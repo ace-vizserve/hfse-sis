@@ -58,6 +58,7 @@ All UI must conform to `docs/context/09-design-system.md`. Colors, fonts, radius
 - **Next.js 16** (App Router, Turbopack, TypeScript) — single deployable at the repo root
 - **Supabase** (Postgres + Auth, `@supabase/ssr`) — single shared project also hosting admissions tables
 - **Tailwind CSS v4** via `@tailwindcss/postcss` (no `tailwind.config.js`)
+- **`@tanstack/react-table`** + **`recharts`** — canonical data-table and charting engines for dashboards
 - **Vercel** — deployment target (Root Directory: repo root / blank)
 - **PDF generation deferred** — browser Print / Save as PDF covers current volume. If automation is needed later, prefer Puppeteer-in-Next.js over the original Python/WeasyPrint plan.
 
@@ -80,14 +81,16 @@ hfse-markbook/
 ├── app/                      ← App Router
 │   ├── (auth)/login/
 │   ├── (dashboard)/
+│   │   ├── page.tsx          ← root `/` — single dashboard; admin content inlined, role-gated
 │   │   ├── account/          ← /account: self-serve password change (all roles)
 │   │   ├── grading/          ← teacher path: list, [id] grid, advisory comments
-│   │   ├── admin/            ← registrar path: sync, sections, audit-log
+│   │   ├── admin/            ← /admin redirects to /; nested routes live here (admissions, sections, sync, audit-log)
+│   │   │   └── admissions/   ← Sprint 7 Part A full dashboard (pipeline, funnel, outdated, etc)
 │   │   └── report-cards/     ← HTML preview + browser print + publication window
 │   ├── (parent)/parent/      ← parent portal SSO landing + report card view
 │   │   ├── enter/            ← token-fragment handoff from enrol.hfse.edu.sg
 │   │   └── report-cards/     ← parent-scoped report card view
-│   └── api/                  ← all routes (one folder per resource)
+│   └── api/                  ← all routes (one folder per resource; incl. api/admissions/export)
 ├── lib/
 │   ├── supabase/             ← client / server / service / middleware / admissions helpers
 │   ├── auth/                 ← roles, require-role, teacher-assignments
@@ -95,17 +98,19 @@ hfse-markbook/
 │   ├── audit/                ← log-action.ts (generic) + log-grade-change.ts (legacy)
 │   ├── notifications/        ← email-parents-publication.ts (Resend)
 │   ├── report-card/          ← build-report-card.ts (shared staff+parent fetch)
+│   ├── admissions/           ← dashboard.ts — cached read-only query helpers for /admin/admissions
 │   ├── academic-year.ts      ← getCurrentAcademicYear / requireCurrentAyCode
 │   └── sync/                 ← students planner, snapshot loader, normalizers
 ├── components/grading/       ← score-entry-grid, lock-toggle, totals-editor, ...
 ├── components/admin/         ← teacher-assignments-panel, publish-window-panel, publication-status
+├── components/admissions/    ← pipeline-cards, funnel/by-level/assessment/referral charts, outdated table, ay-switcher
 ├── components/report-card/   ← report-card-document (shared render, print CSS)
 ├── components/ui/            ← shadcn primitives (button/card/table/field/select/tabs/dropdown-menu/sheet/popover/calendar/...) + DateTimePicker wrapper + PageShell layout wrapper
 ├── components/{app,parent}-sidebar.tsx
 ├── supabase/
 │   ├── migrations/           ← 001_initial_schema → 008_publication_notified_at
 │   └── seed.sql              ← AY2026 + levels + subjects + sections + terms + configs
-├── docs/                     ← context docs (incl. 10-parent-portal.md) + sprint plan
+├── docs/                     ← context docs (incl. 08-admission-dashboard.md, 10-parent-portal.md) + sprint plan
 └── types/index.ts
 ```
 
@@ -143,6 +148,8 @@ Original plan had separate `ADMISSIONS_SUPABASE_*` vars; dropped because admissi
 15. **Aurora Vault palette** — core shadcn semantic tokens in `app/globals.css` `:root` are remapped to the Aurora Vault hex palette (navy `#0B1120`, indigo `#4F46E5`, ink ramp `#0F172A`→`#94A3B8`, hairline `#E2E8F0`). Raw values use the `--av-*` prefix to avoid self-reference cycles with `@theme inline`. All shadcn semantic utilities (`bg-primary`, `text-foreground`, `border-border`, `bg-card`) and explicit Aurora Vault utilities (`bg-brand-indigo`, `text-ink`, `border-hairline`) render identically — use either. Full token table and page→component matrix in `docs/context/09-design-system.md`.
 16. **`@tanstack/react-table` is the canonical data-table engine** for filterable/sortable/paginated lists. Reference implementation: `app/(dashboard)/grading/grading-data-table.tsx` (dashboard-01 toolbar pattern with global search, faceted level filter, column visibility, status tabs, pagination). New data tables start from there, not from a bare `<Table>` wrapper.
 17. **Parent notifications via Resend** — `lib/notifications/email-parents-publication.ts` is called from `POST /api/report-card-publications` and is idempotent via the `report_card_publications.notified_at` column (`008_publication_notified_at.sql`). Best-effort: failures log but never fail the publication. Silently no-ops when `RESEND_API_KEY` / `NEXT_PUBLIC_PARENT_PORTAL_URL` are unset, so local dev works without the dep.
+18. **Admissions dashboard is read-only** — Sprint 7 Part A. All queries live in `lib/admissions/dashboard.ts`, wrapped in `unstable_cache` (10-min TTL, tag `admissions-dashboard:${ayCode}`), hitting `ay{YY}_enrolment_applications` × `ay{YY}_enrolment_status` via the service-role client. Hero lives at `/admin/admissions`; the high-signal widgets (pipeline cards + outdated table) are also inlined on the root `/` dashboard for privileged roles so there's one landing page. Outdated-row staleness uses `applicationUpdatedDate ?? created_at` as a fallback because the admissions team never stamps `*UpdatedDate` columns in practice. Superadmin-only CSV export at `/api/admissions/export`. Part B (SharePoint inquiries) remains blocked on HFSE credentials.
+19. **Single dashboard for everyone** — `/admin` index redirects to `/`. Teachers see school stats + grading/report-card quick links; registrar/admin/superadmin additionally see the admissions pipeline snapshot, stale-applications table, and inline admin tools grid. Nested admin routes (`/admin/admissions`, `/admin/sections`, `/admin/sync-students`, `/admin/audit-log`) are unaffected.
 
 ## Workflow
 

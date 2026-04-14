@@ -3,8 +3,9 @@ import {
   CheckCircle2,
   ClipboardList,
   FileText,
+  History,
   Lock,
-  Settings,
+  RefreshCw,
   Unlock,
   Users,
   type LucideIcon,
@@ -22,10 +23,55 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageShell } from "@/components/ui/page-shell";
-import { getCurrentAcademicYear } from "@/lib/academic-year";
+import { PipelineCards } from "@/components/admissions/pipeline-cards";
+import { OutdatedApplicationsTable } from "@/components/admissions/outdated-applications-table";
+import {
+  getOutdatedApplications,
+  getPipelineCounts,
+} from "@/lib/admissions/dashboard";
+import { getCurrentAcademicYear, requireCurrentAyCode } from "@/lib/academic-year";
 import { getUserRole } from "@/lib/auth/roles";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+
+type Tool = {
+  eyebrow: string;
+  title: string;
+  description: string;
+  href: string;
+  cta: string;
+  icon: LucideIcon;
+};
+
+const ADMIN_TOOLS: Tool[] = [
+  {
+    icon: RefreshCw,
+    eyebrow: "Admissions",
+    title: "Sync Students",
+    description:
+      "Pull new, updated, and withdrawn students from the admissions tables for the current academic year.",
+    href: "/admin/sync-students",
+    cta: "Open sync",
+  },
+  {
+    icon: Users,
+    eyebrow: "Rosters",
+    title: "Sections & Advisers",
+    description:
+      "View every section for the current AY and manage enrolment, class advisers, and comments.",
+    href: "/admin/sections",
+    cta: "Open sections",
+  },
+  {
+    icon: History,
+    eyebrow: "Compliance",
+    title: "Audit Log",
+    description:
+      "Append-only record of every post-lock grade change, with field diffs and approval references.",
+    href: "/admin/audit-log",
+    cta: "Open audit log",
+  },
+];
 
 export default async function DashboardHome() {
   const supabase = await createClient();
@@ -37,7 +83,6 @@ export default async function DashboardHome() {
   const canSeeAdmin = role === "registrar" || role === "admin" || role === "superadmin";
   const canSeeGrading = role === "teacher" || role === "registrar" || role === "superadmin";
   const canSeeReportCards = role === "registrar" || role === "admin" || role === "superadmin";
-  const primaryPathIsAdmin = role === "registrar" || role === "admin" || role === "superadmin";
 
   // Fetch current-AY stats. Service client bypasses RLS so the counts are
   // the *whole school* view — teachers see the same school-wide numbers
@@ -45,6 +90,18 @@ export default async function DashboardHome() {
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
   const stats = currentAy ? await loadStats(service, currentAy.id) : null;
+
+  // Admin-only: pipeline snapshot + stale applications. Gated so teachers
+  // never pay for admissions queries. `getOutdatedApplications` already
+  // applies the spec §1.2 blocklist + 7-day cutoff, so no client-side filter
+  // is needed here — whatever it returns is ready to render.
+  const ayCode = canSeeAdmin ? await requireCurrentAyCode(supabase) : null;
+  const [pipeline, outdated] = canSeeAdmin && ayCode
+    ? await Promise.all([
+        getPipelineCounts(ayCode),
+        getOutdatedApplications(ayCode),
+      ])
+    : [null, [] as Awaited<ReturnType<typeof getOutdatedApplications>>];
 
   return (
     <PageShell>
@@ -127,48 +184,106 @@ export default async function DashboardHome() {
         </div>
       </div>
 
-      {/* Quick links */}
-      <div>
-        <p className="mb-4 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Jump back in
-        </p>
-        <div className="@container/main">
-          <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-3">
-            {canSeeGrading && (
-              <QuickLinkCard
-                icon={ClipboardList}
-                eyebrow="Grading"
-                title="Grading Sheets"
-                description="Enter and review quarterly grades for your sections."
-                href="/grading"
-                cta="Open grading"
-                primary={!primaryPathIsAdmin}
-              />
-            )}
-            {canSeeReportCards && (
-              <QuickLinkCard
-                icon={FileText}
-                eyebrow="Report Cards"
-                title="Report Cards"
-                description="Preview, print, and publish report cards for the current academic year."
-                href="/report-cards"
-                cta="Browse report cards"
-              />
-            )}
-            {canSeeAdmin && (
-              <QuickLinkCard
-                icon={Settings}
-                eyebrow="Administration"
-                title="Admin"
-                description="Sync students, manage sections, and review the audit log."
-                href="/admin"
-                cta="Open admin"
-                primary={primaryPathIsAdmin}
-              />
-            )}
+      {/* Admissions snapshot — privileged roles only */}
+      {canSeeAdmin && pipeline && (
+        <section className="space-y-4">
+          <div className="flex items-end justify-between gap-4">
+            <div className="space-y-2">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Admissions · At a glance
+              </p>
+              <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
+                Pipeline snapshot
+              </h2>
+            </div>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/admin/admissions">
+                Full dashboard
+                <ArrowUpRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+          <PipelineCards counts={pipeline} />
+        </section>
+      )}
+
+      {/* Stale applications — privileged roles only */}
+      {canSeeAdmin && (
+        <section className="space-y-4">
+          <div className="space-y-2">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Needs attention
+            </p>
+            <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
+              Stale applications
+            </h2>
+          </div>
+          <OutdatedApplicationsTable rows={outdated} />
+        </section>
+      )}
+
+      {/* Admin tools — privileged roles only */}
+      {canSeeAdmin && (
+        <section className="space-y-4">
+          <div className="space-y-2">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Tools
+            </p>
+            <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
+              Administrator tools
+            </h2>
+          </div>
+          <div className="@container/main">
+            <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-3">
+              {ADMIN_TOOLS.map((t) => (
+                <QuickLinkCard
+                  key={t.href}
+                  icon={t.icon}
+                  eyebrow={t.eyebrow}
+                  title={t.title}
+                  description={t.description}
+                  href={t.href}
+                  cta={t.cta}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Quick links — grading + report cards (admin card removed; admin tools are inline above) */}
+      {(canSeeGrading || canSeeReportCards) && (
+        <div>
+          <p className="mb-4 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Jump back in
+          </p>
+          <div className="@container/main">
+            <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2">
+              {canSeeGrading && (
+                <QuickLinkCard
+                  icon={ClipboardList}
+                  eyebrow="Grading"
+                  title="Grading Sheets"
+                  description="Enter and review quarterly grades for your sections."
+                  href="/grading"
+                  cta="Open grading"
+                  primary={!canSeeAdmin}
+                />
+              )}
+              {canSeeReportCards && (
+                <QuickLinkCard
+                  icon={FileText}
+                  eyebrow="Report Cards"
+                  title="Report Cards"
+                  description="Preview, print, and publish report cards for the current academic year."
+                  href="/report-cards"
+                  cta="Browse report cards"
+                />
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <TrustStrip ayLabel={currentAy?.ay_code ?? "—"} />
     </PageShell>

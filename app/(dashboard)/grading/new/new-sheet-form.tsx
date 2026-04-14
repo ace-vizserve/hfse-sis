@@ -2,15 +2,22 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Plus } from 'lucide-react';
+import {
+  GraduationCap,
+  Loader2,
+  Plus,
+  Sliders,
+  Target,
+  UserRound,
+} from 'lucide-react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -45,6 +52,14 @@ type Config = {
 
 const first = <T,>(v: T | T[] | null): T | null =>
   Array.isArray(v) ? v[0] ?? null : v ?? null;
+
+function TileIcon({ icon: Icon }: { icon: React.ComponentType<{ className?: string }> }) {
+  return (
+    <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+      <Icon className="size-4" />
+    </div>
+  );
+}
 
 export function NewSheetForm({
   terms,
@@ -97,6 +112,10 @@ export function NewSheetForm({
   const selectedSection = sections.find((s) => s.id === sectionId);
   const selectedSubject = subjects.find((s) => s.id === subjectId);
   const selectedTerm = terms.find((t) => t.id === termId);
+  const selectedLevel = first(selectedSection?.level ?? null);
+
+  const wwTotal = wwSlots * wwEach;
+  const ptTotal = ptSlots * ptEach;
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -128,247 +147,321 @@ export function NewSheetForm({
   const canSubmit = !busy && !!termId && !!sectionId && !!subjectId;
 
   return (
-    <form onSubmit={submit}>
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-            Step 1 · Assignment
-          </CardDescription>
-          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            Where does this sheet belong?
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="term">Term</FieldLabel>
-              <Select value={termId} onValueChange={setTermId} required>
-                <SelectTrigger id="term">
-                  <SelectValue placeholder="— pick a term —" />
-                </SelectTrigger>
-                <SelectContent>
-                  {terms.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.label}
-                      {t.is_current ? ' · current' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FieldDescription>
-                The sheet&apos;s reporting period. Current term is pre-selected.
-              </FieldDescription>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="section">Section</FieldLabel>
-              <Select
-                value={sectionId}
-                onValueChange={(v) => {
-                  setSectionId(v);
-                  setSubjectId('');
-                }}
-                required
-              >
-                <SelectTrigger id="section">
-                  <SelectValue placeholder="— pick a section —" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sectionsGrouped.map(([label, list]) => (
-                    <SelectGroup key={label}>
-                      <SelectLabel>{label}</SelectLabel>
-                      {list.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FieldDescription>
-                Sections are grouped by level. Picking one filters the subject list below.
-              </FieldDescription>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="subject">Subject</FieldLabel>
-              <Select
-                value={subjectId}
-                onValueChange={setSubjectId}
-                required
-                disabled={!sectionId}
-              >
-                <SelectTrigger id="subject">
-                  <SelectValue
-                    placeholder={sectionId ? '— pick a subject —' : '— pick a section first —'}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {subjects
-                    .filter((s) => allowedSubjectIds.has(s.id))
-                    .map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name}
-                        {!s.is_examinable && ' · letter grade'}
+    <form onSubmit={submit} className="grid gap-6 lg:grid-cols-12">
+      <div className="flex flex-col gap-6 lg:col-span-8">
+        <Card className="@container/card">
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Step 1 · Assignment
+            </CardDescription>
+            <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Where does this sheet belong?
+            </CardTitle>
+            <CardAction>
+              <TileIcon icon={Target} />
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="term">Term</FieldLabel>
+                <Select value={termId} onValueChange={setTermId} required>
+                  <SelectTrigger id="term">
+                    <SelectValue placeholder="— pick a term —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {terms.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.label}
+                        {t.is_current ? ' · current' : ''}
                       </SelectItem>
                     ))}
-                </SelectContent>
-              </Select>
-              <FieldDescription>
-                Only subjects with a weight configuration for this level appear here.
-              </FieldDescription>
-            </Field>
-          </FieldGroup>
-        </CardContent>
-      </Card>
-
-      <Card className="@container/card mt-5">
-        <CardHeader>
-          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-            Step 2 · Score slots
-          </CardDescription>
-          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            Assessment structure
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <FieldGroup>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="num-ww-slots">Written Works · slots</FieldLabel>
-                <Input
-                  id="num-ww-slots"
-                  type="number"
-                  value={wwSlots}
-                  min={0}
-                  max={5}
-                  onChange={(e) => setWwSlots(Number(e.target.value))}
-                />
-                <FieldDescription>Max 5 per project rules.</FieldDescription>
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  The sheet&apos;s reporting period. Current term is pre-selected.
+                </FieldDescription>
               </Field>
+
               <Field>
-                <FieldLabel htmlFor="num-ww-each">Written Works · max each</FieldLabel>
+                <FieldLabel htmlFor="section">Section</FieldLabel>
+                <Select
+                  value={sectionId}
+                  onValueChange={(v) => {
+                    setSectionId(v);
+                    setSubjectId('');
+                  }}
+                  required
+                >
+                  <SelectTrigger id="section">
+                    <SelectValue placeholder="— pick a section —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sectionsGrouped.map(([label, list]) => (
+                      <SelectGroup key={label}>
+                        <SelectLabel>{label}</SelectLabel>
+                        {list.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  Sections are grouped by level. Picking one filters the subject list below.
+                </FieldDescription>
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor="subject">Subject</FieldLabel>
+                <Select
+                  value={subjectId}
+                  onValueChange={setSubjectId}
+                  required
+                  disabled={!sectionId}
+                >
+                  <SelectTrigger id="subject">
+                    <SelectValue
+                      placeholder={
+                        sectionId ? '— pick a subject —' : '— pick a section first —'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {subjects
+                      .filter((s) => allowedSubjectIds.has(s.id))
+                      .map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name}
+                          {!s.is_examinable && ' · letter grade'}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  Only subjects with a weight configuration for this level appear here.
+                </FieldDescription>
+              </Field>
+            </FieldGroup>
+          </CardContent>
+        </Card>
+
+        <Card className="@container/card">
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Step 2 · Score slots
+            </CardDescription>
+            <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Assessment structure
+            </CardTitle>
+            <CardAction>
+              <TileIcon icon={Sliders} />
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            <FieldGroup>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="num-ww-slots">Written Works · slots</FieldLabel>
+                  <Input
+                    id="num-ww-slots"
+                    type="number"
+                    value={wwSlots}
+                    min={0}
+                    max={5}
+                    onChange={(e) => setWwSlots(Number(e.target.value))}
+                  />
+                  <FieldDescription>Max 5 per project rules.</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="num-ww-each">Written Works · max each</FieldLabel>
+                  <Input
+                    id="num-ww-each"
+                    type="number"
+                    value={wwEach}
+                    min={1}
+                    onChange={(e) => setWwEach(Number(e.target.value))}
+                  />
+                  <FieldDescription>Highest score a student can earn per slot.</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="num-pt-slots">Performance Tasks · slots</FieldLabel>
+                  <Input
+                    id="num-pt-slots"
+                    type="number"
+                    value={ptSlots}
+                    min={0}
+                    max={5}
+                    onChange={(e) => setPtSlots(Number(e.target.value))}
+                  />
+                  <FieldDescription>Max 5 per project rules.</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="num-pt-each">Performance Tasks · max each</FieldLabel>
+                  <Input
+                    id="num-pt-each"
+                    type="number"
+                    value={ptEach}
+                    min={1}
+                    onChange={(e) => setPtEach(Number(e.target.value))}
+                  />
+                  <FieldDescription>Highest score a student can earn per slot.</FieldDescription>
+                </Field>
+              </div>
+
+              <FieldSeparator />
+
+              <Field>
+                <FieldLabel htmlFor="num-qa-total">Quarterly Assessment · max</FieldLabel>
                 <Input
-                  id="num-ww-each"
+                  id="num-qa-total"
                   type="number"
-                  value={wwEach}
+                  value={qaTotal}
                   min={1}
-                  onChange={(e) => setWwEach(Number(e.target.value))}
+                  onChange={(e) => setQaTotal(Number(e.target.value))}
                 />
-                <FieldDescription>Highest score a student can earn per slot.</FieldDescription>
+                <FieldDescription>
+                  The single QA exam is one score out of this max.
+                </FieldDescription>
               </Field>
+            </FieldGroup>
+          </CardContent>
+        </Card>
+
+        <Card className="@container/card">
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Step 3 · Teacher
+            </CardDescription>
+            <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Who teaches this sheet?
+            </CardTitle>
+            <CardAction>
+              <TileIcon icon={UserRound} />
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="num-pt-slots">Performance Tasks · slots</FieldLabel>
+                <FieldLabel htmlFor="teacher">Teacher name</FieldLabel>
                 <Input
-                  id="num-pt-slots"
-                  type="number"
-                  value={ptSlots}
-                  min={0}
-                  max={5}
-                  onChange={(e) => setPtSlots(Number(e.target.value))}
+                  id="teacher"
+                  value={teacherName}
+                  onChange={(e) => setTeacherName(e.target.value)}
+                  placeholder="e.g. Ms. Tan"
                 />
-                <FieldDescription>Max 5 per project rules.</FieldDescription>
+                <FieldDescription>
+                  Optional. Shown on the grading sheet list and on the report card.
+                </FieldDescription>
               </Field>
-              <Field>
-                <FieldLabel htmlFor="num-pt-each">Performance Tasks · max each</FieldLabel>
-                <Input
-                  id="num-pt-each"
-                  type="number"
-                  value={ptEach}
-                  min={1}
-                  onChange={(e) => setPtEach(Number(e.target.value))}
+            </FieldGroup>
+          </CardContent>
+        </Card>
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+      </div>
+
+      <aside className="lg:col-span-4">
+        <div className="lg:sticky lg:top-6">
+          <Card className="@container/card">
+            <CardHeader>
+              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                Live preview
+              </CardDescription>
+              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                Sheet summary
+              </CardTitle>
+              <CardAction>
+                <TileIcon icon={GraduationCap} />
+              </CardAction>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <dl className="space-y-3 text-sm">
+                <SummaryRow label="Subject" value={selectedSubject?.name} />
+                <SummaryRow
+                  label="Section"
+                  value={
+                    selectedSection
+                      ? `${selectedLevel?.label ? `${selectedLevel.label} · ` : ''}${selectedSection.name}`
+                      : undefined
+                  }
                 />
-                <FieldDescription>Highest score a student can earn per slot.</FieldDescription>
-              </Field>
-            </div>
+                <SummaryRow label="Term" value={selectedTerm?.label} />
+                <SummaryRow label="Teacher" value={teacherName.trim() || undefined} />
+              </dl>
 
-            <FieldSeparator />
+              <div className="h-px bg-border" />
 
-            <Field>
-              <FieldLabel htmlFor="num-qa-total">Quarterly Assessment · max</FieldLabel>
-              <Input
-                id="num-qa-total"
-                type="number"
-                value={qaTotal}
-                min={1}
-                onChange={(e) => setQaTotal(Number(e.target.value))}
-              />
-              <FieldDescription>
-                The single QA exam is one score out of this max.
-              </FieldDescription>
-            </Field>
-          </FieldGroup>
-        </CardContent>
-      </Card>
+              <div className="grid grid-cols-3 gap-3">
+                <Metric
+                  label="WW"
+                  value={`${wwSlots}×${wwEach}`}
+                  sub={`= ${wwTotal}`}
+                />
+                <Metric
+                  label="PT"
+                  value={`${ptSlots}×${ptEach}`}
+                  sub={`= ${ptTotal}`}
+                />
+                <Metric label="QA" value={`${qaTotal}`} sub="max" />
+              </div>
 
-      <Card className="@container/card mt-5">
-        <CardHeader>
-          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-            Step 3 · Teacher
-          </CardDescription>
-          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            Who teaches this sheet?
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="teacher">Teacher name</FieldLabel>
-              <Input
-                id="teacher"
-                value={teacherName}
-                onChange={(e) => setTeacherName(e.target.value)}
-                placeholder="e.g. Ms. Tan"
-              />
-              <FieldDescription>
-                Optional. Shown on the grading sheet list and on the report card.
-              </FieldDescription>
-            </Field>
-          </FieldGroup>
-        </CardContent>
-      </Card>
-
-      {error && (
-        <Alert variant="destructive" className="mt-5">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Summary + submit */}
-      <Card className="@container/card mt-5">
-        <CardContent>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Summary
-              </p>
-              <p className="text-sm text-foreground">
-                {canSubmit ? (
-                  <>
-                    <span className="font-medium">{selectedSubject?.name}</span> ·{' '}
-                    {selectedSection?.name} · {selectedTerm?.label}
-                  </>
+              <Button type="submit" disabled={!canSubmit} className="w-full">
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <span className="text-muted-foreground">
-                    Pick a term, section, and subject above.
-                  </span>
+                  <Plus className="h-4 w-4" />
                 )}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-        <CardFooter className="justify-end">
-          <Button type="submit" disabled={!canSubmit}>
-            {busy ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4" />
-            )}
-            {busy ? 'Creating…' : 'Create grading sheet'}
-          </Button>
-        </CardFooter>
-      </Card>
+                {busy ? 'Creating…' : 'Create grading sheet'}
+              </Button>
+              {!canSubmit && !busy && (
+                <p className="text-center text-xs text-muted-foreground">
+                  Pick a term, section, and subject to continue.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </aside>
     </form>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string | undefined }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <dt className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </dt>
+      <dd
+        className={
+          value
+            ? 'truncate text-right font-medium text-foreground'
+            : 'text-right text-muted-foreground/60'
+        }
+      >
+        {value ?? '—'}
+      </dd>
+    </div>
+  );
+}
+
+function Metric({ label, value, sub }: { label: string; value: string; sub: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-muted/40 p-3">
+      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 font-serif text-lg font-semibold leading-none tabular-nums text-foreground">
+        {value}
+      </p>
+      <p className="mt-1 text-[11px] text-muted-foreground tabular-nums">{sub}</p>
+    </div>
   );
 }

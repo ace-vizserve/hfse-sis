@@ -28,7 +28,7 @@ export default async function NewGradingSheetPage() {
   ]);
 
   return (
-    <PageShell className="max-w-3xl">
+    <PageShell>
       <Link
         href="/grading"
         className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"

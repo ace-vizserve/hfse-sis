@@ -6,7 +6,7 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 
 **Stack:** Next.js 16 (App Router) + Supabase + Vercel. Python/FastAPI/WeasyPrint PDF service from the original plan has been deferred (see Sprint 6 decision note); browser print handles current volume.
 
-## Status snapshot (last updated 2026-04-16)
+## Status snapshot (last updated 2026-04-17)
 
 | Sprint | Title | Status |
 |---|---|---|
@@ -17,7 +17,7 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 | 5 | Comments, Attendance & Report Card Data | 🔶 Done with deferrals (Sec 3–4 profile, attendance import) |
 | 6 | PDF Generation & Polish | ✅ Done (2026-04-16) — Aurora Vault v2 + close-out pass: grading grid polish (exceeds-max ring, withdrawn strike, plain-text locked mode, `is_na` toggle, quarterly color coding), blank-counts column on `/grading`, Resend-powered parent email notifications on publication (idempotent via `notified_at`). PDF automation, mobile pass, and previous-term comparison intentionally deferred — see backlog |
 | — | Teacher Assignments _(added mid-flight)_ | ✅ Done — `teacher_assignments` table + CRUD UI + gates on grading list & comments |
-| 7 | Admissions Dashboard (Phase 2) | ⏸️ Not started — blocked on UAT signoff from Joann |
+| 7 | Admissions Dashboard (Phase 2) | 🔶 Part A done (2026-04-17) — pipeline cards, funnel, applications-by-level, outdated table, doc completion (live), assessment outcomes, referral sources, AY switcher, superadmin CSV export. Part B (SharePoint inquiries) still blocked on HFSE credentials |
 
 ### Cross-cutting improvements backlog
 
@@ -476,19 +476,26 @@ Final bite closing every deferred polish item that could ship without new data, 
 
 **Full spec:** `docs/context/08-admissions-dashboard.md`
 
-### Part A — Applications Dashboard (no blockers)
+### Part A — Applications Dashboard ✅ Done (2026-04-17)
 
-- [ ] Applications pipeline overview — summary cards per `applicationStatus` (Submitted, Processing, Enrolled, Withdrawn, Cancelled, Enrolled Conditional)
-- [ ] Outdated applications table — applications not updated in 7+ days, with red/amber/green staleness indicators
-- [ ] Day counter per application — days from `created_at` to enrolled (or today if still open)
-- [ ] Average time to enrollment metric
-- [ ] Applications by level bar chart — Submitted vs Enrolled per level
-- [ ] Conversion funnel visualization — Submitted → Verification → Processing → Enrolled with drop-off %
-- [ ] Document completion rate — % of applicants with required docs submitted (from `enrolment_documents`)
-- [ ] Assessment outcomes chart — pass/fail rate from `assessmentGradeMath` + `assessmentGradeEnglish`
-- [ ] Referral source breakdown — bar chart from `howDidYouKnowAboutHFSEIS`
-- [ ] AY switcher — configurable table prefix (ay2026, ay2027, etc.) — do not hardcode the year
-- [ ] Cache dashboard queries for 5–15 minutes (use Next.js fetch cache)
+- [x] Applications pipeline overview — 7 summary cards per `applicationStatus` (Submitted, Ongoing Verification, Processing, Enrolled, Enrolled Conditional, Withdrawn, Cancelled)
+- [x] Outdated applications table — TanStack table with red/amber/green staleness tiers rendered as badge + icon + label (never color-only)
+- [x] Day counter per application — `daysInPipeline` column, matches spec SQL
+- [x] Average time to enrollment metric — dedicated card with sample size
+- [x] Applications by level bar chart — grouped Submitted vs Enrolled per level
+- [x] Conversion funnel visualization — horizontal bar chart (reads clearer at low n than recharts FunnelChart), drop-off % per stage in tooltip
+- [x] Document completion rate — live query against `ay{YY}_enrolment_documents`, all 5 core docs (medical, passport, birthCert, educCert, idPicture) must be non-null to count as complete
+- [x] Assessment outcomes chart — stacked bar (Math, English) with Pass/Fail/Unknown, 60% pass threshold, handles both numeric and letter grades
+- [x] Referral source breakdown — horizontal bar from `howDidYouKnowAboutHFSEIS`, top 8 + "Other" rollup
+- [x] AY switcher — `?ay=AY2026` searchParam, dropdown reads from `academic_years`, no hardcoding
+- [x] Cache dashboard queries — `unstable_cache` wrapper with 600s TTL and `admissions-dashboard:${ayCode}` tag
+- [x] Superadmin-only CSV export at `/api/admissions/export` for the outdated-applications view
+- [x] High-signal widgets also inlined on the root `/` dashboard (merged /admin into /; /admin redirects to /) so privileged roles land on a single dashboard
+- [x] Outdated-row staleness falls back to `applicationUpdatedDate ?? created_at` — the admissions team never stamps `*UpdatedDate` columns (0/471 populated in AY2026), so without the fallback every row collapsed to "Never updated"
+- [x] Outdated table follows the `grading-data-table.tsx` canonical pattern — pagination, tabs (All / Critical / Warning / Never), sortable headers, mono-caps badges with icons, searchable Level combobox (Popover + Input, no cmdk dep)
+- [x] Pipeline-age column shows a compact RAG dot + tinted count reusing the spec §1.2 thresholds
+- [x] Status badges use distinct icon + brand-token tint per `applicationStatus` (Submitted → indigo, Verification → sky, Processing → soft indigo, Enrolled → mint, etc.) instead of a plain secondary variant
+- [x] AY switcher promoted from a cramped hero toolbar to a dedicated right-column "Viewing" card with full-width controls
 
 ### Part B — Inquiry Tracking via SharePoint (blocked until HFSE provides credentials)
 

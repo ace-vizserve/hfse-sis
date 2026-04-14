@@ -37,7 +37,10 @@ export const NAV_BY_ROLE: Record<Role, NavSection[]> = {
     { items: [{ href: '/report-cards', label: 'Report Cards' }] },
     {
       label: 'Admin',
-      items: [{ href: '/admin/audit-log', label: 'Audit Log' }],
+      items: [
+        { href: '/admin/admissions', label: 'Admissions Dashboard' },
+        { href: '/admin/audit-log', label: 'Audit Log' },
+      ],
     },
   ],
   admin: [
@@ -47,6 +50,10 @@ export const NAV_BY_ROLE: Record<Role, NavSection[]> = {
       items: [{ href: '/admin/sections', label: 'Sections' }],
     },
     { items: [{ href: '/report-cards', label: 'Report Cards' }] },
+    {
+      label: 'Admissions',
+      items: [{ href: '/admin/admissions', label: 'Pipeline Dashboard' }],
+    },
     {
       label: 'Admin',
       items: [{ href: '/admin/audit-log', label: 'Audit Log' }],
@@ -69,6 +76,10 @@ export const NAV_BY_ROLE: Record<Role, NavSection[]> = {
       ],
     },
     { items: [{ href: '/report-cards', label: 'Report Cards' }] },
+    {
+      label: 'Admissions',
+      items: [{ href: '/admin/admissions', label: 'Pipeline Dashboard' }],
+    },
     {
       label: 'Admin',
       items: [{ href: '/admin/audit-log', label: 'Audit Log' }],

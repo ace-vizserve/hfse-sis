@@ -35,7 +35,8 @@
       "Bash(git stash:*)",
       "Skill(get-context)",
       "Bash(npx tsc:*)",
-      "Skill(sync-docs)"
+      "Skill(sync-docs)",
+      "Bash(node -e ' *)"
     ]
   },
   "enabledMcpjsonServers": [
