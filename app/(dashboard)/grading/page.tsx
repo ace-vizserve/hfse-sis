@@ -1,30 +1,25 @@
 import Link from 'next/link';
 import {
-  CheckCircle2,
   Layers,
   Lock,
   LockOpen,
   Plus,
   Sparkles,
-  X,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { getUserRole } from '@/lib/auth/roles';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Separator } from '@/components/ui/separator';
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import { PageHeader } from '@/components/ui/page-header';
-import { Surface, SurfaceHeader, SurfaceTitle, SurfaceDescription } from '@/components/ui/surface';
-import { cn } from '@/lib/utils';
+import { GradingDataTable, type GradingSheetRow } from './grading-data-table';
 
 type LevelLite = { id: string; code: string; label: string; level_type: 'primary' | 'secondary' };
 type SubjectLite = { id: string; code: string; name: string; is_examinable: boolean };
@@ -43,15 +38,7 @@ type SheetRow = {
 const first = <T,>(v: T | T[] | null): T | null =>
   Array.isArray(v) ? v[0] ?? null : v ?? null;
 
-export default async function GradingListPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ level?: string; status?: string }>;
-}) {
-  const sp = await searchParams;
-  const levelFilter = sp.level ?? 'all';
-  const statusFilter = sp.status ?? 'all';
-
+export default async function GradingListPage() {
   const supabase = await createClient();
 
   const { data: user } = await supabase.auth.getUser();
@@ -83,8 +70,13 @@ export default async function GradingListPage({
     advisorySections = ((advisorAssignments ?? []) as AA[])
       .map((a) => first(a.section))
       .filter(
-        (s): s is { id: string; name: string; level: { label: string } | { label: string }[] | null } =>
-          !!s,
+        (
+          s,
+        ): s is {
+          id: string;
+          name: string;
+          level: { label: string } | { label: string }[] | null;
+        } => !!s,
       )
       .map((s) => {
         const lvl = first(s.level);
@@ -94,304 +86,176 @@ export default async function GradingListPage({
 
   const allRows = (sheets ?? []) as SheetRow[];
 
-  const levelSet = new Map<string, string>();
-  for (const s of allRows) {
-    const lvl = first(first(s.section)?.level ?? null);
-    if (lvl?.label) levelSet.set(lvl.label, lvl.label);
-  }
-  const allLevels = Array.from(levelSet.keys()).sort();
-
-  const filtered = allRows.filter((s) => {
-    const lvlLabel = first(first(s.section)?.level ?? null)?.label ?? 'Unknown';
-    if (levelFilter !== 'all' && lvlLabel !== levelFilter) return false;
-    if (statusFilter === 'locked' && !s.is_locked) return false;
-    if (statusFilter === 'open' && s.is_locked) return false;
-    return true;
+  // Flatten to GradingSheetRow[] for the data table.
+  const tableRows: GradingSheetRow[] = allRows.map((s) => {
+    const section = first(s.section);
+    const level = first(section?.level ?? null);
+    const subject = first(s.subject);
+    const term = first(s.term);
+    return {
+      id: s.id,
+      section: section?.name ?? '—',
+      level: level?.label ?? 'Unknown',
+      subject: subject?.name ?? '—',
+      term: term?.label ?? '—',
+      teacher: s.teacher_name ?? null,
+      is_locked: s.is_locked,
+    };
   });
 
-  const grouped = new Map<string, SheetRow[]>();
-  for (const s of filtered) {
-    const key = first(first(s.section)?.level ?? null)?.label ?? 'Unknown';
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key)!.push(s);
-  }
-  const levels = Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b));
-
-  const totalCount = allRows.length;
-  const lockedCount = allRows.filter((s) => s.is_locked).length;
+  const totalCount = tableRows.length;
+  const lockedCount = tableRows.filter((s) => s.is_locked).length;
   const openCount = totalCount - lockedCount;
-
-  const buildHref = (patch: { level?: string; status?: string }) => {
-    const params = new URLSearchParams();
-    const lvl = patch.level ?? levelFilter;
-    const st = patch.status ?? statusFilter;
-    if (lvl !== 'all') params.set('level', lvl);
-    if (st !== 'all') params.set('status', st);
-    const qs = params.toString();
-    return qs ? `/grading?${qs}` : '/grading';
-  };
-
-  const hasFilter = levelFilter !== 'all' || statusFilter !== 'all';
+  const lockedPct = totalCount > 0 ? Math.round((lockedCount / totalCount) * 100) : 0;
+  const distinctLevels = new Set(tableRows.map((r) => r.level)).size;
 
   return (
     <PageShell>
-      <PageHeader
-        eyebrow="Grading"
-        title="Grading Sheets"
-        description="One sheet per subject × section × term."
-        actions={
-          canCreate ? (
-            <Button asChild>
-              <Link href="/grading/new">
-                <Plus className="h-4 w-4" />
-                New grading sheet
-              </Link>
-            </Button>
-          ) : null
-        }
-      />
+      {/* Hero header */}
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-4">
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Grading
+          </p>
+          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+            Grading sheets.
+          </h1>
+          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+            One sheet per subject × section × term. Click a row to enter scores.
+          </p>
+        </div>
+        {canCreate && (
+          <Button asChild>
+            <Link href="/grading/new">
+              <Plus className="h-4 w-4" />
+              New grading sheet
+            </Link>
+          </Button>
+        )}
+      </header>
 
       {/* Stat cards */}
-      <div className="grid gap-5 sm:grid-cols-3">
-        <StatCard icon={Layers} label="Total sheets" value={totalCount} />
-        <StatCard icon={LockOpen} label="Open" value={openCount} hint="teachers can edit" />
-        <StatCard
-          icon={Lock}
-          label="Locked"
-          value={lockedCount}
-          hint="registrar-only post-lock edits"
-        />
+      <div className="@container/main">
+        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-3">
+          <StatCard
+            description="Total sheets"
+            value={totalCount}
+            icon={Layers}
+            footerTitle={`${distinctLevels} ${distinctLevels === 1 ? 'level' : 'levels'}`}
+            footerDetail="Across every term in the current AY"
+          />
+          <StatCard
+            description="Open"
+            value={openCount}
+            icon={LockOpen}
+            footerTitle="Teachers can edit"
+            footerDetail="Draft or in progress"
+          />
+          <StatCard
+            description="Locked"
+            value={lockedCount}
+            icon={Lock}
+            footerTitle={totalCount > 0 ? `${lockedPct}% of sheets` : 'No sheets yet'}
+            footerDetail="Post-lock edits require approval"
+          />
+        </div>
       </div>
 
       {/* Advisory shortcut */}
       {advisorySections.length > 0 && (
-        <Surface padded={false}>
-          <SurfaceHeader>
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <SurfaceTitle>Sections you advise</SurfaceTitle>
+        <Card className="@container/card">
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Form Class Adviser
+            </CardDescription>
+            <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Sections you advise
+            </CardTitle>
+            <CardAction>
+              <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                <Sparkles className="size-5" />
+              </div>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Write the term comments that appear on report cards.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {advisorySections.map((s) => (
+                <Button key={s.id} asChild variant="outline" size="sm">
+                  <Link href={`/grading/advisory/${s.id}/comments`}>
+                    {s.level_label ? `${s.level_label} · ` : ''}
+                    {s.name} · Comments →
+                  </Link>
+                </Button>
+              ))}
             </div>
-            <SurfaceDescription>
-              Form Class Adviser — write the term comments that appear on report cards.
-            </SurfaceDescription>
-          </SurfaceHeader>
-          <div className="flex flex-wrap gap-2 p-6 md:p-8">
-            {advisorySections.map((s) => (
-              <Button key={s.id} asChild variant="outline" size="sm">
-                <Link href={`/grading/advisory/${s.id}/comments`}>
-                  {s.level_label ? `${s.level_label} · ` : ''}
-                  {s.name} · Comments →
-                </Link>
-              </Button>
-            ))}
-          </div>
-        </Surface>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Filter bar */}
-      {totalCount > 0 && (
-        <Surface className="flex flex-wrap items-center gap-2 p-4">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Level
-          </span>
-          <FilterChip label="All" active={levelFilter === 'all'} href={buildHref({ level: 'all' })} />
-          {allLevels.map((l) => (
-            <FilterChip
-              key={l}
-              label={l}
-              active={levelFilter === l}
-              href={buildHref({ level: l })}
-            />
-          ))}
-          <Separator orientation="vertical" className="mx-2 h-5" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Status
-          </span>
-          <FilterChip
-            label="All"
-            active={statusFilter === 'all'}
-            href={buildHref({ status: 'all' })}
-          />
-          <FilterChip
-            label="Open"
-            active={statusFilter === 'open'}
-            href={buildHref({ status: 'open' })}
-          />
-          <FilterChip
-            label="Locked"
-            active={statusFilter === 'locked'}
-            href={buildHref({ status: 'locked' })}
-          />
-          {hasFilter && (
-            <Link
-              href="/grading"
-              className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
-            >
-              <X className="h-3 w-3" />
-              Clear filters
-            </Link>
-          )}
-        </Surface>
-      )}
-
-      {/* Empty state */}
-      {totalCount === 0 && (
-        <EmptyState
-          title="No grading sheets yet"
-          hint={
-            canCreate
-              ? 'Create the first sheet for a subject × section × term.'
-              : 'Ask the registrar to create a sheet for your class.'
-          }
-          action={
-            canCreate ? (
+      {/* Empty state or data table */}
+      {totalCount === 0 ? (
+        <Card className="items-center py-12 text-center">
+          <CardContent className="flex flex-col items-center gap-3">
+            <div className="font-serif text-lg font-semibold text-foreground">
+              No grading sheets yet
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {canCreate
+                ? 'Create the first sheet for a subject × section × term.'
+                : 'Ask the registrar to create a sheet for your class.'}
+            </div>
+            {canCreate && (
               <Button asChild>
                 <Link href="/grading/new">
                   <Plus className="h-4 w-4" />
                   New grading sheet
                 </Link>
               </Button>
-            ) : null
-          }
-        />
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <GradingDataTable data={tableRows} />
       )}
-
-      {/* No results after filter */}
-      {totalCount > 0 && levels.length === 0 && (
-        <EmptyState
-          title="No sheets match the current filter"
-          hint="Try clearing the level or status filter."
-          action={
-            <Button asChild variant="outline">
-              <Link href="/grading">Clear filters</Link>
-            </Button>
-          }
-        />
-      )}
-
-      {/* Grouped tables */}
-      <div className="space-y-8">
-        {levels.map(([levelLabel, rows]) => (
-          <section key={levelLabel} className="space-y-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {levelLabel}{' '}
-              <span className="text-muted-foreground">· {rows.length}</span>
-            </h2>
-            <Surface padded={false} className="overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Section</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Term</TableHead>
-                    <TableHead>Teacher</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((s) => {
-                    const section = first(s.section);
-                    const subject = first(s.subject);
-                    const term = first(s.term);
-                    return (
-                      <TableRow key={s.id}>
-                        <TableCell>
-                          <Link
-                            href={`/grading/${s.id}`}
-                            className="font-medium text-foreground hover:text-primary hover:underline"
-                          >
-                            {section?.name ?? '—'}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{subject?.name ?? '—'}</TableCell>
-                        <TableCell>{term?.label ?? '—'}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {s.teacher_name ?? '—'}
-                        </TableCell>
-                        <TableCell>
-                          {s.is_locked ? (
-                            <Badge variant="secondary">
-                              <Lock className="h-3 w-3" />
-                              Locked
-                            </Badge>
-                          ) : (
-                            <Badge variant="default">
-                              <CheckCircle2 className="h-3 w-3" />
-                              Open
-                            </Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </Surface>
-          </section>
-        ))}
-      </div>
     </PageShell>
   );
 }
 
 function StatCard({
-  icon: Icon,
-  label,
+  description,
   value,
-  hint,
+  icon: Icon,
+  footerTitle,
+  footerDetail,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
+  description: string;
   value: number;
-  hint?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  footerTitle: string;
+  footerDetail: string;
 }) {
   return (
-    <Surface className="p-5">
-      <div className="flex items-center justify-between">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {label}
-        </div>
-        <Icon className="h-4 w-4 text-primary" />
-      </div>
-      <div className="mt-2 font-serif text-3xl font-semibold tabular-nums text-primary">
-        {value}
-      </div>
-      {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
-    </Surface>
+    <Card className="@container/card">
+      <CardHeader>
+        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+          {description}
+        </CardDescription>
+        <CardTitle className="font-serif text-[32px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]">
+          {value.toLocaleString('en-SG')}
+        </CardTitle>
+        <CardAction>
+          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <Icon className="size-4" />
+          </div>
+        </CardAction>
+      </CardHeader>
+      <CardFooter className="flex-col items-start gap-1 text-sm">
+        <p className="font-medium text-foreground">{footerTitle}</p>
+        <p className="text-xs text-muted-foreground">{footerDetail}</p>
+      </CardFooter>
+    </Card>
   );
 }
-
-function EmptyState({
-  title,
-  hint,
-  action,
-}: {
-  title: string;
-  hint: string;
-  action: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border bg-card/40 py-12 text-center">
-      <div className="font-serif text-base font-semibold text-foreground">{title}</div>
-      <div className="text-xs text-muted-foreground">{hint}</div>
-      {action}
-    </div>
-  );
-}
-
-function FilterChip({ label, active, href }: { label: string; active: boolean; href: string }) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        'inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
-        active
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-border bg-background text-foreground hover:bg-accent'
-      )}
-    >
-      {label}
-    </Link>
-  );
-}
-

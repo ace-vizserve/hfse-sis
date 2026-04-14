@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { CheckCircle2, Loader2 } from 'lucide-react';
 
-import { Surface } from '@/components/ui/surface';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import {
   Table,
   TableBody,
@@ -37,6 +38,7 @@ export function AttendanceGrid({
 }) {
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   async function saveRow(row: Row) {
@@ -60,10 +62,15 @@ export function AttendanceGrid({
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? 'save failed');
+      setSavedId(row.enrolment_id);
+      setTimeout(() => setSavedId((id) => (id === row.enrolment_id ? null : id)), 1500);
     } catch (e) {
-      setErrors((er) => ({ ...er, [row.enrolment_id]: e instanceof Error ? e.message : 'error' }));
+      setErrors((er) => ({
+        ...er,
+        [row.enrolment_id]: e instanceof Error ? e.message : 'error',
+      }));
     } finally {
-      setSavingId(null);
+      setSavingId((s) => (s === row.enrolment_id ? null : s));
     }
   }
 
@@ -75,37 +82,56 @@ export function AttendanceGrid({
   }
 
   return (
-    <div className="space-y-2">
-      <Surface padded={false} className="overflow-hidden">
+    <div className="space-y-3">
+      <Card className="overflow-hidden p-0">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead className="w-12 text-right">#</TableHead>
+            <TableRow className="bg-muted/40 hover:bg-muted/40">
+              <TableHead className="w-14 text-right">#</TableHead>
               <TableHead>Student</TableHead>
-              <TableHead className="text-right">School days</TableHead>
-              <TableHead className="text-right">Present</TableHead>
-              <TableHead className="text-right">Late</TableHead>
+              <TableHead className="w-[140px] text-right">School days</TableHead>
+              <TableHead className="w-[140px] text-right">Present</TableHead>
+              <TableHead className="w-[140px] text-right">Late</TableHead>
+              <TableHead className="w-10" aria-label="Save state" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
-                  No students enrolled.
+                <TableCell colSpan={6} className="py-12 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="font-serif text-base font-semibold text-foreground">
+                      No students enrolled
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Sync from admissions or add a student to this section first.
+                    </div>
+                  </div>
                 </TableCell>
               </TableRow>
             )}
             {rows.map((r) => {
               const disabled = r.withdrawn;
+              const saving = savingId === r.enrolment_id;
+              const justSaved = savedId === r.enrolment_id;
               return (
                 <TableRow
                   key={r.enrolment_id}
                   className={disabled ? 'text-muted-foreground' : ''}
                 >
-                  <TableCell className="text-right tabular-nums">{r.index_number}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                    {r.index_number}
+                  </TableCell>
                   <TableCell>
-                    <div className="whitespace-nowrap">{r.student_name}</div>
-                    <div className="text-xs tabular-nums text-muted-foreground">
+                    <div
+                      className={
+                        'font-medium ' +
+                        (disabled ? 'line-through text-muted-foreground' : 'text-foreground')
+                      }
+                    >
+                      {r.student_name}
+                    </div>
+                    <div className="mt-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">
                       {r.student_number}
                     </div>
                   </TableCell>
@@ -114,7 +140,9 @@ export function AttendanceGrid({
                       value={r.school_days}
                       disabled={disabled}
                       onChange={(v) => update(r.enrolment_id, 'school_days', v)}
-                      onBlur={() => saveRow(rows.find((x) => x.enrolment_id === r.enrolment_id)!)}
+                      onCommit={() =>
+                        saveRow(rows.find((x) => x.enrolment_id === r.enrolment_id)!)
+                      }
                     />
                   </TableCell>
                   <TableCell className="text-right">
@@ -122,7 +150,9 @@ export function AttendanceGrid({
                       value={r.days_present}
                       disabled={disabled}
                       onChange={(v) => update(r.enrolment_id, 'days_present', v)}
-                      onBlur={() => saveRow(rows.find((x) => x.enrolment_id === r.enrolment_id)!)}
+                      onCommit={() =>
+                        saveRow(rows.find((x) => x.enrolment_id === r.enrolment_id)!)
+                      }
                     />
                   </TableCell>
                   <TableCell className="text-right">
@@ -130,26 +160,33 @@ export function AttendanceGrid({
                       value={r.days_late}
                       disabled={disabled}
                       onChange={(v) => update(r.enrolment_id, 'days_late', v)}
-                      onBlur={() => saveRow(rows.find((x) => x.enrolment_id === r.enrolment_id)!)}
+                      onCommit={() =>
+                        saveRow(rows.find((x) => x.enrolment_id === r.enrolment_id)!)
+                      }
                     />
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {saving ? (
+                      <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                    ) : justSaved ? (
+                      <CheckCircle2 className="mx-auto h-3.5 w-3.5 text-primary" />
+                    ) : null}
                   </TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
-      </Surface>
-      {savingId && (
-        <div className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          saving…
+      </Card>
+      {Object.entries(errors).length > 0 && (
+        <div className="space-y-1">
+          {Object.entries(errors).map(([id, msg]) => (
+            <div key={id} className="text-xs text-destructive">
+              {msg}
+            </div>
+          ))}
         </div>
       )}
-      {Object.entries(errors).map(([id, msg]) => (
-        <div key={id} className="text-xs text-destructive">
-          {msg}
-        </div>
-      ))}
     </div>
   );
 }
@@ -158,16 +195,16 @@ function NumInput({
   value,
   disabled,
   onChange,
-  onBlur,
+  onCommit,
 }: {
   value: number | null;
   disabled?: boolean;
   onChange: (raw: string) => void;
-  onBlur: () => void;
+  onCommit: () => void;
 }) {
   const [text, setText] = useState<string>(value == null ? '' : String(value));
   return (
-    <input
+    <Input
       type="number"
       min={0}
       disabled={disabled}
@@ -176,8 +213,8 @@ function NumInput({
         setText(e.target.value);
         onChange(e.target.value);
       }}
-      onBlur={onBlur}
-      className="h-9 w-20 rounded-md border border-input bg-background px-2 text-right text-sm tabular-nums ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60"
+      onBlur={onCommit}
+      className="ml-auto h-9 w-24 text-right font-mono tabular-nums disabled:cursor-not-allowed disabled:bg-muted/40"
     />
   );
 }

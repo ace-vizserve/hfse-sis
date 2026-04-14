@@ -161,14 +161,7 @@ export default async function GradingSheetPage({
               )}
             </p>
           </div>
-          {canManage && (
-            <LockToggle
-              sheetId={sheet.id}
-              isLocked={sheet.is_locked}
-              lockedBy={(sheet.locked_by as string | null) ?? null}
-              lockedAt={(sheet.locked_at as string | null) ?? null}
-            />
-          )}
+          {canManage && <LockToggle sheetId={sheet.id} isLocked={sheet.is_locked} />}
         </div>
       </header>
 

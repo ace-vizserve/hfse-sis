@@ -6,9 +6,22 @@ import { Loader2, Plus } from 'lucide-react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldSeparator,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -23,7 +36,12 @@ type Term = { id: string; term_number: number; label: string; is_current: boolea
 type Level = { id: string; code: string; label: string; level_type: 'primary' | 'secondary' };
 type Section = { id: string; name: string; level: Level | Level[] | null };
 type Subject = { id: string; code: string; name: string; is_examinable: boolean };
-type Config = { subject_id: string; level_id: string; ww_max_slots: number; pt_max_slots: number };
+type Config = {
+  subject_id: string;
+  level_id: string;
+  ww_max_slots: number;
+  pt_max_slots: number;
+};
 
 const first = <T,>(v: T | T[] | null): T | null =>
   Array.isArray(v) ? v[0] ?? null : v ?? null;
@@ -61,7 +79,9 @@ export function NewSheetForm({
 
   const allowedSubjectIds = useMemo(() => {
     if (!sectionLevelId) return new Set<string>();
-    return new Set(configs.filter((c) => c.level_id === sectionLevelId).map((c) => c.subject_id));
+    return new Set(
+      configs.filter((c) => c.level_id === sectionLevelId).map((c) => c.subject_id),
+    );
   }, [configs, sectionLevelId]);
 
   const sectionsGrouped = useMemo(() => {
@@ -73,6 +93,10 @@ export function NewSheetForm({
     }
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [sections]);
+
+  const selectedSection = sections.find((s) => s.id === sectionId);
+  const selectedSubject = subjects.find((s) => s.id === subjectId);
+  const selectedTerm = terms.find((t) => t.id === termId);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -101,139 +125,250 @@ export function NewSheetForm({
     }
   }
 
+  const canSubmit = !busy && !!termId && !!sectionId && !!subjectId;
+
   return (
-    <Card>
-      <CardContent className="p-6">
-        <form onSubmit={submit} className="space-y-5">
-          <div className="space-y-2">
-            <Label htmlFor="term">Term</Label>
-            <Select value={termId} onValueChange={setTermId} required>
-              <SelectTrigger id="term">
-                <SelectValue placeholder="— pick a term —" />
-              </SelectTrigger>
-              <SelectContent>
-                {terms.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="section">Section</Label>
-            <Select
-              value={sectionId}
-              onValueChange={(v) => {
-                setSectionId(v);
-                setSubjectId('');
-              }}
-              required
-            >
-              <SelectTrigger id="section">
-                <SelectValue placeholder="— pick a section —" />
-              </SelectTrigger>
-              <SelectContent>
-                {sectionsGrouped.map(([label, list]) => (
-                  <SelectGroup key={label}>
-                    <SelectLabel>{label}</SelectLabel>
-                    {list.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="subject">Subject</Label>
-            <Select
-              value={subjectId}
-              onValueChange={setSubjectId}
-              required
-              disabled={!sectionId}
-            >
-              <SelectTrigger id="subject">
-                <SelectValue
-                  placeholder={sectionId ? '— pick a subject —' : '— pick a section first —'}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {subjects
-                  .filter((s) => allowedSubjectIds.has(s.id))
-                  .map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name} {!s.is_examinable && '(letter grade)'}
+    <form onSubmit={submit}>
+      <Card className="@container/card">
+        <CardHeader>
+          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+            Step 1 · Assignment
+          </CardDescription>
+          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+            Where does this sheet belong?
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="term">Term</FieldLabel>
+              <Select value={termId} onValueChange={setTermId} required>
+                <SelectTrigger id="term">
+                  <SelectValue placeholder="— pick a term —" />
+                </SelectTrigger>
+                <SelectContent>
+                  {terms.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.label}
+                      {t.is_current ? ' · current' : ''}
                     </SelectItem>
                   ))}
-              </SelectContent>
-            </Select>
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                The sheet&apos;s reporting period. Current term is pre-selected.
+              </FieldDescription>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="section">Section</FieldLabel>
+              <Select
+                value={sectionId}
+                onValueChange={(v) => {
+                  setSectionId(v);
+                  setSubjectId('');
+                }}
+                required
+              >
+                <SelectTrigger id="section">
+                  <SelectValue placeholder="— pick a section —" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sectionsGrouped.map(([label, list]) => (
+                    <SelectGroup key={label}>
+                      <SelectLabel>{label}</SelectLabel>
+                      {list.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                Sections are grouped by level. Picking one filters the subject list below.
+              </FieldDescription>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="subject">Subject</FieldLabel>
+              <Select
+                value={subjectId}
+                onValueChange={setSubjectId}
+                required
+                disabled={!sectionId}
+              >
+                <SelectTrigger id="subject">
+                  <SelectValue
+                    placeholder={sectionId ? '— pick a subject —' : '— pick a section first —'}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjects
+                    .filter((s) => allowedSubjectIds.has(s.id))
+                    .map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                        {!s.is_examinable && ' · letter grade'}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                Only subjects with a weight configuration for this level appear here.
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
+        </CardContent>
+      </Card>
+
+      <Card className="@container/card mt-5">
+        <CardHeader>
+          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+            Step 2 · Score slots
+          </CardDescription>
+          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+            Assessment structure
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <FieldGroup>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="num-ww-slots">Written Works · slots</FieldLabel>
+                <Input
+                  id="num-ww-slots"
+                  type="number"
+                  value={wwSlots}
+                  min={0}
+                  max={5}
+                  onChange={(e) => setWwSlots(Number(e.target.value))}
+                />
+                <FieldDescription>Max 5 per project rules.</FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="num-ww-each">Written Works · max each</FieldLabel>
+                <Input
+                  id="num-ww-each"
+                  type="number"
+                  value={wwEach}
+                  min={1}
+                  onChange={(e) => setWwEach(Number(e.target.value))}
+                />
+                <FieldDescription>Highest score a student can earn per slot.</FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="num-pt-slots">Performance Tasks · slots</FieldLabel>
+                <Input
+                  id="num-pt-slots"
+                  type="number"
+                  value={ptSlots}
+                  min={0}
+                  max={5}
+                  onChange={(e) => setPtSlots(Number(e.target.value))}
+                />
+                <FieldDescription>Max 5 per project rules.</FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="num-pt-each">Performance Tasks · max each</FieldLabel>
+                <Input
+                  id="num-pt-each"
+                  type="number"
+                  value={ptEach}
+                  min={1}
+                  onChange={(e) => setPtEach(Number(e.target.value))}
+                />
+                <FieldDescription>Highest score a student can earn per slot.</FieldDescription>
+              </Field>
+            </div>
+
+            <FieldSeparator />
+
+            <Field>
+              <FieldLabel htmlFor="num-qa-total">Quarterly Assessment · max</FieldLabel>
+              <Input
+                id="num-qa-total"
+                type="number"
+                value={qaTotal}
+                min={1}
+                onChange={(e) => setQaTotal(Number(e.target.value))}
+              />
+              <FieldDescription>
+                The single QA exam is one score out of this max.
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
+        </CardContent>
+      </Card>
+
+      <Card className="@container/card mt-5">
+        <CardHeader>
+          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+            Step 3 · Teacher
+          </CardDescription>
+          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+            Who teaches this sheet?
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="teacher">Teacher name</FieldLabel>
+              <Input
+                id="teacher"
+                value={teacherName}
+                onChange={(e) => setTeacherName(e.target.value)}
+                placeholder="e.g. Ms. Tan"
+              />
+              <FieldDescription>
+                Optional. Shown on the grading sheet list and on the report card.
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
+        </CardContent>
+      </Card>
+
+      {error && (
+        <Alert variant="destructive" className="mt-5">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Summary + submit */}
+      <Card className="@container/card mt-5">
+        <CardContent>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Summary
+              </p>
+              <p className="text-sm text-foreground">
+                {canSubmit ? (
+                  <>
+                    <span className="font-medium">{selectedSubject?.name}</span> ·{' '}
+                    {selectedSection?.name} · {selectedTerm?.label}
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">
+                    Pick a term, section, and subject above.
+                  </span>
+                )}
+              </p>
+            </div>
           </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <NumberField label="Written Works: slots" value={wwSlots} setValue={setWwSlots} min={0} max={5} />
-            <NumberField label="Written Works: max each" value={wwEach} setValue={setWwEach} min={1} />
-            <NumberField label="Performance Tasks: slots" value={ptSlots} setValue={setPtSlots} min={0} max={5} />
-            <NumberField label="Performance Tasks: max each" value={ptEach} setValue={setPtEach} min={1} />
-            <NumberField label="Quarterly Assessment: max" value={qaTotal} setValue={setQaTotal} min={1} />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="teacher">Teacher name (optional)</Label>
-            <Input
-              id="teacher"
-              value={teacherName}
-              onChange={(e) => setTeacherName(e.target.value)}
-            />
-          </div>
-
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          <div>
-            <Button type="submit" disabled={busy || !termId || !sectionId || !subjectId}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              {busy ? 'Creating…' : 'Create grading sheet'}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  setValue,
-  min,
-  max,
-}: {
-  label: string;
-  value: number;
-  setValue: (n: number) => void;
-  min?: number;
-  max?: number;
-}) {
-  const id = `num-${label.replace(/\W+/g, '-').toLowerCase()}`;
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      <Input
-        id={id}
-        type="number"
-        value={value}
-        min={min}
-        max={max}
-        onChange={(e) => setValue(Number(e.target.value))}
-      />
-    </div>
+        </CardContent>
+        <CardFooter className="justify-end">
+          <Button type="submit" disabled={!canSubmit}>
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            {busy ? 'Creating…' : 'Create grading sheet'}
+          </Button>
+        </CardFooter>
+      </Card>
+    </form>
   );
 }

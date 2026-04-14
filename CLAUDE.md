@@ -19,6 +19,7 @@ A web app replacing manual Google Sheets grading at HFSE International School, S
 | `docs/context/06-admissions-integration.md` | Admissions sync                                          |
 | `docs/context/07-api-routes.md`             | API contracts                                            |
 | `docs/context/09-design-system.md`          | Any UI work — tokens, components, what NOT to build      |
+| `docs/context/10-parent-portal.md`          | Parent portal handoff, admissions DDL, parent flow       |
 
 ## Hard rules — never violate
 
@@ -82,21 +83,28 @@ hfse-markbook/
 │   │   ├── account/          ← /account: self-serve password change (all roles)
 │   │   ├── grading/          ← teacher path: list, [id] grid, advisory comments
 │   │   ├── admin/            ← registrar path: sync, sections, audit-log
-│   │   └── report-cards/     ← HTML preview + browser print
+│   │   └── report-cards/     ← HTML preview + browser print + publication window
+│   ├── (parent)/parent/      ← parent portal SSO landing + report card view
+│   │   ├── enter/            ← token-fragment handoff from enrol.hfse.edu.sg
+│   │   └── report-cards/     ← parent-scoped report card view
 │   └── api/                  ← all routes (one folder per resource)
 ├── lib/
-│   ├── supabase/             ← client / server / service / middleware helpers
+│   ├── supabase/             ← client / server / service / middleware / admissions helpers
 │   ├── auth/                 ← roles, require-role, teacher-assignments
 │   ├── compute/              ← quarterly.ts + annual.ts (both with self-tests)
-│   ├── audit/                ← log-grade-change.ts (diff + write)
+│   ├── audit/                ← log-action.ts (generic) + log-grade-change.ts (legacy)
+│   ├── report-card/          ← build-report-card.ts (shared staff+parent fetch)
+│   ├── academic-year.ts      ← getCurrentAcademicYear / requireCurrentAyCode
 │   └── sync/                 ← students planner, snapshot loader, normalizers
 ├── components/grading/       ← score-entry-grid, lock-toggle, totals-editor, ...
-├── components/admin/         ← teacher-assignments-panel
-├── components/ui/            ← shadcn primitives + PageShell / PageHeader / Surface
+├── components/admin/         ← teacher-assignments-panel, publish-window-panel, publication-status
+├── components/report-card/   ← report-card-document (shared render, print CSS)
+├── components/ui/            ← shadcn primitives (button/card/table/field/select/tabs/dropdown-menu/sheet/popover/calendar/...) + DateTimePicker wrapper + legacy PageShell/PageHeader/Surface wrappers (deprecated for new work)
+├── components/{app,parent}-sidebar.tsx
 ├── supabase/
-│   ├── migrations/           ← 001_initial_schema → 005_rls_teacher_scoping
+│   ├── migrations/           ← 001_initial_schema → 007_report_card_publications
 │   └── seed.sql              ← AY2026 + levels + subjects + sections + terms + configs
-├── docs/                     ← context docs + sprint plan
+├── docs/                     ← context docs (incl. 10-parent-portal.md) + sprint plan
 └── types/index.ts
 ```
 
@@ -106,8 +114,9 @@ hfse-markbook/
 # .env.local (at repo root)
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_KEY=        # server-only, bypasses RLS
-PDF_SERVICE_URL=             # reserved, currently unused
+SUPABASE_SERVICE_KEY=              # server-only, bypasses RLS
+PDF_SERVICE_URL=                   # reserved, currently unused
+NEXT_PUBLIC_PARENT_PORTAL_URL=     # parent-portal dashboard, per-environment (see docs/context/10-parent-portal.md)
 ```
 
 Original plan had separate `ADMISSIONS_SUPABASE_*` vars; dropped because admissions and grading share one Supabase project. `lib/supabase/admissions.ts` reuses `createServiceClient()`.
@@ -123,6 +132,13 @@ Original plan had separate `ADMISSIONS_SUPABASE_*` vars; dropped because admissi
 7. **Overall annual grade** = `T1×0.20 + T2×0.20 + T3×0.20 + T4×0.40`, rounded 2dp. See `lib/compute/annual.ts`.
 8. **PDF generation deferred** — browser print covers current volume.
 9. **RLS tightened** via `supabase/migrations/004_tighten_rls.sql` (JWT role gate + deny-writes on authenticated role + grade_audit_log registrar-only) and `005_rls_teacher_scoping.sql` (per-teacher row scoping on grade/student tables). Apply both before production UAT.
+10. **Comprehensive audit log** in `006_audit_log.sql` (`public.audit_log` — generic `{actor, action, entity_type, entity_id, context}` rows) written from every mutating API route via `lib/audit/log-action.ts`. Historical `grade_audit_log` kept intact; the `/admin/audit-log` page unions both. Hard Rule #6 still applies.
+11. **Report card publication windows** in `007_report_card_publications.sql` — per-section, per-term `(publish_from, publish_until)` gates the parent view. Registrar publishes via `/report-cards` list page. See `docs/context/10-parent-portal.md`.
+12. **Parents are null-role Supabase Auth users** in the shared project. `getUserRole()` returns `null` for them; `proxy.ts` routes null-role users to `/parent/*` only. Parent↔student linkage lives in admissions `ay{YY}_enrolment_applications` (`motherEmail`/`fatherEmail`) — resolved via `getStudentsByParentEmail()` in `lib/supabase/admissions.ts`.
+13. **Parent portal SSO handoff** via URL fragment at `/parent/enter`. Parents sign in once at `https://enrol.hfse.edu.sg`, click "View report card" there, arrive at the markbook with `#access_token=&refresh_token=&next=` in the URL; client-side `supabase.auth.setSession()` establishes the markbook session without a second login. See `docs/context/10-parent-portal.md` for the integration snippet.
+14. **Dynamic academic year** via `lib/academic-year.ts::getCurrentAcademicYear()` — reads `academic_years WHERE is_current=true`. Never hardcode `'AY2026'` in runtime code; admissions table prefixes (`ay{YY}_enrolment_*`) are derived from the current AY code so rolling to AY2027 is a DB flag flip, not a code change.
+15. **Aurora Vault palette** — core shadcn semantic tokens in `app/globals.css` `:root` are remapped to the Aurora Vault hex palette (navy `#0B1120`, indigo `#4F46E5`, ink ramp `#0F172A`→`#94A3B8`, hairline `#E2E8F0`). Raw values use the `--av-*` prefix to avoid self-reference cycles with `@theme inline`. All shadcn semantic utilities (`bg-primary`, `text-foreground`, `border-border`, `bg-card`) and explicit Aurora Vault utilities (`bg-brand-indigo`, `text-ink`, `border-hairline`) render identically — use either. Full token table and page→component matrix in `docs/context/09-design-system.md`.
+16. **`@tanstack/react-table` is the canonical data-table engine** for filterable/sortable/paginated lists. Reference implementation: `app/(dashboard)/grading/grading-data-table.tsx` (dashboard-01 toolbar pattern with global search, faceted level filter, column visibility, status tabs, pagination). New data tables start from there, not from a bare `<Table>` wrapper.
 
 ## Workflow
 

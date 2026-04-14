@@ -1,12 +1,18 @@
 import Link from 'next/link';
-import { ArrowRight, BookOpen, CheckCircle2, Clock, GraduationCap } from 'lucide-react';
+import { ArrowUpRight, BookOpen, CheckCircle2, Clock, GraduationCap, Lock } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getStudentsByParentEmail } from '@/lib/supabase/admissions';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { PageShell } from '@/components/ui/page-shell';
-import { PageHeader } from '@/components/ui/page-header';
-import { Surface } from '@/components/ui/surface';
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 
 type ChildCard = {
   student_id: string;
@@ -40,16 +46,19 @@ export default async function ParentHomePage() {
   if (!currentAy) {
     return (
       <PageShell className="max-w-3xl">
-        <PageHeader
-          eyebrow="Parent portal"
-          title="Welcome"
-          description={`Signed in as ${email}.`}
-        />
-        <Surface>
-          <div className="py-6 text-center text-sm text-muted-foreground">
-            No academic year is currently active. Please contact the school office.
+        <ParentHero email={email} subtitle="Signed in." />
+        <Card className="p-8">
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <BookOpen className="h-8 w-8 text-muted-foreground" />
+            <div className="font-serif text-lg font-semibold text-foreground">
+              No academic year is active
+            </div>
+            <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
+              Please contact the school office — we&apos;ll let you know as soon as the new year
+              is open.
+            </p>
           </div>
-        </Surface>
+        </Card>
       </PageShell>
     );
   }
@@ -60,24 +69,20 @@ export default async function ParentHomePage() {
   if (admissionsRows.length === 0) {
     return (
       <PageShell className="max-w-3xl">
-        <PageHeader
-          eyebrow="Parent portal"
-          title="Welcome"
-          description={`Signed in as ${email}.`}
-        />
-        <Surface>
-          <div className="flex flex-col items-center gap-3 py-8 text-center">
+        <ParentHero email={email} subtitle="Signed in." />
+        <Card className="p-8">
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
             <BookOpen className="h-8 w-8 text-muted-foreground" />
             <div className="font-serif text-lg font-semibold text-foreground">
               No student records linked to this email
             </div>
-            <p className="max-w-md text-sm text-muted-foreground">
+            <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
               We couldn&apos;t find any HFSE student applications where this email is listed as
               the mother or father contact for the current academic year. If you think this is a
               mistake, please contact the school office.
             </p>
           </div>
-        </Surface>
+        </Card>
       </PageShell>
     );
   }
@@ -185,92 +190,125 @@ export default async function ParentHomePage() {
     ];
   });
 
+  const childLabel = children.length === 1 ? '1 child' : `${children.length} children`;
+
   return (
     <PageShell className="max-w-4xl">
-      <PageHeader
-        eyebrow="Parent portal"
-        title="My children"
-        description={`Signed in as ${email}. Report cards appear here once the school publishes them for the term.`}
+      <ParentHero
+        email={email}
+        subtitle={`Viewing ${childLabel} — report cards appear here once the school publishes them.`}
       />
 
-      <div className="space-y-5">
-        {children.map((child) => (
-          <Surface key={child.student_id} className="space-y-4">
-            <div className="flex items-start gap-4">
-              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-                <GraduationCap className="h-5 w-5" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-serif text-lg font-semibold tracking-tight text-foreground">
+      <div className="@container/main">
+        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs">
+          {children.map((child) => (
+            <Card key={child.student_id} className="@container/card group">
+              <CardHeader>
+                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  {child.class_label}
+                </CardDescription>
+                <CardTitle className="font-serif text-xl font-semibold leading-snug tracking-tight text-foreground @[320px]/card:text-[22px]">
                   {child.full_name}
-                </h3>
-                <div className="mt-0.5 text-sm text-muted-foreground">
-                  <span>{child.class_label}</span>
-                  <span className="mx-2">·</span>
-                  <span className="tabular-nums">{child.student_number}</span>
-                </div>
-              </div>
-            </div>
+                </CardTitle>
+                <CardAction>
+                  <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                    <GraduationCap className="size-5" />
+                  </div>
+                </CardAction>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                  {child.student_number}
+                </p>
 
-            {child.publications.length === 0 && (
-              <div className="rounded-md border border-dashed border-border bg-card/40 p-4 text-center text-sm text-muted-foreground">
-                No report cards have been published yet. Check back after the school publishes
-                the term.
-              </div>
-            )}
+                {child.publications.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-border bg-background/40 p-5 text-center text-sm text-muted-foreground">
+                    No report cards have been published yet. Check back after the school
+                    publishes the term.
+                  </div>
+                )}
 
-            {child.publications.length > 0 && (
-              <div className="space-y-2">
-                {child.publications.map((p) => {
-                  const canView = p.status === 'active';
-                  return (
-                    <div
-                      key={p.term_id}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium text-foreground">{p.term_label}</div>
-                        <div className="mt-0.5 flex items-center gap-2 text-xs">
-                          {p.status === 'active' && (
-                            <>
-                              <CheckCircle2 className="h-3 w-3 text-primary" />
-                              <span className="text-primary">Available now</span>
-                            </>
-                          )}
-                          {p.status === 'scheduled' && (
-                            <>
-                              <Clock className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-muted-foreground">
-                                Available from {new Date(p.publish_from).toLocaleDateString()}
-                              </span>
-                            </>
-                          )}
-                          {p.status === 'expired' && (
-                            <span className="text-muted-foreground">
-                              Window closed on {new Date(p.publish_until).toLocaleDateString()}
-                            </span>
+                {child.publications.length > 0 && (
+                  <div className="space-y-2">
+                    {child.publications.map((p) => {
+                      const canView = p.status === 'active';
+                      return (
+                        <div
+                          key={p.term_id}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card/60 px-4 py-3 shadow-xs transition-colors hover:border-primary/40"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-foreground">{p.term_label}</div>
+                            <div className="mt-0.5 flex items-center gap-1.5 text-xs">
+                              {p.status === 'active' && (
+                                <>
+                                  <CheckCircle2 className="h-3 w-3 text-primary" />
+                                  <span className="font-medium text-primary">Available now</span>
+                                </>
+                              )}
+                              {p.status === 'scheduled' && (
+                                <>
+                                  <Clock className="h-3 w-3 text-muted-foreground" />
+                                  <span className="text-muted-foreground">
+                                    Available from{' '}
+                                    {new Date(p.publish_from).toLocaleDateString()}
+                                  </span>
+                                </>
+                              )}
+                              {p.status === 'expired' && (
+                                <span className="text-muted-foreground">
+                                  Window closed on{' '}
+                                  {new Date(p.publish_until).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {canView ? (
+                            <Link
+                              href={`/parent/report-cards/${child.student_id}`}
+                              className="inline-flex items-center gap-1 text-sm font-medium text-primary transition-transform hover:underline [&>svg]:hover:translate-x-0.5 [&>svg]:hover:-translate-y-0.5"
+                            >
+                              View report card
+                              <ArrowUpRight className="h-3.5 w-3.5 transition-transform" />
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Not available</span>
                           )}
                         </div>
-                      </div>
-                      {canView ? (
-                        <Link
-                          href={`/parent/report-cards/${child.student_id}`}
-                          className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-                        >
-                          View report card
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </Link>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Not available</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Surface>
-        ))}
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <Lock className="size-3" strokeWidth={2.25} />
+        <span>AY {currentAy.ay_code.replace('AY', '')}</span>
+        <span className="text-border">·</span>
+        <span>Secure Parent Portal</span>
+        <span className="text-border">·</span>
+        <span>Published reports only</span>
       </div>
     </PageShell>
+  );
+}
+
+function ParentHero({ email, subtitle }: { email: string; subtitle: string }) {
+  return (
+    <header className="space-y-4">
+      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        Parent Portal
+      </p>
+      <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+        My children.
+      </h1>
+      <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+        Signed in as <span className="font-medium text-foreground">{email}</span>. {subtitle}
+      </p>
+    </header>
   );
 }

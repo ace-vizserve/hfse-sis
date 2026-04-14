@@ -13,9 +13,9 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 | 1 | Foundation | ✅ Done |
 | 2 | Student Roster | ✅ Done |
 | 3 | Grade Entry | 🔶 Mostly done (comparison column deferred) |
-| 4 | Locking & Audit Trail | 🔶 Mostly done (blank-counts dashboard pending; `is_na` has API but no UI toggle) |
+| 4 | Locking & Audit Trail | ✅ Done (comprehensive audit log now covers all mutations; `is_na` UI toggle + blank-counts dashboard still deferred as polish) |
 | 5 | Comments, Attendance & Report Card Data | 🔶 Done with deferrals (Sec 3–4 profile, attendance import) |
-| 6 | PDF Generation & Polish | 🔶 PDF service deferred; design system fully revamped ("Digital Ledger" on shadcn); RLS tightened (004+005); **Vercel live; registrar UAT in progress** |
+| 6 | PDF Generation & Polish | 🔶 PDF service deferred; design revamped (v1 2026-04-14 + v2 "Aurora Vault" 2026-04-14); RLS tightened; **Vercel live**; audit log (006) + parent report card publication (007) + `/parent` route group + `/parent/enter` SSO handoff all shipped; **all staff pages rebuilt on shadcn `Card`/`Table`/`Field`/`Tabs`/`Sheet` + `@tanstack/react-table` data table + `DateTimePicker`**; registrar UAT in progress |
 | — | Teacher Assignments _(added mid-flight)_ | ✅ Done — `teacher_assignments` table + CRUD UI + gates on grading list & comments |
 | 7 | Admissions Dashboard (Phase 2) | ⏸️ Not started |
 
@@ -31,6 +31,11 @@ These came up during sprints but were intentionally deferred to keep scope tight
 - End-of-year "mid-year T1–T3" vs "full year T1–T4" report card toggle (Sprint 5)
 - Secondary Sec 3–4 Economics variant template (Sprint 5)
 - Virtue-theme header label on comments / report card (Sprint 5)
+- **Grading detail page primitive migration (Sprint 6):** `components/grading/totals-editor.tsx` still uses the inline-collapse pattern with raw `<label>` — should migrate to `Sheet`-triggered form matching `ManualAddStudent`, using `Field`/`FieldLabel`/`FieldDescription`. Started in the Aurora Vault pass; `lock-toggle.tsx` already simplified, `totals-editor.tsx` and `app/(dashboard)/grading/[id]/page.tsx` still pending the new hero + stat cards + Sheet-based totals editor.
+- **`components/ui/page-header.tsx` default variant** still renders the eyebrow as a styled `<span>` chip. The hero variant matches the canonical design. Low priority because `PageHeader` is a legacy wrapper — new pages use inline `<header>` markup per the design-system §8 canonical pattern.
+- **`components/grading/score-entry-grid.tsx` and `letter-grade-grid.tsx`** — marked custom in the §6 registry matrix (Blank ≠ Zero semantics, no registry fits). Core logic stays custom; a visual refresh pass to use `bg-muted/40` header rows + `border-hairline` + ink typography would match the other data tables but is polish, not blocking.
+- Email notification to parents when the registrar publishes a report card window (Sprint 6). Parents currently navigate via the parent-portal button; no push notification yet.
+- Origin check (HMAC) on `/parent/enter` handoff as defense-in-depth. Deliberately skipped for UAT — the existing parent↔student gate is sufficient. Revisit if a real threat materializes.
 
 **Reference docs:**
 
@@ -207,7 +212,8 @@ def compute_quarterly_grade(
 - [x] Registrar can still edit a locked sheet (post-lock edit mode)
 - [x] Post-lock edit requires `approval_reference` field (email subject/ref) _(enforced server-side; grid prompts once and caches for the session)_
 - [x] All post-lock edits written to `grade_audit_log` _(per-field diff rows with bracket notation, e.g. `ww_scores[1]`)_
-- [x] Audit log UI: filterable by sheet _(date/editor filters are a small follow-up; `?sheet_id=` and `?entry_id=` work)_
+- [x] Comprehensive audit log — every mutating action logged _(migration `006_audit_log.sql` added a generic `public.audit_log`; `lib/audit/log-action.ts` is called from sheet create/lock/unlock, entries PATCH (pre-lock AND post-lock), totals, student sync, manual student add, teacher assignment POST/DELETE, attendance PUT, comments PUT, publication create/delete)_
+- [x] Audit log UI: filterable by sheet + action _(unions `audit_log` + legacy `grade_audit_log`; renders action-specific rows; `?sheet_id=` and `?action=` query params)_
 - [x] Update QA/WW/PT totals (max scores) post-lock also requires approval ref and is logged _(full-sheet recompute cascades automatically)_
 - [x] Lock timestamp and locked-by recorded on `grading_sheets`
 - [x] Late enrollee flag: registrar can mark specific assessments as N/A per student _(`is_na` supported in PATCH + audit-logged; no dedicated UI toggle yet — set via DB or API)_
@@ -287,6 +293,18 @@ def compute_quarterly_grade(
 - [x] Deploy to Vercel _(live; monorepo flattened from `hfse-markbook/app/` to repo root, Root Directory blank, env vars + Supabase redirect URLs configured)_
 - [x] Tighten RLS _(migrations `004_tighten_rls.sql` + `005_rls_teacher_scoping.sql`: JWT role gate, deny-writes on authenticated role, `grade_audit_log` registrar-only, per-teacher row scoping on grade/student tables via `teacher_assignments` joins)_
 
+#### Accountability & parent-facing features — shipped 2026-04-14
+
+Added after the UAT message went out. Separate from Sprint 5's "teacher comment entry" and "report card preview" because these are downstream features the registrar specifically asked for.
+
+- [x] **Comprehensive audit log** _(migration `006_audit_log.sql`; generic `public.audit_log` table with action/entity/context JSONB. `lib/audit/log-action.ts` wired into 11 mutating API routes: sheet create/lock/unlock, entries PATCH (pre-lock + post-lock), totals, student sync, manual student add, teacher assignment POST/DELETE, attendance PUT, comments PUT, publication create/delete. Audit-log UI rewritten to UNION `audit_log` + legacy `grade_audit_log` with action-specific row renderers.)_
+- [x] **Report card publication windows** _(migration `007_report_card_publications.sql`; registrar publishes per-section per-term via `<PublishWindowPanel>` on `/report-cards`; parents only see report cards while `publish_from <= now() <= publish_until`. API at `/api/report-card-publications`.)_
+- [x] **Parent route group `(parent)`** _(layout + sidebar gated on `getUserRole() === null`; `/parent` lists the parent's children via `getStudentsByParentEmail()` admissions lookup; `/parent/report-cards/[studentId]` re-verifies the parent↔student linkage and the publication window; reuses the shared `<ReportCardDocument>` via `buildReportCard()`.)_
+- [x] **Parent portal SSO handoff** _(`/parent/enter` client component reads access_token/refresh_token from URL fragment, calls `supabase.auth.setSession()`, redirects to `next`. Parents sign in once at `enrol.hfse.edu.sg` — no second login on the markbook. `NEXT_PUBLIC_PARENT_PORTAL_URL` env var for the error fallback. `PUBLIC_PATHS` updated in `proxy.ts`. Per-environment integration docs in `docs/context/10-parent-portal.md`.)_
+- [x] **Dynamic academic year** _(`lib/academic-year.ts::getCurrentAcademicYear` / `requireCurrentAyCode` reads `academic_years WHERE is_current=true`. Replaced hardcoded `'AY2026'` in parent pages, sync routes. Rolling to AY2027 is a DB flag flip, not a code change — admissions table prefixes derive from the current AY code.)_
+- [x] **Admissions reference doc** _(`docs/context/10-parent-portal.md` with full frozen DDL for `ay2026_enrolment_applications` / `_status` / `_documents`, per-environment env var tables, integration snippet for the parent portal team, troubleshooting table.)_
+- [x] **Case-insensitive parent email match** _(`getStudentsByParentEmail` uses `.ilike` so parents whose auth email differs in case from their admissions record still match. Fix spotted during the reference doc pass.)_
+
 #### Design system pass — fully revamped 2026-04-14
 
 Original plan (industrial dark DM Sans, `.btn-*` CSS primitives) was **discarded** in favour of a new "Digital Ledger" corporate editorial system built entirely on shadcn primitives. All 14 private pages + login + account were rebuilt.
@@ -310,6 +328,59 @@ Original plan (industrial dark DM Sans, `.btn-*` CSS primitives) was **discarded
 - [ ] Tab key navigation between score cells
 - [ ] `.score-input.exceeds-max` red border + danger bg
 - [ ] Withdrawn-row line-through (partially done — muted-foreground applied, no strike-through)
+
+#### Design system v2 "Aurora Vault" — 2026-04-14
+
+The first design pass (Digital Ledger / Inter + Source Serif + JetBrains Mono + shadcn semantic tokens) was working but felt generic. Second pass introduces a crafted corporate palette + component rebuild across every staff page. **All edits are uncommitted; review and ship as one sprint-close commit.**
+
+**Tokens added to `app/globals.css`:**
+
+- [x] Aurora Vault palette under `--av-*` prefix in `:root` (navy `#0B1120`, indigo ramp `#4F46E5/#4338CA/#5B52ED/#818CF8`, sky `#38BDF8`, mint `#A5F3B7`, ink ramp `#0F172A/#334155/#475569/#64748B/#94A3B8`, hairline `#E2E8F0/#CBD5E1`), mapped via `@theme inline` to Tailwind utilities `bg-brand-navy`, `text-ink`, `border-hairline`, etc. Core shadcn semantic tokens (`--foreground`, `--primary`, `--border`) remapped to these values so legacy utilities inherit the aesthetic without per-file edits.
+- [x] Crafted shadow tokens: `--av-shadow-input` / `--av-shadow-brand-tile` / `--av-shadow-button` / `--av-shadow-button-hover` / `--av-shadow-button-active` / `--av-shadow-glass-card`. Default shadcn `Button` ships the gradient indigo + `shadow-button` recipe so every CTA cascades the depth automatically.
+
+**Primitives upgraded or installed:**
+
+- [x] `components/ui/button.tsx` — default variant now `bg-gradient-to-b from-brand-indigo to-brand-indigo-deep shadow-button`, outline variant uses `border-hairline bg-white text-ink shadow-input`, link variant uses `text-brand-indigo`, focus ring `ring-brand-indigo/25`
+- [x] `components/ui/card.tsx` — upgraded via `npx shadcn@latest add card` to the newer version with `data-slot="card"`, `@container/card` container queries, and `CardAction` grid slot
+- [x] `components/ui/badge.tsx` — default variant gets the mini-button gradient treatment, secondary uses `border-hairline bg-muted`, outline matches the hero role/AY pills, shouty `font-bold uppercase` default dropped
+- [x] `components/ui/tabs.tsx` — list gains `border-hairline shadow-input`, active trigger uses `bg-white text-brand-indigo ring-1 ring-inset ring-hairline` + inset highlight shadow, `line` variant uses `after:bg-brand-indigo` for the underline accent
+- [x] `components/ui/input.tsx` + `textarea.tsx` — `border-hairline bg-white shadow-input`, `focus-visible:ring-4 focus-visible:ring-brand-indigo/15`, `aria-invalid` destructive ring, ink placeholder
+- [x] `components/ui/select.tsx` — trigger matches Input styling, content uses `rounded-lg border-hairline bg-white` with a crafted 2-layer drop shadow, `SelectLabel` becomes mono uppercase eyebrow, `SelectItem` checked state uses `text-brand-indigo`
+- [x] `components/ui/alert.tsx` — `border-hairline bg-white shadow-input` default + `bg-destructive/5 border-destructive/30` destructive; `AlertTitle` is serif semibold
+- [x] `components/ui/table.tsx` — `border-hairline` throughout, `TableHead` becomes mono uppercase tracking-[0.14em] text-ink-4
+- [x] `components/ui/tooltip.tsx` — dark navy tooltip with mono text
+- [x] `components/ui/checkbox.tsx` — gradient primary fill on checked state matching the Button
+- [x] `components/ui/sheet.tsx` — navy-tinted backdrop-blur overlay, crafted left-side shadow, close button rebuilt as a hairline-bordered square, `SheetTitle` serif xl
+- [x] `components/ui/dropdown-menu.tsx` — content uses `rounded-lg border-hairline bg-white` + crafted shadow, labels as mono eyebrows
+- [x] `components/ui/separator.tsx` + `label.tsx` + `skeleton.tsx` — hairline + ink tweaks
+- [x] `components/ui/page-header.tsx` — `variant="hero"` added with serif `text-[38px]`/`md:text-[44px]` headline and ink ramp description; default variant retained for backwards compat
+- [x] `components/ui/surface.tsx` — `border-hairline bg-white` + crafted rest shadow; kept as legacy wrapper, new work uses `Card` directly per design-system §4
+- [x] **New installs:** `components/ui/dropdown-menu.tsx`, `tabs.tsx`, `calendar.tsx`, `popover.tsx`, plus npm `@tanstack/react-table` and `react-day-picker`
+- [x] **New custom component:** `components/ui/date-time-picker.tsx` — `Popover` + `Calendar` + `Input type="time"` wrapper replacing native `datetime-local` inputs; used in `PublishWindowPanel`
+
+**Pages rebuilt (uncommitted):**
+
+- [x] `/login` (`app/(auth)/login/page.tsx`) — `@shadcn/login-02` split-screen with Aurora Vault tokens, navy brand panel with radial glows + hairline grid mask + glass product-glimpse card
+- [x] `/` (`app/(dashboard)/page.tsx`) — dashboard-01 `SectionCards` pattern with 4 live stat cards (students enrolled, grading sheets, sheets locked %, publications live) backed by server-side Supabase queries, plus 3 role-aware quick-link cards and mono trust strip
+- [x] `/admin` (`app/(dashboard)/admin/page.tsx`) — same hero + card pattern, 4 tool cards in 2×2
+- [x] `/parent` (`app/(parent)/parent/page.tsx`) — narrow "published report cards" list (not a portal hub — corrected misframing; the real parent portal lives at `enrol.hfse.edu.sg`), child cards with gradient icon tiles and per-term publication badges
+- [x] `/grading` (`app/(dashboard)/grading/page.tsx` + `grading-data-table.tsx`) — full `@tanstack/react-table` implementation with global fuzzy search, faceted `DropdownMenuCheckboxItem` level filter, column visibility, status tabs with live counts, sortable columns, pagination bar. Canonical data-table reference per design-system §8.
+- [x] `/grading/new` (`app/(dashboard)/grading/new/page.tsx` + `new-sheet-form.tsx`) — 3-step card wizard (Assignment / Score slots / Teacher) with `Field` / `FieldLabel` / `FieldDescription` throughout, summary card with submit button
+- [x] `/admin/sections` (`app/(dashboard)/admin/sections/page.tsx`) — 3 summary stat cards + per-level container `Card`s with `divide-y` list rows for sections; clear visual separation between "stats" and "groups"
+- [x] `/admin/sections/[id]` (`page.tsx` + subcomponents) — hero + 3 stat cards + `Tabs` (Roster / Teachers). Roster tab has `Card`-wrapped `Table`. Manual-add-student now a `Sheet`-triggered form in the hero actions row (primary gradient button, `ManualAddStudent` refactored to `SheetTrigger` + `SheetContent` + `Field`-based form). Teacher assignments panel split into 3 cards (form adviser / subject teachers / new assignment).
+- [x] `/admin/sections/[id]/attendance` — hero + 3 live stat cards (School days / Average attendance / Perfect attendance) + URL-driven `Tabs` term switcher (`TabsTrigger asChild` wrapping `Link`) + `Card`-wrapped numeric grid with per-row save indicator (spinner → green check)
+- [x] `/admin/sections/[id]/comments` — hero + 3 stat cards (Written / Pending / Average length) + `Tabs` term switcher + **vertical list of `Card`s, one per student** instead of table (multi-line text needs breathing room); each card has status badge in `CardAction` and inline save indicator
+- [x] `/admin/sync-students` — hero + wizard-style Step 1 action card + 7 stat cards (Source rows / New / Updates / Enrolments / Withdrawals / Reactivations / Errors — destructive-tinted when non-zero) + `Card`-wrapped diff & errors tables
+- [x] `/admin/audit-log` — **not yet touched** in the v2 pass; next logical data-table redesign
+- [x] `/report-cards` (`app/(dashboard)/report-cards/page.tsx` + `section-picker.tsx`) — hero with `Select`-based section picker (grouped by level via `SelectGroup` / `SelectLabel`), 3 live publication stat cards, rebuilt `PublishWindowPanel` as a `Card` with `divide-y` term rows using the new `DateTimePicker` for publish windows, `Card`-wrapped roster table with per-row preview button
+- [x] `/account` — inherits via shared components; no per-file rewrite this pass
+
+**Pages still pending in the v2 pass:** `/admin/audit-log` (data-table refresh), `/grading/[id]` (hero + stat cards + Sheet-based totals editor — in progress, `lock-toggle.tsx` simplified, `totals-editor.tsx` not yet migrated), `/grading/advisory/[id]/comments`, `/report-cards/[studentId]`, `/parent/report-cards/[studentId]`, `/parent/enter`, `/account`.
+
+**Docs:**
+
+- [x] `docs/context/09-design-system.md` rewritten from 581 → 426 lines: added §5 "Page construction process" (review → pick → build), §6 full registry matrix of every route → shadcn block/primitive, §8 canonical patterns library with code snippets referencing live files, §10 pre-delivery checklist, §11 "adding a new token" with `--av-*` prefix rule and the self-reference-cycle incident documented, §11c craft standard, §11d "prefer shadcn primitives over custom wrappers" policy.
+- [x] Memory `feedback_design_tokens.md` updated with token equivalence table and the critical "verify compiled CSS, not just build success" note.
 
 ### Definition of Done
 

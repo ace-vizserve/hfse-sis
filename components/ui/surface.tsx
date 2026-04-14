@@ -14,7 +14,7 @@ export function Surface({
   return (
     <div
       className={cn(
-        'rounded-xl border border-border bg-card shadow-sm',
+        'rounded-xl border border-hairline bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.03)]',
         padded && 'p-6 md:p-8',
         className,
       )}
@@ -33,7 +33,7 @@ export function SurfaceHeader({
   return (
     <div
       className={cn(
-        'flex flex-col gap-1 border-b border-border px-6 py-5 md:px-8',
+        'flex flex-col gap-1 border-b border-hairline px-6 py-5 md:px-8',
         className,
       )}
       {...props}
@@ -51,7 +51,7 @@ export function SurfaceTitle({
   return (
     <h2
       className={cn(
-        'font-serif text-lg font-semibold tracking-tight text-foreground',
+        'font-serif text-lg font-semibold tracking-tight text-ink',
         className,
       )}
       {...props}
@@ -67,7 +67,7 @@ export function SurfaceDescription({
   ...props
 }: React.HTMLAttributes<HTMLParagraphElement>) {
   return (
-    <p className={cn('text-sm text-muted-foreground', className)} {...props}>
+    <p className={cn('text-sm text-ink-3', className)} {...props}>
       {children}
     </p>
   );

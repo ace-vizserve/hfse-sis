@@ -8,14 +8,27 @@ const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLI
       <input
         type={type}
         className={cn(
-          'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
-          className
+          // Base
+          'flex h-10 w-full rounded-md border border-hairline bg-white px-3 py-2 text-sm text-foreground shadow-input transition-all',
+          // File inputs
+          'file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground',
+          // Placeholder
+          'placeholder:text-ink-5',
+          // Hover (on non-disabled)
+          'hover:border-hairline-strong',
+          // Focus — crafted brand indigo ring (matches login)
+          'focus-visible:border-brand-indigo focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-indigo/15',
+          // Invalid (aria-invalid / error state)
+          'aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:ring-destructive/15',
+          // Disabled
+          'disabled:cursor-not-allowed disabled:bg-muted/60 disabled:opacity-70',
+          className,
         )}
         ref={ref}
         {...props}
       />
     );
-  }
+  },
 );
 Input.displayName = 'Input';
 

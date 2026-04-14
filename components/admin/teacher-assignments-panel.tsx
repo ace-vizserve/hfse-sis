@@ -2,11 +2,21 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Plus, Trash2, Users } from 'lucide-react';
+import { Loader2, Plus, Trash2, UserCheck, UserCog, Users } from 'lucide-react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Field, FieldLabel } from '@/components/ui/field';
 import {
   Select,
   SelectContent,
@@ -136,32 +146,35 @@ export function TeacherAssignmentsPanel({
     });
 
   return (
-    <Card>
-      <CardContent className="space-y-5 p-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">Teacher assignments</h3>
-          </div>
-          {loading && (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              loading…
-            </span>
-          )}
-        </div>
-
-        <div>
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className="space-y-5">
+      {/* Form Class Adviser */}
+      <Card className="@container/card">
+        <CardHeader>
+          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+            Assignment
+          </CardDescription>
+          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
             Form class adviser
-          </div>
-          {formAdviser ? (
-            <div className="flex items-center justify-between rounded-md border bg-muted px-3 py-2 text-sm">
+          </CardTitle>
+          <CardAction>
+            <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <UserCheck className="size-5" />
+            </div>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading…
+            </div>
+          ) : formAdviser ? (
+            <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3">
               <div>
-                <div className="font-medium">
+                <div className="font-medium text-foreground">
                   {teachersById.get(formAdviser.teacher_user_id)?.display_name ?? '(unknown user)'}
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
                   {teachersById.get(formAdviser.teacher_user_id)?.email ??
                     formAdviser.teacher_user_id}
                 </div>
@@ -172,42 +185,69 @@ export function TeacherAssignmentsPanel({
                 onClick={() => removeAssignment(formAdviser.id)}
                 disabled={busy}
                 aria-label="Remove form adviser"
-                className="text-destructive hover:text-destructive"
+                className="text-muted-foreground hover:text-destructive"
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
           ) : (
-            <div className="text-xs italic text-muted-foreground">
-              No form adviser assigned yet.
+            <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-5 text-center text-xs text-muted-foreground">
+              No form adviser assigned yet. Use the form below to assign one.
             </div>
           )}
-        </div>
+        </CardContent>
+      </Card>
 
-        <div>
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Subject teachers
-          </div>
-          {subjectTeachers.length === 0 ? (
-            <div className="text-xs italic text-muted-foreground">
-              No subject teachers assigned yet.
+      {/* Subject Teachers */}
+      <Card className="@container/card">
+        <CardHeader>
+          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+            Assignments
+          </CardDescription>
+          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+            Subject teachers{' '}
+            <span className="ml-1 font-mono text-[11px] font-normal tabular-nums text-muted-foreground">
+              {subjectTeachers.length}
+            </span>
+          </CardTitle>
+          <CardAction>
+            <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <Users className="size-5" />
+            </div>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading…
+            </div>
+          ) : subjectTeachers.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-5 text-center text-xs text-muted-foreground">
+              No subject teachers assigned yet. Use the form below to assign one.
             </div>
           ) : (
-            <ul className="space-y-1.5">
+            <ul className="space-y-2">
               {subjectTeachers.map((a) => {
                 const t = teachersById.get(a.teacher_user_id);
                 const s = subjectsById.get(a.subject_id ?? '');
                 return (
                   <li
                     key={a.id}
-                    className="flex items-center justify-between rounded-md border bg-muted px-3 py-2 text-sm"
+                    className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3"
                   >
-                    <div>
-                      <span className="font-medium">{s?.name ?? '(unknown subject)'}</span>
-                      <span className="mx-2 text-muted-foreground">·</span>
-                      <span className="text-muted-foreground">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="font-mono text-[10px]">
+                          {s?.code ?? '—'}
+                        </Badge>
+                        <span className="font-medium text-foreground">
+                          {s?.name ?? '(unknown subject)'}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
                         {t?.display_name ?? '(unknown user)'}
-                      </span>
+                      </div>
                     </div>
                     <Button
                       variant="ghost"
@@ -215,7 +255,7 @@ export function TeacherAssignmentsPanel({
                       onClick={() => removeAssignment(a.id)}
                       disabled={busy}
                       aria-label="Remove subject teacher"
-                      className="text-destructive hover:text-destructive"
+                      className="text-muted-foreground hover:text-destructive"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -224,86 +264,112 @@ export function TeacherAssignmentsPanel({
               })}
             </ul>
           )}
-        </div>
+        </CardContent>
+      </Card>
 
-        <div className="border-t pt-4">
-          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Add assignment
-          </div>
-          <div className="grid gap-2 sm:grid-cols-[auto_1fr_1fr_auto]">
-            <Select
-              value={role}
-              onValueChange={(v) => setRole(v as 'form_adviser' | 'subject_teacher')}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="subject_teacher">Subject teacher</SelectItem>
-                <SelectItem value="form_adviser">Form class adviser</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={teacherId} onValueChange={setTeacherId}>
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="— pick a teacher —" />
-              </SelectTrigger>
-              <SelectContent>
-                {teachers.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.display_name}
-                    {t.email && t.email !== t.display_name ? ` (${t.email})` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {role === 'subject_teacher' ? (
-              <Select value={subjectId} onValueChange={setSubjectId}>
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="— pick a subject —" />
+      {/* Add assignment */}
+      <Card className="@container/card">
+        <CardHeader>
+          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+            New assignment
+          </CardDescription>
+          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+            Assign a teacher
+          </CardTitle>
+          <CardAction>
+            <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <UserCog className="size-5" />
+            </div>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 lg:grid-cols-[200px_1fr_1fr]">
+            <Field>
+              <FieldLabel htmlFor="ta-role">Role</FieldLabel>
+              <Select
+                value={role}
+                onValueChange={(v) => setRole(v as 'form_adviser' | 'subject_teacher')}
+              >
+                <SelectTrigger id="ta-role">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {levelSubjects.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
+                  <SelectItem value="subject_teacher">Subject teacher</SelectItem>
+                  <SelectItem value="form_adviser">Form class adviser</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="ta-teacher">Teacher</FieldLabel>
+              <Select value={teacherId} onValueChange={setTeacherId}>
+                <SelectTrigger id="ta-teacher">
+                  <SelectValue placeholder="— pick a teacher —" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teachers.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.display_name}
+                      {t.email && t.email !== t.display_name ? ` (${t.email})` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            ) : (
-              <div className="flex h-9 items-center rounded-md border border-dashed border-border px-2 text-xs text-muted-foreground">
-                no subject for form adviser
-              </div>
-            )}
-            <Button
-              onClick={createAssignment}
-              disabled={busy || !teacherId || (role === 'subject_teacher' && !subjectId)}
-              size="sm"
-            >
-              {busy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="ta-subject">Subject</FieldLabel>
+              {role === 'subject_teacher' ? (
+                <Select value={subjectId} onValueChange={setSubjectId}>
+                  <SelectTrigger id="ta-subject">
+                    <SelectValue placeholder="— pick a subject —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {levelSubjects.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               ) : (
-                <Plus className="h-4 w-4" />
+                <div className="flex h-10 items-center rounded-md border border-dashed border-border px-3 text-xs text-muted-foreground">
+                  N/A for form adviser
+                </div>
               )}
-              Add
-            </Button>
+            </Field>
           </div>
+
           {teachers.length === 0 && !loading && (
-            <Alert className="mt-3">
+            <Alert className="mt-4">
               <AlertDescription>
                 No teacher users found. Create users in the Supabase dashboard and set{' '}
-                <code className="rounded bg-muted px-1 py-0.5 text-xs">app_metadata.role</code> to{' '}
-                <code className="rounded bg-muted px-1 py-0.5 text-xs">&quot;teacher&quot;</code>.
+                <code className="rounded bg-muted px-1 py-0.5 text-xs">app_metadata.role</code>{' '}
+                to <code className="rounded bg-muted px-1 py-0.5 text-xs">&quot;teacher&quot;</code>
+                .
               </AlertDescription>
             </Alert>
           )}
-        </div>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-      </CardContent>
-    </Card>
+          {error && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+        <CardFooter className="justify-end border-t border-border pt-6">
+          <Button
+            onClick={createAssignment}
+            disabled={busy || !teacherId || (role === 'subject_teacher' && !subjectId)}
+            size="sm"
+          >
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            {busy ? 'Adding…' : 'Add assignment'}
+          </Button>
+        </CardFooter>
+      </Card>
+    </div>
   );
 }

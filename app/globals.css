@@ -3,38 +3,42 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.3211 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.3211 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.3211 0 0);
-  --primary: oklch(0.6231 0.188 259.8145);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.967 0.0029 264.5419);
-  --secondary-foreground: oklch(0.4461 0.0263 256.8018);
-  --muted: oklch(0.9846 0.0017 247.8389);
-  --muted-foreground: oklch(0.551 0.0234 264.3637);
-  --accent: oklch(0.9514 0.025 236.8242);
-  --accent-foreground: oklch(0.3791 0.1378 265.5222);
+  /* Core shadcn semantic tokens. These now resolve to Aurora Vault values
+     (see the --av-* block below) so every existing utility like
+     text-foreground / border-border / bg-primary automatically inherits
+     the project's corporate palette — no per-file refactor needed. */
+  --background: #FFFFFF;
+  --foreground: #0F172A;         /* was gray; now ink */
+  --card: #FFFFFF;
+  --card-foreground: #0F172A;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F172A;
+  --primary: #4F46E5;            /* was mid blue; now brand indigo */
+  --primary-foreground: #FFFFFF;
+  --secondary: #F1F5F9;
+  --secondary-foreground: #334155;
+  --muted: #F8FAFC;              /* page canvas — very subtle slate */
+  --muted-foreground: #64748B;   /* was gray; now ink-4 */
+  --accent: #EEF2FF;             /* subtle indigo wash for hovers */
+  --accent-foreground: #4338CA;
   --destructive: oklch(0.6368 0.2078 25.3313);
-  --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.9276 0.0058 264.5313);
-  --input: oklch(0.9276 0.0058 264.5313);
-  --ring: oklch(0.6231 0.188 259.8145);
-  --chart-1: oklch(0.6231 0.188 259.8145);
-  --chart-2: oklch(0.5461 0.2152 262.8809);
-  --chart-3: oklch(0.4882 0.2172 264.3763);
-  --chart-4: oklch(0.4244 0.1809 265.6377);
-  --chart-5: oklch(0.3791 0.1378 265.5222);
-  --sidebar: oklch(0.9846 0.0017 247.8389);
-  --sidebar-foreground: oklch(0.3211 0 0);
-  --sidebar-primary: oklch(0.6231 0.188 259.8145);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.9514 0.025 236.8242);
-  --sidebar-accent-foreground: oklch(0.3791 0.1378 265.5222);
-  --sidebar-border: oklch(0.9276 0.0058 264.5313);
-  --sidebar-ring: oklch(0.6231 0.188 259.8145);
+  --destructive-foreground: #FFFFFF;
+  --border: #E2E8F0;             /* was gray; now hairline */
+  --input: #E2E8F0;
+  --ring: #4F46E5;               /* was mid blue; now brand indigo */
+  --chart-1: #4F46E5;            /* brand indigo */
+  --chart-2: #6366F1;
+  --chart-3: #818CF8;
+  --chart-4: #38BDF8;            /* sky */
+  --chart-5: #A5F3B7;            /* mint */
+  --sidebar: #F8FAFC;
+  --sidebar-foreground: #334155;
+  --sidebar-primary: #4F46E5;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #EEF2FF;
+  --sidebar-accent-foreground: #4338CA;
+  --sidebar-border: #E2E8F0;
+  --sidebar-ring: #4F46E5;
   --font-sans: Inter, sans-serif;
   --font-serif: Source Serif 4, serif;
   --font-mono: JetBrains Mono, monospace;
@@ -55,6 +59,30 @@
   --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
+
+  /* Aurora Vault — auth / high-trust surfaces.
+     Raw values use the --av-* prefix to avoid self-reference with @theme inline. */
+  --av-navy: #0B1120;
+  --av-indigo: #4F46E5;
+  --av-indigo-deep: #4338CA;
+  --av-indigo-light: #5B52ED;
+  --av-indigo-soft: #818CF8;
+  --av-sky: #38BDF8;
+  --av-mint: #A5F3B7;
+  --av-ink: #0F172A;
+  --av-ink-2: #334155;
+  --av-ink-3: #475569;
+  --av-ink-4: #64748B;
+  --av-ink-5: #94A3B8;
+  --av-hairline: #E2E8F0;
+  --av-hairline-strong: #CBD5E1;
+
+  --av-shadow-input: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --av-shadow-brand-tile: inset 0 1px 0 0 rgba(255, 255, 255, 0.2), 0 4px 12px -4px rgba(79, 70, 229, 0.5);
+  --av-shadow-button: inset 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(15, 23, 42, 0.08), 0 8px 24px -8px rgba(79, 70, 229, 0.55);
+  --av-shadow-button-hover: inset 0 1px 0 0 rgba(255, 255, 255, 0.22), 0 2px 4px rgba(15, 23, 42, 0.1), 0 12px 28px -10px rgba(79, 70, 229, 0.65);
+  --av-shadow-button-active: inset 0 1px 0 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(15, 23, 42, 0.1);
+  --av-shadow-glass-card: 0 20px 60px -20px rgba(0, 0, 0, 0.6), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
 }
 
 .dark {
@@ -161,6 +189,29 @@
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
+
+  /* Aurora Vault — referencing --av-* so no self-reference cycle */
+  --color-brand-navy: var(--av-navy);
+  --color-brand-indigo: var(--av-indigo);
+  --color-brand-indigo-deep: var(--av-indigo-deep);
+  --color-brand-indigo-light: var(--av-indigo-light);
+  --color-brand-indigo-soft: var(--av-indigo-soft);
+  --color-brand-sky: var(--av-sky);
+  --color-brand-mint: var(--av-mint);
+  --color-ink: var(--av-ink);
+  --color-ink-2: var(--av-ink-2);
+  --color-ink-3: var(--av-ink-3);
+  --color-ink-4: var(--av-ink-4);
+  --color-ink-5: var(--av-ink-5);
+  --color-hairline: var(--av-hairline);
+  --color-hairline-strong: var(--av-hairline-strong);
+
+  --shadow-input: var(--av-shadow-input);
+  --shadow-brand-tile: var(--av-shadow-brand-tile);
+  --shadow-button: var(--av-shadow-button);
+  --shadow-button-hover: var(--av-shadow-button-hover);
+  --shadow-button-active: var(--av-shadow-button-active);
+  --shadow-glass-card: var(--av-shadow-glass-card);
 }
 
 @layer base {

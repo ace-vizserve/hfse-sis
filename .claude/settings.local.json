@@ -6,9 +6,35 @@
       "Bash(npm install:*)",
       "Bash(grep:*)",
       "Bash(npm run:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "WebFetch(domain:uselayouts.com)",
+      "WebFetch(domain:originui.com)",
+      "WebFetch(domain:www.kibo-ui.com)",
+      "WebFetch(domain:shadcnblocks.com)",
+      "WebFetch(domain:coss.com)",
+      "mcp__shadcn__view_items_in_registries",
+      "mcp__shadcn__get_item_examples_from_registries",
+      "Bash(npx shadcn@latest add @shadcn/field --yes)",
+      "Bash(ls *.json)",
+      "Bash(npx shadcn@latest add field)",
+      "Bash(npx shadcn@latest add field --overwrite=false)",
+      "Bash(yes n:*)",
+      "Bash(ls -la .next/static/chunks/*.css)",
+      "Bash(node -e \"const c=require\\('fs'\\).readFileSync\\('.next/static/chunks/004u8ygj89845.css','utf8'\\); for \\(const k of ['.bg-primary','.bg-brand-navy','.text-ink','.text-ink-2','.shadow-button','.border-hairline','.from-brand-indigo']\\) console.log\\(k.padEnd\\(22\\), c.includes\\(k\\)\\);\")",
+      "Bash(node -e ':*)",
+      "Bash(yes)",
+      "Bash(npx shadcn@latest add card)",
+      "mcp__shadcn__search_items_in_registries",
+      "Bash(npm ls:*)",
+      "Bash(npx shadcn@latest add dropdown-menu tabs)",
+      "Bash(npx shadcn@latest add calendar popover)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)"
     ]
   },
+  "enabledMcpjsonServers": [
+    "shadcn"
+  ],
   "enabledPlugins": {
     "ui-ux-pro-max@ui-ux-pro-max-skill": true
   }

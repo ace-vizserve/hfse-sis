@@ -1,17 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { CheckCircle2, Loader2 } from 'lucide-react';
 
-import { Surface } from '@/components/ui/surface';
+import { Badge } from '@/components/ui/badge';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 
 type Row = {
@@ -35,6 +35,7 @@ export function CommentsGrid({
 }) {
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   async function save(row: Row, nextComment: string) {
@@ -62,72 +63,102 @@ export function CommentsGrid({
           r.student_id === row.student_id ? { ...r, comment: nextComment || null } : r,
         ),
       );
+      setSavedId(row.student_id);
+      setTimeout(() => setSavedId((id) => (id === row.student_id ? null : id)), 1500);
     } catch (e) {
-      setErrors((er) => ({ ...er, [row.student_id]: e instanceof Error ? e.message : 'error' }));
+      setErrors((er) => ({
+        ...er,
+        [row.student_id]: e instanceof Error ? e.message : 'error',
+      }));
     } finally {
-      setSavingId(null);
+      setSavingId((s) => (s === row.student_id ? null : s));
     }
   }
 
+  if (rows.length === 0) {
+    return (
+      <Card className="items-center py-12 text-center">
+        <CardContent className="flex flex-col items-center gap-3">
+          <div className="font-serif text-lg font-semibold text-foreground">
+            No students enrolled
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Sync from admissions or add a student to this section first.
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
-    <div className="space-y-2">
-      <Surface padded={false} className="overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-12 text-right">#</TableHead>
-              <TableHead className="w-56">Student</TableHead>
-              <TableHead>Comment</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={3} className="py-6 text-center text-muted-foreground">
-                  No students enrolled.
-                </TableCell>
-              </TableRow>
-            )}
-            {rows.map((r) => (
-              <TableRow
-                key={r.enrolment_id}
-                className={r.withdrawn ? 'text-muted-foreground' : ''}
+    <div className="space-y-4">
+      {rows.map((r) => {
+        const saving = savingId === r.student_id;
+        const justSaved = savedId === r.student_id;
+        const hasComment = !!(r.comment && r.comment.trim().length > 0);
+        return (
+          <Card key={r.enrolment_id} className="@container/card">
+            <CardHeader>
+              <CardDescription className="flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                <span className="tabular-nums">#{r.index_number}</span>
+                <span className="text-hairline-strong">·</span>
+                <span className="tabular-nums">{r.student_number}</span>
+              </CardDescription>
+              <CardTitle
+                className={
+                  'font-serif text-xl font-semibold leading-snug tracking-tight ' +
+                  (r.withdrawn ? 'line-through text-muted-foreground' : 'text-foreground')
+                }
               >
-                <TableCell className="text-right align-top tabular-nums">
-                  {r.index_number}
-                </TableCell>
-                <TableCell className="align-top">
-                  <div className="whitespace-nowrap">{r.student_name}</div>
-                  <div className="text-xs tabular-nums text-muted-foreground">
-                    {r.student_number}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <CommentCell
-                    initial={r.comment ?? ''}
-                    disabled={r.withdrawn}
-                    onCommit={(v) => save(r, v)}
-                  />
-                  {errors[r.student_id] && (
-                    <div className="mt-1 text-xs text-destructive">{errors[r.student_id]}</div>
+                {r.student_name}
+              </CardTitle>
+              <CardAction>
+                {r.withdrawn ? (
+                  <Badge variant="secondary">withdrawn</Badge>
+                ) : hasComment ? (
+                  <Badge variant="default">
+                    <CheckCircle2 className="h-3 w-3" />
+                    written
+                  </Badge>
+                ) : (
+                  <Badge variant="outline">pending</Badge>
+                )}
+              </CardAction>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <CommentTextarea
+                initial={r.comment ?? ''}
+                disabled={r.withdrawn}
+                onCommit={(v) => save(r, v)}
+              />
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  {saving && (
+                    <span className="inline-flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Saving…
+                    </span>
                   )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Surface>
-      {savingId && (
-        <div className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          saving…
-        </div>
-      )}
+                  {justSaved && !saving && (
+                    <span className="inline-flex items-center gap-1 text-primary">
+                      <CheckCircle2 className="h-3 w-3" />
+                      Saved
+                    </span>
+                  )}
+                </span>
+                {errors[r.student_id] && (
+                  <span className="text-destructive">{errors[r.student_id]}</span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }
 
-function CommentCell({
+function CommentTextarea({
   initial,
   disabled,
   onCommit,
@@ -143,9 +174,9 @@ function CommentCell({
       disabled={disabled}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => onCommit(text.trim())}
-      rows={2}
+      rows={3}
       placeholder="Write adviser's comment for this term…"
-      className="min-h-[60px] disabled:bg-muted"
+      className="min-h-[84px] resize-y disabled:cursor-not-allowed disabled:bg-muted/40"
     />
   );
 }

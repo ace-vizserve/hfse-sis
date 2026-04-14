@@ -1,13 +1,10 @@
 "use client";
 
-import { AlertCircle, FileCheck2, GraduationCap, Loader2, Lock, Shield, Users } from "lucide-react";
+import { AlertCircle, Loader2, Lock, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
@@ -34,174 +31,253 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-dvh w-full bg-background lg:grid-cols-[1.1fr_1fr]">
-      {/* Left brand panel */}
-      <aside className="relative hidden overflow-hidden border-r border-border bg-muted lg:flex lg:flex-col lg:justify-between lg:p-14">
+    <div className="grid min-h-svh bg-white lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+      {/* ───────────────── Form column ───────────────── */}
+      <div className="relative flex flex-col px-6 py-10 sm:px-10 lg:px-16 lg:py-14">
+        {/* Lockup */}
+        <div className="flex items-center gap-2.5">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <ShieldCheck className="size-4" strokeWidth={2.25} />
+          </span>
+          <span className="font-serif text-[17px] font-semibold tracking-tight text-ink">
+            HFSE Markbook
+          </span>
+        </div>
+
+        {/* Form */}
+        <div className="flex flex-1 items-center justify-center">
+          <div className="w-full max-w-sm">
+            <div className="mb-8">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-4">
+                Faculty Portal
+              </p>
+              <h1 className="mt-3 font-serif text-[34px] font-semibold leading-[1.05] tracking-tight text-ink">
+                Welcome back.
+              </h1>
+              <p className="mt-3 text-[15px] leading-relaxed text-ink-3">
+                Sign in with your HFSE staff credentials to continue.
+              </p>
+            </div>
+
+            <form onSubmit={onSubmit} noValidate className="space-y-5">
+              {/* Email */}
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="email"
+                  className="block text-[13px] font-medium text-ink-2">
+                  Work email
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  autoFocus
+                  placeholder="you@hfse.edu.sg"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  aria-invalid={error ? true : undefined}
+                  className="h-11 w-full rounded-lg border border-hairline bg-white px-3.5 text-[15px] text-ink shadow-input outline-none transition placeholder:text-ink-5 focus:border-brand-indigo focus:ring-4 focus:ring-brand-indigo/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-4 aria-[invalid=true]:ring-destructive/10"
+                />
+              </div>
+
+              {/* Password */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="password"
+                    className="block text-[13px] font-medium text-ink-2">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    aria-pressed={showPassword}
+                    className="text-[12px] font-medium text-ink-4 transition hover:text-ink">
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  aria-invalid={error ? true : undefined}
+                  className="h-11 w-full rounded-lg border border-hairline bg-white px-3.5 text-[15px] text-ink shadow-input outline-none transition placeholder:text-ink-5 focus:border-brand-indigo focus:ring-4 focus:ring-brand-indigo/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-4 aria-[invalid=true]:ring-destructive/10"
+                />
+              </div>
+
+              {/* Error */}
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-brand-indigo to-brand-indigo-deep text-[14px] font-medium text-white shadow-button transition-all duration-150 hover:from-brand-indigo-light hover:to-brand-indigo hover:shadow-button-hover active:translate-y-px active:shadow-button-active focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-indigo/25 disabled:cursor-not-allowed disabled:opacity-80">
+                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {loading ? "Signing in…" : "Sign in"}
+              </button>
+
+              <p className="pt-1 text-center text-[13px] text-ink-4">
+                Forgot your password? Contact the registrar&apos;s office.
+              </p>
+            </form>
+          </div>
+        </div>
+
+        {/* Trust footer */}
+        <div className="mt-10 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-5">
+          <Lock className="size-3" strokeWidth={2.25} />
+          <span>TLS 1.3</span>
+          <span className="text-hairline-strong">·</span>
+          <span>Supabase Auth</span>
+          <span className="text-hairline-strong">·</span>
+          <span>Audit-logged</span>
+        </div>
+      </div>
+
+      {/* ───────────────── Brand column ───────────────── */}
+      <aside className="relative hidden overflow-hidden bg-brand-navy lg:block">
+        {/* Layer 1 — top-left indigo glow */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 opacity-40"
+          className="pointer-events-none absolute inset-0"
           style={{
-            backgroundImage: "radial-gradient(circle at 1px 1px, var(--muted-foreground) 1px, transparent 0)",
-            backgroundSize: "22px 22px",
-            maskImage: "radial-gradient(ellipse at center, black 40%, transparent 75%)",
+            background:
+              "radial-gradient(ellipse 60% 50% at 15% 10%, rgba(99,102,241,0.28), transparent 65%)",
+          }}
+        />
+        {/* Layer 2 — bottom-right sky glow */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 50% 40% at 90% 90%, rgba(14,165,233,0.14), transparent 60%)",
+          }}
+        />
+        {/* Layer 3 — hairline grid with radial mask */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)",
+            backgroundSize: "48px 48px",
+            maskImage:
+              "radial-gradient(ellipse at center, black 30%, transparent 80%)",
+            WebkitMaskImage:
+              "radial-gradient(ellipse at center, black 30%, transparent 80%)",
           }}
         />
 
-        <div className="relative flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-            <GraduationCap className="h-5 w-5" />
+        {/* Content */}
+        <div className="relative flex h-full flex-col justify-between p-14 text-white">
+          {/* Top: lockup */}
+          <div className="flex items-center gap-3">
+            <span className="flex size-11 items-center justify-center rounded-xl bg-white/[0.06] ring-1 ring-white/15 backdrop-blur-sm">
+              <ShieldCheck className="size-5" strokeWidth={2} />
+            </span>
+            <div className="flex flex-col leading-tight">
+              <span className="font-serif text-[15px] font-semibold tracking-tight">
+                HFSE International School
+              </span>
+              <span className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.1em] text-white/50">
+                Singapore · AY 2025–26
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold tracking-tight text-foreground">HFSE International School</span>
-            <span className="text-xs text-muted-foreground">Singapore &middot; AY 2025–2026</span>
+
+          {/* Center: glass product-glimpse card */}
+          <div className="flex flex-1 items-center justify-center py-12">
+            <div className="w-full max-w-sm -rotate-[1.5deg] rounded-2xl border border-white/10 bg-white/[0.04] p-5 shadow-glass-card backdrop-blur-xl">
+              {/* Window chrome */}
+              <div className="flex items-center gap-2">
+                <span className="size-2 rounded-full bg-[#FF5F57]" />
+                <span className="size-2 rounded-full bg-[#FEBC2E]" />
+                <span className="size-2 rounded-full bg-[#28C840]" />
+                <span className="ml-3 truncate font-mono text-[10px] text-white/40">
+                  markbook.hfse.edu.sg / grading / sec-1a
+                </span>
+              </div>
+
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50">
+                  Mathematics · Sec-1A · Q3
+                </p>
+                <div className="mt-4 grid grid-cols-3 gap-3">
+                  <Stat label="Students" value="24" />
+                  <Stat label="Status" value="Locked" accent />
+                  <Stat label="Average" value="87.4" />
+                </div>
+
+                {/* Progress */}
+                <div className="mt-5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase tracking-wider text-white/40">
+                      Entries complete
+                    </span>
+                    <span className="font-mono text-[10px] tabular-nums text-white/60">
+                      82%
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full w-[82%] rounded-full bg-gradient-to-r from-brand-indigo-soft to-brand-sky" />
+                  </div>
+                </div>
+
+                <p className="mt-4 font-mono text-[10px] text-white/40">
+                  Last edited 2h ago · 3 pending totals
+                </p>
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div className="relative max-w-lg">
-          <span className="inline-flex items-center rounded-full border border-border bg-card px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground shadow-sm">
-            Faculty Portal
-          </span>
-          <h1 className="mt-5 font-serif text-4xl font-semibold leading-[1.1] tracking-tight text-foreground xl:text-[2.75rem]">
-            Grading, report cards, and advisory —<span className="text-muted-foreground"> one source of truth.</span>
-          </h1>
-          <p className="mt-4 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-            The official HFSE markbook replaces quarterly spreadsheets with a single, auditable system for teachers and
-            the registrar.
-          </p>
-
-          <ul className="mt-10 space-y-5">
-            <FeatureRow
-              icon={FileCheck2}
-              title="Single-source computation"
-              body="Scores in, grades out — no more formula drift between workbooks."
-            />
-            <FeatureRow
-              icon={Shield}
-              title="Full audit trail"
-              body="Every post-lock edit is recorded with its approval reference."
-            />
-            <FeatureRow
-              icon={Users}
-              title="Role-aware access"
-              body="Teachers see their sections. The registrar sees everything."
-            />
-          </ul>
-        </div>
-
-        <div className="relative flex items-center justify-between border-t border-border pt-6 text-xs text-muted-foreground">
-          <span>&copy; {new Date().getFullYear()} HFSE International School</span>
-          <span className="tabular-nums">v1.0</span>
+          {/* Bottom: trust row */}
+          <div className="flex items-center justify-between border-t border-white/10 pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-white/50">
+            <div className="flex items-center gap-3">
+              <span>✓ Secured</span>
+              <span className="text-white/20">·</span>
+              <span>✓ Audited</span>
+              <span className="text-white/20">·</span>
+              <span>✓ Compliant</span>
+            </div>
+            <span>&copy; {new Date().getFullYear()} HFSE</span>
+          </div>
         </div>
       </aside>
-
-      {/* Right form panel */}
-      <section className="flex items-center justify-center bg-background px-6 py-12 sm:px-10">
-        <div className="w-full max-w-sm">
-          {/* Mobile brand */}
-          <div className="mb-10 flex items-center gap-3 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <GraduationCap className="h-5 w-5" />
-            </div>
-            <div className="flex flex-col leading-tight">
-              <span className="text-sm font-semibold text-foreground">HFSE Markbook</span>
-              <span className="text-xs text-muted-foreground">Singapore</span>
-            </div>
-          </div>
-
-          <div className="mb-8">
-            <h2 className="font-serif text-[28px] font-semibold tracking-tight text-foreground">
-              Sign in to your account
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">Use your HFSE staff credentials to continue.</p>
-          </div>
-
-          <form onSubmit={onSubmit} noValidate className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="email">Work email</Label>
-              <Input
-                id="email"
-                type="email"
-                required
-                autoComplete="email"
-                autoFocus
-                placeholder="you@hfse.edu.sg"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                aria-invalid={error ? true : undefined}
-                className="h-11"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  className="h-auto p-0 text-xs font-medium text-muted-foreground hover:text-foreground hover:no-underline"
-                  onClick={() => setShowPassword((s) => !s)}
-                  aria-pressed={showPassword}>
-                  {showPassword ? "Hide" : "Show"}
-                </Button>
-              </div>
-              <Input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                required
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                aria-invalid={error ? true : undefined}
-                className="h-11"
-              />
-            </div>
-
-            {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-
-            <Button type="submit" disabled={loading} className="h-11 w-full shadow-sm">
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {loading ? "Signing in…" : "Sign in"}
-            </Button>
-
-            <p className="text-center text-xs text-muted-foreground">
-              Forgot your password? Contact the registrar&apos;s office.
-            </p>
-          </form>
-
-          <div className="mt-12 flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
-            <Lock className="h-3 w-3" />
-            <span>Secured connection &middot; Authorized personnel only</span>
-          </div>
-        </div>
-      </section>
-    </main>
+    </div>
   );
 }
 
-function FeatureRow({
-  icon: Icon,
-  title,
-  body,
+function Stat({
+  label,
+  value,
+  accent,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  body: string;
+  label: string;
+  value: string;
+  accent?: boolean;
 }) {
   return (
-    <li className="flex gap-4">
-      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary shadow-sm">
-        <Icon className="h-4 w-4" />
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-white/40">
+        {label}
       </span>
-      <div className="flex flex-col">
-        <span className="text-sm font-semibold text-foreground">{title}</span>
-        <span className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">{body}</span>
-      </div>
-    </li>
+      <span
+        className={`font-serif text-[22px] leading-none tabular-nums ${
+          accent ? "text-brand-mint" : "text-white"
+        }`}>
+        {value}
+      </span>
+    </div>
   );
 }

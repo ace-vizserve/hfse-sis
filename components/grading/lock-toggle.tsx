@@ -9,13 +9,9 @@ import { Button } from '@/components/ui/button';
 export function LockToggle({
   sheetId,
   isLocked,
-  lockedBy,
-  lockedAt,
 }: {
   sheetId: string;
   isLocked: boolean;
-  lockedBy: string | null;
-  lockedAt: string | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -40,11 +36,6 @@ export function LockToggle({
 
   return (
     <div className="flex flex-col items-end gap-1">
-      {isLocked && (
-        <div className="text-xs text-muted-foreground">
-          Locked {lockedAt && new Date(lockedAt).toLocaleString()} by {lockedBy ?? '—'}
-        </div>
-      )}
       <Button
         onClick={toggle}
         disabled={busy}
@@ -60,7 +51,7 @@ export function LockToggle({
         )}
         {isLocked ? 'Unlock sheet' : 'Lock sheet'}
       </Button>
-      {error && <span className="text-xs text-destructive">{error}</span>}
+      {error && <span className="font-mono text-[10px] text-destructive">{error}</span>}
     </div>
   );
 }
