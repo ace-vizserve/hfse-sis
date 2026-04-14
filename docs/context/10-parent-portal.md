@@ -96,16 +96,157 @@ Never change this to "parents read directly via RLS." The parent↔student relat
 
 ## What the parent flow actually does, step-by-step
 
-1. Parent visits the markbook URL (the same URL staff use).
-2. `/login` is public. Parent enters Supabase email + password.
-3. On success, `proxy.ts` detects `getUserRole() === null` and redirects to `/parent`.
-4. `/parent` page calls `getStudentsByParentEmail(user.email, 'AY2026')`.
-5. For each admissions row returned, the server resolves `studentNumber` → grading `students.id` via the service-role client.
-6. For each student, the server finds their current-AY `section_students` enrolment and any `report_card_publications` on that section.
-7. Per term, the server computes whether each publication is `active` / `scheduled` / `expired` based on `publish_from` / `publish_until` vs `now()`.
-8. The page renders one card per child with a "View report card" link per active publication.
-9. Clicking the link goes to `/parent/report-cards/{studentId}`, which re-runs the parent→student verification and re-checks the publication window, then renders the shared `<ReportCardDocument>` via `buildReportCard()` (also using the service-role client).
-10. Parent presses `Ctrl+P` to print / save as PDF — the print CSS in `components/report-card/report-card-document.tsx` produces the same paper layout the staff view uses.
+1. Parent signs in at the parent portal (`https://enrol.hfse.edu.sg/`) — that's their existing, primary auth point.
+2. From the authenticated parent dashboard (`/admission/dashboard`), the parent clicks "View report card". The parent-portal code reads `supabase.auth.getSession()` and navigates the browser to `https://<markbook>/parent/enter#access_token=…&refresh_token=…&next=/parent/...` (see [§ Parent portal → markbook handoff](#parent-portal--markbook-handoff) below for the integration snippet).
+3. The markbook's `/parent/enter` client page reads the URL fragment, calls `supabase.auth.setSession()` with the tokens, and the `@supabase/ssr` browser client writes the session cookies. Parent never sees a login screen on the markbook side.
+4. Post-handoff, `router.replace(next)` redirects to `/parent` or directly to `/parent/report-cards/{studentId}`. `proxy.ts` now sees a cookie-bound session with `role === null` and allows parent paths.
+5. `/parent` calls `getStudentsByParentEmail(user.email, currentAy.ay_code)` to look up children in `ay{YY}_enrolment_applications` where `motherEmail` or `fatherEmail` matches (case-insensitive).
+6. For each admissions row, the server resolves `studentNumber` → grading `students.id` via the service-role client.
+7. For each student, the server finds their current-AY `section_students` enrolment and any `report_card_publications` on that section.
+8. Per term, the server computes whether each publication is `active` / `scheduled` / `expired` based on `publish_from` / `publish_until` vs `now()`.
+9. The page renders one card per child with a "View report card" link per active publication.
+10. Clicking the link goes to `/parent/report-cards/{studentId}`, which re-runs the parent→student verification and re-checks the publication window, then renders the shared `<ReportCardDocument>` via `buildReportCard()`.
+11. Parent presses `Ctrl+P` to print / save as PDF — the print CSS in `components/report-card/report-card-document.tsx` produces the same paper layout the staff view uses.
+
+The markbook's own `/login` route still exists as a fallback (staff use it for sign-in; a parent could technically use it too if they ever arrive at the markbook without going through the handoff), but the intended parent entry point is always the "View report card" button on the parent portal.
+
+## Parent portal → markbook handoff
+
+The handoff mechanism that lets parents cross from `enrol.hfse.edu.sg` into the markbook without a second sign-in, based on Path B of the design discussion (token-in-URL-fragment).
+
+### Why it exists
+
+Parent accounts live in the shared Supabase project's `auth.users`. The parent portal and the markbook are separate codebases on **different origins**, which means their Supabase Auth session cookies are not shared. Without a handoff mechanism, a parent who signed in at the parent portal would face a second login screen on the markbook — same credentials, different cookie jar, bad UX. The handoff lets us hand over the signed-in session cleanly.
+
+### How it works
+
+1. **Parent portal builds a URL** with the parent's current Supabase session tokens in the **URL fragment** (the part after `#`):
+   ```
+   https://<markbook-domain>/parent/enter#access_token=<jwt>&refresh_token=<jwt>&next=/parent/report-cards/<studentId>
+   ```
+2. **Browser navigates** to the markbook. The URL fragment is **not sent to any server** — it stays in the browser, so the tokens never appear in the markbook's access logs, the parent-portal's `Referer` header, or any intermediate proxy.
+3. **Markbook's `/parent/enter` client page** (at `app/(parent)/parent/enter/page.tsx`) reads `window.location.hash` on mount, parses `access_token` / `refresh_token` / `next`, and calls `supabase.auth.setSession({ access_token, refresh_token })`. The `@supabase/ssr` browser client writes the `sb-*-auth-token` cookies via its cookie adapter.
+4. **`router.replace(next)`** navigates to the target path. The URL fragment drops from history, and `proxy.ts` on the next hop sees a valid session cookie → parent routing kicks in → the report card renders.
+
+### Security
+
+- The fragment is origin-local to the browser — it's not in Referer (browsers strip fragments), not in access logs, not in redirect chains.
+- The `next` parameter is validated to start with `/parent` — anything else falls back to `/parent`. No open redirect.
+- Tokens are never logged, sent to telemetry, or passed through `fetch`. The only consumer is `setSession`.
+- If the access token is expired, `setSession` uses the refresh token to mint a new one. If the refresh token is also expired, the handoff shows an error state with a "Back to parent portal" button pointing at `NEXT_PUBLIC_PARENT_PORTAL_URL`.
+- The real authorization gate is still `getStudentsByParentEmail()` in the parent-scoped pages — an attacker with stolen tokens can still only see children linked to that parent's email, which is the same access they'd have via a direct parent-portal login. The handoff does not widen the blast radius.
+- No HMAC signing or referrer origin check was added this sprint. The parent↔student gate is sufficient for UAT. Revisit if a real threat materializes; prefer HMAC over referrer if you ever need hardening.
+
+### Environment variables
+
+| Side | Name | Value |
+|---|---|---|
+| Markbook | `NEXT_PUBLIC_PARENT_PORTAL_URL` | `https://enrol.hfse.edu.sg/admission/dashboard` — error fallback destination on `/parent/enter` |
+| Parent portal | `NEXT_PUBLIC_MARKBOOK_HANDOFF_URL` | `https://<markbook-domain>/parent/enter` — target of the "View report card" button |
+
+Both must be set in **Production** environment on Vercel (or equivalent), not just locally.
+
+### Integration snippet for the parent-portal team
+
+Drop this component into the parent-portal repo (e.g. at `components/ViewReportCardButton.tsx`) and render it from the authenticated dashboard at `/admission/dashboard`. It assumes the parent portal already exposes a Supabase browser client via `@/lib/supabase/client` (or equivalent) — adapt the import path if yours differs.
+
+```tsx
+'use client';
+
+import { useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
+
+// Markbook handoff URL. Set NEXT_PUBLIC_MARKBOOK_HANDOFF_URL on the parent
+// portal's production env so it points at the real markbook domain instead
+// of a hardcoded default.
+const MARKBOOK_HANDOFF_URL =
+  process.env.NEXT_PUBLIC_MARKBOOK_HANDOFF_URL ??
+  'https://hfse-markbook.vercel.app/parent/enter';
+
+type Props = {
+  /**
+   * Optional — if the parent portal already knows the specific student
+   * the parent wants to view, pass the markbook's `students.id` so the
+   * handoff deep-links straight to that report card. Without it, the
+   * parent lands on the markbook's "My children" page and picks which
+   * report card to open from there.
+   */
+  studentId?: string;
+  className?: string;
+  children?: React.ReactNode;
+};
+
+export function ViewReportCardButton({ studentId, className, children }: Props) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function go() {
+    setLoading(true);
+    setError(null);
+    try {
+      const supabase = createClient();
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session) {
+        setError('Your session has expired. Please sign in again.');
+        setLoading(false);
+        return;
+      }
+
+      const next = studentId
+        ? `/parent/report-cards/${studentId}`
+        : '/parent';
+
+      const fragment = new URLSearchParams({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        next,
+      }).toString();
+
+      // Full browser navigation (not router.push) so the target origin
+      // reads the fragment fresh on page load.
+      window.location.href = `${MARKBOOK_HANDOFF_URL}#${fragment}`;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to open report card');
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <button type="button" onClick={go} disabled={loading} className={className}>
+        {children ?? (loading ? 'Loading…' : 'View report card')}
+      </button>
+      {error && <p role="alert">{error}</p>}
+    </>
+  );
+}
+```
+
+**Usage on the authenticated parent dashboard:**
+
+```tsx
+// Anywhere under /admission/dashboard
+<ViewReportCardButton studentId={child.markbookStudentId}>
+  View {child.firstName}&apos;s report card
+</ViewReportCardButton>
+```
+
+Or without a specific student (parent picks on the markbook side):
+
+```tsx
+<ViewReportCardButton>View report cards</ViewReportCardButton>
+```
+
+### Troubleshooting
+
+- **"This handoff link is missing its session tokens"** — the URL fragment is empty or malformed. Check that the parent-portal snippet is constructing the URL correctly with `#` (not `?`) and that both `access_token` and `refresh_token` are present.
+- **"Your session has expired"** — the refresh token is no longer valid. The parent needs to sign in fresh on the parent portal, then click the button again.
+- **Parent lands on the markbook's `/login` instead of `/parent/enter`** — `PUBLIC_PATHS` in `proxy.ts` didn't get `/parent/enter` added. Verify the middleware allows the route without authentication.
+- **Handoff succeeds but parent sees "no students linked to this email"** — the parent portal's `motherEmail`/`fatherEmail` on the admissions row doesn't match their `auth.users.email`. The markbook does a case-insensitive match (`.ilike`), but a genuine email mismatch (typo, different provider) will show an empty state. Fix at the admissions side.
 
 ## Out of scope
 
