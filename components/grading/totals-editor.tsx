@@ -2,12 +2,27 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Minus, Pencil, Plus, Save, X } from 'lucide-react';
+import { Loader2, Minus, Pencil, Plus, Save } from 'lucide-react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 
 type Props = {
   sheetId: string;
@@ -60,7 +75,9 @@ export function TotalsEditor({
     setArr(arr.slice(0, -1));
   }
 
-  async function save() {
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
     const shrinking = ww.length < initialWw.length || pt.length < initialPt.length;
     if (shrinking) {
       const ok = confirm(
@@ -106,87 +123,85 @@ export function TotalsEditor({
     }
   }
 
-  if (!open) {
-    return (
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        <Pencil className="h-4 w-4" />
-        Edit totals & slots
-      </Button>
-    );
-  }
-
   return (
-    <Card>
-      <CardContent className="space-y-5 p-5">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Edit totals & slots</h3>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              reset();
-              setOpen(false);
-            }}
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        <SlotSection
-          label="Written Works"
-          prefix="W"
-          values={ww}
-          onChangeAt={(i, v) => updateAt(ww, setWw, i, v)}
-          onAdd={() => addSlot(ww, setWw, wwMaxSlots)}
-          onRemove={() => removeSlot(ww, setWw)}
-          cap={wwMaxSlots}
-        />
-
-        <SlotSection
-          label="Performance Tasks"
-          prefix="PT"
-          values={pt}
-          onChangeAt={(i, v) => updateAt(pt, setPt, i, v)}
-          onAdd={() => addSlot(pt, setPt, ptMaxSlots)}
-          onRemove={() => removeSlot(pt, setPt)}
-          cap={ptMaxSlots}
-        />
-
-        <div>
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Quarterly Assessment
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">QA max</span>
-            <Input
-              type="number"
-              min={1}
-              value={qa ?? ''}
-              onChange={(e) => setQa(e.target.value === '' ? null : Number(e.target.value))}
-              className="h-9 w-24 text-right tabular-nums"
-            />
-          </label>
-        </div>
-
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-          <div className="text-xs text-muted-foreground">
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) reset();
+      }}
+    >
+      <SheetTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Pencil className="h-4 w-4" />
+          Edit totals & slots
+        </Button>
+      </SheetTrigger>
+      <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
+        <SheetHeader className="space-y-3 border-b border-border p-6">
+          <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+            Edit totals & slots
+          </SheetTitle>
+          <SheetDescription className="text-sm text-muted-foreground">
             {isLocked
-              ? 'Sheet is locked — you will be prompted for an approval reference.'
-              : 'All students grades will be recomputed against the new denominators.'}
+              ? 'Sheet is locked — you will be prompted for an approval reference on save.'
+              : 'All student grades will be recomputed against the new denominators.'}
+          </SheetDescription>
+        </SheetHeader>
+
+        <form onSubmit={save} className="flex flex-1 flex-col">
+          <div className="flex-1 overflow-y-auto p-6">
+            <FieldGroup>
+              <SlotSection
+                label="Written Works"
+                prefix="W"
+                values={ww}
+                onChangeAt={(i, v) => updateAt(ww, setWw, i, v)}
+                onAdd={() => addSlot(ww, setWw, wwMaxSlots)}
+                onRemove={() => removeSlot(ww, setWw)}
+                cap={wwMaxSlots}
+              />
+
+              <SlotSection
+                label="Performance Tasks"
+                prefix="PT"
+                values={pt}
+                onChangeAt={(i, v) => updateAt(pt, setPt, i, v)}
+                onAdd={() => addSlot(pt, setPt, ptMaxSlots)}
+                onRemove={() => removeSlot(pt, setPt)}
+                cap={ptMaxSlots}
+              />
+
+              <Field>
+                <FieldLabel htmlFor="te-qa">Quarterly assessment · max</FieldLabel>
+                <Input
+                  id="te-qa"
+                  type="number"
+                  min={1}
+                  value={qa ?? ''}
+                  onChange={(e) =>
+                    setQa(e.target.value === '' ? null : Number(e.target.value))
+                  }
+                  className="h-9 w-28 text-right tabular-nums"
+                />
+                <FieldDescription>Single quarterly assessment denominator.</FieldDescription>
+              </Field>
+
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+            </FieldGroup>
           </div>
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={reset} disabled={busy}>
-              Reset
-            </Button>
-            <Button type="button" size="sm" onClick={save} disabled={busy}>
+
+          <SheetFooter className="flex-row justify-end gap-2 border-t border-border p-6 sm:justify-end">
+            <SheetClose asChild>
+              <Button type="button" variant="outline" size="sm">
+                Cancel
+              </Button>
+            </SheetClose>
+            <Button type="submit" size="sm" disabled={busy}>
               {busy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -194,10 +209,10 @@ export function TotalsEditor({
               )}
               {busy ? 'Saving…' : 'Save totals'}
             </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+          </SheetFooter>
+        </form>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -219,11 +234,14 @@ function SlotSection({
   cap: number;
 }) {
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {label} ({values.length} / {cap})
-        </div>
+    <Field>
+      <div className="flex items-center justify-between">
+        <FieldLabel className="m-0">
+          {label}
+          <span className="ml-2 font-mono text-[10px] font-normal text-muted-foreground">
+            {values.length} / {cap}
+          </span>
+        </FieldLabel>
         <div className="flex gap-1">
           <Button
             type="button"
@@ -247,13 +265,13 @@ function SlotSection({
           </Button>
         </div>
       </div>
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3 pt-1">
         {values.length === 0 && (
           <div className="text-xs text-muted-foreground">no slots</div>
         )}
         {values.map((v, i) => (
           <label key={i} className="flex items-center gap-1.5 text-sm">
-            <span className="text-muted-foreground">
+            <span className="font-mono text-[11px] text-muted-foreground">
               {prefix}
               {i + 1}
             </span>
@@ -267,6 +285,6 @@ function SlotSection({
           </label>
         ))}
       </div>
-    </div>
+    </Field>
   );
 }

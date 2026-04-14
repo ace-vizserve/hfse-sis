@@ -246,11 +246,26 @@ export default async function SectionRosterPage({
                       </TableCell>
                       <TableCell>
                         {withdrawn ? (
-                          <Badge variant="secondary">withdrawn</Badge>
+                          <Badge
+                            variant="outline"
+                            className="h-6 border-destructive/40 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive"
+                          >
+                            Withdrawn
+                          </Badge>
                         ) : e.enrollment_status === 'late_enrollee' ? (
-                          <Badge variant="outline">late enrollee</Badge>
+                          <Badge
+                            variant="outline"
+                            className="h-6 border-brand-indigo-soft/60 bg-accent px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-indigo-deep"
+                          >
+                            Late enrollee
+                          </Badge>
                         ) : (
-                          <Badge variant="default">active</Badge>
+                          <Badge
+                            variant="outline"
+                            className="h-6 border-brand-mint bg-brand-mint/30 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink"
+                          >
+                            Active
+                          </Badge>
                         )}
                       </TableCell>
                     </TableRow>

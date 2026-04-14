@@ -1,13 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 
 export function ChangePasswordForm() {
   const [password, setPassword] = useState('');
@@ -46,67 +51,71 @@ export function ChangePasswordForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="space-y-5">
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="new-password">New password</Label>
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            className="h-auto p-0 text-xs font-medium text-muted-foreground hover:text-foreground hover:no-underline"
-            onClick={() => setShowPassword((s) => !s)}
-            aria-pressed={showPassword}
-          >
-            {showPassword ? 'Hide' : 'Show'}
-          </Button>
-        </div>
-        <Input
-          id="new-password"
-          type={showPassword ? 'text' : 'password'}
-          required
-          autoComplete="new-password"
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="h-11"
-        />
-      </div>
+    <form onSubmit={onSubmit} noValidate>
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="new-password">New password</FieldLabel>
+          <div className="relative">
+            <Input
+              id="new-password"
+              type={showPassword ? 'text' : 'password'}
+              required
+              autoComplete="new-password"
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="h-11 pr-10"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowPassword((s) => !s)}
+              aria-pressed={showPassword}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="absolute right-1 top-1/2 size-9 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          </div>
+          <FieldDescription>Minimum 8 characters. Toggles both fields.</FieldDescription>
+        </Field>
 
-      <div className="space-y-2">
-        <Label htmlFor="confirm-password">Confirm new password</Label>
-        <Input
-          id="confirm-password"
-          type={showPassword ? 'text' : 'password'}
-          required
-          autoComplete="new-password"
-          minLength={8}
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          className="h-11"
-        />
-      </div>
+        <Field>
+          <FieldLabel htmlFor="confirm-password">Confirm new password</FieldLabel>
+          <Input
+            id="confirm-password"
+            type={showPassword ? 'text' : 'password'}
+            required
+            autoComplete="new-password"
+            minLength={8}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            className="h-11"
+          />
+        </Field>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-      {success && (
-        <Alert>
-          <CheckCircle2 className="h-4 w-4" />
-          <AlertDescription>
-            Password updated. You can keep working — no need to sign out.
-          </AlertDescription>
-        </Alert>
-      )}
+        {success && (
+          <Alert>
+            <CheckCircle2 className="h-4 w-4" />
+            <AlertDescription>
+              Password updated. You can keep working — no need to sign out.
+            </AlertDescription>
+          </Alert>
+        )}
 
-      <Button type="submit" disabled={loading} className="h-11 shadow-sm">
-        {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-        {loading ? 'Updating…' : 'Update password'}
-      </Button>
+        <Button type="submit" disabled={loading} className="h-11 w-fit">
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          {loading ? 'Updating…' : 'Update password'}
+        </Button>
+      </FieldGroup>
     </form>
   );
 }

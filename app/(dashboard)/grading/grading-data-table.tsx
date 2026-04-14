@@ -154,12 +154,18 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
         header: 'Status',
         cell: ({ row }) =>
           row.original.is_locked ? (
-            <Badge variant="secondary">
+            <Badge
+              variant="outline"
+              className="h-6 border-destructive/40 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive"
+            >
               <Lock className="h-3 w-3" />
               Locked
             </Badge>
           ) : (
-            <Badge variant="default">
+            <Badge
+              variant="outline"
+              className="h-6 border-brand-mint bg-brand-mint/30 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink"
+            >
               <CheckCircle2 className="h-3 w-3" />
               Open
             </Badge>

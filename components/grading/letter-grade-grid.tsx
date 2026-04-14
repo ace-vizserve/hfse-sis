@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Surface } from '@/components/ui/surface';
+import { Card } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -82,10 +82,10 @@ export function LetterGradeGrid({
 
   return (
     <div className="space-y-3">
-      <Surface padded={false} className="overflow-hidden">
+      <Card className="overflow-hidden p-0">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="bg-muted/40 hover:bg-muted/40">
               <TableHead className="w-12 text-right">#</TableHead>
               <TableHead>Student</TableHead>
               <TableHead className="w-40">Letter grade</TableHead>
@@ -129,7 +129,7 @@ export function LetterGradeGrid({
             })}
           </TableBody>
         </Table>
-      </Surface>
+      </Card>
 
       {savingId && (
         <div className="inline-flex items-center gap-1 text-xs text-muted-foreground">

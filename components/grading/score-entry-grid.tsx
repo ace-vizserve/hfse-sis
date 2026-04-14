@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Surface } from '@/components/ui/surface';
+import { Card } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -37,7 +37,6 @@ type Props = {
   wwTotals: number[];
   ptTotals: number[];
   qaTotal: number | null;
-  weights: { ww: number; pt: number; qa: number };
   rows: GradeRow[];
   readOnly?: boolean;
   requireApproval?: boolean;
@@ -58,7 +57,6 @@ export function ScoreEntryGrid({
   wwTotals,
   ptTotals,
   qaTotal,
-  weights,
   rows: initialRows,
   readOnly = false,
   requireApproval = false,
@@ -137,12 +135,12 @@ export function ScoreEntryGrid({
 
   return (
     <div className="space-y-3">
-      <Surface padded={false} className="overflow-hidden">
+      <Card className="overflow-hidden p-0">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead className="sticky left-0 z-10 bg-muted text-right">#</TableHead>
-              <TableHead className="sticky left-8 z-10 bg-muted">Student</TableHead>
+            <TableRow className="bg-muted/40 hover:bg-muted/40">
+              <TableHead className="sticky left-0 z-10 bg-muted/40 text-right">#</TableHead>
+              <TableHead className="sticky left-8 z-10 bg-muted/40">Student</TableHead>
               {wwTotals.map((max, i) => (
                 <TableHead key={`ww-${i}`} className="text-center">
                   W{i + 1}
@@ -241,13 +239,9 @@ export function ScoreEntryGrid({
             })}
           </TableBody>
         </Table>
-      </Surface>
+      </Card>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span>
-          Weights: WW {(weights.ww * 100).toFixed(0)}% · PT {(weights.pt * 100).toFixed(0)}% · QA{' '}
-          {(weights.qa * 100).toFixed(0)}%
-        </span>
         {savingId && (
           <span className="inline-flex items-center gap-1 text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />

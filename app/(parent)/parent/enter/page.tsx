@@ -5,11 +5,9 @@ import { useRouter } from 'next/navigation';
 import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import { PageHeader } from '@/components/ui/page-header';
-import { Surface } from '@/components/ui/surface';
 
 // Parent portal → markbook handoff page. Reached from the "View report card"
 // button on https://enrol.hfse.edu.sg/admission/dashboard. Expects the
@@ -110,8 +108,8 @@ export default function ParentEnterPage() {
   if (state.kind === 'loading') {
     return (
       <PageShell className="max-w-md">
-        <Surface>
-          <div className="flex flex-col items-center gap-3 py-8 text-center">
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
             <div className="font-serif text-lg font-semibold text-foreground">
               Signing you in…
@@ -119,29 +117,41 @@ export default function ParentEnterPage() {
             <p className="text-sm text-muted-foreground">
               One moment while we open your child&apos;s report card.
             </p>
-          </div>
-        </Surface>
+          </CardContent>
+        </Card>
       </PageShell>
     );
   }
 
   return (
     <PageShell className="max-w-md">
-      <PageHeader eyebrow="Parent portal" title="Can&rsquo;t open report card" />
-      <Surface>
-        <div className="space-y-4">
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{state.message}</AlertDescription>
-          </Alert>
-          <Button asChild className="w-full">
-            <a href={parentPortalUrl}>
-              <ArrowLeft className="h-4 w-4" />
-              Back to parent portal
-            </a>
-          </Button>
+      <header className="space-y-3">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Parent portal
+        </p>
+        <h1 className="font-serif text-[28px] font-semibold leading-[1.1] tracking-tight text-foreground">
+          Can&rsquo;t open report card.
+        </h1>
+      </header>
+
+      <div className="flex items-start gap-4 rounded-xl border border-destructive/30 bg-destructive/5 p-5">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive text-destructive-foreground shadow-brand-tile">
+          <AlertCircle className="size-4" />
         </div>
-      </Surface>
+        <div className="flex-1 space-y-1.5">
+          <p className="font-serif text-base font-semibold leading-tight text-foreground">
+            Sign-in failed
+          </p>
+          <p className="text-sm leading-relaxed text-muted-foreground">{state.message}</p>
+        </div>
+      </div>
+
+      <Button asChild className="w-full">
+        <a href={parentPortalUrl}>
+          <ArrowLeft className="h-4 w-4" />
+          Back to parent portal
+        </a>
+      </Button>
     </PageShell>
   );
 }

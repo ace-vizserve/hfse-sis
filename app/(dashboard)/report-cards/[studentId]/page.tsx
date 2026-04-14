@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
-import { PageHeader } from '@/components/ui/page-header';
 import { buildReportCard } from '@/lib/report-card/build-report-card';
 import { ReportCardDocument } from '@/components/report-card/report-card-document';
 import { PublicationStatus } from '@/components/admin/publication-status';
@@ -38,25 +37,33 @@ export default async function ReportCardPreview({
   return (
     <div className="space-y-6">
       {/* Registrar controls — hidden from the "paper" preview below. */}
-      <div className="mx-auto w-full max-w-[8.5in] print:hidden">
+      <div className="mx-auto flex w-full max-w-[8.5in] flex-col gap-6 print:hidden">
         <Link
           href="/report-cards"
-          className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           All report cards
         </Link>
-        <div className="mt-4">
-          <PageHeader
-            eyebrow="Report Card"
-            title={payload.student.full_name}
-            description={`${payload.level.label} · ${payload.section.name} · ${payload.ay.label}`}
-            actions={<PrintButton />}
-          />
-        </div>
-        <div className="mt-4">
-          <PublicationStatus sectionId={payload.section.id} terms={payload.terms} />
-        </div>
+
+        <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div className="space-y-4">
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Report card · {payload.ay.label}
+            </p>
+            <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+              {payload.student.full_name}.
+            </h1>
+            <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+              {payload.level.label} · {payload.section.name}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <PrintButton />
+          </div>
+        </header>
+
+        <PublicationStatus sectionId={payload.section.id} terms={payload.terms} />
       </div>
 
       {/* --- Report card "paper" --- */}

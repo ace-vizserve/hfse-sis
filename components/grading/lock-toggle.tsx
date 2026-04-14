@@ -40,7 +40,7 @@ export function LockToggle({
         onClick={toggle}
         disabled={busy}
         size="sm"
-        variant={isLocked ? 'outline' : 'default'}
+        variant={isLocked ? 'default' : 'destructive'}
       >
         {busy ? (
           <Loader2 className="h-4 w-4 animate-spin" />

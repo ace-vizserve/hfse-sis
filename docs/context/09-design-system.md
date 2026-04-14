@@ -368,31 +368,84 @@ The `gap-0 py-0` lets children render edge-to-edge; the muted meta strip and div
 
 ---
 
-## 9. Primary color discipline
+## 9. Semantic color discipline
 
-This is a corporate trust product — the primary color is how the user reads state, action, and identity. A page without any primary color is almost certainly missing an affordance.
+This is a corporate trust product — **color is how users read state, action, and severity at a glance**. Every button, badge, and status panel must be colored by *purpose*, never by aesthetic preference. If two elements with different meanings look the same, the page has failed.
 
-**Use primary for:**
-- The one primary CTA per page (via default `Button`)
-- Active navigation states (sidebar items, tabs)
-- "Good" status badges — `Badge variant="default"` for active / complete / open
-- Key metric values that should read as headlines (chart elements, top-stat numbers)
-- Focus rings (`ring-brand-indigo/25` on `focus-visible`)
-- Icon tiles on primary surfaces
+### 9.1 The semantic palette
 
-**Never use primary for:**
-- Decoration without meaning
-- Every card border (use `border-border`)
-- Body text (use `text-foreground`)
+| Role | Token | When to use | Reads as |
+|---|---|---|---|
+| **Primary** | `bg-primary` / `text-primary` / `from-brand-indigo` | The one CTA per view, active nav, focus rings, brand tiles, primary metric headlines | "Do this. This is the path forward." |
+| **Destructive** | `bg-destructive` / `text-destructive` / `border-destructive/*` | Actions that are hard to undo, commit state, delete, lock, block | "Careful — this is final." |
+| **Mint (success/open)** | `bg-brand-mint/30` / `border-brand-mint` / `text-ink` | Healthy status (Open, Active, Available, Published) | "All clear." |
+| **Accent (info/config)** | `bg-accent` / `text-brand-indigo-deep` / `border-brand-indigo-soft` | Informational panels, configuration actions, approval-required states | "Heads up — here's context." |
+| **Muted** | `bg-muted` / `text-muted-foreground` | Neutral surfaces, table headers, secondary text, withdrawn/archived rows | "Background. Deprioritized." |
 
-**Review checklist per page:**
-- [ ] At least one `bg-primary` element above the fold?
-- [ ] Single primary CTA uses default `Button`, not `outline`?
-- [ ] "Open" / "Active" badges use `variant="default"`? "Locked" / "Withdrawn" use `variant="secondary"`?
-- [ ] Key metrics read as headlines (serif, tabular-nums), not body text?
-- [ ] Primary color conveys *meaning*, not decoration?
+### 9.2 Buttons — colored by purpose, not by aesthetic
 
-If every answer is yes, the page is on brand. If the page feels plain and any answer is no, fix that first.
+| Variant | Intent | Use for |
+|---|---|---|
+| `default` (indigo gradient) | **Primary path forward** | Save, Submit, Create, the one CTA per view, Unlock (restoring the happy path) |
+| `destructive` (solid red) | **Commit / hard-to-undo** | Lock sheet, Delete, Withdraw, Purge |
+| `outline` (indigo wash) | **Configuration / editing** | Edit totals & slots, column toggles, secondary navigation triggers |
+| `ghost` | **Tertiary / inline** | Clear filters, close icons, "change" inline triggers |
+| `link` | **Inline navigation** | "View audit log →", breadcrumbs |
+
+**Rules:**
+- Exactly **one `default` button** per view. Two primary CTAs = no primary CTA.
+- **Never** use `outline` for a destructive action. **Never** use `default` for a destructive action. Lock and Delete must be `destructive`, always.
+- Don't override `variant` colors with per-instance `className` to express semantics — if the treatment is reusable, promote it to the variant in `components/ui/button.tsx`.
+
+### 9.3 Status badges — one palette, three tones
+
+All status indicators use `Badge variant="outline"` with one of three color recipes:
+
+```tsx
+// HEALTHY / OPEN / ACTIVE
+<Badge className="h-6 border-brand-mint bg-brand-mint/30 text-ink">
+  <Icon className="h-3 w-3" /> Open
+</Badge>
+
+// LOCKED / BLOCKED / ERROR
+<Badge className="h-6 border-destructive/40 bg-destructive/10 text-destructive">
+  <Icon className="h-3 w-3" /> Locked
+</Badge>
+
+// INFORMATIONAL / NEUTRAL / COUNT
+<Badge variant="secondary" className="h-6">{count}</Badge>
+```
+
+`Badge variant="default"` and `variant="secondary"` alone (without the recipes above) are **not acceptable** for state badges — they don't carry enough color to differentiate severity at a glance.
+
+### 9.4 Status panels (locked alerts, warnings, approval banners)
+
+Don't use the default `<Alert>` for high-visibility status. Build a bordered status panel instead:
+
+```tsx
+<div className="flex items-start gap-4 rounded-xl border border-destructive/30 bg-destructive/5 p-5">
+  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive text-destructive-foreground shadow-brand-tile">
+    <Lock className="size-4" />
+  </div>
+  <div className="flex-1 space-y-1.5">
+    <p className="font-serif text-base font-semibold text-foreground">Title states the condition</p>
+    <p className="text-sm text-muted-foreground">Body explains what the user can do.</p>
+  </div>
+</div>
+```
+
+Swap the color family (`destructive` / `accent` + `brand-indigo-soft` / `brand-mint`) to match severity. Reference implementation: `app/(dashboard)/grading/[id]/page.tsx`.
+
+### 9.5 Review checklist per page
+
+- [ ] Exactly one `default` `Button` above the fold?
+- [ ] Every button's variant matches its purpose (destructive for commit/delete, outline for config, default for primary path)?
+- [ ] Every status badge uses the §9.3 recipes — mint for healthy, destructive for blocked — not plain `variant="default"`/`"secondary"`?
+- [ ] Any locked / approval / error panel uses the §9.4 pattern, not a plain `<Alert>`?
+- [ ] Key metrics read as headlines (serif, tabular-nums)?
+- [ ] Color carries meaning, never decoration?
+
+If every answer is yes, the page is on brand and legible. If any answer is no, fix that before shipping.
 
 ---
 

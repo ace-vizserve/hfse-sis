@@ -30,7 +30,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-  SidebarSeparator,
 } from '@/components/ui/sidebar';
 
 // Map nav hrefs to lucide icons. Falls back to BookOpen.
@@ -42,6 +41,13 @@ const ICON_BY_HREF: Record<string, LucideIcon> = {
   '/report-cards': FileText,
   '/admin/audit-log': History,
   '/admin': GraduationCap,
+};
+
+const ROLE_LABEL: Record<Role, string> = {
+  teacher: 'Teacher',
+  registrar: 'Registrar',
+  admin: 'Admin',
+  superadmin: 'Superadmin',
 };
 
 export function AppSidebar({ role, email }: { role: Role; email: string }) {
@@ -71,28 +77,34 @@ export function AppSidebar({ role, email }: { role: Role; email: string }) {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex items-center gap-3 px-2 py-2">
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-            <GraduationCap className="h-4 w-4" />
+      {/* Brand header */}
+      <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
+        <Link
+          href="/"
+          className="flex items-center gap-3 outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        >
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <GraduationCap className="size-4" />
           </div>
           <div className="flex min-w-0 flex-col leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="truncate font-serif text-sm font-semibold tracking-tight">
-              HFSE Markbook
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/60">
+              HFSE
             </span>
-            <span className="truncate text-[11px] text-sidebar-foreground/60">
-              Singapore
+            <span className="truncate font-serif text-base font-semibold tracking-tight text-sidebar-foreground">
+              Markbook
             </span>
           </div>
-        </div>
+        </Link>
       </SidebarHeader>
 
-      <SidebarSeparator />
-
-      <SidebarContent>
+      <SidebarContent className="px-1.5 py-3">
         {sections.map((section, i) => (
           <SidebarGroup key={i}>
-            {section.label && <SidebarGroupLabel>{section.label}</SidebarGroupLabel>}
+            {section.label && (
+              <SidebarGroupLabel className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
+                {section.label}
+              </SidebarGroupLabel>
+            )}
             <SidebarGroupContent>
               <SidebarMenu>
                 {section.items.map((item) => {
@@ -100,7 +112,12 @@ export function AppSidebar({ role, email }: { role: Role; email: string }) {
                   const Icon = ICON_BY_HREF[item.href] ?? BookOpen;
                   return (
                     <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isActive}
+                        tooltip={item.label}
+                        className="relative h-9 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-r-full before:bg-brand-indigo before:opacity-0 before:transition-opacity data-[active=true]:before:opacity-100"
+                      >
                         <Link href={item.href}>
                           <Icon />
                           <span>{item.label}</span>
@@ -115,19 +132,21 @@ export function AppSidebar({ role, email }: { role: Role; email: string }) {
         ))}
       </SidebarContent>
 
-      <SidebarSeparator />
-
-      <SidebarFooter>
-        <div className="flex items-center gap-3 px-2 py-2 group-data-[collapsible=icon]:hidden">
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-muted text-[11px] font-semibold text-foreground">
+      {/* Profile + actions */}
+      <SidebarFooter className="border-t border-sidebar-border p-3">
+        <div className="mb-2 flex items-center gap-3 group-data-[collapsible=icon]:hidden">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-indigo to-brand-navy text-[11px] font-semibold text-white shadow-brand-tile">
             {initials}
           </div>
           <div className="min-w-0 flex-1 leading-tight">
-            <div className="truncate text-xs font-medium text-sidebar-foreground">
+            <div
+              className="truncate text-xs font-medium text-sidebar-foreground"
+              title={email}
+            >
               {email}
             </div>
-            <div className="mt-0.5 inline-flex rounded-full bg-sidebar-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sidebar-accent-foreground">
-              {role}
+            <div className="mt-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/60">
+              {ROLE_LABEL[role]}
             </div>
           </div>
         </div>
@@ -137,6 +156,7 @@ export function AppSidebar({ role, email }: { role: Role; email: string }) {
               asChild
               isActive={pathname === '/account' || pathname.startsWith('/account/')}
               tooltip="Account"
+              className="relative h-9 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-r-full before:bg-brand-indigo before:opacity-0 before:transition-opacity data-[active=true]:before:opacity-100"
             >
               <Link href="/account">
                 <UserCog />
@@ -145,7 +165,11 @@ export function AppSidebar({ role, email }: { role: Role; email: string }) {
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={signOut} tooltip="Sign out">
+            <SidebarMenuButton
+              onClick={signOut}
+              tooltip="Sign out"
+              className="h-9 text-sidebar-foreground/70 hover:bg-destructive/10 hover:text-destructive"
+            >
               <LogOut />
               <span>Sign out</span>
             </SidebarMenuButton>

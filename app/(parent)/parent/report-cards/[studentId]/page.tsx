@@ -7,8 +7,7 @@ import { getStudentsByParentEmail } from '@/lib/supabase/admissions';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { buildReportCard } from '@/lib/report-card/build-report-card';
 import { ReportCardDocument } from '@/components/report-card/report-card-document';
-import { PageHeader } from '@/components/ui/page-header';
-import { Surface } from '@/components/ui/surface';
+import { Card, CardContent } from '@/components/ui/card';
 
 export default async function ParentReportCardPage({
   params,
@@ -83,25 +82,33 @@ export default async function ParentReportCardPage({
 
   if (activePubs.length === 0) {
     return (
-      <div className="mx-auto w-full max-w-2xl space-y-4">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
         <Link
           href="/parent"
-          className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           My children
         </Link>
-        <PageHeader
-          eyebrow="Report card"
-          title={payload.student.full_name}
-          description={`${payload.level.label} · ${payload.section.name} · ${payload.ay.label}`}
-        />
-        <Surface>
-          <div className="py-6 text-center text-sm text-muted-foreground">
+
+        <header className="space-y-4">
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Report card · {payload.ay.label}
+          </p>
+          <h1 className="font-serif text-[32px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[38px]">
+            {payload.student.full_name}.
+          </h1>
+          <p className="text-[15px] leading-relaxed text-muted-foreground">
+            {payload.level.label} · {payload.section.name}
+          </p>
+        </header>
+
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
             This report card is not currently available to view. The school will publish it when
             it&apos;s ready.
-          </div>
-        </Surface>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -109,30 +116,35 @@ export default async function ParentReportCardPage({
   return (
     <div className="space-y-6">
       {/* Parent chrome — hidden when printing. */}
-      <div className="mx-auto w-full max-w-[8.5in] print:hidden">
+      <div className="mx-auto flex w-full max-w-[8.5in] flex-col gap-6 print:hidden">
         <Link
           href="/parent"
-          className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           My children
         </Link>
-        <div className="mt-4 flex items-start justify-between gap-4">
-          <div className="flex-1">
-            <PageHeader
-              eyebrow="Report card"
-              title={payload.student.full_name}
-              description={`${payload.level.label} · ${payload.section.name} · ${payload.ay.label}`}
-            />
+
+        <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div className="space-y-4">
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Report card · {payload.ay.label}
+            </p>
+            <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+              {payload.student.full_name}.
+            </h1>
+            <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+              {payload.level.label} · {payload.section.name}
+            </p>
           </div>
-          <div className="pt-2 text-xs text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             <Printer className="mr-1 inline h-3 w-3" />
             Press <kbd className="rounded border border-border bg-card px-1 py-0.5">Ctrl</kbd>
             {' + '}
             <kbd className="rounded border border-border bg-card px-1 py-0.5">P</kbd> to print or
             save as PDF
           </div>
-        </div>
+        </header>
       </div>
 
       <ReportCardDocument payload={payload} />

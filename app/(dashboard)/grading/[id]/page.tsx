@@ -1,10 +1,25 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, Lock } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  CheckCircle2,
+  Lock,
+  LockOpen,
+  Scale,
+  Users,
+} from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { getUserRole, type Role } from '@/lib/auth/roles';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import {
+  Card,
+  CardAction,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { ScoreEntryGrid } from '@/components/grading/score-entry-grid';
 import { LetterGradeGrid } from '@/components/grading/letter-grade-grid';
@@ -105,6 +120,7 @@ export default async function GradingSheetPage({
   const subject = first(sheet.subject as Subject | Subject[] | null);
   const term = first(sheet.term as Term | Term[] | null);
   const config = first(sheet.subject_config as SubjectConfig | SubjectConfig[] | null);
+  const isExaminable = subject?.is_examinable !== false;
 
   const rows = entries.map((e) => {
     const ss = first(e.section_student);
@@ -129,99 +145,211 @@ export default async function GradingSheetPage({
     };
   });
 
+  // Stat card metrics — only count active + late_enrollee students
+  const activeRows = rows.filter((r) => !r.withdrawn);
+  const totalStudents = activeRows.length;
+  const gradedCount = activeRows.filter((r) =>
+    isExaminable ? r.quarterly_grade !== null : r.letter_grade !== null,
+  ).length;
+  const gradedPct =
+    totalStudents > 0 ? Math.round((gradedCount / totalStudents) * 100) : 0;
+
+  const wwW = Math.round(Number(config?.ww_weight ?? 0) * 100);
+  const ptW = Math.round(Number(config?.pt_weight ?? 0) * 100);
+  const qaW = Math.round(Number(config?.qa_weight ?? 0) * 100);
+
   return (
     <PageShell>
-      <header className="flex flex-col gap-5 border-b border-border pb-6">
-        <Link
-          href="/grading"
-          className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          All grading sheets
-        </Link>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="font-serif text-3xl font-semibold leading-tight tracking-tight text-foreground md:text-[2rem]">
-                {subject?.name} · {level?.label} {section?.name}
-              </h1>
-              {sheet.is_locked ? (
-                <Badge variant="secondary">
-                  <Lock className="h-3 w-3" />
-                  Locked
-                </Badge>
-              ) : (
-                <Badge variant="default">Open</Badge>
-              )}
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {term?.label}
-              {sheet.teacher_name && (
-                <span className="ml-2">· {sheet.teacher_name}</span>
-              )}
-            </p>
+      <Link
+        href="/grading"
+        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        All grading sheets
+      </Link>
+
+      {/* Hero */}
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-4">
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Grading · {term?.label ?? 'Term'}
+          </p>
+          <div className="flex flex-wrap items-baseline gap-3">
+            <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+              {subject?.name ?? 'Subject'}
+            </h1>
+            {sheet.is_locked ? (
+              <Badge
+                variant="outline"
+                className="h-7 border-destructive/40 bg-destructive/10 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-destructive"
+              >
+                <Lock className="h-3 w-3" />
+                Locked
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="h-7 border-brand-mint bg-brand-mint/30 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink"
+              >
+                <LockOpen className="h-3 w-3" />
+                Open for entry
+              </Badge>
+            )}
           </div>
+          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+            {level?.label} {section?.name}
+            {sheet.teacher_name && <> · {sheet.teacher_name}</>}
+            {!isExaminable && <> · Letter-grade subject</>}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {canManage && isExaminable && (
+            <TotalsEditor
+              sheetId={sheet.id}
+              wwTotals={(sheet.ww_totals ?? []) as number[]}
+              ptTotals={(sheet.pt_totals ?? []) as number[]}
+              qaTotal={sheet.qa_total as number | null}
+              wwMaxSlots={Number(config?.ww_max_slots ?? 5)}
+              ptMaxSlots={Number(config?.pt_max_slots ?? 5)}
+              isLocked={sheet.is_locked}
+            />
+          )}
           {canManage && <LockToggle sheetId={sheet.id} isLocked={sheet.is_locked} />}
         </div>
       </header>
 
+      {/* Stat cards */}
+      <div className="@container/main">
+        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-3">
+          <StatCard
+            description="Students"
+            value={totalStudents.toLocaleString('en-SG')}
+            icon={Users}
+            footerTitle={`${totalStudents} on the roster`}
+            footerDetail="Withdrawn students excluded"
+          />
+          <StatCard
+            description="Graded"
+            value={`${gradedCount}/${totalStudents || 0}`}
+            icon={CheckCircle2}
+            footerTitle={totalStudents > 0 ? `${gradedPct}% complete` : 'No students yet'}
+            footerDetail={
+              isExaminable
+                ? 'Quarterly grade computed'
+                : 'Letter grade recorded'
+            }
+          />
+          <StatCard
+            description={isExaminable ? 'Weights · WW / PT / QA' : 'Format'}
+            value={isExaminable ? `${wwW}/${ptW}/${qaW}` : 'Letters'}
+            icon={Scale}
+            footerTitle={
+              isExaminable
+                ? 'Written · Performance · Quarterly'
+                : 'A / B / C / IP / UG / NA / INC / CO / E'
+            }
+            footerDetail={
+              isExaminable
+                ? 'Configured per subject × level × AY'
+                : 'Non-examinable subject'
+            }
+          />
+        </div>
+      </div>
+
       {sheet.is_locked && (
-        <Alert>
-          <Lock className="h-4 w-4" />
-          <AlertDescription>
-            {readOnly
-              ? 'This sheet is locked. Contact the registrar to request corrections.'
-              : 'This sheet is locked. Any edit you make will be written to the audit log and requires an approval reference.'}
+        <div
+          className={
+            readOnly
+              ? 'flex items-start gap-4 rounded-xl border border-destructive/30 bg-destructive/5 p-5'
+              : 'flex items-start gap-4 rounded-xl border border-brand-indigo-soft/50 bg-accent p-5'
+          }
+        >
+          <div
+            className={
+              readOnly
+                ? 'flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive text-destructive-foreground shadow-brand-tile'
+                : 'flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile'
+            }
+          >
+            <Lock className="size-4" />
+          </div>
+          <div className="flex-1 space-y-1.5">
+            <p className="font-serif text-base font-semibold leading-tight text-foreground">
+              {readOnly ? 'Sheet is locked for editing' : 'Sheet is locked — approval required'}
+            </p>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {readOnly
+                ? 'Grades have been committed for this term. Contact the registrar to request corrections.'
+                : 'Any edit you make will be written to the audit log. You will be prompted for an approval reference on save.'}
+            </p>
             {canManage && (
-              <>
-                {' '}
-                <Link
-                  href={`/admin/audit-log?sheet_id=${sheet.id}`}
-                  className="font-medium underline underline-offset-2"
-                >
-                  View audit log →
-                </Link>
-              </>
+              <Link
+                href={`/admin/audit-log?sheet_id=${sheet.id}`}
+                className="inline-flex items-center gap-1 pt-1 text-sm font-medium text-brand-indigo-deep underline-offset-4 hover:underline"
+              >
+                View audit log
+                <ArrowUpRight className="size-3.5" />
+              </Link>
             )}
-          </AlertDescription>
-        </Alert>
+          </div>
+        </div>
       )}
 
-      {canManage && subject?.is_examinable !== false && (
-        <TotalsEditor
+      {isExaminable ? (
+        <ScoreEntryGrid
           sheetId={sheet.id}
           wwTotals={(sheet.ww_totals ?? []) as number[]}
           ptTotals={(sheet.pt_totals ?? []) as number[]}
           qaTotal={sheet.qa_total as number | null}
-          wwMaxSlots={Number(config?.ww_max_slots ?? 5)}
-          ptMaxSlots={Number(config?.pt_max_slots ?? 5)}
-          isLocked={sheet.is_locked}
+          rows={rows}
+          readOnly={readOnly}
+          requireApproval={requireApproval}
         />
-      )}
-
-      {subject?.is_examinable === false ? (
+      ) : (
         <LetterGradeGrid
           sheetId={sheet.id}
           rows={rows}
           readOnly={readOnly}
           requireApproval={requireApproval}
         />
-      ) : (
-        <ScoreEntryGrid
-          sheetId={sheet.id}
-          wwTotals={(sheet.ww_totals ?? []) as number[]}
-          ptTotals={(sheet.pt_totals ?? []) as number[]}
-          qaTotal={sheet.qa_total as number | null}
-          weights={{
-            ww: Number(config?.ww_weight ?? 0),
-            pt: Number(config?.pt_weight ?? 0),
-            qa: Number(config?.qa_weight ?? 0),
-          }}
-          rows={rows}
-          readOnly={readOnly}
-          requireApproval={requireApproval}
-        />
       )}
     </PageShell>
+  );
+}
+
+function StatCard({
+  description,
+  value,
+  icon: Icon,
+  footerTitle,
+  footerDetail,
+}: {
+  description: string;
+  value: string;
+  icon: React.ComponentType<{ className?: string }>;
+  footerTitle: string;
+  footerDetail: string;
+}) {
+  return (
+    <Card className="@container/card">
+      <CardHeader>
+        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+          {description}
+        </CardDescription>
+        <CardTitle className="font-serif text-[32px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]">
+          {value}
+        </CardTitle>
+        <CardAction>
+          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <Icon className="size-4" />
+          </div>
+        </CardAction>
+      </CardHeader>
+      <CardFooter className="flex-col items-start gap-1 text-sm">
+        <p className="font-medium text-foreground">{footerTitle}</p>
+        <p className="text-xs text-muted-foreground">{footerDetail}</p>
+      </CardFooter>
+    </Card>
   );
 }

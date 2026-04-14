@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import {
+  ArrowUpRight,
   Layers,
   Lock,
   LockOpen,
@@ -186,7 +187,8 @@ export default async function GradingListPage() {
                 <Button key={s.id} asChild variant="outline" size="sm">
                   <Link href={`/grading/advisory/${s.id}/comments`}>
                     {s.level_label ? `${s.level_label} · ` : ''}
-                    {s.name} · Comments →
+                    {s.name} · Comments
+                    <ArrowUpRight />
                   </Link>
                 </Button>
               ))}

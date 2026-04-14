@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  ArrowRight,
   CheckCircle2,
   Clock,
   Loader2,
@@ -55,25 +56,38 @@ function StatusBadge({ status }: { status: Status }) {
   switch (status) {
     case 'active':
       return (
-        <Badge variant="default">
+        <Badge
+          variant="outline"
+          className="h-6 border-brand-mint bg-brand-mint/30 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink"
+        >
           <CheckCircle2 className="h-3 w-3" />
           Published
         </Badge>
       );
     case 'scheduled':
       return (
-        <Badge variant="outline">
+        <Badge
+          variant="outline"
+          className="h-6 border-brand-indigo-soft/60 bg-accent px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-indigo-deep"
+        >
           <Clock className="h-3 w-3" />
           Scheduled
         </Badge>
       );
     case 'expired':
-      return <Badge variant="secondary">Expired</Badge>;
+      return (
+        <Badge
+          variant="outline"
+          className="h-6 border-destructive/40 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive"
+        >
+          Expired
+        </Badge>
+      );
     default:
       return (
         <Badge
           variant="outline"
-          className="border-dashed text-muted-foreground"
+          className="h-6 border-dashed border-border bg-muted px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
         >
           Not published
         </Badge>
@@ -246,9 +260,9 @@ export function PublishWindowPanel({
                         <StatusBadge status={status} />
                       </div>
                       {existing && (
-                        <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                          {fmt(existing.publish_from)}{' '}
-                          <span className="text-hairline-strong">→</span>{' '}
+                        <div className="inline-flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
+                          {fmt(existing.publish_from)}
+                          <ArrowRight className="size-3 text-hairline-strong" />
                           {fmt(existing.publish_until)}
                         </div>
                       )}

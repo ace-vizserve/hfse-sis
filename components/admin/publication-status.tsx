@@ -1,6 +1,8 @@
-import Link from 'next/link';
-import { CheckCircle2, Clock, Share2 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
+import { Badge } from "@/components/ui/badge";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { createClient } from "@/lib/supabase/server";
+import { ArrowRight, ArrowUpRight, Clock, Eye, EyeOff, Share2, XCircle } from "lucide-react";
+import Link from "next/link";
 
 type Term = { id: string; term_number: number; label: string };
 
@@ -11,22 +13,18 @@ type Publication = {
   publish_until: string;
 };
 
+type Status = "active" | "scheduled" | "expired" | "none";
+
 // Read-only publication indicator shown on the staff-side report card detail
 // page. Unlike `PublishWindowPanel` (which is the full editor on the list
-// page), this is just a one-line summary per term. Click-through to the list
-// page for editing.
-export async function PublicationStatus({
-  sectionId,
-  terms,
-}: {
-  sectionId: string;
-  terms: Term[];
-}) {
+// page), this is a per-term scan view. Click-through to the list page for
+// editing.
+export async function PublicationStatus({ sectionId, terms }: { sectionId: string; terms: Term[] }) {
   const supabase = await createClient();
   const { data } = await supabase
-    .from('report_card_publications')
-    .select('id, term_id, publish_from, publish_until')
-    .eq('section_id', sectionId);
+    .from("report_card_publications")
+    .select("id, term_id, publish_from, publish_until")
+    .eq("section_id", sectionId);
   const pubs = (data ?? []) as Publication[];
 
   // Server component runs per-request; current time is required to bucket
@@ -35,58 +33,121 @@ export async function PublicationStatus({
   // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
 
+  const rows = terms.map((t) => {
+    const p = pubs.find((x) => x.term_id === t.id);
+    if (!p) return { term: t, pub: null, status: "none" as Status };
+    const from = new Date(p.publish_from).getTime();
+    const until = new Date(p.publish_until).getTime();
+    if (now < from) return { term: t, pub: p, status: "scheduled" as Status };
+    if (now > until) return { term: t, pub: p, status: "expired" as Status };
+    return { term: t, pub: p, status: "active" as Status };
+  });
+
+  const activeCount = rows.filter((r) => r.status === "active").length;
+
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
-      <Share2 className="h-4 w-4 text-primary" />
-      <div className="flex-1">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-3 font-serif text-base font-semibold tracking-tight text-foreground">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <Share2 className="size-4" />
+          </span>
           Parent access
+        </CardTitle>
+        <CardDescription>
+          {activeCount === 0
+            ? "No terms are currently visible to parents."
+            : activeCount === terms.length
+              ? "All terms are currently visible to parents."
+              : `${activeCount} of ${terms.length} terms are currently visible to parents.`}
+        </CardDescription>
+        <CardAction>
+          <Link
+            href="/report-cards"
+            className="inline-flex items-center gap-1 text-sm font-medium text-brand-indigo-deep underline-offset-4 hover:underline">
+            Manage
+            <ArrowUpRight className="size-3.5" />
+          </Link>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="border-t border-border pt-4">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          {rows.map(({ term, pub, status }) => (
+            <TermRow key={term.id} term={term} pub={pub} status={status} />
+          ))}
         </div>
-        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-          {terms.map((t) => {
-            const p = pubs.find((x) => x.term_id === t.id);
-            if (!p) {
-              return (
-                <span key={t.id} className="text-muted-foreground">
-                  {t.label}: not published
-                </span>
-              );
-            }
-            const from = new Date(p.publish_from).getTime();
-            const until = new Date(p.publish_until).getTime();
-            const active = now >= from && now <= until;
-            const scheduled = now < from;
-            return (
-              <span key={t.id} className="inline-flex items-center gap-1">
-                <span className="font-medium text-foreground">{t.label}:</span>
-                {active && (
-                  <>
-                    <CheckCircle2 className="h-3 w-3 text-primary" />
-                    <span className="text-primary">active</span>
-                  </>
-                )}
-                {scheduled && (
-                  <>
-                    <Clock className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-muted-foreground">scheduled</span>
-                  </>
-                )}
-                {!active && !scheduled && <span className="text-muted-foreground">expired</span>}
-                <span className="text-muted-foreground tabular-nums">
-                  ({new Date(p.publish_from).toLocaleDateString()} →{' '}
-                  {new Date(p.publish_until).toLocaleDateString()})
-                </span>
-              </span>
-            );
-          })}
-        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TermRow({ term, pub, status }: { term: Term; pub: Publication | null; status: Status }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-xl border border-border bg-muted/30 p-3">
+      <div className="space-y-1.5">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          {term.label}
+        </p>
+        {pub ? (
+          <p className="inline-flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-foreground">
+            {fmtShort(pub.publish_from)}
+            <ArrowRight className="size-3 text-muted-foreground" />
+            {fmtShort(pub.publish_until)}
+          </p>
+        ) : (
+          <p className="text-[11px] italic text-muted-foreground">No window scheduled</p>
+        )}
       </div>
-      <Link
-        href="/report-cards"
-        className="text-xs font-medium text-primary hover:underline"
-      >
-        Manage →
-      </Link>
+      <StatusBadge status={status} />
     </div>
   );
+}
+
+function StatusBadge({ status }: { status: Status }) {
+  switch (status) {
+    case "active":
+      return (
+        <Badge
+          variant="outline"
+          className="h-6 shrink-0 border-brand-mint bg-brand-mint/30 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink">
+          <Eye className="h-3 w-3" />
+          Visible
+        </Badge>
+      );
+    case "scheduled":
+      return (
+        <Badge
+          variant="outline"
+          className="h-6 shrink-0 border-brand-indigo-soft/60 bg-accent px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-indigo-deep">
+          <Clock className="h-3 w-3" />
+          Scheduled
+        </Badge>
+      );
+    case "expired":
+      return (
+        <Badge
+          variant="outline"
+          className="h-6 shrink-0 border-destructive/40 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive">
+          <XCircle className="h-3 w-3" />
+          Expired
+        </Badge>
+      );
+    default:
+      return (
+        <Badge
+          variant="outline"
+          className="h-6 shrink-0 border-dashed border-border bg-muted px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          <EyeOff className="h-3 w-3" />
+          Not published
+        </Badge>
+      );
+  }
+}
+
+function fmtShort(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }

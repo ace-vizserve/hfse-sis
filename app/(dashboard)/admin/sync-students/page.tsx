@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   Database,
   FileX,
@@ -229,7 +230,13 @@ export default function SyncStudentsPage() {
                   description="Reactivations"
                   value={stats.enrollments_to_reactivate}
                   icon={RefreshCw}
-                  footer="Withdrawn → active"
+                  footer={
+                    <span className="inline-flex items-center gap-1.5">
+                      Withdrawn
+                      <ArrowRight className="size-3" />
+                      active
+                    </span>
+                  }
                 />
                 <StatCard
                   description="Errors"
@@ -330,7 +337,7 @@ function StatCard({
   description: string;
   value: number;
   icon: LucideIcon;
-  footer: string;
+  footer: React.ReactNode;
   tone?: 'ok' | 'warn';
 }) {
   const warn = tone === 'warn' && value > 0;
@@ -362,7 +369,7 @@ function StatCard({
         </CardAction>
       </CardHeader>
       <CardFooter>
-        <p className="text-xs text-muted-foreground">{footer}</p>
+        <div className="text-xs text-muted-foreground">{footer}</div>
       </CardFooter>
     </Card>
   );

@@ -16,7 +16,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-  SidebarSeparator,
 } from '@/components/ui/sidebar';
 
 export function ParentSidebar({ email }: { email: string }) {
@@ -42,28 +41,37 @@ export function ParentSidebar({ email }: { email: string }) {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex items-center gap-3 px-2 py-2">
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-            <GraduationCap className="h-4 w-4" />
+      {/* Brand header */}
+      <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
+        <Link
+          href="/parent"
+          className="flex items-center gap-3 outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        >
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <GraduationCap className="size-4" />
           </div>
           <div className="flex min-w-0 flex-col leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="truncate font-serif text-sm font-semibold tracking-tight">
-              HFSE Parent Portal
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/60">
+              HFSE
             </span>
-            <span className="truncate text-[11px] text-sidebar-foreground/60">Singapore</span>
+            <span className="truncate font-serif text-base font-semibold tracking-tight text-sidebar-foreground">
+              Parent Portal
+            </span>
           </div>
-        </div>
+        </Link>
       </SidebarHeader>
 
-      <SidebarSeparator />
-
-      <SidebarContent>
+      <SidebarContent className="px-1.5 py-3">
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isOnParentHome} tooltip="My children">
+                <SidebarMenuButton
+                  asChild
+                  isActive={isOnParentHome}
+                  tooltip="My children"
+                  className="relative h-9 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-r-full before:bg-brand-indigo before:opacity-0 before:transition-opacity data-[active=true]:before:opacity-100"
+                >
                   <Link href="/parent">
                     <Home />
                     <span>My children</span>
@@ -75,16 +83,20 @@ export function ParentSidebar({ email }: { email: string }) {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarSeparator />
-
-      <SidebarFooter>
-        <div className="flex items-center gap-3 px-2 py-2 group-data-[collapsible=icon]:hidden">
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-muted text-[11px] font-semibold text-foreground">
+      {/* Profile + actions */}
+      <SidebarFooter className="border-t border-sidebar-border p-3">
+        <div className="mb-2 flex items-center gap-3 group-data-[collapsible=icon]:hidden">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-indigo to-brand-navy text-[11px] font-semibold text-white shadow-brand-tile">
             {initials}
           </div>
           <div className="min-w-0 flex-1 leading-tight">
-            <div className="truncate text-xs font-medium text-sidebar-foreground">{email}</div>
-            <div className="mt-0.5 inline-flex rounded-full bg-sidebar-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sidebar-accent-foreground">
+            <div
+              className="truncate text-xs font-medium text-sidebar-foreground"
+              title={email}
+            >
+              {email}
+            </div>
+            <div className="mt-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/60">
               Parent
             </div>
           </div>
@@ -95,6 +107,7 @@ export function ParentSidebar({ email }: { email: string }) {
               asChild
               isActive={pathname === '/account'}
               tooltip="Account"
+              className="relative h-9 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-r-full before:bg-brand-indigo before:opacity-0 before:transition-opacity data-[active=true]:before:opacity-100"
             >
               <Link href="/account">
                 <UserCog />
@@ -103,7 +116,11 @@ export function ParentSidebar({ email }: { email: string }) {
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={signOut} tooltip="Sign out">
+            <SidebarMenuButton
+              onClick={signOut}
+              tooltip="Sign out"
+              className="h-9 text-sidebar-foreground/70 hover:bg-destructive/10 hover:text-destructive"
+            >
               <LogOut />
               <span>Sign out</span>
             </SidebarMenuButton>

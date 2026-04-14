@@ -6,7 +6,7 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 
 **Stack:** Next.js 16 (App Router) + Supabase + Vercel. Python/FastAPI/WeasyPrint PDF service from the original plan has been deferred (see Sprint 6 decision note); browser print handles current volume.
 
-## Status snapshot (last updated 2026-04-14)
+## Status snapshot (last updated 2026-04-15)
 
 | Sprint | Title | Status |
 |---|---|---|
@@ -15,7 +15,7 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 | 3 | Grade Entry | 🔶 Mostly done (comparison column deferred) |
 | 4 | Locking & Audit Trail | ✅ Done (comprehensive audit log now covers all mutations; `is_na` UI toggle + blank-counts dashboard still deferred as polish) |
 | 5 | Comments, Attendance & Report Card Data | 🔶 Done with deferrals (Sec 3–4 profile, attendance import) |
-| 6 | PDF Generation & Polish | 🔶 PDF service deferred; design revamped (v1 2026-04-14 + v2 "Aurora Vault" 2026-04-14); RLS tightened; **Vercel live**; audit log (006) + parent report card publication (007) + `/parent` route group + `/parent/enter` SSO handoff all shipped; **all staff pages rebuilt on shadcn `Card`/`Table`/`Field`/`Tabs`/`Sheet` + `@tanstack/react-table` data table + `DateTimePicker`**; registrar UAT in progress |
+| 6 | PDF Generation & Polish | 🔶 PDF service deferred; **Aurora Vault v2 pass complete — every staff + parent page migrated, `PageHeader`/`Surface` wrappers deleted, audit-log rebuilt as interactive `@tanstack/react-table`, report card document uses brand header/footer images, sidebar redesigned, semantic color discipline (§9) codified**; RLS tightened; Vercel live; registrar UAT in progress; mobile responsive pass and parent-email notifications still open |
 | — | Teacher Assignments _(added mid-flight)_ | ✅ Done — `teacher_assignments` table + CRUD UI + gates on grading list & comments |
 | 7 | Admissions Dashboard (Phase 2) | ⏸️ Not started |
 
@@ -31,9 +31,6 @@ These came up during sprints but were intentionally deferred to keep scope tight
 - End-of-year "mid-year T1–T3" vs "full year T1–T4" report card toggle (Sprint 5)
 - Secondary Sec 3–4 Economics variant template (Sprint 5)
 - Virtue-theme header label on comments / report card (Sprint 5)
-- **Grading detail page primitive migration (Sprint 6):** `components/grading/totals-editor.tsx` still uses the inline-collapse pattern with raw `<label>` — should migrate to `Sheet`-triggered form matching `ManualAddStudent`, using `Field`/`FieldLabel`/`FieldDescription`. Started in the Aurora Vault pass; `lock-toggle.tsx` already simplified, `totals-editor.tsx` and `app/(dashboard)/grading/[id]/page.tsx` still pending the new hero + stat cards + Sheet-based totals editor.
-- **`components/ui/page-header.tsx` default variant** still renders the eyebrow as a styled `<span>` chip. The hero variant matches the canonical design. Low priority because `PageHeader` is a legacy wrapper — new pages use inline `<header>` markup per the design-system §8 canonical pattern.
-- **`components/grading/score-entry-grid.tsx` and `letter-grade-grid.tsx`** — marked custom in the §6 registry matrix (Blank ≠ Zero semantics, no registry fits). Core logic stays custom; a visual refresh pass to use `bg-muted/40` header rows + `border-hairline` + ink typography would match the other data tables but is polish, not blocking.
 - Email notification to parents when the registrar publishes a report card window (Sprint 6). Parents currently navigate via the parent-portal button; no push notification yet.
 - Origin check (HMAC) on `/parent/enter` handoff as defense-in-depth. Deliberately skipped for UAT — the existing parent↔student gate is sufficient. Revisit if a real threat materializes.
 
@@ -375,12 +372,65 @@ The first design pass (Digital Ledger / Inter + Source Serif + JetBrains Mono + 
 - [x] `/report-cards` (`app/(dashboard)/report-cards/page.tsx` + `section-picker.tsx`) — hero with `Select`-based section picker (grouped by level via `SelectGroup` / `SelectLabel`), 3 live publication stat cards, rebuilt `PublishWindowPanel` as a `Card` with `divide-y` term rows using the new `DateTimePicker` for publish windows, `Card`-wrapped roster table with per-row preview button
 - [x] `/account` — inherits via shared components; no per-file rewrite this pass
 
-**Pages still pending in the v2 pass:** `/admin/audit-log` (data-table refresh), `/grading/[id]` (hero + stat cards + Sheet-based totals editor — in progress, `lock-toggle.tsx` simplified, `totals-editor.tsx` not yet migrated), `/grading/advisory/[id]/comments`, `/report-cards/[studentId]`, `/parent/report-cards/[studentId]`, `/parent/enter`, `/account`.
+**Pages still pending in the v2 pass:** _none — closed in the sprint-close pass below._
 
 **Docs:**
 
 - [x] `docs/context/09-design-system.md` rewritten from 581 → 426 lines: added §5 "Page construction process" (review → pick → build), §6 full registry matrix of every route → shadcn block/primitive, §8 canonical patterns library with code snippets referencing live files, §10 pre-delivery checklist, §11 "adding a new token" with `--av-*` prefix rule and the self-reference-cycle incident documented, §11c craft standard, §11d "prefer shadcn primitives over custom wrappers" policy.
 - [x] Memory `feedback_design_tokens.md` updated with token equivalence table and the critical "verify compiled CSS, not just build success" note.
+
+#### Aurora Vault v2 — sprint-close pass (2026-04-15)
+
+Closing pass that finished every legacy page, removed the deprecated wrappers, and made the design system colour rules a written contract. **All edits are uncommitted**; review and ship as one commit.
+
+**Legacy page rebuilds (all migrated off `PageHeader` / `Surface`):**
+
+- [x] `/admin/audit-log` — full rebuild: hero + 3 stat cards (Entries loaded / Unique actors / Post-lock edits — replaced the dead "Active filter" card), filter status panel removed in favour of an interactive toolbar; new client component `app/(dashboard)/admin/audit-log/audit-log-data-table.tsx` using `@tanstack/react-table` with global text search, faceted Action multi-select dropdown, deep-link `?sheet_id=` chip with clearable X, sortable When/Who/Action columns, 25/50/100 pagination. `ActionDetails` switch renderer relocated to the client component.
+- [x] `/grading/[id]` — hero + 3 stat cards (Students / Graded with % complete / Weights `WW/PT/QA`), `TotalsEditor` rebuilt as a `Sheet`-triggered form with `FieldGroup`/`Field`/`FieldLabel`/`FieldDescription` matching `ManualAddStudent`, lock-status panel rewritten as a §9.4 bordered status panel (destructive tint for read-only teacher view, accent tint for registrar approval-required view).
+- [x] `/grading/advisory/[id]/comments` — mirrors the registrar comments page: hero with level/section badge, 3 stat cards (Written / Pending / Average length), `Tabs` term switcher replacing the legacy `<Surface>`-wrapped term picker, §9.4 destructive panel for the access-denied early return.
+- [x] `/account` + `change-password-form.tsx` — inline hero + two `Card`s (Signed-in identity / Change password); form migrated to `FieldGroup`/`Field` with an inline `Eye`/`EyeOff` show-hide toggle absolutely positioned inside the New password field.
+- [x] `/report-cards/[studentId]` — inline hero with `PrintButton` in the actions row; `ReportCardDocument` body untouched.
+- [x] `/parent/enter` — `Card`-wrapped loading state, §9.4 destructive panel for sign-in failures, hero header for the error state.
+- [x] `/parent/report-cards/[studentId]` — inline hero on both the "not yet published" and the document views.
+- [x] `components/grading/score-entry-grid.tsx` + `letter-grade-grid.tsx` — visual refresh: legacy `Surface` wrapper → `<Card className="overflow-hidden p-0">` + `<TableRow className="bg-muted/40 hover:bg-muted/40">` headers matching the other data tables. `weights` prop dropped from `ScoreEntryGrid` (info now lives in the hero stat card).
+
+**Deprecated wrappers deleted:**
+
+- [x] `components/ui/page-header.tsx` and `components/ui/surface.tsx` removed from the repo. Final grep confirmed zero remaining imports across `app/` and `components/`. `CLAUDE.md` project-layout footnote updated to drop the legacy wrappers note.
+
+**Design system §9 — "Semantic color discipline" rewrite:**
+
+- [x] Section renamed from "Primary color discipline" to **"Semantic color discipline"** in `docs/context/09-design-system.md`. Adds §9.1 semantic palette table (primary / destructive / mint / accent / muted with "reads as" mental model), §9.2 button variants by purpose (with hard rules: exactly one `default` per view, never `outline` for destructive, promote per-instance treatments to the variant), §9.3 three status-badge recipes (mint healthy / destructive blocked / secondary informational) with ready-to-paste JSX, §9.4 bordered status panel pattern (replacing default `<Alert>` for high-visibility status), §9.5 updated review checklist.
+- [x] Existing badges across the app brought in line with §9.3:
+  - `app/(dashboard)/grading/grading-data-table.tsx` Locked/Open status column
+  - `components/admin/publish-window-panel.tsx` Published/Scheduled/Expired/Not-published states
+  - `app/(dashboard)/admin/sections/[id]/page.tsx` roster Active/Late-enrollee/Withdrawn
+  - `app/(dashboard)/admin/sections/[id]/comments/comments-grid.tsx` Written/Pending/Withdrawn
+- [x] `Button` outline variant base styling promoted in `components/ui/button.tsx` to the indigo wash treatment (`border-brand-indigo-soft/60 bg-accent/40 text-brand-indigo-deep`) so every outline button across the app inherits it without per-instance overrides.
+
+**Lucide icon convention:**
+
+- [x] Every visible `→` glyph replaced with a lucide icon. Convention: `<ArrowUpRight />` for action / navigation links ("Manage", "View audit log", "Comments", "open sheet"); `<ArrowRight />` for inline data flow / range / diff separators (date ranges, old→new value diffs in audit log, "Withdrawn → active" sync footer). `StatCard.footer` prop in `app/(dashboard)/admin/sync-students/page.tsx` relaxed from `string` to `React.ReactNode` to accept the inline icon. Audit pass verified every `<ArrowUpRight />` link uses `inline-flex items-center gap-1` + an explicit icon size class so text and icon sit on a single horizontal baseline.
+
+**Report card document redesign (`components/report-card/report-card-document.tsx`):**
+
+- [x] Letterhead now uses `public/report-card/report-card-header.png` (full-width brand image with logo, address, contact, registration baked in) instead of the text-only "HFSE INTERNATIONAL SCHOOL · Singapore" header.
+- [x] Footer brand strip now uses `public/report-card/report-card-footer.jpg` (HFSE Global Education Group affiliated brands).
+- [x] Outer wrapper is `<article>` with edge-to-edge images flush against the rounded card boundaries; print CSS still strips the rounded edges and shadow.
+- [x] Body sections polished: student info on a `bg-muted/40` card, table headers `bg-muted/60` + uppercase mono labels, grading legend on `bg-accent/50` indigo wash, signature lines using `border-ink-5`. `print:break-inside-avoid` on every section.
+
+**`PublicationStatus` parent-access panel rebuild (`components/admin/publication-status.tsx`):**
+
+- [x] Replaced the cramped one-line strip with a proper `Card`: brand-tile gradient icon chip + serif title + dynamic description ("2 of 4 terms are currently visible to parents") + Manage link in `CardAction`. Body is a 2-column responsive grid of per-term mini-tiles, each showing the publish window in mono tabular-nums and a status badge color-coded per §9.3 (mint Visible / accent Scheduled / destructive Expired / dashed muted Not-published).
+
+**Sidebar redesign (`components/app-sidebar.tsx` + `parent-sidebar.tsx`):**
+
+- [x] Brand chip upgraded from flat indigo square to the indigo→navy gradient + `shadow-brand-tile` (matches stat cards and status panels everywhere). Two-line label uses the §8 hero pattern: mono uppercase `HFSE` eyebrow over a serif `Markbook` / `Parent Portal` title. Header is now a clickable Link to `/` (or `/parent`).
+- [x] Group labels promoted to mono `tracking-[0.14em]` matching every eyebrow in the app.
+- [x] Active menu item gets a left-edge indigo accent bar via `before:` pseudo-element, only visible when `data-[active=true]`.
+- [x] Footer profile rebuilt: avatar circle uses the indigo→navy gradient with white initials and `shadow-brand-tile`; role label is now a title-cased mono uppercase eyebrow (`TEACHER`, `REGISTRAR`, etc.) via a `ROLE_LABEL` map.
+- [x] Sign out hover state shifts to `bg-destructive/10 text-destructive` to signal it ends the session (per §9.2 destructive intent).
+- [x] `SIDEBAR_WIDTH_ICON` in `components/ui/sidebar.tsx` bumped from `3rem` → `4rem` so the collapsed icon-only rail fits the `size-9` brand chip + `px-3` header padding without clipping.
 
 ### Definition of Done
 

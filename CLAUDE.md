@@ -99,7 +99,7 @@ hfse-markbook/
 ├── components/grading/       ← score-entry-grid, lock-toggle, totals-editor, ...
 ├── components/admin/         ← teacher-assignments-panel, publish-window-panel, publication-status
 ├── components/report-card/   ← report-card-document (shared render, print CSS)
-├── components/ui/            ← shadcn primitives (button/card/table/field/select/tabs/dropdown-menu/sheet/popover/calendar/...) + DateTimePicker wrapper + legacy PageShell/PageHeader/Surface wrappers (deprecated for new work)
+├── components/ui/            ← shadcn primitives (button/card/table/field/select/tabs/dropdown-menu/sheet/popover/calendar/...) + DateTimePicker wrapper + PageShell layout wrapper
 ├── components/{app,parent}-sidebar.tsx
 ├── supabase/
 │   ├── migrations/           ← 001_initial_schema → 007_report_card_publications
