@@ -106,19 +106,23 @@ export async function getStudentsByParentEmail(
   email: string,
   ayCode: string,
 ): Promise<ParentStudentRow[]> {
-  const lower = email.trim().toLowerCase();
-  if (!lower) return [];
+  const trimmed = email.trim();
+  if (!trimmed) return [];
   const year = ayCode.replace(/^AY/i, '').toLowerCase();
   const appsTable = `ay${year}_enrolment_applications`;
   const statusTable = `ay${year}_enrolment_status`;
 
   const supabase = createAdmissionsClient();
 
-  // 1) Find enrolee rows whose parent emails match.
+  // 1) Find enrolee rows whose parent emails match. Use `.ilike` so a parent
+  //    who enrolled their child as "jane.smith@example.com" still matches
+  //    when their Supabase Auth account was created as "Jane.Smith@Example.com".
+  //    Emails are case-insensitive in practice; the admissions schema stores
+  //    whatever the parent typed in the enrolment form.
   const { data: apps, error: appsErr } = await supabase
     .from(appsTable)
     .select('enroleeNumber, studentNumber, lastName, firstName, middleName, motherEmail, fatherEmail')
-    .or(`motherEmail.eq.${lower},fatherEmail.eq.${lower}`);
+    .or(`motherEmail.ilike.${trimmed},fatherEmail.ilike.${trimmed}`);
   if (appsErr) {
     // Admissions schema drift or missing columns — fail soft so the parent
     // still gets a "no records found" page instead of a hard crash.
