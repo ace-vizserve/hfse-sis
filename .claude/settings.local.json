@@ -36,7 +36,24 @@
       "Skill(get-context)",
       "Bash(npx tsc:*)",
       "Skill(sync-docs)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(npx shadcn@latest add alert-dialog)",
+      "Bash(npx shadcn@latest add alert-dialog --overwrite=false)",
+      "Bash(npx shadcn@latest add sonner)",
+      "Bash(node -e \"console.log\\(require\\('./package.json'\\).dependencies['next-themes'] || 'missing'\\)\")",
+      "Bash(npx shadcn@latest add dialog)",
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('rhf:', p.dependencies['react-hook-form'] || 'missing'\\); console.log\\('zod:', p.dependencies['zod'] || 'missing'\\); console.log\\('resolvers:', p.dependencies['@hookform/resolvers'] || 'missing'\\);\")",
+      "Bash(npx shadcn@latest add form)",
+      "Bash(node -e \"console.log\\('radix-label:', require\\('./package.json'\\).dependencies['@radix-ui/react-label'] || 'missing'\\); console.log\\('radix-slot:', require\\('./package.json'\\).dependencies['@radix-ui/react-slot'] || 'missing'\\);\")",
+      "Bash(node -e \"const d = require\\('./package.json'\\).dependencies; console.log\\('tw-animate-css:', d['tw-animate-css'] || 'missing'\\); console.log\\('tailwindcss-animate:', d['tailwindcss-animate'] || 'missing'\\);\")",
+      "Bash(node -e \"const d = {...require\\('./package.json'\\).dependencies, ...require\\('./package.json'\\).devDependencies}; console.log\\('tailwindcss:', d.tailwindcss\\); console.log\\('@tailwindcss/postcss:', d['@tailwindcss/postcss']\\); console.log\\('tw-animate-css:', d['tw-animate-css']\\);\")",
+      "Bash(node -e \"const p = JSON.parse\\(require\\('fs'\\).readFileSync\\(0,'utf8'\\)\\); console.log\\('main:', p.main\\); console.log\\('exports:', JSON.stringify\\(p.exports, null, 2\\)\\); console.log\\('style:', p.style\\);\")",
+      "Bash(grep -l \"animate-in\\\\|--animate-in\" .next/dev/static/chunks/*.css)",
+      "Bash(grep -c \"fade-in\\\\|animate-in\\\\|zoom-in\" .next/dev/static/chunks/app_globals_css_0w3-wzy._.single.css)",
+      "Bash(awk '/\\\\.animate-in \\\\{/,/\\\\}/' .next/dev/static/chunks/app_globals_css_0w3-wzy._.single.css)",
+      "Bash(awk '/\\\\.fade-in-0 \\\\{/,/\\\\}/' .next/dev/static/chunks/app_globals_css_0w3-wzy._.single.css)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/tailwindcss/package.json'\\).version\\)\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/tw-animate-css/package.json'\\).peerDependencies || 'no peers'\\)\")"
     ]
   },
   "enabledMcpjsonServers": [

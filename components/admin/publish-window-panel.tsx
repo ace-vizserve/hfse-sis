@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import {
   ArrowRight,
   CheckCircle2,
@@ -11,7 +12,16 @@ import {
   X,
 } from 'lucide-react';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -122,7 +132,7 @@ export function PublishWindowPanel({
   const [from, setFrom] = useState('');
   const [until, setUntil] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,7 +155,6 @@ export function PublishWindowPanel({
 
   async function save(termId: string) {
     setBusy(true);
-    setError(null);
     try {
       const res = await fetch('/api/report-card-publications', {
         method: 'POST',
@@ -165,18 +174,17 @@ export function PublishWindowPanel({
       const reloadBody = await reload.json();
       setPublications((reloadBody.publications ?? []) as Publication[]);
       setEditingTermId(null);
+      toast.success('Publication window saved');
       startTransition(() => router.refresh());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'unknown error');
+      toast.error(e instanceof Error ? e.message : 'Failed to save publication window');
     } finally {
       setBusy(false);
     }
   }
 
   async function revoke(publicationId: string) {
-    if (!confirm('Revoke this publication? Parents will lose access immediately.')) return;
     setBusy(true);
-    setError(null);
     try {
       const res = await fetch(`/api/report-card-publications/${publicationId}`, {
         method: 'DELETE',
@@ -184,9 +192,10 @@ export function PublishWindowPanel({
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? 'revoke failed');
       setPublications((prev) => prev.filter((p) => p.id !== publicationId));
+      toast.success('Publication revoked');
       startTransition(() => router.refresh());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'unknown error');
+      toast.error(e instanceof Error ? e.message : 'Failed to revoke publication');
     } finally {
       setBusy(false);
     }
@@ -194,7 +203,6 @@ export function PublishWindowPanel({
 
   function startEdit(termId: string, existing?: Publication) {
     setEditingTermId(termId);
-    setError(null);
     if (existing) {
       setFrom(existing.publish_from);
       setUntil(existing.publish_until);
@@ -231,14 +239,6 @@ export function PublishWindowPanel({
           <div className="flex items-center gap-2 px-6 pb-4 text-sm text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
             Loading publications…
-          </div>
-        )}
-
-        {error && (
-          <div className="px-6">
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
           </div>
         )}
 
@@ -281,7 +281,7 @@ export function PublishWindowPanel({
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => revoke(existing.id)}
+                            onClick={() => setPendingRevokeId(existing.id)}
                             disabled={busy}
                           >
                             <X className="h-3.5 w-3.5" />
@@ -342,6 +342,36 @@ export function PublishWindowPanel({
           </ul>
         )}
       </CardContent>
+
+      <AlertDialog
+        open={pendingRevokeId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRevokeId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke this publication?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Parents will lose access to the report card immediately. You can re-publish later if
+              needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={async () => {
+                const id = pendingRevokeId;
+                setPendingRevokeId(null);
+                if (id) await revoke(id);
+              }}
+            >
+              Revoke
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

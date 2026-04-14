@@ -3,7 +3,18 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Lock, LockOpen } from 'lucide-react';
+import { toast } from 'sonner';
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 
 export function LockToggle({
@@ -15,20 +26,20 @@ export function LockToggle({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  async function toggle() {
-    const action = isLocked ? 'unlock' : 'lock';
-    if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} this sheet?`)) return;
+  const action: 'lock' | 'unlock' = isLocked ? 'unlock' : 'lock';
+
+  async function runToggle() {
     setBusy(true);
-    setError(null);
     try {
       const res = await fetch(`/api/grading-sheets/${sheetId}/${action}`, { method: 'POST' });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `${action} failed`);
+      toast.success(action === 'lock' ? 'Sheet locked' : 'Sheet unlocked');
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'error');
+      toast.error(e instanceof Error ? e.message : `Failed to ${action} sheet`);
     } finally {
       setBusy(false);
     }
@@ -37,7 +48,7 @@ export function LockToggle({
   return (
     <div className="flex flex-col items-end gap-1">
       <Button
-        onClick={toggle}
+        onClick={() => setConfirmOpen(true)}
         disabled={busy}
         size="sm"
         variant={isLocked ? 'default' : 'destructive'}
@@ -51,7 +62,35 @@ export function LockToggle({
         )}
         {isLocked ? 'Unlock sheet' : 'Lock sheet'}
       </Button>
-      {error && <span className="font-mono text-[10px] text-destructive">{error}</span>}
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {isLocked ? 'Unlock this sheet?' : 'Lock this sheet?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {isLocked
+                ? 'Unlocking lets teachers edit scores again. Any changes made while unlocked are still audited.'
+                : 'Locking prevents teachers from editing scores. Further changes will require an approval reference.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={
+                isLocked ? 'bg-destructive text-white hover:bg-destructive/90' : undefined
+              }
+              onClick={async () => {
+                setConfirmOpen(false);
+                await runToggle();
+              }}
+            >
+              {isLocked ? 'Unlock' : 'Lock'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

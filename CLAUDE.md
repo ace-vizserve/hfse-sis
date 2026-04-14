@@ -58,6 +58,9 @@ All UI must conform to `docs/context/09-design-system.md`. Colors, fonts, radius
 - **Next.js 16** (App Router, Turbopack, TypeScript) — single deployable at the repo root
 - **Supabase** (Postgres + Auth, `@supabase/ssr`) — single shared project also hosting admissions tables
 - **Tailwind CSS v4** via `@tailwindcss/postcss` (no `tailwind.config.js`)
+- **`tw-animate-css`** — Tailwind v4 animation utilities (`animate-in`, `fade-in-0`, `zoom-in-95`, `slide-in-from-*`). Imported in `app/globals.css`; `.animate-in` / `.animate-out` are overridden with longhand `animation-*` properties there because the package's minified shorthand doesn't parse.
+- **`react-hook-form` + `zod` + `@hookform/resolvers`** + shadcn `Form` primitive (`components/ui/form.tsx`) — canonical stack for any submit-based form. Schemas live in `lib/schemas/`.
+- **`sonner`** via shadcn `components/ui/sonner.tsx` — canonical toast system. `<Toaster />` mounted once in `app/layout.tsx` (light theme, top-right, richColors). All action feedback flows through `toast.success` / `toast.error`, not inline `<Alert>` blocks.
 - **`@tanstack/react-table`** + **`recharts`** — canonical data-table and charting engines for dashboards
 - **Vercel** — deployment target (Root Directory: repo root / blank)
 - **PDF generation deferred** — browser Print / Save as PDF covers current volume. If automation is needed later, prefer Puppeteer-in-Next.js over the original Python/WeasyPrint plan.
@@ -99,13 +102,14 @@ hfse-markbook/
 │   ├── notifications/        ← email-parents-publication.ts (Resend)
 │   ├── report-card/          ← build-report-card.ts (shared staff+parent fetch)
 │   ├── admissions/           ← dashboard.ts — cached read-only query helpers for /admin/admissions
+│   ├── schemas/              ← zod schemas shared by RHF forms (and by API routes once server validation is adopted)
 │   ├── academic-year.ts      ← getCurrentAcademicYear / requireCurrentAyCode
 │   └── sync/                 ← students planner, snapshot loader, normalizers
-├── components/grading/       ← score-entry-grid, lock-toggle, totals-editor, ...
+├── components/grading/       ← score-entry-grid, lock-toggle, totals-editor, use-approval-reference (shadcn Dialog hook replacing window.prompt), ...
 ├── components/admin/         ← teacher-assignments-panel, publish-window-panel, publication-status
 ├── components/admissions/    ← pipeline-cards, funnel/by-level/assessment/referral charts, outdated table, ay-switcher
 ├── components/report-card/   ← report-card-document (shared render, print CSS)
-├── components/ui/            ← shadcn primitives (button/card/table/field/select/tabs/dropdown-menu/sheet/popover/calendar/...) + DateTimePicker wrapper + PageShell layout wrapper
+├── components/ui/            ← shadcn primitives (button/card/table/field/form/select/tabs/dropdown-menu/sheet/dialog/alert-dialog/sonner/popover/calendar/...) + DateTimePicker wrapper + PageShell layout wrapper
 ├── components/{app,parent}-sidebar.tsx
 ├── supabase/
 │   ├── migrations/           ← 001_initial_schema → 008_publication_notified_at
@@ -150,6 +154,8 @@ Original plan had separate `ADMISSIONS_SUPABASE_*` vars; dropped because admissi
 17. **Parent notifications via Resend** — `lib/notifications/email-parents-publication.ts` is called from `POST /api/report-card-publications` and is idempotent via the `report_card_publications.notified_at` column (`008_publication_notified_at.sql`). Best-effort: failures log but never fail the publication. Silently no-ops when `RESEND_API_KEY` / `NEXT_PUBLIC_PARENT_PORTAL_URL` are unset, so local dev works without the dep.
 18. **Admissions dashboard is read-only** — Sprint 7 Part A. All queries live in `lib/admissions/dashboard.ts`, wrapped in `unstable_cache` (10-min TTL, tag `admissions-dashboard:${ayCode}`), hitting `ay{YY}_enrolment_applications` × `ay{YY}_enrolment_status` via the service-role client. Hero lives at `/admin/admissions`; the high-signal widgets (pipeline cards + outdated table) are also inlined on the root `/` dashboard for privileged roles so there's one landing page. Outdated-row staleness uses `applicationUpdatedDate ?? created_at` as a fallback because the admissions team never stamps `*UpdatedDate` columns in practice. Superadmin-only CSV export at `/api/admissions/export`. Part B (SharePoint inquiries) remains blocked on HFSE credentials.
 19. **Single dashboard for everyone** — `/admin` index redirects to `/`. Teachers see school stats + grading/report-card quick links; registrar/admin/superadmin additionally see the admissions pipeline snapshot, stale-applications table, and inline admin tools grid. Nested admin routes (`/admin/admissions`, `/admin/sections`, `/admin/sync-students`, `/admin/audit-log`) are unaffected.
+20. **Forms: RHF + zod + shadcn `Form`** — every submit-based form (`login`, `change-password`, `manual-add-student`, `new-sheet`) uses `useForm` with `zodResolver`, a schema from `lib/schemas/`, and `<FormField>`/`<FormMessage>` for per-field errors. Autosave grids (`score-entry-grid`, `letter-grade-grid`, `comments-grid`, `attendance-grid`), the slot-array editor (`totals-editor`), the inline-edit publish panel, and select-only admin panels stay on raw state — RHF's submit lifecycle is a bad fit for per-cell autosave. Schemas live outside `app/` and `components/` so API routes can import them later.
+21. **Feedback: toasts + dialogs, never `window.*` and never inline error alerts** — all action feedback goes through `toast.success`/`toast.error` (sonner). Destructive confirmations use shadcn `AlertDialog`; locked-sheet approval-reference prompts use shadcn `Dialog` via the shared `components/grading/use-approval-reference.tsx` hook (returns a promise-based `requireApproval()` + the dialog JSX to mount). The only remaining inline `<Alert>` is the empty-state notice in `teacher-assignments-panel.tsx` (persistent informational content, not transient feedback). Native `window.alert` / `window.confirm` / `window.prompt` are banned.
 
 ## Workflow
 

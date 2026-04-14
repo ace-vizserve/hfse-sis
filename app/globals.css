@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -220,5 +221,36 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Override tw-animate-css's .animate-in / .animate-out shorthand with longhand
+   animation-* properties. The packaged version emits
+     animation: enter var(...)var(...)var(...);
+   (minified, no spaces between var() calls), which some CSS shorthand parsers
+   fail to tokenize, leaving dialogs/sheets/alert-dialogs un-animated. The
+   keyframes (@keyframes enter / exit) and the fade-in-0 / zoom-in-95 /
+   slide-in-from-* utilities from tw-animate-css still set --tw-enter-* vars
+   correctly, so this override alone is enough to get everything moving.
+   ------------------------------------------------------------------------- */
+@layer utilities {
+  .animate-in {
+    animation-name: enter;
+    animation-duration: var(--tw-duration, 150ms);
+    animation-timing-function: var(--tw-ease, ease);
+    animation-delay: var(--tw-animation-delay, 0s);
+    animation-iteration-count: var(--tw-animation-iteration-count, 1);
+    animation-direction: var(--tw-animation-direction, normal);
+    animation-fill-mode: var(--tw-animation-fill-mode, both);
+  }
+  .animate-out {
+    animation-name: exit;
+    animation-duration: var(--tw-duration, 150ms);
+    animation-timing-function: var(--tw-ease, ease);
+    animation-delay: var(--tw-animation-delay, 0s);
+    animation-iteration-count: var(--tw-animation-iteration-count, 1);
+    animation-direction: var(--tw-animation-direction, normal);
+    animation-fill-mode: var(--tw-animation-fill-mode, both);
   }
 }

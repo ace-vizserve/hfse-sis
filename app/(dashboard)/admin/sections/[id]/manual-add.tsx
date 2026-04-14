@@ -1,20 +1,24 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, UserPlus } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from '@/components/ui/field';
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Sheet,
   SheetClose,
@@ -25,6 +29,18 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import {
+  ManualAddStudentSchema,
+  type ManualAddStudentInput,
+} from '@/lib/schemas/manual-add-student';
+
+const DEFAULTS: ManualAddStudentInput = {
+  student_number: '',
+  last_name: '',
+  first_name: '',
+  middle_name: '',
+  late_enrollee: false,
+};
 
 export function ManualAddStudent({
   sectionId,
@@ -35,61 +51,43 @@ export function ManualAddStudent({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    student_number: '',
-    last_name: '',
-    first_name: '',
-    middle_name: '',
-    late_enrollee: false,
+  const form = useForm<ManualAddStudentInput>({
+    resolver: zodResolver(ManualAddStudentSchema),
+    defaultValues: DEFAULTS,
   });
 
-  function reset() {
-    setForm({
-      student_number: '',
-      last_name: '',
-      first_name: '',
-      middle_name: '',
-      late_enrollee: false,
-    });
-    setError(null);
-  }
-
-  async function submit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
+  async function onSubmit(values: ManualAddStudentInput) {
     try {
       const res = await fetch(`/api/sections/${sectionId}/students`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          student_number: form.student_number.trim(),
-          last_name: form.last_name.trim(),
-          first_name: form.first_name.trim(),
-          middle_name: form.middle_name.trim() || null,
-          enrollment_status: form.late_enrollee ? 'late_enrollee' : 'active',
+          student_number: values.student_number,
+          last_name: values.last_name,
+          first_name: values.first_name,
+          middle_name: values.middle_name?.trim() || null,
+          enrollment_status: values.late_enrollee ? 'late_enrollee' : 'active',
         }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? 'failed');
+      toast.success('Student added');
       setOpen(false);
-      reset();
+      form.reset(DEFAULTS);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'unknown error');
-    } finally {
-      setBusy(false);
+      toast.error(e instanceof Error ? e.message : 'Failed to add student');
     }
   }
+
+  const busy = form.formState.isSubmitting;
 
   return (
     <Sheet
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) reset();
+        if (!next) form.reset(DEFAULTS);
       }}
     >
       <SheetTrigger asChild>
@@ -111,88 +109,112 @@ export function ManualAddStudent({
           </SheetDescription>
         </SheetHeader>
 
-        <form onSubmit={submit} className="flex flex-1 flex-col">
-          <div className="flex-1 overflow-y-auto p-6">
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="ma-student-number">Student number</FieldLabel>
-                <Input
-                  id="ma-student-number"
-                  required
-                  autoFocus
-                  value={form.student_number}
-                  onChange={(e) => setForm({ ...form, student_number: e.target.value })}
-                />
-                <FieldDescription>
-                  Stable cross-year ID. Never reused even after the student leaves.
-                </FieldDescription>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="ma-last-name">Last name</FieldLabel>
-                <Input
-                  id="ma-last-name"
-                  required
-                  value={form.last_name}
-                  onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="ma-first-name">First name</FieldLabel>
-                <Input
-                  id="ma-first-name"
-                  required
-                  value={form.first_name}
-                  onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="ma-middle-name">Middle name</FieldLabel>
-                <Input
-                  id="ma-middle-name"
-                  value={form.middle_name}
-                  onChange={(e) => setForm({ ...form, middle_name: e.target.value })}
-                />
-                <FieldDescription>Optional.</FieldDescription>
-              </Field>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1 flex-col">
+            <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-6">
+              <FormField
+                control={form.control}
+                name="student_number"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Student number</FormLabel>
+                    <FormControl>
+                      <Input autoFocus {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Stable cross-year ID. Never reused even after the student leaves.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-              <Label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm font-normal text-foreground">
-                <Checkbox
-                  checked={form.late_enrollee}
-                  onCheckedChange={(v) => setForm({ ...form, late_enrollee: v === true })}
-                  className="mt-0.5"
-                />
-                <span>
-                  Late enrollee
-                  <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                    Assessments before the enrolment date will be marked N/A.
-                  </span>
-                </span>
-              </Label>
+              <FormField
+                control={form.control}
+                name="last_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Last name</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-            </FieldGroup>
-          </div>
+              <FormField
+                control={form.control}
+                name="first_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>First name</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-          <SheetFooter className="flex-row justify-end gap-2 border-t border-border p-6 sm:justify-end">
-            <SheetClose asChild>
-              <Button type="button" variant="outline" size="sm">
-                Cancel
+              <FormField
+                control={form.control}
+                name="middle_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Middle name</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ''} />
+                    </FormControl>
+                    <FormDescription>Optional.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="late_enrollee"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm font-normal text-foreground">
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={(v) => field.onChange(v === true)}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          Late enrollee
+                          <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                            Assessments before the enrolment date will be marked N/A.
+                          </span>
+                        </span>
+                      </label>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <SheetFooter className="flex-row justify-end gap-2 border-t border-border p-6 sm:justify-end">
+              <SheetClose asChild>
+                <Button type="button" variant="outline" size="sm">
+                  Cancel
+                </Button>
+              </SheetClose>
+              <Button type="submit" size="sm" disabled={busy}>
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <UserPlus className="h-4 w-4" />
+                )}
+                {busy ? 'Adding…' : 'Add student'}
               </Button>
-            </SheetClose>
-            <Button type="submit" size="sm" disabled={busy}>
-              {busy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <UserPlus className="h-4 w-4" />
-              )}
-              {busy ? 'Adding…' : 'Add student'}
-            </Button>
-          </SheetFooter>
-        </form>
+            </SheetFooter>
+          </form>
+        </Form>
       </SheetContent>
     </Sheet>
   );

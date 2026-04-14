@@ -2,8 +2,8 @@
 
 import { useState, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useApprovalReference } from './use-approval-reference';
 
 export type GradeRow = {
   entry_id: string;
@@ -65,8 +66,11 @@ export function ScoreEntryGrid({
   requireApproval = false,
 }: Props) {
   const [rows, setRows] = useState<GradeRow[]>(initialRows);
-  const [errors, setErrors] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const {
+    requireApproval: getApprovalRef,
+    dialog: approvalDialog,
+  } = useApprovalReference();
   const [approvalRef, setApprovalRef] = useState<string>('');
 
   const locked = readOnly && !requireApproval;
@@ -75,24 +79,16 @@ export function ScoreEntryGrid({
     async (entryId: string, body: Partial<Pick<GradeRow, 'ww_scores' | 'pt_scores' | 'qa_score' | 'is_na'>>) => {
       let approval = approvalRef;
       if (requireApproval && !approval) {
-        const entered = window.prompt(
-          'This sheet is locked. Enter the approval reference (e.g. "Email from Ms. Chandana, 2026-03-15"):',
-          '',
-        );
-        if (!entered || !entered.trim()) {
-          setErrors((e) => ({ ...e, [entryId]: 'approval reference required' }));
+        const entered = await getApprovalRef();
+        if (!entered) {
+          toast.error('Approval reference required');
           return;
         }
-        approval = entered.trim();
+        approval = entered;
         setApprovalRef(approval);
       }
 
       setSavingId(entryId);
-      setErrors((e) => {
-        const n = { ...e };
-        delete n[entryId];
-        return n;
-      });
       try {
         const payload = requireApproval ? { ...body, approval_reference: approval } : body;
         const res = await fetch(`/api/grading-sheets/${sheetId}/entries/${entryId}`, {
@@ -102,7 +98,10 @@ export function ScoreEntryGrid({
         });
         const data = await res.json();
         if (!res.ok) {
-          setErrors((e) => ({ ...e, [entryId]: data.error ?? 'save failed' }));
+          const row = rows.find((r) => r.entry_id === entryId);
+          toast.error(
+            `Failed to save ${row ? `#${row.index_number} ${row.student_name}` : 'entry'}: ${data.error ?? 'save failed'}`,
+          );
           return;
         }
         setRows((current) =>
@@ -124,12 +123,12 @@ export function ScoreEntryGrid({
           ),
         );
       } catch (e) {
-        setErrors((er) => ({ ...er, [entryId]: e instanceof Error ? e.message : 'error' }));
+        toast.error(e instanceof Error ? e.message : 'Failed to save entry');
       } finally {
         setSavingId(null);
       }
     },
-    [sheetId, requireApproval, approvalRef],
+    [sheetId, requireApproval, approvalRef, getApprovalRef, rows],
   );
 
   const updateLocal = useCallback(
@@ -298,20 +297,7 @@ export function ScoreEntryGrid({
         )}
       </div>
 
-      {Object.entries(errors).length > 0 && (
-        <Alert variant="destructive">
-          <AlertDescription className="space-y-1">
-            {Object.entries(errors).map(([id, msg]) => {
-              const row = rows.find((r) => r.entry_id === id);
-              return (
-                <div key={id}>
-                  #{row?.index_number} {row?.student_name}: {msg}
-                </div>
-              );
-            })}
-          </AlertDescription>
-        </Alert>
-      )}
+      {approvalDialog}
     </div>
   );
 }

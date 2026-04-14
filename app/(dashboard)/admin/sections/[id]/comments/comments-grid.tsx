@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import {
@@ -36,16 +37,10 @@ export function CommentsGrid({
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
 
   async function save(row: Row, nextComment: string) {
     if ((row.comment ?? '') === nextComment) return;
     setSavingId(row.student_id);
-    setErrors((e) => {
-      const n = { ...e };
-      delete n[row.student_id];
-      return n;
-    });
     try {
       const res = await fetch(`/api/sections/${sectionId}/comments`, {
         method: 'PUT',
@@ -66,10 +61,9 @@ export function CommentsGrid({
       setSavedId(row.student_id);
       setTimeout(() => setSavedId((id) => (id === row.student_id ? null : id)), 1500);
     } catch (e) {
-      setErrors((er) => ({
-        ...er,
-        [row.student_id]: e instanceof Error ? e.message : 'error',
-      }));
+      toast.error(
+        `Failed to save comment for #${row.index_number} ${row.student_name}: ${e instanceof Error ? e.message : 'error'}`,
+      );
     } finally {
       setSavingId((s) => (s === row.student_id ? null : s));
     }
@@ -159,9 +153,6 @@ export function CommentsGrid({
                     </span>
                   )}
                 </span>
-                {errors[r.student_id] && (
-                  <span className="text-destructive">{errors[r.student_id]}</span>
-                )}
               </div>
             </CardContent>
           </Card>

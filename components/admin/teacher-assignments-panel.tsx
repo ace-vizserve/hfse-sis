@@ -3,8 +3,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Plus, Trash2, UserCheck, UserCog, Users } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,16 +57,15 @@ export function TeacherAssignmentsPanel({
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const [role, setRole] = useState<'form_adviser' | 'subject_teacher'>('subject_teacher');
   const [teacherId, setTeacherId] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
-    setError(null);
     try {
       const [tRes, aRes] = await Promise.all([
         fetch('/api/users/teachers'),
@@ -68,7 +78,7 @@ export function TeacherAssignmentsPanel({
       setTeachers(tBody.teachers ?? []);
       setAssignments(aBody.assignments ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'error');
+      toast.error(e instanceof Error ? e.message : 'Failed to load teacher assignments');
     } finally {
       setLoading(false);
     }
@@ -80,15 +90,14 @@ export function TeacherAssignmentsPanel({
 
   async function createAssignment() {
     if (!teacherId) {
-      setError('pick a teacher');
+      toast.error('Pick a teacher');
       return;
     }
     if (role === 'subject_teacher' && !subjectId) {
-      setError('pick a subject');
+      toast.error('Pick a subject');
       return;
     }
     setBusy(true);
-    setError(null);
     try {
       const res = await fetch('/api/teacher-assignments', {
         method: 'POST',
@@ -104,27 +113,27 @@ export function TeacherAssignmentsPanel({
       if (!res.ok) throw new Error(body.error ?? 'failed');
       setTeacherId('');
       setSubjectId('');
+      toast.success('Assignment added');
       await load();
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'error');
+      toast.error(e instanceof Error ? e.message : 'Failed to add assignment');
     } finally {
       setBusy(false);
     }
   }
 
   async function removeAssignment(id: string) {
-    if (!confirm('Remove this assignment?')) return;
     setBusy(true);
-    setError(null);
     try {
       const res = await fetch(`/api/teacher-assignments/${id}`, { method: 'DELETE' });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? 'failed');
+      toast.success('Assignment removed');
       await load();
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'error');
+      toast.error(e instanceof Error ? e.message : 'Failed to remove assignment');
     } finally {
       setBusy(false);
     }
@@ -182,7 +191,7 @@ export function TeacherAssignmentsPanel({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => removeAssignment(formAdviser.id)}
+                onClick={() => setPendingRemoveId(formAdviser.id)}
                 disabled={busy}
                 aria-label="Remove form adviser"
                 className="text-muted-foreground hover:text-destructive"
@@ -252,7 +261,7 @@ export function TeacherAssignmentsPanel({
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => removeAssignment(a.id)}
+                      onClick={() => setPendingRemoveId(a.id)}
                       disabled={busy}
                       aria-label="Remove subject teacher"
                       className="text-muted-foreground hover:text-destructive"
@@ -349,11 +358,6 @@ export function TeacherAssignmentsPanel({
             </Alert>
           )}
 
-          {error && (
-            <Alert variant="destructive" className="mt-4">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
         </CardContent>
         <CardFooter className="justify-end border-t border-border pt-6">
           <Button
@@ -370,6 +374,35 @@ export function TeacherAssignmentsPanel({
           </Button>
         </CardFooter>
       </Card>
+
+      <AlertDialog
+        open={pendingRemoveId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemoveId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this assignment?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The teacher will immediately lose access to this section. You can re-assign them later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={async () => {
+                const id = pendingRemoveId;
+                setPendingRemoveId(null);
+                if (id) await removeAssignment(id);
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

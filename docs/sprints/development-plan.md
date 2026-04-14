@@ -6,7 +6,7 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 
 **Stack:** Next.js 16 (App Router) + Supabase + Vercel. Python/FastAPI/WeasyPrint PDF service from the original plan has been deferred (see Sprint 6 decision note); browser print handles current volume.
 
-## Status snapshot (last updated 2026-04-17)
+## Status snapshot (last updated 2026-04-18)
 
 | Sprint | Title | Status |
 |---|---|---|
@@ -18,6 +18,8 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 | 6 | PDF Generation & Polish | ✅ Done (2026-04-16) — Aurora Vault v2 + close-out pass: grading grid polish (exceeds-max ring, withdrawn strike, plain-text locked mode, `is_na` toggle, quarterly color coding), blank-counts column on `/grading`, Resend-powered parent email notifications on publication (idempotent via `notified_at`). PDF automation, mobile pass, and previous-term comparison intentionally deferred — see backlog |
 | — | Teacher Assignments _(added mid-flight)_ | ✅ Done — `teacher_assignments` table + CRUD UI + gates on grading list & comments |
 | 7 | Admissions Dashboard (Phase 2) | 🔶 Part A done (2026-04-17) — pipeline cards, funnel, applications-by-level, outdated table, doc completion (live), assessment outcomes, referral sources, AY switcher, superadmin CSV export. Part B (SharePoint inquiries) still blocked on HFSE credentials |
+| 8 | Verified Student P-Files (Document Management) | 📋 Planned (post-phase-2) — dedicated module for admissions staff to create/update verified p-files against `enrolment_documents` with full revision history. Details TBD |
+| — | Forms + feedback polish pass _(cross-cutting, post-Sprint 7)_ | ✅ Done — RHF+zod+shadcn `Form` on all 4 submit-based forms (schemas in `lib/schemas/`), sonner `<Toaster>` mounted once in `app/layout.tsx`, shadcn `AlertDialog` for destructive confirms, shadcn `Dialog` via shared `useApprovalReference()` hook replacing all `window.prompt()`, `tw-animate-css` wired up (with `.animate-in`/`.animate-out` longhand overrides in `globals.css` because the package's minified shorthand was breaking dialog/sheet animations) |
 
 ### Cross-cutting improvements backlog
 
@@ -534,6 +536,47 @@ Final bite closing every deferred polish item that could ship without new data, 
 - Conversion funnel percentages are verified against raw counts
 - Part B: Inquiry list last-updated timestamp is visible and staleness alert triggers correctly
 - Part B: Inquiry-to-application matching correctly identifies converted leads
+
+---
+
+## Sprint 8 — Verified Student P-Files (Document Management) 📋 Planned
+
+**Goal:** Give admissions staff a dedicated module to create, update, and audit verified student p-files — one per enrolled student — with full revision history. This is a **separate concern from Sprint 7 Part A's live doc-completion widget**, which only reports against the raw admissions intake (`ay{YY}_enrolment_documents`). Sprint 8 is the canonical, verified record that admissions maintains after intake.
+
+**Phasing:** Post-phase-2. Pick up after Sprint 7 Part B (SharePoint inquiries) or in parallel once requirements are frozen.
+
+### Scope (from initial brief — details TBD)
+
+- **Table of record:** `enrolment_documents` — supports create/update against enrolled students with revision history. Schema, FK conventions, and storage strategy to be documented in a dedicated `docs/context/11-document-management.md` once details land.
+- **All documents are required.** There is no "core vs. optional" split. Every listed document must be present, with one explicit escape hatch:
+  - **"To follow" flag** — parents/guardians can mark an individual document as pending (e.g. passport application in progress). A p-file with "to follow" items is still incomplete, but the incompleteness is *expected and acknowledged*, not a data-quality gap. This supersedes the Sprint 7 Part A "all 5 non-null = complete" heuristic for the authoritative view.
+- **Parent/guardian passports** are part of the required set, alongside the existing student documents (medical, passport, birth cert, educational cert, ID picture, etc.).
+- **Document status is category-dependent** — every document falls into one of two categories, and the allowed status set differs per category:
+  - **Non-expiring** (birth certificate, educational certificate, ID picture, …) → statuses: `Uploaded`, `Valid`, `Rejected`
+  - **Expiring** (passport, medical, visa, guardian passport, …) → statuses: `Valid`, `Expired`, `Rejected`
+  - Expiring documents carry a paired expiration column (e.g. `passport` → `passportExpiry`, `medical` → `medicalExpiry`). The UI should read the expiry and auto-compute `Valid` vs `Expired` based on today's date — `Rejected` stays manual. A dashboard filter for "expiring in the next N days" falls out of this model for free and should ship with the first cut.
+- **Revision history:** every create/update writes a new revision row rather than mutating in place; the module reads "current" via the latest revision per (student, document_type).
+- **Admissions staff** own the module. Registrar/admin/superadmin see everything; teachers have no access; parents see their own child's p-file status (read-only) if the parent portal is extended later.
+
+### Open questions (to resolve with user before execution)
+
+- [ ] Full document checklist — which document types count, and are any level-specific (Sec 3–4 transcripts, etc.)?
+- [ ] Storage — Supabase Storage bucket layout, file-type and size limits, retention policy
+- [ ] Revision semantics — is a revision created on every save, or only on file replacement vs. metadata-only edits?
+- [ ] "To follow" expiry — do pending items get a due date / auto-reminder?
+- [ ] Parent-facing view — read-only status page only, or can parents upload new revisions themselves?
+- [ ] Relationship to `ay{YY}_enrolment_documents` — is Sprint 8's `enrolment_documents` a promotion of verified rows out of the admissions intake, or a completely separate table that references the student by `studentNumber`?
+- [ ] Audit log integration — reuse `public.audit_log` via `lib/audit/log-action.ts`, or add a domain-specific audit trail?
+- [ ] Dashboard impact — should Sprint 7's live "Document completion rate" widget read from `enrolment_documents` instead of the raw admissions table once this ships?
+
+### Definition of Done (draft)
+
+- `enrolment_documents` schema migrated, with revision history working end-to-end
+- Admissions UI lists every enrolled student with a per-document status (present / to-follow / missing), filterable and searchable via the `grading-data-table.tsx` canonical pattern
+- Upload + replace writes a new revision; old revisions are retrievable
+- "To follow" flag round-trips via the same form that handles file upload
+- Every mutation writes to the audit log (actor, action, entity_type=`p_file`, entity_id=revision id)
+- RLS on `enrolment_documents` scoped to admissions staff roles
 
 ---
 

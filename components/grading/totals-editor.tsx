@@ -3,8 +3,18 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Minus, Pencil, Plus, Save } from 'lucide-react';
+import { toast } from 'sonner';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Field,
@@ -23,6 +33,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import { useApprovalReference } from './use-approval-reference';
 
 type Props = {
   sheetId: string;
@@ -49,13 +60,16 @@ export function TotalsEditor({
   const [pt, setPt] = useState<number[]>(initialPt);
   const [qa, setQa] = useState<number | null>(initialQa);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [shrinkConfirmOpen, setShrinkConfirmOpen] = useState(false);
+  const {
+    requireApproval: getApprovalRef,
+    dialog: approvalDialog,
+  } = useApprovalReference();
 
   function reset() {
     setWw(initialWw);
     setPt(initialPt);
     setQa(initialQa);
-    setError(null);
   }
 
   function updateAt(arr: number[], setArr: (v: number[]) => void, i: number, v: number) {
@@ -75,32 +89,28 @@ export function TotalsEditor({
     setArr(arr.slice(0, -1));
   }
 
-  async function save(e: React.FormEvent<HTMLFormElement>) {
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-
     const shrinking = ww.length < initialWw.length || pt.length < initialPt.length;
     if (shrinking) {
-      const ok = confirm(
-        'Removing slots will delete any scores entered in those slots for every student. Continue?',
-      );
-      if (!ok) return;
+      setShrinkConfirmOpen(true);
+      return;
     }
+    void doSave();
+  }
 
+  async function doSave() {
     let approval_reference: string | undefined;
     if (isLocked) {
-      const entered = window.prompt(
-        'This sheet is locked. Enter the approval reference for the totals change:',
-        '',
-      );
-      if (!entered || !entered.trim()) {
-        setError('approval reference required');
+      const entered = await getApprovalRef();
+      if (!entered) {
+        toast.error('Approval reference required');
         return;
       }
-      approval_reference = entered.trim();
+      approval_reference = entered;
     }
 
     setBusy(true);
-    setError(null);
     try {
       const res = await fetch(`/api/grading-sheets/${sheetId}/totals`, {
         method: 'PATCH',
@@ -115,9 +125,10 @@ export function TotalsEditor({
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? 'save failed');
       setOpen(false);
+      toast.success('Totals saved — grades recomputed');
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'error');
+      toast.error(e instanceof Error ? e.message : 'Failed to save totals');
     } finally {
       setBusy(false);
     }
@@ -149,7 +160,7 @@ export function TotalsEditor({
           </SheetDescription>
         </SheetHeader>
 
-        <form onSubmit={save} className="flex flex-1 flex-col">
+        <form onSubmit={onSubmit} className="flex flex-1 flex-col">
           <div className="flex-1 overflow-y-auto p-6">
             <FieldGroup>
               <SlotSection
@@ -187,11 +198,6 @@ export function TotalsEditor({
                 <FieldDescription>Single quarterly assessment denominator.</FieldDescription>
               </Field>
 
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
             </FieldGroup>
           </div>
 
@@ -212,6 +218,32 @@ export function TotalsEditor({
           </SheetFooter>
         </form>
       </SheetContent>
+
+      <AlertDialog open={shrinkConfirmOpen} onOpenChange={setShrinkConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove slots?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Removing slots will delete any scores entered in those slots for every student.
+              This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={async () => {
+                setShrinkConfirmOpen(false);
+                await doSave();
+              }}
+            >
+              Remove slots & save
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {approvalDialog}
     </Sheet>
   );
 }

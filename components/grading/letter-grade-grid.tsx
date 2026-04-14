@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card } from '@/components/ui/card';
 import {
   Select,
@@ -21,6 +21,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { GradeRow } from './score-entry-grid';
+import { useApprovalReference } from './use-approval-reference';
 
 const LETTER_OPTIONS = ['A', 'B', 'C', 'IP', 'UG', 'NA', 'INC', 'CO', 'E'] as const;
 const EMPTY_LETTER = '__none__';
@@ -38,26 +39,24 @@ export function LetterGradeGrid({
 }) {
   const [rows, setRows] = useState<GradeRow[]>(initialRows);
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
   const [approvalRef, setApprovalRef] = useState<string>('');
+  const {
+    requireApproval: getApprovalRef,
+    dialog: approvalDialog,
+  } = useApprovalReference();
 
   async function save(entryId: string, letter: string | null) {
     let approval = approvalRef;
     if (requireApproval && !approval) {
-      const entered = window.prompt('This sheet is locked. Enter the approval reference:', '');
-      if (!entered || !entered.trim()) {
-        setErrors((er) => ({ ...er, [entryId]: 'approval reference required' }));
+      const entered = await getApprovalRef();
+      if (!entered) {
+        toast.error('Approval reference required');
         return;
       }
-      approval = entered.trim();
+      approval = entered;
       setApprovalRef(approval);
     }
     setSavingId(entryId);
-    setErrors((e) => {
-      const n = { ...e };
-      delete n[entryId];
-      return n;
-    });
     try {
       const payload = requireApproval
         ? { letter_grade: letter, approval_reference: approval }
@@ -69,7 +68,10 @@ export function LetterGradeGrid({
       });
       const data = await res.json();
       if (!res.ok) {
-        setErrors((er) => ({ ...er, [entryId]: data.error ?? 'save failed' }));
+        const row = rows.find((r) => r.entry_id === entryId);
+        toast.error(
+          `Failed to save ${row ? `#${row.index_number} ${row.student_name}` : 'entry'}: ${data.error ?? 'save failed'}`,
+        );
         return;
       }
       setRows((current) =>
@@ -153,15 +155,7 @@ export function LetterGradeGrid({
         </div>
       )}
 
-      {Object.entries(errors).length > 0 && (
-        <Alert variant="destructive">
-          <AlertDescription className="space-y-1">
-            {Object.entries(errors).map(([id, msg]) => (
-              <div key={id}>{msg}</div>
-            ))}
-          </AlertDescription>
-        </Alert>
-      )}
+      {approvalDialog}
     </div>
   );
 }

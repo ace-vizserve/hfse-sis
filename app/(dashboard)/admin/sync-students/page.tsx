@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import {
-  AlertCircle,
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
@@ -16,8 +15,18 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -61,40 +70,36 @@ export default function SyncStudentsPage() {
   const [loading, setLoading] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [result, setResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [commitConfirmOpen, setCommitConfirmOpen] = useState(false);
 
   async function loadPreview() {
     setLoading(true);
-    setError(null);
-    setResult(null);
     try {
       const res = await fetch('/api/students/sync/stats');
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? 'preview failed');
       setPreview(body);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'unknown error');
+      toast.error(e instanceof Error ? e.message : 'Failed to load sync preview');
     } finally {
       setLoading(false);
     }
   }
 
   async function commit() {
-    if (!confirm('Apply this sync to the grading database? This cannot be undone.')) return;
     setCommitting(true);
-    setError(null);
     try {
       const res = await fetch('/api/students/sync', { method: 'POST' });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? 'commit failed');
       const s = body.summary;
-      setResult(
-        `Synced ${s.enrolled} enrolments (${s.added} new students, ${s.updated} updated, ${s.withdrawn} withdrawn, ${s.reactivated} reactivated).`,
-      );
+      toast.success('Sync complete', {
+        description: `${s.enrolled} enrolments · ${s.added} new · ${s.updated} updated · ${s.withdrawn} withdrawn · ${s.reactivated} reactivated`,
+        duration: 10000,
+      });
       setPreview(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'unknown error');
+      toast.error(e instanceof Error ? e.message : 'Failed to apply sync');
     } finally {
       setCommitting(false);
     }
@@ -151,7 +156,11 @@ export default function SyncStudentsPage() {
               {loading ? 'Loading preview…' : preview ? 'Reload preview' : 'Load preview'}
             </Button>
             {preview && (
-              <Button onClick={commit} disabled={committing} variant="outline">
+              <Button
+                onClick={() => setCommitConfirmOpen(true)}
+                disabled={committing}
+                variant="outline"
+              >
                 {committing ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -163,21 +172,6 @@ export default function SyncStudentsPage() {
           </div>
         </CardContent>
       </Card>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Sync failed</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      {result && (
-        <Alert>
-          <CheckCircle2 className="h-4 w-4" />
-          <AlertTitle>Sync complete</AlertTitle>
-          <AlertDescription>{result}</AlertDescription>
-        </Alert>
-      )}
 
       {stats && (
         <>
@@ -323,6 +317,30 @@ export default function SyncStudentsPage() {
           )}
         </>
       )}
+
+      <AlertDialog open={commitConfirmOpen} onOpenChange={setCommitConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Apply this sync?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This applies all previewed changes to the grading database — adds, updates,
+              withdrawals, and reactivations. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={async () => {
+                setCommitConfirmOpen(false);
+                await commit();
+              }}
+            >
+              Apply sync
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageShell>
   );
 }

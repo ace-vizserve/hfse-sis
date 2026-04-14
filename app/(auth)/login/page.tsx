@@ -1,34 +1,47 @@
 "use client";
 
-import { AlertCircle, Loader2, Lock, ShieldCheck } from "lucide-react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Loader2, Lock, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { LoginSchema, type LoginInput } from "@/lib/schemas/login";
 import { createClient } from "@/lib/supabase/client";
+
+const INPUT_CLASS =
+  "h-11 w-full rounded-lg border border-hairline bg-white px-3.5 text-[15px] text-ink shadow-input outline-none transition placeholder:text-ink-5 focus:border-brand-indigo focus:ring-4 focus:ring-brand-indigo/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-4 aria-[invalid=true]:ring-destructive/10";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const form = useForm<LoginInput>({
+    resolver: zodResolver(LoginSchema),
+    defaultValues: { email: "", password: "" },
+  });
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+  async function onSubmit(values: LoginInput) {
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
+    const { error } = await supabase.auth.signInWithPassword(values);
     if (error) {
-      setError(error.message);
+      form.setError("password", { message: error.message });
+      toast.error(error.message);
       return;
     }
     router.replace("/");
     router.refresh();
   }
+
+  const loading = form.formState.isSubmitting;
 
   return (
     <div className="grid min-h-svh bg-white lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
@@ -59,66 +72,67 @@ export default function LoginPage() {
               </p>
             </div>
 
-            <form onSubmit={onSubmit} noValidate className="space-y-5">
-              {/* Email */}
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="email"
-                  className="block text-[13px] font-medium text-ink-2">
-                  Work email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  autoFocus
-                  placeholder="you@hfse.edu.sg"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  aria-invalid={error ? true : undefined}
-                  className="h-11 w-full rounded-lg border border-hairline bg-white px-3.5 text-[15px] text-ink shadow-input outline-none transition placeholder:text-ink-5 focus:border-brand-indigo focus:ring-4 focus:ring-brand-indigo/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-4 aria-[invalid=true]:ring-destructive/10"
+            <Form {...form}>
+              <form
+                onSubmit={form.handleSubmit(onSubmit)}
+                noValidate
+                className="space-y-5"
+              >
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="block text-[13px] font-medium text-ink-2">
+                        Work email
+                      </FormLabel>
+                      <FormControl>
+                        <input
+                          type="email"
+                          autoComplete="email"
+                          autoFocus
+                          placeholder="you@hfse.edu.sg"
+                          className={INPUT_CLASS}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-              </div>
 
-              {/* Password */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label
-                    htmlFor="password"
-                    className="block text-[13px] font-medium text-ink-2">
-                    Password
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((s) => !s)}
-                    aria-pressed={showPassword}
-                    className="text-[12px] font-medium text-ink-4 transition hover:text-ink">
-                    {showPassword ? "Hide" : "Show"}
-                  </button>
-                </div>
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  required
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  aria-invalid={error ? true : undefined}
-                  className="h-11 w-full rounded-lg border border-hairline bg-white px-3.5 text-[15px] text-ink shadow-input outline-none transition placeholder:text-ink-5 focus:border-brand-indigo focus:ring-4 focus:ring-brand-indigo/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-4 aria-[invalid=true]:ring-destructive/10"
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <FormLabel className="block text-[13px] font-medium text-ink-2">
+                          Password
+                        </FormLabel>
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((s) => !s)}
+                          aria-pressed={showPassword}
+                          className="text-[12px] font-medium text-ink-4 transition hover:text-ink"
+                        >
+                          {showPassword ? "Hide" : "Show"}
+                        </button>
+                      </div>
+                      <FormControl>
+                        <input
+                          type={showPassword ? "text" : "password"}
+                          autoComplete="current-password"
+                          className={INPUT_CLASS}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-              </div>
 
-              {/* Error */}
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              {/* Submit */}
-              <button
+                <button
                 type="submit"
                 disabled={loading}
                 className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-brand-indigo to-brand-indigo-deep text-[14px] font-medium text-white shadow-button transition-all duration-150 hover:from-brand-indigo-light hover:to-brand-indigo hover:shadow-button-hover active:translate-y-px active:shadow-button-active focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-indigo/25 disabled:cursor-not-allowed disabled:opacity-80">
@@ -126,10 +140,11 @@ export default function LoginPage() {
                 {loading ? "Signing in…" : "Sign in"}
               </button>
 
-              <p className="pt-1 text-center text-[13px] text-ink-4">
-                Forgot your password? Contact the registrar&apos;s office.
-              </p>
-            </form>
+                <p className="pt-1 text-center text-[13px] text-ink-4">
+                  Forgot your password? Contact the registrar&apos;s office.
+                </p>
+              </form>
+            </Form>
           </div>
         </div>
 

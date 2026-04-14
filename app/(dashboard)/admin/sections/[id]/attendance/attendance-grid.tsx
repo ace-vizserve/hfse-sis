@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -39,15 +40,9 @@ export function AttendanceGrid({
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
 
   async function saveRow(row: Row) {
     setSavingId(row.enrolment_id);
-    setErrors((e) => {
-      const n = { ...e };
-      delete n[row.enrolment_id];
-      return n;
-    });
     try {
       const res = await fetch(`/api/sections/${sectionId}/attendance`, {
         method: 'PUT',
@@ -65,10 +60,9 @@ export function AttendanceGrid({
       setSavedId(row.enrolment_id);
       setTimeout(() => setSavedId((id) => (id === row.enrolment_id ? null : id)), 1500);
     } catch (e) {
-      setErrors((er) => ({
-        ...er,
-        [row.enrolment_id]: e instanceof Error ? e.message : 'error',
-      }));
+      toast.error(
+        `Failed to save attendance for #${row.index_number} ${row.student_name}: ${e instanceof Error ? e.message : 'error'}`,
+      );
     } finally {
       setSavingId((s) => (s === row.enrolment_id ? null : s));
     }
@@ -178,15 +172,6 @@ export function AttendanceGrid({
           </TableBody>
         </Table>
       </Card>
-      {Object.entries(errors).length > 0 && (
-        <div className="space-y-1">
-          {Object.entries(errors).map(([id, msg]) => (
-            <div key={id} className="text-xs text-destructive">
-              {msg}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
