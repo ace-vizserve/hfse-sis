@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -16,6 +16,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useChangeReference, type ChangeReferenceTarget } from './use-approval-reference';
+import {
+  GridFilterToolbar,
+  DEFAULT_GRID_FILTERS,
+  type GridFilters,
+} from './grid-filter-toolbar';
 
 export type GradeRow = {
   entry_id: string;
@@ -66,9 +71,33 @@ export function ScoreEntryGrid({
 }: Props) {
   const [rows, setRows] = useState<GradeRow[]>(initialRows);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [filters, setFilters] = useState<GridFilters>(DEFAULT_GRID_FILTERS);
   const { requireChangeReference, dialog: approvalDialog } = useChangeReference();
 
   const locked = readOnly && !requireApproval;
+
+  const wwLen = wwTotals.length;
+  const ptLen = ptTotals.length;
+
+  const visibleRows = useMemo(() => {
+    const q = filters.search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (filters.hideWithdrawn && r.withdrawn) return false;
+      if (q) {
+        const hay = `${r.student_name} ${r.student_number}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (filters.blanksOnly) {
+        if (r.withdrawn || r.is_na) return false;
+        const hasBlank =
+          r.ww_scores.slice(0, wwLen).some((v) => v == null) ||
+          r.pt_scores.slice(0, ptLen).some((v) => v == null) ||
+          r.qa_score == null;
+        if (!hasBlank) return false;
+      }
+      return true;
+    });
+  }, [rows, filters, wwLen, ptLen]);
 
   const patchEntry = useCallback(
     async (
@@ -146,6 +175,12 @@ export function ScoreEntryGrid({
 
   return (
     <div className="space-y-3">
+      <GridFilterToolbar
+        filters={filters}
+        onChange={setFilters}
+        total={rows.length}
+        visible={visibleRows.length}
+      />
       <Card className="overflow-hidden p-0">
         <Table>
           <TableHeader>
@@ -176,7 +211,17 @@ export function ScoreEntryGrid({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((r) => {
+            {visibleRows.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={6 + wwLen + ptLen}
+                  className="py-10 text-center text-sm text-muted-foreground"
+                >
+                  No students match the current filters.
+                </TableCell>
+              </TableRow>
+            )}
+            {visibleRows.map((r) => {
               const inputsDisabled = r.withdrawn || r.is_na || readOnly;
               const muted = r.withdrawn || r.is_na || readOnly;
               const rowClass = muted ? 'text-muted-foreground' : '';

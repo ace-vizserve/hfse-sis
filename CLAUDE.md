@@ -87,8 +87,8 @@ hfse-markbook/
 │   ├── (dashboard)/
 │   │   ├── page.tsx          ← root `/` — single dashboard; admin content inlined, role-gated
 │   │   ├── account/          ← /account: self-serve password change (all roles)
-│   │   ├── grading/          ← teacher path: list, [id] grid, advisory comments
-│   │   ├── admin/            ← /admin redirects to /; nested routes live here (admissions, sections, sync, audit-log)
+│   │   ├── grading/          ← teacher path: list, [id] grid, advisory comments, requests (my change requests)
+│   │   ├── admin/            ← /admin redirects to /; nested routes live here (admissions, sections, sync, audit-log, change-requests)
 │   │   │   └── admissions/   ← Sprint 7 Part A full dashboard (pipeline, funnel, outdated, etc)
 │   │   └── report-cards/     ← HTML preview + browser print + publication window
 │   ├── (parent)/parent/      ← parent portal SSO landing + report card view
@@ -113,7 +113,7 @@ hfse-markbook/
 ├── components/ui/            ← shadcn primitives (button/card/table/field/form/select/tabs/dropdown-menu/sheet/dialog/alert-dialog/sonner/popover/calendar/...) + DateTimePicker wrapper + PageShell layout wrapper
 ├── components/{app,parent}-sidebar.tsx
 ├── supabase/
-│   ├── migrations/           ← 001_initial_schema → 008_publication_notified_at
+│   ├── migrations/           ← 001_initial_schema → 009_change_requests
 │   └── seed.sql              ← AY2026 + levels + subjects + sections + terms + configs
 ├── docs/                     ← context docs (incl. 08-admission-dashboard.md, 10-parent-portal.md) + sprint plan
 └── types/index.ts
@@ -160,7 +160,8 @@ Original plan had separate `ADMISSIONS_SUPABASE_*` vars; dropped because admissi
 22. **Three Supabase clients, strict separation.** `createClient()` from `lib/supabase/server.ts` is the default for server components and API route reads — cookie-scoped, RLS-enforced. `createServiceClient()` from `lib/supabase/service.ts` bypasses RLS and is reserved for (a) mutating API routes that write past row-level scoping, (b) school-wide read aggregations where RLS would leak per-user shapes (dashboard stats, admissions analytics), and (c) server-only helpers like `lib/notifications/email-parents-publication.ts`. `createClient()` from `lib/supabase/client.ts` (browser) is rarely used — the only current legitimate caller is `/parent/enter` for the SSO session handoff. Client components should go through API routes, not talk to Supabase directly.
 23. **API route request validation is manual, not zod (yet).** Current shape across every `app/api/**/route.ts`: `const body = await request.json().catch(() => null)` → inline null/required/shape checks → return `NextResponse.json({ error }, { status: 400 })` on failure. Zod schemas in `lib/schemas/` are used by RHF forms only. This is a deliberate deferral — Key Decision #20 notes schemas "can be imported later" by API routes. When a future route is complex enough to justify it, import the schema from `lib/schemas/` and use `schema.safeParse(body)` rather than bolting on a new convention. Until then, match the existing manual pattern.
 24. **Client mutations: raw `fetch` + `toast.error`, no React Query.** Client components mutate via `fetch(url, { method, body })` → `if (!res.ok) throw` → `catch(e) { toast.error(e.message) }`. Reference: `components/grading/totals-editor.tsx`. The one reserved candidate for `@tanstack/react-query` is the grading grid autosave — see `docs/context/11-performance-patterns.md` §4. Everywhere else, follow the raw-`fetch` pattern and do not introduce React Query as a general dependency.
-25. **Dates: ISO 8601 UTC in storage and transit, display-layer local.** Timestamps flow as UTC ISO strings end-to-end (Postgres `timestamptz`, API JSON, server component props). Display conversion to Singapore local happens at render time via `new Date(iso).toLocaleString('en-SG')`. No `dayjs` / `date-fns` / `moment` is imported anywhere — don't add one. Publication windows (`publish_from` / `publish_until`) and audit timestamps follow the same rule. When adding new timestamp fields, keep them UTC in the DB and let the UI format them.
+25. **Locked-sheet edits go through a structured change-request workflow, not free-text approval strings.** Sprint 9, migration `009_change_requests.sql`. Teachers file a `grade_change_requests` row (RHF form in `app/(dashboard)/grading/[id]/request-edit-button.tsx`) with target field + proposed value + reason category + justification ≥20 chars. Admin+ approve/reject at `/admin/change-requests`. Registrar applies the approved request (Path A) or logs a structured data-entry correction (Path B) via a branched dialog in `components/grading/use-approval-reference.tsx`. The entry PATCH route now rejects any `approval_reference` in the body and instead requires `change_request_id` or `correction_reason`; the server re-validates the typed value against the approved proposal and derives the `approval_reference` string itself. Hard Rule #5 still holds (every post-lock mutation writes an `approval_reference` to `grade_audit_log`) — only the client contract changed. Notification emails flow through `lib/notifications/email-change-request.ts` (Resend, best-effort).
+26. **Dates: ISO 8601 UTC in storage and transit, display-layer local.** Timestamps flow as UTC ISO strings end-to-end (Postgres `timestamptz`, API JSON, server component props). Display conversion to Singapore local happens at render time via `new Date(iso).toLocaleString('en-SG')`. No `dayjs` / `date-fns` / `moment` is imported anywhere — don't add one. Publication windows (`publish_from` / `publish_until`) and audit timestamps follow the same rule. When adding new timestamp fields, keep them UTC in the DB and let the UI format them.
 
 ## Workflow
 

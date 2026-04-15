@@ -19,6 +19,7 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 | — | Teacher Assignments _(added mid-flight)_ | ✅ Done — `teacher_assignments` table + CRUD UI + gates on grading list & comments |
 | 7 | Admissions Dashboard (Phase 2) | 🔶 Part A done (2026-04-17) — pipeline cards, funnel, applications-by-level, outdated table, doc completion (live), assessment outcomes, referral sources, AY switcher, superadmin CSV export. Part B (SharePoint inquiries) still blocked on HFSE credentials |
 | 8 | Verified Student P-Files (Document Management) | 📋 Planned (post-phase-2) — dedicated module for admissions staff to create/update verified p-files against `enrolment_documents` with full revision history. Details TBD |
+| 9 | Locked-sheet Change Request Workflow | ✅ Done (2026-04-15) — replaces free-text `approval_reference` with structured teacher→admin→registrar state machine. Migration `009_change_requests.sql` + `/api/change-requests` + teacher request form + `/admin/change-requests` inbox + registrar Path A/B dialog + Resend notifications |
 | — | Forms + feedback polish pass _(cross-cutting, post-Sprint 7)_ | ✅ Done — RHF+zod+shadcn `Form` on all 4 submit-based forms (schemas in `lib/schemas/`), sonner `<Toaster>` mounted once in `app/layout.tsx`, shadcn `AlertDialog` for destructive confirms, shadcn `Dialog` via shared `useApprovalReference()` hook replacing all `window.prompt()`, `tw-animate-css` wired up (with `.animate-in`/`.animate-out` longhand overrides in `globals.css` because the package's minified shorthand was breaking dialog/sheet animations) |
 
 ### Cross-cutting improvements backlog
@@ -579,6 +580,40 @@ Final bite closing every deferred polish item that could ship without new data, 
 - "To follow" flag round-trips via the same form that handles file upload
 - Every mutation writes to the audit log (actor, action, entity_type=`p_file`, entity_id=revision id)
 - RLS on `enrolment_documents` scoped to admissions staff roles
+
+---
+
+## Sprint 9 — Locked-sheet Change Request Workflow ✅ Done (2026-04-15)
+
+**Goal:** Replace the free-text `approval_reference` flow for post-lock edits with a structured request/approve/apply state machine that can be audited, reviewed, and notified on. Hard Rule #5 is preserved — every post-lock mutation still writes an `approval_reference` string to `grade_audit_log` — but the client no longer types it, and the server now derives it from either an approved request (Path A) or a structured data-entry correction reason (Path B).
+
+### Backend (commit `80033c0`)
+
+- [x] Migration `009_change_requests.sql` — `grade_change_requests` table with full lifecycle columns (`pending → approved → applied`, plus `rejected` / `cancelled`), slot-shape constraint, 4 indexes, RLS (authenticated SELECT via `current_user_role()`, deny-all writes — mutations go through service-role in API routes)
+- [x] `lib/schemas/change-request.ts` — zod schemas for create/review/apply payloads, `reason_category` enum, `justification` ≥20 chars
+- [x] `app/api/change-requests/route.ts` — POST (teacher files a request, snapshots `current_value`, audit-logged) + GET (teachers see own, admin+ see all, filterable by `?mine=1` / `?status=` / `?sheet_id=`)
+- [x] `app/api/change-requests/[id]/route.ts` — PATCH (admin+ approve/reject; teacher cancel-own-pending), state-machine validation, `decision_note` required on reject, audit-logged
+- [x] `lib/notifications/email-change-request.ts` — Resend-powered notifier with 3 templates (submitted → admins, decided → teacher, applied → teacher), Aurora Vault branded HTML, best-effort (silent no-op when `RESEND_API_KEY` unset)
+- [x] `lib/audit/log-action.ts` — new action types (`change_request.create` / `.approve` / `.reject` / `.cancel` / `.apply`) wired through
+
+### UI + entry-route integration (commit `3019028`)
+
+- [x] `app/(dashboard)/grading/[id]/request-edit-button.tsx` — teacher RHF form (shadcn `Sheet` + `Form` + `FieldGroup`) to file a change request against a specific `(student × field × slot)`: field picker, proposed-value input validated against sheet max, reason category select, justification textarea (≥20 chars client + server)
+- [x] `app/(dashboard)/grading/requests/page.tsx` + `my-requests-cancel-button.tsx` — teacher-facing "My change requests" list with status badges, cancel-own-pending action
+- [x] `app/(dashboard)/admin/change-requests/page.tsx` + `decision-buttons.tsx` — admin inbox: pending tab with per-row Approve/Reject `AlertDialog`s, reviewed history tab, deep-links to the target sheet
+- [x] `components/grading/use-approval-reference.tsx` rebuilt — Path A/B branched dialog: Path A shows the list of approved requests for the current row and applies the selected one; Path B captures a structured `correction_reason` from a fixed enum (typo, miscounted, wrong-student, etc.). Free-text approval strings no longer possible from the UI.
+- [x] `app/api/grading-sheets/[id]/entries/[entryId]/route.ts` — entry PATCH route rewritten: rejects any `approval_reference` in the body with a 400, requires `change_request_id` (Path A) or `correction_reason` (Path B), re-validates typed values against the approved proposal (typed value must match), derives the `approval_reference` string server-side, marks the change request `applied` with `applied_by` / `applied_at`, audit-logged via `change_request.apply`. Totals PATCH route (`app/api/grading-sheets/[id]/totals/route.ts`) gets the same Path B gate for max-score updates on a locked sheet.
+- [x] `components/grading/score-entry-grid.tsx` + `letter-grade-grid.tsx` + `totals-editor.tsx` — call sites updated to use the new `useApprovalReference()` promise-based hook and the new request-file entry point
+- [x] `lib/auth/roles.ts` + `app/(dashboard)/layout.tsx` — sidebar nav gains "Change requests" entries (teacher: `/grading/requests`; admin+: `/admin/change-requests`)
+
+### Definition of Done
+
+- [x] Teacher can file a change request against a locked sheet row and see it in their "My requests" list
+- [x] Admin/superadmin see pending requests in the inbox and can approve or reject with a decision note
+- [x] Registrar applying an approved request on the grading grid re-validates the typed value matches the proposal and writes `approval_reference = "Request #... approved by ..."` to `grade_audit_log`
+- [x] Registrar can also bypass the request flow for pure data-entry corrections via Path B — a structured `correction_reason` is logged as `approval_reference = "Data entry correction: ..."`
+- [x] Free-text `approval_reference` is no longer accepted by the API (returns 400)
+- [x] Resend emails fire at submit / decide / apply, best-effort, idempotent per transition
 
 ---
 

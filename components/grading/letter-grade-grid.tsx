@@ -1,10 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Card } from '@/components/ui/card';
+import {
+  GridFilterToolbar,
+  DEFAULT_GRID_FILTERS,
+  type GridFilters,
+} from './grid-filter-toolbar';
 import {
   Select,
   SelectContent,
@@ -39,7 +44,24 @@ export function LetterGradeGrid({
 }) {
   const [rows, setRows] = useState<GradeRow[]>(initialRows);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [filters, setFilters] = useState<GridFilters>(DEFAULT_GRID_FILTERS);
   const { requireChangeReference, dialog: approvalDialog } = useChangeReference();
+
+  const visibleRows = useMemo(() => {
+    const q = filters.search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (filters.hideWithdrawn && r.withdrawn) return false;
+      if (q) {
+        const hay = `${r.student_name} ${r.student_number}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (filters.blanksOnly) {
+        if (r.withdrawn) return false;
+        if (r.letter_grade != null) return false;
+      }
+      return true;
+    });
+  }, [rows, filters]);
 
   async function save(entryId: string, letter: string | null) {
     let extraPayload: Record<string, unknown> = {};
@@ -90,6 +112,12 @@ export function LetterGradeGrid({
 
   return (
     <div className="space-y-3">
+      <GridFilterToolbar
+        filters={filters}
+        onChange={setFilters}
+        total={rows.length}
+        visible={visibleRows.length}
+      />
       <Card className="overflow-hidden p-0">
         <Table>
           <TableHeader>
@@ -100,7 +128,17 @@ export function LetterGradeGrid({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((r) => {
+            {visibleRows.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={3}
+                  className="py-10 text-center text-sm text-muted-foreground"
+                >
+                  No students match the current filters.
+                </TableCell>
+              </TableRow>
+            )}
+            {visibleRows.map((r) => {
               const plaintext = readOnly && !requireApproval;
               const disabled = r.withdrawn || readOnly;
               return (
