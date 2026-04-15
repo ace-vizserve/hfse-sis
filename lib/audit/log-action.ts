@@ -16,7 +16,13 @@ export type AuditAction =
   | 'attendance.update'
   | 'comment.update'
   | 'publication.create'
-  | 'publication.delete';
+  | 'publication.delete'
+  | 'grade_change_requested'
+  | 'grade_change_approved'
+  | 'grade_change_rejected'
+  | 'grade_change_cancelled'
+  | 'grade_change_applied'
+  | 'grade_correction';
 
 export type AuditEntityType =
   | 'grading_sheet'
@@ -26,7 +32,8 @@ export type AuditEntityType =
   | 'attendance_record'
   | 'report_card_comment'
   | 'report_card_publication'
-  | 'sync_batch';
+  | 'sync_batch'
+  | 'grade_change_request';
 
 type LogActionParams = {
   service: SupabaseClient;
