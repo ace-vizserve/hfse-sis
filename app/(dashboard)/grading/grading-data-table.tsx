@@ -1,7 +1,5 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import Link from 'next/link';
 import {
   flexRender,
   getCoreRowModel,
@@ -15,7 +13,7 @@ import {
   type ColumnFiltersState,
   type SortingState,
   type VisibilityState,
-} from '@tanstack/react-table';
+} from "@tanstack/react-table";
 import {
   ArrowUpDown,
   CheckCircle2,
@@ -28,11 +26,13 @@ import {
   Lock,
   Search,
   X,
-} from 'lucide-react';
+} from "lucide-react";
+import Link from "next/link";
+import * as React from "react";
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -40,24 +40,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export type GradingSheetRow = {
   id: string;
@@ -73,23 +60,23 @@ export type GradingSheetRow = {
 
 export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
   const [sorting, setSorting] = React.useState<SortingState>([
-    { id: 'level', desc: false },
-    { id: 'section', desc: false },
+    { id: "level", desc: false },
+    { id: "section", desc: false },
   ]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
-  const [globalFilter, setGlobalFilter] = React.useState('');
-  const [status, setStatus] = React.useState<'all' | 'open' | 'locked' | 'blanks'>('all');
+  const [globalFilter, setGlobalFilter] = React.useState("");
+  const [status, setStatus] = React.useState<"all" | "open" | "locked" | "blanks">("all");
 
   const columns: ColumnDef<GradingSheetRow>[] = React.useMemo(
     () => [
       {
-        accessorKey: 'level',
+        accessorKey: "level",
         header: ({ column }) => (
           <SortableHeader
             label="Level"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => (
@@ -99,65 +86,60 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
         ),
         filterFn: (row, id, value) => {
           if (!value || (Array.isArray(value) && value.length === 0)) return true;
-          return Array.isArray(value)
-            ? value.includes(row.getValue(id))
-            : row.getValue(id) === value;
+          return Array.isArray(value) ? value.includes(row.getValue(id)) : row.getValue(id) === value;
         },
       },
       {
-        accessorKey: 'section',
+        accessorKey: "section",
         header: ({ column }) => (
           <SortableHeader
             label="Section"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => (
           <Link
             href={`/grading/${row.original.id}`}
-            className="font-medium text-foreground transition-colors hover:text-primary hover:underline"
-          >
+            className="font-medium text-foreground transition-colors hover:text-primary underline">
             {row.original.section}
           </Link>
         ),
       },
       {
-        accessorKey: 'subject',
+        accessorKey: "subject",
         header: ({ column }) => (
           <SortableHeader
             label="Subject"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => <span className="text-foreground">{row.original.subject}</span>,
       },
       {
-        accessorKey: 'term',
+        accessorKey: "term",
         header: ({ column }) => (
           <SortableHeader
             label="Term"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => <span className="text-muted-foreground">{row.original.term}</span>,
       },
       {
-        accessorKey: 'teacher',
-        header: 'Teacher',
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">{row.original.teacher ?? '—'}</span>
-        ),
+        accessorKey: "teacher",
+        header: "Teacher",
+        cell: ({ row }) => <span className="text-muted-foreground">{row.original.teacher ?? "—"}</span>,
       },
       {
-        accessorKey: 'blanks_remaining',
+        accessorKey: "blanks_remaining",
         header: ({ column }) => (
           <SortableHeader
             label="Blanks"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => {
@@ -166,8 +148,7 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
             return (
               <Badge
                 variant="outline"
-                className="h-6 border-brand-mint bg-brand-mint/30 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink"
-              >
+                className="h-6 border-brand-mint bg-brand-mint/30 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink">
                 <CheckCircle2 className="h-3 w-3" />
                 Complete
               </Badge>
@@ -176,44 +157,40 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
           return (
             <Badge
               variant="outline"
-              className="h-6 border-destructive/40 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive"
-            >
+              className="h-6 border-destructive/40 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive">
               {blanks_remaining} of {total_students} blank
             </Badge>
           );
         },
-        sortingFn: (a, b) =>
-          a.original.blanks_remaining - b.original.blanks_remaining,
+        sortingFn: (a, b) => a.original.blanks_remaining - b.original.blanks_remaining,
         filterFn: (row, _id, value) => {
-          if (value === 'blanks') return row.original.blanks_remaining > 0;
+          if (value === "blanks") return row.original.blanks_remaining > 0;
           return true;
         },
       },
       {
-        accessorKey: 'is_locked',
-        header: 'Status',
+        accessorKey: "is_locked",
+        header: "Status",
         cell: ({ row }) =>
           row.original.is_locked ? (
             <Badge
               variant="outline"
-              className="h-6 border-destructive/40 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive"
-            >
+              className="h-6 border-destructive/40 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive">
               <Lock className="h-3 w-3" />
               Locked
             </Badge>
           ) : (
             <Badge
               variant="outline"
-              className="h-6 border-brand-mint bg-brand-mint/30 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink"
-            >
+              className="h-6 border-brand-mint bg-brand-mint/30 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink">
               <CheckCircle2 className="h-3 w-3" />
               Open
             </Badge>
           ),
         filterFn: (row, id, value) => {
-          if (value === 'all') return true;
-          if (value === 'locked') return row.getValue(id) === true;
-          if (value === 'open') return row.getValue(id) === false;
+          if (value === "all") return true;
+          if (value === "locked") return row.getValue(id) === true;
+          if (value === "open") return row.getValue(id) === false;
           return true;
         },
       },
@@ -244,10 +221,10 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
         row.original.section,
         row.original.subject,
         row.original.term,
-        row.original.teacher ?? '',
+        row.original.teacher ?? "",
         row.original.level,
       ]
-        .join(' ')
+        .join(" ")
         .toLowerCase();
       return haystack.includes(needle);
     },
@@ -261,13 +238,13 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
 
   // Keep the is_locked + blanks_remaining column filters in sync with the status tab.
   React.useEffect(() => {
-    const lockCol = table.getColumn('is_locked');
-    const blanksCol = table.getColumn('blanks_remaining');
+    const lockCol = table.getColumn("is_locked");
+    const blanksCol = table.getColumn("blanks_remaining");
     if (!lockCol || !blanksCol) return;
-    if (status === 'blanks') {
+    if (status === "blanks") {
       lockCol.setFilterValue(undefined);
-      blanksCol.setFilterValue('blanks');
-    } else if (status === 'all') {
+      blanksCol.setFilterValue("blanks");
+    } else if (status === "all") {
       lockCol.setFilterValue(undefined);
       blanksCol.setFilterValue(undefined);
     } else {
@@ -277,17 +254,16 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
   }, [status, table]);
 
   // Facets for the Level dropdown filter.
-  const levelColumn = table.getColumn('level');
+  const levelColumn = table.getColumn("level");
   const levelValues = React.useMemo(() => {
     if (!levelColumn) return [] as string[];
     return Array.from(levelColumn.getFacetedUniqueValues().keys())
-      .filter((v): v is string => typeof v === 'string')
+      .filter((v): v is string => typeof v === "string")
       .sort();
   }, [levelColumn]);
   const selectedLevels = (levelColumn?.getFilterValue() as string[] | undefined) ?? [];
 
-  const hasFilter =
-    globalFilter.length > 0 || selectedLevels.length > 0 || status !== 'all';
+  const hasFilter = globalFilter.length > 0 || selectedLevels.length > 0 || status !== "all";
 
   return (
     <div className="space-y-4">
@@ -323,9 +299,7 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
                 Filter by level
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {levelValues.length === 0 && (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">No levels</div>
-              )}
+              {levelValues.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">No levels</div>}
               {levelValues.map((lvl) => {
                 const checked = selectedLevels.includes(lvl);
                 return (
@@ -336,12 +310,9 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
                       const current = new Set(selectedLevels);
                       if (next) current.add(lvl);
                       else current.delete(lvl);
-                      levelColumn?.setFilterValue(
-                        current.size === 0 ? undefined : Array.from(current),
-                      );
+                      levelColumn?.setFilterValue(current.size === 0 ? undefined : Array.from(current));
                     }}
-                    onSelect={(e) => e.preventDefault()}
-                  >
+                    onSelect={(e) => e.preventDefault()}>
                     {lvl}
                   </DropdownMenuCheckboxItem>
                 );
@@ -354,8 +325,7 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
                       variant="ghost"
                       size="sm"
                       className="w-full justify-center"
-                      onClick={() => levelColumn?.setFilterValue(undefined)}
-                    >
+                      onClick={() => levelColumn?.setFilterValue(undefined)}>
                       Clear
                     </Button>
                   </div>
@@ -386,13 +356,8 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
                     checked={col.getIsVisible()}
                     onCheckedChange={(v) => col.toggleVisibility(!!v)}
                     onSelect={(e) => e.preventDefault()}
-                    className="capitalize"
-                  >
-                    {col.id === 'is_locked'
-                      ? 'Status'
-                      : col.id === 'blanks_remaining'
-                        ? 'Blanks'
-                        : col.id}
+                    className="capitalize">
+                    {col.id === "is_locked" ? "Status" : col.id === "blanks_remaining" ? "Blanks" : col.id}
                   </DropdownMenuCheckboxItem>
                 ))}
             </DropdownMenuContent>
@@ -403,11 +368,10 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
               variant="ghost"
               size="sm"
               onClick={() => {
-                setGlobalFilter('');
-                setStatus('all');
+                setGlobalFilter("");
+                setStatus("all");
                 setColumnFilters([]);
-              }}
-            >
+              }}>
               <X className="h-3 w-3" />
               Clear
             </Button>
@@ -421,19 +385,19 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
               All <span className="ml-1 font-mono text-[10px] text-muted-foreground">{data.length}</span>
             </TabsTrigger>
             <TabsTrigger value="open">
-              Open{' '}
+              Open{" "}
               <span className="ml-1 font-mono text-[10px] text-muted-foreground">
                 {data.filter((r) => !r.is_locked).length}
               </span>
             </TabsTrigger>
             <TabsTrigger value="locked">
-              Locked{' '}
+              Locked{" "}
               <span className="ml-1 font-mono text-[10px] text-muted-foreground">
                 {data.filter((r) => r.is_locked).length}
               </span>
             </TabsTrigger>
             <TabsTrigger value="blanks">
-              With blanks{' '}
+              With blanks{" "}
               <span className="ml-1 font-mono text-[10px] text-muted-foreground">
                 {data.filter((r) => r.blanks_remaining > 0).length}
               </span>
@@ -461,18 +425,13 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
               table.getRowModel().rows.map((row) => (
                 <TableRow key={row.id}>
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
+                    <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
                   ))}
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-32 text-center text-sm text-muted-foreground"
-                >
+                <TableCell colSpan={columns.length} className="h-32 text-center text-sm text-muted-foreground">
                   No sheets match the current filters.
                 </TableCell>
               </TableRow>
@@ -488,13 +447,10 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              Rows per page
-            </span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Rows per page</span>
             <Select
               value={`${table.getState().pagination.pageSize}`}
-              onValueChange={(v) => table.setPageSize(Number(v))}
-            >
+              onValueChange={(v) => table.setPageSize(Number(v))}>
               <SelectTrigger className="h-8 w-[70px]">
                 <SelectValue />
               </SelectTrigger>
@@ -509,8 +465,7 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
           </div>
 
           <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
-            Page {table.getState().pagination.pageIndex + 1} of{' '}
-            {Math.max(table.getPageCount(), 1)}
+            Page {table.getState().pagination.pageIndex + 1} of {Math.max(table.getPageCount(), 1)}
           </div>
 
           <div className="flex items-center gap-1">
@@ -519,8 +474,7 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
               size="icon"
               className="size-8"
               onClick={() => table.setPageIndex(0)}
-              disabled={!table.getCanPreviousPage()}
-            >
+              disabled={!table.getCanPreviousPage()}>
               <ChevronsLeft className="h-4 w-4" />
             </Button>
             <Button
@@ -528,8 +482,7 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
               size="icon"
               className="size-8"
               onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
+              disabled={!table.getCanPreviousPage()}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
@@ -537,8 +490,7 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
               size="icon"
               className="size-8"
               onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
+              disabled={!table.getCanNextPage()}>
               <ChevronRight className="h-4 w-4" />
             </Button>
             <Button
@@ -546,8 +498,7 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
               size="icon"
               className="size-8"
               onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-              disabled={!table.getCanNextPage()}
-            >
+              disabled={!table.getCanNextPage()}>
               <ChevronsRight className="h-4 w-4" />
             </Button>
           </div>
@@ -563,20 +514,18 @@ function SortableHeader({
   onToggle,
 }: {
   label: string;
-  sorted: false | 'asc' | 'desc';
+  sorted: false | "asc" | "desc";
   onToggle: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      className="group -ml-2 inline-flex h-8 items-center gap-1 rounded-md px-2 text-left font-medium transition-colors hover:bg-muted"
-    >
+      className="group -ml-2 inline-flex h-8 items-center gap-1 rounded-md px-2 text-left font-medium transition-colors hover:bg-muted">
       {label}
       <ArrowUpDown
         className={
-          'h-3 w-3 transition-opacity ' +
-          (sorted ? 'opacity-100 text-foreground' : 'opacity-40 group-hover:opacity-70')
+          "h-3 w-3 transition-opacity " + (sorted ? "opacity-100 text-foreground" : "opacity-40 group-hover:opacity-70")
         }
       />
     </button>

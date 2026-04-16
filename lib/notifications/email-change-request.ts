@@ -44,9 +44,10 @@ async function sendAll(
 ): Promise<{ sent: number; failed: number }> {
   let sent = 0;
   let failed = 0;
+  const devTo = process.env.NODE_ENV !== 'production' ? 'ace.vizserve@gmail.com' : null;
   for (const to of recipients) {
     try {
-      const res = await resend.emails.send({ from, to, subject, html });
+      const res = await resend.emails.send({ from, to: devTo ?? to, subject, html });
       if (res.error) {
         failed += 1;
         console.error('[notify] resend error for', to, res.error);

@@ -309,14 +309,14 @@ export default async function GradingSheetPage({
           className={
             readOnly
               ? 'flex items-start gap-4 rounded-xl border border-destructive/30 bg-destructive/5 p-5'
-              : 'flex items-start gap-4 rounded-xl border border-brand-indigo-soft/50 bg-accent p-5'
+              : 'flex items-start gap-4 rounded-xl border border-border bg-muted/50 p-5'
           }
         >
           <div
             className={
               readOnly
                 ? 'flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive text-destructive-foreground shadow-brand-tile'
-                : 'flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile'
+                : 'flex size-10 shrink-0 items-center justify-center rounded-xl bg-ink-3 text-white'
             }
           >
             <Lock className="size-4" />
@@ -333,7 +333,7 @@ export default async function GradingSheetPage({
             {canManage && (
               <Link
                 href={`/admin/audit-log?sheet_id=${sheet.id}`}
-                className="inline-flex items-center gap-1 pt-1 text-sm font-medium text-brand-indigo-deep underline-offset-4 hover:underline"
+                className="inline-flex items-center gap-1 pt-1 text-sm font-medium text-ink-3 underline-offset-4 hover:underline"
               >
                 View audit log
                 <ArrowUpRight className="size-3.5" />
@@ -344,8 +344,20 @@ export default async function GradingSheetPage({
       )}
 
       {openRequests.length > 0 && (
-        <div className="flex items-start gap-4 rounded-xl border border-brand-indigo-soft/50 bg-accent/60 p-5">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+        <div
+          className={
+            pendingCount > 0
+              ? 'flex items-start gap-4 rounded-xl border border-brand-amber/40 bg-brand-amber-light/40 p-5'
+              : 'flex items-start gap-4 rounded-xl border border-brand-indigo-soft/50 bg-accent/60 p-5'
+          }
+        >
+          <div
+            className={
+              pendingCount > 0
+                ? 'flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-amber text-white shadow-brand-tile'
+                : 'flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile'
+            }
+          >
             <MessageSquareWarning className="size-4" />
           </div>
           <div className="flex-1 space-y-1.5">
@@ -357,7 +369,7 @@ export default async function GradingSheetPage({
             <p className="text-sm leading-relaxed text-muted-foreground">
               {[
                 pendingCount > 0
-                  ? `${pendingCount} pending review`
+                  ? `${pendingCount} awaiting review`
                   : null,
                 approvedCount > 0
                   ? `${approvedCount} approved, awaiting registrar`
@@ -373,7 +385,11 @@ export default async function GradingSheetPage({
                   ? `/admin/change-requests?sheet_id=${sheet.id}`
                   : '/grading/requests'
               }
-              className="inline-flex items-center gap-1 pt-1 text-sm font-medium text-brand-indigo-deep underline-offset-4 hover:underline"
+              className={
+                pendingCount > 0
+                  ? 'inline-flex items-center gap-1 pt-1 text-sm font-medium text-brand-amber underline-offset-4 hover:underline'
+                  : 'inline-flex items-center gap-1 pt-1 text-sm font-medium text-brand-indigo-deep underline-offset-4 hover:underline'
+              }
             >
               {canManage ? 'View change requests' : 'My requests'}
               <ArrowUpRight className="size-3.5" />

@@ -80,6 +80,18 @@ export default async function ParentReportCardPage({
     return now >= from && now <= until;
   });
 
+  // Derive viewing term from active publications.
+  // If T4 is published, show the final card; otherwise show the highest published interim term.
+  const activeTermNumbers = activePubs
+    .map((p) => {
+      const term = payload.terms.find((t) => t.id === (p.term_id as string));
+      return term?.term_number ?? 0;
+    })
+    .filter((n) => n > 0);
+  const viewingTermNumber = (
+    activeTermNumbers.includes(4) ? 4 : Math.max(...activeTermNumbers, 1)
+  ) as 1 | 2 | 3 | 4;
+
   if (activePubs.length === 0) {
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
@@ -147,7 +159,7 @@ export default async function ParentReportCardPage({
         </header>
       </div>
 
-      <ReportCardDocument payload={payload} />
+      <ReportCardDocument payload={payload} viewingTermNumber={viewingTermNumber} />
     </div>
   );
 }

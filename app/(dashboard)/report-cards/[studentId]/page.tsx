@@ -6,13 +6,17 @@ import { buildReportCard } from '@/lib/report-card/build-report-card';
 import { ReportCardDocument } from '@/components/report-card/report-card-document';
 import { PublicationStatus } from '@/components/admin/publication-status';
 import { PrintButton } from './print-button';
+import { cn } from '@/lib/utils';
 
 export default async function ReportCardPreview({
   params,
+  searchParams,
 }: {
   params: Promise<{ studentId: string }>;
+  searchParams: Promise<{ term?: string }>;
 }) {
   const { studentId } = await params;
+  const { term: termParam } = await searchParams;
   const supabase = await createClient();
 
   const result = await buildReportCard(supabase, studentId);
@@ -34,9 +38,22 @@ export default async function ReportCardPreview({
   if (!result.ok) notFound();
   const payload = result.payload;
 
+  // Determine which term to view: from URL param, or default to current term
+  const { data: currentTermRow } = await supabase
+    .from('terms')
+    .select('term_number')
+    .eq('is_current', true)
+    .maybeSingle();
+  const parsedTerm = termParam ? parseInt(termParam, 10) : NaN;
+  const viewingTermNumber = (
+    [1, 2, 3, 4].includes(parsedTerm)
+      ? parsedTerm
+      : currentTermRow?.term_number ?? 1
+  ) as 1 | 2 | 3 | 4;
+  const isFinal = viewingTermNumber === 4;
+
   return (
     <div className="space-y-6">
-      {/* Registrar controls — hidden from the "paper" preview below. */}
       <div className="mx-auto flex w-full max-w-[8.5in] flex-col gap-6 print:hidden">
         <Link
           href="/report-cards"
@@ -63,11 +80,36 @@ export default async function ReportCardPreview({
           </div>
         </header>
 
+        {/* Template switcher: Interim (T1–T3) vs Final (T4) */}
+        <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+          <Link
+            href={`/report-cards/${studentId}?term=1`}
+            className={cn(
+              'rounded-md px-4 py-1.5 font-mono text-xs font-semibold uppercase tracking-wider transition-colors',
+              !isFinal
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            Interim (T1–T3)
+          </Link>
+          <Link
+            href={`/report-cards/${studentId}?term=4`}
+            className={cn(
+              'rounded-md px-4 py-1.5 font-mono text-xs font-semibold uppercase tracking-wider transition-colors',
+              isFinal
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            Final (T4)
+          </Link>
+        </div>
+
         <PublicationStatus sectionId={payload.section.id} terms={payload.terms} />
       </div>
 
-      {/* --- Report card "paper" --- */}
-      <ReportCardDocument payload={payload} />
+      <ReportCardDocument payload={payload} viewingTermNumber={viewingTermNumber} />
     </div>
   );
 }

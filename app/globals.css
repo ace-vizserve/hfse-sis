@@ -70,6 +70,8 @@
   --av-indigo-soft: #818CF8;
   --av-sky: #38BDF8;
   --av-mint: #A5F3B7;
+  --av-amber: #F59E0B;
+  --av-amber-light: #FEF3C7;
   --av-ink: #0F172A;
   --av-ink-2: #334155;
   --av-ink-3: #475569;
@@ -199,6 +201,8 @@
   --color-brand-indigo-soft: var(--av-indigo-soft);
   --color-brand-sky: var(--av-sky);
   --color-brand-mint: var(--av-mint);
+  --color-brand-amber: var(--av-amber);
+  --color-brand-amber-light: var(--av-amber-light);
   --color-ink: var(--av-ink);
   --color-ink-2: var(--av-ink-2);
   --color-ink-3: var(--av-ink-3);

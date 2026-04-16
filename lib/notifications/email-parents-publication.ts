@@ -106,11 +106,12 @@ export async function emailParentsPublication(args: {
 
   let sent = 0;
   let failed = 0;
+  const devTo = process.env.NODE_ENV !== 'production' ? 'ace.vizserve@gmail.com' : null;
   for (const to of recipients) {
     try {
       const res = await resend.emails.send({
         from: fromAddress,
-        to,
+        to: devTo ?? to,
         subject,
         html,
       });

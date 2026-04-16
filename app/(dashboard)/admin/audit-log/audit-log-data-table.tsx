@@ -100,19 +100,27 @@ export function AuditLogDataTable({
   const [sheetIdFilter, setSheetIdFilter] = React.useState<string | null>(
     initialSheetIdFilter ?? null,
   );
+  const [dateRange, setDateRange] = React.useState<DateRange | undefined>(undefined);
+  const [dateRangeOpen, setDateRangeOpen] = React.useState(false);
   const [sorting, setSorting] = React.useState<SortingState>([{ id: 'at', desc: true }]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     initialActionFilter ? [{ id: 'action', value: [initialActionFilter] }] : [],
   );
   const [globalFilter, setGlobalFilter] = React.useState('');
 
-  // Apply the URL-derived sheet_id filter as a pre-filter step. Once cleared
-  // it stays cleared — the user can drive the rest of the table from the
-  // toolbar without touching the URL.
-  const filteredData = React.useMemo(
-    () => (sheetIdFilter ? rows.filter((r) => r.sheet_id === sheetIdFilter) : rows),
-    [rows, sheetIdFilter],
-  );
+  const filteredData = React.useMemo(() => {
+    let data = rows;
+    if (sheetIdFilter) data = data.filter((r) => r.sheet_id === sheetIdFilter);
+    if (dateRange?.from) {
+      const from = startOfDay(dateRange.from).getTime();
+      const to = dateRange.to ? endOfDay(dateRange.to).getTime() : Infinity;
+      data = data.filter((r) => {
+        const ts = new Date(r.at).getTime();
+        return ts >= from && ts <= to;
+      });
+    }
+    return data;
+  }, [rows, sheetIdFilter, dateRange]);
 
   const columns: ColumnDef<MergedRow>[] = React.useMemo(
     () => [
@@ -245,7 +253,7 @@ export function AuditLogDataTable({
   const selectedActions = (actionColumn?.getFilterValue() as string[] | undefined) ?? [];
 
   const hasFilter =
-    globalFilter.length > 0 || selectedActions.length > 0 || !!sheetIdFilter;
+    globalFilter.length > 0 || selectedActions.length > 0 || !!sheetIdFilter || !!dateRange?.from;
 
   return (
     <div className="space-y-4">
@@ -323,6 +331,57 @@ export function AuditLogDataTable({
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Date range filter */}
+          <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  'gap-2 font-normal',
+                  !dateRange?.from && 'text-muted-foreground',
+                )}
+              >
+                <CalendarIcon className="h-3.5 w-3.5" />
+                {dateRange?.from ? (
+                  <span className="font-mono text-[11px] tabular-nums">
+                    {formatDay(dateRange.from)}
+                    {dateRange.to ? ` – ${formatDay(dateRange.to)}` : ''}
+                  </span>
+                ) : (
+                  <span>Any date</span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="range"
+                selected={dateRange}
+                onSelect={setDateRange}
+                numberOfMonths={2}
+                captionLayout="dropdown"
+              />
+              <div className="flex items-center justify-between border-t border-hairline p-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDateRange(undefined)}
+                  disabled={!dateRange?.from}
+                >
+                  Clear
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setDateRangeOpen(false)}
+                >
+                  Done
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+
           {/* Sheet ID chip (from deep-link) */}
           {sheetIdFilter && (
             <Badge
@@ -349,6 +408,7 @@ export function AuditLogDataTable({
                 setGlobalFilter('');
                 setColumnFilters([]);
                 setSheetIdFilter(null);
+                setDateRange(undefined);
               }}
             >
               <X className="h-3 w-3" />
@@ -745,6 +805,18 @@ function ActionDetails({ row }: { row: MergedRow }) {
     default:
       return <span className="text-muted-foreground">{JSON.stringify(ctx)}</span>;
   }
+}
+
+function startOfDay(d: Date): Date {
+  const n = new Date(d);
+  n.setHours(0, 0, 0, 0);
+  return n;
+}
+
+function endOfDay(d: Date): Date {
+  const n = new Date(d);
+  n.setHours(23, 59, 59, 999);
+  return n;
 }
 
 function toIsoDay(d: Date): string {

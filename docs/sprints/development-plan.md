@@ -6,7 +6,7 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 
 **Stack:** Next.js 16 (App Router) + Supabase + Vercel. Python/FastAPI/WeasyPrint PDF service from the original plan has been deferred (see Sprint 6 decision note); browser print handles current volume.
 
-## Status snapshot (last updated 2026-04-16)
+## Status snapshot (last updated 2026-04-17)
 
 | Sprint | Title | Status |
 |---|---|---|
@@ -22,6 +22,8 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 | 9 | Locked-sheet Change Request Workflow | ✅ Done (2026-04-15) — replaces free-text `approval_reference` with structured teacher→admin→registrar state machine. Migration `009_change_requests.sql` + `/api/change-requests` + teacher request form + `/admin/change-requests` inbox + registrar Path A/B dialog + Resend notifications |
 | — | Change-request monitoring + audit-log export _(follow-up to Sprint 9, 2026-04-16)_ | ✅ Done — date-range + status filter toolbar on `/admin/change-requests`, pending-count badge on the sidebar (role-scoped), inline "ongoing change request" alert on `/grading/[id]`, superadmin CSV export at `/api/audit-log/export` with shared `lib/csv.ts` helper |
 | — | Parent-facing mobile pass _(follow-up, 2026-04-16)_ | ✅ Done — responsive body padding on `ReportCardDocument`, horizontal-scroll wrappers on the academic-grades + attendance tables (`min-w-[560px]` / `[420px]`), mobile-tightened hero typography on `/parent` + `/parent/report-cards/[id]`, Ctrl+P hint hidden below `md`. Staff-facing pages still deferred |
+| — | Report card T1–T3 vs T4 template distinction _(2026-04-17)_ | ✅ Done — `ReportCardDocument` accepts `viewingTermNumber` prop. T1–T3 interim shows 3 term columns, no Final Grade. T4 final shows all 4 terms + Final Grade + General Average + Attendance %. `computeGeneralAverage()` + `computeAttendancePercentage()` added to `lib/compute/annual.ts` with self-tests. Staff page has Interim/Final tab switcher at `/report-cards/[id]?term=N`. Parent page auto-derives from active publications. Non-examinable subjects show "Passed" in T4 Final Grade. Student info fields, attendance labels, signatures, and legend all match the HFSE reference templates |
+| — | Pre-publish checklist + change-request UX polish _(2026-04-17)_ | ✅ Done — full pre-publish readiness checklist via `GET /api/sections/[id]/publish-readiness` (checks: grading sheets locked, adviser comments, attendance records, T4 all-terms-locked, T4 quarterly grades present). Soft-warning AlertDialog on `publish-window-panel.tsx` with per-item pass/fail and "Publish anyway". Also: descriptive status badges with icons on change requests (both admin + teacher views), always-visible sheet link on admin change requests table, amber/indigo color-coded change-request alert on grading sheets, neutral locked-sheet banner, audit log date range filter, dev email redirect to static address, amber design tokens (`brand-amber`, `brand-amber-light`) added to Aurora Vault |
 | — | Forms + feedback polish pass _(cross-cutting, post-Sprint 7)_ | ✅ Done — RHF+zod+shadcn `Form` on all 4 submit-based forms (schemas in `lib/schemas/`), sonner `<Toaster>` mounted once in `app/layout.tsx`, shadcn `AlertDialog` for destructive confirms, shadcn `Dialog` via shared `useApprovalReference()` hook replacing all `window.prompt()`, `tw-animate-css` wired up (with `.animate-in`/`.animate-out` longhand overrides in `globals.css` because the package's minified shorthand was breaking dialog/sheet animations) |
 
 ### Cross-cutting improvements backlog
@@ -31,7 +33,7 @@ These came up during sprints but were intentionally deferred to keep scope tight
 - Previous-term comparison column on the grade entry grid (Sprint 3) — needs a second full term of data before it's meaningful
 - Automated PDF generation + Supabase Storage archival (Sprint 6) — browser Print / Save as PDF covers current volume; Puppeteer-in-Next.js is the path of least resistance if automation is ever needed
 - Mobile / tablet responsive pass (Sprint 6) — **parent-facing slice done 2026-04-16** (`ReportCardDocument` tables + parent hero typography). Staff-facing pages (grading grid especially) still deferred; registrar + teachers are all on desktop today
-- End-of-year "mid-year T1–T3" vs "full year T1–T4" report card toggle (Sprint 5) — end-of-year concern, no students past T2 yet
+- ~~End-of-year "mid-year T1–T3" vs "full year T1–T4" report card toggle (Sprint 5)~~ — ✅ shipped 2026-04-17. `ReportCardDocument` now accepts `viewingTermNumber` prop; interim (T1–T3) and final (T4) templates match HFSE reference images
 - Secondary Sec 3–4 Economics variant template (Sprint 5) — no Sec 3–4 students enrolled yet
 - Virtue-theme header label on comments / report card (Sprint 5) — ornamental, no schema + no stakeholder ask
 - Origin check (HMAC) on `/parent/enter` handoff as defense-in-depth. Deliberately skipped for UAT — the existing parent↔student gate is sufficient. Revisit if a real threat materializes.
