@@ -19,6 +19,7 @@ import {
 
 import { createClient } from '@/lib/supabase/client';
 import { NAV_BY_ROLE, type Role, type SidebarBadges } from '@/lib/auth/roles';
+import { useRealtimeBadgeCount } from '@/hooks/use-realtime-badge-count';
 import {
   Sidebar,
   SidebarContent,
@@ -57,11 +58,18 @@ export function AppSidebar({
   role,
   email,
   badges,
+  userId,
 }: {
   role: Role;
   email: string;
   badges?: SidebarBadges;
+  userId: string;
 }) {
+  const liveChangeRequestCount = useRealtimeBadgeCount(
+    role,
+    userId,
+    badges?.changeRequests ?? 0,
+  );
   const router = useRouter();
   const pathname = usePathname();
   const sections = NAV_BY_ROLE[role];
@@ -126,7 +134,9 @@ export function AppSidebar({
                   const isActive = item.href === activeHref;
                   const Icon = ICON_BY_HREF[item.href] ?? BookOpen;
                   const badge: number =
-                    (item.badgeKey && badges?.[item.badgeKey]) || 0;
+                    item.badgeKey === 'changeRequests'
+                      ? liveChangeRequestCount
+                      : (item.badgeKey && badges?.[item.badgeKey]) || 0;
                   return (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton
