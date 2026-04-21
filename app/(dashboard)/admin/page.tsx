@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation';
 
-// /admin was the legacy tool-launcher. Most admin tooling moved to /markbook
-// when Markbook got its own route group; /admin/admissions is the one surface
-// that stayed. Send bare /admin there so old bookmarks still land usefully.
+// Legacy /admin bookmark. The Admissions Dashboard was consolidated into the
+// Records dashboard — every admissions widget (pipeline, funnel, outdated,
+// assessment, referral, time-to-enroll) now renders inside /records alongside
+// the internal stage pipeline + document backlog. Send legacy traffic there.
 export default function AdminRedirect() {
-  redirect('/admin/admissions');
+  redirect('/records');
 }

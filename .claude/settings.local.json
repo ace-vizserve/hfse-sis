@@ -68,7 +68,10 @@
       "Bash(mkdir -p \"app/\\(records\\)/records/students/[enroleeNumber]\" \"app/\\(records\\)/records/discount-codes\" \"app/\\(records\\)/records/audit-log\")",
       "Bash(cp \"app/\\(sis\\)/sis/students/[enroleeNumber]/page.tsx\" \"app/\\(records\\)/records/students/[enroleeNumber]/page.tsx\")",
       "Bash(sed -i \"s|pathname: \\\\`/sis/students/|pathname: \\\\`/records/students/|g\" components/sis/cross-ay-search.tsx components/sis/enrollment-history-chips.tsx)",
-      "Bash(sed -i \"s|href={\\\\`/sis/students/|href={\\\\`/records/students/|g\" components/sis/student-data-table.tsx)"
+      "Bash(sed -i \"s|href={\\\\`/sis/students/|href={\\\\`/records/students/|g\" components/sis/student-data-table.tsx)",
+      "Bash(git reset *)",
+      "Bash(rm -rf 'app/\\(markbook\\)/markbook/.next')",
+      "Bash(git check-ignore *)"
     ],
     "deny": [
       "Read(./.env.local)"

@@ -120,9 +120,10 @@ export async function GET(req: Request) {
         }),
       };
     }),
-  ].sort(
-    (a, b) =>
-      new Date(b.timestamp_utc).getTime() - new Date(a.timestamp_utc).getTime(),
+  ].sort((a, b) =>
+    // ISO-8601 timestamps sort lexicographically — no `Date` allocation per
+    // comparison. Descending = most recent first.
+    b.timestamp_utc < a.timestamp_utc ? -1 : b.timestamp_utc > a.timestamp_utc ? 1 : 0,
   );
 
   const body = buildCsv(

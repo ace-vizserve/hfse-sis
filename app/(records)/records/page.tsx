@@ -11,7 +11,12 @@ import {
   Users,
 } from 'lucide-react';
 
+import { AssessmentOutcomesChart } from '@/components/admissions/assessment-outcomes-chart';
 import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { ConversionFunnelChart } from '@/components/admissions/conversion-funnel-chart';
+import { OutdatedApplicationsTable } from '@/components/admissions/outdated-applications-table';
+import { ReferralSourceChart } from '@/components/admissions/referral-source-chart';
+import { TimeToEnrollmentCard } from '@/components/admissions/time-to-enrollment-card';
 import { DocumentBacklogChart } from '@/components/sis/document-backlog-chart';
 import { ExpiringDocumentsPanel } from '@/components/sis/expiring-documents-panel';
 import { LevelDistributionChart } from '@/components/sis/level-distribution-chart';
@@ -29,6 +34,13 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+import {
+  getAssessmentOutcomes,
+  getAverageTimeToEnrollment,
+  getConversionFunnel,
+  getOutdatedApplications,
+  getReferralSourceBreakdown,
+} from '@/lib/admissions/dashboard';
 import {
   getDocumentValidationBacklog,
   getExpiringDocuments,
@@ -73,13 +85,36 @@ export default async function RecordsDashboard({
   const selectedAy = ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
   const isCurrentAy = selectedAy === currentAy.ay_code;
 
-  const [summary, pipelineStages, docBacklog, levels, expiring, activity] = await Promise.all([
+  // Records dashboard is the single consolidated Records + Admissions view.
+  // Records-side aggregators live in `lib/sis/dashboard.ts` (internal 9-stage
+  // pipeline, doc backlog, level distribution, expiring, activity feed).
+  // Admissions-side aggregators live in `lib/admissions/dashboard.ts` (avg
+  // time-to-enroll, conversion funnel, outdated applications, assessment
+  // outcomes, referral sources). Both fire in one Promise.all.
+  const [
+    summary,
+    pipelineStages,
+    docBacklog,
+    levels,
+    expiring,
+    activity,
+    timeToEnroll,
+    funnel,
+    outdated,
+    assessment,
+    referral,
+  ] = await Promise.all([
     getSisDashboardSummary(selectedAy),
     getPipelineStageBreakdown(selectedAy),
     getDocumentValidationBacklog(selectedAy),
     getLevelDistribution(selectedAy),
     getExpiringDocuments(selectedAy, EXPIRY_WINDOW_DAYS, 8),
     getRecentSisActivity(8),
+    getAverageTimeToEnrollment(selectedAy),
+    getConversionFunnel(selectedAy),
+    getOutdatedApplications(selectedAy),
+    getAssessmentOutcomes(selectedAy),
+    getReferralSourceBreakdown(selectedAy),
   ]);
 
   return (
@@ -88,14 +123,15 @@ export default async function RecordsDashboard({
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div className="space-y-3">
           <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Records · Student records
+            Records · Students & Admissions
           </p>
           <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Student records.
+            Records dashboard.
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Daily-ops view for the Records module — pipeline position, document backlog,
-            upcoming expirations, and recent edits across every student.
+            Unified view of the student record — internal pipeline stages, document
+            backlog, admissions funnel + time-to-enroll, assessment outcomes, referral
+            sources, and recent edits. Operational + analytical in one surface.
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
@@ -185,6 +221,16 @@ export default async function RecordsDashboard({
         </div>
       </section>
 
+      {/* Admissions analytics — conversion funnel (2/3) + avg time-to-enroll (1/3) */}
+      <section className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <ConversionFunnelChart data={funnel} />
+        </div>
+        <div className="lg:col-span-1">
+          <TimeToEnrollmentCard data={timeToEnroll} />
+        </div>
+      </section>
+
       {/* Document section — backlog chart (2/3) + expiring panel (1/3) */}
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -197,6 +243,25 @@ export default async function RecordsDashboard({
             windowDays={EXPIRY_WINDOW_DAYS}
           />
         </div>
+      </section>
+
+      {/* Needs attention — outdated applications table (full width) */}
+      <section className="space-y-3">
+        <div className="space-y-1">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Needs attention
+          </p>
+          <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
+            Outdated applications
+          </h2>
+        </div>
+        <OutdatedApplicationsTable rows={outdated} />
+      </section>
+
+      {/* Deep analytics — assessment outcomes + referral sources (2-col) */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <AssessmentOutcomesChart data={assessment} />
+        <ReferralSourceChart data={referral} />
       </section>
 
       {/* Activity feed — full width */}

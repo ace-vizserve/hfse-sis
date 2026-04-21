@@ -5,7 +5,6 @@ import {
   ClipboardList,
   FilePlus2,
   FileText,
-  GraduationCap,
   History,
   LogOut,
   RefreshCw,
@@ -42,7 +41,6 @@ const ICON_BY_HREF: Record<string, LucideIcon> = {
   "/markbook/sections": Users,
   "/markbook/sync-students": RefreshCw,
   "/markbook/change-requests": FileText,
-  "/admin/admissions": GraduationCap,
   "/markbook/report-cards": FileText,
   "/markbook/audit-log": History,
 };

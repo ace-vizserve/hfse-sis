@@ -57,24 +57,24 @@ export default async function RecordsDiscountCodesPage({
 
   const codes = await listDiscountCodes(selectedAy);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const isActive = (start: string | null, end: string | null) => {
-    if (!start || !end) return false;
-    return today >= new Date(start) && today <= new Date(end);
-  };
-  const isScheduled = (start: string | null) => {
-    if (!start) return false;
-    return new Date(start) > today;
-  };
-  const isExpired = (end: string | null) => {
-    if (!end) return false;
-    return new Date(end) < today;
-  };
+  // Single-pass status derivation. `Date.parse(iso)` returns ms directly —
+  // no `Date` allocation per code. Pre-compute `todayMs` once.
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayMs = todayStart.getTime();
 
-  const activeCount = codes.filter((c) => isActive(c.startDate, c.endDate)).length;
-  const scheduledCount = codes.filter((c) => isScheduled(c.startDate)).length;
-  const expiredCount = codes.filter((c) => isExpired(c.endDate)).length;
+  let activeCount = 0;
+  let scheduledCount = 0;
+  let expiredCount = 0;
+  for (const c of codes) {
+    if (!c.startDate || !c.endDate) continue;
+    const startMs = Date.parse(c.startDate);
+    const endMs = Date.parse(c.endDate);
+    if (Number.isNaN(startMs) || Number.isNaN(endMs)) continue;
+    if (endMs < todayMs) expiredCount += 1;
+    else if (startMs > todayMs) scheduledCount += 1;
+    else activeCount += 1;
+  }
 
   return (
     <PageShell>

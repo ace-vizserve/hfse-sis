@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowUpRight, CalendarCog, FolderCog, ShieldCheck, Users } from 'lucide-react';
+import { ArrowUpRight, CalendarCog, FolderCog, ShieldCheck } from 'lucide-react';
 
+import { SystemHealthStrip } from '@/components/sis/system-health-strip';
 import {
   Card,
   CardAction,
@@ -12,6 +13,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { getSystemHealth } from '@/lib/sis/health';
 import { getSessionUser } from '@/lib/supabase/server';
 import type { Role } from '@/lib/auth/roles';
 
@@ -22,6 +24,10 @@ export default async function SisAdminHub() {
   if (role !== 'school_admin' && role !== 'admin' && role !== 'superadmin') {
     redirect('/');
   }
+
+  // System-health strip is superadmin-only (approver counts are sensitive to
+  // their operational awareness). school_admin/admin see the hub without it.
+  const health = role === 'superadmin' ? await getSystemHealth() : null;
 
   return (
     <PageShell>
@@ -39,13 +45,15 @@ export default async function SisAdminHub() {
         </p>
       </header>
 
+      {health && <SystemHealthStrip health={health} />}
+
       <section className="grid gap-4 md:grid-cols-2">
         <AdminCard
           href="/records"
           icon={FolderCog}
-          eyebrow="Operational"
+          eyebrow="Operational + Analytics"
           title="Records"
-          description="Student records, profiles, family, stage pipeline, discount codes. The daily operational surface for admissions + registrar staff."
+          description="The consolidated Records dashboard — student profiles, family, stage pipeline, documents, and admissions analytics (conversion funnel, time-to-enroll, outdated applications, assessment outcomes, referral sources) in one surface."
           cta="Open Records"
           role={role}
           allowedRoles={['school_admin', 'admin', 'superadmin']}
@@ -69,16 +77,6 @@ export default async function SisAdminHub() {
           cta="Manage approvers"
           role={role}
           allowedRoles={['superadmin']}
-        />
-        <AdminCard
-          href="/admin/admissions"
-          icon={Users}
-          eyebrow="Analytics"
-          title="Admissions Dashboard"
-          description="Read-only pipeline analytics — applications by level, conversion funnel, outdated applications, document completeness, assessment outcomes."
-          cta="Open dashboard"
-          role={role}
-          allowedRoles={['school_admin', 'admin', 'superadmin']}
         />
       </section>
     </PageShell>

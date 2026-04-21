@@ -40,7 +40,12 @@ const PFILES_NAV: NavSection[] = [
 ];
 
 // Records module — the student-records operational surface.
-// Route group: (records)/records/*
+// Route group: (records)/records/*. The Records dashboard consolidates
+// operational records (internal stage pipeline, doc backlog, level
+// distribution) with admissions analytics (conversion funnel, time-to-enroll,
+// outdated applications, assessment outcomes, referral sources) — one
+// dashboard, not two. /admin/admissions redirects to /records for legacy
+// bookmark compatibility.
 const RECORDS_NAV: NavSection[] = [
   {
     items: [
@@ -107,7 +112,6 @@ export const NAV_BY_MODULE: {
       {
         label: "Admin",
         items: [
-          { href: "/admin/admissions", label: "Admissions Dashboard" },
           { href: "/markbook/change-requests", label: "Change Requests", badgeKey: "changeRequests" },
           { href: "/markbook/audit-log", label: "Audit Log" },
         ],
@@ -120,10 +124,6 @@ export const NAV_BY_MODULE: {
         items: [{ href: "/markbook/sections", label: "Sections" }],
       },
       { items: [{ href: "/markbook/report-cards", label: "Report Cards" }] },
-      {
-        label: "Admissions",
-        items: [{ href: "/admin/admissions", label: "Pipeline Dashboard" }],
-      },
       {
         label: "Admin",
         items: [
@@ -141,10 +141,6 @@ export const NAV_BY_MODULE: {
         items: [{ href: "/markbook/sections", label: "Sections" }],
       },
       { items: [{ href: "/markbook/report-cards", label: "Report Cards" }] },
-      {
-        label: "Admissions",
-        items: [{ href: "/admin/admissions", label: "Pipeline Dashboard" }],
-      },
       {
         label: "Admin",
         items: [
@@ -169,10 +165,6 @@ export const NAV_BY_MODULE: {
         ],
       },
       { items: [{ href: "/markbook/report-cards", label: "Report Cards" }] },
-      {
-        label: "Admissions",
-        items: [{ href: "/admin/admissions", label: "Pipeline Dashboard" }],
-      },
       {
         label: "Admin",
         items: [

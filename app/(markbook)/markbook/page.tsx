@@ -1,12 +1,12 @@
 import {
   ArrowUpRight,
+  BarChart3,
   CheckCircle2,
   ClipboardList,
   FileText,
   History,
   Lock,
   RefreshCw,
-  Unlock,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -24,13 +24,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageShell } from "@/components/ui/page-shell";
-import { PipelineCards } from "@/components/admissions/pipeline-cards";
-import { OutdatedApplicationsTable } from "@/components/admissions/outdated-applications-table";
+import { ChangeRequestPanel } from "@/components/markbook/change-request-panel";
+import { GradeDistributionChart } from "@/components/markbook/grade-distribution-chart";
+import { PublicationCoverageChart } from "@/components/markbook/publication-coverage-chart";
+import { RecentMarkbookActivity } from "@/components/markbook/recent-markbook-activity";
+import { SheetProgressChart } from "@/components/markbook/sheet-progress-chart";
 import {
-  getOutdatedApplications,
-  getPipelineCounts,
-} from "@/lib/admissions/dashboard";
-import { getCurrentAcademicYear, requireCurrentAyCode } from "@/lib/academic-year";
+  getChangeRequestSummary,
+  getGradeDistribution,
+  getPublicationCoverage,
+  getRecentMarkbookActivity,
+  getSheetLockProgressByTerm,
+} from "@/lib/markbook/dashboard";
+import { getCurrentAcademicYear } from "@/lib/academic-year";
 import { getRoleFromClaims } from "@/lib/auth/roles";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -94,25 +100,39 @@ export default async function MarkbookHome() {
   // see the same numbers; their scoped work lives on /markbook/grading.
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
-  const ayCode = canSeeAdmin ? await requireCurrentAyCode(supabase) : null;
+  const ayId = currentAy?.id ?? null;
 
-  const [stats, pipeline, outdated] = await Promise.all([
-    currentAy ? loadStats(currentAy.id) : Promise.resolve(null),
-    canSeeAdmin && ayCode ? getPipelineCounts(ayCode) : Promise.resolve(null),
-    canSeeAdmin && ayCode
-      ? getOutdatedApplications(ayCode)
-      : Promise.resolve(
-          [] as Awaited<ReturnType<typeof getOutdatedApplications>>,
-        ),
-  ]);
+  // Module-specific analytics: grading distributions, lock progress, change
+  // requests, publication coverage, recent activity. Admissions analytics
+  // live under `/admin/admissions` + `/records` — do not reach for them here.
+  const [stats, gradeDist, sheetProgress, changeRequests, pubCoverage, activity, currentTerm] =
+    await Promise.all([
+      ayId ? loadStats(ayId) : Promise.resolve(null),
+      canSeeAdmin && ayId ? getGradeDistribution(ayId) : Promise.resolve(null),
+      canSeeAdmin && ayId ? getSheetLockProgressByTerm(ayId) : Promise.resolve(null),
+      canSeeAdmin ? getChangeRequestSummary(30) : Promise.resolve(null),
+      canSeeAdmin && ayId ? getPublicationCoverage(ayId) : Promise.resolve(null),
+      canSeeAdmin ? getRecentMarkbookActivity(8) : Promise.resolve(null),
+      ayId
+        ? service
+            .from("terms")
+            .select("term_number")
+            .eq("academic_year_id", ayId)
+            .order("term_number", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+            .then((r) => (r.data?.term_number as number | undefined) ?? null)
+        : Promise.resolve(null),
+    ]);
 
   return (
     <PageShell>
-      {/* Hero header */}
+      {/* Hero — canonical pattern. Markbook is current-AY only (see plan) so
+          the right column shows the chip + Current badge without a switcher. */}
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
+        <div className="space-y-3">
           <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Markbook · Faculty portal
+            Markbook · Dashboard
           </p>
           <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
             Welcome back.
@@ -123,22 +143,19 @@ export default async function MarkbookHome() {
             HFSE stands today.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {currentAy && (
+        {currentAy && (
+          <div className="flex items-center gap-2">
             <Badge
               variant="outline"
               className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
             >
               {currentAy.ay_code}
             </Badge>
-          )}
-          <Badge
-            variant="outline"
-            className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-          >
-            {role ?? "no role"}
-          </Badge>
-        </div>
+            <Badge className="h-7 border-brand-mint bg-brand-mint/30 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink">
+              Current
+            </Badge>
+          </div>
+        )}
       </header>
 
       {/* Stats — dashboard-01 SectionCards pattern */}
@@ -187,43 +204,35 @@ export default async function MarkbookHome() {
         </div>
       </div>
 
-      {/* Admissions snapshot — privileged roles only */}
-      {canSeeAdmin && pipeline && (
-        <section className="space-y-4">
-          <div className="flex items-end justify-between gap-4">
-            <div className="space-y-2">
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Admissions · At a glance
-              </p>
-              <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
-                Pipeline snapshot
-              </h2>
+      {/* Grade distribution + Sheet progress — privileged roles only */}
+      {canSeeAdmin && (gradeDist || sheetProgress) && (
+        <section className="grid gap-4 lg:grid-cols-3">
+          {gradeDist && (
+            <div className="lg:col-span-2">
+              <GradeDistributionChart
+                data={gradeDist}
+                termLabel={currentTerm != null ? `Term ${currentTerm}` : "Current term"}
+              />
             </div>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/admin/admissions">
-                Full dashboard
-                <ArrowUpRight className="h-4 w-4" />
-              </Link>
-            </Button>
-          </div>
-          <PipelineCards counts={pipeline} />
+          )}
+          {sheetProgress && (
+            <div className="lg:col-span-1">
+              <SheetProgressChart data={sheetProgress} />
+            </div>
+          )}
         </section>
       )}
 
-      {/* Stale applications — privileged roles only */}
-      {canSeeAdmin && (
-        <section className="space-y-4">
-          <div className="space-y-2">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Needs attention
-            </p>
-            <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
-              Stale applications
-            </h2>
-          </div>
-          <OutdatedApplicationsTable rows={outdated} />
+      {/* Change requests + Publication coverage — privileged roles only */}
+      {canSeeAdmin && (changeRequests || pubCoverage) && (
+        <section className="grid gap-4 lg:grid-cols-2">
+          {changeRequests && <ChangeRequestPanel summary={changeRequests} />}
+          {pubCoverage && <PublicationCoverageChart data={pubCoverage} />}
         </section>
       )}
+
+      {/* Recent Markbook activity — privileged roles only */}
+      {canSeeAdmin && activity && <RecentMarkbookActivity rows={activity} />}
 
       {/* Admin tools — privileged roles only */}
       {canSeeAdmin && (
@@ -288,7 +297,15 @@ export default async function MarkbookHome() {
         </div>
       )}
 
-      <TrustStrip ayLabel={currentAy?.ay_code ?? "—"} />
+      {/* Trust strip — canonical shape (matches /records, /p-files) */}
+      <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <BarChart3 className="size-3" strokeWidth={2.25} />
+        <span>{currentAy?.ay_code ?? "—"}</span>
+        <span className="text-border">·</span>
+        <span>Supabase Auth</span>
+        <span className="text-border">·</span>
+        <span>Audit-logged</span>
+      </div>
     </PageShell>
   );
 }
@@ -476,15 +493,3 @@ function QuickLinkCard({
   );
 }
 
-function TrustStrip({ ayLabel }: { ayLabel: string }) {
-  return (
-    <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-      <Unlock className="size-3" strokeWidth={2.25} />
-      <span>{ayLabel}</span>
-      <span className="text-border">·</span>
-      <span>Supabase Auth</span>
-      <span className="text-border">·</span>
-      <span>Audit-logged</span>
-    </div>
-  );
-}

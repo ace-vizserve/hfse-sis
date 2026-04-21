@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 
 import { createServiceClient } from '@/lib/supabase/service';
 import { APPROVER_FLOWS, type ApproverFlow } from '@/lib/schemas/approvers';
@@ -10,6 +11,16 @@ export type ApproverUser = {
   role: string | null;
   assigned_at: string;
 };
+
+// Request-scoped user list. `auth.admin.listUsers` doesn't accept an id filter
+// and HFSE's user count is small (<30), so we fetch all and filter in memory.
+// React.cache dedupes within a single render — both listApproversForFlow and
+// listEligibleApproverCandidates can fan out across flows without refetching.
+const getAllUsers = cache(async () => {
+  const service = createServiceClient();
+  const { data } = await service.auth.admin.listUsers({ perPage: 200 });
+  return data?.users ?? [];
+});
 
 /**
  * Users currently assigned as approvers for the given flow, joined with
@@ -34,14 +45,8 @@ export async function listApproversForFlow(flow: ApproverFlow): Promise<Approver
   type AssignmentRow = { id: string; user_id: string; created_at: string };
   const assignments = rows as AssignmentRow[];
 
-  const userIds = assignments.map((r) => r.user_id);
-
-  // auth.admin.listUsers doesn't accept an id filter; we fetch all and
-  // filter client-side. HFSE's user count is small (<30).
-  const { data: listRes } = await service.auth.admin.listUsers({ perPage: 200 });
-  const userById = new Map(
-    (listRes?.users ?? []).map((u) => [u.id, u]),
-  );
+  const users = await getAllUsers();
+  const userById = new Map(users.map((u) => [u.id, u]));
 
   return assignments
     .map((a) => {
@@ -86,8 +91,8 @@ export async function listEligibleApproverCandidates(
 ): Promise<Array<{ user_id: string; email: string; role: string }>> {
   const service = createServiceClient();
 
-  const { data: listRes } = await service.auth.admin.listUsers({ perPage: 200 });
-  const candidates = (listRes?.users ?? [])
+  const users = await getAllUsers();
+  const candidates = users
     .map((u) => {
       const role =
         ((u.app_metadata as { role?: string } | null)?.role ??
