@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeAnnualGrade } from '@/lib/compute/annual';
 
 // Fully-resolved report card payload for one student in the current academic
-// year. Staff (`/report-cards/[studentId]`) and parent
+// year. Staff (`/markbook/report-cards/[studentId]`) and parent
 // (`/parent/report-cards/[studentId]`) views both call this.
 
 export type Cell = { quarterly: number | null; letter: string | null; is_na: boolean };

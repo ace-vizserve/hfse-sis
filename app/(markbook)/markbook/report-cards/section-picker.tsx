@@ -36,7 +36,7 @@ export function SectionPicker({
     <Select
       value={selectedId ?? ''}
       onValueChange={(v) => {
-        if (v) router.push(`/report-cards?section_id=${v}`);
+        if (v) router.push(`/markbook/report-cards?section_id=${v}`);
         else router.push('/markbook/report-cards');
       }}
     >
