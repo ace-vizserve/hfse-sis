@@ -28,13 +28,13 @@ export type AyAdmissionsTableSuffix = (typeof AY_ADMISSIONS_TABLE_SUFFIXES)[numb
 
 /**
  * Given an AY code like "AY2027", returns the slug prefix used in the
- * admissions table names (e.g. "ay27"). Matches the Postgres-function
+ * admissions table names (e.g. "ay2027"). Matches the Postgres-function
  * slug derivation in `create_academic_year` / `delete_academic_year`.
  */
 export function ayCodeToSlug(ayCode: string): string {
   const m = ayCode.trim().toUpperCase().match(/^AY(\d{4})$/);
   if (!m) throw new Error(`Invalid AY code: ${ayCode}`);
-  return `ay${m[1].slice(2)}`;
+  return `ay${m[1]}`;
 }
 
 /**

@@ -3,15 +3,17 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { CalendarCog, LayoutDashboard, LogOut, ShieldCheck, UserCog, type LucideIcon } from 'lucide-react';
+import { Building2, CalendarCog, CalendarDays, ClipboardList, Database, LayoutDashboard, LayoutGrid, LogOut, Settings2, ShieldCheck, Tag, UserCog, type LucideIcon } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -30,10 +32,19 @@ const ROLE_LABEL: Record<string, string> = {
 const ICON_BY_HREF: Record<string, LucideIcon> = {
   '/sis': LayoutDashboard,
   '/sis/ay-setup': CalendarCog,
+  '/sis/calendar': CalendarDays,
+  '/sis/sections': LayoutGrid,
+  '/sis/admin/discount-codes': Tag,
   '/sis/admin/approvers': ShieldCheck,
+  '/sis/admin/school-config': Building2,
+  '/sis/admin/evaluation-checklists': ClipboardList,
+  '/sis/admin/users': UserCog,
+  '/sis/admin/settings': Settings2,
+  '/sis/sync-students': Database,
 };
 
-const PREFIX_MATCH_HREFS = new Set<string>();
+// /sis/sections/[id] should highlight the "Sections" parent nav item.
+const PREFIX_MATCH_HREFS = new Set(['/sis/sections']);
 
 const ACTIVE_INDICATOR =
   'relative h-9 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-r-full before:bg-brand-indigo before:opacity-0 before:transition-opacity data-[active=true]:before:opacity-100';
@@ -67,12 +78,16 @@ export function SisSidebar({ email, role }: { email: string; role: string }) {
   // Filter out items the caller's role can't access. `requiresRoles` is
   // optional — an item without it is visible to anyone in the Records
   // audience (registrar + admin + superadmin per ROUTE_ACCESS on /sis).
-  const sections = NAV_BY_MODULE.sis.map((section) => ({
-    ...section,
-    items: section.items.filter(
-      (item) => !item.requiresRoles || item.requiresRoles.includes(role as Role),
-    ),
-  }));
+  // Empty groups (e.g. "Access" when viewed as registrar) are dropped so
+  // no orphan group labels render.
+  const sections = NAV_BY_MODULE.sis
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (item) => !item.requiresRoles || item.requiresRoles.includes(role as Role),
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
 
   return (
     <Sidebar collapsible="icon">
@@ -99,9 +114,16 @@ export function SisSidebar({ email, role }: { email: string; role: string }) {
         </Link>
       </SidebarHeader>
 
-      <SidebarContent className="px-1.5 py-3">
+      <SidebarContent className="overflow-hidden px-0 py-0">
+        <ScrollArea className="h-full w-full">
+          <div className="px-1.5 py-3">
         {sections.map((section, i) => (
           <SidebarGroup key={i}>
+            {section.label && (
+              <SidebarGroupLabel className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
+                {section.label}
+              </SidebarGroupLabel>
+            )}
             <SidebarGroupContent>
               <SidebarMenu>
                 {section.items.map((item) => {
@@ -126,6 +148,8 @@ export function SisSidebar({ email, role }: { email: string; role: string }) {
             </SidebarGroupContent>
           </SidebarGroup>
         ))}
+          </div>
+        </ScrollArea>
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-3">

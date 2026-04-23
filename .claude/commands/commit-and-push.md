@@ -19,6 +19,19 @@ npm run build
 
 ### 3. Stage All Changes
 
+**Only when the current branch is `main`**, pin the commit identity to the
+project service account so the Vercel production-deploy attribution lands on
+the right address. On any other branch, skip this step — feature-branch
+commits keep the user's own identity.
+
+```
+if [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]; then
+  git config user.email "vercel.hfse@gmail.com"
+fi
+```
+
+Then stage:
+
 ```
 git add .
 ```

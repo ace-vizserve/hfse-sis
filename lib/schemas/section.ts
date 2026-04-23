@@ -19,3 +19,12 @@ export const SectionCreateSchema = z.object({
 });
 
 export type SectionCreateInput = z.infer<typeof SectionCreateSchema>;
+
+// PATCH /api/sections/[id] — rename is the only mutation in scope today.
+// `level_id` and `academic_year_id` are load-bearing joins and can't be
+// edited without cascade concerns; class_type is set at creation for now.
+export const SectionUpdateSchema = z.object({
+  name: z.string().trim().min(1, 'Name required').max(60, 'Keep it under 60 chars'),
+});
+
+export type SectionUpdateInput = z.infer<typeof SectionUpdateSchema>;

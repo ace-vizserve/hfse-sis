@@ -17,7 +17,7 @@ export function ReportCardDocument({
   payload: ReportCardPayload;
   viewingTermNumber: 1 | 2 | 3 | 4;
 }) {
-  const { ay, terms, student, section, level, enrollment_status, subjects, attendance, comments } =
+  const { ay, terms, student, section, level, enrollment_status, subjects, attendance, comments, schoolConfig } =
     payload;
 
   const isFinal = viewingTermNumber === 4;
@@ -52,6 +52,11 @@ export function ReportCardDocument({
           <h1 className="font-serif text-[26px] font-semibold leading-tight tracking-tight text-ink">
             Student Progress Report
           </h1>
+          {schoolConfig.peiRegistrationNumber && (
+            <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-4">
+              PEI Reg. No. {schoolConfig.peiRegistrationNumber}
+            </p>
+          )}
         </header>
 
         {/* Student info card — different fields per template */}
@@ -224,7 +229,22 @@ export function ReportCardDocument({
         {/* Adviser comments — T1-T3 only (T4 reference doesn't show comments) */}
         {!isFinal && (
           <section className="space-y-3">
-            <SectionHeading>Form Class Adviser&apos;s Comments</SectionHeading>
+            <SectionHeading>
+              Form Class Adviser&apos;s Comments
+              {(() => {
+                // KD #49: parenthetical carries the viewing term's virtue
+                // theme. Falls back to an unparenthesised heading when the
+                // theme is null (historical terms pre-migration 018).
+                const viewingTerm = terms.find((t) => t.term_number === viewingTermNumber);
+                const virtue = viewingTerm?.virtue_theme?.trim() || null;
+                return virtue ? (
+                  <span className="font-sans text-[11px] font-normal tracking-normal text-ink-4">
+                    {' '}
+                    (HFSE Virtues: {virtue})
+                  </span>
+                ) : null;
+              })()}
+            </SectionHeading>
             <div className="space-y-2.5">
               {visibleTerms.map((t) => {
                 const comment =
@@ -260,12 +280,16 @@ export function ReportCardDocument({
               </div>
               <div>
                 <div className="h-12 border-b border-ink-5"></div>
-                <p className="mt-2 font-medium text-ink">&nbsp;</p>
+                <p className="mt-2 font-medium text-ink">
+                  {schoolConfig.principalName || ' '}
+                </p>
                 <p className="text-[10px] uppercase tracking-wider text-ink-4">School Principal</p>
               </div>
               <div>
                 <div className="h-12 border-b border-ink-5"></div>
-                <p className="mt-2 font-medium text-ink">&nbsp;</p>
+                <p className="mt-2 font-medium text-ink">
+                  {schoolConfig.ceoName || ' '}
+                </p>
                 <p className="text-[10px] uppercase tracking-wider text-ink-4">Founder &amp; CEO</p>
               </div>
             </div>

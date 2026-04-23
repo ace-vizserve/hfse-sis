@@ -68,7 +68,7 @@ Supabase (PostgreSQL) — single shared project
         ├── students, section_students, academic_years, terms, levels, subjects
         ├── subject_configs, sections, teacher_assignments
         ├── grading_sheets, grade_entries, grade_audit_log
-        ├── report_card_comments, attendance_records, report_card_publications
+        ├── evaluation_writeups, attendance_records, report_card_publications
         ├── grade_change_requests, p_file_revisions, audit_log
         └── supabase.auth.users (shared with parent portal for SSO)
 ```

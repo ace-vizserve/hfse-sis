@@ -1,15 +1,17 @@
 import Link from 'next/link';
 import {
+  ArrowUpRight,
   ChevronRight,
   GraduationCap,
   LayoutGrid,
   School,
+  Settings,
   Users,
   UserX,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
-import { NewSectionButton } from '@/components/markbook/new-section-button';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardAction,
@@ -33,6 +35,12 @@ type SectionCard = {
 
 export default async function SectionsListPage() {
   const supabase = await createClient();
+  const sessionUser = await getSessionUser();
+  const canManage =
+    sessionUser?.role === 'registrar' ||
+    sessionUser?.role === 'school_admin' ||
+    sessionUser?.role === 'admin' ||
+    sessionUser?.role === 'superadmin';
 
   const { data: ay } = await supabase
     .from('academic_years')
@@ -46,17 +54,6 @@ export default async function SectionsListPage() {
         .select('id, name, level:levels(id, code, label, level_type)')
         .eq('academic_year_id', ay.id)
     : { data: [] as Array<{ id: string; name: string; level: LevelLite | LevelLite[] | null }> };
-
-  // Level catalogue for the "New section" dialog.
-  const { data: levelRows } = await supabase
-    .from('levels')
-    .select('id, code, label, level_type')
-    .order('code');
-  const levelOptions = ((levelRows ?? []) as LevelLite[]).map((l) => ({
-    id: l.id,
-    code: l.code,
-    label: l.label,
-  }));
 
   const ids = (sections ?? []).map((s) => s.id);
   const counts: Record<string, { active: number; withdrawn: number }> = {};
@@ -104,14 +101,15 @@ export default async function SectionsListPage() {
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div className="space-y-4">
           <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Administration · Rosters
+            Markbook · Rosters
           </p>
           <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
             Sections & advisers.
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Every section for the current academic year. Click a card to view the roster, manage
-            enrolment, or assign a form class adviser.
+            Every section for the current academic year. Click a card to view the roster, grading
+            sheets, and attendance. Section setup (create, teacher assignments) lives in SIS
+            Admin.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -123,7 +121,15 @@ export default async function SectionsListPage() {
               {ay.ay_code}
             </Badge>
           )}
-          <NewSectionButton levels={levelOptions} ayCode={ay?.ay_code ?? null} />
+          {canManage && (
+            <Button asChild size="sm" variant="outline" className="gap-1.5">
+              <Link href="/sis/sections">
+                <Settings className="size-3.5" />
+                Manage in SIS Admin
+                <ArrowUpRight className="size-3" />
+              </Link>
+            </Button>
+          )}
         </div>
       </header>
 
@@ -162,7 +168,17 @@ export default async function SectionsListPage() {
               No sections yet
             </div>
             <div className="text-sm text-muted-foreground">
-              Run the seed SQL or ask the registrar to create sections for the current AY.
+              {canManage ? (
+                <>
+                  Create sections for the current AY in{' '}
+                  <Link href="/sis/sections" className="font-medium text-foreground underline">
+                    SIS Admin
+                  </Link>
+                  .
+                </>
+              ) : (
+                <>Ask the registrar to create sections for the current AY.</>
+              )}
             </div>
           </CardContent>
         </Card>

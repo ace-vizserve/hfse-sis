@@ -102,7 +102,7 @@ export function AySetupWizard({ preview, children }: Props) {
   }
 
   const ayCode = form.watch('ay_code')?.trim().toUpperCase() || '';
-  const aySlug = /^AY\d{4}$/.test(ayCode) ? `ay${ayCode.slice(4)}` : 'ay__';
+  const aySlug = /^AY\d{4}$/.test(ayCode) ? `ay${ayCode.slice(2).toLowerCase()}` : 'ay____';
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>

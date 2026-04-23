@@ -66,24 +66,33 @@ export async function GET(
   });
   const unlockedSheets = sheetList.filter((s) => !s.is_locked);
 
-  // 4) Comments for this section + term
+  // 4) Evaluation write-ups for this section + term (KD #49). Sole source
+  // for the adviser-comment readiness check since migration 024 retired
+  // `report_card_comments`. Three states: submitted, drafted (non-empty
+  // text but not submitted), missing (no row OR empty text).
   const studentIds = activeStudents.map((s) => s.studentId).filter((id): id is string => !!id);
-  const { data: commentRows } = studentIds.length > 0
+  const { data: writeupRows } = studentIds.length > 0
     ? await service
-        .from('report_card_comments')
-        .select('student_id, comment')
+        .from('evaluation_writeups')
+        .select('student_id, writeup, submitted')
         .eq('term_id', termId)
         .eq('section_id', sectionId)
         .in('student_id', studentIds)
     : { data: [] };
-  const commentsByStudent = new Map(
-    (commentRows ?? []).map((c) => [c.student_id, c.comment]),
+  type WriteupLite = { student_id: string; writeup: string | null; submitted: boolean };
+  const writeupsByStudent = new Map<string, WriteupLite>(
+    (writeupRows ?? []).map((w) => [(w as WriteupLite).student_id, w as WriteupLite]),
   );
-  const missingComments = activeStudents.filter((s) => {
+  const missingEvaluations = activeStudents.filter((s) => {
     if (!s.studentId) return true;
-    const comment = commentsByStudent.get(s.studentId);
-    return !comment || comment.trim().length === 0;
+    const w = writeupsByStudent.get(s.studentId);
+    return !w || !w.writeup || w.writeup.trim().length === 0;
   });
+  const submittedCount = activeStudents.filter((s) => {
+    if (!s.studentId) return false;
+    return writeupsByStudent.get(s.studentId)?.submitted === true;
+  }).length;
+  const draftedCount = activeStudents.length - missingEvaluations.length - submittedCount;
 
   // 5) Attendance for this section + term
   const sectionStudentIds = activeStudents.map((s) => s.sectionStudentId);
@@ -190,10 +199,13 @@ export async function GET(
       locked: sheetList.length - unlockedSheets.length,
       unlocked: unlockedSheets.map((s) => ({ subject_name: s.subject_name })),
     },
-    comments: {
+    // Adviser-comment readiness (KD #49). Sourced from `evaluation_writeups`
+    // since migration 024 retired `report_card_comments`.
+    evaluations: {
       total_active: activeStudents.length,
-      written: activeStudents.length - missingComments.length,
-      missing: missingComments.map((s) => ({ name: s.name, index: s.indexNumber })),
+      submitted: submittedCount,
+      drafted: draftedCount,
+      missing: missingEvaluations.map((s) => ({ name: s.name, index: s.indexNumber })),
     },
     attendance: {
       total_active: activeStudents.length,

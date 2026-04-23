@@ -27,6 +27,7 @@ export default async function Home() {
   // Single-module roles: skip the picker, go straight to work.
   if (role === 'teacher') redirect('/markbook');
   if (role === 'p-file') redirect('/p-files');
+  if (role === 'admissions') redirect('/admissions');
   if (!role) redirect('/parent');
 
   // Superadmin defaults to /sis per KD #42 — structural oversight, not daily

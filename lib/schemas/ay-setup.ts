@@ -64,6 +64,21 @@ export const TermDatesSchema = z
   .object({
     startDate: termDate,
     endDate: termDate,
+    // Free-text virtue theme set by the registrar (e.g. "Faith, Hope, Love").
+    // Optional for backward compatibility with the dates-only payload shape.
+    // `null` or empty string clears it. Appears as a prompt in the Evaluation
+    // module and on T1–T3 report cards (KD #49).
+    virtueTheme: z
+      .string()
+      .trim()
+      .max(200, 'Keep the virtue theme under 200 chars')
+      .nullable()
+      .optional()
+      .transform((s) => (s == null || s.length === 0 ? null : s)),
+    // Advisory grading cutoff per term. Purely informational — the actual
+    // per-sheet lock is independent. Same optional shape as virtueTheme so
+    // pre-existing callers keep working.
+    gradingLockDate: termDate.optional(),
   })
   .refine((v) => !v.startDate || !v.endDate || v.startDate <= v.endDate, {
     message: 'End date must be on or after start date',

@@ -28,6 +28,7 @@ type Config = {
   qa_weight: number;
   ww_max_slots: number;
   pt_max_slots: number;
+  qa_max: number;
 };
 
 export function SubjectConfigMatrix({
@@ -63,6 +64,7 @@ export function SubjectConfigMatrix({
       qa_weight: Math.round(config.qa_weight * 100),
       ww_max_slots: config.ww_max_slots,
       pt_max_slots: config.pt_max_slots,
+      qa_max: config.qa_max,
     });
     setOpen(true);
   }
@@ -135,13 +137,13 @@ export function SubjectConfigMatrix({
                           type="button"
                           onClick={() => openCell(s, l, cfg)}
                           className="inline-flex w-full flex-col items-center rounded-md border border-border bg-card px-2 py-1 transition-colors hover:border-primary/40 hover:bg-primary/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                          title={`Edit ${s.name} × ${l.code} — ${ww}/${pt}/${qa} · slots ${cfg.ww_max_slots}/${cfg.pt_max_slots}`}
+                          title={`Edit ${s.name} × ${l.code} — weights ${ww}/${pt}/${qa} · slots ${cfg.ww_max_slots}/${cfg.pt_max_slots} · QA/${cfg.qa_max}`}
                         >
                           <span className="font-mono text-[12px] font-semibold tabular-nums text-foreground">
                             {ww}·{pt}·{qa}
                           </span>
                           <span className="font-mono text-[9px] tabular-nums text-muted-foreground">
-                            {cfg.ww_max_slots}/{cfg.pt_max_slots} slots
+                            {cfg.ww_max_slots}/{cfg.pt_max_slots} · QA/{cfg.qa_max}
                           </span>
                         </button>
                       </TableCell>

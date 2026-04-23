@@ -8,7 +8,7 @@ P-Files lives alongside the other Records modules as a separate route group (`/(
 
 **Current manual process:** Parents upload documents during enrollment via the admissions portal (`enrol.hfse.edu.sg`). Ms. Gael (admissions) collects them, forwards to the P-files person, who manually uploads to SharePoint folders organized by student name/number. No centralized tracking of what's complete vs missing.
 
-**Goal:** Replace the manual SharePoint workflow with an in-app cabinet that reads from `ay{YY}_enrolment_documents` (already populated by parent uploads), lets staff upload replacements on behalf of parents, preserves every previous version in a revision history, and flags expired documents.
+**Goal:** Replace the manual SharePoint workflow with an in-app cabinet that reads from `ay{YYYY}_enrolment_documents` (already populated by parent uploads), lets staff upload replacements on behalf of parents, preserves every previous version in a revision history, and flags expired documents.
 
 ## Access
 
@@ -51,8 +51,8 @@ Two categories based on expiry behavior:
 
 ### Conditional logic
 
-- Father documents required only if `fatherEmail` is present in `ay{YY}_enrolment_applications`
-- Guardian documents required only if `guardianEmail` is present in `ay{YY}_enrolment_applications`
+- Father documents required only if `fatherEmail` is present in `ay{YYYY}_enrolment_applications`
+- Guardian documents required only if `guardianEmail` is present in `ay{YYYY}_enrolment_applications`
 - Mother documents always required (assumption — validate with stakeholder)
 
 ### Status model in P-Files
@@ -71,7 +71,7 @@ There is **no `Rejected` state in P-Files** — rejection is a validation call a
 
 ## Data Source
 
-All document data lives in the admissions table `ay{YY}_enrolment_documents`, keyed by `studentNumber`. This table is **already populated** by parent uploads through the admissions portal. The SIS has read access via `createServiceClient()` (service-role, bypasses RLS).
+All document data lives in the admissions table `ay{YYYY}_enrolment_documents`, keyed by `studentNumber`. This table is **already populated** by parent uploads through the admissions portal. The SIS has read access via `createServiceClient()` (service-role, bypasses RLS).
 
 ### Document URL format
 
@@ -101,7 +101,7 @@ Join path: `enrolment_documents.studentNumber` → `enrolment_applications.stude
 - The button labels switch based on slot state: **Upload** when missing, **Replace** when a file is already on record
 - Staff uploads always set the DB status column to `'Valid'` so the repository view reflects that the staff member accepted the file. Validation semantics still belong to SIS.
 - Multipart: one or more files. Single file → stored as-is; multiple PDFs → merged server-side via `pdf-merger-js`. Limits: 10 MB per file, 30 MB per request
-- Expiring slots require structured metadata (passport number *or* pass type + expiry date) which is mirrored into `ay{YY}_enrolment_applications`
+- Expiring slots require structured metadata (passport number *or* pass type + expiry date) which is mirrored into `ay{YYYY}_enrolment_applications`
 
 ### 4. Revision history
 

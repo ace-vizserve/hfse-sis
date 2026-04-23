@@ -13,6 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import type { DocumentRevision } from '@/lib/p-files/queries';
 
 type HistoryDialogProps = {
@@ -91,7 +92,7 @@ export function HistoryDialog({ enroleeNumber, slotKey, label, trigger }: Histor
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[60vh] overflow-y-auto py-3">
+        <ScrollArea className="h-[60vh] py-3">
           {loading && (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
@@ -169,7 +170,7 @@ export function HistoryDialog({ enroleeNumber, slotKey, label, trigger }: Histor
               })}
             </ul>
           )}
-        </div>
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );

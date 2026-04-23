@@ -12,6 +12,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -30,11 +31,12 @@ const ROLE_LABEL: Record<string, string> = {
 const ICON_BY_HREF: Record<string, LucideIcon> = {
   '/records': LayoutDashboard,
   '/records/students': Users,
-  '/records/discount-codes': Tag,
+  // Cross-module link to the SIS Admin catalogue (moved 2026-04-22).
+  '/sis/admin/discount-codes': Tag,
   '/records/audit-log': History,
 };
 
-const PREFIX_MATCH_HREFS = new Set(['/records/students', '/records/discount-codes']);
+const PREFIX_MATCH_HREFS = new Set(['/records/students']);
 
 const ACTIVE_INDICATOR =
   'relative h-9 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-r-full before:bg-brand-indigo before:opacity-0 before:transition-opacity data-[active=true]:before:opacity-100';
@@ -65,12 +67,14 @@ export function RecordsSidebar({ email, role }: { email: string; role: string })
     return pathname === item.href;
   }
 
-  const sections = NAV_BY_MODULE.records.map((section) => ({
-    ...section,
-    items: section.items.filter(
-      (item) => !item.requiresRoles || item.requiresRoles.includes(role as Role),
-    ),
-  }));
+  const sections = NAV_BY_MODULE.records
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (item) => !item.requiresRoles || item.requiresRoles.includes(role as Role),
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
 
   return (
     <Sidebar collapsible="icon">
@@ -100,6 +104,11 @@ export function RecordsSidebar({ email, role }: { email: string; role: string })
       <SidebarContent className="px-1.5 py-3">
         {sections.map((section, i) => (
           <SidebarGroup key={i}>
+            {section.label && (
+              <SidebarGroupLabel className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
+                {section.label}
+              </SidebarGroupLabel>
+            )}
             <SidebarGroupContent>
               <SidebarMenu>
                 {section.items.map((item) => {

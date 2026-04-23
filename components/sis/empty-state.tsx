@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 // Canonical empty-state lockup for the Records module — icon tile + serif title
-// + body + optional CTA. Per docs/context/09-design-system.md §7.6:
+// + body + optional CTA. Per docs/context/09a-design-patterns.md §7.6:
 // "Empty states are never blank."
 //
 // Renders as a centered, bordered placeholder. Use inside a TableCell colSpan

@@ -2,12 +2,22 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { CalendarX, Loader2, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
+import { CalendarOff, CalendarPlus, CheckCheck, Loader2, Trash2, X } from 'lucide-react';
+import type { DayButton } from 'react-day-picker';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Calendar, CalendarDayButton } from '@/components/ui/calendar';
 import { DatePicker } from '@/components/ui/date-picker';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -18,7 +28,32 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { SchoolCalendarRow, CalendarEventRow } from '@/lib/attendance/calendar';
+import {
+  DAY_TYPE_LABELS,
+  DAY_TYPE_VALUES,
+  isEncodableDayType,
+  type DayType,
+} from '@/lib/schemas/attendance';
 import { CopyHolidaysDialog } from '@/components/attendance/copy-holidays-dialog';
+
+// School-calendar admin, month-view. Composes the shadcn `Calendar`
+// primitive (react-day-picker) with modifier classes for school-day and
+// holiday states. The design-system (§6) mandates `@shadcn` only; the
+// registry has no "event calendar", so we compose per §5 step 4.
+//
+// UX model: every weekday is a school day by default. The page RSC
+// auto-seeds `school_calendar` rows on first visit via ensureTermSeeded(),
+// so the registrar never sees empty state. Weekends are hard-disabled.
+// The only actions on a weekday click are "Set as holiday" and
+// "Set as important date".
+//
+// Allowlist semantics (migration 015) are preserved underneath: the
+// attendance grid reads `school_calendar` rows and treats missing rows as
+// non-encodable once the term has ≥1 row. Auto-seed guarantees that
+// state — the UI just never shows it.
+//
+// Events (`calendar_events`) are informational labels overlaid as a
+// primary-colored dot below the date number.
 
 type TermOption = {
   id: string;
@@ -35,6 +70,75 @@ type CopyHolidaysProps = {
   sourceAyCode: string;
   sourceHolidays: SchoolCalendarRow[];
 };
+
+// Short banner labels printed inside each cell (below the day number).
+// Keep terse — cell is ~80px wide. `school_day` is intentionally null so
+// the default encodable state renders nothing; showing "School" on every
+// weekday would be pure noise.
+const DAY_TYPE_SHORT_LABEL: Record<DayType, string | null> = {
+  school_day: null,
+  public_holiday: 'Public',
+  school_holiday: 'School hol.',
+  hbl: 'HBL',
+  no_class: 'No class',
+};
+
+// Tint + descriptive copy per day-type (KD #50). `school_day` intentionally
+// has no tint — it's the default encodable state and the grid background
+// stays neutral. `hbl` uses primary (blue) since it's also encodable.
+const DAY_TYPE_STYLES: Record<
+  DayType,
+  { cell: string; chip: string; blurb: string }
+> = {
+  school_day: {
+    cell: 'bg-emerald-500/15 text-emerald-900 font-semibold hover:bg-emerald-500/25 dark:text-emerald-200',
+    chip: 'bg-emerald-500/20 text-emerald-900 dark:text-emerald-200',
+    blurb: 'Regular in-school day. Attendance is taken.',
+  },
+  public_holiday: {
+    cell: 'bg-destructive/15 text-destructive font-semibold hover:bg-destructive/25',
+    chip: 'bg-destructive/15 text-destructive',
+    blurb: 'National / public closure. No attendance taken.',
+  },
+  school_holiday: {
+    cell: 'bg-amber-500/20 text-amber-900 font-semibold hover:bg-amber-500/30 dark:text-amber-100',
+    chip: 'bg-amber-500/20 text-amber-900 dark:text-amber-100',
+    blurb: 'School-only closure (staff PD, founder’s day). No attendance taken.',
+  },
+  hbl: {
+    cell: 'bg-primary/15 text-primary font-semibold hover:bg-primary/25',
+    chip: 'bg-primary/15 text-primary',
+    blurb: 'Home-based learning. Attendance still taken; counts as a school day.',
+  },
+  no_class: {
+    cell: 'bg-muted text-muted-foreground font-semibold hover:bg-muted/80',
+    chip: 'bg-muted text-muted-foreground',
+    blurb: 'School-wide no class. No attendance taken.',
+  },
+};
+
+// yyyy-MM-dd → local Date (no tz shift).
+function parseIso(iso: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) throw new Error(`bad iso: ${iso}`);
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+// local Date → yyyy-MM-dd.
+function formatIso(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// Readable date: "Monday, 15 Jan 2026".
+function formatHumanDate(iso: string): string {
+  return parseIso(iso).toLocaleDateString('en-SG', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
 
 export function CalendarAdminClient({
   terms,
@@ -54,54 +158,98 @@ export function CalendarAdminClient({
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
 
+  const [dateDialogIso, setDateDialogIso] = useState<string | null>(null);
+  const [addEventOpen, setAddEventOpen] = useState(false);
+
+  // Multi-select bulk-classify flow. When `multiSelect` is true, clicking a
+  // weekday toggles it into `selectedDates` instead of opening the single
+  // action dialog. "Apply day-type…" opens `bulkDialogOpen` which writes
+  // every selected date in one `POST /api/attendance/calendar` batch.
+  const [multiSelect, setMultiSelect] = useState(false);
+  const [selectedDates, setSelectedDates] = useState<Date[]>([]);
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+
   const selectedTerm = terms.find((t) => t.id === termId) ?? terms[0];
 
+  // Index calendar rows by ISO date for O(1) lookup.
+  const byDate = useMemo(() => {
+    const map = new Map<string, SchoolCalendarRow>();
+    for (const r of calendar) map.set(r.date, r);
+    return map;
+  }, [calendar]);
+
+  // Modifier date arrays for react-day-picker — one per day_type + overlay.
+  const daysByType = useMemo(() => {
+    const out: Record<DayType, Date[]> = {
+      school_day: [],
+      public_holiday: [],
+      school_holiday: [],
+      hbl: [],
+      no_class: [],
+    };
+    for (const r of calendar) {
+      out[r.dayType]?.push(parseIso(r.date));
+    }
+
+    // Expand each event's [start..end] into individual days for the dot overlay.
+    const eventIsoSet = new Set<string>();
+    for (const e of events) {
+      const d = parseIso(e.startDate);
+      const end = parseIso(e.endDate);
+      while (d.getTime() <= end.getTime()) {
+        eventIsoSet.add(formatIso(d));
+        d.setDate(d.getDate() + 1);
+      }
+    }
+    return { ...out, event: Array.from(eventIsoSet).map(parseIso) };
+  }, [calendar, events]);
+
+  // Events overlapping a given ISO date — used by the date-action dialog.
+  const eventsOnDate = useMemo(() => {
+    return (iso: string): CalendarEventRow[] =>
+      events.filter((e) => iso >= e.startDate && iso <= e.endDate);
+  }, [events]);
+
   function switchTerm(next: string) {
-    // Term-id is the only searchParam this page cares about, so we build the
-    // URL directly instead of reading `useSearchParams()` — which would need
-    // a Suspense boundary in Next 16.
+    // Clear multi-select selection when crossing terms — the picked dates
+    // belong to the previous term's calendar scope and shouldn't leak.
+    setSelectedDates([]);
+    setMultiSelect(false);
     startTransition(() => {
       router.push(`${pathname}?term_id=${encodeURIComponent(next)}`);
     });
   }
 
-  async function autofillWeekdays() {
-    if (!selectedTerm) return;
-    setBusy(true);
-    try {
-      const res = await fetch('/api/attendance/calendar', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'autofill_weekdays', termId: selectedTerm.id }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? 'autofill failed');
-      toast.success(
-        `Seeded ${body.inserted ?? body.seeded ?? 0} school day${
-          (body.inserted ?? body.seeded) === 1 ? '' : 's'
-        } for ${selectedTerm.label}.`,
-      );
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'autofill failed');
-    } finally {
-      setBusy(false);
-    }
+  function toggleMultiSelect() {
+    setMultiSelect((prev) => {
+      if (prev) {
+        // Exiting multi-select mode clears the pending selection.
+        setSelectedDates([]);
+      }
+      return !prev;
+    });
   }
 
-  async function toggleHoliday(date: string, nextIsHoliday: boolean, label: string | null) {
+  async function bulkUpsert(dates: Date[], dayType: DayType, label: string | null) {
+    if (!selectedTerm || dates.length === 0) return;
     setBusy(true);
     try {
       const res = await fetch('/api/attendance/calendar', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          termId: selectedTerm?.id,
-          entries: [{ date, isHoliday: nextIsHoliday, label }],
+          termId: selectedTerm.id,
+          entries: dates.map((d) => ({ date: formatIso(d), dayType, label })),
         }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error ?? 'save failed');
+      toast.success(
+        `${dates.length} date${dates.length === 1 ? '' : 's'} set to ${DAY_TYPE_LABELS[dayType]}.`,
+      );
+      setSelectedDates([]);
+      setMultiSelect(false);
+      setBulkDialogOpen(false);
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'save failed');
@@ -110,23 +258,58 @@ export function CalendarAdminClient({
     }
   }
 
-  async function removeEntry(date: string) {
+  async function upsertDate(iso: string, dayType: DayType, label: string | null) {
     if (!selectedTerm) return;
     setBusy(true);
     try {
-      const res = await fetch(
-        `/api/attendance/calendar?termId=${encodeURIComponent(selectedTerm.id)}&date=${encodeURIComponent(date)}`,
-        { method: 'DELETE' },
-      );
+      const res = await fetch('/api/attendance/calendar', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          termId: selectedTerm.id,
+          entries: [{ date: iso, dayType, label }],
+        }),
+      });
       const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? 'delete failed');
+      if (!res.ok) throw new Error(body?.error ?? 'save failed');
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'delete failed');
+      toast.error(e instanceof Error ? e.message : 'save failed');
+      throw e;
     } finally {
       setBusy(false);
     }
   }
+
+  async function createEventOnDate(iso: string, label: string) {
+    if (!selectedTerm) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/attendance/calendar/events', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          termId: selectedTerm.id,
+          startDate: iso,
+          endDate: iso,
+          label,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error ?? 'create failed');
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'create failed');
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Missing row is defensive only — auto-seed should prevent it. Treat as
+  // school day so the dialog still offers sensible actions.
+  const dateDialogEntry = dateDialogIso ? byDate.get(dateDialogIso) ?? null : null;
+  const dateDialogType: DayType = dateDialogEntry?.dayType ?? 'school_day';
 
   return (
     <div className="space-y-6">
@@ -169,398 +352,609 @@ export function CalendarAdminClient({
           )}
           <Button
             type="button"
+            variant={multiSelect ? 'default' : 'outline'}
+            size="sm"
+            disabled={busy || !selectedTerm}
+            onClick={toggleMultiSelect}
+            className="gap-1.5"
+          >
+            <CheckCheck className="size-3.5" />
+            {multiSelect ? 'Cancel multi-select' : 'Multi-select'}
+          </Button>
+          <Button
+            type="button"
             variant="outline"
             size="sm"
             disabled={busy || !selectedTerm}
-            onClick={autofillWeekdays}
+            onClick={() => setAddEventOpen(true)}
             className="gap-1.5"
           >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-            Seed weekdays
+            <CalendarPlus className="size-3.5" />
+            Add date range
           </Button>
+          {busy && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
         </div>
       </div>
 
-      {/* Calendar grid */}
+      {/* Multi-select selection strip. */}
+      {multiSelect && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm">
+          <div className="flex items-center gap-2 text-foreground">
+            <CheckCheck className="size-4 text-primary" />
+            <span className="font-medium tabular-nums">
+              {selectedDates.length === 0
+                ? 'Click dates to build a selection'
+                : `${selectedDates.length} date${selectedDates.length === 1 ? '' : 's'} selected`}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy || selectedDates.length === 0}
+              onClick={() => setSelectedDates([])}
+              className="gap-1.5"
+            >
+              <X className="size-3.5" />
+              Clear
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || selectedDates.length === 0}
+              onClick={() => setBulkDialogOpen(true)}
+              className="gap-1.5"
+            >
+              Apply day-type
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Legend */}
       {selectedTerm && (
-        <TermCalendarGrid
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/30 px-4 py-2.5 text-[11px] text-muted-foreground">
+          {DAY_TYPE_VALUES.map((dt) => (
+            <LegendChip key={dt} className={DAY_TYPE_STYLES[dt].chip}>
+              {DAY_TYPE_LABELS[dt]}
+            </LegendChip>
+          ))}
+          <LegendChip className="bg-muted text-muted-foreground">Weekend</LegendChip>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block size-1.5 rounded-full bg-primary" />
+            <span>Important date overlay</span>
+          </span>
+        </div>
+      )}
+
+      {/* Month view */}
+      {selectedTerm && (
+        <MonthView
           term={selectedTerm}
-          calendar={calendar}
-          events={events}
-          busy={busy}
-          onToggleHoliday={toggleHoliday}
-          onRemoveEntry={removeEntry}
+          daysByType={daysByType}
+          multiSelect={multiSelect}
+          selectedDates={selectedDates}
+          onSelectDates={setSelectedDates}
+          onDayClick={(iso) => setDateDialogIso(iso)}
         />
       )}
 
-      {/* Events overlay section */}
+      {/* Events panel */}
       {selectedTerm && (
         <EventsPanel
-          termId={selectedTerm.id}
-          termStart={selectedTerm.startDate}
-          termEnd={selectedTerm.endDate}
           events={events}
           busy={busy}
-          onChanged={() => router.refresh()}
-          setBusy={setBusy}
+          onDelete={async (id) => {
+            setBusy(true);
+            try {
+              const res = await fetch(
+                `/api/attendance/calendar/events?id=${encodeURIComponent(id)}`,
+                { method: 'DELETE' },
+              );
+              const body = await res.json();
+              if (!res.ok) throw new Error(body?.error ?? 'delete failed');
+              router.refresh();
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : 'delete failed');
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      )}
+
+      {/* Dialogs */}
+      <DateActionDialog
+        open={dateDialogIso !== null}
+        iso={dateDialogIso}
+        currentDayType={dateDialogType}
+        existingLabel={dateDialogEntry?.label ?? null}
+        eventsOnDate={dateDialogIso ? eventsOnDate(dateDialogIso) : []}
+        busy={busy}
+        onClose={() => setDateDialogIso(null)}
+        onSaveDayType={async (iso, dayType, label) => {
+          await upsertDate(iso, dayType, label);
+          setDateDialogIso(null);
+        }}
+        onAddImportantDate={async (iso, label) => {
+          await createEventOnDate(iso, label);
+          setDateDialogIso(null);
+        }}
+      />
+
+      <AddEventDialog
+        open={addEventOpen}
+        termId={selectedTerm?.id ?? ''}
+        termStart={selectedTerm?.startDate ?? ''}
+        termEnd={selectedTerm?.endDate ?? ''}
+        onClose={() => setAddEventOpen(false)}
+        onCreated={() => {
+          setAddEventOpen(false);
+          router.refresh();
+        }}
+      />
+
+      <BulkDayTypeDialog
+        open={bulkDialogOpen}
+        selectedDates={selectedDates}
+        busy={busy}
+        onClose={() => setBulkDialogOpen(false)}
+        onSave={bulkUpsert}
+      />
+    </div>
+  );
+}
+
+function LegendChip({
+  className,
+  children,
+}: {
+  className: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-sm px-2 py-0.5 font-medium ${className}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+// Picks the banner label for a given day cell based on which day-type
+// modifier is set on it. Returns null for `school_day` (no banner) and
+// for weekends / disabled days (no modifier match).
+function bannerTypeFromModifiers(modifiers: Record<string, unknown>): DayType | null {
+  if (modifiers.public_holiday) return 'public_holiday';
+  if (modifiers.school_holiday) return 'school_holiday';
+  if (modifiers.hbl) return 'hbl';
+  if (modifiers.no_class) return 'no_class';
+  return null;
+}
+
+// Wraps shadcn's CalendarDayButton so every cell renders a small chip
+// beneath the day number indicating its day-type. Defaults (`school_day`)
+// render nothing extra.
+function DayButtonWithBanner(props: React.ComponentProps<typeof DayButton>) {
+  const { modifiers, children } = props;
+  const bannerType = bannerTypeFromModifiers(modifiers as Record<string, unknown>);
+  return (
+    <CalendarDayButton {...props}>
+      {children}
+      {bannerType && (
+        <span
+          className={`mt-0.5 rounded-sm px-1 font-mono text-[8px] font-semibold uppercase leading-tight tracking-wider ${DAY_TYPE_STYLES[bannerType].chip}`}
+        >
+          {DAY_TYPE_SHORT_LABEL[bannerType]}
+        </span>
+      )}
+    </CalendarDayButton>
+  );
+}
+
+function MonthView({
+  term,
+  daysByType,
+  multiSelect,
+  selectedDates,
+  onSelectDates,
+  onDayClick,
+}: {
+  term: TermOption;
+  daysByType: Record<DayType, Date[]> & { event: Date[] };
+  multiSelect: boolean;
+  selectedDates: Date[];
+  onSelectDates: (next: Date[]) => void;
+  onDayClick: (iso: string) => void;
+}) {
+  const startDate = parseIso(term.startDate);
+  const endDate = parseIso(term.endDate);
+  const [month, setMonth] = useState<Date>(startDate);
+
+  const sharedCalendarProps = {
+    showOutsideDays: false,
+    month,
+    onMonthChange: setMonth,
+    startMonth: startDate,
+    endMonth: endDate,
+    // Hard-disable Sat (6) and Sun (0). The attendance sheet has no
+    // concept of weekend school days for this school.
+    disabled: (day: Date) => day.getDay() === 0 || day.getDay() === 6,
+    modifiers: {
+      school_day: daysByType.school_day,
+      public_holiday: daysByType.public_holiday,
+      school_holiday: daysByType.school_holiday,
+      hbl: daysByType.hbl,
+      no_class: daysByType.no_class,
+      eventDay: daysByType.event,
+    },
+    modifiersClassNames: {
+      school_day: DAY_TYPE_STYLES.school_day.cell,
+      public_holiday: DAY_TYPE_STYLES.public_holiday.cell,
+      school_holiday: DAY_TYPE_STYLES.school_holiday.cell,
+      hbl: DAY_TYPE_STYLES.hbl.cell,
+      no_class: DAY_TYPE_STYLES.no_class.cell,
+      eventDay:
+        'relative after:content-[""] after:absolute after:bottom-1.5 after:left-1/2 after:-translate-x-1/2 after:h-1.5 after:w-1.5 after:rounded-full after:bg-primary',
+    },
+    classNames: {
+      // Full-width month, bigger weekday headers, bigger day buttons.
+      root: 'w-full',
+      month: 'flex w-full flex-col gap-4',
+      month_caption:
+        'flex h-(--cell-size) w-full items-center justify-center px-(--cell-size) font-serif text-lg font-semibold tracking-tight',
+      weekday:
+        'flex-1 rounded-md text-[11px] font-mono font-semibold uppercase tracking-[0.14em] text-muted-foreground select-none',
+      day_button:
+        'flex aspect-square size-auto w-full min-w-(--cell-size) flex-col items-center justify-center gap-0.5 px-0.5 text-base font-medium leading-none group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50',
+    },
+    components: { DayButton: DayButtonWithBanner },
+    // Bump cell size from the primitive's 32px default to 80px for
+    // proper school-calendar breathing room.
+    className: '[--cell-size:--spacing(20)] w-full',
+  };
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 md:p-6">
+      {multiSelect ? (
+        <Calendar
+          {...sharedCalendarProps}
+          mode="multiple"
+          selected={selectedDates}
+          onSelect={(next) => onSelectDates(next ?? [])}
+        />
+      ) : (
+        <Calendar
+          {...sharedCalendarProps}
+          mode="single"
+          onDayClick={(day, modifiers) => {
+            if (modifiers.disabled) return;
+            onDayClick(formatIso(day));
+          }}
         />
       )}
     </div>
   );
 }
 
-function TermCalendarGrid({
-  term,
-  calendar,
-  events,
-  busy,
-  onToggleHoliday,
-  onRemoveEntry,
-}: {
-  term: TermOption;
-  calendar: SchoolCalendarRow[];
-  events: CalendarEventRow[];
-  busy: boolean;
-  onToggleHoliday: (date: string, nextIsHoliday: boolean, label: string | null) => Promise<void>;
-  onRemoveEntry: (date: string) => Promise<void>;
-}) {
-  // Build a by-date index.
-  const byDate = useMemo(() => {
-    const map = new Map<string, SchoolCalendarRow>();
-    for (const r of calendar) map.set(r.date, r);
-    return map;
-  }, [calendar]);
+type InputMode = 'view' | 'event';
 
-  const eventLabelFor = useMemo(() => {
-    return (iso: string): string | null => {
-      const hits = events.filter((e) => iso >= e.startDate && iso <= e.endDate);
-      return hits.length === 0 ? null : hits.map((e) => e.label).join(' · ');
-    };
-  }, [events]);
-
-  // Build month-grouped cell rows from term start → end.
-  const dates: string[] = useMemo(() => {
-    const parse = (iso: string) => {
-      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-      if (!m) throw new Error(`bad iso: ${iso}`);
-      return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    };
-    const fmt = (d: Date) => {
-      const pad = (n: number) => String(n).padStart(2, '0');
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    };
-    const out: string[] = [];
-    const d = parse(term.startDate);
-    const end = parse(term.endDate);
-    while (d.getTime() <= end.getTime()) {
-      out.push(fmt(d));
-      d.setDate(d.getDate() + 1);
-    }
-    return out;
-  }, [term.startDate, term.endDate]);
-
-  const byMonth = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const iso of dates) {
-      const key = iso.slice(0, 7);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(iso);
-    }
-    return Array.from(map.entries()).sort(([a], [b]) => (a < b ? -1 : 1));
-  }, [dates]);
-
-  return (
-    <div className="space-y-5">
-      {byMonth.map(([month, monthDates]) => {
-        const [y, m] = month.split('-');
-        const label = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-SG', {
-          month: 'long',
-          year: 'numeric',
-        });
-        return (
-          <div key={month} className="space-y-2">
-            <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              {label}
-            </div>
-            <div className="grid grid-cols-7 gap-1 md:grid-cols-10 lg:grid-cols-14">
-              {monthDates.map((iso) => {
-                const d = new Date(
-                  Number(iso.slice(0, 4)),
-                  Number(iso.slice(5, 7)) - 1,
-                  Number(iso.slice(8, 10)),
-                );
-                const dow = d.getDay();
-                const isWeekend = dow === 0 || dow === 6;
-                const entry = byDate.get(iso);
-                const eventLabel = eventLabelFor(iso);
-
-                const state: 'unset' | 'school' | 'holiday' = entry
-                  ? entry.isHoliday
-                    ? 'holiday'
-                    : 'school'
-                  : 'unset';
-
-                return (
-                  <DateCell
-                    key={iso}
-                    iso={iso}
-                    weekday={dow}
-                    weekend={isWeekend}
-                    state={state}
-                    holidayLabel={entry?.isHoliday ? entry.label : null}
-                    eventLabel={eventLabel}
-                    busy={busy}
-                    onToggleHoliday={onToggleHoliday}
-                    onRemoveEntry={onRemoveEntry}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function DateCell({
+function DateActionDialog({
+  open,
   iso,
-  weekend,
-  state,
-  holidayLabel,
-  eventLabel,
+  currentDayType,
+  existingLabel,
+  eventsOnDate,
   busy,
-  onToggleHoliday,
-  onRemoveEntry,
+  onClose,
+  onSaveDayType,
+  onAddImportantDate,
 }: {
-  iso: string;
-  weekday: number;
-  weekend: boolean;
-  state: 'unset' | 'school' | 'holiday';
-  holidayLabel: string | null;
-  eventLabel: string | null;
+  open: boolean;
+  iso: string | null;
+  currentDayType: DayType;
+  existingLabel: string | null;
+  eventsOnDate: CalendarEventRow[];
   busy: boolean;
-  onToggleHoliday: (date: string, nextIsHoliday: boolean, label: string | null) => Promise<void>;
-  onRemoveEntry: (date: string) => Promise<void>;
+  onClose: () => void;
+  onSaveDayType: (iso: string, dayType: DayType, label: string | null) => Promise<void>;
+  onAddImportantDate: (iso: string, label: string) => Promise<void>;
 }) {
-  const [editingHoliday, setEditingHoliday] = useState(false);
-  const [holidayInput, setHolidayInput] = useState(holidayLabel ?? '');
+  const [mode, setMode] = useState<InputMode>('view');
+  const [pickedType, setPickedType] = useState<DayType>(currentDayType);
+  const [labelInput, setLabelInput] = useState(existingLabel ?? '');
+  const [eventLabelInput, setEventLabelInput] = useState('');
 
-  const dayNum = iso.slice(-2);
-  const baseClass =
-    'relative flex min-h-[62px] flex-col rounded-md border p-1.5 text-left text-[10px] transition-colors';
+  // Reset local state when the dialog opens for a new date.
+  const key = `${iso}-${currentDayType}-${existingLabel ?? ''}`;
+  const [initKey, setInitKey] = useState<string | null>(null);
+  if (open && initKey !== key) {
+    setInitKey(key);
+    setMode('view');
+    setPickedType(currentDayType);
+    setLabelInput(existingLabel ?? '');
+    setEventLabelInput('');
+  }
+  if (!open && initKey !== null) setInitKey(null);
 
-  if (state === 'holiday') {
-    return (
-      <div
-        className={
-          baseClass +
-          ' border-destructive/30 bg-destructive/10 text-destructive'
-        }
-      >
-        <div className="flex items-start justify-between">
-          <span className="font-mono text-[11px] font-semibold tabular-nums">{dayNum}</span>
-          <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onToggleHoliday(iso, false, null)}
-              title="Mark as school day"
-              className="rounded p-0.5 text-destructive/70 hover:bg-destructive/15 hover:text-destructive"
-            >
-              <RotateCcw className="size-3" />
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onRemoveEntry(iso)}
-              title="Remove entry"
-              className="rounded p-0.5 text-destructive/70 hover:bg-destructive/15 hover:text-destructive"
-            >
-              <Trash2 className="size-3" />
-            </button>
-          </div>
-        </div>
-        <div className="mt-auto truncate font-medium" title={holidayLabel ?? ''}>
-          {holidayLabel ?? 'Holiday'}
-        </div>
-      </div>
-    );
+  if (!iso) return null;
+
+  const dirty =
+    pickedType !== currentDayType ||
+    labelInput.trim() !== (existingLabel ?? '').trim();
+
+  async function saveDayType() {
+    if (!iso) return;
+    const label = labelInput.trim();
+    // For encodable types an empty label is fine; for holidays default to the
+    // type label so the attendance sheet header always reads something.
+    const resolvedLabel = label.length > 0
+      ? label
+      : isEncodableDayType(pickedType)
+        ? null
+        : DAY_TYPE_LABELS[pickedType];
+    try {
+      await onSaveDayType(iso, pickedType, resolvedLabel);
+    } catch {
+      // toast raised by parent
+    }
   }
 
-  if (state === 'school') {
-    return (
-      <div
-        className={
-          baseClass +
-          ' border-emerald-500/30 bg-emerald-500/10 text-emerald-900 hover:bg-emerald-500/15 dark:text-emerald-200'
-        }
-      >
-        <div className="flex items-start justify-between">
-          <span className="font-mono text-[11px] font-semibold tabular-nums">{dayNum}</span>
-          {editingHoliday ? null : (
-            <div className="flex items-center gap-0.5">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setEditingHoliday(true)}
-                title="Convert to holiday"
-                className="rounded p-0.5 text-emerald-700/70 hover:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-300"
-              >
-                <CalendarX className="size-3" />
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => onRemoveEntry(iso)}
-                title="Remove entry"
-                className="rounded p-0.5 text-emerald-700/70 hover:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-300"
-              >
-                <Trash2 className="size-3" />
-              </button>
+  async function saveImportantDate() {
+    if (!iso) return;
+    const label = eventLabelInput.trim();
+    if (!label) {
+      toast.error('Label is required');
+      return;
+    }
+    try {
+      await onAddImportantDate(iso, label);
+    } catch {
+      // toast raised by parent
+    }
+  }
+
+  const statusBadgeClass = DAY_TYPE_STYLES[currentDayType].chip;
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
+      <DialogContent className="sm:max-w-[520px]">
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-flex items-center rounded-sm px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] ${statusBadgeClass}`}
+            >
+              {DAY_TYPE_LABELS[currentDayType]}
+            </span>
+            {existingLabel && (
+              <span className="text-sm font-medium text-foreground">· {existingLabel}</span>
+            )}
+          </div>
+          <DialogTitle className="font-serif text-[18px] font-semibold tracking-tight">
+            {formatHumanDate(iso)}
+          </DialogTitle>
+          <DialogDescription>
+            Pick a day-type to classify this date. Encodable types
+            (school day, HBL) accept attendance writes; the others reject them and grey the column
+            out on the attendance grid.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-5">
+          {eventsOnDate.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Overlapping important dates
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {eventsOnDate.map((e) => (
+                  <Badge key={e.id} variant="outline" className="text-[11px]">
+                    <span className="mr-1.5 inline-block size-1.5 rounded-full bg-primary" />
+                    {e.label}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {mode === 'view' && (
+            <>
+              <fieldset className="space-y-2">
+                <legend className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Day type
+                </legend>
+                <div className="grid gap-2">
+                  {DAY_TYPE_VALUES.map((dt) => {
+                    const style = DAY_TYPE_STYLES[dt];
+                    const selected = pickedType === dt;
+                    return (
+                      <label
+                        key={dt}
+                        className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                          selected
+                            ? 'border-primary/40 ring-2 ring-primary/20'
+                            : 'border-border hover:border-primary/30'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="dayType"
+                          value={dt}
+                          checked={selected}
+                          onChange={() => setPickedType(dt)}
+                          className="mt-1 size-4 cursor-pointer accent-primary"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`inline-flex items-center rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] ${style.chip}`}
+                            >
+                              {DAY_TYPE_LABELS[dt]}
+                            </span>
+                            {isEncodableDayType(dt) && (
+                              <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-primary">
+                                encodable
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
+                            {style.blurb}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              <div className="space-y-2">
+                <Label htmlFor="dlgDayLabel">
+                  Label{' '}
+                  <span className="font-mono text-[10px] font-normal text-muted-foreground">
+                    (optional for school day; required-ish for closures)
+                  </span>
+                </Label>
+                <Input
+                  id="dlgDayLabel"
+                  value={labelInput}
+                  onChange={(e) => setLabelInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && dirty) {
+                      e.preventDefault();
+                      saveDayType();
+                    }
+                  }}
+                  placeholder={
+                    isEncodableDayType(pickedType)
+                      ? 'e.g. Half-day: early dismissal'
+                      : 'e.g. CNY Day 1, Staff Dev Day'
+                  }
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Shown on the attendance sheet header for this date.
+                </p>
+              </div>
+            </>
+          )}
+
+          {mode === 'event' && (
+            <div className="space-y-2">
+              <Label htmlFor="dlgEventLabel">Important date label</Label>
+              <Input
+                id="dlgEventLabel"
+                autoFocus
+                value={eventLabelInput}
+                onChange={(e) => setEventLabelInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveImportantDate();
+                  }
+                  if (e.key === 'Escape') setMode('view');
+                }}
+                placeholder="e.g. School Photos, Parent-Teacher Conference"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Overlays a dot on the grid for this date. Does not affect attendance.
+              </p>
             </div>
           )}
         </div>
-        {editingHoliday ? (
-          <HolidayLabelInput
-            value={holidayInput}
-            onChange={setHolidayInput}
-            onConfirm={async () => {
-              await onToggleHoliday(iso, true, holidayInput.trim() || 'Holiday');
-              setEditingHoliday(false);
-            }}
-            onCancel={() => setEditingHoliday(false)}
-          />
-        ) : (
-          <div className="mt-auto font-medium">School day</div>
-        )}
-        {eventLabel && (
-          <div
-            className="mt-0.5 truncate font-mono text-[9px] uppercase tracking-[0.1em] opacity-70"
-            title={eventLabel}
-          >
-            ★ {eventLabel}
-          </div>
-        )}
-      </div>
-    );
-  }
 
-  // unset
-  return (
-    <div
-      className={
-        baseClass +
-        (weekend
-          ? ' border-border/60 bg-muted/40 text-muted-foreground'
-          : ' border-border bg-card text-foreground hover:border-primary/30')
-      }
-    >
-      <div className="flex items-start justify-between">
-        <span className="font-mono text-[11px] font-semibold tabular-nums">{dayNum}</span>
-      </div>
-      <div className="mt-auto flex gap-1">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onToggleHoliday(iso, false, null)}
-          className="flex-1 rounded-sm border border-emerald-500/30 bg-emerald-500/10 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
-        >
-          School
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onToggleHoliday(iso, true, 'Holiday')}
-          className="flex-1 rounded-sm border border-destructive/30 bg-destructive/10 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-destructive hover:bg-destructive/20"
-        >
-          Holiday
-        </button>
-      </div>
-      {eventLabel && (
-        <div
-          className="mt-0.5 truncate font-mono text-[9px] uppercase tracking-[0.1em] opacity-70"
-          title={eventLabel}
-        >
-          ★ {eventLabel}
-        </div>
-      )}
-    </div>
+        <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+          {mode === 'view' ? (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => setMode('event')}
+                className="gap-1.5 text-muted-foreground"
+              >
+                <CalendarPlus className="size-3.5" />
+                Set as important date
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy || !dirty}
+                onClick={saveDayType}
+                className="gap-1.5"
+              >
+                {busy ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <CalendarOff className="size-3.5" />
+                )}
+                Save day type
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => setMode('view')}
+              >
+                Cancel
+              </Button>
+              <Button type="button" size="sm" disabled={busy} onClick={saveImportantDate}>
+                {busy && <Loader2 className="size-3.5 animate-spin" />}
+                Save
+              </Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function HolidayLabelInput({
-  value,
-  onChange,
-  onConfirm,
-  onCancel,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="mt-auto flex flex-col gap-1">
-      <input
-        autoFocus
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') onConfirm();
-          if (e.key === 'Escape') onCancel();
-        }}
-        placeholder="Reason…"
-        className="w-full rounded-sm border border-border bg-background px-1 py-0.5 font-mono text-[9px] focus:outline-none focus:ring-1 focus:ring-primary"
-      />
-      <div className="flex gap-1">
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="flex-1 rounded-sm border border-destructive/30 bg-destructive/10 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-destructive hover:bg-destructive/20"
-        >
-          Save
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex-1 rounded-sm border border-border bg-muted/40 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted-foreground hover:bg-muted"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function EventsPanel({
+function AddEventDialog({
+  open,
   termId,
   termStart,
   termEnd,
-  events,
-  busy,
-  onChanged,
-  setBusy,
+  onClose,
+  onCreated,
 }: {
+  open: boolean;
   termId: string;
   termStart: string;
   termEnd: string;
-  events: CalendarEventRow[];
-  busy: boolean;
-  onChanged: () => void;
-  setBusy: (v: boolean) => void;
+  onClose: () => void;
+  onCreated: () => void;
 }) {
-  const [adding, setAdding] = useState(false);
   const [start, setStart] = useState(termStart);
   const [end, setEnd] = useState(termEnd);
   const [label, setLabel] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Reset when the dialog opens for a new term.
+  const key = `${termId}-${termStart}-${termEnd}`;
+  const [initKey, setInitKey] = useState<string | null>(null);
+  if (open && initKey !== key) {
+    setInitKey(key);
+    setStart(termStart);
+    setEnd(termEnd);
+    setLabel('');
+  }
+  if (!open && initKey !== null) setInitKey(null);
 
   async function create() {
     if (!label.trim()) {
       toast.error('Label is required');
       return;
     }
-    setBusy(true);
+    if (end < start) {
+      toast.error('End date must be on or after start date');
+      return;
+    }
+    setSaving(true);
     try {
       const res = await fetch('/api/attendance/calendar/events', {
         method: 'POST',
@@ -569,104 +963,94 @@ function EventsPanel({
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error ?? 'create failed');
-      toast.success('Event added');
-      setLabel('');
-      setAdding(false);
-      onChanged();
+      toast.success('Important date added');
+      onCreated();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'create failed');
     } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(id: string) {
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/attendance/calendar/events?id=${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? 'delete failed');
-      onChanged();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'delete failed');
-    } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Informational events
-          </div>
-          <p className="text-[12px] text-muted-foreground">
-            Overlay labels on the attendance grid. Does not affect whether a day is encodable.
-          </p>
-        </div>
-        {!adding && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={busy}
-            onClick={() => setAdding(true)}
-            className="gap-1.5"
-          >
-            <Plus className="size-3.5" />
-            Add event
-          </Button>
-        )}
-      </div>
+    <Dialog open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle className="font-serif text-[18px] font-semibold tracking-tight">
+            Add an important date
+          </DialogTitle>
+          <DialogDescription>
+            Overlays a label on matching dates in the month view and the attendance sheet. Does not
+            block attendance — the underlying school days remain encodable.
+          </DialogDescription>
+        </DialogHeader>
 
-      {adding && (
-        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-muted/30 p-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="evStart">Start</Label>
-            <div className="w-[180px]">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="addEventStart">Start</Label>
               <DatePicker value={start} onChange={setStart} />
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="evEnd">End</Label>
-            <div className="w-[180px]">
+            <div className="space-y-1.5">
+              <Label htmlFor="addEventEnd">End</Label>
               <DatePicker value={end} onChange={setEnd} />
             </div>
           </div>
-          <div className="flex-1 space-y-1.5">
-            <Label htmlFor="evLabel">Label</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="addEventLabel">Label</Label>
             <Input
-              id="evLabel"
+              id="addEventLabel"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Mathematics Week"
-              className="h-10"
+              placeholder="e.g. Mathematics Week, Assessment Week"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !saving) {
+                  e.preventDefault();
+                  create();
+                }
+              }}
             />
           </div>
-          <Button type="button" size="sm" disabled={busy} onClick={create}>
-            Save
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => {
-              setAdding(false);
-              setLabel('');
-            }}
-          >
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" size="sm" disabled={saving} onClick={onClose}>
             Cancel
           </Button>
+          <Button type="button" size="sm" disabled={saving} onClick={create}>
+            {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EventsPanel({
+  events,
+  busy,
+  onDelete,
+}: {
+  events: CalendarEventRow[];
+  busy: boolean;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Important dates
         </div>
-      )}
+        <p className="text-[12px] text-muted-foreground">
+          Overlay labels on the grid. Does not affect whether a day is encodable.
+        </p>
+      </div>
 
       {events.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-center text-[12px] text-muted-foreground">
-          No events yet. Add one to label ranges like &ldquo;Math Week&rdquo; on the grid.
+          No important dates yet. Use <strong>Add important date</strong> to label a span like
+          &ldquo;Math Week&rdquo;.
         </div>
       ) : (
         <div className="divide-y divide-border rounded-xl border border-border bg-card">
@@ -674,21 +1058,19 @@ function EventsPanel({
             <div key={e.id} className="flex items-center justify-between gap-4 px-4 py-3">
               <div className="min-w-0">
                 <div className="font-serif text-[14px] font-semibold text-foreground">
+                  <span className="mr-2 inline-block size-1.5 rounded-full bg-primary align-middle" />
                   {e.label}
                 </div>
                 <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
                   {e.startDate} → {e.endDate}
                 </div>
               </div>
-              <Badge variant="outline" className="font-mono text-[10px]">
-                Label
-              </Badge>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 disabled={busy}
-                onClick={() => remove(e.id)}
+                onClick={() => onDelete(e.id)}
                 className="gap-1"
               >
                 <Trash2 className="size-3.5" />
@@ -699,5 +1081,190 @@ function EventsPanel({
         </div>
       )}
     </div>
+  );
+}
+
+// Groups a sorted list of ISO dates into contiguous runs for a compact
+// preview ("Feb 3–5 · Feb 8 · Feb 10–14"). Non-adjacent dates are single
+// entries; adjacent dates collapse.
+function summariseDates(dates: Date[]): string {
+  if (dates.length === 0) return '';
+  const sorted = [...dates].sort((a, b) => a.getTime() - b.getTime());
+  type Run = { start: Date; end: Date };
+  const runs: Run[] = [];
+  for (const d of sorted) {
+    const last = runs[runs.length - 1];
+    if (last) {
+      const lastPlusOne = new Date(last.end);
+      lastPlusOne.setDate(lastPlusOne.getDate() + 1);
+      if (formatIso(lastPlusOne) === formatIso(d)) {
+        last.end = d;
+        continue;
+      }
+    }
+    runs.push({ start: d, end: d });
+  }
+  const fmtShort = (d: Date) =>
+    d.toLocaleDateString('en-SG', { month: 'short', day: 'numeric' });
+  return runs
+    .map((r) =>
+      formatIso(r.start) === formatIso(r.end)
+        ? fmtShort(r.start)
+        : `${fmtShort(r.start)}–${r.end.getDate()}`,
+    )
+    .join(' · ');
+}
+
+function BulkDayTypeDialog({
+  open,
+  selectedDates,
+  busy,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  selectedDates: Date[];
+  busy: boolean;
+  onClose: () => void;
+  onSave: (dates: Date[], dayType: DayType, label: string | null) => Promise<void>;
+}) {
+  const [pickedType, setPickedType] = useState<DayType>('public_holiday');
+  const [labelInput, setLabelInput] = useState('');
+
+  // Reset on dialog open so the next use doesn't inherit a stale label.
+  const key = `${open ? 'open' : 'closed'}-${selectedDates.length}`;
+  const [initKey, setInitKey] = useState<string | null>(null);
+  if (open && initKey !== key) {
+    setInitKey(key);
+    setPickedType('public_holiday');
+    setLabelInput('');
+  }
+  if (!open && initKey !== null) setInitKey(null);
+
+  async function save() {
+    const label = labelInput.trim();
+    const resolved = label.length > 0
+      ? label
+      : isEncodableDayType(pickedType)
+        ? null
+        : DAY_TYPE_LABELS[pickedType];
+    await onSave(selectedDates, pickedType, resolved);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
+      <DialogContent className="sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle className="font-serif text-[18px] font-semibold tracking-tight">
+            Apply day-type to {selectedDates.length} date
+            {selectedDates.length === 1 ? '' : 's'}
+          </DialogTitle>
+          <DialogDescription>
+            All selected dates get overwritten with the picked day-type. Existing labels on those
+            dates are replaced by the single label below (blank = use the type default).
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-5">
+          {selectedDates.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Selection
+              </div>
+              <p className="rounded-md bg-muted/40 px-3 py-2 font-mono text-[11px] leading-snug tabular-nums text-foreground">
+                {summariseDates(selectedDates)}
+              </p>
+            </div>
+          )}
+
+          <fieldset className="space-y-2">
+            <legend className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Day type
+            </legend>
+            <div className="grid gap-2">
+              {DAY_TYPE_VALUES.map((dt) => {
+                const style = DAY_TYPE_STYLES[dt];
+                const selected = pickedType === dt;
+                return (
+                  <label
+                    key={dt}
+                    className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                      selected
+                        ? 'border-primary/40 ring-2 ring-primary/20'
+                        : 'border-border hover:border-primary/30'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="bulkDayType"
+                      value={dt}
+                      checked={selected}
+                      onChange={() => setPickedType(dt)}
+                      className="mt-1 size-4 cursor-pointer accent-primary"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-flex items-center rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] ${style.chip}`}
+                        >
+                          {DAY_TYPE_LABELS[dt]}
+                        </span>
+                        {isEncodableDayType(dt) && (
+                          <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-primary">
+                            encodable
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
+                        {style.blurb}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <div className="space-y-2">
+            <Label htmlFor="bulkDayLabel">
+              Label{' '}
+              <span className="font-mono text-[10px] font-normal text-muted-foreground">
+                (applied to every selected date)
+              </span>
+            </Label>
+            <Input
+              id="bulkDayLabel"
+              value={labelInput}
+              onChange={(e) => setLabelInput(e.target.value)}
+              placeholder={
+                isEncodableDayType(pickedType)
+                  ? 'e.g. Early dismissal week'
+                  : 'e.g. CNY Block, Term break'
+              }
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy || selectedDates.length === 0}
+            onClick={save}
+            className="gap-1.5"
+          >
+            {busy ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <CalendarOff className="size-3.5" />
+            )}
+            Apply to {selectedDates.length} date{selectedDates.length === 1 ? '' : 's'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

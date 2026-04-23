@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service';
+import { isEncodableDayType, type DayType } from '@/lib/schemas/attendance';
 
 // Attendance module — school-calendar helpers. Server-only reads.
 //
@@ -9,6 +10,10 @@ export type SchoolCalendarRow = {
   id: string;
   termId: string;
   date: string;         // yyyy-MM-dd
+  /** 5 typed values per KD #50. `school_day` + `hbl` are encodable. */
+  dayType: DayType;
+  /** Legacy derived column (`day_type NOT IN ('school_day','hbl')`).
+   *  New code should branch on `dayType`. */
   isHoliday: boolean;
   label: string | null;
 };
@@ -29,7 +34,7 @@ export async function getSchoolCalendarForTerm(
   const service = createServiceClient();
   const { data, error } = await service
     .from('school_calendar')
-    .select('id, term_id, date, is_holiday, label')
+    .select('id, term_id, date, day_type, is_holiday, label')
     .eq('term_id', termId)
     .order('date', { ascending: true });
   if (error) {
@@ -40,6 +45,7 @@ export async function getSchoolCalendarForTerm(
     id: string;
     term_id: string;
     date: string;
+    day_type: DayType;
     is_holiday: boolean;
     label: string | null;
   };
@@ -47,6 +53,7 @@ export async function getSchoolCalendarForTerm(
     id: r.id,
     termId: r.term_id,
     date: r.date,
+    dayType: r.day_type,
     isHoliday: r.is_holiday,
     label: r.label,
   }));
@@ -81,16 +88,19 @@ export async function getCalendarEventsForTerm(
   }));
 }
 
-// Convenience: returns the list of encodable (non-holiday) dates for a term
-// in chronological order. If no calendar is configured, returns an empty
-// list (and the caller should fall back to legacy behaviour).
+// Convenience: returns the list of encodable dates for a term in
+// chronological order. Encodable = day_type IN ('school_day','hbl').
+// If no calendar is configured, returns an empty list (the caller should
+// fall back to legacy behaviour).
 export async function getEncodableDatesForTerm(termId: string): Promise<string[]> {
   const rows = await getSchoolCalendarForTerm(termId);
-  return rows.filter((r) => !r.isHoliday).map((r) => r.date);
+  return rows.filter((r) => isEncodableDayType(r.dayType)).map((r) => r.date);
 }
 
 // Fast lookup: is a given date a holiday in this term? Returns null when
-// the term has no calendar rows (legacy mode).
+// the term has no calendar rows (legacy mode). "Holiday" here means
+// "not encodable" — public_holiday / school_holiday / no_class all return
+// true. school_day + hbl return false.
 export async function isHoliday(
   termId: string,
   date: string,
@@ -106,14 +116,13 @@ export async function isHoliday(
 
   const { data } = await service
     .from('school_calendar')
-    .select('is_holiday')
+    .select('day_type')
     .eq('term_id', termId)
     .eq('date', date)
     .maybeSingle();
   // If not listed, treat as "not a school day" (grid shouldn't render it).
-  // Holidays ARE listed with is_holiday=true.
   if (!data) return true;
-  return data.is_holiday;
+  return !isEncodableDayType(data.day_type as DayType);
 }
 
 // Find the most recent prior AY that has a term with the given term_number,
@@ -177,6 +186,51 @@ export function shiftYearPreserveMonthDay(iso: string, targetYear: number): stri
   }
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${targetYear}-${pad(month)}-${pad(day)}`;
+}
+
+// Idempotent auto-seed: if a term has zero school_calendar rows, insert
+// one row per weekday in [startIso, endIso] with is_holiday=false. Returns
+// the number of rows actually inserted (0 if the term already had rows, or
+// if the term has no weekdays in the range).
+//
+// Called from the calendar admin page RSC on every visit so the registrar
+// never sees an empty allowlist. Safe under concurrent loads thanks to the
+// ignoreDuplicates upsert.
+export async function ensureTermSeeded(
+  termId: string,
+  startIso: string,
+  endIso: string,
+  userId: string,
+): Promise<number> {
+  const service = createServiceClient();
+
+  const { count: existing } = await service
+    .from('school_calendar')
+    .select('*', { count: 'exact', head: true })
+    .eq('term_id', termId);
+  if ((existing ?? 0) > 0) return 0;
+
+  const dates = weekdaysBetween(startIso, endIso);
+  if (dates.length === 0) return 0;
+
+  const rows = dates.map((date) => ({
+    term_id: termId,
+    date,
+    day_type: 'school_day' as const,
+    // `is_holiday` is kept for backwards-compat but derived server-side via
+    // the migration-019 trigger; writing false here is redundant-but-safe.
+    is_holiday: false,
+    label: null,
+    created_by: userId,
+  }));
+  const { error, count } = await service
+    .from('school_calendar')
+    .upsert(rows, { onConflict: 'term_id,date', ignoreDuplicates: true, count: 'exact' });
+  if (error) {
+    console.error('[attendance] ensureTermSeeded failed:', error.message);
+    return 0;
+  }
+  return count ?? rows.length;
 }
 
 // Generate candidate dates for a term (Mon–Fri between start and end).

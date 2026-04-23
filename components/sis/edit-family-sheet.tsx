@@ -17,6 +17,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -173,39 +174,41 @@ export function EditFamilySheet({
           Edit
         </Button>
       </SheetTrigger>
-      <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
-        <SheetHeader className="space-y-2 border-b border-border p-6">
-          <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            Edit {PARENT_LABELS[parent].toLowerCase()}
-          </SheetTitle>
-          <SheetDescription className="text-sm text-muted-foreground">
-            Audit-logged on save. Empty fields are stored as null.
-          </SheetDescription>
-        </SheetHeader>
+      <SheetContent className="w-full gap-0 p-0 sm:max-w-xl">
+        <ScrollArea className="h-full">
+          <SheetHeader className="space-y-2 border-b border-border p-6">
+            <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Edit {PARENT_LABELS[parent].toLowerCase()}
+            </SheetTitle>
+            <SheetDescription className="text-sm text-muted-foreground">
+              Audit-logged on save. Empty fields are stored as null.
+            </SheetDescription>
+          </SheetHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {fields.map((cfg) => (
-                  <SchemaField key={cfg.name} cfg={cfg} form={form} />
-                ))}
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)}>
+              <div className="p-6">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {fields.map((cfg) => (
+                    <SchemaField key={cfg.name} cfg={cfg} form={form} />
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <SheetFooter className="flex-row justify-end gap-2 border-t border-border p-6 sm:justify-end">
-              <SheetClose asChild>
-                <Button type="button" variant="outline" size="sm" disabled={busy}>
-                  Cancel
+              <SheetFooter className="flex-row justify-end gap-2 border-t border-border p-6 sm:justify-end">
+                <SheetClose asChild>
+                  <Button type="button" variant="outline" size="sm" disabled={busy}>
+                    Cancel
+                  </Button>
+                </SheetClose>
+                <Button type="submit" size="sm" disabled={busy}>
+                  {busy && <Loader2 className="size-3.5 animate-spin" />}
+                  {busy ? 'Saving…' : 'Save changes'}
                 </Button>
-              </SheetClose>
-              <Button type="submit" size="sm" disabled={busy}>
-                {busy && <Loader2 className="size-3.5 animate-spin" />}
-                {busy ? 'Saving…' : 'Save changes'}
-              </Button>
-            </SheetFooter>
-          </form>
-        </Form>
+              </SheetFooter>
+            </form>
+          </Form>
+        </ScrollArea>
       </SheetContent>
     </Sheet>
   );

@@ -1,21 +1,8 @@
-import Link from 'next/link';
-import {
-  ArrowRight,
-  CalendarCheck2,
-  CheckCircle2,
-  Clock,
-  ShieldAlert,
-  ShieldCheck,
-} from 'lucide-react';
+import { ArrowRight, ArrowUpRight, CalendarCheck2, CheckCircle2, Clock, ShieldAlert, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 
-import type { SystemHealth } from '@/lib/sis/health';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import type { SystemHealth } from "@/lib/sis/health";
 
 export function SystemHealthStrip({ health }: { health: SystemHealth }) {
   const { ayCount, currentAy, approverFlows, lastAdminActivityAt } = health;
@@ -64,21 +51,16 @@ export function SystemHealthStrip({ health }: { health: SystemHealth }) {
             </p>
             {currentAy ? (
               <>
-                <p className="font-serif text-base font-semibold text-foreground">
-                  {currentAy.ayCode}
-                </p>
+                <p className="font-serif text-base font-semibold text-foreground">{currentAy.ayCode}</p>
                 <p className="text-xs text-muted-foreground">
                   {currentAy.label} · {ayCount} total configured
                 </p>
               </>
             ) : (
               <>
-                <p className="font-serif text-base font-semibold text-destructive">
-                  No current AY
-                </p>
+                <p className="font-serif text-base font-semibold text-destructive">No current AY</p>
                 <p className="text-xs text-muted-foreground">
-                  Flip <code className="rounded bg-muted px-1 py-0.5">is_current</code> in
-                  /sis/ay-setup.
+                  Flip <code className="rounded bg-muted px-1 py-0.5">is_current</code> in /sis/ay-setup.
                 </p>
               </>
             )}
@@ -88,24 +70,18 @@ export function SystemHealthStrip({ health }: { health: SystemHealth }) {
         {/* Approver coverage */}
         <div className="flex items-start gap-3 p-5">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            {approverIssues === 0 ? (
-              <ShieldCheck className="size-4" />
-            ) : (
-              <ShieldAlert className="size-4" />
-            )}
+            {approverIssues === 0 ? <ShieldCheck className="size-4" /> : <ShieldAlert className="size-4" />}
           </div>
           <div className="min-w-0 flex-1 space-y-1">
             <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               Approvers
             </p>
             <p className="font-serif text-base font-semibold text-foreground">
-              {approverFlows.length} flow{approverFlows.length === 1 ? '' : 's'}
+              {approverFlows.length} flow{approverFlows.length === 1 ? "" : "s"}
               {approverIssues > 0 && (
                 <>
-                  {' · '}
-                  <span className="text-destructive">
-                    {approverIssues} under-staffed
-                  </span>
+                  {" · "}
+                  <span className="text-destructive">{approverIssues} under-staffed</span>
                 </>
               )}
             </p>
@@ -118,8 +94,8 @@ export function SystemHealthStrip({ health }: { health: SystemHealth }) {
                     <ShieldAlert className="size-3 text-destructive" />
                   )}
                   <span>
-                    <span className="text-foreground">{f.label}:</span>{' '}
-                    <span className="tabular-nums">{f.count}</span> assigned
+                    <span className="text-foreground">{f.label}:</span> <span className="tabular-nums">{f.count}</span>{" "}
+                    assigned
                   </span>
                 </li>
               ))}
@@ -138,14 +114,10 @@ export function SystemHealthStrip({ health }: { health: SystemHealth }) {
             </p>
             <Link
               href="/sis/admin/approvers"
-              className="block font-serif text-base font-semibold text-foreground hover:text-brand-indigo-deep"
-            >
-              Approver assignments →
+              className="inline-flex items-center gap-1.5 font-serif text-base font-semibold text-foreground hover:text-brand-indigo-deep">
+              Approver assignments <ArrowUpRight className="size-3.5" />
             </Link>
-            <Link
-              href="/sis/ay-setup"
-              className="block text-xs text-muted-foreground hover:text-foreground"
-            >
+            <Link href="/sis/ay-setup" className="block text-xs text-muted-foreground hover:text-foreground">
               AY setup
             </Link>
           </div>
@@ -167,5 +139,5 @@ function formatRelative(iso: string): string {
   if (diffHr < 24) return `${diffHr}h ago`;
   const diffDay = Math.round(diffHr / 24);
   if (diffDay < 7) return `${diffDay}d ago`;
-  return new Date(iso).toLocaleDateString('en-SG', { month: 'short', day: 'numeric' });
+  return new Date(iso).toLocaleDateString("en-SG", { month: "short", day: "numeric" });
 }

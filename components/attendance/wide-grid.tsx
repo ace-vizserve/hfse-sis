@@ -23,18 +23,48 @@ import Link from 'next/link';
 // Chromebooks. At that point look at column virtualization (react-window)
 // or a paginated-by-week view.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+
+// Local-tz ISO for today. Inline helper — the file doesn't pull from
+// lib/attendance/calendar.ts to stay a pure client leaf.
+function todayLocalIso(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 import { Card } from '@/components/ui/card';
 import {
   ATTENDANCE_STATUS_LABELS,
+  DAY_TYPE_LABELS,
   EX_REASON_LABELS,
+  isEncodableDayType,
   type AttendanceStatus,
+  type DayType,
   type ExReason,
 } from '@/lib/schemas/attendance';
 import type { CalendarEventRow, SchoolCalendarRow } from '@/lib/attendance/calendar';
+
+// Column header + cell tinting by day_type. Matches the calendar admin
+// legend (see components/attendance/calendar-admin-client.tsx DAY_TYPE_STYLES).
+// Scaled down for the dense 1,410-cell grid — lower opacity than the
+// month view so the status letter stays readable.
+const DAY_TYPE_HEADER_BG: Record<DayType, string> = {
+  school_day: 'bg-muted/60 text-foreground',
+  public_holiday: 'bg-destructive/10 text-destructive',
+  school_holiday: 'bg-amber-500/15 text-amber-900 dark:text-amber-100',
+  hbl: 'bg-primary/10 text-primary',
+  no_class: 'bg-muted/40 text-muted-foreground',
+};
+const DAY_TYPE_CELL_BG: Record<DayType, string> = {
+  school_day: '',
+  public_holiday: 'bg-destructive/5',
+  school_holiday: 'bg-amber-500/5',
+  hbl: 'bg-primary/5',
+  no_class: 'bg-muted/20',
+};
 import type { DailyEntryRow } from '@/lib/attendance/queries';
 
 export type WideGridEnrolment = {
@@ -211,12 +241,27 @@ export function AttendanceWideGrid({
     }
   }
 
-  // Calendar columns in order; each flagged with event labels.
+  // Today's column — ref + ISO captured once at mount so the auto-scroll
+  // effect fires exactly once. On a date change (registrar leaves the tab
+  // open past midnight) the ref still points at yesterday's column; not
+  // worth complicating for that edge case.
+  const todayIso = useMemo(() => todayLocalIso(), []);
+  const todayHeaderRef = useRef<HTMLTableCellElement | null>(null);
+  useEffect(() => {
+    todayHeaderRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'center',
+    });
+  }, []);
+
+  // Calendar columns in order; each flagged with day_type + event labels.
   const columns = useMemo(() => {
     const evBy = (iso: string) => events.filter((e) => iso >= e.startDate && iso <= e.endDate);
     return calendar.map((c) => ({
       iso: c.date,
-      isHoliday: c.isHoliday,
+      dayType: c.dayType,
+      encodable: isEncodableDayType(c.dayType),
       label: c.label,
       events: evBy(c.date),
     }));
@@ -306,21 +351,30 @@ export function AttendanceWideGrid({
                     Number(c.iso.slice(8, 10)),
                   ).toLocaleDateString('en-SG', { weekday: 'short' });
                   const eventLabel = c.events.map((e) => e.label).join(' · ');
+                  const dayTypeTitle = `${DAY_TYPE_LABELS[c.dayType]}${
+                    c.label ? ` · ${c.label}` : ''
+                  }${eventLabel ? ` · ${eventLabel}` : ''}`;
+                  const isToday = c.iso === todayIso;
                   return (
                     <th
                       key={c.iso}
-                      title={eventLabel || undefined}
+                      ref={isToday ? todayHeaderRef : undefined}
+                      title={isToday ? `Today · ${dayTypeTitle}` : dayTypeTitle}
                       className={
                         'border-b border-r border-border px-1 py-1 text-center font-mono text-[10px] font-semibold ' +
-                        (c.isHoliday
-                          ? 'bg-muted/40 text-muted-foreground'
-                          : 'bg-muted/60 text-foreground')
+                        DAY_TYPE_HEADER_BG[c.dayType] +
+                        (isToday ? ' relative ring-2 ring-inset ring-brand-indigo' : '')
                       }
                     >
                       <div className="leading-tight">{c.iso.slice(-2)}</div>
-                      <div className="text-[9px] font-normal text-muted-foreground">
+                      <div className="text-[9px] font-normal opacity-70">
                         {weekday.slice(0, 3)}
                       </div>
+                      {c.dayType === 'hbl' && (
+                        <div className="mt-0.5 font-mono text-[8px] font-bold uppercase tracking-wider">
+                          HBL
+                        </div>
+                      )}
                       {c.events.length > 0 && (
                         <div className="mt-0.5 truncate text-[9px] font-normal text-primary">
                           ★
@@ -399,20 +453,20 @@ export function AttendanceWideGrid({
                       const status = cell?.status ?? null;
                       const exReason = cell?.exReason ?? null;
                       const currentValue = encodeOption(status, exReason);
-                      const disabled = e.withdrawn || c.isHoliday;
+                      const disabled = e.withdrawn || !c.encodable;
 
                       return (
                         <td
                           key={c.iso}
                           className={
                             'border-r border-border text-center align-middle ' +
-                            (c.isHoliday ? 'bg-muted/30' : '')
+                            DAY_TYPE_CELL_BG[c.dayType]
                           }
                         >
-                          {c.isHoliday ? (
+                          {!c.encodable ? (
                             <span
                               className="block px-1 py-1 text-[10px] text-muted-foreground"
-                              title={c.label ?? 'Holiday'}
+                              title={`${DAY_TYPE_LABELS[c.dayType]}${c.label ? ` · ${c.label}` : ''}`}
                             >
                               —
                             </span>

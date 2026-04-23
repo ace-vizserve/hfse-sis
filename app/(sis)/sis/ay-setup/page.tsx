@@ -1,16 +1,18 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, CalendarRange, RefreshCw, Trash2, UserCheck } from 'lucide-react';
+import { ArrowLeft, CalendarRange, FilePlus2, RefreshCw, Trash2, UserCheck } from 'lucide-react';
 
 import { AyDeleteDialog } from '@/components/sis/ay-delete-dialog';
 import { NewAyButton } from '@/components/sis/ay-setup-wizard';
 import { AySwitchActiveDialog } from '@/components/sis/ay-switch-active-dialog';
+import { GenerateSheetsDialog } from '@/components/sis/generate-sheets-dialog';
 import { TermDatesEditor } from '@/components/sis/term-dates-editor';
 import { CopyTeacherAssignmentsDialog } from '@/components/sis/copy-teacher-assignments-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   checkAyEmpty,
@@ -88,7 +90,8 @@ export default async function AySetupPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
+          <ScrollArea className="w-full">
+          <Table noWrapper>
             <TableHeader>
               <TableRow className="bg-muted/20 hover:bg-muted/20">
                 <TableHead>AY code</TableHead>
@@ -125,6 +128,8 @@ export default async function AySetupPage() {
               )}
             </TableBody>
           </Table>
+          <ScrollBar orientation="horizontal" />
+          </ScrollArea>
         </CardContent>
       </Card>
 
@@ -232,6 +237,14 @@ function AyRow({
                 Copy teachers
               </Button>
             </CopyTeacherAssignmentsDialog>
+          )}
+          {ay.counts.subject_configs > 0 && ay.counts.sections > 0 && (
+            <GenerateSheetsDialog scope={{ kind: 'ay', ayId: ay.id, ayCode: ay.ay_code }}>
+              <Button size="sm" variant="outline" className="h-7 text-xs" title="Generate every missing grading sheet for this AY">
+                <FilePlus2 className="mr-1 size-3" />
+                Generate sheets
+              </Button>
+            </GenerateSheetsDialog>
           )}
           {!ay.is_current && (
             <AySwitchActiveDialog targetAyCode={ay.ay_code} currentAyCode={activeAyCode}>

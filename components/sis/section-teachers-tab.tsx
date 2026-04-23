@@ -46,6 +46,10 @@ type Assignment = {
   role: 'form_adviser' | 'subject_teacher';
 };
 
+// Teachers tab on /sis/sections/[id]. Moved from
+// components/admin/teacher-assignments-panel.tsx during the 2026-04-22 SIS
+// Admin consolidation sprint — same logic, new home, unchanged exported
+// name so callers don't need a rename.
 export function TeacherAssignmentsPanel({
   sectionId,
   levelSubjects,

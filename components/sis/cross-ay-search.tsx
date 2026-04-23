@@ -7,6 +7,7 @@ import * as React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 type Match = {
   ayCode: string;
@@ -100,7 +101,8 @@ export function CrossAySearch() {
       </div>
 
       {showResults && (
-        <Card className="absolute left-0 right-0 top-full z-50 mt-2 max-h-[420px] overflow-y-auto p-0 shadow-lg">
+        <Card className="absolute left-0 right-0 top-full z-50 mt-2 p-0 shadow-lg">
+          <ScrollArea className="h-[420px]">
           {loading && (
             <div className="flex items-center gap-2 px-4 py-6 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
@@ -124,7 +126,7 @@ export function CrossAySearch() {
                 <li key={`${m.ayCode}:${m.enroleeNumber}`}>
                   <Link
                     href={{
-                      pathname: `/records/students/${m.enroleeNumber}`,
+                      pathname: `/records/students/by-enrolee/${m.enroleeNumber}`,
                       query: { ay: m.ayCode },
                     }}
                     onClick={() => setOpen(false)}
@@ -154,6 +156,7 @@ export function CrossAySearch() {
               ))}
             </ul>
           )}
+          </ScrollArea>
         </Card>
       )}
     </div>

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import {
+  AlarmClock,
   ArrowUpRight,
   Layers,
   Lock,
@@ -40,6 +41,27 @@ type SheetRow = {
 const first = <T,>(v: T | T[] | null): T | null =>
   Array.isArray(v) ? v[0] ?? null : v ?? null;
 
+// Midnight-aligned day delta between today and an ISO date.
+// Positive = iso is in the future; negative = past; zero = today.
+function daysUntilIso(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return 0;
+  const target = new Date(y, m - 1, d).getTime();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((target - today.getTime()) / 86_400_000);
+}
+
+function formatRelativeDays(days: number): string {
+  if (days === 0) return 'today';
+  if (days === 1) return 'tomorrow';
+  if (days === -1) return 'yesterday';
+  if (days < 0) return `${Math.abs(days)}d ago`;
+  if (days < 14) return `in ${days}d`;
+  const weeks = Math.round(days / 7);
+  return `in ${weeks}w`;
+}
+
 export default async function GradingListPage() {
   const supabase = await createClient();
 
@@ -67,6 +89,18 @@ export default async function GradingListPage() {
         .eq('role', 'form_adviser')
     : Promise.resolve({ data: [] as unknown });
 
+  // Term grading-lock dates for the current AY — used by the advisory chip
+  // strip. Fires in parallel with the other queries; cheap (4 rows / AY).
+  const termLocksPromise = ayPromise.then(async (r) => {
+    const ay = r.data as { id: string } | null;
+    if (!ay) return { data: [] };
+    return supabase
+      .from('terms')
+      .select('id, term_number, label, grading_lock_date, is_current')
+      .eq('academic_year_id', ay.id)
+      .order('term_number');
+  });
+
   // Fetch sheets + advisor + current AY in parallel.
   const [sheetsRes, advisorRes, ayRes] = await Promise.all([
     supabase
@@ -81,6 +115,17 @@ export default async function GradingListPage() {
     ayPromise,
   ]);
   const currentAy = (ayRes.data as { id: string; ay_code: string } | null) ?? null;
+  const termLocksRes = await termLocksPromise;
+  type TermLockRow = {
+    id: string;
+    term_number: number;
+    label: string;
+    grading_lock_date: string | null;
+    is_current: boolean;
+  };
+  const termLocks = ((termLocksRes.data ?? []) as TermLockRow[]).filter(
+    (t) => t.grading_lock_date,
+  );
 
   const sheets = sheetsRes.data;
   const sheetIds = (sheets ?? []).map((s: { id: string }) => s.id);
@@ -225,6 +270,50 @@ export default async function GradingListPage() {
         )}
       </header>
 
+      {/* Grading lock-date advisory strip (per-term). Informational only —
+          the actual per-sheet lock is `grading_sheets.is_locked`. */}
+      {termLocks.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/30 px-4 py-2.5 text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5 font-mono font-semibold uppercase tracking-[0.14em]">
+            <AlarmClock className="size-3" />
+            Grading locks
+          </span>
+          {termLocks.map((t) => {
+            const lockIso = t.grading_lock_date as string;
+            const days = daysUntilIso(lockIso);
+            const tone =
+              days < 0
+                ? 'bg-destructive/15 text-destructive'
+                : days <= 7
+                  ? 'bg-amber-500/20 text-amber-900 dark:text-amber-100'
+                  : 'bg-muted text-foreground';
+            return (
+              <span
+                key={t.id}
+                className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono font-semibold ${tone}`}
+                title={`${t.label} lock target: ${lockIso}`}
+              >
+                <span className="opacity-80">{t.label}</span>
+                <span className="tabular-nums">
+                  {new Date(lockIso).toLocaleDateString('en-SG', {
+                    day: '2-digit',
+                    month: 'short',
+                  })}
+                </span>
+                <span className="opacity-70">
+                  · {formatRelativeDays(days)}
+                </span>
+                {t.is_current && (
+                  <span className="rounded-sm bg-primary/20 px-1 text-[9px] uppercase text-primary">
+                    current
+                  </span>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {/* Stat cards */}
       <div className="@container/main">
         <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-3">
@@ -270,14 +359,15 @@ export default async function GradingListPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Write the term comments that appear on report cards.
+              Write the adviser paragraph that appears on T1&ndash;T3 report cards. Now lives in
+              the Evaluation module.
             </p>
             <div className="flex flex-wrap gap-2">
               {advisorySections.map((s) => (
                 <Button key={s.id} asChild variant="outline" size="sm">
-                  <Link href={`/markbook/grading/advisory/${s.id}/comments`}>
+                  <Link href={`/evaluation/sections/${s.id}`}>
                     {s.level_label ? `${s.level_label} · ` : ''}
-                    {s.name} · Comments
+                    {s.name} · Write-ups
                     <ArrowUpRight />
                   </Link>
                 </Button>

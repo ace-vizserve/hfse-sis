@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -205,10 +206,8 @@ export function useChangeReference() {
                 request, or use the correction tab if this is a data entry fix.
               </p>
             ) : (
-              <div
-                role="radiogroup"
-                aria-label="Approved change requests"
-                className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              <ScrollArea className="h-72 pr-1">
+                <div role="radiogroup" aria-label="Approved change requests" className="space-y-2">
                 {requests.map((r) => {
                   const selected = r.id === selectedRequestId;
                   return (
@@ -243,7 +242,8 @@ export function useChangeReference() {
                     </button>
                   );
                 })}
-              </div>
+                </div>
+              </ScrollArea>
             )}
             <p className="text-[11px] text-muted-foreground">
               The typed cell value must match the request&apos;s proposed value.

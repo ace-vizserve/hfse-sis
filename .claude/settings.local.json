@@ -72,7 +72,9 @@
       "Bash(git reset *)",
       "Bash(rm -rf 'app/\\(markbook\\)/markbook/.next')",
       "Bash(git check-ignore *)",
-      "Bash(echo \"---exit=$?\")"
+      "Bash(echo \"---exit=$?\")",
+      "Bash(rm -rf .next/* .next/.cache)",
+      "Bash(git config *)"
     ],
     "deny": [
       "Read(./.env.local)"

@@ -5,22 +5,15 @@ import {
   ChartBar,
   GraduationCap,
   History,
-  Hourglass,
   Tag,
   UserMinus,
   Users,
 } from 'lucide-react';
 
-import { AssessmentOutcomesChart } from '@/components/admissions/assessment-outcomes-chart';
 import { AySwitcher } from '@/components/admissions/ay-switcher';
-import { ConversionFunnelChart } from '@/components/admissions/conversion-funnel-chart';
-import { OutdatedApplicationsTable } from '@/components/admissions/outdated-applications-table';
-import { ReferralSourceChart } from '@/components/admissions/referral-source-chart';
-import { TimeToEnrollmentCard } from '@/components/admissions/time-to-enrollment-card';
 import { DocumentBacklogChart } from '@/components/sis/document-backlog-chart';
 import { ExpiringDocumentsPanel } from '@/components/sis/expiring-documents-panel';
 import { LevelDistributionChart } from '@/components/sis/level-distribution-chart';
-import { PipelineStageChart } from '@/components/sis/pipeline-stage-chart';
 import { RecentActivityFeed } from '@/components/sis/recent-activity-feed';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -35,17 +28,9 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
-  getAssessmentOutcomes,
-  getAverageTimeToEnrollment,
-  getConversionFunnel,
-  getOutdatedApplications,
-  getReferralSourceBreakdown,
-} from '@/lib/admissions/dashboard';
-import {
   getDocumentValidationBacklog,
   getExpiringDocuments,
   getLevelDistribution,
-  getPipelineStageBreakdown,
   getRecentSisActivity,
 } from '@/lib/sis/dashboard';
 import { getSisDashboardSummary } from '@/lib/sis/queries';
@@ -54,6 +39,10 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 const EXPIRY_WINDOW_DAYS = 60;
 
+// Records dashboard — enrolled students only. Pre-enrolment funnel
+// analytics live on /admissions. This page surfaces the permanent
+// record view: who's enrolled, doc validation backlog, document
+// expiry, level distribution, recent edits.
 export default async function RecordsDashboard({
   searchParams,
 }: {
@@ -85,53 +74,28 @@ export default async function RecordsDashboard({
   const selectedAy = ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
   const isCurrentAy = selectedAy === currentAy.ay_code;
 
-  // Records dashboard is the single consolidated Records + Admissions view.
-  // Records-side aggregators live in `lib/sis/dashboard.ts` (internal 9-stage
-  // pipeline, doc backlog, level distribution, expiring, activity feed).
-  // Admissions-side aggregators live in `lib/admissions/dashboard.ts` (avg
-  // time-to-enroll, conversion funnel, outdated applications, assessment
-  // outcomes, referral sources). Both fire in one Promise.all.
-  const [
-    summary,
-    pipelineStages,
-    docBacklog,
-    levels,
-    expiring,
-    activity,
-    timeToEnroll,
-    funnel,
-    outdated,
-    assessment,
-    referral,
-  ] = await Promise.all([
+  const [summary, docBacklog, levels, expiring, activity] = await Promise.all([
     getSisDashboardSummary(selectedAy),
-    getPipelineStageBreakdown(selectedAy),
     getDocumentValidationBacklog(selectedAy),
     getLevelDistribution(selectedAy),
     getExpiringDocuments(selectedAy, EXPIRY_WINDOW_DAYS, 8),
     getRecentSisActivity(8),
-    getAverageTimeToEnrollment(selectedAy),
-    getConversionFunnel(selectedAy),
-    getOutdatedApplications(selectedAy),
-    getAssessmentOutcomes(selectedAy),
-    getReferralSourceBreakdown(selectedAy),
   ]);
 
   return (
     <PageShell>
-      {/* Hero — title + AY chip + AY switcher (right-aligned) */}
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div className="space-y-3">
           <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Records · Students & Admissions
+            Records · Enrolled students
           </p>
           <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Records dashboard.
+            Student records.
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Unified view of the student record — internal pipeline stages, document
-            backlog, admissions funnel + time-to-enroll, assessment outcomes, referral
-            sources, and recent edits. Operational + analytical in one surface.
+            Permanent cross-year record of every enrolled student. Document backlog,
+            expiring documents, level distribution, and recent edits. Pre-enrolment
+            applications are on the Admissions module.
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
@@ -159,15 +123,8 @@ export default async function RecordsDashboard({
         </div>
       </header>
 
-      {/* Summary stats row */}
       <section className="@container/main">
         <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
-          <SummaryStat
-            label="Total students"
-            value={summary.totalStudents}
-            icon={Users}
-            footnote="In this academic year"
-          />
           <SummaryStat
             label="Enrolled"
             value={summary.enrolled}
@@ -175,10 +132,10 @@ export default async function RecordsDashboard({
             footnote="Active + conditional"
           />
           <SummaryStat
-            label="In pipeline"
-            value={summary.pending}
-            icon={Hourglass}
-            footnote="Pre-enrollment stages"
+            label="Total applications"
+            value={summary.totalStudents}
+            icon={Users}
+            footnote="All stages — see Admissions"
           />
           <SummaryStat
             label="Withdrawn"
@@ -186,57 +143,47 @@ export default async function RecordsDashboard({
             icon={UserMinus}
             footnote="Left during the year"
           />
+          <SummaryStat
+            label="Doc expiring ≤ 60d"
+            value={expiring.length}
+            icon={History}
+            footnote="Per-student, top 8 shown"
+          />
         </div>
       </section>
 
-      {/* Quick actions */}
       <section className="grid gap-4 md:grid-cols-3">
         <QuickLink
           href={`/records/students?ay=${selectedAy}`}
           icon={Users}
           title="Students"
-          description="Browse, search, and edit every student's profile, family, pipeline, and documents."
+          description="Enrolled students across all years. Open any profile to see cross-year academic and attendance history."
         />
         <QuickLink
-          href={`/records/discount-codes?ay=${selectedAy}`}
+          href={`/sis/admin/discount-codes?ay=${selectedAy}`}
           icon={Tag}
           title="Discount Codes"
-          description="Manage the enrolment portal's promotion codes for this AY."
+          description="Enrolment-portal promotion codes for this AY. Lives in SIS Admin — cross-module link for convenience."
         />
         <QuickLink
           href="/records/audit-log"
           icon={History}
           title="Audit Log"
-          description="Full append-only log of every Records edit — profile, family, stage, discount, document."
+          description="Append-only record of every edit on enrolled students."
         />
       </section>
 
-      {/* Main grid — pipeline chart (2/3) + level distribution (1/3) */}
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <PipelineStageChart data={pipelineStages} />
+          <DocumentBacklogChart data={docBacklog} />
         </div>
         <div className="lg:col-span-1">
           <LevelDistributionChart data={levels} />
         </div>
       </section>
 
-      {/* Admissions analytics — conversion funnel (2/3) + avg time-to-enroll (1/3) */}
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <ConversionFunnelChart data={funnel} />
-        </div>
-        <div className="lg:col-span-1">
-          <TimeToEnrollmentCard data={timeToEnroll} />
-        </div>
-      </section>
-
-      {/* Document section — backlog chart (2/3) + expiring panel (1/3) */}
-      <section className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <DocumentBacklogChart data={docBacklog} />
-        </div>
-        <div className="lg:col-span-1">
           <ExpiringDocumentsPanel
             rows={expiring}
             ayCode={selectedAy}
@@ -245,34 +192,13 @@ export default async function RecordsDashboard({
         </div>
       </section>
 
-      {/* Needs attention — outdated applications table (full width) */}
-      <section className="space-y-3">
-        <div className="space-y-1">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Needs attention
-          </p>
-          <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
-            Outdated applications
-          </h2>
-        </div>
-        <OutdatedApplicationsTable rows={outdated} />
-      </section>
-
-      {/* Deep analytics — assessment outcomes + referral sources (2-col) */}
-      <section className="grid gap-4 lg:grid-cols-2">
-        <AssessmentOutcomesChart data={assessment} />
-        <ReferralSourceChart data={referral} />
-      </section>
-
-      {/* Activity feed — full width */}
       <RecentActivityFeed rows={activity} />
 
-      {/* Trust strip */}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         <ChartBar className="size-3" strokeWidth={2.25} />
         <span>{selectedAy}</span>
         <span className="text-border">·</span>
-        <span>Live data</span>
+        <span>Enrolled only</span>
         <span className="text-border">·</span>
         <span>Cache 10m</span>
         <span className="text-border">·</span>

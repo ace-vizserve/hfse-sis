@@ -60,10 +60,17 @@ export default async function RecordsStudentsPage({
   const selectedAy = ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
   const isCurrentAy = selectedAy === currentAy.ay_code;
 
-  const [students, summary] = await Promise.all([
+  const [allStudents, summary] = await Promise.all([
     listStudents(selectedAy),
     getSisDashboardSummary(selectedAy),
   ]);
+
+  // Records is the permanent cross-year record of enrolled students only.
+  // Pre-enrolment applications live on /admissions/applications.
+  const ENROLLED = new Set(['Enrolled', 'Enrolled (Conditional)']);
+  const students = allStudents.filter((s) =>
+    ENROLLED.has((s.applicationStatus ?? '').trim()),
+  );
 
   return (
     <PageShell>
@@ -79,15 +86,15 @@ export default async function RecordsStudentsPage({
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div className="space-y-3">
           <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Records · Students
+            Records · Enrolled students
           </p>
           <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
             Student records.
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Browse, search, and open any student in the selected academic year. The
-            cross-year search on the right of this page spans every AY and ignores the
-            AY filter.
+            Enrolled students only. Click a row to open the cross-year permanent record
+            (grades, attendance, and class-placement history across every AY). Pre-
+            enrolment applications are on the Admissions module.
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
@@ -185,7 +192,11 @@ export default async function RecordsStudentsPage({
           </CardAction>
         </CardHeader>
         <CardContent className="p-0">
-          <StudentDataTable data={students} />
+          <StudentDataTable
+            data={students}
+            linkBase="/records/students"
+            linkAttribute="studentNumber"
+          />
         </CardContent>
       </Card>
 

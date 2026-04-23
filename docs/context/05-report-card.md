@@ -96,7 +96,7 @@ Two legends side by side:
 Source: `attendance_records` table.
 
 ### 6. Form Class Adviser's Comments
-Free-text block. Source: `report_card_comments` table.
+Free-text block. Source: `evaluation_writeups` table (KD #49; see `19-evaluation-module.md`).
 Label includes the term's HFSE Virtue theme (e.g., "Commitment, Discipline, Integrity").
 
 ### 7. Footer

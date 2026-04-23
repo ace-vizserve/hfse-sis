@@ -56,6 +56,24 @@ This updates one row in `15-markbook-module.md` "Planned migrations": attendance
 
 **Decision:** write-through. Every daily write (import, live-entry PATCH, correction) recomputes the `attendance_records` row for the same `(term_id, section_student_id)` in the same transaction. Trivial given Phase 1's flat status vocabulary — `days_present = count(P∪L∪EX)`, `days_late = count(L)`, `days_excused = count(EX)`, `days_absent = count(A)`, `school_days = count(status != 'NC')`, `attendance_pct = round(days_present / school_days * 100, 2)`.
 
+### 4. School calendar has five typed day-types (migration 019 — KD #50)
+
+`school_calendar.day_type` replaces the binary is_holiday flag with five values:
+
+| Day type | Encodable? | Header tint | Semantics |
+|---|---|---|---|
+| `school_day` | ✅ yes | muted | Regular in-school day. Attendance taken. |
+| `hbl` | ✅ yes | primary (blue) | Home-based learning. Attendance taken; counts in `school_days`. |
+| `public_holiday` | ❌ no | destructive (red) | National / public closure (e.g. CNY Day 1). |
+| `school_holiday` | ❌ no | amber | School-only closure (staff PD, founder's day). |
+| `no_class` | ❌ no | muted grey | School-wide no class (typhoon, assembly block). |
+
+Writes to `/api/attendance/daily` reject with 409 on any non-encodable day-type. The rollup in §3 is unchanged — `school_days = count(status != 'NC')` naturally collapses to encodable days only because non-encodable days produce no rows (or `NC` rows if a registrar back-fills).
+
+`is_holiday` stays on the column via a BEFORE INSERT/UPDATE trigger (`is_holiday = day_type NOT IN ('school_day','hbl')`) for backwards-compat until every consumer migrates to `day_type`.
+
+"Special events" (Math Week, school photos, PTC) stay on the separate `calendar_events` overlay table — they're labels, not day-types. Rendered as a primary-colored dot on calendar + grid headers.
+
 ## Routes (planned)
 
 Phase 1 route surface, skeletal — actual components + URLs finalise once Excel-driven decisions land:
@@ -63,6 +81,7 @@ Phase 1 route surface, skeletal — actual components + URLs finalise once Excel
 - `/attendance` — entry surface list (pick a section + date, similar to how Markbook `/grading` lists sheets).
 - `/attendance/[sectionId]` — daily grid for a section (default: today). Columns: students; rows: days within the current term; cells: status. Autosave per cell, like the Markbook score grid.
 - `/attendance/[sectionId]?date=YYYY-MM-DD` — specific date view (bookmarkable, deep-linkable).
+- `/sis/calendar` — **school-calendar admin (moved to SIS Admin 2026-04-22)**. Defines which weekdays are school days vs holidays per term, plus overlays for important dates. The Attendance sidebar keeps a cross-module link for registrar convenience; the legacy `/attendance/calendar` URL redirects.
 - `/records/students/[enroleeNumber]?tab=attendance` — per-student log (new tab on the existing Records student detail page).
 - Optional: `/attendance/audit-log` — module-scoped audit, mirroring `/p-files/audit-log` and `/records/audit-log`.
 

@@ -12,6 +12,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -30,7 +31,7 @@ const ROLE_LABEL: Record<string, string> = {
 
 const ICON_BY_HREF: Record<string, LucideIcon> = {
   '/attendance': CalendarCheck,
-  '/attendance/calendar': CalendarDays,
+  '/sis/calendar': CalendarDays,
   '/attendance/import': FileUp,
   '/attendance/audit-log': History,
 };
@@ -61,20 +62,16 @@ export function AttendanceSidebar({ email, role }: { email: string; role: string
 
   function isActive(item: NavItem): boolean {
     // Prefix match only for the root /attendance so sub-routes like
-    // /attendance/[sectionId] still highlight "Sections" — but /import,
-    // /calendar, /audit-log must remain exact-match so they don't steal
-    // the highlight.
+    // /attendance/[sectionId] still highlight "Sections" — but /import
+    // and /audit-log must remain exact-match so they don't steal the
+    // highlight.
     if (item.href === '/attendance') {
       if (pathname === '/attendance') return true;
       return (
         pathname.startsWith('/attendance/') &&
         !pathname.startsWith('/attendance/import') &&
-        !pathname.startsWith('/attendance/calendar') &&
         !pathname.startsWith('/attendance/audit-log')
       );
-    }
-    if (item.href === '/attendance/calendar') {
-      return pathname === item.href || pathname.startsWith(item.href + '/');
     }
     if (PREFIX_MATCH_HREFS.has(item.href)) {
       return pathname === item.href || pathname.startsWith(item.href + '/');
@@ -82,12 +79,14 @@ export function AttendanceSidebar({ email, role }: { email: string; role: string
     return pathname === item.href;
   }
 
-  const sections = NAV_BY_MODULE.attendance.map((section) => ({
-    ...section,
-    items: section.items.filter(
-      (item) => !item.requiresRoles || item.requiresRoles.includes(role as Role),
-    ),
-  }));
+  const sections = NAV_BY_MODULE.attendance
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (item) => !item.requiresRoles || item.requiresRoles.includes(role as Role),
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
 
   return (
     <Sidebar collapsible="icon">
@@ -117,6 +116,11 @@ export function AttendanceSidebar({ email, role }: { email: string; role: string
       <SidebarContent className="px-1.5 py-3">
         {sections.map((section, i) => (
           <SidebarGroup key={i}>
+            {section.label && (
+              <SidebarGroupLabel className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
+                {section.label}
+              </SidebarGroupLabel>
+            )}
             <SidebarGroupContent>
               <SidebarMenu>
                 {section.items.map((item) => {

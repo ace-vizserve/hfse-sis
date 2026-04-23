@@ -15,6 +15,10 @@ export const SubjectConfigUpdateSchema = z
     qa_weight: z.number().int().min(0).max(100),
     ww_max_slots: z.number().int().min(1).max(5),
     pt_max_slots: z.number().int().min(1).max(5),
+    // Max possible QA score for this (subject × level × AY). Default 30
+    // per Hard Rule #1 canonical case; registrars can vary (e.g. 50 for
+    // Math, 20 for Art).
+    qa_max: z.number().int().min(1).max(100),
   })
   .refine((v) => v.ww_weight + v.pt_weight + v.qa_weight === 100, {
     message: 'WW + PT + QA must sum to 100',

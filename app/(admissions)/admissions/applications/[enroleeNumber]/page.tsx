@@ -31,7 +31,13 @@ export default async function SisStudentDetailPage({
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
-  if (sessionUser.role !== 'registrar' && sessionUser.role !== 'school_admin' && sessionUser.role !== 'admin' && sessionUser.role !== 'superadmin') {
+  if (
+    sessionUser.role !== 'admissions' &&
+    sessionUser.role !== 'registrar' &&
+    sessionUser.role !== 'school_admin' &&
+    sessionUser.role !== 'admin' &&
+    sessionUser.role !== 'superadmin'
+  ) {
     redirect('/');
   }
 
@@ -93,7 +99,7 @@ export default async function SisStudentDetailPage({
   return (
     <PageShell>
       <Link
-        href={{ pathname: '/records/students', query: { ay: selectedAy } }}
+        href={{ pathname: '/admissions/applications', query: { ay: selectedAy } }}
         className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
@@ -102,7 +108,7 @@ export default async function SisStudentDetailPage({
 
       <header className="space-y-3">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Records · Student Record
+          Admissions · Application
         </p>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="space-y-2">

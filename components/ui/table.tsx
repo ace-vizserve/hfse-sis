@@ -2,16 +2,25 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
-  ({ className, ...props }, ref) => (
-    <div className="relative w-full overflow-auto">
+type TableProps = React.HTMLAttributes<HTMLTableElement> & {
+  // When true, skip the default `<div overflow-auto>` wrapper so the caller
+  // can provide their own scroll surface (e.g. a shadcn `ScrollArea`). Leaves
+  // the `<table>` styling intact. Default `false` keeps legacy behavior.
+  noWrapper?: boolean;
+};
+
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, noWrapper, ...props }, ref) => {
+    const table = (
       <table
         ref={ref}
         className={cn('w-full caption-bottom text-sm text-foreground', className)}
         {...props}
       />
-    </div>
-  ),
+    );
+    if (noWrapper) return table;
+    return <div className="relative w-full overflow-auto">{table}</div>;
+  },
 );
 Table.displayName = 'Table';
 

@@ -17,6 +17,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -177,48 +178,50 @@ export function EditProfileSheet({
           Edit profile
         </Button>
       </SheetTrigger>
-      <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
-        <SheetHeader className="space-y-2 border-b border-border p-6">
-          <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            Edit profile
-          </SheetTitle>
-          <SheetDescription className="text-sm text-muted-foreground">
-            Updates demographic and preference fields on{' '}
-            <span className="font-mono text-foreground">{ayCode.toLowerCase()}_enrolment_applications</span>.
-            Stable IDs (enrolee number, student number) are not editable.
-          </SheetDescription>
-        </SheetHeader>
+      <SheetContent className="w-full gap-0 p-0 sm:max-w-2xl">
+        <ScrollArea className="h-full">
+          <SheetHeader className="space-y-2 border-b border-border p-6">
+            <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Edit profile
+            </SheetTitle>
+            <SheetDescription className="text-sm text-muted-foreground">
+              Updates demographic and preference fields on{' '}
+              <span className="font-mono text-foreground">{ayCode.toLowerCase()}_enrolment_applications</span>.
+              Stable IDs (enrolee number, student number) are not editable.
+            </SheetDescription>
+          </SheetHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex-1 space-y-8 overflow-y-auto p-6">
-              {SECTIONS.map((section) => (
-                <section key={section.title} className="space-y-3">
-                  <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
-                    {section.title}
-                  </h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    {section.fields.map((cfg) => (
-                      <SchemaField key={cfg.name} cfg={cfg} form={form} />
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)}>
+              <div className="space-y-8 p-6">
+                {SECTIONS.map((section) => (
+                  <section key={section.title} className="space-y-3">
+                    <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
+                      {section.title}
+                    </h3>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      {section.fields.map((cfg) => (
+                        <SchemaField key={cfg.name} cfg={cfg} form={form} />
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
 
-            <SheetFooter className="flex-row justify-end gap-2 border-t border-border p-6 sm:justify-end">
-              <SheetClose asChild>
-                <Button type="button" variant="outline" size="sm" disabled={busy}>
-                  Cancel
+              <SheetFooter className="flex-row justify-end gap-2 border-t border-border p-6 sm:justify-end">
+                <SheetClose asChild>
+                  <Button type="button" variant="outline" size="sm" disabled={busy}>
+                    Cancel
+                  </Button>
+                </SheetClose>
+                <Button type="submit" size="sm" disabled={busy}>
+                  {busy && <Loader2 className="size-3.5 animate-spin" />}
+                  {busy ? 'Saving…' : 'Save changes'}
                 </Button>
-              </SheetClose>
-              <Button type="submit" size="sm" disabled={busy}>
-                {busy && <Loader2 className="size-3.5 animate-spin" />}
-                {busy ? 'Saving…' : 'Save changes'}
-              </Button>
-            </SheetFooter>
-          </form>
-        </Form>
+              </SheetFooter>
+            </form>
+          </Form>
+        </ScrollArea>
       </SheetContent>
     </Sheet>
   );

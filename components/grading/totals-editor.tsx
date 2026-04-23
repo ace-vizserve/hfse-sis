@@ -23,6 +23,7 @@ import {
   FieldLabel,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Sheet,
   SheetClose,
@@ -182,20 +183,21 @@ export function TotalsEditor({
           Edit totals & slots
         </Button>
       </SheetTrigger>
-      <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
-        <SheetHeader className="space-y-3 border-b border-border p-6">
-          <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            Edit totals & slots
-          </SheetTitle>
-          <SheetDescription className="text-sm text-muted-foreground">
-            {isLocked
-              ? 'Sheet is locked — you will be prompted for an approval reference on save.'
-              : 'All student grades will be recomputed against the new denominators.'}
-          </SheetDescription>
-        </SheetHeader>
+      <SheetContent className="w-full gap-0 p-0 sm:max-w-md">
+        <ScrollArea className="h-full">
+          <SheetHeader className="space-y-3 border-b border-border p-6">
+            <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Edit totals & slots
+            </SheetTitle>
+            <SheetDescription className="text-sm text-muted-foreground">
+              {isLocked
+                ? 'Sheet is locked — you will be prompted for an approval reference on save.'
+                : 'All student grades will be recomputed against the new denominators.'}
+            </SheetDescription>
+          </SheetHeader>
 
-        <form onSubmit={onSubmit} className="flex flex-1 flex-col">
-          <div className="flex-1 overflow-y-auto p-6">
+          <form onSubmit={onSubmit}>
+          <div className="p-6">
             <FieldGroup>
               <SlotSection
                 label="Written Works"
@@ -251,6 +253,7 @@ export function TotalsEditor({
             </Button>
           </SheetFooter>
         </form>
+        </ScrollArea>
       </SheetContent>
 
       <AlertDialog open={shrinkConfirmOpen} onOpenChange={setShrinkConfirmOpen}>

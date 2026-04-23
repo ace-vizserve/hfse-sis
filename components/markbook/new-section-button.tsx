@@ -78,7 +78,8 @@ export function NewSectionButton({
       toast.success(`Created ${values.name}`);
       setOpen(false);
       form.reset(BLANK);
-      router.push(`/markbook/sections/${body.id}`);
+      // Section setup lives in SIS Admin now (2026-04-22).
+      router.push(`/sis/sections/${body.id}`);
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'create failed');

@@ -18,6 +18,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -226,7 +227,7 @@ export function BulkPublishDialog({
                 </Button>
               </div>
             </div>
-            <div className="max-h-[240px] overflow-y-auto p-2">
+            <ScrollArea className="h-[240px] p-2">
               {sortedSections.length === 0 && (
                 <div className="p-3 text-center text-sm text-muted-foreground">
                   No sections available.
@@ -250,7 +251,7 @@ export function BulkPublishDialog({
                   </div>
                 </label>
               ))}
-            </div>
+            </ScrollArea>
           </div>
 
           {progress && (

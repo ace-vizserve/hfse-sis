@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 type Term = { id: string; term_number: number; label: string };
 
@@ -40,9 +41,10 @@ type ChecklistData = {
     locked: number;
     unlocked: { subject_name: string }[];
   };
-  comments: {
+  evaluations: {
     total_active: number;
-    written: number;
+    submitted: number;
+    drafted: number;
     missing: { name: string; index: number | null }[];
   };
   attendance: {
@@ -136,14 +138,16 @@ function CheckItem({ passed, label, detail }: { passed: boolean; label: string; 
 function StudentList({ items }: { items: { name: string; index: number | null }[] }) {
   if (items.length === 0) return null;
   return (
-    <ul className="mt-1.5 max-h-28 space-y-0.5 overflow-y-auto pl-6 text-xs text-muted-foreground">
-      {items.map((s, i) => (
-        <li key={i}>
-          {s.index != null && <span className="mr-1.5 font-mono text-[10px]">#{s.index}</span>}
-          {s.name}
-        </li>
-      ))}
-    </ul>
+    <ScrollArea className="mt-1.5 h-28 pl-6">
+      <ul className="space-y-0.5 pr-3 text-xs text-muted-foreground">
+        {items.map((s, i) => (
+          <li key={i}>
+            {s.index != null && <span className="mr-1.5 font-mono text-[10px]">#{s.index}</span>}
+            {s.name}
+          </li>
+        ))}
+      </ul>
+    </ScrollArea>
   );
 }
 
@@ -243,7 +247,7 @@ export function PublishWindowPanel({
 
       const hasIssues =
         data.grading_sheets.unlocked.length > 0 ||
-        data.comments.missing.length > 0 ||
+        data.evaluations.missing.length > 0 ||
         data.attendance.missing.length > 0 ||
         (data.t4_readiness && (!data.t4_readiness.all_terms_locked || data.t4_readiness.missing_annual_count > 0));
 
@@ -275,7 +279,7 @@ export function PublishWindowPanel({
 
   const checklistOpen = checklist !== null;
   const sheetsOk = checklist ? checklist.grading_sheets.unlocked.length === 0 : true;
-  const commentsOk = checklist ? checklist.comments.missing.length === 0 : true;
+  const commentsOk = checklist ? checklist.evaluations.missing.length === 0 : true;
   const attendanceOk = checklist ? checklist.attendance.missing.length === 0 : true;
   const t4LockedOk = checklist?.t4_readiness ? checklist.t4_readiness.all_terms_locked : true;
   const t4GradesOk = checklist?.t4_readiness ? checklist.t4_readiness.missing_annual_count === 0 : true;
@@ -461,11 +465,11 @@ export function PublishWindowPanel({
                     passed={commentsOk}
                     label={
                       commentsOk
-                        ? `All ${checklist?.comments.total_active ?? 0} adviser comments written`
-                        : `${checklist?.comments.missing.length} missing adviser comment${(checklist?.comments.missing.length ?? 0) === 1 ? "" : "s"}`
+                        ? `All ${checklist?.evaluations.total_active ?? 0} adviser comments written`
+                        : `${checklist?.evaluations.missing.length} missing adviser comment${(checklist?.evaluations.missing.length ?? 0) === 1 ? "" : "s"}`
                     }
                   />
-                  {!commentsOk && <StudentList items={checklist?.comments.missing ?? []} />}
+                  {!commentsOk && <StudentList items={checklist?.evaluations.missing ?? []} />}
 
                   <CheckItem
                     passed={attendanceOk}

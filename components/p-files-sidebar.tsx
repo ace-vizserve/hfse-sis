@@ -12,6 +12,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -84,6 +85,11 @@ export function PFilesSidebar({ email, role }: { email: string; role: string }) 
       <SidebarContent className="px-1.5 py-3">
         {sections.map((section, i) => (
           <SidebarGroup key={i}>
+            {section.label && (
+              <SidebarGroupLabel className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
+                {section.label}
+              </SidebarGroupLabel>
+            )}
             <SidebarGroupContent>
               <SidebarMenu>
                 {section.items.map((item) => {

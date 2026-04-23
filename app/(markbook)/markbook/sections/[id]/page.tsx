@@ -1,11 +1,9 @@
-import { TeacherAssignmentsPanel } from "@/components/admin/teacher-assignments-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageShell } from "@/components/ui/page-shell";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { createClient } from "@/lib/supabase/server";
-import { ArrowLeft, Calendar, Clock, MessageSquare, UserCheck, UserMinus, Users } from "lucide-react";
+import { createClient, getSessionUser } from "@/lib/supabase/server";
+import { ArrowLeft, ArrowUpRight, Calendar, Clock, MessageSquare, UserCheck, UserCog, UserMinus } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ManualAddStudent } from "./manual-add";
@@ -34,6 +32,12 @@ type EnrolmentRow = {
 export default async function SectionRosterPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
+  const sessionUser = await getSessionUser();
+  const canManage =
+    sessionUser?.role === "registrar" ||
+    sessionUser?.role === "school_admin" ||
+    sessionUser?.role === "admin" ||
+    sessionUser?.role === "superadmin";
 
   const { data: section } = await supabase
     .from("sections")
@@ -60,20 +64,6 @@ export default async function SectionRosterPage({ params }: { params: Promise<{ 
     .maybeSingle();
 
   const levelFromSection = (Array.isArray(section.level) ? section.level[0] : section.level) as LevelLite | null;
-  const { data: configs } = levelFromSection
-    ? await supabase
-        .from("subject_configs")
-        .select("subject:subjects(id, code, name)")
-        .eq("academic_year_id", section.academic_year_id)
-        .eq("level_id", levelFromSection.id)
-    : { data: [] };
-  type CfgRow = {
-    subject: { id: string; code: string; name: string } | { id: string; code: string; name: string }[] | null;
-  };
-  const levelSubjects = ((configs ?? []) as CfgRow[])
-    .map((c) => (Array.isArray(c.subject) ? c.subject[0] : c.subject))
-    .filter((s): s is { id: string; code: string; name: string } => !!s)
-    .sort((a, b) => a.name.localeCompare(b.name));
 
   const enrolments = (rows ?? []) as unknown as EnrolmentRow[];
   const level = levelFromSection;
@@ -129,10 +119,20 @@ export default async function SectionRosterPage({ params }: { params: Promise<{ 
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {canManage && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/sis/sections/${section.id}?tab=teachers`}>
+                <UserCog className="h-4 w-4" />
+                Manage teachers
+                <ArrowUpRight className="h-3 w-3" />
+              </Link>
+            </Button>
+          )}
           <Button asChild variant="outline" size="sm">
-            <Link href={`/markbook/sections/${section.id}/comments`}>
+            <Link href={`/evaluation/sections/${section.id}`}>
               <MessageSquare className="h-4 w-4" />
-              Comments
+              Write-ups
+              <ArrowUpRight className="h-3 w-3" />
             </Link>
           </Button>
           <Button asChild variant="outline" size="sm">
@@ -181,28 +181,18 @@ export default async function SectionRosterPage({ params }: { params: Promise<{ 
         />
       )}
 
-      {/* Tabs: Roster / Teachers */}
-      <Tabs defaultValue="roster">
-        <TabsList>
-          <TabsTrigger value="roster">
-            <Users className="h-3.5 w-3.5" />
+      {/* Roster */}
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             Roster
-            <span className="ml-1 font-mono text-[10px] text-muted-foreground">{enrolments.length}</span>
-          </TabsTrigger>
-          <TabsTrigger value="teachers">
-            <UserCheck className="h-3.5 w-3.5" />
-            Teachers
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="roster" className="mt-4 space-y-4">
-          <RosterTable data={rosterRows} sectionId={section.id} />
-        </TabsContent>
-
-        <TabsContent value="teachers" className="mt-4">
-          <TeacherAssignmentsPanel sectionId={section.id} levelSubjects={levelSubjects} />
-        </TabsContent>
-      </Tabs>
+            <span className="ml-2 font-mono text-[10px] text-muted-foreground">
+              {enrolments.length}
+            </span>
+          </h2>
+        </div>
+        <RosterTable data={rosterRows} sectionId={section.id} />
+      </div>
     </PageShell>
   );
 }

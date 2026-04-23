@@ -4,7 +4,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { weekdaysBetween } from '@/lib/attendance/calendar';
-import { SchoolCalendarUpsertSchema } from '@/lib/schemas/attendance';
+import { resolveDayType, SchoolCalendarUpsertSchema } from '@/lib/schemas/attendance';
 
 // POST /api/attendance/calendar
 // Body — either:
@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
     const rows = dates.map((date) => ({
       term_id: termId,
       date,
+      day_type: 'school_day' as const,
       is_holiday: false,
       label: null,
       created_by: auth.user.id,
@@ -75,13 +76,35 @@ export async function POST(request: NextRequest) {
   }
   const { termId, entries } = parsed.data;
 
-  const rows = entries.map((e) => ({
-    term_id: termId,
-    date: e.date,
-    is_holiday: e.isHoliday,
-    label: e.label ?? null,
-    created_by: auth.user.id,
-  }));
+  // Load previous day_types for these (term, date) pairs so the audit diff
+  // captures what changed. Cheap — HFSE volumes are small and entries max 200.
+  const dates = entries.map((e) => e.date);
+  const { data: beforeRows } = await service
+    .from('school_calendar')
+    .select('date, day_type')
+    .eq('term_id', termId)
+    .in('date', dates);
+  const beforeByDate = new Map<string, string>(
+    ((beforeRows ?? []) as Array<{ date: string; day_type: string }>).map((r) => [
+      r.date,
+      r.day_type,
+    ]),
+  );
+
+  const rows = entries.map((e) => {
+    const dayType = resolveDayType(e);
+    return {
+      term_id: termId,
+      date: e.date,
+      day_type: dayType,
+      // is_holiday is derived by the migration-019 trigger; we still pass a
+      // value here for rows that existed pre-migration and haven't been
+      // re-written yet. Trigger will overwrite anyway.
+      is_holiday: dayType !== 'school_day' && dayType !== 'hbl',
+      label: e.label ?? null,
+      created_by: auth.user.id,
+    };
+  });
 
   const { error: upsertErr } = await service
     .from('school_calendar')
@@ -90,13 +113,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: upsertErr.message }, { status: 500 });
   }
 
+  const diffs = rows.map((r) => ({
+    date: r.date,
+    before_day_type: beforeByDate.get(r.date) ?? null,
+    after_day_type: r.day_type,
+    label: r.label,
+  }));
+
   await logAction({
     service,
     actor: { id: auth.user.id, email: auth.user.email ?? null },
     action: 'attendance.calendar.upsert',
     entityType: 'school_calendar',
     entityId: termId,
-    context: { action: 'upsert', rows: rows.length },
+    context: { action: 'upsert', rows: rows.length, diffs },
   });
 
   return NextResponse.json({ ok: true, upserted: rows.length });

@@ -30,14 +30,15 @@ export async function PATCH(
       { status: 400 },
     );
   }
-  const { ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots } = parsed.data;
+  const { ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max } =
+    parsed.data;
 
   const service = createServiceClient();
 
   const { data: before, error: loadErr } = await service
     .from('subject_configs')
     .select(
-      'id, academic_year_id, subject_id, level_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots',
+      'id, academic_year_id, subject_id, level_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max',
     )
     .eq('id', configId)
     .maybeSingle();
@@ -56,6 +57,7 @@ export async function PATCH(
       qa_weight: qa_dec,
       ww_max_slots,
       pt_max_slots,
+      qa_max,
     })
     .eq('id', configId);
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
@@ -76,6 +78,7 @@ export async function PATCH(
         qa_weight: Number(before.qa_weight),
         ww_max_slots: before.ww_max_slots,
         pt_max_slots: before.pt_max_slots,
+        qa_max: before.qa_max,
       },
       after: {
         ww_weight: Number(ww_dec),
@@ -83,6 +86,7 @@ export async function PATCH(
         qa_weight: Number(qa_dec),
         ww_max_slots,
         pt_max_slots,
+        qa_max,
       },
     },
   });

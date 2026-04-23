@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 // Status badges read severity at a glance through one of five semantic
-// recipes. Per docs/context/09-design-system.md §9.1 + §9.3 — no
+// recipes. Per docs/context/09a-design-patterns.md §9.1 + §9.3 — no
 // per-status bespoke colors, no raw Tailwind utilities. Anything the
 // admissions team sends that isn't mapped falls through to MUTED so it
 // surfaces rather than vanishes.

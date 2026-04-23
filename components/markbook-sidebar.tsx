@@ -52,6 +52,7 @@ const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
   superadmin: "Superadmin",
   "p-file": "P-File Officer",
+  admissions: "Admissions",
 };
 
 export function MarkbookSidebar({

@@ -30,6 +30,7 @@ export type SubjectConfigDraft = {
   qa_weight: number;
   ww_max_slots: number;
   pt_max_slots: number;
+  qa_max: number;  // max possible QA score (default 30 per Hard Rule #1)
 };
 
 export function SubjectConfigEditDialog({
@@ -47,6 +48,7 @@ export function SubjectConfigEditDialog({
   const [qa, setQa] = useState('20');
   const [wwSlots, setWwSlots] = useState('5');
   const [ptSlots, setPtSlots] = useState('5');
+  const [qaMax, setQaMax] = useState('30');
   const [saving, setSaving] = useState(false);
 
   // Re-seed on draft change (i.e., user opened the dialog for a different row).
@@ -57,6 +59,7 @@ export function SubjectConfigEditDialog({
     setQa(String(draft.qa_weight));
     setWwSlots(String(draft.ww_max_slots));
     setPtSlots(String(draft.pt_max_slots));
+    setQaMax(String(draft.qa_max));
   }, [draft]);
 
   const wwN = Number(ww) || 0;
@@ -71,6 +74,7 @@ export function SubjectConfigEditDialog({
     qa_weight: qaN,
     ww_max_slots: Number(wwSlots) || 0,
     pt_max_slots: Number(ptSlots) || 0,
+    qa_max: Number(qaMax) || 0,
   });
 
   async function save() {
@@ -89,7 +93,7 @@ export function SubjectConfigEditDialog({
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error ?? 'save failed');
       toast.success(
-        `${draft.subjectName} · ${draft.levelCode}: ${wwN}·${ptN}·${qaN}`,
+        `${draft.subjectName} · ${draft.levelCode}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`,
       );
       onOpenChange(false);
       router.refresh();
@@ -153,6 +157,33 @@ export function SubjectConfigEditDialog({
               <p className="text-[11px] text-muted-foreground">
                 Hard cap 5 per KD #5. Lowering won&apos;t delete existing entries — only caps
                 future additions.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                QA assessment max
+              </div>
+              <div className="grid grid-cols-[1fr_1fr] gap-3">
+                <div className="space-y-1">
+                  <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                    QA max score
+                  </Label>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={qaMax}
+                    onChange={(e) =>
+                      setQaMax(e.target.value.replace(/[^0-9]/g, '').slice(0, 3))
+                    }
+                    className="h-10 text-right font-mono tabular-nums"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Denominator of the QA percentage. Canonical 30 per Hard Rule #1; vary per subject
+                (e.g. 50 for Math, 20 for Art). Range 1&ndash;100.
               </p>
             </div>
           </div>

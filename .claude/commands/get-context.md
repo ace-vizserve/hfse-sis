@@ -5,7 +5,7 @@ allowed-tools: [Read, Glob, Grep, Bash]
 
 # Bootstrap project context
 
-`CLAUDE.md` is auto-loaded by Claude Code, but `docs/sprints/development-plan.md` is not, and even with `CLAUDE.md` in context the model needs to actively orient itself before suggesting work. Run this command at the start of any session — or any time you've been away from the repo for a while — to load the situation into working memory.
+`CLAUDE.md` is auto-loaded by Claude Code — and its `@.claude/rules/*.md` imports come in with it — but `docs/sprints/development-plan.md` is not, and even with all of that in context the model needs to actively orient itself before suggesting work. Run this command at the start of any session — or any time you've been away from the repo for a while — to load the situation into working memory.
 
 Optional argument (`$ARGUMENTS`):
 
@@ -15,12 +15,15 @@ Optional argument (`$ARGUMENTS`):
 
 ## Workflow
 
-### 1. Read the two source-of-truth files
+### 1. Read the source-of-truth files
 
-- `CLAUDE.md` — already in context, but **re-read it** so the hard rules and key decisions are top-of-mind, not buried under earlier conversation
+- `CLAUDE.md` — already in context, but **re-read it** so the imports list, on-demand rule table, and session-context scratch are top-of-mind
+- `.claude/rules/hard-rules.md` — auto-loaded via `@`-import in CLAUDE.md; re-read if not confident it's in working memory
+- `.claude/rules/key-decisions.md` — **on-demand; read it now** as part of orientation, because many KDs inform routine judgment calls; after orientation, re-read only when a "KD #N" is cited or an architectural question comes up
+- Other `.claude/rules/*.md` (tech-stack, project-layout, env-vars, workflow) — on-demand; read only if the session's task matches their frontmatter `description`
 - `docs/sprints/development-plan.md` — not auto-loaded; read it in full
 
-If either file is missing or unreadable, **stop and report** — the project is in an unknown state and you should not start work until it's resolved.
+If any of these files are missing or unreadable, **stop and report** — the project is in an unknown state and you should not start work until it's resolved.
 
 ### 2. (only if `deep`) Probe recent activity
 
@@ -55,7 +58,7 @@ Reply with a tight, scannable status report. Structure:
 
 ## Hard rules (do not violate)
 
-[List the 6 hard rules from CLAUDE.md by short title only — not the full text. The reader can scan CLAUDE.md if they need detail.]
+[List the 7 hard rules from `.claude/rules/hard-rules.md` by short title only — not the full text. The reader can open the file if they need detail.]
 
 ## Suggested next action
 

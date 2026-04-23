@@ -24,6 +24,12 @@ export type TermRow = {
   start_date: string | null;
   end_date: string | null;
   is_current: boolean;
+  // Free-text virtue theme set in SIS Admin. Drives the Evaluation module
+  // prompt and the T1–T3 report card parenthetical label (KD #49).
+  virtue_theme: string | null;
+  // Advisory grading cutoff. Informational only — the actual per-sheet
+  // lock is `grading_sheets.is_locked`.
+  grading_lock_date: string | null;
 };
 
 /**
@@ -34,7 +40,7 @@ export async function listTermsByAy(): Promise<Record<string, TermRow[]>> {
   const service = createServiceClient();
   const { data, error } = await service
     .from('terms')
-    .select('id, academic_year_id, term_number, label, start_date, end_date, is_current')
+    .select('id, academic_year_id, term_number, label, start_date, end_date, is_current, virtue_theme, grading_lock_date')
     .order('term_number', { ascending: true });
   if (error) {
     console.error('[ay-setup queries] listTermsByAy failed:', error.message);

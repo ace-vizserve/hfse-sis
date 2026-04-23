@@ -1,14 +1,17 @@
 "use client";
 
-import { BookOpen, CalendarCheck, ChevronDown, ChevronUp, FolderOpen, Home, ShieldCheck, Users } from "lucide-react";
+import { BookOpen, CalendarCheck, ChevronDown, ChevronUp, ClipboardCheck, FileStack, FolderOpen, Home, ShieldCheck, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { isRouteAllowed, type Role } from "@/lib/auth/roles";
 
 const MODULES = [
   { value: "markbook", label: "Markbook", icon: BookOpen, href: "/markbook" },
   { value: "attendance", label: "Attendance", icon: CalendarCheck, href: "/attendance" },
+  { value: "evaluation", label: "Evaluation", icon: ClipboardCheck, href: "/evaluation" },
   { value: "p-files", label: "P-Files", icon: FolderOpen, href: "/p-files" },
+  { value: "admissions", label: "Admissions", icon: FileStack, href: "/admissions" },
   { value: "records", label: "Records", icon: Users, href: "/records" },
   { value: "sis", label: "SIS Admin", icon: ShieldCheck, href: "/sis" },
 ] as const;
@@ -17,14 +20,23 @@ type ModuleValue = (typeof MODULES)[number]["value"];
 
 type ModuleSwitcherProps = {
   currentModule: ModuleValue | null;
-  canSwitch: boolean;
+  role: Role | null;
 };
 
-export function ModuleSwitcher({ currentModule, canSwitch }: ModuleSwitcherProps) {
+// Single source of truth for "which modules can this role reach?" —
+// derived from `ROUTE_ACCESS` via `isRouteAllowed` so the switcher, the
+// proxy middleware, and the server-side redirects never drift. Pre-fix
+// the visibility was hard-coded per-layout, which led to registrars
+// seeing dead `p-files`/`sis` entries and teachers seeing no switcher at
+// all despite having access to 3 modules.
+export function ModuleSwitcher({ currentModule, role }: ModuleSwitcherProps) {
   const router = useRouter();
   const current = currentModule ? MODULES.find((m) => m.value === currentModule) : null;
   const Icon = current?.icon ?? Home;
   const label = current?.label ?? "Home";
+
+  const allowedModules = MODULES.filter((m) => isRouteAllowed(m.href, role));
+  const canSwitch = allowedModules.length > 1;
 
   if (!canSwitch) {
     return (
@@ -43,7 +55,7 @@ export function ModuleSwitcher({ currentModule, canSwitch }: ModuleSwitcherProps
   }
 
   function handleChange(value: string) {
-    const target = MODULES.find((m) => m.value === value);
+    const target = allowedModules.find((m) => m.value === value);
     if (target && target.value !== currentModule) {
       router.push(target.href);
     }
@@ -65,7 +77,7 @@ export function ModuleSwitcher({ currentModule, canSwitch }: ModuleSwitcherProps
         </div>
       </SelectTrigger>
       <SelectContent align="start" className="min-w-[180px]">
-        {MODULES.map((m) => {
+        {allowedModules.map((m) => {
           const MIcon = m.icon;
           return (
             <SelectItem key={m.value} value={m.value} className="py-2">

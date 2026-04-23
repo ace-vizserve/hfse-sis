@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -98,18 +99,19 @@ export function EnrolmentEditSheet({
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger asChild>{children}</SheetTrigger>
-      <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
-        <SheetHeader className="space-y-2 border-b border-border p-6">
-          <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            Edit enrolment
-          </SheetTitle>
-          <SheetDescription className="text-sm text-muted-foreground">
-            <span className="font-mono tabular-nums">#{indexNumber}</span> · {studentName}
-          </SheetDescription>
-        </SheetHeader>
+      <SheetContent className="w-full gap-0 p-0 sm:max-w-md">
+        <ScrollArea className="h-full">
+          <SheetHeader className="space-y-2 border-b border-border p-6">
+            <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Edit enrolment
+            </SheetTitle>
+            <SheetDescription className="text-sm text-muted-foreground">
+              <span className="font-mono tabular-nums">#{indexNumber}</span> · {studentName}
+            </SheetDescription>
+          </SheetHeader>
 
-        <form onSubmit={onSubmit} className="flex flex-1 flex-col">
-          <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-6">
+          <form onSubmit={onSubmit}>
+          <div className="flex flex-col gap-5 p-6">
             <div className="space-y-2">
               <Label htmlFor="busNo">Bus number</Label>
               <Input
@@ -168,6 +170,7 @@ export function EnrolmentEditSheet({
             </Button>
           </SheetFooter>
         </form>
+        </ScrollArea>
       </SheetContent>
     </Sheet>
   );

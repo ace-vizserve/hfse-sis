@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeAnnualGrade } from '@/lib/compute/annual';
+import { DEFAULT_SCHOOL_CONFIG, type SchoolConfig } from '@/lib/sis/school-config';
 
 // Fully-resolved report card payload for one student in the current academic
 // year. Staff (`/markbook/report-cards/[studentId]`) and parent
@@ -16,7 +17,18 @@ export type SubjectRow = {
   annual: number | null;
 };
 
-export type Term = { id: string; term_number: number; label: string };
+export type Term = {
+  id: string;
+  term_number: number;
+  label: string;
+  /**
+   * Free-text virtue theme set per term in SIS Admin. Renders as the
+   * parenthetical on T1–T3 report cards: "Form Class Adviser's Comments
+   * (HFSE Virtues: {virtue_theme})". NULL for terms where Joann hasn't
+   * configured a theme (or for T4, which has no comment section).
+   */
+  virtue_theme: string | null;
+};
 
 export type AttendanceRecord = {
   term_id: string;
@@ -48,6 +60,11 @@ export type ReportCardPayload = {
   subjects: SubjectRow[];
   attendance: AttendanceRecord[];
   comments: CommentRecord[];
+  // School-wide rendered text: signature names + PEI reg number. Sourced
+  // from the singleton `school_config` row (editable at
+  // /sis/admin/school-config). Always populated — defaults to empty strings
+  // + 30-day publication window when unset.
+  schoolConfig: SchoolConfig;
 };
 
 export type BuildReportCardError =
@@ -81,7 +98,7 @@ export async function buildReportCard(
 
   const { data: terms } = await supabase
     .from('terms')
-    .select('id, term_number, label')
+    .select('id, term_number, label, virtue_theme')
     .eq('academic_year_id', ay.id)
     .order('term_number');
   const termList = (terms ?? []) as Term[];
@@ -213,16 +230,32 @@ export async function buildReportCard(
     .eq('section_student_id', enrolment.id)
     .in('term_id', termList.map((t) => t.id));
 
-  const { data: comments } = await supabase
-    .from('report_card_comments')
-    .select('term_id, comment')
+  // KD #49: FCA comments on T1–T3 report cards come exclusively from
+  // `evaluation_writeups`. We read `writeup` here and expose it as the
+  // same `comment` field the template has always consumed, so the render
+  // path stays unchanged. Migration 018 backfilled historical
+  // `report_card_comments` rows, so this query returns the same data for
+  // pre-migration terms and continues to work for new ones.
+  const { data: writeups } = await supabase
+    .from('evaluation_writeups')
+    .select('term_id, writeup')
     .eq('section_id', section.id)
     .eq('student_id', student.id)
     .in('term_id', termList.map((t) => t.id));
+  const comments: CommentRecord[] = ((writeups ?? []) as Array<{
+    term_id: string;
+    writeup: string | null;
+  }>).map((w) => ({ term_id: w.term_id, comment: w.writeup }));
 
   const fullName = [student.last_name, student.first_name, student.middle_name]
     .filter(Boolean)
     .join(', ');
+
+  // School-wide config (singleton, id=1). Uses its own service-role helper
+  // to sidestep RLS; falls back to defaults if the row is missing for any
+  // reason so the report card still renders.
+  const { getSchoolConfig } = await import('@/lib/sis/school-config');
+  const schoolConfig = await getSchoolConfig().catch(() => DEFAULT_SCHOOL_CONFIG);
 
   return {
     ok: true,
@@ -239,7 +272,8 @@ export async function buildReportCard(
       enrollment_status: enrolment.enrollment_status,
       subjects: subjectRows,
       attendance: (attendance ?? []) as AttendanceRecord[],
-      comments: (comments ?? []) as CommentRecord[],
+      comments,
+      schoolConfig,
     },
   };
 }

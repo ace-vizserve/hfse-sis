@@ -112,7 +112,7 @@ Just to anchor the discussion — not a commitment:
 1. Add `sis` route group: `app/(sis)/sis/*` with own layout + sidebar. Pattern-match `(p-files)`.
 2. Module switcher (`components/module-switcher.tsx`) extends to 3 options. Already a shadcn `Select` — 3 items is fine.
 3. Hero page: `/sis` = student list with search, AY switcher, level/section filters, `@tanstack/react-table` (reuse the existing patterns).
-4. Detail page: `/records/students/[enroleeNumber]` with tabs — Profile / Family / Enrollment / Documents (with approve/reject in Phase 3; links to P-Files for the file viewer). No separate Discounts tab — the catalogue lives at `/records/discount-codes`, grants live in the Profile sheet's Discount slots section.
+4. Detail page: `/records/students/[enroleeNumber]` with tabs — Profile / Family / Enrollment / Documents (with approve/reject in Phase 3; links to P-Files for the file viewer). No separate Discounts tab — the catalogue lives at `/sis/admin/discount-codes` (moved to SIS Admin 2026-04-22; Records sidebar keeps a cross-module link), grants live in the Profile sheet's Discount slots section.
 5. Write forms: RHF + zod + shadcn `Form` per existing convention (Key Decision #20). Schemas in `lib/schemas/`.
 6. Audit log: new actions (`sis.profile.update`, `sis.family.update`, `sis.stage.update`, `sis.discount_code.*`, `sis.document.{approve,reject}`), new entity types (`enrolment_application`, `enrolment_status`, `discount_code`, `enrolment_document`), written via existing `logAction()`. Route `/records/audit-log` with a module-scoped view (same split pattern as `/p-files/audit-log`).
 7. Migration SQL is only needed if Phase 4 inquiries land — no schema changes for Phases 1–3.

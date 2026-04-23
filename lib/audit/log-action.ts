@@ -16,12 +16,14 @@ export type AuditAction =
   | 'assignment.create'
   | 'assignment.delete'
   | 'section.create'
+  | 'section.rename'
   | 'attendance.update'
   | 'attendance.daily.update'
   | 'attendance.daily.correct'
   | 'attendance.import.bulk'
   | 'attendance.calendar.upsert'
   | 'attendance.calendar.delete'
+  | 'attendance.calendar.autoseed'
   | 'attendance.event.create'
   | 'attendance.event.delete'
   | 'comment.update'
@@ -47,10 +49,29 @@ export type AuditAction =
   | 'ay.switch_current'
   | 'ay.delete'
   | 'ay.term_dates.update'
+  | 'ay.term_virtue.update'
+  | 'ay.term_grading_lock.update'
+  | 'evaluation.writeup.save'
+  | 'evaluation.writeup.submit'
+  | 'evaluation.term.open'
+  | 'evaluation.term.close'
+  | 'evaluation.checklist_item.create'
+  | 'evaluation.checklist_item.update'
+  | 'evaluation.checklist_item.delete'
+  | 'evaluation.checklist_response.save'
+  | 'evaluation.subject_comment.save'
+  | 'evaluation.ptc_feedback.save'
   | 'ay.copy_teacher_assignments'
   | 'approver.assign'
   | 'approver.revoke'
-  | 'subject_config.update';
+  | 'subject_config.update'
+  | 'school_config.update'
+  | 'user.invite'
+  | 'user.role.update'
+  | 'user.disable'
+  | 'user.enable'
+  | 'environment.switch'
+  | 'environment.seed';
 
 export type AuditEntityType =
   | 'grading_sheet'
@@ -73,7 +94,15 @@ export type AuditEntityType =
   | 'academic_year'
   | 'term'
   | 'approver_assignment'
-  | 'subject_config';
+  | 'subject_config'
+  | 'school_config'
+  | 'user_account'
+  | 'evaluation_writeup'
+  | 'evaluation_term'
+  | 'evaluation_checklist_item'
+  | 'evaluation_checklist_response'
+  | 'evaluation_subject_comment'
+  | 'evaluation_ptc_feedback';
 
 type LogActionParams = {
   service: SupabaseClient;

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Sheet,
@@ -174,20 +175,21 @@ export function RequestEditButton({ sheetId, isExaminable, wwSlotCount, ptSlotCo
           Request edit
         </Button>
       </SheetTrigger>
-      <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
-        <SheetHeader className="space-y-2 border-b border-border p-6">
-          <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            Request a locked-sheet edit
-          </SheetTitle>
-          <SheetDescription className="text-sm text-muted-foreground">
-            This request will be sent to the administrator for approval. The registrar applies the change after it is
-            approved.
-          </SheetDescription>
-        </SheetHeader>
+      <SheetContent className="w-full gap-0 p-0 sm:max-w-md">
+        <ScrollArea className="h-full">
+          <SheetHeader className="space-y-2 border-b border-border p-6">
+            <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Request a locked-sheet edit
+            </SheetTitle>
+            <SheetDescription className="text-sm text-muted-foreground">
+              This request will be sent to the administrator for approval. The registrar applies the change after it is
+              approved.
+            </SheetDescription>
+          </SheetHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1 flex-col">
-            <div className="flex-1 space-y-5 overflow-y-auto p-6">
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)}>
+            <div className="space-y-5 p-6">
               <FormField
                 control={form.control}
                 name="grade_entry_id"
@@ -429,6 +431,7 @@ export function RequestEditButton({ sheetId, isExaminable, wwSlotCount, ptSlotCo
             </SheetFooter>
           </form>
         </Form>
+        </ScrollArea>
       </SheetContent>
     </Sheet>
   );

@@ -65,7 +65,21 @@ function studentDisplayName(row: StudentListRow): string {
   return parts.length ? parts.join(' ') : '(no name on file)';
 }
 
-export function StudentDataTable({ data }: { data: StudentListRow[] }) {
+// `linkBase` controls where the name link points — defaults to Admissions
+// (enroleeNumber-indexed) since that's the more common case. Records
+// (enrolled-only) overrides with `linkBase="/records/students"` +
+// `linkAttribute="studentNumber"` to point at the cross-year permanent URL.
+// Rows without a studentNumber fall back to the enroleeNumber URL so unsynced
+// enrolled applicants (rare edge case) still have a working link.
+export function StudentDataTable({
+  data,
+  linkBase = '/admissions/applications',
+  linkAttribute = 'enroleeNumber',
+}: {
+  data: StudentListRow[];
+  linkBase?: string;
+  linkAttribute?: 'enroleeNumber' | 'studentNumber';
+}) {
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'level', desc: false },
     { id: 'section', desc: false },
@@ -87,14 +101,22 @@ export function StudentDataTable({ data }: { data: StudentListRow[] }) {
             onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           />
         ),
-        cell: ({ row }) => (
-          <Link
-            href={`/records/students/${row.original.enroleeNumber}`}
-            className="font-medium text-foreground underline transition-colors hover:text-primary"
-          >
-            {studentDisplayName(row.original)}
-          </Link>
-        ),
+        cell: ({ row }) => {
+          // studentNumber may be null for unsynced enrolled rows; fall back
+          // to enroleeNumber so the row still links somewhere useful.
+          const linkId =
+            linkAttribute === 'studentNumber'
+              ? row.original.studentNumber ?? row.original.enroleeNumber
+              : row.original.enroleeNumber;
+          return (
+            <Link
+              href={`${linkBase}/${linkId}`}
+              className="font-medium text-foreground underline transition-colors hover:text-primary"
+            >
+              {studentDisplayName(row.original)}
+            </Link>
+          );
+        },
       },
       {
         accessorKey: 'studentNumber',
@@ -186,7 +208,7 @@ export function StudentDataTable({ data }: { data: StudentListRow[] }) {
         },
       },
     ],
-    [],
+    [linkBase, linkAttribute],
   );
 
   const table = useReactTable({

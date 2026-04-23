@@ -19,6 +19,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Sheet,
   SheetClose,
@@ -175,22 +176,23 @@ export function ManualAddStudent({
           Manually add student
         </Button>
       </SheetTrigger>
-      <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
-        <SheetHeader className="space-y-3 border-b border-border p-6">
-          <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            Add student manually
-          </SheetTitle>
-          <SheetDescription className="text-sm text-muted-foreground">
-            Adds a new row to{' '}
-            <span className="font-mono text-foreground">public.students</span> (if the student
-            number is new) and enrols them in this section. The student will be assigned index{' '}
-            <span className="font-mono tabular-nums text-foreground">#{nextIndex}</span>.
-          </SheetDescription>
-        </SheetHeader>
+      <SheetContent className="w-full gap-0 p-0 sm:max-w-md">
+        <ScrollArea className="h-full">
+          <SheetHeader className="space-y-3 border-b border-border p-6">
+            <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Add student manually
+            </SheetTitle>
+            <SheetDescription className="text-sm text-muted-foreground">
+              Adds a new row to{' '}
+              <span className="font-mono text-foreground">public.students</span> (if the student
+              number is new) and enrols them in this section. The student will be assigned index{' '}
+              <span className="font-mono tabular-nums text-foreground">#{nextIndex}</span>.
+            </SheetDescription>
+          </SheetHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1 flex-col">
-            <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-6">
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)}>
+            <div className="flex flex-col gap-6 p-6">
               {/* Admissions search — optional pre-fill before manual entry. */}
               <div className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
                 <label
@@ -241,7 +243,8 @@ export function ManualAddStudent({
                   </div>
                 )}
                 {searchResults.length > 0 && (
-                  <div className="max-h-[180px] divide-y divide-border overflow-y-auto rounded-md border border-border bg-card">
+                  <ScrollArea className="h-[180px] rounded-md border border-border bg-card">
+                    <div className="divide-y divide-border">
                     {searchResults.map((m) => (
                       <button
                         key={`${m.ayCode}|${m.enroleeNumber}`}
@@ -267,7 +270,8 @@ export function ManualAddStudent({
                         </div>
                       </button>
                     ))}
-                  </div>
+                    </div>
+                  </ScrollArea>
                 )}
                 {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
                   <div className="px-2 py-1 text-[11px] text-muted-foreground">
@@ -419,6 +423,7 @@ export function ManualAddStudent({
             </SheetFooter>
           </form>
         </Form>
+        </ScrollArea>
       </SheetContent>
     </Sheet>
   );

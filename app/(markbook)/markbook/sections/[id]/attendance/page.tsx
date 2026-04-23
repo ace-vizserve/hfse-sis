@@ -1,12 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  CalendarCheck,
-  CalendarDays,
-  Percent,
-} from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, CalendarCheck, CalendarDays, Percent } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,12 +21,6 @@ import {
 
 type LevelLite = { code: string; label: string };
 type TermLite = { id: string; label: string; term_number: number; is_current: boolean };
-
-function todayIso(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 
 export default async function SectionAttendancePage({
   params,
@@ -165,7 +153,7 @@ export default async function SectionAttendancePage({
           </p>
         </div>
         <Button asChild variant="default" size="sm" className="gap-1.5">
-          <Link href={`/attendance/${id}?date=${todayIso()}`}>
+          <Link href={`/attendance/${id}`}>
             Mark attendance
             <ArrowUpRight className="size-3.5" />
           </Link>

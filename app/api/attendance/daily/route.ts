@@ -136,42 +136,46 @@ export async function PATCH(request: NextRequest) {
     rollup: Awaited<ReturnType<typeof writeDailyEntry>>;
   }> = [];
 
-  // Cache holiday lookups per (termId, date) to avoid N round-trips on bulk.
-  const holidayCache = new Map<string, boolean>();
-  async function checkHoliday(termId: string, date: string): Promise<boolean> {
+  // Cache write-gate lookups per (termId, date) to avoid N round-trips on bulk.
+  // Gate: encodable when day_type IN ('school_day','hbl'); blocked otherwise.
+  // When the term has NO calendar rows (legacy/unconfigured mode) we don't
+  // block — same behaviour as pre-migration-019.
+  const blockCache = new Map<string, boolean>();
+  async function isNonSchoolDay(termId: string, date: string): Promise<boolean> {
     const key = `${termId}|${date}`;
-    if (holidayCache.has(key)) return holidayCache.get(key)!;
+    if (blockCache.has(key)) return blockCache.get(key)!;
     const { data } = await service
       .from('school_calendar')
-      .select('is_holiday')
+      .select('day_type')
       .eq('term_id', termId)
       .eq('date', date)
       .maybeSingle();
-    // If the term has any calendar rows and THIS date isn't one of them,
-    // treat as non-school (implicit holiday). If the term has no calendar
-    // at all, don't block — that's legacy/unconfigured mode.
     if (!data) {
+      // Date not listed. If the term has any rows, treat as non-school
+      // (implicit holiday / unlisted day); otherwise legacy mode (no block).
       const { count } = await service
         .from('school_calendar')
         .select('*', { count: 'exact', head: true })
         .eq('term_id', termId);
       const isBlocked = (count ?? 0) > 0;
-      holidayCache.set(key, isBlocked);
+      blockCache.set(key, isBlocked);
       return isBlocked;
     }
-    holidayCache.set(key, data.is_holiday);
-    return data.is_holiday;
+    const dt = data.day_type as string;
+    const isBlocked = dt !== 'school_day' && dt !== 'hbl';
+    blockCache.set(key, isBlocked);
+    return isBlocked;
   }
 
   for (const entry of entries) {
-    // Holiday gate: writes on non-school days / holidays are rejected
-    // (except registrar+ writing NC, which is the legitimate way to mark
-    // a date as "no class" before the calendar was configured).
-    const blockedByHoliday = await checkHoliday(entry.termId, entry.date);
-    if (blockedByHoliday && entry.status !== 'NC') {
+    // Write-gate: encodable day_types are school_day + hbl. Others reject
+    // unless registrar+ is writing NC (the legitimate way to mark "no class"
+    // on a pre-calendar date or back-fill a closure).
+    const blocked = await isNonSchoolDay(entry.termId, entry.date);
+    if (blocked && entry.status !== 'NC') {
       return NextResponse.json(
         {
-          error: `Date ${entry.date} is a holiday or non-school day — attendance cannot be recorded. Configure the school calendar if this is an error.`,
+          error: `Date ${entry.date} is not an encodable school day (public_holiday / school_holiday / no_class). Configure the school calendar if this is an error.`,
           writtenSoFar: results.length,
         },
         { status: 409 },

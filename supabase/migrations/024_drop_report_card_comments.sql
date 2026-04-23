@@ -1,0 +1,27 @@
+-- 024_drop_report_card_comments.sql
+--
+-- Retires the legacy `report_card_comments` table.
+--
+-- KD #49 made `evaluation_writeups` the sole source of truth for the Form
+-- Class Adviser comment field on T1–T3 report cards. Migration 018 did a
+-- one-shot copy of every existing `report_card_comments` row into
+-- `evaluation_writeups` (with `submitted=true, submitted_at=created_at`),
+-- and all in-app writers have been retired:
+--
+--   - `/markbook/sections/[id]/comments` → redirects to
+--     `/evaluation/sections/[id]` (Sprint 16 Bite 5).
+--   - `/markbook/grading/advisory/[id]/comments` → redirects to
+--     `/evaluation/grading/advisory/[id]/comments` (Sprint 16 Bite 5).
+--   - `PUT /api/sections/[id]/comments` — route deleted in Sprint 19.
+--   - `comments` block on `GET /api/sections/[id]/publish-readiness` —
+--     removed in Sprint 19; `evaluations` block is the replacement.
+--   - `build-report-card.ts` — reads `evaluation_writeups` since Sprint 16.
+--
+-- `CASCADE` sweeps up migration 005's `report_card_comments_scoped_read`
+-- RLS policy automatically. No downstream FK/view depends on this table.
+--
+-- APPLY AFTER VERIFICATION: confirm the Evaluation pipeline has produced at
+-- least one real report-card cycle and migration 018's data copy has been
+-- spot-checked against the live `evaluation_writeups` rows.
+
+drop table if exists public.report_card_comments cascade;

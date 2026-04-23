@@ -17,14 +17,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { role } = sessionUser;
   if (!role) redirect('/parent');
   if (role === 'p-file') redirect('/p-files');
+  if (role === 'admissions') redirect('/admissions');
 
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md">
-        <ModuleSwitcher
-          currentModule={null}
-          canSwitch={role === 'school_admin' || role === 'admin' || role === 'superadmin'}
-        />
+        <ModuleSwitcher currentModule={null} role={role} />
       </header>
       <div className="flex-1 bg-muted px-6 py-8 md:px-10 md:py-10">
         {children}

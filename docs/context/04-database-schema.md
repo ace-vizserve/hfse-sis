@@ -197,10 +197,12 @@ CREATE TABLE grade_audit_log (
 );
 ```
 
-### `report_card_comments`
-Teacher comments per student per term (used in report card).
+### `report_card_comments` — DROPPED (migration 024, applied 2026-04-23)
+
+> **Retired.** `evaluation_writeups` is the sole source of Form Class Adviser comments on T1–T3 report cards (KD #49). Migration 018 one-shot-copied historical rows into `evaluation_writeups`. Migration 024 (`supabase/migrations/024_drop_report_card_comments.sql`) dropped the table (`DROP TABLE IF EXISTS public.report_card_comments CASCADE;`) on 2026-04-23 — this includes migration 005's `report_card_comments_scoped_read` RLS policy via CASCADE. DDL retained below for historical reference only; do not recreate.
 
 ```sql
+-- Historical DDL (do not recreate):
 CREATE TABLE report_card_comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   term_id UUID REFERENCES terms(id),

@@ -60,21 +60,64 @@ export const DailyEntrySchema = z
 
 export type DailyEntryInput = z.infer<typeof DailyEntrySchema>;
 
+// 5 day-types (KD #50). `school_day` + `hbl` are encodable; the other three
+// reject attendance writes.
+export const DAY_TYPE_VALUES = [
+  'school_day',
+  'public_holiday',
+  'school_holiday',
+  'hbl',
+  'no_class',
+] as const;
+export type DayType = (typeof DAY_TYPE_VALUES)[number];
+
+export const ENCODABLE_DAY_TYPES: ReadonlyArray<DayType> = ['school_day', 'hbl'];
+export function isEncodableDayType(t: DayType | null | undefined): boolean {
+  return t === 'school_day' || t === 'hbl';
+}
+
+export const DAY_TYPE_LABELS: Record<DayType, string> = {
+  school_day: 'School day',
+  public_holiday: 'Public holiday',
+  school_holiday: 'School holiday',
+  hbl: 'HBL',
+  no_class: 'No class',
+};
+
 // Schemas for the school-calendar admin surface.
 export const SchoolCalendarUpsertSchema = z.object({
   termId: uuidString,
   entries: z
     .array(
-      z.object({
-        date: dateString,
-        isHoliday: z.boolean(),
-        label: z.string().trim().max(200).optional().nullable(),
-      }),
+      z
+        .object({
+          date: dateString,
+          // `dayType` is the preferred field. `isHoliday` is legacy — if both
+          // are omitted it's a bad request; if only `isHoliday` is present it
+          // maps to `school_day` / `public_holiday`.
+          dayType: z.enum(DAY_TYPE_VALUES).optional(),
+          isHoliday: z.boolean().optional(),
+          label: z.string().trim().max(200).optional().nullable(),
+        })
+        .refine((v) => v.dayType !== undefined || v.isHoliday !== undefined, {
+          message: 'Provide dayType (preferred) or isHoliday (legacy)',
+          path: ['dayType'],
+        }),
     )
     .min(1)
     .max(200),
 });
 export type SchoolCalendarUpsertInput = z.infer<typeof SchoolCalendarUpsertSchema>;
+
+/** Resolves the `day_type` value to persist from either a new-shape or
+ *  legacy-shape upsert entry. */
+export function resolveDayType(entry: {
+  dayType?: DayType;
+  isHoliday?: boolean;
+}): DayType {
+  if (entry.dayType) return entry.dayType;
+  return entry.isHoliday ? 'public_holiday' : 'school_day';
+}
 
 export const CalendarEventCreateSchema = z
   .object({

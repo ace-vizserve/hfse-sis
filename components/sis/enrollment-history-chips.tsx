@@ -35,7 +35,7 @@ export function EnrollmentHistoryChips({
                 <Link
                   key={`${entry.ayCode}:${entry.enroleeNumber}`}
                   href={{
-                    pathname: `/records/students/${entry.enroleeNumber}`,
+                    pathname: `/records/students/by-enrolee/${entry.enroleeNumber}`,
                     query: { ay: entry.ayCode },
                   }}
                   className={cn(

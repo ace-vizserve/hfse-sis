@@ -16,6 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import type { SchoolCalendarRow } from '@/lib/attendance/calendar';
 
 // "Carry holidays from [prior AY]" dialog. Shows prior-AY holidays grouped
@@ -171,7 +172,7 @@ export function CopyHolidaysDialog({
           </div>
         </div>
 
-        <div className="max-h-[360px] overflow-y-auto rounded-xl border border-border">
+        <ScrollArea className="h-[360px] rounded-xl border border-border">
           {grouped.map(({ ym, label, list }) => (
             <div key={ym}>
               <div className="sticky top-0 z-10 border-b border-border bg-muted/60 px-4 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -205,7 +206,7 @@ export function CopyHolidaysDialog({
               })}
             </div>
           ))}
-        </div>
+        </ScrollArea>
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>
