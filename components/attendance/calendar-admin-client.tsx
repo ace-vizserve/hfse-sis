@@ -326,7 +326,7 @@ export function CalendarAdminClient({
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Tabs value={view} onValueChange={(v) => setView(v as "month" | "term")}>
-            <TabsList className="bg-background" variant="default">
+            <TabsList className="bg-accent" variant="default">
               <TabsTrigger value="month">Month</TabsTrigger>
               <TabsTrigger value="term">Full term</TabsTrigger>
             </TabsList>
@@ -568,15 +568,17 @@ const DAY_TYPE_LEGEND_COLOR: Record<DayType, ChartLegendChipColor> = {
   no_class: "neutral",
 };
 
-// Subdued outline chip for informational events (calendar_events rows). Kept
-// distinct from the gradient day-type badges so structural vs informational
-// classifications read differently at a glance.
+// Gradient chip for informational events (calendar_events rows). Matches the
+// "Important date" ChartLegendChip in the legend strip pixel-for-pixel — same
+// font size / tracking / padding / gradient / shadow — so the in-cell event
+// chip and the legend's example chip read as the same affordance. Only
+// addition is w-full + inner truncate so long labels clip cleanly.
 function EventChip({ label }: { label: string }) {
   return (
     <span
-      className="block truncate rounded-md border border-brand-indigo-soft/40 bg-accent px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.1em] text-brand-indigo-deep"
+      className="inline-flex w-full min-w-0 items-center justify-center gap-1 rounded-md border border-transparent bg-gradient-to-b from-chart-4 to-chart-2 px-2 py-0.5 font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.14em] text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)]"
       title={label}>
-      {label}
+      <span className="truncate">{label}</span>
     </span>
   );
 }
@@ -713,20 +715,19 @@ function MonthView({
           <Button
             type="button"
             variant="outline"
-            size="sm"
-            onClick={goToday}
-            className="h-8 font-mono text-[10px] uppercase tracking-[0.14em]">
-            Today
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
             size="icon"
             onClick={goNext}
             disabled={!canNext}
             aria-label="Next month"
             className="size-8">
             <ChevronRight />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={goToday}
+            className="h-8 font-mono text-[10px] uppercase tracking-[0.14em]">
+            Today
           </Button>
         </div>
       </div>
