@@ -12,6 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 import type { TermLockProgress } from '@/lib/markbook/dashboard';
 import {
   Card,
@@ -66,7 +67,7 @@ export function SheetProgressChart({ data }: { data: TermLockProgress[] }) {
                   fontSize: 12,
                 }}
               />
-              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" />
+              <Legend content={chartLegendContent({ locked: 'chart-5', open: 'chart-3' })} />
               <Bar dataKey="locked" name="Locked" stackId="status" fill="var(--chart-5)" />
               <Bar dataKey="open" name="Open" stackId="status" fill="var(--chart-3)" />
             </BarChart>
