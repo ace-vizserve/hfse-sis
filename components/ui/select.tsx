@@ -17,11 +17,13 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-10 w-full items-center justify-between rounded-md border border-hairline bg-white px-3 py-2 text-sm text-foreground shadow-input transition-all',
-      'hover:border-hairline-strong',
-      'focus:border-brand-indigo focus:outline-none focus:ring-4 focus:ring-brand-indigo/15',
+      'group flex h-10 w-full items-center justify-between gap-2 rounded-md border border-hairline bg-white px-3 py-2 text-sm text-foreground shadow-input transition-all',
+      'hover:bg-muted/40 hover:border-hairline-strong',
+      'focus-visible:border-brand-indigo/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/20 focus-visible:shadow-sm',
+      'data-[state=open]:border-brand-indigo/60 data-[state=open]:ring-2 data-[state=open]:ring-brand-indigo/20 data-[state=open]:shadow-sm',
+      'aria-[invalid=true]:border-destructive/60 aria-[invalid=true]:focus-visible:ring-2 aria-[invalid=true]:focus-visible:ring-destructive/30',
+      'disabled:cursor-not-allowed disabled:opacity-60 disabled:bg-muted/60',
       'data-[placeholder]:text-ink-5',
-      'disabled:cursor-not-allowed disabled:bg-muted/60 disabled:opacity-70',
       '[&>span]:line-clamp-1',
       className,
     )}
@@ -29,7 +31,7 @@ const SelectTrigger = React.forwardRef<
   >
     {children}
     <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 text-ink-4 opacity-80" />
+      <ChevronDown className="size-4 opacity-60 transition-transform group-data-[state=open]:rotate-180" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));
@@ -71,7 +73,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        'relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-lg border border-hairline bg-white text-foreground shadow-[0_12px_32px_-8px_rgba(15,23,42,0.15),0_4px_12px_-4px_rgba(15,23,42,0.08)] ring-1 ring-inset ring-white/5',
+        'relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover text-foreground ring-1 ring-inset ring-hairline shadow-lg',
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
         position === 'popper' &&
