@@ -661,12 +661,218 @@ function MonthView({
   );
 }
 
-function TermStripView(props: React.ComponentProps<typeof MonthView>) {
-  // Placeholder — full implementation in Task 6.
-  void props;
+// Group every day within [termStart, termEnd] into rows keyed by Monday-
+// starting week number. Weekends are INCLUDED so each row is a full 7-day
+// strip (weekends render as disabled cells). Day objects carry their ISO
+// date + classified day-type (or null for pre-weekend cells).
+type StripDay = {
+  iso: string;
+  date: Date;
+  dayType: DayType | null;
+  isWeekend: boolean;
+  isEvent: boolean;
+  isToday: boolean;
+  isFirstOfMonth: boolean;
+};
+type StripWeek = { weekNumber: number; days: (StripDay | null)[] };
+
+function buildStripWeeks(
+  termStartIso: string,
+  termEndIso: string,
+  dayTypeByIso: Map<string, DayType>,
+  eventIsos: Set<string>,
+): StripWeek[] {
+  const start = parseIso(termStartIso);
+  const end = parseIso(termEndIso);
+
+  // Align to the Monday of the first week.
+  const firstMonday = new Date(start);
+  const startDow = start.getDay(); // 0 = Sun, 1 = Mon, ... 6 = Sat
+  const shift = startDow === 0 ? -6 : 1 - startDow; // Mon → 0, Tue → -1, Sun → -6
+  firstMonday.setDate(start.getDate() + shift);
+
+  const weeks: StripWeek[] = [];
+  const todayIso = formatIso(new Date());
+  const cursor = new Date(firstMonday);
+  let weekNumber = 1;
+
+  while (cursor.getTime() <= end.getTime()) {
+    const days: (StripDay | null)[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(cursor);
+      const iso = formatIso(d);
+      const inRange = d.getTime() >= start.getTime() && d.getTime() <= end.getTime();
+      if (!inRange) {
+        days.push(null);
+      } else {
+        const dow = d.getDay();
+        days.push({
+          iso,
+          date: new Date(d),
+          dayType: dayTypeByIso.get(iso) ?? null,
+          isWeekend: dow === 0 || dow === 6,
+          isEvent: eventIsos.has(iso),
+          isToday: iso === todayIso,
+          isFirstOfMonth: d.getDate() === 1,
+        });
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    weeks.push({ weekNumber, days });
+    weekNumber++;
+  }
+  return weeks;
+}
+
+function TermStripView({
+  term,
+  daysByType,
+  multiSelect,
+  selectedDates,
+  onSelectDates,
+  onDayClick,
+}: {
+  term: TermOption;
+  daysByType: Record<DayType, Date[]> & { event: Date[] };
+  multiSelect: boolean;
+  selectedDates: Date[];
+  onSelectDates: (next: Date[]) => void;
+  onDayClick: (iso: string) => void;
+}) {
+  // Flatten daysByType into an iso→dayType map for O(1) lookup per cell.
+  const dayTypeByIso = useMemo(() => {
+    const m = new Map<string, DayType>();
+    (Object.keys(daysByType) as Array<keyof typeof daysByType>).forEach((key) => {
+      if (key === "event") return;
+      daysByType[key as DayType].forEach((d) => m.set(formatIso(d), key as DayType));
+    });
+    return m;
+  }, [daysByType]);
+
+  const eventIsoSet = useMemo(() => {
+    const s = new Set<string>();
+    daysByType.event.forEach((d) => s.add(formatIso(d)));
+    return s;
+  }, [daysByType]);
+
+  const weeks = useMemo(
+    () => buildStripWeeks(term.startDate, term.endDate, dayTypeByIso, eventIsoSet),
+    [term.startDate, term.endDate, dayTypeByIso, eventIsoSet],
+  );
+
+  const selectedIsoSet = useMemo(
+    () => new Set(selectedDates.map(formatIso)),
+    [selectedDates],
+  );
+
+  function toggleSelection(iso: string, d: Date) {
+    if (selectedIsoSet.has(iso)) {
+      onSelectDates(selectedDates.filter((x) => formatIso(x) !== iso));
+    } else {
+      onSelectDates([...selectedDates, d]);
+    }
+  }
+
   return (
-    <div className="rounded-xl border border-hairline bg-card p-6 text-sm text-muted-foreground">
-      Term strip view — coming in the next commit.
+    <div className="rounded-xl border border-hairline bg-card shadow-sm ring-1 ring-inset ring-hairline">
+      {/* Eyebrow meta-strip */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline bg-muted/30 px-6 py-3 shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.4)]">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Full term
+          <span className="mx-2 text-hairline-strong">·</span>
+          <span className="tabular-nums">{weeks.length}</span> weeks
+        </p>
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          Switch → Month to drill down
+        </p>
+      </div>
+      {/* Term grid */}
+      <div className="p-6 md:p-8">
+        <div className="mb-3 flex items-baseline justify-between border-b border-hairline pb-3">
+          <h3 className="font-serif text-[24px] font-semibold tracking-tight text-foreground">
+            {term.label} <span className="mx-2 text-hairline-strong">·</span>{" "}
+            <span className="font-mono text-[12px] tabular-nums text-muted-foreground">
+              {term.startDate} → {term.endDate}
+            </span>
+          </h3>
+        </div>
+        {/* Weekday header */}
+        <div className="mb-1 grid grid-cols-[56px_repeat(7,1fr)] gap-1">
+          <div />
+          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+            <div
+              key={d}
+              className="rounded-md bg-muted/40 px-2 py-1.5 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.5)]"
+            >
+              {d}
+            </div>
+          ))}
+        </div>
+        {/* Weeks */}
+        <div className="space-y-1">
+          {weeks.map((wk) => (
+            <div
+              key={wk.weekNumber}
+              className="grid grid-cols-[56px_repeat(7,1fr)] gap-1"
+            >
+              <div className="flex items-center justify-center rounded-md bg-muted/40 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-3">
+                W{wk.weekNumber}
+              </div>
+              {wk.days.map((d, idx) => {
+                if (!d) {
+                  return <div key={idx} className="aspect-[1.2/1] opacity-0" />;
+                }
+                const tintClass = d.isWeekend
+                  ? "bg-background text-hairline-strong shadow-[inset_0_0_0_1px_var(--av-hairline)]"
+                  : d.dayType
+                    ? DAY_TYPE_STYLES[d.dayType].cell
+                    : "bg-background shadow-[inset_0_0_0_1px_var(--av-hairline)]";
+                const isSelected = selectedIsoSet.has(d.iso);
+                const todayClass = d.isToday
+                  ? "shadow-[inset_0_0_0_2px_var(--av-indigo)]"
+                  : "";
+                const selectedClass = isSelected
+                  ? "scale-[0.98] ring-2 ring-brand-indigo/40 ring-offset-1 ring-offset-card"
+                  : "";
+                const firstOfMonthClass = d.isFirstOfMonth
+                  ? "mt-2 border-t border-hairline/40 pt-2"
+                  : "";
+                const clickable = !d.isWeekend;
+
+                return (
+                  <button
+                    key={d.iso}
+                    type="button"
+                    disabled={!clickable}
+                    onClick={() => {
+                      if (!clickable) return;
+                      if (multiSelect) toggleSelection(d.iso, d.date);
+                      else onDayClick(d.iso);
+                    }}
+                    className={[
+                      "relative aspect-[1.2/1] rounded-md p-1 text-left font-serif text-[13px] font-semibold tabular-nums leading-none transition-all",
+                      tintClass,
+                      todayClass,
+                      selectedClass,
+                      firstOfMonthClass,
+                      clickable && "hover:-translate-y-0.5 hover:shadow-md cursor-pointer",
+                      !clickable && "cursor-not-allowed",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    title={formatHumanDate(d.iso)}
+                  >
+                    <span>{d.date.getDate()}</span>
+                    {d.isEvent && (
+                      <span className="absolute bottom-1 left-1/2 size-1 -translate-x-1/2 rounded-full bg-primary" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
