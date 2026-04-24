@@ -4,7 +4,7 @@
 // - buildCsv: header row + body rows joined with \n, prefixed with a UTF-8 BOM
 //   so Excel-on-Windows detects encoding correctly.
 
-const UTF8_BOM = '﻿';
+const UTF8_BOM = '\uFEFF';
 
 export function toCsvValue(v: unknown): string {
   if (v === null || v === undefined) return '';

@@ -15,7 +15,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Download } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { SheetContent } from '@/components/ui/sheet';
+import { SheetContent, SheetTitle } from '@/components/ui/sheet';
 import {
   Table,
   TableBody,
@@ -101,6 +101,7 @@ export function DrillDownSheet<T>({
           <h2 className="font-serif text-xl font-semibold tracking-tight text-foreground">
             {title}
           </h2>
+          <SheetTitle className="sr-only">{title}</SheetTitle>
           <Badge variant="outline">
             {count.toLocaleString('en-SG')} rows
           </Badge>
@@ -159,7 +160,16 @@ export function DrillDownSheet<T>({
                           ? ArrowDown
                           : ArrowUpDown;
                     return (
-                      <TableHead key={h.id}>
+                      <TableHead
+                        key={h.id}
+                        aria-sort={
+                          sorted === 'asc'
+                            ? 'ascending'
+                            : sorted === 'desc'
+                              ? 'descending'
+                              : 'none'
+                        }
+                      >
                         <button
                           type="button"
                           onClick={h.column.getToggleSortingHandler()}
