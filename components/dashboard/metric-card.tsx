@@ -185,6 +185,7 @@ export function MetricCard({
         )}
         {drillSheet && (
           <span className="inline-flex items-center gap-1 text-xs font-medium text-brand-indigo-deep">
+            Details
             <ChevronsRight className="size-3 transition-transform group-hover:translate-x-0.5" />
           </span>
         )}
