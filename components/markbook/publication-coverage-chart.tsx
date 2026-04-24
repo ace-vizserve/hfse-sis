@@ -12,6 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 import type { TermPubCoverage } from '@/lib/markbook/dashboard';
 import {
   Card,
@@ -70,7 +71,7 @@ export function PublicationCoverageChart({ data }: { data: TermPubCoverage[] }) 
                   fontSize: 12,
                 }}
               />
-              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" />
+              <Legend content={chartLegendContent({ published: 'chart-5', notPublished: 'chart-2' })} />
               <Bar dataKey="published" name="Published" stackId="pub" fill="var(--chart-5)" />
               <Bar dataKey="notPublished" name="Not yet published" stackId="pub" fill="var(--muted-foreground)" />
             </BarChart>
