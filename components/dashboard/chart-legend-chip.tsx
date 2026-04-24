@@ -10,18 +10,24 @@ export type ChartLegendChipColor =
   | 'primary'
   | 'fresh'
   | 'stale'
-  | 'very-stale';
+  | 'very-stale'
+  | 'neutral';
 
-const stripeGradientByColor: Record<ChartLegendChipColor, string> = {
-  'chart-1': 'from-chart-1 to-chart-1/60',
-  'chart-2': 'from-chart-2 to-chart-2/60',
-  'chart-3': 'from-chart-3 to-chart-3/60',
-  'chart-4': 'from-chart-4 to-chart-4/60',
-  'chart-5': 'from-chart-5 to-chart-5/60',
+// Each chip renders as a fully-filled gradient pill (same craft as the default
+// Badge: mono uppercase tracked label, white text, inset-highlight shadow).
+// Gradients terminate at a darker endpoint so white text stays readable across
+// the whole palette.
+const chipGradientByColor: Record<ChartLegendChipColor, string> = {
+  'chart-1': 'from-chart-1 to-brand-indigo-deep',
+  'chart-2': 'from-chart-2 to-chart-1',
+  'chart-3': 'from-chart-3 to-chart-2',
+  'chart-4': 'from-chart-4 to-chart-2',
+  'chart-5': 'from-chart-5 to-chart-3',
   primary: 'from-brand-indigo to-brand-navy',
-  fresh: 'from-brand-mint to-brand-sky',
-  stale: 'from-brand-amber to-brand-amber',
+  fresh: 'from-chart-5 to-chart-3',
+  stale: 'from-brand-amber to-brand-amber/80',
   'very-stale': 'from-destructive to-destructive/80',
+  neutral: 'from-ink-4 to-ink-3',
 };
 
 export type ChartLegendChipProps = {
@@ -40,20 +46,14 @@ export function ChartLegendChip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-2 rounded-md border border-hairline bg-background px-2 py-1 text-xs text-foreground shadow-xs',
+        'inline-flex items-center gap-1 rounded-md border border-transparent bg-gradient-to-b px-2 py-0.5 font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.14em] text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)]',
+        chipGradientByColor[color],
         className,
       )}
     >
-      <span
-        aria-hidden
-        className={cn(
-          'h-4 w-[3px] rounded-sm bg-gradient-to-b',
-          stripeGradientByColor[color],
-        )}
-      />
       <span>{label}</span>
       {count !== undefined && (
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+        <span className="font-mono text-[10px] tabular-nums text-white/80">
           {count}
         </span>
       )}

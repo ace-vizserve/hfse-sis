@@ -397,18 +397,18 @@ export function CalendarAdminClient({
         </div>
       )}
 
-      {/* Legend */}
+      {/* Legend — each chip here matches the in-cell chip color for the same day-type. */}
       {selectedTerm && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-hairline bg-muted/25 px-4 py-2 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.5)]">
-          <ChartLegendChip color="chart-4" label="School day" />
           <ChartLegendChip color="very-stale" label="Public holiday" />
           <ChartLegendChip color="stale" label="School holiday" />
           <ChartLegendChip color="primary" label="HBL" />
-          <ChartLegendChip color="chart-4" label="No class" />
-          <ChartLegendChip color="chart-4" label="Weekend" />
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block size-1.5 rounded-full bg-primary" />
-            <span className="font-mono uppercase font-bold">Important date overlay</span>
+          <ChartLegendChip color="neutral" label="No class" />
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-brand-indigo-soft/40 bg-accent px-2 py-0.5 font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-brand-indigo-deep">
+            Event
+          </span>
+          <span className="ml-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            School days are the default — weekdays without a chip are in-school
           </span>
         </div>
       )}
@@ -418,6 +418,7 @@ export function CalendarAdminClient({
         <MonthView
           term={selectedTerm}
           daysByType={daysByType}
+          events={events}
           multiSelect={multiSelect}
           selectedDates={selectedDates}
           onSelectDates={setSelectedDates}
@@ -507,13 +508,16 @@ function LegendChip({ className, children }: { className: string; children: Reac
 // Build 5-column (Mon–Fri) weekday rows for the month containing `cursor`.
 // Weekends are intentionally excluded — weekdays are school days by default;
 // there is no classification granularity for Saturdays / Sundays.
+// Out-of-month cells ARE included (with `outOfMonth: true`) so the grid
+// renders a full rectangle with leading / trailing days visible but faded —
+// Google-Calendar-style — instead of blank gaps.
 type MonthCell = {
   iso: string;
   date: Date;
   dayType: DayType | null;
-  isEvent: boolean;
   isToday: boolean;
   inTermRange: boolean;
+  outOfMonth: boolean;
 };
 
 function buildMonthWeekdayRows(
@@ -521,8 +525,7 @@ function buildMonthWeekdayRows(
   termStart: Date,
   termEnd: Date,
   dayTypeByIso: Map<string, DayType>,
-  eventIsos: Set<string>,
-): (MonthCell | null)[][] {
+): MonthCell[][] {
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
   const firstOfMonth = new Date(year, month, 1);
@@ -535,27 +538,23 @@ function buildMonthWeekdayRows(
   weekStart.setDate(firstOfMonth.getDate() + mondayShift);
 
   const todayIso = formatIso(new Date());
-  const rows: (MonthCell | null)[][] = [];
+  const rows: MonthCell[][] = [];
 
   while (weekStart.getTime() <= lastOfMonth.getTime()) {
-    const week: (MonthCell | null)[] = [];
+    const week: MonthCell[] = [];
     for (let i = 0; i < 5; i++) {
       const d = new Date(weekStart);
       d.setDate(weekStart.getDate() + i);
-      const inMonth = d.getMonth() === month;
-      if (!inMonth) {
-        week.push(null);
-      } else {
-        const iso = formatIso(d);
-        week.push({
-          iso,
-          date: new Date(d),
-          dayType: dayTypeByIso.get(iso) ?? null,
-          isEvent: eventIsos.has(iso),
-          isToday: iso === todayIso,
-          inTermRange: d.getTime() >= termStart.getTime() && d.getTime() <= termEnd.getTime(),
-        });
-      }
+      const iso = formatIso(d);
+      week.push({
+        iso,
+        date: new Date(d),
+        dayType: dayTypeByIso.get(iso) ?? null,
+        isToday: iso === todayIso,
+        inTermRange:
+          d.getTime() >= termStart.getTime() && d.getTime() <= termEnd.getTime(),
+        outOfMonth: d.getMonth() !== month,
+      });
     }
     rows.push(week);
     weekStart.setDate(weekStart.getDate() + 7);
@@ -563,9 +562,37 @@ function buildMonthWeekdayRows(
   return rows;
 }
 
+// Horizontal event bar — left-aligned, full-width of cell, colored left border
+// with tinted background. Used for both day-type classifications and event-row
+// labels (Google-Calendar-style). All colors resolve to Aurora Vault tokens.
+function EventBar({
+  type,
+  label,
+}: {
+  type: DayType | "event";
+  label: string;
+}) {
+  const classByType: Record<DayType | "event", string> = {
+    school_day: "bg-brand-mint/30 text-ink border-l-[3px] border-brand-mint",
+    public_holiday: "bg-destructive/15 text-destructive border-l-[3px] border-destructive",
+    school_holiday: "bg-brand-amber/25 text-foreground border-l-[3px] border-brand-amber",
+    hbl: "bg-primary/15 text-primary border-l-[3px] border-primary",
+    no_class: "bg-muted text-ink-3 border-l-[3px] border-ink-5",
+    event: "bg-accent text-brand-indigo-deep border-l-[3px] border-brand-indigo-soft",
+  };
+  return (
+    <span
+      className={`block truncate rounded-sm px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-tight tracking-[0.02em] ${classByType[type]}`}
+      title={label}>
+      {label}
+    </span>
+  );
+}
+
 function MonthView({
   term,
   daysByType,
+  events,
   multiSelect,
   selectedDates,
   onSelectDates,
@@ -573,6 +600,7 @@ function MonthView({
 }: {
   term: TermOption;
   daysByType: Record<DayType, Date[]> & { event: Date[] };
+  events: CalendarEventRow[];
   multiSelect: boolean;
   selectedDates: Date[];
   onSelectDates: (next: Date[]) => void;
@@ -594,17 +622,30 @@ function MonthView({
     return m;
   }, [daysByType]);
 
-  const eventIsoSet = useMemo(() => {
-    const s = new Set<string>();
-    daysByType.event.forEach((d) => s.add(formatIso(d)));
-    return s;
-  }, [daysByType]);
+  // Event rows grouped by ISO date. Multi-day events expand into one entry per
+  // day they cover, so each cell can render its stack of event labels.
+  const eventsByIso = useMemo(() => {
+    const m = new Map<string, CalendarEventRow[]>();
+    for (const e of events) {
+      const start = parseIso(e.startDate);
+      const end = parseIso(e.endDate);
+      const d = new Date(start);
+      while (d.getTime() <= end.getTime()) {
+        const iso = formatIso(d);
+        const arr = m.get(iso) ?? [];
+        arr.push(e);
+        m.set(iso, arr);
+        d.setDate(d.getDate() + 1);
+      }
+    }
+    return m;
+  }, [events]);
 
   const selectedIsoSet = useMemo(() => new Set(selectedDates.map(formatIso)), [selectedDates]);
 
   const rows = useMemo(
-    () => buildMonthWeekdayRows(cursor, termStart, termEnd, dayTypeByIso, eventIsoSet),
-    [cursor, termStart, termEnd, dayTypeByIso, eventIsoSet],
+    () => buildMonthWeekdayRows(cursor, termStart, termEnd, dayTypeByIso),
+    [cursor, termStart, termEnd, dayTypeByIso],
   );
 
   // Nav — clamp prev/next to months that overlap the term range.
@@ -692,77 +733,89 @@ function MonthView({
         </div>
       </div>
 
-      {/* Calendar grid (Mon–Fri) */}
-      <div className="p-6 md:p-8">
-        {/* Weekday header band */}
-        <div className="mb-2 grid grid-cols-5 gap-1">
-          {["Mon", "Tue", "Wed", "Thu", "Fri"].map((d) => (
+      {/* Event-calendar grid — flush table-style, no gaps, thin hairlines
+          between cells. Full-bleed under the card's rounded edges. */}
+      <div className="border-t border-hairline">
+        {/* Weekday header row */}
+        <div className="grid grid-cols-5 bg-muted/30">
+          {["Mon", "Tue", "Wed", "Thu", "Fri"].map((d, idx) => (
             <div
               key={d}
-              className="rounded-md bg-muted/40 px-2 py-2 text-center font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.5)]">
+              className={`px-3 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-4 ${
+                idx < 4 ? "border-r border-hairline" : ""
+              } border-b border-hairline`}>
               {d}
             </div>
           ))}
         </div>
 
-        {/* Day grid */}
-        <div className="space-y-1">
-          {rows.map((row, rowIdx) => (
-            <div key={rowIdx} className="grid grid-cols-5 gap-1">
-              {row.map((cell, i) => {
-                if (!cell) {
-                  return <div key={i} className="aspect-square" />;
-                }
-                const isSelected = selectedIsoSet.has(cell.iso);
-                const tintClass = cell.dayType
-                  ? DAY_TYPE_STYLES[cell.dayType].cell
-                  : "bg-background text-ink shadow-[inset_0_0_0_1px_var(--av-hairline)] hover:bg-muted/30";
-                const todayClass = cell.isToday ? "shadow-[inset_0_0_0_2px_var(--av-indigo)]" : "";
-                const selectedClass = isSelected
-                  ? "scale-[0.98] ring-2 ring-brand-indigo/40 ring-offset-1 ring-offset-card"
-                  : "";
-                const shortLabel = cell.dayType ? DAY_TYPE_SHORT_LABEL[cell.dayType] : null;
+        {/* Day rows */}
+        {rows.map((row, rowIdx) => (
+          <div key={rowIdx} className="grid grid-cols-5">
+            {row.map((cell, colIdx) => {
+              const isSelected = selectedIsoSet.has(cell.iso);
+              const dayEvents = eventsByIso.get(cell.iso) ?? [];
+              const shortLabel = cell.dayType ? DAY_TYPE_SHORT_LABEL[cell.dayType] : null;
+              const clickable = cell.inTermRange && !cell.outOfMonth;
+              const isLastRow = rowIdx === rows.length - 1;
+              const isLastCol = colIdx === 4;
 
-                return (
-                  <button
-                    key={cell.iso}
-                    type="button"
-                    disabled={!cell.inTermRange}
-                    onClick={() => {
-                      if (!cell.inTermRange) return;
-                      if (multiSelect) toggleSelection(cell.iso, cell.date);
-                      else onDayClick(cell.iso);
-                    }}
+              return (
+                <button
+                  key={cell.iso}
+                  type="button"
+                  disabled={!clickable}
+                  onClick={() => {
+                    if (!clickable) return;
+                    if (multiSelect) toggleSelection(cell.iso, cell.date);
+                    else onDayClick(cell.iso);
+                  }}
+                  className={[
+                    "relative flex min-h-[120px] flex-col gap-1.5 p-2 text-left align-top transition-colors",
+                    !isLastCol && "border-r border-hairline",
+                    !isLastRow && "border-b border-hairline",
+                    cell.outOfMonth ? "bg-muted/20" : "bg-background",
+                    isSelected && "bg-accent",
+                    clickable && "cursor-pointer hover:bg-muted/40",
+                    !clickable && "cursor-not-allowed",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  title={formatHumanDate(cell.iso)}>
+                  {/* Date number — sans, top-left. Today = filled indigo circle. */}
+                  <span
                     className={[
-                      "relative flex aspect-square flex-col items-start justify-between gap-1 rounded-lg p-3 text-left transition-all",
-                      tintClass,
-                      todayClass,
-                      selectedClass,
-                      cell.inTermRange
-                        ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-md"
-                        : "cursor-not-allowed opacity-50",
+                      "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold tabular-nums leading-none",
+                      cell.isToday
+                        ? "bg-gradient-to-b from-brand-indigo to-brand-indigo-deep text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),0_1px_2px_rgba(15,23,42,0.1)]"
+                        : cell.outOfMonth
+                          ? "text-ink-5"
+                          : "text-foreground",
                     ]
                       .filter(Boolean)
-                      .join(" ")}
-                    title={formatHumanDate(cell.iso)}>
-                    <span className="font-serif text-[22px] font-semibold leading-none tabular-nums">
-                      {cell.date.getDate()}
-                    </span>
-                    {cell.isEvent && (
-                      <span aria-hidden className="absolute right-2 top-2 size-1.5 rounded-full bg-primary" />
-                    )}
+                      .join(" ")}>
+                    {cell.date.getDate()}
+                  </span>
+
+                  {/* Stacked event bars */}
+                  <div className="flex w-full flex-col gap-0.5">
                     {shortLabel && cell.dayType && (
-                      <span
-                        className={`inline-flex self-stretch justify-center rounded-md px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.14em] ${DAY_TYPE_STYLES[cell.dayType].chip}`}>
-                        {shortLabel}
+                      <EventBar type={cell.dayType} label={shortLabel} />
+                    )}
+                    {dayEvents.slice(0, 3).map((evt) => (
+                      <EventBar key={evt.id} type="event" label={evt.label} />
+                    ))}
+                    {dayEvents.length > 3 && (
+                      <span className="px-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">
+                        +{dayEvents.length - 3} more
                       </span>
                     )}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -918,7 +971,14 @@ function TermStripView({
               </div>
               {wk.days.map((d, idx) => {
                 if (!d) {
-                  return <div key={idx} className="aspect-[1.2/1] opacity-0" />;
+                  // Leading / trailing days outside term range — render a
+                  // subtle placeholder so the grid shape stays visible.
+                  return (
+                    <div
+                      key={idx}
+                      className="aspect-[1.2/1] rounded-md border border-hairline/40 bg-muted/20 opacity-50"
+                    />
+                  );
                 }
                 const tintClass = d.dayType
                   ? DAY_TYPE_STYLES[d.dayType].cell
