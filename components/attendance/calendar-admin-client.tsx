@@ -526,10 +526,11 @@ function DayButtonWithBanner(props: React.ComponentProps<typeof DayButton>) {
   const bannerType = bannerTypeFromModifiers(modifiers as Record<string, unknown>);
   return (
     <CalendarDayButton {...props}>
+      {/* Day number — inherits font-serif / text-[22px] / tabular-nums from the day_button className (Task 4) */}
       {children}
       {bannerType && (
         <span
-          className={`mt-1.5 rounded-md px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase leading-tight tracking-[0.14em] ${DAY_TYPE_STYLES[bannerType].chip}`}>
+          className={`mt-auto inline-flex self-stretch justify-center rounded-md px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.14em] ${DAY_TYPE_STYLES[bannerType].chip}`}>
           {DAY_TYPE_SHORT_LABEL[bannerType]}
         </span>
       )}
