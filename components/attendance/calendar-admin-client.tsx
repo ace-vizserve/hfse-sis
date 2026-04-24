@@ -583,51 +583,57 @@ function MonthView({
         'relative after:content-[""] after:absolute after:bottom-1.5 after:left-1/2 after:-translate-x-1/2 after:h-1.5 after:w-1.5 after:rounded-full after:bg-primary',
     },
     classNames: {
-      // Full-width month. Weekdays + days stretch edge-to-edge; cells are
-      // large (112px) so the whole-term scan is comfortable.
       root: "w-full",
       month: "flex w-full flex-col gap-4",
-      // Editorial section title — serif display face, left-aligned, with a
-      // hairline underline so the month reads as a chapter heading above
-      // its grid. Nav (prev/next) floats to the right via the default
-      // primitive layout.
+      // Editorial month caption — serif display face, left-aligned, hairline underline.
       month_caption:
-        "flex h-[56px] w-full items-center justify-start border-b border-hairline px-2 pb-3 font-serif text-[32px] font-semibold leading-none tracking-tight text-foreground",
-      // Weekday header strip — muted-tinted bar + inset highlight so the
-      // row reads as a proper header band, not floating text.
+        "flex h-[56px] w-full items-center justify-between border-b border-hairline px-2 pb-3 font-serif text-[30px] font-semibold leading-none tracking-tight text-foreground",
+      // Weekday header band — bg-muted tint + inset highlight.
       weekdays:
-        "flex rounded-lg border border-hairline bg-muted/40 px-2 py-2.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.5)]",
+        "flex rounded-lg border border-hairline bg-muted/40 px-2 py-2 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.5)]",
       weekday:
-        "flex-1 text-center text-[12px] font-mono font-semibold uppercase tracking-[0.14em] text-ink-4 select-none",
-      // Grid hairlines — horizontal (per-week top border) + vertical
-      // (per-day right border, except the last day) so the month reads as
-      // a crafted data grid, not floating tiles.
-      week: "mt-0 flex w-full border-t border-hairline/60",
-      day: "border-r border-hairline/60 last:border-r-0",
-      // Large day cells — top-anchored serif date number, room beneath for
-      // the day-type banner chip + optional event dot overlay.
+        "flex-1 text-center text-[11px] font-mono font-semibold uppercase tracking-[0.14em] text-ink-4 select-none",
+      week: "mt-1 flex w-full",
+      day: "p-0.5",
       day_button:
-        "flex aspect-square size-auto w-full min-w-(--cell-size) flex-col items-center justify-start gap-0 px-1 pt-3 font-serif text-[22px] font-semibold tabular-nums leading-none group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50",
+        "flex aspect-square size-auto w-full min-w-(--cell-size) flex-col items-start justify-start gap-1 rounded-lg px-3 pt-3 font-serif text-[22px] font-semibold tabular-nums leading-none transition-all hover:-translate-y-0.5 hover:shadow-md group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50",
     },
     components: { DayButton: DayButtonWithBanner },
-    // 112px cells — roomy enough for a serif date number + gradient chip
-    // banner + event-dot overlay without cramping.
-    className: "[--cell-size:--spacing(28)] w-full",
+    className: "[--cell-size:--spacing(36)] w-full",
   };
 
   const monthLabel = month.toLocaleString("en-SG", { month: "long", year: "numeric" });
 
+  // Count school-day rows already classified for this term — every non-weekend
+  // day with a day-type assignment.
+  const totalSchoolDays =
+    daysByType.school_day.length +
+    daysByType.public_holiday.length +
+    daysByType.school_holiday.length +
+    daysByType.hbl.length +
+    daysByType.no_class.length;
+
+  // Compute week-of-term — 1-indexed number of weeks from term start to today,
+  // clamped to [1, 13]. If today is before the term starts, reads as "Week 1".
+  const now = new Date();
+  const termStart = parseIso(term.startDate);
+  const daysSinceStart = Math.max(
+    0,
+    Math.floor((now.getTime() - termStart.getTime()) / 86400000),
+  );
+  const weekOfTerm = Math.min(13, Math.floor(daysSinceStart / 7) + 1);
+
   return (
-    <div className="rounded-xl border border-hairline bg-card shadow-sm ring-1 ring-inset ring-hairline">
-      {/* Editorial eyebrow strip — term + date-range context sits above the month grid. */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline bg-muted/25 px-6 py-3 shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.4)]">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+    <div className="rounded-xl border border-hairline bg-card shadow-sm ring-1 ring-inset ring-hairline" title={monthLabel}>
+      {/* Eyebrow meta-strip — term label + week-of-term on the left, classified-count on the right. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline bg-muted/30 px-6 py-3 shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.4)]">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           {term.label}
           <span className="mx-2 text-hairline-strong">·</span>
-          <span className="tabular-nums">{term.startDate} → {term.endDate}</span>
+          Week <span className="tabular-nums">{weekOfTerm}</span> of 13
         </p>
         <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          Viewing {monthLabel}
+          <span className="tabular-nums">{totalSchoolDays}</span> days classified
         </p>
       </div>
       {/* Calendar grid */}
