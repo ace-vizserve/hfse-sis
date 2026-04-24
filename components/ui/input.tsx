@@ -17,9 +17,9 @@ const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLI
           // Hover (on non-disabled)
           'hover:border-hairline-strong',
           // Focus — crafted brand indigo ring (matches login)
-          'focus-visible:border-brand-indigo focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-indigo/15',
+          'focus-visible:border-brand-indigo/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/20 focus-visible:shadow-sm',
           // Invalid (aria-invalid / error state)
-          'aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:ring-destructive/15',
+          'aria-[invalid=true]:border-destructive/60 aria-[invalid=true]:focus-visible:ring-2 aria-[invalid=true]:focus-visible:ring-destructive/30',
           // Disabled
           'disabled:cursor-not-allowed disabled:bg-muted/60 disabled:opacity-70',
           className,
