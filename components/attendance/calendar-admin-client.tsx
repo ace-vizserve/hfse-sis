@@ -573,6 +573,7 @@ function MonthView({
       hbl: daysByType.hbl,
       no_class: daysByType.no_class,
       eventDay: daysByType.event,
+      today: [new Date()],
     },
     modifiersClassNames: {
       school_day: DAY_TYPE_STYLES.school_day.cell,
@@ -582,6 +583,8 @@ function MonthView({
       no_class: DAY_TYPE_STYLES.no_class.cell,
       eventDay:
         'relative after:content-[""] after:absolute after:bottom-1.5 after:left-1/2 after:-translate-x-1/2 after:h-1.5 after:w-1.5 after:rounded-full after:bg-primary',
+      today: "shadow-[inset_0_0_0_2px_var(--av-indigo)]",
+      selected: "scale-[0.98] ring-2 ring-brand-indigo/40 ring-offset-1 ring-offset-card",
     },
     classNames: {
       root: "w-full",
