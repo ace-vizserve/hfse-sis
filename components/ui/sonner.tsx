@@ -29,6 +29,25 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--border-radius": "var(--radius)",
         } as React.CSSProperties
       }
+      toastOptions={{
+        classNames: {
+          toast:
+            "group toast group-[.toaster]:bg-popover group-[.toaster]:text-popover-foreground group-[.toaster]:ring-1 group-[.toaster]:ring-inset group-[.toaster]:ring-hairline group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:shadow-lg",
+          description: "group-[.toast]:text-muted-foreground",
+          actionButton:
+            "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
+          cancelButton:
+            "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
+          error:
+            "group-[.toaster]:bg-destructive/5 group-[.toaster]:ring-destructive/30 group-[.toaster]:text-destructive",
+          success:
+            "group-[.toaster]:bg-brand-mint/20 group-[.toaster]:ring-brand-mint/60 group-[.toaster]:text-foreground",
+          warning:
+            "group-[.toaster]:bg-brand-amber-light group-[.toaster]:ring-brand-amber/50 group-[.toaster]:text-foreground",
+          info:
+            "group-[.toaster]:bg-accent group-[.toaster]:ring-brand-indigo-soft/40 group-[.toaster]:text-foreground",
+        },
+      }}
       {...props}
     />
   )
