@@ -12,6 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 import type { LevelCompletionRow } from '@/lib/p-files/dashboard';
 import {
   Card,
@@ -77,7 +78,7 @@ export function CompletionByLevelChart({ data }: { data: LevelCompletionRow[] })
                   return p?.level ?? '';
                 }}
               />
-              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" />
+              <Legend content={chartLegendContent({ valid: 'chart-5', pending: 'chart-3', rejected: 'very-stale', missing: 'chart-2' })} />
               <Bar dataKey="valid" name="Valid" stackId="status" fill="var(--chart-5)" />
               <Bar dataKey="pending" name="Pending review" stackId="status" fill="var(--chart-3)" />
               <Bar dataKey="rejected" name="Rejected" stackId="status" fill="var(--destructive)" />
