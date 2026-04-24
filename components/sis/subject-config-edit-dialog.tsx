@@ -147,9 +147,7 @@ export function SubjectConfigEditDialog({
             </FieldRow>
 
             {/* Max slots row. */}
-            <FieldRow
-              eyebrow="Max slots"
-              helper="Hard cap 5 per KD #5. Lowering won't delete existing entries.">
+            <FieldRow eyebrow="Max slots" helper="Hard cap 5 per KD #5. Lowering won't delete existing entries.">
               <div className="grid grid-cols-2 gap-3">
                 <NumberField label="WW slots" value={wwSlots} setValue={setWwSlots} maxDigits={1} />
                 <NumberField label="PT slots" value={ptSlots} setValue={setPtSlots} maxDigits={1} />
@@ -181,76 +179,46 @@ export function SubjectConfigEditDialog({
   );
 }
 
-// Visual summary of the current (WW/PT/QA) split as a horizontal stacked
-// bar. Each segment is colored to match the Legend chip gradient for that
-// part's canonical profile color, so the bar reads as a live version of
-// the table's color-coded cells.
-function RatioBar({
-  ww,
-  pt,
-  qa,
-  sumOk,
-  sum,
-}: {
-  ww: number;
-  pt: number;
-  qa: number;
-  sumOk: boolean;
-  sum: number;
-}) {
-  // Clamp totals so the bar never overflows when sum > 100; shows a gap on
-  // the right when sum < 100.
+// Thin 3-segment progress bar showing the WW/PT/QA split at a glance.
+// Color-coded segments only — no inline labels, no gradients, no inset
+// chrome. The compact header row carries the segment legend + live sum
+// validation.
+function RatioBar({ ww, pt, qa, sumOk, sum }: { ww: number; pt: number; qa: number; sumOk: boolean; sum: number }) {
+  // Clamp so the bar never overflows when sum > 100; gap on the right when sum < 100.
   const total = Math.max(sum, 100);
   const pctOf = (n: number) => (n / total) * 100;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Live ratio preview
-        </p>
-        <span
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]",
-            sumOk
-              ? "border-brand-mint/60 bg-brand-mint/20 text-ink"
-              : "border-destructive/40 bg-destructive/10 text-destructive",
-          )}>
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="flex items-center gap-3 tabular-nums">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-sm bg-chart-3" /> WW {ww}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-sm bg-brand-indigo" /> PT {pt}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-sm bg-brand-amber" /> QA {qa}
+          </span>
+        </div>
+        <span className={cn("inline-flex items-center gap-1 font-semibold", sumOk ? "text-ink" : "text-destructive")}>
           {sumOk ? <CheckCircle2 className="size-3" /> : <AlertCircle className="size-3" />}
-          <span className="tabular-nums">{sum}</span>%
-          <span>{sumOk ? "· Valid" : sum < 100 ? `· need ${100 - sum}` : `· over ${sum - 100}`}</span>
+          <span className="tabular-nums">{sum}%</span>
         </span>
       </div>
-      <div className="flex h-10 w-full overflow-hidden rounded-lg border border-hairline bg-muted shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)]">
+      <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
         {ww > 0 && (
-          <div
-            className="flex items-center justify-center bg-gradient-to-b from-chart-5 to-chart-3 text-white transition-[flex-basis] duration-200"
-            style={{ flexBasis: `${pctOf(ww)}%` }}
-            title={`WW · ${ww}%`}>
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums">
-              {ww >= 8 ? `WW ${ww}%` : ww}
-            </span>
-          </div>
+          <div className="bg-chart-3 transition-[flex-basis] duration-200" style={{ flexBasis: `${pctOf(ww)}%` }} />
         )}
         {pt > 0 && (
           <div
-            className="flex items-center justify-center bg-gradient-to-b from-brand-indigo to-brand-indigo-deep text-white transition-[flex-basis] duration-200"
+            className="bg-brand-indigo transition-[flex-basis] duration-200"
             style={{ flexBasis: `${pctOf(pt)}%` }}
-            title={`PT · ${pt}%`}>
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums">
-              {pt >= 8 ? `PT ${pt}%` : pt}
-            </span>
-          </div>
+          />
         )}
         {qa > 0 && (
-          <div
-            className="flex items-center justify-center bg-gradient-to-b from-brand-amber to-brand-amber/80 text-ink transition-[flex-basis] duration-200"
-            style={{ flexBasis: `${pctOf(qa)}%` }}
-            title={`QA · ${qa}%`}>
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums">
-              {qa >= 8 ? `QA ${qa}%` : qa}
-            </span>
-          </div>
+          <div className="bg-brand-amber transition-[flex-basis] duration-200" style={{ flexBasis: `${pctOf(qa)}%` }} />
         )}
       </div>
     </div>
@@ -259,24 +227,12 @@ function RatioBar({
 
 // Labeled form row — eyebrow + children + helper caption. Flat hierarchy
 // (no nested card) so the dialog breathes.
-function FieldRow({
-  eyebrow,
-  helper,
-  children,
-}: {
-  eyebrow: string;
-  helper?: string;
-  children: React.ReactNode;
-}) {
+function FieldRow({ eyebrow, helper, children }: { eyebrow: string; helper?: string; children: React.ReactNode }) {
   return (
     <div className="space-y-2 border-t border-hairline pt-4 first:border-t-0 first:pt-0">
-      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        {eyebrow}
-      </p>
+      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{eyebrow}</p>
       {children}
-      {helper && (
-        <p className="text-[11px] leading-snug text-muted-foreground">{helper}</p>
-      )}
+      {helper && <p className="text-[11px] leading-snug text-muted-foreground">{helper}</p>}
     </div>
   );
 }
@@ -328,9 +284,7 @@ function NumberField({
 }) {
   return (
     <div className="space-y-1">
-      <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-        {label}
-      </Label>
+      <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{label}</Label>
       <Input
         type="text"
         inputMode="numeric"
