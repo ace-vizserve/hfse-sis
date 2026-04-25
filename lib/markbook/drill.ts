@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache';
 
+import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Markbook drill-down primitives — sibling of `lib/admissions/drill.ts`.
@@ -292,22 +293,7 @@ async function loadEntryRowsUncached(ayCode: string): Promise<GradeEntryRow[]> {
     if (!teacherBySectionSubject.has(k)) teacherBySectionSubject.set(k, a.teacher_user_id);
   }
 
-  // Resolve teacher emails for all teacher user IDs we'll reference. Service
-  // role can hit auth.admin for this; we batch via a single listUsers call.
-  // Pragmatic shortcut: pull all teachers via auth.admin.listUsers if cheap;
-  // otherwise leave email null (the dashboard tolerates).
-  let teacherEmailById = new Map<string, string>();
-  try {
-    const { data: userList } = await service.auth.admin.listUsers({ perPage: 1000 });
-    if (userList?.users) {
-      for (const u of userList.users) {
-        if (u.email) teacherEmailById.set(u.id, u.email);
-      }
-    }
-  } catch {
-    // Auth admin call optional; fall back to null emails.
-    teacherEmailById = new Map();
-  }
+  const teacherEmailById = new Map<string, string>(await getTeacherEmailMap());
 
   // Entries — split into chunks to avoid PostgREST URL length limits.
   type EntryLite = {

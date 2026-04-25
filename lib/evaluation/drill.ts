@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache';
 
+import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Evaluation drill primitives — single row shape (WriteupRow). Simpler than
@@ -210,18 +211,12 @@ async function loadWriteupRowsUncached(ayCode: string): Promise<WriteupRow[]> {
   const openedAtByTerm = new Map<string, string | null>();
   for (const r of (evalTermRows ?? []) as EvalTermRecord[]) openedAtByTerm.set(r.term_id, r.opened_at);
 
-  // Resolve adviser emails (best-effort).
   const adviserUserIds = Array.from(new Set(Array.from(adviserBySection.values())));
+  const allEmails = new Map(await getTeacherEmailMap());
   const adviserEmailById = new Map<string, string>();
-  try {
-    const { data: userList } = await service.auth.admin.listUsers({ perPage: 1000 });
-    if (userList?.users) {
-      for (const u of userList.users) {
-        if (u.email && adviserUserIds.includes(u.id)) adviserEmailById.set(u.id, u.email);
-      }
-    }
-  } catch {
-    // Optional.
+  for (const id of adviserUserIds) {
+    const email = allEmails.get(id);
+    if (email) adviserEmailById.set(id, email);
   }
 
   const out: WriteupRow[] = [];
