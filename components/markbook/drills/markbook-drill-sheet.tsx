@@ -10,6 +10,7 @@ import {
   type DrillDownDensity,
   type DrillDownGroupBy,
 } from '@/components/dashboard/drill-down-sheet';
+import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
 import { Badge } from '@/components/ui/badge';
 import {
   allColumnsForKind,
@@ -335,6 +336,7 @@ export function MarkbookDrillSheet(props: MarkbookDrillSheetProps) {
 
   const [scope, setScope] = React.useState<DrillScope>(initialScope);
   const [rows, setRows] = React.useState<MarkbookDrillRow[]>(seedRows);
+  const [loading, setLoading] = React.useState(seedRows.length === 0);
   const [globalFilter, _setGlobalFilter] = React.useState('');
   void _setGlobalFilter;
   const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>([]);
@@ -353,6 +355,7 @@ export function MarkbookDrillSheet(props: MarkbookDrillSheetProps) {
       return;
     }
     let cancelled = false;
+    setLoading(true);
     const params = new URLSearchParams({ ay: ayCode, scope });
     if (initialFrom) params.set('from', initialFrom);
     if (initialTo) params.set('to', initialTo);
@@ -367,6 +370,9 @@ export function MarkbookDrillSheet(props: MarkbookDrillSheetProps) {
       })
       .catch(() => {
         if (!cancelled) toast.error('Failed to load drill data');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -457,6 +463,10 @@ export function MarkbookDrillSheet(props: MarkbookDrillSheetProps) {
   );
 
   const header = drillHeaderForTarget(target, segment ?? null);
+
+  if (loading && rows.length === 0) {
+    return <DrillSheetSkeleton title={header.title} />;
+  }
 
   const csvParams = new URLSearchParams({ ay: ayCode, scope, format: 'csv' });
   if (initialFrom) csvParams.set('from', initialFrom);

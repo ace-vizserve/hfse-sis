@@ -213,7 +213,6 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
                 initialScope="range"
                 initialFrom={rangeInput.from}
                 initialTo={rangeInput.to}
-                initialEntries={drillRowSets?.entries}
               />
             }
           />
@@ -362,7 +361,6 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
                 ayCode={ayCode}
                 rangeFrom={rangeInput.from}
                 rangeTo={rangeInput.to}
-                initialEntries={drillRowSets?.entries}
               />
             </div>
           )}

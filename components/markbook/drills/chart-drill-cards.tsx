@@ -19,12 +19,13 @@ type CommonDrillProps = {
   ayCode: string;
   rangeFrom?: string;
   rangeTo?: string;
-  initialEntries?: GradeEntryRow[];
   initialSheets?: SheetRow[];
   initialChangeRequests?: ChangeRequestRow[];
 };
 
 // ─── Grade Distribution → grade-bucket-entries ──────────────────────────────
+// Lazy-fetches entries via /api/markbook/drill on drill open (entry-kind row
+// shape is too large to pre-fetch at scale — see KD #56).
 
 export function GradeDistributionDrillCard({
   data,
@@ -32,7 +33,6 @@ export function GradeDistributionDrillCard({
   ayCode,
   rangeFrom,
   rangeTo,
-  initialEntries,
 }: CommonDrillProps & { data: GradeBucket[]; termLabel: string }) {
   const [segment, setSegment] = React.useState<string | null>(null);
   return (
@@ -46,7 +46,6 @@ export function GradeDistributionDrillCard({
           initialScope="range"
           initialFrom={rangeFrom}
           initialTo={rangeTo}
-          initialEntries={initialEntries}
         />
       )}
     </Sheet>

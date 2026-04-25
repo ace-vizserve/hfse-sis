@@ -624,12 +624,15 @@ export async function buildAllRowSets(input: {
   to?: string;
   allowedSectionIds?: string[] | null;
 }): Promise<{
-  entries: GradeEntryRow[];
   sheets: SheetRow[];
   changeRequests: ChangeRequestRow[];
 }> {
-  const [entries, sheets, changeRequests] = await Promise.all([
-    loadEntryRows(input.ayCode),
+  // entries deliberately excluded — at 1000 students × 10 subjects × 4 terms
+  // that's ~40k rows, ~10 MB JSON shipped through the RSC payload for users
+  // who may never open an entry-kind drill. Drill sheets with target kind
+  // 'entry' lazy-fetch via /api/markbook/drill/{target}. sheets +
+  // changeRequests stay pre-fetched (small + read often).
+  const [sheets, changeRequests] = await Promise.all([
     loadSheetRows(input.ayCode),
     loadChangeRequestRows(input.ayCode),
   ]);
@@ -640,11 +643,6 @@ export async function buildAllRowSets(input: {
     to: input.to,
     allowedSectionIds: input.allowedSectionIds ?? null,
   };
-  const filteredEntries = applyTeacherFilter(
-    applyScopeFilter(entries as MarkbookDrillRow[], 'entry', rangeInput),
-    'entry',
-    input.allowedSectionIds ?? null,
-  ) as GradeEntryRow[];
   const filteredSheets = applyTeacherFilter(
     applyScopeFilter(sheets as MarkbookDrillRow[], 'sheet', rangeInput),
     'sheet',
@@ -656,7 +654,6 @@ export async function buildAllRowSets(input: {
     input.allowedSectionIds ?? null,
   ) as ChangeRequestRow[];
   return {
-    entries: filteredEntries,
     sheets: filteredSheets,
     changeRequests: filteredCrs,
   };
