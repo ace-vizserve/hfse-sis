@@ -15,10 +15,12 @@ import { ComparisonToolbar } from "@/components/dashboard/comparison-toolbar";
 import { DashboardHero } from "@/components/dashboard/dashboard-hero";
 import { InsightsPanel } from "@/components/dashboard/insights-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { PriorityPanel } from "@/components/dashboard/priority-panel";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/ui/page-shell";
 import {
   getAttendanceKpisRange,
+  getAttendancePriority,
   getDailyAttendanceRange,
   getDayTypeDistributionRange,
   getExReasonMixRange,
@@ -67,6 +69,13 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
     buildAllRowSets({ ayCode: selectedAy, scope: "range", from: rangeInput.from, to: rangeInput.to }),
   ]);
 
+  // Priority depends on the freshly-loaded compassionate roll-up; compute
+  // after buildAllRowSets so we don't refetch entries inside the loader.
+  const priority = await getAttendancePriority({
+    ayCode: selectedAy,
+    compassionate: drillRowSets.compassionate,
+  });
+
   const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
 
   const insights = attendanceInsights({
@@ -106,6 +115,8 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
         ayWindows={windows.ay}
         showAySwitcher={false}
       />
+
+      <PriorityPanel payload={priority} />
 
       <InsightsPanel insights={insights} />
 

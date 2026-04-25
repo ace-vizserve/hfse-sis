@@ -1,4 +1,5 @@
 import { unstable_cache } from 'next/cache';
+import { AlertTriangle } from 'lucide-react';
 
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -9,6 +10,8 @@ import {
   type RangeInput,
   type RangeResult,
 } from '@/lib/dashboard/range';
+import type { PriorityPayload } from '@/lib/dashboard/priority';
+import type { CompassionateUsageRow } from '@/lib/attendance/drill';
 
 // Attendance dashboard aggregators — read-only consumers per KD #47.
 // Attendance itself is the sole writer of `attendance_daily`; this file only
@@ -333,5 +336,203 @@ export function getDayTypeDistributionRange(
     loadDayTypeDistributionRangeUncached,
     ['attendance', 'day-type', input.ayCode, input.from, input.to],
     { revalidate: CACHE_TTL_SECONDS, tags: tag(input.ayCode) },
+  )(input);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// PriorityPanel payload — top-of-fold "what should I act on right now?"
+// answer for the operational Attendance dashboard. The registrar's first
+// question landing on /attendance is "did all sections mark attendance
+// today, and are any students over the compassionate quota?"
+//
+// Headline = unmarked sections for today (school days only).
+// Chips    = top 4 unmarked sections + up to 2 compassionate over-quota.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type AttendancePriorityInput = {
+  ayCode: string;
+  /**
+   * Already-loaded compassionate rows from `buildAllRowSets`. Pass through to
+   * avoid a duplicate fetch — same pattern as P-Files reusing
+   * getExpiringDocuments. Plain serializable objects are safe inside
+   * unstable_cache args.
+   */
+  compassionate: CompassionateUsageRow[];
+};
+
+async function loadAttendancePriorityUncached(
+  input: AttendancePriorityInput,
+): Promise<PriorityPayload> {
+  const service = createServiceClient();
+
+  // Today's date in Asia/Singapore (matches HFSE operating TZ). ISO date.
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+
+  // Resolve current AY id so we can scope sections + the calendar lookup.
+  const { data: ayRow } = await service
+    .from('academic_years')
+    .select('id')
+    .eq('ay_code', input.ayCode)
+    .maybeSingle();
+  const ayId = (ayRow?.id as string | undefined) ?? null;
+  if (!ayId) {
+    return {
+      eyebrow: 'Priority · today',
+      title: 'No academic year configured',
+      headline: { value: 0, label: 'set up AY in /sis/ay-setup', severity: 'info' },
+      chips: [],
+      icon: AlertTriangle,
+    };
+  }
+
+  // Confirm today is a school day. school_calendar lacks an ay_code column;
+  // it joins to AY via terms.academic_year_id. Filter terms to this AY,
+  // then look up the single row for today.
+  const { data: termRows } = await service
+    .from('terms')
+    .select('id')
+    .eq('academic_year_id', ayId);
+  const termIds = (termRows ?? []).map((r) => r.id as string);
+
+  let dayType: string | null = null;
+  if (termIds.length > 0) {
+    const { data: calRow } = await service
+      .from('school_calendar')
+      .select('day_type')
+      .in('term_id', termIds)
+      .eq('date', today)
+      .maybeSingle();
+    dayType = (calRow?.day_type as string | undefined) ?? null;
+  }
+
+  const isSchoolDay = dayType === 'school_day' || dayType === 'hbl';
+
+  // Compassionate over-quota — passed in to avoid refetching.
+  const overQuota = input.compassionate.filter((r) => r.isOverQuota);
+
+  if (!isSchoolDay) {
+    // No school today → headline collapses; surface compassionate-quota
+    // chips so the panel still has signal when a registrar checks in.
+    const compassionateChips = overQuota.slice(0, 4).map((r) => ({
+      label: `${r.studentName} (${r.sectionName})`,
+      count: r.used,
+      href: `/attendance/${r.sectionId}`,
+      severity: 'warn' as const,
+    }));
+    return {
+      eyebrow: 'Priority · today',
+      title:
+        overQuota.length > 0
+          ? `${overQuota.length} students over compassionate quota`
+          : 'No school today',
+      headline: {
+        value: 0,
+        label: overQuota.length > 0 ? 'attendance not required' : 'attendance not required',
+        severity: overQuota.length > 0 ? 'warn' : 'good',
+      },
+      chips: compassionateChips,
+      icon: AlertTriangle,
+    };
+  }
+
+  // All sections in current AY.
+  const { data: sectionsData } = await service
+    .from('sections')
+    .select('id, name')
+    .eq('academic_year_id', ayId);
+  const sections = (sectionsData ?? []) as Array<{ id: string; name: string }>;
+
+  // Sections with at least one attendance_daily row for today.
+  const sectionIds = sections.map((s) => s.id);
+  let markedSectionIds = new Set<string>();
+  if (sectionIds.length > 0) {
+    // attendance_daily references section_students (not sections directly).
+    // Resolve the section_student ids that belong to these sections, then
+    // ask which of them have a row for today.
+    const { data: ssRows } = await service
+      .from('section_students')
+      .select('id, section_id')
+      .in('section_id', sectionIds);
+    const ssToSection = new Map<string, string>();
+    for (const row of (ssRows ?? []) as Array<{ id: string; section_id: string }>) {
+      ssToSection.set(row.id, row.section_id);
+    }
+    const ssIds = Array.from(ssToSection.keys());
+
+    if (ssIds.length > 0) {
+      // Chunk to respect URL length limits (mirrors loadDailyRowsUncached).
+      const chunks: string[][] = [];
+      for (let i = 0; i < ssIds.length; i += 1000) chunks.push(ssIds.slice(i, i + 1000));
+      for (const chunk of chunks) {
+        const { data } = await service
+          .from('attendance_daily')
+          .select('section_student_id')
+          .eq('date', today)
+          .in('section_student_id', chunk);
+        for (const row of (data ?? []) as Array<{ section_student_id: string }>) {
+          const secId = ssToSection.get(row.section_student_id);
+          if (secId) markedSectionIds.add(secId);
+        }
+      }
+    }
+  }
+
+  const unmarked = sections.filter((s) => !markedSectionIds.has(s.id));
+
+  const topUnmarkedChips = unmarked.slice(0, 4).map((s) => ({
+    label: s.name,
+    count: 0, // binary: section either marked or hasn't — count is just "0 recorded so far"
+    href: `/attendance/${s.id}`,
+    severity: 'bad' as const,
+  }));
+
+  // Add up to 2 compassionate over-quota chips if there's room.
+  const remaining = Math.max(0, 5 - topUnmarkedChips.length);
+  const compassionateChips = overQuota.slice(0, remaining).map((r) => ({
+    label: `${r.studentName} (${r.sectionName})`,
+    count: r.used,
+    href: `/attendance/${r.sectionId}`,
+    severity: 'warn' as const,
+  }));
+
+  const total = unmarked.length;
+  const severity: 'bad' | 'warn' | 'good' =
+    unmarked.length > 0 ? 'bad' : overQuota.length > 0 ? 'warn' : 'good';
+
+  return {
+    eyebrow: 'Priority · today',
+    title:
+      total === 0 && overQuota.length === 0
+        ? "Today's attendance is in"
+        : total === 0
+          ? `${overQuota.length} students over compassionate quota`
+          : 'Sections still need to mark attendance today',
+    headline: {
+      value: total,
+      label: total === 0 ? 'all sections marked' : `of ${sections.length} sections still pending`,
+      severity,
+    },
+    chips: [...topUnmarkedChips, ...compassionateChips],
+    cta:
+      total > 0 ? { label: 'Open section picker', href: '/attendance/sections' } : undefined,
+    icon: AlertTriangle,
+  };
+}
+
+export function getAttendancePriority(
+  input: AttendancePriorityInput,
+): Promise<PriorityPayload> {
+  // Cache key includes today's UTC date so it rolls over at UTC midnight
+  // (8am SGT). Operational data — 60s revalidate keeps the panel fresh
+  // while sections are marking in.
+  return unstable_cache(
+    loadAttendancePriorityUncached,
+    [
+      'attendance',
+      'priority',
+      input.ayCode,
+      new Date().toISOString().slice(0, 10),
+    ],
+    { tags: tag(input.ayCode), revalidate: 60 },
   )(input);
 }
