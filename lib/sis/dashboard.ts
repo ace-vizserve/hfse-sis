@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache';
 
+import { loadActorActivity } from '@/lib/sis/drill';
 import { DOCUMENT_SLOTS, resolveStatus, type DocumentGroup } from '@/lib/p-files/document-config';
 import { STAGE_COLUMN_MAP, STAGE_KEYS, STAGE_LABELS, type StageKey } from '@/lib/schemas/sis';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -882,4 +883,15 @@ export function getClassAssignmentReadiness(
     ['sis-dashboard', 'class-assignment-readiness', ayCode],
     { revalidate: 60, tags: tag(ayCode) },
   )();
+}
+
+export async function getActivityByActor(
+  range?: { from: string; to: string },
+): Promise<Awaited<ReturnType<typeof loadActorActivity>>> {
+  // Cache wrapper keyed by range
+  const key = ['sis-dashboard', 'activity-by-actor', range?.from ?? 'all', range?.to ?? 'all'];
+  return unstable_cache(() => loadActorActivity(range), key, {
+    revalidate: 60,
+    tags: ['sis-dashboard', 'audit-log'],
+  })();
 }

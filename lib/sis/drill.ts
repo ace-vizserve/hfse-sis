@@ -434,3 +434,226 @@ export function drillHeaderForTarget(
       return { eyebrow: 'Drill · Class assignment', title: 'Active without section' };
   }
 }
+
+// ─── SIS Admin drill types ──────────────────────────────────────────────────
+
+export type SisAdminDrillTarget =
+  | 'audit-events'
+  | 'approver-coverage'
+  | 'academic-years'
+  | 'activity-by-actor';
+
+export type AuditDrillRow = {
+  id: string;
+  action: string;
+  actorEmail: string | null;
+  entityType: string;
+  entityId: string;
+  context: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+export type ApproverAssignmentDrillRow = {
+  id: string;
+  flow: string;
+  userId: string;
+  email: string | null;
+  role: string;
+  assignedAt: string | null;
+};
+
+export type AcademicYearDrillRow = {
+  id: string;
+  ayCode: string;
+  label: string | null;
+  isCurrent: boolean;
+  termsCount: number;
+  studentsCount: number;
+};
+
+export type ActorActivityDrillRow = {
+  userId: string;
+  email: string | null;
+  count: number;
+  lastEventAt: string | null;
+};
+
+const MODULE_ACTION_PREFIXES: Record<string, string> = {
+  markbook: 'sheet.',
+  entry: 'entry.',
+  pfile: 'pfile.',
+  sis: 'sis.',
+  attendance: 'attendance.',
+  evaluation: 'evaluation.',
+};
+
+export async function loadAuditEventsUncached(
+  modulePrefix: string,
+  range?: { from: string; to: string },
+): Promise<AuditDrillRow[]> {
+  const service = createServiceClient();
+  let q = service
+    .from('audit_log')
+    .select('id, action, actor_email, entity_type, entity_id, context, created_at')
+    .like('action', `${modulePrefix}%`)
+    .order('created_at', { ascending: false })
+    .limit(2000);
+  if (range?.from && range?.to) {
+    q = q.gte('created_at', range.from).lte('created_at', `${range.to}T23:59:59.999Z`);
+  }
+  const { data } = await q;
+  type AuditRow = {
+    id: string;
+    action: string;
+    actor_email: string | null;
+    entity_type: string;
+    entity_id: string;
+    context: Record<string, unknown> | null;
+    created_at: string;
+  };
+  return ((data ?? []) as AuditRow[]).map((r) => ({
+    id: r.id,
+    action: r.action,
+    actorEmail: r.actor_email,
+    entityType: r.entity_type,
+    entityId: r.entity_id,
+    context: r.context,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function loadApproverAssignments(): Promise<ApproverAssignmentDrillRow[]> {
+  const service = createServiceClient();
+  const { data } = await service
+    .from('approver_assignments')
+    .select('id, flow, user_id, role, created_at');
+  type Row = {
+    id: string;
+    flow: string;
+    user_id: string;
+    role: string;
+    created_at: string | null;
+  };
+  const rows = (data ?? []) as Row[];
+
+  // Resolve emails via auth admin
+  const emailMap = new Map<string, string>();
+  try {
+    const { data: userList } = await service.auth.admin.listUsers({ perPage: 1000 });
+    if (userList?.users) {
+      for (const u of userList.users) if (u.email) emailMap.set(u.id, u.email);
+    }
+  } catch {
+    /* email is best-effort */
+  }
+  return rows.map((r) => ({
+    id: r.id,
+    flow: r.flow,
+    userId: r.user_id,
+    email: emailMap.get(r.user_id) ?? null,
+    role: r.role,
+    assignedAt: r.created_at,
+  }));
+}
+
+export async function loadAcademicYearsList(): Promise<AcademicYearDrillRow[]> {
+  const service = createServiceClient();
+  const { data } = await service
+    .from('academic_years')
+    .select('id, ay_code, label, is_current')
+    .order('ay_code', { ascending: false });
+  type Row = { id: string; ay_code: string; label: string | null; is_current: boolean };
+  const ays = (data ?? []) as Row[];
+  if (ays.length === 0) return [];
+
+  const ayIds = ays.map((a) => a.id);
+  const [termsCountByAy, studentsCountByAy] = await Promise.all([
+    service
+      .from('terms')
+      .select('academic_year_id', { count: 'exact' })
+      .in('academic_year_id', ayIds)
+      .then(({ data }) => {
+        const m = new Map<string, number>();
+        for (const r of (data ?? []) as { academic_year_id: string }[]) {
+          m.set(r.academic_year_id, (m.get(r.academic_year_id) ?? 0) + 1);
+        }
+        return m;
+      }),
+    service
+      .from('sections')
+      .select('id, academic_year_id')
+      .in('academic_year_id', ayIds)
+      .then(async ({ data: sections }) => {
+        const sectionRows = (sections ?? []) as { id: string; academic_year_id: string }[];
+        if (sectionRows.length === 0) return new Map<string, number>();
+        const sectionIds = sectionRows.map((s) => s.id);
+        const { data: ssRows } = await service
+          .from('section_students')
+          .select('section_id')
+          .in('section_id', sectionIds);
+        const sectionToAy = new Map<string, string>();
+        for (const s of sectionRows) sectionToAy.set(s.id, s.academic_year_id);
+        const out = new Map<string, number>();
+        for (const r of (ssRows ?? []) as { section_id: string }[]) {
+          const ay = sectionToAy.get(r.section_id);
+          if (!ay) continue;
+          out.set(ay, (out.get(ay) ?? 0) + 1);
+        }
+        return out;
+      }),
+  ]);
+
+  return ays.map((a) => ({
+    id: a.id,
+    ayCode: a.ay_code,
+    label: a.label,
+    isCurrent: a.is_current,
+    termsCount: termsCountByAy.get(a.id) ?? 0,
+    studentsCount: studentsCountByAy.get(a.id) ?? 0,
+  }));
+}
+
+export async function loadActorActivity(
+  range?: { from: string; to: string },
+): Promise<ActorActivityDrillRow[]> {
+  const service = createServiceClient();
+  let q = service
+    .from('audit_log')
+    .select('actor_user_id, actor_email, created_at')
+    .order('created_at', { ascending: false })
+    .limit(5000);
+  if (range?.from && range?.to) {
+    q = q.gte('created_at', range.from).lte('created_at', `${range.to}T23:59:59.999Z`);
+  }
+  const { data } = await q;
+  type Row = {
+    actor_user_id: string | null;
+    actor_email: string | null;
+    created_at: string;
+  };
+  const map = new Map<string, { email: string | null; count: number; lastAt: string }>();
+  for (const r of (data ?? []) as Row[]) {
+    const userId = r.actor_user_id ?? '__anon';
+    const acc = map.get(userId);
+    if (acc) {
+      acc.count += 1;
+      if (r.created_at > acc.lastAt) acc.lastAt = r.created_at;
+    } else {
+      map.set(userId, { email: r.actor_email, count: 1, lastAt: r.created_at });
+    }
+  }
+  const out: ActorActivityDrillRow[] = [];
+  for (const [userId, acc] of map.entries()) {
+    out.push({ userId, email: acc.email, count: acc.count, lastEventAt: acc.lastAt });
+  }
+  out.sort((a, b) => b.count - a.count);
+  return out;
+}
+
+export function isModulePrefix(p: string): boolean {
+  return Object.values(MODULE_ACTION_PREFIXES).includes(p) || p in MODULE_ACTION_PREFIXES;
+}
+
+export function modulePrefixFor(slug: string): string {
+  return MODULE_ACTION_PREFIXES[slug] ?? slug;
+}
