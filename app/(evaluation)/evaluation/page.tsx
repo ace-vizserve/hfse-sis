@@ -2,11 +2,16 @@ import { ArrowUpRight, CheckCircle2, ClipboardCheck, Clock, NotebookPen, SquareP
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { TrendChart } from "@/components/dashboard/charts/trend-chart";
 import { ComparisonToolbar } from "@/components/dashboard/comparison-toolbar";
 import { DashboardHero } from "@/components/dashboard/dashboard-hero";
 import { InsightsPanel } from "@/components/dashboard/insights-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import {
+  SubmissionVelocityDrillCard,
+  TimeToSubmitHistogramCard,
+  WriteupsBySectionCard,
+} from "@/components/evaluation/drills/chart-drill-cards";
+import { EvaluationDrillSheet } from "@/components/evaluation/drills/evaluation-drill-sheet";
 import { TermOpenToggle } from "@/components/evaluation/term-open-toggle";
 import {
   Card,
@@ -22,6 +27,7 @@ import { evaluationInsights } from "@/lib/dashboard/insights";
 import { formatRangeLabel, resolveRange, type DashboardSearchParams } from "@/lib/dashboard/range";
 import { getDashboardWindows } from "@/lib/dashboard/windows";
 import { getEvaluationKpisRange, getSubmissionVelocityRange } from "@/lib/evaluation/dashboard";
+import { buildAllRowSets } from "@/lib/evaluation/drill";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -81,9 +87,13 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
     ? await getDashboardWindows(ayCode)
     : { term: { thisTerm: null, lastTerm: null }, ay: { thisAY: null, lastAY: null } };
   const rangeInput = ayCode ? resolveRange(resolvedSearch, windows, ayCode) : null;
-  const [kpisResult, velocity] = rangeInput
-    ? await Promise.all([getEvaluationKpisRange(rangeInput), getSubmissionVelocityRange(rangeInput)])
-    : [null, null];
+  const [kpisResult, velocity, drillRowSets] = rangeInput
+    ? await Promise.all([
+        getEvaluationKpisRange(rangeInput),
+        getSubmissionVelocityRange(rangeInput),
+        buildAllRowSets({ ayCode, scope: "range", from: rangeInput.from, to: rangeInput.to }),
+      ])
+    : [null, null, null];
   const comparisonLabel = rangeInput
     ? `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`
     : "";
@@ -133,6 +143,16 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
               deltaGoodWhen="up"
               comparisonLabel={comparisonLabel}
               sparkline={velocity.current.slice(-14)}
+              drillSheet={
+                <EvaluationDrillSheet
+                  target="submission-status"
+                  ayCode={ayCode}
+                  initialScope="range"
+                  initialFrom={rangeInput.from}
+                  initialTo={rangeInput.to}
+                  initialWriteups={drillRowSets?.writeups}
+                />
+              }
             />
             <MetricCard
               label="Submitted"
@@ -140,6 +160,16 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
               icon={CheckCircle2}
               intent="default"
               subtext={`of ${kpisResult.current.expected} expected`}
+              drillSheet={
+                <EvaluationDrillSheet
+                  target="submitted"
+                  ayCode={ayCode}
+                  initialScope="range"
+                  initialFrom={rangeInput.from}
+                  initialTo={rangeInput.to}
+                  initialWriteups={drillRowSets?.writeups}
+                />
+              }
             />
             <MetricCard
               label="Median time-to-submit"
@@ -153,6 +183,16 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
                   ? `${kpisResult.comparison.medianTimeToSubmitDays}d prior`
                   : "No prior data"
               }
+              drillSheet={
+                <EvaluationDrillSheet
+                  target="time-to-submit"
+                  ayCode={ayCode}
+                  initialScope="range"
+                  initialFrom={rangeInput.from}
+                  initialTo={rangeInput.to}
+                  initialWriteups={drillRowSets?.writeups}
+                />
+              }
             />
             <MetricCard
               label="Late submissions"
@@ -161,21 +201,49 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
               intent={kpisResult.current.lateSubmissions > 0 ? "warning" : "good"}
               deltaGoodWhen="down"
               subtext={`${kpisResult.comparison.lateSubmissions} prior`}
+              drillSheet={
+                <EvaluationDrillSheet
+                  target="late"
+                  ayCode={ayCode}
+                  initialScope="range"
+                  initialFrom={rangeInput.from}
+                  initialTo={rangeInput.to}
+                  initialWriteups={drillRowSets?.writeups}
+                />
+              }
             />
           </section>
 
           {velocity.current.length > 1 && (
-            <Card>
-              <CardHeader>
-                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  Submission velocity
-                </CardDescription>
-                <CardTitle className="font-serif text-xl">Write-ups submitted per day</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <TrendChart label="Submissions" current={velocity.current} comparison={velocity.comparison} />
-              </CardContent>
-            </Card>
+            <SubmissionVelocityDrillCard
+              current={velocity.current}
+              comparison={velocity.comparison}
+              ayCode={ayCode}
+              rangeFrom={rangeInput.from}
+              rangeTo={rangeInput.to}
+              initialWriteups={drillRowSets?.writeups}
+            />
+          )}
+
+          {drillRowSets && (drillRowSets.bySection.length > 0 || drillRowSets.buckets.some((b) => b.count > 0)) && (
+            <section className="grid gap-4 lg:grid-cols-2">
+              <WriteupsBySectionCard
+                data={drillRowSets.bySection}
+                ayCode={ayCode}
+                rangeFrom={rangeInput.from}
+                rangeTo={rangeInput.to}
+                initialBySection={drillRowSets.bySection}
+                initialWriteups={drillRowSets.writeups}
+              />
+              <TimeToSubmitHistogramCard
+                data={drillRowSets.buckets}
+                ayCode={ayCode}
+                rangeFrom={rangeInput.from}
+                rangeTo={rangeInput.to}
+                initialBuckets={drillRowSets.buckets}
+                initialWriteups={drillRowSets.writeups}
+              />
+            </section>
           )}
         </>
       )}
