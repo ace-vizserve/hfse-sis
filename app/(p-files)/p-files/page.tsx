@@ -15,6 +15,7 @@ import {
   TopMissingDrillCard,
 } from "@/components/p-files/drills/chart-drill-cards";
 import { PFilesDrillSheet } from "@/components/p-files/drills/pfiles-drill-sheet";
+import { RevisionsHeatmapCard } from "@/components/p-files/revisions-heatmap-card";
 import { RevisionsOverTimeChart } from "@/components/p-files/revisions-over-time-chart";
 import { SummaryCards } from "@/components/p-files/summary-cards";
 import { ExpiringDocumentsPanel } from "@/components/sis/expiring-documents-panel";
@@ -28,6 +29,7 @@ import {
   getCompletionByLevel,
   getPFilesKpisRange,
   getRevisionVelocityRange,
+  getRevisionsHeatmap,
   getRevisionsOverTime,
   getSlotStatusMix,
 } from "@/lib/p-files/dashboard";
@@ -75,17 +77,27 @@ export default async function PFilesDashboard({
   const windows = await getDashboardWindows(selectedAy);
   const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
 
-  const [{ students, summary }, byLevel, backlog, expiring, revisions, kpisResult, velocity, slotMix] =
-    await Promise.all([
-      getDocumentDashboardData(selectedAy),
-      getCompletionByLevel(selectedAy),
-      getDocumentValidationBacklog(selectedAy),
-      getExpiringDocuments(selectedAy, 60, 6),
-      getRevisionsOverTime(selectedAy, 12),
-      getPFilesKpisRange(rangeInput),
-      getRevisionVelocityRange(rangeInput),
-      getSlotStatusMix(selectedAy),
-    ]);
+  const [
+    { students, summary },
+    byLevel,
+    backlog,
+    expiring,
+    revisions,
+    kpisResult,
+    velocity,
+    slotMix,
+    revisionsHeatmap,
+  ] = await Promise.all([
+    getDocumentDashboardData(selectedAy),
+    getCompletionByLevel(selectedAy),
+    getDocumentValidationBacklog(selectedAy),
+    getExpiringDocuments(selectedAy, 60, 6),
+    getRevisionsOverTime(selectedAy, 12),
+    getPFilesKpisRange(rangeInput),
+    getRevisionVelocityRange(rangeInput),
+    getSlotStatusMix(selectedAy),
+    getRevisionsHeatmap(selectedAy, 12),
+  ]);
 
   const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
 
@@ -211,9 +223,10 @@ export default async function PFilesDashboard({
         viewAllHref={`/p-files?ay=${selectedAy}&status=expired`}
       />
 
-      {/* Row 6 — wide revision trend (12-week reference) */}
-      <section className="grid gap-4">
+      {/* Row 6 — wide revision trend + heatmap (12-week reference) */}
+      <section className="grid gap-4 lg:grid-cols-2">
         <RevisionsOverTimeChart data={revisions} />
+        <RevisionsHeatmapCard data={revisionsHeatmap} ayCode={selectedAy} weeks={12} />
       </section>
 
       {/* Row 7 — completion by level (2/3) + slot status mix (1/3) */}

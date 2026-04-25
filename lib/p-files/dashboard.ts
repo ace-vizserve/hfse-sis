@@ -494,3 +494,56 @@ export function getSlotStatusMix(ayCode: string): Promise<SlotStatusMix> {
     { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS },
   )(ayCode);
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Revisions activity heatmap — 12-week × 7-day calendar grid of revision
+// counts. Visualises which weeks/days see uploads (e.g. enrollment season
+// spikes). Each cell click drills to revisions on that day.
+
+export type RevisionsHeatmapCell = {
+  date: string; // ISO yyyy-MM-dd
+  count: number;
+};
+
+async function loadRevisionsHeatmapUncached(
+  ayCode: string,
+  weeks: number,
+): Promise<RevisionsHeatmapCell[]> {
+  const service = createServiceClient();
+  const today = new Date();
+  const since = new Date(today.getFullYear(), today.getMonth(), today.getDate() - weeks * 7 + 1);
+  const sinceIso = since.toISOString();
+
+  const { data } = await service
+    .from('p_file_revisions')
+    .select('replaced_at')
+    .eq('ay_code', ayCode)
+    .gte('replaced_at', sinceIso);
+
+  const buckets = new Map<string, number>();
+  for (const r of (data ?? []) as { replaced_at: string }[]) {
+    const day = r.replaced_at.slice(0, 10);
+    buckets.set(day, (buckets.get(day) ?? 0) + 1);
+  }
+
+  // Fill the full grid so empty cells render as muted; cells are in
+  // chronological order which the card uses to lay out 7 days × N weeks.
+  const out: RevisionsHeatmapCell[] = [];
+  for (let i = 0; i < weeks * 7; i += 1) {
+    const d = new Date(since.getFullYear(), since.getMonth(), since.getDate() + i);
+    const iso = d.toISOString().slice(0, 10);
+    out.push({ date: iso, count: buckets.get(iso) ?? 0 });
+  }
+  return out;
+}
+
+export function getRevisionsHeatmap(
+  ayCode: string,
+  weeks = 12,
+): Promise<RevisionsHeatmapCell[]> {
+  return unstable_cache(
+    () => loadRevisionsHeatmapUncached(ayCode, weeks),
+    ['p-files', 'revisions-heatmap', ayCode, String(weeks)],
+    { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS },
+  )();
+}
