@@ -619,7 +619,7 @@ export async function loadActorActivity(
   const service = createServiceClient();
   let q = service
     .from('audit_log')
-    .select('actor_user_id, actor_email, created_at')
+    .select('actor_id, actor_email, created_at')
     .order('created_at', { ascending: false })
     .limit(5000);
   if (range?.from && range?.to) {
@@ -627,13 +627,13 @@ export async function loadActorActivity(
   }
   const { data } = await q;
   type Row = {
-    actor_user_id: string | null;
+    actor_id: string | null;
     actor_email: string | null;
     created_at: string;
   };
   const map = new Map<string, { email: string | null; count: number; lastAt: string }>();
   for (const r of (data ?? []) as Row[]) {
-    const userId = r.actor_user_id ?? '__anon';
+    const userId = r.actor_id ?? '__anon';
     const acc = map.get(userId);
     if (acc) {
       acc.count += 1;
