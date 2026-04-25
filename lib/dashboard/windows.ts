@@ -122,7 +122,3 @@ function computePriorAyCode(ayCode: string): string | null {
   return `AY${Number(m[1]) - 1}`;
 }
 
-export async function listAyCodes(): Promise<string[]> {
-  const terms = await loadTerms();
-  return Array.from(new Set(terms.map((t) => t.ay_code).filter(Boolean))).sort().reverse();
-}

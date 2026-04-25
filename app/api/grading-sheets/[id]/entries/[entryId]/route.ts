@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
-import { getUserRole } from '@/lib/auth/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 import { computeQuarterly } from '@/lib/compute/quarterly';
 import { buildAuditRows, writeAuditRows } from '@/lib/audit/log-grade-change';
@@ -30,7 +29,7 @@ export async function PATCH(
 ) {
   const auth = await requireRole(['teacher', 'registrar', 'school_admin', 'admin', 'superadmin']);
   if ('error' in auth) return auth.error;
-  const role = getUserRole(auth.user);
+  const role = auth.role;
 
   const { id: sheetId, entryId } = await params;
   const body = (await request.json().catch(() => null)) as

@@ -147,8 +147,8 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
           if (blanks_remaining === 0) {
             return (
               <Badge
-                variant="outline"
-                className="h-6 border-brand-mint bg-brand-mint/30 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink">
+                variant="success"
+                className="h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]">
                 <CheckCircle2 className="h-3 w-3" />
                 Complete
               </Badge>
@@ -156,8 +156,8 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
           }
           return (
             <Badge
-              variant="outline"
-              className="h-6 border-destructive/40 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive">
+              variant="blocked"
+              className="h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]">
               {blanks_remaining} of {total_students} blank
             </Badge>
           );
@@ -174,15 +174,15 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
         cell: ({ row }) =>
           row.original.is_locked ? (
             <Badge
-              variant="outline"
-              className="h-6 border-destructive/40 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive">
+              variant="blocked"
+              className="h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]">
               <Lock className="h-3 w-3" />
               Locked
             </Badge>
           ) : (
             <Badge
-              variant="outline"
-              className="h-6 border-brand-mint bg-brand-mint/30 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink">
+              variant="success"
+              className="h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]">
               <CheckCircle2 className="h-3 w-3" />
               Open
             </Badge>

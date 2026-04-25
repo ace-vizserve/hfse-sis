@@ -91,7 +91,7 @@ function Calendar({
         table: "w-full border-collapse",
         weekdays: cn("flex", defaultClassNames.weekdays),
         weekday: cn(
-          "flex-1 rounded-md text-[0.8rem] font-normal text-muted-foreground select-none",
+          "flex-1 rounded-md font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground select-none",
           defaultClassNames.weekday
         ),
         week: cn("mt-2 flex w-full", defaultClassNames.week),
@@ -117,7 +117,7 @@ function Calendar({
         range_middle: cn("rounded-none", defaultClassNames.range_middle),
         range_end: cn("rounded-r-md bg-accent", defaultClassNames.range_end),
         today: cn(
-          "rounded-md bg-accent text-accent-foreground data-[selected=true]:rounded-none",
+          "rounded-md bg-accent font-semibold text-accent-foreground ring-1 ring-inset ring-brand-indigo-soft/40 data-[selected=true]:rounded-none data-[selected=true]:ring-0",
           defaultClassNames.today
         ),
         outside: cn(
@@ -208,7 +208,17 @@ function CalendarDayButton({
       data-range-end={modifiers.range_end}
       data-range-middle={modifiers.range_middle}
       className={cn(
-        "flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 leading-none font-normal group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50 data-[range-end=true]:rounded-md data-[range-end=true]:rounded-r-md data-[range-end=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-accent data-[range-middle=true]:text-accent-foreground data-[range-start=true]:rounded-md data-[range-start=true]:rounded-l-md data-[range-start=true]:bg-primary data-[range-start=true]:text-primary-foreground data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground dark:hover:text-accent-foreground [&>span]:text-xs [&>span]:opacity-70",
+        "flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 leading-none font-normal transition-all",
+        // Focus ring
+        "group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50",
+        // Selected / range-start / range-end — brand gradient + inset-highlight shadow (matches Badge default craft)
+        "data-[selected-single=true]:bg-gradient-to-b data-[selected-single=true]:from-brand-indigo data-[selected-single=true]:to-brand-indigo-deep data-[selected-single=true]:text-white data-[selected-single=true]:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)]",
+        "data-[range-start=true]:rounded-md data-[range-start=true]:rounded-l-md data-[range-start=true]:bg-gradient-to-b data-[range-start=true]:from-brand-indigo data-[range-start=true]:to-brand-indigo-deep data-[range-start=true]:text-white data-[range-start=true]:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)]",
+        "data-[range-end=true]:rounded-md data-[range-end=true]:rounded-r-md data-[range-end=true]:bg-gradient-to-b data-[range-end=true]:from-brand-indigo data-[range-end=true]:to-brand-indigo-deep data-[range-end=true]:text-white data-[range-end=true]:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)]",
+        // Range middle — subdued connector wash, stays flat
+        "data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-accent data-[range-middle=true]:text-accent-foreground",
+        // Micro annotation text (e.g. badges in the day cell)
+        "[&>span]:text-xs [&>span]:opacity-70",
         defaultClassNames.day,
         className
       )}

@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
-import { getUserRole } from '@/lib/auth/roles';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { loadAssignmentsForUser, subjectTeacherPairs } from '@/lib/auth/teacher-assignments';
@@ -16,7 +15,7 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient();
   const termId = request.nextUrl.searchParams.get('term_id');
-  const role = getUserRole(auth.user);
+  const role = auth.role;
 
   let query = supabase
     .from('grading_sheets')

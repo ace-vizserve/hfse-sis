@@ -75,7 +75,23 @@
       "Bash(echo \"---exit=$?\")",
       "Bash(rm -rf .next/* .next/.cache)",
       "Bash(git config *)",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "Bash(npx fallow *)",
+      "Bash(rm \"components/admissions/applications-by-level-chart.tsx\" \"components/admissions/document-completion-card.tsx\" \"components/admissions/pipeline-cards.tsx\" \"components/dashboard/charts/heatmap.tsx\" \"components/dashboard/charts/stacked-area-chart.tsx\" \"types/index.ts\")",
+      "Bash(rmdir types *)",
+      "Bash(npm uninstall *)",
+      "Bash(git checkout *)",
+      "Bash(node -e \"console.log\\(require\\('./package.json'\\).dependencies['@tanstack/react-table'] + ' / ' + require\\('./package.json'\\).dependencies['lucide-react']\\)\")",
+      "Bash(git -C \"C:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-vizserve projects/hfse-markbook\" rev-parse HEAD)",
+      "Bash(git -C \"C:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-vizserve projects/hfse-markbook\" branch --show-current)",
+      "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\(\"C:\\\\Users\\\\Ace\\\\OneDrive - HFSE International School\\\\Desktop\\\\hfse-vizserve projects\\\\hfse-markbook\\\\lib\\\\csv.ts\"\\); $bytes[0..100] | ForEach-Object { \"{0:X2}\" -f $_ } | Select-Object -First 60)",
+      "PowerShell($content = [System.IO.File]::ReadAllText\\(\"C:\\\\Users\\\\Ace\\\\OneDrive - HFSE International School\\\\Desktop\\\\hfse-vizserve projects\\\\hfse-markbook\\\\lib\\\\csv.ts\"\\); $idx = $content.IndexOf\\(\"UTF8_BOM\"\\); $content.Substring\\($idx, 40\\) | ForEach-Object { $_.ToCharArray\\(\\) } | ForEach-Object { \"{0,-4} U+{1:X4}\" -f $_, [int]$_ })",
+      "PowerShell($path = \"C:\\\\Users\\\\Ace\\\\OneDrive - HFSE International School\\\\Desktop\\\\hfse-vizserve projects\\\\hfse-markbook\\\\lib\\\\csv.ts\"; $content = [System.IO.File]::ReadAllText\\($path\\); $oldLine = \"const UTF8_BOM = '\" + [char]0xFEFF + \"';\"; $newLine = \"const UTF8_BOM = '﻿';\"; if \\($content.Contains\\($oldLine\\)\\) { $newContent = $content.Replace\\($oldLine, $newLine\\); [System.IO.File]::WriteAllText\\($path, $newContent, \\(New-Object System.Text.UTF8Encoding $false\\)\\); \"Replaced successfully\" } else { \"Old pattern not found\" })",
+      "PowerShell($path = \"C:\\\\Users\\\\Ace\\\\OneDrive - HFSE International School\\\\Desktop\\\\hfse-vizserve projects\\\\hfse-markbook\\\\lib\\\\csv.ts\"; $content = [System.IO.File]::ReadAllText\\($path\\); $bomChar = [string][char]0xFEFF; $oldLine = \"const UTF8_BOM = '\" + $bomChar + \"';\"; $newLine = 'const UTF8_BOM = ' + \"'\" + '﻿' + \"'\" + ';'; Write-Host \"Old line bytes:\"; \\($oldLine.ToCharArray\\(\\) | ForEach-Object { \"{0:X4}\" -f [int]$_ }\\) -join \" \"; Write-Host \"New line bytes:\"; \\($newLine.ToCharArray\\(\\) | ForEach-Object { \"{0:X4}\" -f [int]$_ }\\) -join \" \")",
+      "PowerShell($path = \"C:\\\\Users\\\\Ace\\\\OneDrive - HFSE International School\\\\Desktop\\\\hfse-vizserve projects\\\\hfse-markbook\\\\lib\\\\csv.ts\"; $content = [System.IO.File]::ReadAllText\\($path\\); $bomChar = [string][char]0xFEFF; $oldLine = \"const UTF8_BOM = '\" + $bomChar + \"';\"; $newLine = \"const UTF8_BOM = '\\\\u\" + \"FEFF';\"; if \\($content.Contains\\($oldLine\\)\\) { $newContent = $content.Replace\\($oldLine, $newLine\\); [System.IO.File]::WriteAllText\\($path, $newContent, \\(New-Object System.Text.UTF8Encoding $false\\)\\); \"Replaced successfully\" } else { \"Old pattern not found\" })",
+      "PowerShell($content = [System.IO.File]::ReadAllText\\(\"C:\\\\Users\\\\Ace\\\\OneDrive - HFSE International School\\\\Desktop\\\\hfse-vizserve projects\\\\hfse-markbook\\\\lib\\\\csv.ts\"\\); $idx = $content.IndexOf\\(\"UTF8_BOM\"\\); $segment = $content.Substring\\($idx, 30\\); Write-Host \"Segment:\"; $segment; Write-Host \"\"; Write-Host \"Bytes:\"; \\($segment.ToCharArray\\(\\) | ForEach-Object { \"{0,-4} U+{1:X4}\" -f $_, [int]$_ }\\) -join \"`n\")",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(C:/Users/Ace/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/brainstorming/scripts/start-server.sh *)"
     ],
     "deny": [
       "Read(./.env.local)"

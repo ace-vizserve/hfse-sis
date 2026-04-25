@@ -44,7 +44,7 @@ export async function PATCH(request: NextRequest) {
 
   // Per-section gate for teachers. Non-teacher roles are trusted via
   // requireRole above.
-  if (auth.user.app_metadata?.role === 'teacher') {
+  if (auth.role === 'teacher') {
     const { data: assignment } = await service
       .from('teacher_assignments')
       .select('id')

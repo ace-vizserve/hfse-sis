@@ -35,7 +35,7 @@ export async function PATCH(request: NextRequest) {
 
   const service = createServiceClient();
 
-  if (auth.user.app_metadata?.role === 'teacher') {
+  if (auth.role === 'teacher') {
     const { data: assignment } = await service
       .from('teacher_assignments')
       .select('id')

@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { CalendarRange, Loader2, Sparkles } from 'lucide-react';
-import { toast } from 'sonner';
+import { CalendarRange, Loader2, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -15,9 +15,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import type { SchoolCalendarRow } from '@/lib/attendance/calendar';
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import type { SchoolCalendarRow } from "@/lib/attendance/calendar";
 
 // "Carry holidays from [prior AY]" dialog. Shows prior-AY holidays grouped
 // by month with checkboxes; on commit, POSTs them to the current target
@@ -50,9 +50,7 @@ export function CopyHolidaysDialog({
   const rows = useMemo(() => {
     return sourceHolidays.map((h) => {
       const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(h.date);
-      const targetDate = m
-        ? `${targetYear}-${m[2]}-${m[3]}`
-        : null;
+      const targetDate = m ? `${targetYear}-${m[2]}-${m[3]}` : null;
       return { source: h, targetDate };
     });
   }, [sourceHolidays, targetYear]);
@@ -67,10 +65,10 @@ export function CopyHolidaysDialog({
     }
     const entries = Array.from(map.entries()).sort(([a], [b]) => (a < b ? -1 : 1));
     return entries.map(([ym, list]) => {
-      const [y, m] = ym.split('-');
-      const label = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-SG', {
-        month: 'long',
-        year: 'numeric',
+      const [y, m] = ym.split("-");
+      const label = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-SG", {
+        month: "long",
+        year: "numeric",
       });
       return { ym, label, list };
     });
@@ -92,28 +90,28 @@ export function CopyHolidaysDialog({
       .map((r) => ({
         date: r.targetDate!,
         isHoliday: true,
-        label: r.source.label ?? 'Holiday',
+        label: r.source.label ?? "Holiday",
       }));
     if (entries.length === 0) {
-      toast.info('Nothing selected — nothing carried over.');
+      toast.info("Nothing selected — nothing carried over.");
       return;
     }
     setSaving(true);
     try {
-      const res = await fetch('/api/attendance/calendar', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+      const res = await fetch("/api/attendance/calendar", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ termId: targetTermId, entries }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'save failed');
+      if (!res.ok) throw new Error(body?.error ?? "save failed");
       toast.success(
-        `Carried ${entries.length} holiday${entries.length === 1 ? '' : 's'} to ${targetTermLabel}. Moveable dates (CNY, Good Friday, Hari Raya) may need adjustment.`,
+        `Carried ${entries.length} holiday${entries.length === 1 ? "" : "s"} to ${targetTermLabel}. Moveable dates (CNY, Good Friday, Hari Raya) may need adjustment.`,
       );
       setOpen(false);
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'save failed');
+      toast.error(e instanceof Error ? e.message : "save failed");
     } finally {
       setSaving(false);
     }
@@ -124,12 +122,10 @@ export function CopyHolidaysDialog({
     return (
       <Button
         type="button"
-        variant="outline"
         size="sm"
         disabled
         className="gap-1.5"
-        title={`${sourceAyCode} has no holidays on this term — nothing to carry forward.`}
-      >
+        title={`${sourceAyCode} has no holidays on this term — nothing to carry forward.`}>
         <CalendarRange className="size-3.5" />
         Carry holidays
       </Button>
@@ -151,10 +147,9 @@ export function CopyHolidaysDialog({
             Carry holidays forward
           </DialogTitle>
           <DialogDescription>
-            Copying holidays from <strong>{sourceAyCode}</strong> into <strong>{targetTermLabel}</strong>{' '}
-            (year {targetYear}). Month and day are preserved. Fixed-date holidays (National Day,
-            Christmas) land correctly. Moveable ones (CNY, Good Friday, Hari Raya) will need
-            manual adjustment — review before committing.
+            Copying holidays from <strong>{sourceAyCode}</strong> into <strong>{targetTermLabel}</strong> (year{" "}
+            {targetYear}). Month and day are preserved. Fixed-date holidays (National Day, Christmas) land correctly.
+            Moveable ones (CNY, Good Friday, Hari Raya) will need manual adjustment — review before committing.
           </DialogDescription>
         </DialogHeader>
 
@@ -180,24 +175,19 @@ export function CopyHolidaysDialog({
               </div>
               {list.map((r) => {
                 const checked = !!selection[r.source.date];
-                const sameDay =
-                  r.targetDate &&
-                  r.source.date.slice(5) === r.targetDate.slice(5); // month+day match
+                const sameDay = r.targetDate && r.source.date.slice(5) === r.targetDate.slice(5); // month+day match
                 return (
                   <label
                     key={r.source.date}
-                    className="flex cursor-pointer items-center gap-3 border-b border-border px-4 py-2 last:border-b-0 hover:bg-muted/30"
-                  >
+                    className="flex cursor-pointer items-center gap-3 border-b border-border px-4 py-2 last:border-b-0 hover:bg-muted/30">
                     <Checkbox checked={checked} onCheckedChange={() => toggle(r.source.date)} />
                     <div className="min-w-0 flex-1">
-                      <div className="font-medium text-foreground">
-                        {r.source.label ?? 'Holiday'}
-                      </div>
+                      <div className="font-medium text-foreground">{r.source.label ?? "Holiday"}</div>
                       <div className="flex items-center gap-2 font-mono text-[11px] tabular-nums text-muted-foreground">
                         <span>{r.source.date}</span>
                         <span className="text-border">→</span>
-                        <span className={sameDay ? 'text-foreground' : 'text-amber-700 dark:text-amber-200'}>
-                          {r.targetDate ?? '(bad date)'}
+                        <span className={sameDay ? "text-foreground" : "text-amber-700 dark:text-amber-200"}>
+                          {r.targetDate ?? "(bad date)"}
                         </span>
                       </div>
                     </div>
@@ -212,14 +202,9 @@ export function CopyHolidaysDialog({
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button
-            type="button"
-            onClick={commit}
-            disabled={saving || selectedCount === 0}
-            className="gap-1.5"
-          >
+          <Button type="button" onClick={commit} disabled={saving || selectedCount === 0} className="gap-1.5">
             {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-            {saving ? 'Carrying…' : `Carry ${selectedCount} holiday${selectedCount === 1 ? '' : 's'}`}
+            {saving ? "Carrying…" : `Carry ${selectedCount} holiday${selectedCount === 1 ? "" : "s"}`}
           </Button>
         </DialogFooter>
       </DialogContent>

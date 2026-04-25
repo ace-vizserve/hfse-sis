@@ -33,7 +33,7 @@ export async function PATCH(request: NextRequest) {
 
   const service = createServiceClient();
 
-  if (auth.user.app_metadata?.role === 'teacher') {
+  if (auth.role === 'teacher') {
     // Subject teachers gated to their assigned (section × subject); form
     // advisers can write any subject comment (they edit writeups too).
     const { data: assignment } = await service

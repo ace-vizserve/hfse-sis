@@ -133,7 +133,7 @@ export default async function AySetupPage() {
         </CardContent>
       </Card>
 
-      <section className="rounded-xl border border-hairline bg-white p-4 text-xs leading-relaxed text-muted-foreground">
+      <section className="rounded-xl border border-hairline bg-card p-4 text-xs leading-relaxed text-muted-foreground">
         <p className="mb-2 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
           <CalendarRange className="size-3" /> Rollover checklist
         </p>
@@ -193,11 +193,9 @@ function AyRow({
       <TableCell className="text-sm">{ay.label}</TableCell>
       <TableCell>
         {ay.is_current ? (
-          <Badge className="border-transparent bg-brand-mint text-foreground">Active</Badge>
+          <Badge>Active</Badge>
         ) : (
-          <Badge variant="outline" className="text-muted-foreground">
-            Inactive
-          </Badge>
+          <Badge variant="muted">Inactive</Badge>
         )}
       </TableCell>
       <TableCell className="text-right font-mono text-xs tabular-nums">{ay.counts.terms}</TableCell>
@@ -217,7 +215,7 @@ function AyRow({
               className={
                 'h-7 text-xs ' +
                 (datesIncomplete
-                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-200'
+                  ? 'border-brand-amber/40 bg-brand-amber-light text-foreground hover:bg-brand-amber/20'
                   : '')
               }
               title={datesIncomplete ? `Term dates: ${datesStatus}` : `Term dates (${datesStatus})`}
@@ -257,8 +255,8 @@ function AyRow({
             <AyDeleteDialog ayCode={ay.ay_code} blockers={blockers}>
               <Button
                 size="sm"
-                variant="outline"
-                className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                variant="destructive"
+                className="h-7 text-xs"
                 title={blockers.length > 0 ? `Cannot delete: ${blockers.join(', ')}` : undefined}
               >
                 <Trash2 className="mr-1 size-3" /> Delete

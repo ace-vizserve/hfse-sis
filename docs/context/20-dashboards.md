@@ -15,9 +15,7 @@ Every module's dashboard landing page composes from **one** vocabulary:
 - `charts/trend-chart.tsx` — area chart with gradient fill + comparison overlay
 - `charts/comparison-bar-chart.tsx` — grouped bar (vertical or horizontal)
 - `charts/donut-chart.tsx` — donut + inline legend with progress bars
-- `charts/stacked-area-chart.tsx` — cumulative stacked area
 - `charts/sparkline-chart.tsx` — inline 40px area line
-- `charts/heatmap.tsx` — custom grid (solid-tint intensity steps)
 
 **Shared lib (`lib/dashboard/`):**
 - `range.ts` — preset resolution + delta math + shared types (`RangeInput`, `RangeResult<T>`)

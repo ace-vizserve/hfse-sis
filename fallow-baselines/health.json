@@ -1,0 +1,1813 @@
+{
+  "finding_counts": {
+    "app/(admissions)/admissions/applications/[enroleeNumber]/page.tsx": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_high": {
+        "count": 7
+      },
+      "crap_moderate": {
+        "count": 11
+      }
+    },
+    "app/(admissions)/admissions/applications/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(admissions)/admissions/audit-log/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(admissions)/admissions/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(admissions)/layout.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(attendance)/attendance/[sectionId]/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "app/(attendance)/attendance/audit-log/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(attendance)/attendance/import/page.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(attendance)/attendance/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(attendance)/attendance/sections/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(attendance)/layout.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(dashboard)/account/page.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(dashboard)/error.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(dashboard)/layout.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(dashboard)/page.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(evaluation)/evaluation/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(evaluation)/evaluation/sections/[sectionId]/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(evaluation)/evaluation/sections/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(evaluation)/layout.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/layout.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/audit-log/audit-log-data-table.tsx": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "app/(markbook)/markbook/audit-log/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/change-requests/change-requests-data-table.tsx": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/change-requests/decision-buttons.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/change-requests/page.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/grading/[id]/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/grading/[id]/request-edit-button.tsx": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/grading/grading-data-table.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "app/(markbook)/markbook/grading/new/new-sheet-form.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "app/(markbook)/markbook/grading/new/page.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/grading/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/grading/requests/my-requests-cancel-button.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/grading/requests/page.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "app/(markbook)/markbook/report-cards/[studentId]/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/report-cards/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/sections/[id]/attendance/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/sections/[id]/manual-add.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "app/(markbook)/markbook/sections/[id]/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(markbook)/markbook/sections/[id]/roster-table.tsx": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "app/(markbook)/markbook/sections/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(p-files)/layout.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(p-files)/p-files/[enroleeNumber]/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(p-files)/p-files/audit-log/page.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(p-files)/p-files/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(parent)/error.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(parent)/parent/enter/page.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(parent)/parent/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "app/(parent)/parent/report-cards/[studentId]/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(records)/layout.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(records)/records/audit-log/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(records)/records/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(records)/records/students/[studentNumber]/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(records)/records/students/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(sis)/layout.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(sis)/sis/admin/discount-codes/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(sis)/sis/admin/evaluation-checklists/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(sis)/sis/admin/subjects/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(sis)/sis/ay-setup/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(sis)/sis/calendar/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(sis)/sis/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/(sis)/sis/sections/[id]/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/(sis)/sis/sections/page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/(sis)/sis/sync-students/page.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "app/api/admissions/export/route.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/attendance/calendar/events/route.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/attendance/calendar/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/attendance/daily/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/attendance/import/route.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "app/api/audit-log/export/route.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "app/api/audit-log/route.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/change-requests/[id]/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/change-requests/route.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "app/api/compute/quarterly/route.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/evaluation/checklist-items/[id]/route.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/evaluation/checklist-items/route.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/evaluation/checklist-responses/route.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/evaluation/ptc-feedback/route.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/evaluation/subject-comments/route.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/evaluation/terms/[termId]/config/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/evaluation/writeups/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/grading-sheets/[id]/entries/[entryId]/route.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "app/api/grading-sheets/[id]/lock/route.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/api/grading-sheets/[id]/route.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/grading-sheets/[id]/totals/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/grading-sheets/[id]/unlock/route.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/api/grading-sheets/bulk-create/route.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/grading-sheets/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/p-files/[enroleeNumber]/upload/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/report-card-publications/[id]/route.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/report-card-publications/route.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/report-card/[studentId]/route.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sections/[id]/publish-readiness/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/sections/[id]/route.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sections/[id]/students/[enrolmentId]/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sections/[id]/students/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/sections/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/sis/admin/approvers/[id]/route.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/sis/admin/approvers/route.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sis/admin/environment/route.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/sis/admin/school-config/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sis/admin/subjects/[configId]/route.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/api/sis/admin/users/[id]/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sis/admin/users/route.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sis/ay-setup/copy-teacher-assignments/route.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sis/ay-setup/route.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/api/sis/ay-setup/terms/[termId]/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sis/discount-codes/[id]/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sis/discount-codes/route.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "app/api/sis/students/[enroleeNumber]/allowance/route.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sis/students/[enroleeNumber]/document/[slotKey]/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sis/students/[enroleeNumber]/family/[parent]/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sis/students/[enroleeNumber]/profile/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/sis/students/[enroleeNumber]/stage/[stageKey]/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/students/sync/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "app/api/teacher-assignments/[id]/route.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/teacher-assignments/route.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "app/api/users/teachers/route.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/admin/bulk-publish-dialog.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/admin/publish-window-panel.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/admissions/outdated-applications-table.tsx": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 5
+      }
+    },
+    "components/admissions/time-to-enrollment-card.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/attendance-sidebar.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "components/attendance/calendar-admin-client.tsx": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 5
+      }
+    },
+    "components/attendance/copy-holidays-dialog.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/attendance/import-form.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/attendance/wide-grid.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "components/dashboard/action-list.tsx": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/dashboard/charts/comparison-bar-chart.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "components/dashboard/comparison-toolbar.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/dashboard/dashboard-hero.tsx": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/dashboard/metric-card.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "components/evaluation-sidebar.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "components/evaluation/checklist-roster-client.tsx": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "components/evaluation/ptc-roster-client.tsx": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "components/evaluation/term-open-toggle.tsx": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "components/evaluation/writeup-roster-client.tsx": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/grading/grid-filter-toolbar.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/grading/letter-grade-grid.tsx": {
+      "crap_high": {
+        "count": 3
+      }
+    },
+    "components/grading/lock-toggle.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/grading/score-entry-grid.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "components/grading/totals-editor.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/grading/use-approval-reference.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/markbook-sidebar.tsx": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "components/markbook/attendance-readonly-table.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/markbook/bulk-create-sheets-button.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "components/markbook/enrolment-edit-sheet.tsx": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/markbook/new-section-button.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "components/markbook/recent-markbook-activity.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/module-switcher.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "components/p-files-sidebar.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/p-files/completeness-table.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/p-files/document-card.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/p-files/history-dialog.tsx": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "components/p-files/revisions-over-time-chart.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "components/p-files/top-missing-panel.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/p-files/upload-dialog.tsx": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "components/report-card/report-card-document.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/sis/approver-assign-dialog.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/approver-revoke-button.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/ay-delete-dialog.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/ay-setup-wizard.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/ay-switch-active-dialog.tsx": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/sis/checklist-items-editor.tsx": {
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/sis/compassionate-allowance-inline.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "components/sis/copy-teacher-assignments-dialog.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "components/sis/cross-ay-search.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/discount-code-row-actions.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/discount-code-status-badge.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "components/sis/document-validation-actions.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "components/sis/edit-discount-code-dialog.tsx": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "components/sis/edit-family-sheet.tsx": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "components/sis/edit-profile-sheet.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "components/sis/edit-stage-dialog.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/enrollment-history-chips.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/environment-card.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/sis/expiring-documents-panel.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/field-grid.tsx": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/sis/generate-sheets-dialog.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/recent-activity-feed.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/school-config-form.tsx": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "components/sis/section-rename-dialog.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "components/sis/section-teachers-tab.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/student-attendance-tab.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/student-data-table.tsx": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "components/sis/subject-config-edit-dialog.tsx": {
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "components/sis/system-health-strip.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/term-dates-editor.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "components/sis/users-admin-client.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "hooks/use-realtime-badge-count.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/admissions/dashboard.ts": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 6
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "lib/attendance/calendar.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/attendance/dashboard.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/attendance/mutations.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/attendance/queries.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "lib/audit/log-action.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/audit/log-grade-change.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/auth/require-role.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/auth/roles.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/change-requests/sidebar-counts.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/compute/annual.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "lib/compute/quarterly.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/csv.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/dashboard/insights.ts": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 7
+      }
+    },
+    "lib/dashboard/range.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "lib/dashboard/windows.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/evaluation/dashboard.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/evaluation/queries.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/markbook/dashboard.ts": {
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/notifications/email-change-request.ts": {
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "lib/notifications/email-parents-publication.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/p-files/dashboard.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/p-files/document-config.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/p-files/queries.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "lib/report-card/build-report-card.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "lib/sis/approvers/queries.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/sis/ay-setup/queries.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/sis/class-assignment.ts": {
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "lib/sis/dashboard.ts": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/sis/environment.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/sis/health.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/sis/queries.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 6
+      }
+    },
+    "lib/sis/records-history.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/sis/school-config.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/sis/seeder/populated.ts": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/sis/seeder/structural.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/sis/seeder/students.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/sis/users/queries.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/supabase/admissions.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      }
+    },
+    "lib/supabase/server.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/sync/level-normalizer.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/sync/snapshot.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/sync/students.ts": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 3
+      }
+    },
+    "proxy.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    }
+  },
+  "production_coverage_findings": [],
+  "target_keys": [
+    "lib/sis/ay-setup/admissions-ddl.ts:dead code",
+    "lib/dashboard/windows.ts:high impact",
+    "lib/sis/dashboard.ts:complexity",
+    "app/api/sis/students/[enroleeNumber]/stage/[stageKey]/route.ts:complexity",
+    "app/api/grading-sheets/[id]/totals/route.ts:complexity",
+    "lib/compute/annual.ts:untested risk",
+    "app/api/sections/[id]/publish-readiness/route.ts:complexity",
+    "lib/p-files/dashboard.ts:complexity",
+    "lib/dashboard/insights.ts:complexity",
+    "app/(markbook)/markbook/grading/[id]/page.tsx:complexity",
+    "app/(markbook)/markbook/grading/page.tsx:complexity",
+    "app/api/grading-sheets/[id]/entries/[entryId]/route.ts:complexity",
+    "lib/audit/log-grade-change.ts:untested risk",
+    "app/(evaluation)/evaluation/sections/[sectionId]/page.tsx:complexity",
+    "app/api/p-files/[enroleeNumber]/upload/route.ts:complexity",
+    "app/api/change-requests/[id]/route.ts:complexity",
+    "app/(sis)/sis/calendar/page.tsx:complexity",
+    "app/api/attendance/import/route.ts:complexity",
+    "app/(markbook)/markbook/page.tsx:complexity",
+    "lib/attendance/queries.ts:complexity",
+    "lib/sync/students.ts:complexity",
+    "lib/sis/seeder/structural.ts:complexity",
+    "components/admin/publish-window-panel.tsx:complexity",
+    "app/(admissions)/admissions/applications/[enroleeNumber]/page.tsx:complexity",
+    "app/(markbook)/markbook/audit-log/audit-log-data-table.tsx:complexity",
+    "components/sis/environment-card.tsx:complexity",
+    "lib/sis/seeder/populated.ts:complexity"
+  ]
+}

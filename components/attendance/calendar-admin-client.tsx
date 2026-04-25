@@ -326,7 +326,7 @@ export function CalendarAdminClient({
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Tabs value={view} onValueChange={(v) => setView(v as "month" | "term")}>
-            <TabsList className="bg-accent" variant="default">
+            <TabsList variant="default">
               <TabsTrigger value="month">Month</TabsTrigger>
               <TabsTrigger value="term">Full term</TabsTrigger>
             </TabsList>

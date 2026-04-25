@@ -23,7 +23,7 @@ export function DiscountCodeStatusBadge({ startDate, endDate }: Props) {
   const state = classify(startDate, endDate);
   if (state === 'active') {
     return (
-      <Badge className="h-6 border-brand-mint bg-brand-mint/30 font-mono text-[10px] uppercase tracking-wider text-ink">
+      <Badge variant="success" className="h-6 font-mono text-[10px] uppercase tracking-wider">
         Active
       </Badge>
     );

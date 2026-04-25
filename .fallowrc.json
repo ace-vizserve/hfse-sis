@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "app/**/page.tsx",
+    "app/**/layout.tsx",
+    "app/**/loading.tsx",
+    "app/**/error.tsx",
+    "app/**/not-found.tsx",
+    "app/**/route.ts",
+    "proxy.ts"
+  ],
+  "ignorePatterns": [
+    "components/ui/**",
+    "hooks/use-mobile.ts"
+  ],
+  "ignoreDependencies": [
+    "shadcn",
+    "@radix-ui/react-checkbox",
+    "@radix-ui/react-dialog",
+    "@radix-ui/react-label",
+    "@radix-ui/react-scroll-area",
+    "@radix-ui/react-select",
+    "@radix-ui/react-slot",
+    "@radix-ui/react-tooltip",
+    "class-variance-authority",
+    "radix-ui"
+  ],
+  "rules": {
+    "unused-types": "off"
+  }
+}

@@ -31,11 +31,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageShell } from "@/components/ui/page-shell";
-import { getCurrentAcademicYear } from "@/lib/academic-year";
+import { getCurrentAcademicYear, listAyCodes } from "@/lib/academic-year";
 import type { Role } from "@/lib/auth/roles";
 import { sisInsights } from "@/lib/dashboard/insights";
 import { formatRangeLabel, resolveRange, type DashboardSearchParams } from "@/lib/dashboard/range";
-import { getDashboardWindows, listAyCodes } from "@/lib/dashboard/windows";
+import { getDashboardWindows } from "@/lib/dashboard/windows";
 import { getAuditActivityByModule } from "@/lib/sis/dashboard";
 import { getSystemHealth } from "@/lib/sis/health";
 import { getSessionUser } from "@/lib/supabase/server";
@@ -61,7 +61,7 @@ export default async function SisAdminHub({ searchParams }: { searchParams: Prom
     ayCode
       ? getDashboardWindows(ayCode)
       : Promise.resolve({ term: { thisTerm: null, lastTerm: null }, ay: { thisAY: null, lastAY: null } }),
-    listAyCodes(),
+    listAyCodes(service),
   ]);
   const rangeInput = ayCode ? resolveRange(resolvedSearch, windows, ayCode) : null;
   // Audit-activity query can be slow on large audit_log tables; guard so a
