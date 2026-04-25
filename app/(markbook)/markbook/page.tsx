@@ -27,6 +27,8 @@ import {
   SheetProgressDrillCard,
 } from "@/components/markbook/drills/chart-drill-cards";
 import { MarkbookDrillSheet } from "@/components/markbook/drills/markbook-drill-sheet";
+import { SheetReadinessCard } from "@/components/markbook/drills/sheet-readiness-card";
+import { TeacherEntryVelocityCard } from "@/components/markbook/drills/teacher-entry-velocity-card";
 import { RecentMarkbookActivity } from "@/components/markbook/recent-markbook-activity";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,7 +56,7 @@ import {
   getRecentMarkbookActivity,
   getSheetLockProgressByTerm,
 } from "@/lib/markbook/dashboard";
-import { buildAllRowSets } from "@/lib/markbook/drill";
+import { buildAllRowSets, getTeacherEntryVelocity } from "@/lib/markbook/drill";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -132,6 +134,7 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
     activity,
     currentTerm,
     drillRowSets,
+    teacherVelocity,
   ] = await Promise.all([
     ayId ? loadStats(ayId) : Promise.resolve(null),
     canSeeAdmin ? getMarkbookKpisRange(rangeInput) : Promise.resolve(null),
@@ -154,6 +157,11 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
       : Promise.resolve(null),
     canSeeAdmin && ayCode
       ? buildAllRowSets({ ayCode, scope: "range", from: rangeInput.from, to: rangeInput.to })
+      : Promise.resolve(null),
+    // Teacher velocity is registrar+ only (gated by canSeeAdmin); the rollup
+    // uses the same loadEntryRows cache as the entry-kind drills.
+    canSeeAdmin && ayCode
+      ? getTeacherEntryVelocity(ayCode)
       : Promise.resolve(null),
   ]);
 
@@ -385,6 +393,15 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
               ayCode={ayCode}
               initialSheets={drillRowSets?.sheets}
             />
+          )}
+        </section>
+      )}
+
+      {canSeeAdmin && ayCode && drillRowSets && (
+        <section className="grid gap-4 lg:grid-cols-2">
+          <SheetReadinessCard sheets={drillRowSets.sheets} ayCode={ayCode} />
+          {teacherVelocity && (
+            <TeacherEntryVelocityCard data={teacherVelocity} ayCode={ayCode} />
           )}
         </section>
       )}

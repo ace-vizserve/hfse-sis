@@ -606,6 +606,51 @@ async function loadChangeRequestRows(ayCode: string): Promise<ChangeRequestRow[]
 }
 
 // ---------------------------------------------------------------------------
+// Teacher-entry-velocity rollup. Surfaced on the dashboard as a chart card
+// (registrar+ only — gated at the page level via canSeeAdmin). Drill into a
+// teacher segment shows the actual entries via target='teacher-entry-velocity'.
+
+export type TeacherVelocityRow = {
+  teacherUserId: string;
+  teacherEmail: string | null;
+  entryCount: number;
+  lastEntryAt: string | null;
+};
+
+export async function getTeacherEntryVelocity(
+  ayCode: string,
+  range?: { from: string; to: string },
+): Promise<TeacherVelocityRow[]> {
+  const entries = await loadEntryRows(ayCode);
+  type Acc = { count: number; lastAt: string | null; email: string | null };
+  const map = new Map<string, Acc>();
+  for (const e of entries) {
+    if (!e.enteredById) continue;
+    if (range && (e.enteredAt.slice(0, 10) < range.from || e.enteredAt.slice(0, 10) > range.to)) {
+      continue;
+    }
+    let acc = map.get(e.enteredById);
+    if (!acc) {
+      acc = { count: 0, lastAt: null, email: e.enteredBy };
+      map.set(e.enteredById, acc);
+    }
+    acc.count += 1;
+    if (!acc.lastAt || e.enteredAt > acc.lastAt) acc.lastAt = e.enteredAt;
+  }
+  const out: TeacherVelocityRow[] = [];
+  for (const [teacherUserId, acc] of map.entries()) {
+    out.push({
+      teacherUserId,
+      teacherEmail: acc.email,
+      entryCount: acc.count,
+      lastEntryAt: acc.lastAt,
+    });
+  }
+  out.sort((a, b) => b.entryCount - a.entryCount);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Universal drill row builder — public entry point.
 
 export type BuildDrillRowsInput = DrillRangeInput & {
