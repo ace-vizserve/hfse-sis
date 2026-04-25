@@ -18,6 +18,7 @@ import { ComparisonToolbar } from "@/components/dashboard/comparison-toolbar";
 import { DashboardHero } from "@/components/dashboard/dashboard-hero";
 import { InsightsPanel } from "@/components/dashboard/insights-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { ClassAssignmentReadinessCard } from "@/components/sis/class-assignment-readiness-card";
 import {
   DocumentBacklogDrillCard,
   ExpiringDocsDrillCard,
@@ -41,6 +42,7 @@ import { recordsInsights } from "@/lib/dashboard/insights";
 import { formatRangeLabel, resolveRange, type DashboardSearchParams } from "@/lib/dashboard/range";
 import { getDashboardWindows } from "@/lib/dashboard/windows";
 import {
+  getClassAssignmentReadiness,
   getDocumentValidationBacklog,
   getEnrollmentVelocityRange,
   getExpiringDocuments,
@@ -91,18 +93,29 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
   const windows = await getDashboardWindows(selectedAy);
   const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
 
-  const [summary, docBacklog, levels, expiring, activity, pipelineStages, kpisResult, enrolVelocity, withdrawVelocity] =
-    await Promise.all([
-      getSisDashboardSummary(selectedAy),
-      getDocumentValidationBacklog(selectedAy),
-      getLevelDistribution(selectedAy),
-      getExpiringDocuments(selectedAy, EXPIRY_WINDOW_DAYS, 8),
-      getRecentSisActivity(8),
-      getPipelineStageBreakdown(selectedAy),
-      getRecordsKpisRange(rangeInput),
-      getEnrollmentVelocityRange(rangeInput),
-      getWithdrawalVelocityRange(rangeInput),
-    ]);
+  const [
+    summary,
+    docBacklog,
+    levels,
+    expiring,
+    activity,
+    pipelineStages,
+    kpisResult,
+    enrolVelocity,
+    withdrawVelocity,
+    classAssignment,
+  ] = await Promise.all([
+    getSisDashboardSummary(selectedAy),
+    getDocumentValidationBacklog(selectedAy),
+    getLevelDistribution(selectedAy),
+    getExpiringDocuments(selectedAy, EXPIRY_WINDOW_DAYS, 8),
+    getRecentSisActivity(8),
+    getPipelineStageBreakdown(selectedAy),
+    getRecordsKpisRange(rangeInput),
+    getEnrollmentVelocityRange(rangeInput),
+    getWithdrawalVelocityRange(rangeInput),
+    getClassAssignmentReadiness(selectedAy),
+  ]);
 
   const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
 
@@ -333,6 +346,8 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
         emptyLabel="No documents expiring in range."
         viewAllHref="/p-files"
       />
+
+      <ClassAssignmentReadinessCard data={classAssignment} ayCode={selectedAy} />
 
       <RecentActivityFeed rows={activity} />
 

@@ -763,3 +763,123 @@ export function getAuditActivityByModule(
     { tags: ['sis'], revalidate: 120 },
   )(input);
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Class-assignment readiness — students enrolled (status=Enrolled) per the
+// admissions tables but not yet placed in any AY-current section. Fills the
+// gap between "enrolled" and "fully placed", actionable for registrars
+// during the section-assignment workflow.
+
+export type ClassAssignmentReadinessRow = {
+  enroleeNumber: string;
+  fullName: string;
+  level: string | null;
+  enrollmentDate: string | null; // ISO
+  daysSinceEnrollment: number | null;
+};
+
+async function loadClassAssignmentReadinessUncached(
+  ayCode: string,
+): Promise<ClassAssignmentReadinessRow[]> {
+  const service = createServiceClient();
+  const admissions = createAdmissionsClient();
+
+  const { data: ayRow } = await service
+    .from('academic_years')
+    .select('id')
+    .eq('ay_code', ayCode)
+    .maybeSingle();
+  const ayId = ayRow?.id as string | undefined;
+  if (!ayId) return [];
+
+  const { data: sectionsData } = await service
+    .from('sections')
+    .select('id')
+    .eq('academic_year_id', ayId);
+  const sectionIds = ((sectionsData ?? []) as { id: string }[]).map((r) => r.id);
+
+  const prefix = prefixFor(ayCode);
+  type EnrolledRow = {
+    enroleeNumber: string | null;
+    applicationStatus: string | null;
+    applicationUpdatedDate: string | null;
+    classLevel: string | null;
+    levelApplied: string | null;
+  };
+  const [enrolledRes, ssRes] = await Promise.all([
+    admissions
+      .from(`${prefix}_enrolment_status`)
+      .select('enroleeNumber, applicationStatus, applicationUpdatedDate, classLevel, levelApplied')
+      .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)']),
+    sectionIds.length > 0
+      ? service.from('section_students').select('enrolee_number').in('section_id', sectionIds)
+      : Promise.resolve({ data: [] as { enrolee_number: string | null }[] }),
+  ]);
+
+  const enrolledRows = (enrolledRes.data ?? []) as EnrolledRow[];
+  const assignedEnrolees = new Set(
+    ((ssRes.data ?? []) as { enrolee_number: string | null }[])
+      .map((r) => r.enrolee_number)
+      .filter((v): v is string => v !== null),
+  );
+
+  const unassignedEnrolees = enrolledRows
+    .map((r) => r.enroleeNumber)
+    .filter((v): v is string => v !== null && !assignedEnrolees.has(v));
+  if (unassignedEnrolees.length === 0) return [];
+
+  type AppRow = {
+    enroleeNumber: string | null;
+    enroleeFullName: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    levelApplied: string | null;
+    created_at: string | null;
+  };
+  const { data: appsData } = await admissions
+    .from(`${prefix}_enrolment_applications`)
+    .select('enroleeNumber, enroleeFullName, firstName, lastName, levelApplied, created_at')
+    .in('enroleeNumber', unassignedEnrolees);
+  const appsByEnrolee = new Map<string, AppRow>();
+  for (const a of (appsData ?? []) as AppRow[]) {
+    if (a.enroleeNumber) appsByEnrolee.set(a.enroleeNumber, a);
+  }
+  const statusByEnrolee = new Map<string, EnrolledRow>();
+  for (const s of enrolledRows) {
+    if (s.enroleeNumber) statusByEnrolee.set(s.enroleeNumber, s);
+  }
+
+  const today = Date.now();
+  const out: ClassAssignmentReadinessRow[] = [];
+  for (const enroleeNumber of unassignedEnrolees) {
+    const status = statusByEnrolee.get(enroleeNumber);
+    const app = appsByEnrolee.get(enroleeNumber);
+    const fullName =
+      (app?.enroleeFullName ?? '').trim() ||
+      `${app?.firstName ?? ''} ${app?.lastName ?? ''}`.trim() ||
+      enroleeNumber;
+    const enrollmentDate = status?.applicationUpdatedDate ?? app?.created_at ?? null;
+    const enrolledMs = enrollmentDate ? Date.parse(enrollmentDate) : NaN;
+    out.push({
+      enroleeNumber,
+      fullName,
+      level: status?.classLevel ?? app?.levelApplied ?? null,
+      enrollmentDate,
+      daysSinceEnrollment: !Number.isNaN(enrolledMs)
+        ? Math.floor((today - enrolledMs) / 86_400_000)
+        : null,
+    });
+  }
+  out.sort((a, b) => (b.daysSinceEnrollment ?? 0) - (a.daysSinceEnrollment ?? 0));
+  return out;
+}
+
+export function getClassAssignmentReadiness(
+  ayCode: string,
+): Promise<ClassAssignmentReadinessRow[]> {
+  return unstable_cache(
+    () => loadClassAssignmentReadinessUncached(ayCode),
+    ['sis-dashboard', 'class-assignment-readiness', ayCode],
+    { revalidate: 60, tags: tag(ayCode) },
+  )();
+}
