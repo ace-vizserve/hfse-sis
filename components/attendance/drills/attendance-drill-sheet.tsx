@@ -4,6 +4,7 @@ import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { toast } from 'sonner';
 
+import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
 import {
   DrillDownSheet,
   type DrillDownDensity,
@@ -299,6 +300,7 @@ export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
 
   const [scope, setScope] = React.useState<DrillScope>(initialScope);
   const [rows, setRows] = React.useState<AttendanceDrillRow[]>(seedRows);
+  const [loading, setLoading] = React.useState(seedRows.length === 0);
   const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>([]);
   const [selectedLevels, setSelectedLevels] = React.useState<string[]>([]);
   const [groupBy, setGroupBy] = React.useState<DrillDownGroupBy>('none');
@@ -315,6 +317,7 @@ export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
       return;
     }
     let cancelled = false;
+    setLoading(true);
     const params = new URLSearchParams({ ay: ayCode, scope });
     if (initialFrom) params.set('from', initialFrom);
     if (initialTo) params.set('to', initialTo);
@@ -329,6 +332,9 @@ export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
       })
       .catch(() => {
         if (!cancelled) toast.error('Failed to load drill data');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
   }, [target, segment, ayCode, scope, initialFrom, initialTo]);
@@ -403,6 +409,10 @@ export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
   );
 
   const header = drillHeaderForTarget(target, segment ?? null);
+
+  if (loading && rows.length === 0) {
+    return <DrillSheetSkeleton title={header.title} />;
+  }
 
   const csvParams = new URLSearchParams({ ay: ayCode, scope, format: 'csv' });
   if (initialFrom) csvParams.set('from', initialFrom);

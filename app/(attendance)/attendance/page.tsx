@@ -126,7 +126,6 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
               initialScope="range"
               initialFrom={rangeInput.from}
               initialTo={rangeInput.to}
-              initialEntries={drillRowSets.entries}
             />
           }
         />
@@ -144,7 +143,6 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
               initialScope="range"
               initialFrom={rangeInput.from}
               initialTo={rangeInput.to}
-              initialEntries={drillRowSets.entries}
             />
           }
         />
@@ -161,7 +159,6 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
               initialScope="range"
               initialFrom={rangeInput.from}
               initialTo={rangeInput.to}
-              initialEntries={drillRowSets.entries}
             />
           }
         />
@@ -179,7 +176,6 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
               initialScope="range"
               initialFrom={rangeInput.from}
               initialTo={rangeInput.to}
-              initialEntries={drillRowSets.entries}
             />
           }
         />
@@ -193,7 +189,6 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
           ayCode={selectedAy}
           rangeFrom={rangeInput.from}
           rangeTo={rangeInput.to}
-          initialEntries={drillRowSets.entries}
         />
       )}
 
@@ -204,7 +199,6 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
           ayCode={selectedAy}
           rangeFrom={rangeInput.from}
           rangeTo={rangeInput.to}
-          initialEntries={drillRowSets.entries}
         />
         <DayTypeDrillCard
           data={dayTypes}

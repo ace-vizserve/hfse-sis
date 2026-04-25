@@ -548,12 +548,15 @@ export async function buildAllRowSets(input: {
   from?: string;
   to?: string;
 }): Promise<{
-  entries: AttendanceEntryRow[];
   topAbsent: TopAbsentDrillRow[];
   sectionAttendance: SectionAttendanceRow[];
   calendar: CalendarDayRow[];
   compassionate: CompassionateUsageRow[];
 }> {
+  // We still need entries internally to build the rolled-up shapes, but we
+  // do NOT return them — at 1000 students × 180 school days that's 180k
+  // rows we'd ship through the RSC payload for nothing. Drill sheets that
+  // need raw entries lazy-fetch via /api/attendance/drill/{target}.
   const [entriesAll, calendarAll, compassionate] = await Promise.all([
     loadEntryRows(input.ayCode),
     loadCalendarRows(input.ayCode),
@@ -562,7 +565,6 @@ export async function buildAllRowSets(input: {
   const entries = applyScopeFilter(entriesAll, input);
   const calendar = applyScopeFilter(calendarAll, input);
   return {
-    entries,
     topAbsent: rollupTopAbsent(entries),
     sectionAttendance: rollupBySection(entries),
     calendar,
