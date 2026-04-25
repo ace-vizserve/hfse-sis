@@ -22,7 +22,7 @@ One chart-quality issue worth fixing this pass: **Pipeline Stage Chart on `/reco
 
 ## 3. Drill targets
 
-### 3.1 Records (8 targets)
+### 3.1 Records (9 targets + 1 NEW card)
 
 | # | Surface | Drill content | Slug |
 |---|---|---|---|
@@ -30,12 +30,13 @@ One chart-quality issue worth fixing this pass: **Pipeline Stage Chart on `/reco
 | 2 | KPI: Withdrawals (range) | Students with `enrollment_status='withdrawn'`, withdrawal_date in range | `withdrawals-range` |
 | 3 | KPI: Active enrolled (AY) | All `enrollment_status IN ('active','conditional')` for current AY | `active-enrolled` |
 | 4 | KPI: Docs expiring ≤60d | Applicants with at least one expiring doc | `expiring-docs` |
-| 5 | Pipeline Stage Chart | Applicants currently at clicked stage | `students-by-pipeline-stage` |
+| 5 | Pipeline Stage Sankey (rebuilt) | Applicants flowing through clicked stage | `students-by-pipeline-stage` |
 | 6 | Document Backlog Chart | Applicants with that doc-slot in that status | `backlog-by-document` |
 | 7 | Level Distribution Chart | Students at clicked level | `students-by-level` |
 | 8 | Expiring Documents Panel | Already drills via row link; **adopt CSV button only** | `expiring-docs` (CSV) |
+| 9 | **NEW** — Class-assignment readiness card | Active students without a `section_id` | `class-assignment-readiness` |
 
-### 3.2 P-Files (8 targets)
+### 3.2 P-Files (8 targets + 1 NEW card)
 
 | # | Surface | Drill content | Slug |
 |---|---|---|---|
@@ -47,14 +48,18 @@ One chart-quality issue worth fixing this pass: **Pipeline Stage Chart on `/reco
 | 6 | Top Missing Panel | Slots of clicked slot-key, status=Missing | `missing-by-slot` |
 | 7 | Completion by Level Chart | Applicants at clicked level | `level-applicants` |
 | 8 | Completeness Table | Already drills via row link; **adopt CSV button** | `completeness` (CSV) |
+| 9 | **NEW** — Revisions activity heatmap | Click a calendar cell → revisions on that day | `revisions-on-day` |
 
-### 3.3 SIS Admin (1 target)
+### 3.3 SIS Admin (4 targets + 1 NEW card)
 
 | # | Surface | Drill content | Slug |
 |---|---|---|---|
-| 1 | Audit by Module bar chart | Audit events with that module prefix | `audit-events` |
+| 1 | Audit by Module bar chart | Audit events with that module prefix; **range-aware** (from/to threaded through API) | `audit-events` |
+| 2 | System health: Approver coverage panel | List of approver assignments per flow + gaps | `approver-coverage` |
+| 3 | System health: Current AY indicator | List of all AYs (current + historical) with status | `academic-years` |
+| 4 | **NEW** — Activity by actor card | Top users by audit-event count over range; click row → audit events for that actor | `activity-by-actor` |
 
-**Total: 17 drill targets across 3 modules.**
+**Total: 23 drill targets across 3 modules + 3 new cards.**
 
 ## 4. Per-module row shapes
 
@@ -122,16 +127,53 @@ type AuditDrillRow = {
 
 Single shape. The audit table is already structured cleanly.
 
-## 5. Chart polish — Pipeline Stage Chart rebuild
+## 5. Chart polish — Pipeline Stage Sankey rebuild
 
 Current `components/sis/pipeline-stage-chart.tsx` is a horizontal bar of stage counts. Survey rated it WEAK because:
 - 10 categories (not_started + 9 canonical stages) is too many for horizontal bars to feel proportional
 - The data has implicit temporal ordering (Inquiry → Submitted → … → Enrolled) that bars don't preserve
 - Bars don't show drop-off between stages
 
-**Rebuild as funnel-style progress rows**: each stage = one row with a horizontal proportion bar (filled to current cohort %), stage label + count + drop-off-from-previous %. Mirrors the cohort-progression mental model. Click any row → drills into applicants at that stage.
+**Rebuild as Sankey diagram** using recharts' built-in `Sankey` component:
+- Nodes = pipeline stages
+- Links = quantity flowing from earlier stage to next stage
+- Width-encoded ribbons make drop-off visceral (a thick ribbon thinning between stages = where applicants stall)
+- Click any node → drills into applicants currently at that stage
+- Recharts ships Sankey natively — no new dep
 
-This pattern matches `SheetReadinessCard` (Sprint 23 Markbook rebuild) — proven aesthetic.
+Hover state shows the count + drop-off % from previous stage (like the existing FunnelStage type). Stages with no applicants are rendered as zero-width nodes (preserving the temporal axis).
+
+The drill target slug stays `students-by-pipeline-stage`; only the visualization changes. The chart card lives at `components/sis/pipeline-stage-sankey-card.tsx` (new); the old `pipeline-stage-chart.tsx` gets retired.
+
+## 5b. New cards (3 — one per module)
+
+### 5b.1 Records — Class-assignment readiness card
+
+Surfaces students with `enrollment_status='active'` (or `'conditional'`) but `section_id IS NULL` — the gap between "enrolled" and "fully placed in a class". Actionable for registrars during the section-assignment workflow.
+
+Layout: list-style card matching `SheetReadinessCard` craft. Severity strip up top (N students unassigned · M sections fully assigned). Per-student row: name + level + days-since-enrollment + "Assign class" link (to `/sis/sections/[id]`).
+
+Drill click → `class-assignment-readiness` target → full unassigned-students list with toolkit. CSV export from drill.
+
+Lib: aggregator helper `getClassAssignmentReadiness(ayCode)` in `lib/sis/dashboard.ts` (returns `{enroleeNumber, fullName, level, enrollmentDate, daysSinceEnrollment}[]`). Re-uses Records' student/section data.
+
+### 5b.2 P-Files — Revisions activity heatmap
+
+Calendar grid (12 weeks × 7 days = 84 cells) of revision counts per day. Cells colored by intensity — empty = subtle muted, high-activity = brand-indigo gradient. Visualizes which weeks see uploads (e.g. enrollment season spikes).
+
+Layout: heatmap card with day-of-week rows + week columns. Hover shows day + count. Click cell → `revisions-on-day` drill scoped to that date's revisions.
+
+Lib: aggregator helper `getRevisionsHeatmap(ayCode, weeks=12)` in `lib/p-files/dashboard.ts` (returns `{date: ISO, count: number}[]` for the visible window).
+
+### 5b.3 SIS Admin — Activity by actor card
+
+Top users by audit-event count over the dashboard range. Horizontal bar (matching audit-by-module pattern) sorted desc. Each row = `{actorEmail, count, lastEventAt}`.
+
+Click bar → `activity-by-actor` drill scoped to that actor's audit events.
+
+Lib: aggregator helper `getActivityByActor(rangeInput)` in `lib/sis/dashboard.ts` (returns `{userId, email, count, lastAt}[]`).
+
+Privacy gate: `school_admin`/`admin`/`superadmin` only — same as audit-by-module.
 
 ## 6. Architecture
 
@@ -189,51 +231,55 @@ Same as Sprints 22+23:
 
 ## 9. Files to create/touch
 
-### New (~12 files)
-- `lib/sis/drill.ts` — RecordsDrillRow + AuditDrillRow, builders, filters
-- `lib/p-files/drill.ts` — PFilesDrillRow, builders, filters
+### New (~17 files)
+- `lib/sis/drill.ts` — RecordsDrillRow + AuditDrillRow + AcademicYearDrillRow + ApproverAssignmentDrillRow + ActivityActorDrillRow, builders, filters
+- `lib/p-files/drill.ts` — PFilesDrillRow + RevisionDrillRow, builders, filters
 - `app/api/records/drill/[target]/route.ts`
 - `app/api/p-files/drill/[target]/route.ts`
-- `app/api/sis-admin/drill/[target]/route.ts`
+- `app/api/sis-admin/drill/[target]/route.ts` (audit-events, approver-coverage, academic-years, activity-by-actor)
 - `components/sis/drills/records-drill-sheet.tsx`
-- `components/sis/drills/audit-drill-sheet.tsx`
-- `components/sis/drills/chart-drill-cards.tsx` (Records + Audit chart wrappers)
-- `components/sis/pipeline-stage-progress-card.tsx` (rebuild of pipeline-stage-chart)
+- `components/sis/drills/sis-admin-drill-sheet.tsx` (audit + approver + AY + actor)
+- `components/sis/drills/chart-drill-cards.tsx` (Records chart wrappers)
+- `components/sis/drills/sis-admin-chart-drill-cards.tsx` (audit + activity-by-actor wrappers)
+- `components/sis/pipeline-stage-sankey-card.tsx` — Sankey rebuild (NEW chart)
+- `components/sis/class-assignment-readiness-card.tsx` — NEW Records card
+- `components/sis/system-health-strip.tsx` — extend existing strip with click-to-drill on approver + AY panels
+- `components/sis/activity-by-actor-card.tsx` — NEW SIS Admin card
 - `components/p-files/drills/pfiles-drill-sheet.tsx`
 - `components/p-files/drills/chart-drill-cards.tsx`
+- `components/p-files/revisions-heatmap-card.tsx` — NEW P-Files card
 
 ### Extended (~6 files)
-- `app/(records)/records/page.tsx` — wire 8 drill slots
-- `app/(p-files)/p-files/page.tsx` — wire 8 drill slots
-- `app/(sis)/sis/page.tsx` — wire audit drill on the audit chart card
-- `components/sis/pipeline-stage-chart.tsx` — replace usage with new progress-card OR keep both
-- `components/admin/audit-by-module-card.tsx` (or wherever it lives) — add `onSegmentClick`
-- Various module chart cards — `onSegmentClick` pass-through
+- `app/(records)/records/page.tsx` — wire 8 drill slots + new class-assignment card; replace pipeline-stage-chart with sankey
+- `app/(p-files)/p-files/page.tsx` — wire 8 drill slots + new revisions-heatmap card
+- `app/(sis)/sis/page.tsx` — wire audit + activity-by-actor drills + system-health click-throughs
+- `lib/sis/dashboard.ts` — add `getClassAssignmentReadiness`, `getActivityByActor` helpers
+- `lib/p-files/dashboard.ts` — add `getRevisionsHeatmap` helper
+- Various existing chart cards — `onSegmentClick` pass-through where missing
 
 ## 10. Build sequence
 
-5 bites. Each independently shippable.
+7 bites. Each independently shippable.
 
-1. **Records drill foundation** — `lib/sis/drill.ts` + API route + drill sheet + chart drill cards. Wire 4 KPI drills + 3 chart drills + Expiring CSV button.
-2. **Records Pipeline Stage rebuild** — replace `pipeline-stage-chart.tsx` usage with new `pipeline-stage-progress-card.tsx` (similar pattern to `SheetReadinessCard`).
-3. **P-Files drill foundation** — `lib/p-files/drill.ts` + API route + drill sheet + chart drill cards. Wire 4 summary drills + Slot Status + Top Missing + Level Completion + Completeness CSV.
-4. **SIS Admin audit drill** — `audit-events` target appended to `lib/sis/drill.ts` + dedicated API route + audit drill sheet wrapper. Wire onto the audit-by-module bar chart.
-5. **Final verification + KD update + docs sync** — `npx next build`, capture before/after sizes, update KD #56 wording, add 30th-pass row to dev-plan.
+1. **Records drill foundation** — `lib/sis/drill.ts` + API route + drill sheet + chart drill cards. Wire 4 KPI drills + Document Backlog + Level Distribution drills + Expiring CSV button.
+2. **Records Pipeline Stage Sankey rebuild** — `components/sis/pipeline-stage-sankey-card.tsx` using recharts `Sankey`. Replaces `pipeline-stage-chart.tsx` usage on `/records`. Wire `students-by-pipeline-stage` drill on node click.
+3. **Records new card: Class-assignment readiness** — `components/sis/class-assignment-readiness-card.tsx` + `lib/sis/dashboard.ts::getClassAssignmentReadiness` helper. Wire `class-assignment-readiness` drill.
+4. **P-Files drill foundation + new heatmap card** — `lib/p-files/drill.ts` + API route + drill sheet + chart drill cards. Wire 4 summary drills + Slot Status + Top Missing + Level Completion + Completeness CSV. Then add `components/p-files/revisions-heatmap-card.tsx` + `lib/p-files/dashboard.ts::getRevisionsHeatmap` + `revisions-on-day` drill.
+5. **SIS Admin drills (4 targets) + activity-by-actor card** — `audit-events` (range-aware), `approver-coverage`, `academic-years`, `activity-by-actor` targets in `lib/sis/drill.ts` + dedicated API route + drill sheet. Wire onto the audit-by-module chart + system-health strip panels. Add `components/sis/activity-by-actor-card.tsx` + `lib/sis/dashboard.ts::getActivityByActor` helper.
+6. **System-health strip click-through** — extend `components/sis/system-health-strip.tsx` so the approver-coverage + current-AY panels become clickable drill triggers.
+7. **Final verification + KD update + docs sync** — `npx next build`, capture before/after sizes, update KD #56 wording, add 30th-pass row to dev-plan.
 
 ## 11. Out of scope
 
 - React Query / SWR (KD #24)
 - URL-persistent drill state
 - XLSX export
-- New cards or features (this is replication only)
-- Drill-down on the system-health strip (status indicators, no rows)
-- Range-aware audit drill (audit is event-stream-by-time; range filter applied post-cache)
-- Pipeline-stage rebuild → flow diagram (overkill; progress-row matches existing patterns)
 
 ## 12. Success criteria
 
-- All 17 drill targets return rows + render correctly in browser smoke test
+- All 23 drill targets return rows + render correctly in browser smoke test
 - CSV export works on at least one drill per module (UTF-8 BOM intact)
 - `npx next build` zero errors / zero warnings
 - Records page payload < 1 MB at 1000 students (full pre-fetch); P-Files < 500 KB (lazy); SIS Admin < 200 KB (lazy)
-- Pipeline Stage rebuild visually distinguishable from Markbook's SheetReadiness rebuild (different domain, similar craft)
+- Pipeline Stage Sankey reads as flow + drop-off (not bars); recharts `Sankey` renders cleanly with the 9-stage progression
+- Three new cards (class-assignment readiness · revisions heatmap · activity-by-actor) ship with their own drill targets and visual identity (not a generic bar chart)
