@@ -1,16 +1,6 @@
 "use client";
 
-import {
-  ArrowUpRight,
-  CalendarIcon,
-  CheckCircle2,
-  Circle,
-  CircleCheck,
-  CircleX,
-  Filter,
-  X,
-  XCircle,
-} from "lucide-react";
+import { ArrowUpRight, CalendarIcon, Filter, X } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 import type { DateRange } from "react-day-picker";
@@ -22,6 +12,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  CHANGE_REQUEST_STATUS_CONFIG,
+  type ChangeRequestStatus,
+} from "@/lib/markbook/change-request-status";
 import { cn } from "@/lib/utils";
 import { ChangeRequestDecisionButtons } from "./decision-buttons";
 
@@ -35,7 +29,7 @@ export type AdminRequestRow = {
   proposed_value: string;
   reason_category: string;
   justification: string;
-  status: "pending" | "approved" | "rejected" | "applied" | "cancelled";
+  status: ChangeRequestStatus;
   requested_by_email: string;
   requested_at: string;
   reviewed_by_email: string | null;
@@ -43,48 +37,6 @@ export type AdminRequestRow = {
   decision_note: string | null;
   applied_by: string | null;
   applied_at: string | null;
-};
-
-// §9.3 status badge recipes — brand tokens, wash treatment for in-table
-// state pills (vs the gradient `success`/`blocked` variants which are too
-// loud for dense rows). `pending` + `cancelled` use the built-in
-// `secondary` variant; the in-flight + terminal states layer wash classes
-// over `outline` to keep colour out of the variant matrix.
-type StatusVariant = "secondary" | "outline";
-const STATUS_CONFIG: Record<
-  AdminRequestRow["status"],
-  { label: string; icon: React.ElementType; variant: StatusVariant; className: string }
-> = {
-  pending: {
-    label: "Awaiting Review",
-    icon: Circle,
-    variant: "secondary",
-    className: "",
-  },
-  approved: {
-    label: "Approved · Awaiting Changes",
-    icon: CheckCircle2,
-    variant: "outline",
-    className: "border-primary/30 bg-primary/10 text-primary",
-  },
-  applied: {
-    label: "Changes Applied",
-    icon: CircleCheck,
-    variant: "outline",
-    className: "border-brand-mint bg-brand-mint/30 text-ink",
-  },
-  rejected: {
-    label: "Declined",
-    icon: XCircle,
-    variant: "outline",
-    className: "border-destructive/40 bg-destructive/10 text-destructive",
-  },
-  cancelled: {
-    label: "Cancelled",
-    icon: CircleX,
-    variant: "secondary",
-    className: "",
-  },
 };
 
 function fieldLabel(field: string, slot: number | null): string {
@@ -282,7 +234,7 @@ export function ChangeRequestsDataTable({
                   </TableCell>
                   <TableCell>
                     {(() => {
-                      const cfg = STATUS_CONFIG[r.status];
+                      const cfg = CHANGE_REQUEST_STATUS_CONFIG[r.status];
                       const Icon = cfg.icon;
                       return (
                         <Badge variant={cfg.variant} className={cn(cfg.className)}>

@@ -1,4 +1,4 @@
-import { ArrowUpRight, CheckCircle2, Circle, CircleCheck, CircleX, XCircle } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -6,6 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageShell } from "@/components/ui/page-shell";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  CHANGE_REQUEST_STATUS_CONFIG,
+  type ChangeRequestStatus,
+} from "@/lib/markbook/change-request-status";
+import { cn } from "@/lib/utils";
 import { getSessionUser } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { MyRequestsCancelButton } from "./my-requests-cancel-button";
@@ -20,40 +25,12 @@ type RequestRow = {
   proposed_value: string;
   reason_category: string;
   justification: string;
-  status: "pending" | "approved" | "rejected" | "applied" | "cancelled";
+  status: ChangeRequestStatus;
   requested_at: string;
   reviewed_at: string | null;
   reviewed_by_email: string | null;
   decision_note: string | null;
   applied_at: string | null;
-};
-
-const STATUS_CONFIG: Record<RequestRow["status"], { label: string; icon: typeof Circle; className: string }> = {
-  pending: {
-    label: "Awaiting Review",
-    icon: Circle,
-    className: "border-border bg-muted text-muted-foreground",
-  },
-  approved: {
-    label: "Approved · Awaiting Changes",
-    icon: CheckCircle2,
-    className: "border-primary/30 bg-primary/10 text-primary",
-  },
-  applied: {
-    label: "Changes Applied",
-    icon: CircleCheck,
-    className: "border-brand-mint bg-brand-mint/30 text-ink",
-  },
-  rejected: {
-    label: "Declined",
-    icon: XCircle,
-    className: "border-destructive/30 bg-destructive/10 text-destructive",
-  },
-  cancelled: {
-    label: "Cancelled",
-    icon: CircleX,
-    className: "border-border bg-muted/50 text-muted-foreground",
-  },
 };
 
 function fieldLabel(field: string, slot: number | null): string {
@@ -174,12 +151,10 @@ export default async function MyRequestsPage() {
                     </TableCell>
                     <TableCell>
                       {(() => {
-                        const cfg = STATUS_CONFIG[r.status];
+                        const cfg = CHANGE_REQUEST_STATUS_CONFIG[r.status];
                         const Icon = cfg.icon;
                         return (
-                          <Badge
-                            variant="outline"
-                            className={`h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] ${cfg.className}`}>
+                          <Badge variant={cfg.variant} className={cn(cfg.className)}>
                             <Icon className="h-3 w-3" />
                             {cfg.label}
                           </Badge>
