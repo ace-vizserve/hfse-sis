@@ -45,34 +45,47 @@ export type AdminRequestRow = {
   applied_at: string | null;
 };
 
-const STATUS_CONFIG: Record<AdminRequestRow["status"], { label: string; icon: React.ElementType; className: string }> =
-  {
-    pending: {
-      label: "Awaiting Review",
-      icon: Circle,
-      className: "border-border bg-muted text-muted-foreground",
-    },
-    approved: {
-      label: "Approved · Awaiting Changes",
-      icon: CheckCircle2,
-      className: "border-primary/30 bg-primary/10 text-primary",
-    },
-    applied: {
-      label: "Changes Applied",
-      icon: CircleCheck,
-      className: "border-brand-mint bg-brand-mint/30 text-ink",
-    },
-    rejected: {
-      label: "Declined",
-      icon: XCircle,
-      className: "border-destructive/30 bg-destructive/10 text-destructive",
-    },
-    cancelled: {
-      label: "Cancelled",
-      icon: CircleX,
-      className: "border-border bg-muted/50 text-muted-foreground",
-    },
-  };
+// §9.3 status badge recipes — brand tokens, wash treatment for in-table
+// state pills (vs the gradient `success`/`blocked` variants which are too
+// loud for dense rows). `pending` + `cancelled` use the built-in
+// `secondary` variant; the in-flight + terminal states layer wash classes
+// over `outline` to keep colour out of the variant matrix.
+type StatusVariant = "secondary" | "outline";
+const STATUS_CONFIG: Record<
+  AdminRequestRow["status"],
+  { label: string; icon: React.ElementType; variant: StatusVariant; className: string }
+> = {
+  pending: {
+    label: "Awaiting Review",
+    icon: Circle,
+    variant: "secondary",
+    className: "",
+  },
+  approved: {
+    label: "Approved · Awaiting Changes",
+    icon: CheckCircle2,
+    variant: "outline",
+    className: "border-primary/30 bg-primary/10 text-primary",
+  },
+  applied: {
+    label: "Changes Applied",
+    icon: CircleCheck,
+    variant: "outline",
+    className: "border-brand-mint bg-brand-mint/30 text-ink",
+  },
+  rejected: {
+    label: "Declined",
+    icon: XCircle,
+    variant: "outline",
+    className: "border-destructive/40 bg-destructive/10 text-destructive",
+  },
+  cancelled: {
+    label: "Cancelled",
+    icon: CircleX,
+    variant: "secondary",
+    className: "",
+  },
+};
 
 function fieldLabel(field: string, slot: number | null): string {
   switch (field) {
@@ -272,9 +285,7 @@ export function ChangeRequestsDataTable({
                       const cfg = STATUS_CONFIG[r.status];
                       const Icon = cfg.icon;
                       return (
-                        <Badge
-                          variant="outline"
-                          className={`h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] ${cfg.className}`}>
+                        <Badge variant={cfg.variant} className={cn(cfg.className)}>
                           <Icon className="h-3 w-3" />
                           {cfg.label}
                         </Badge>
