@@ -39,17 +39,12 @@ export default async function Home() {
 
   const { role, email } = sessionUser;
 
-  // Single-module roles: skip the picker, go straight to work.
-  if (role === 'teacher') redirect('/markbook');
+  // Roles with 0 or 1 module accesses skip the picker — there's nothing to
+  // pick. Everyone else (teacher, registrar, school_admin, admin, superadmin)
+  // sees the centered tile picker, scoped to the modules they can open.
+  if (!role) redirect('/parent');
   if (role === 'p-file') redirect('/p-files');
   if (role === 'admissions') redirect('/admissions');
-  if (!role) redirect('/parent');
-
-  // Superadmin defaults to /sis per KD #42 — structural oversight, not daily
-  // operational work. They can still pick any module via the switcher.
-  if (role === 'superadmin') redirect('/sis');
-
-  // Multi-module roles (registrar, school_admin, admin) see the picker.
   // Only modules the role can actually open are rendered — disabled tiles
   // are dropped entirely (no dimmed-and-locked treatment).
   const visibleModules = MODULES.filter((m) => isRouteAllowed(m.href, role));
