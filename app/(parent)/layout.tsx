@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { getSessionUser } from '@/lib/supabase/server';
-import { ParentSidebar } from '@/components/parent-sidebar';
+import { ModuleSidebar } from '@/components/module-sidebar';
 import {
   SidebarInset,
   SidebarProvider,
@@ -23,7 +23,7 @@ export default async function ParentLayout({ children }: { children: React.React
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
-      <ParentSidebar email={sessionUser.email} />
+      <ModuleSidebar module="parent" role={null} email={sessionUser.email} userId={sessionUser.id} />
       <SidebarInset>
         <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md print:hidden">
           <SidebarTrigger className="-ml-1" />

@@ -1,10 +1,8 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
-import { MarkbookSidebar } from '@/components/markbook-sidebar';
-import { ModuleSwitcher } from '@/components/module-switcher';
+import { ModuleSidebar } from '@/components/module-sidebar';
 import { TestModeBanner } from '@/components/sis/test-mode-banner';
-import { Separator } from '@/components/ui/separator';
 import {
   SidebarInset,
   SidebarProvider,
@@ -33,13 +31,11 @@ export default async function MarkbookLayout({ children }: { children: React.Rea
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
-      <MarkbookSidebar role={role} email={email} badges={sidebarBadges} userId={id} />
+      <ModuleSidebar module="markbook" role={role} email={email} userId={id} badges={sidebarBadges} />
       <SidebarInset>
         <TestModeBanner />
         <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md print:hidden">
           <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mx-1 h-4" />
-          <ModuleSwitcher currentModule="markbook" role={role} />
         </header>
         <div className="flex-1 bg-muted px-6 py-8 md:px-10 md:py-10 print:bg-background print:p-0">
           {children}

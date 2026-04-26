@@ -38,7 +38,7 @@ export default async function AccountPage() {
             </div>
             <div className="flex items-center justify-between px-6 py-4">
               <dt className="text-sm text-muted-foreground">Role</dt>
-              <dd className="text-sm font-bold capitalize text-primary">{role ?? "no role"}</dd>
+              <dd className="text-sm font-bold uppercase font-mono text-primary">{role ?? "no role"}</dd>
             </div>
           </dl>
         </CardContent>

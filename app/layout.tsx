@@ -37,7 +37,19 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} h-full`}>
       <body className="min-h-full bg-background text-foreground flex flex-col">
         {children}
-        <Toaster position="top-right" richColors closeButton />
+        <Toaster
+          theme="light"
+          position="top-center"
+          richColors
+          closeButton
+          options={{
+            fill: "black",
+            styles: {
+              title: "text-white!",
+              description: "text-white/75!",
+            },
+          }}
+        />
       </body>
     </html>
   );
