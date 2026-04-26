@@ -1,56 +1,70 @@
-"use client"
+'use client';
 
-import {
-  CircleCheckIcon,
-  InfoIcon,
-  Loader2Icon,
-  OctagonXIcon,
-  TriangleAlertIcon,
-} from "lucide-react"
-import { Toaster as Sonner, type ToasterProps } from "sonner"
+import * as React from 'react';
+import { sileo, Toaster as SileoToaster, type SileoOptions } from 'sileo';
+import 'sileo/styles.css';
 
-const Toaster = ({ ...props }: ToasterProps) => {
-  return (
-    <Sonner
-      theme="light"
-      className="toaster group"
-      icons={{
-        success: <CircleCheckIcon className="size-4" />,
-        info: <InfoIcon className="size-4" />,
-        warning: <TriangleAlertIcon className="size-4" />,
-        error: <OctagonXIcon className="size-4" />,
-        loading: <Loader2Icon className="size-4 animate-spin" />,
-      }}
-      style={
-        {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
-        } as React.CSSProperties
-      }
-      toastOptions={{
-        classNames: {
-          toast:
-            "group toast group-[.toaster]:bg-popover group-[.toaster]:text-popover-foreground group-[.toaster]:ring-1 group-[.toaster]:ring-inset group-[.toaster]:ring-hairline group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:shadow-lg",
-          description: "group-[.toast]:text-muted-foreground",
-          actionButton:
-            "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
-          cancelButton:
-            "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
-          error:
-            "group-[.toaster]:bg-destructive/5 group-[.toaster]:ring-destructive/30 group-[.toaster]:text-destructive",
-          success:
-            "group-[.toaster]:bg-brand-mint/20 group-[.toaster]:ring-brand-mint/60 group-[.toaster]:text-foreground",
-          warning:
-            "group-[.toaster]:bg-brand-amber-light group-[.toaster]:ring-brand-amber/50 group-[.toaster]:text-foreground",
-          info:
-            "group-[.toaster]:bg-accent group-[.toaster]:ring-brand-indigo-soft/40 group-[.toaster]:text-foreground",
-        },
-      }}
-      {...props}
-    />
-  )
+type SileoToasterProps = React.ComponentProps<typeof SileoToaster>;
+
+type LegacySonnerProps = {
+  richColors?: boolean;
+  closeButton?: boolean;
+};
+
+export type ToasterProps = SileoToasterProps & LegacySonnerProps;
+
+export function Toaster(props: ToasterProps) {
+  const { richColors: _r, closeButton: _c, theme = 'light', ...rest } = props;
+  return <SileoToaster theme={theme} {...rest} />;
 }
 
-export { Toaster }
+type ToastOpts = Omit<SileoOptions, 'title' | 'type'>;
+
+function show(kind: 'success' | 'error' | 'warning' | 'info') {
+  return (title: string, opts?: ToastOpts) =>
+    sileo[kind]({ title, ...(opts ?? {}) });
+}
+
+type SonnerPromiseMessages<T> = {
+  loading: string | { title: string };
+  success: string | ((data: T) => string) | { title: string };
+  error: string | ((err: unknown) => string) | { title: string };
+};
+
+export const toast = {
+  success: show('success'),
+  error: show('error'),
+  warning: show('warning'),
+  info: show('info'),
+  promise<T>(p: Promise<T>, msgs: SonnerPromiseMessages<T>) {
+    const loading =
+      typeof msgs.loading === 'string' ? { title: msgs.loading } : msgs.loading;
+
+    const success =
+      typeof msgs.success === 'string'
+        ? { title: msgs.success }
+        : typeof msgs.success === 'function'
+          ? (data: T) => ({ title: String((msgs.success as (d: T) => string)(data)) })
+          : msgs.success;
+
+    const error =
+      typeof msgs.error === 'string'
+        ? { title: msgs.error }
+        : typeof msgs.error === 'function'
+          ? (err: unknown) => ({
+              title: String((msgs.error as (e: unknown) => string)(err)),
+            })
+          : msgs.error;
+
+    return sileo.promise(p, { loading, success, error });
+  },
+  dismiss: (id?: string) => {
+    if (id) sileo.dismiss(id);
+    else sileo.clear();
+  },
+  loading: (title: string, opts?: ToastOpts) =>
+    sileo.show({ title, type: 'loading', ...(opts ?? {}) }),
+  custom: (node: React.ReactNode) => sileo.show({ description: node }),
+  message: (title: string, opts?: ToastOpts) =>
+    sileo.show({ title, ...(opts ?? {}) }),
+};

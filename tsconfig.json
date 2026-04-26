@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "sonner": ["./components/ui/sonner.tsx"]
     }
   },
   "include": [
