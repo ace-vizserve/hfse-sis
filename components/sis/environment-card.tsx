@@ -199,7 +199,12 @@ export function EnvironmentCard({ current }: { current: Environment | null }) {
 
       <div className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-start gap-3">
-          <Trash2 className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+          {/* §7.4 gradient destructive tile — matches the per-environment
+              tiles above. shadow-brand-tile-destructive is the brand-tinted
+              red glow added in the 26th-pass primitive refresh. */}
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-brand-tile-destructive">
+            <Trash2 className="size-4" />
+          </div>
           <div className="min-w-0 space-y-1">
             <div className="font-serif text-sm font-semibold text-foreground">
               Reset Test environment
