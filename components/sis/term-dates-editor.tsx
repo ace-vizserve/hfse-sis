@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
@@ -151,8 +152,10 @@ export function TermDatesEditor({
       <DialogContent className="flex max-h-[min(800px,88vh)] flex-col gap-0 p-0 sm:max-w-3xl">
         <ScrollArea className="flex max-h-full flex-col overflow-hidden">
           <DialogHeader className="px-6 pt-6">
-            <DialogTitle className="flex items-center gap-2 font-serif text-xl">
-              <CalendarRange className="size-5 text-primary" />
+            <DialogTitle className="flex items-center gap-3 font-serif text-xl">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                <CalendarRange className="size-4" />
+              </div>
               Term dates — {ayCode}
             </DialogTitle>
             <DialogDescription>
@@ -200,7 +203,7 @@ export function TermDatesEditor({
               Close
             </Button>
             <Button type="button" onClick={saveAll} disabled={savingAll || dirtyCount === 0}>
-              {savingAll && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+              {savingAll && <Loader2 className="animate-spin" />}
               {dirtyCount === 0 ? "Saved" : `Save ${dirtyCount} term${dirtyCount === 1 ? "" : "s"}`}
             </Button>
           </div>
@@ -229,29 +232,27 @@ function TermCard({
         "rounded-xl border bg-card p-4 transition-colors " +
         (dirty ? "border-brand-amber/40 bg-brand-amber-light/20" : "border-border")
       }>
-      {/* Header row: term label + dirty/saved indicator. */}
+      {/* Header row: term label + dirty/saved indicator (Badge variants
+          for the per-state pills — saving=muted, saved=success,
+          dirty=warning, clean=secondary; matches §10 single-source-of-
+          truth and the §9.3 trio voiced through Badge primitives). */}
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <h3 className="font-serif text-base font-semibold tracking-tight text-foreground">{draft.label}</h3>
-        <div className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]">
-          {saving ? (
-            <span className="inline-flex items-center gap-1 text-muted-foreground">
-              <Loader2 className="size-3 animate-spin" />
-              Saving…
-            </span>
-          ) : justSaved ? (
-            <span className="inline-flex items-center gap-1 text-primary">
-              <CheckCircle2 className="size-3" />
-              Saved
-            </span>
-          ) : dirty ? (
-            <span className="inline-flex items-center gap-1 text-brand-amber">
-              <span className="size-1.5 rounded-full bg-brand-amber" aria-hidden="true" />
-              Unsaved
-            </span>
-          ) : (
-            <span className="text-muted-foreground/50">Up to date</span>
-          )}
-        </div>
+        {saving ? (
+          <Badge variant="muted">
+            <Loader2 className="size-3 animate-spin" />
+            Saving
+          </Badge>
+        ) : justSaved ? (
+          <Badge variant="success">
+            <CheckCircle2 className="size-3" />
+            Saved
+          </Badge>
+        ) : dirty ? (
+          <Badge variant="warning">Unsaved</Badge>
+        ) : (
+          <Badge variant="secondary">Up to date</Badge>
+        )}
       </div>
 
       {/* Dates row: Start + End side by side. */}
