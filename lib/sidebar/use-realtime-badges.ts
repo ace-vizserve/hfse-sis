@@ -80,8 +80,20 @@ export function useRealtimeBadges(
 ): SidebarBadges {
   const [badges, setBadges] = useState<SidebarBadges>(initial);
 
+  // Sync with the SSR-provided baseline when its CONTENT changes — not
+  // its reference. A caller that passes `badges ?? {}` would otherwise
+  // create a fresh object every render and trigger an infinite loop.
   useEffect(() => {
-    setBadges(initial);
+    setBadges((prev) => {
+      const keys = new Set<SidebarBadgeKey>([
+        ...(Object.keys(prev) as SidebarBadgeKey[]),
+        ...(Object.keys(initial) as SidebarBadgeKey[]),
+      ]);
+      for (const k of keys) {
+        if (prev[k] !== initial[k]) return { ...initial };
+      }
+      return prev;
+    });
   }, [initial]);
 
   useEffect(() => {

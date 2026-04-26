@@ -37,6 +37,11 @@ type ModuleSidebarProps = {
   badges?: SidebarBadges;
 };
 
+// Stable empty default. Inlining `badges ?? {}` would create a fresh
+// object every render and the realtime-badges hook would treat each as
+// a state change → infinite loop on modules that don't ship badges.
+const EMPTY_BADGES: SidebarBadges = {};
+
 // Some entry points (e.g. /sis/sections) want the parent nav item to
 // stay highlighted on /sis/sections/[id]. Add their primary hrefs here.
 const PREFIX_MATCH_HREFS = new Set<string>([
@@ -98,7 +103,7 @@ export function ModuleSidebar({ module, role, email, userId, badges }: ModuleSid
   const pathname = usePathname();
   const config = SIDEBAR_REGISTRY[module];
 
-  const liveBadges = useRealtimeBadges(role, userId, badges ?? {});
+  const liveBadges = useRealtimeBadges(role, userId, badges ?? EMPTY_BADGES);
 
   const sections = resolveSectionsForRole(module, role);
   const allItems = sections.flatMap((s) => s.items);
