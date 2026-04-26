@@ -32,6 +32,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageShell } from "@/components/ui/page-shell";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getCurrentAcademicYear, listAyCodes } from "@/lib/academic-year";
 import type { Role } from "@/lib/auth/roles";
 import { sisInsights } from "@/lib/dashboard/insights";
@@ -42,7 +43,13 @@ import { getSystemHealth } from "@/lib/sis/health";
 import { getSessionUser } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
-export default async function SisAdminHub({ searchParams }: { searchParams: Promise<DashboardSearchParams> }) {
+type SisAdminHubSearchParams = DashboardSearchParams & { view?: string };
+
+export default async function SisAdminHub({
+  searchParams,
+}: {
+  searchParams: Promise<SisAdminHubSearchParams>;
+}) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect("/login");
   const role = sessionUser.role;
@@ -51,6 +58,7 @@ export default async function SisAdminHub({ searchParams }: { searchParams: Prom
   }
 
   const resolvedSearch = await searchParams;
+  const view = (resolvedSearch.view === "audit" ? "audit" : "hub") as "hub" | "audit";
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
   const ayCode = currentAy?.ay_code ?? "";
@@ -65,20 +73,23 @@ export default async function SisAdminHub({ searchParams }: { searchParams: Prom
     listAyCodes(service),
   ]);
   const rangeInput = ayCode ? resolveRange(resolvedSearch, windows, ayCode) : null;
-  // Audit-activity query can be slow on large audit_log tables; guard so a
-  // transient DB error never tanks the admin hub.
-  const [auditResult, actorActivity] = rangeInput
-    ? await Promise.all([
-        getAuditActivityByModule(rangeInput).catch((err) => {
-          console.error("[sis] getAuditActivityByModule failed:", err);
-          return null;
-        }),
-        getActivityByActor({ from: rangeInput.from, to: rangeInput.to }).catch((err) => {
-          console.error("[sis] getActivityByActor failed:", err);
-          return [];
-        }),
-      ])
-    : [null, []];
+
+  // Audit-activity fetches only fire on the audit view — saves DB work on hub
+  // loads. Audit-activity query can be slow on large audit_log tables; guard
+  // so a transient DB error never tanks the admin hub.
+  const [auditResult, actorActivity] =
+    view === "audit" && rangeInput
+      ? await Promise.all([
+          getAuditActivityByModule(rangeInput).catch((err) => {
+            console.error("[sis] getAuditActivityByModule failed:", err);
+            return null;
+          }),
+          getActivityByActor({ from: rangeInput.from, to: rangeInput.to }).catch((err) => {
+            console.error("[sis] getActivityByActor failed:", err);
+            return [];
+          }),
+        ])
+      : [null, []];
   const comparisonLabel = rangeInput
     ? `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`
     : "";
@@ -123,204 +134,227 @@ export default async function SisAdminHub({ searchParams }: { searchParams: Prom
 
       {health && <SystemHealthStrip health={health} />}
 
-      {rangeInput && auditResult && (
+      <Tabs value={view} className="w-full">
+        <TabsList variant="segmented">
+          <TabsTrigger value="hub" asChild>
+            <Link href="/sis">Hub</Link>
+          </TabsTrigger>
+          <TabsTrigger value="audit" asChild>
+            <Link href="/sis?view=audit">Audit overview</Link>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {view === "hub" ? (
         <>
-          <ComparisonToolbar
-            ayCode={ayCode}
-            ayCodes={ayCodes}
-            range={{ from: rangeInput.from, to: rangeInput.to }}
-            comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
-            termWindows={windows.term}
-            ayWindows={windows.ay}
-            showAySwitcher={false}
-          />
-
-          {insights.length > 0 && <InsightsPanel insights={insights} />}
-
-          <section className="grid gap-4 xl:grid-cols-4">
-            <MetricCard
-              label="Audit events"
-              value={currentTotal}
-              icon={Activity}
-              intent="default"
-              delta={auditResult.delta}
-              deltaGoodWhen="up"
-              comparisonLabel={comparisonLabel}
-            />
-            <MetricCard
-              label="Prior period total"
-              value={comparisonTotal}
-              icon={Activity}
-              intent="default"
-              subtext="For comparison"
-            />
-            <MetricCard
-              label="Active modules"
-              value={activeModules}
-              icon={LayoutGrid}
-              intent="default"
-              subtext={`of ${trackedModules} tracked`}
-            />
-            <MetricCard
-              label="Most-active module"
-              value={topModule}
-              format="raw"
-              icon={Activity}
-              intent="default"
-              subtext={`${topModuleCount} events`}
-            />
+          {/* Academic Year — rolls over once a year (AY rollover + calendar). */}
+          <section className="space-y-3">
+            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Academic Year
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2">
+              <AdminCard
+                href="/sis/ay-setup"
+                icon={CalendarCog}
+                eyebrow="Structural"
+                title="AY Setup"
+                description="Create a new academic year, switch the active AY, or retire an empty one. Creates the 4 AY-prefixed admissions tables + SIS reference rows in a single transaction."
+                cta="Open AY Setup"
+                role={role}
+                allowedRoles={["school_admin", "admin", "superadmin"]}
+              />
+              <AdminCard
+                href="/sis/calendar"
+                icon={CalendarDays}
+                eyebrow="Academic calendar"
+                title="School Calendar"
+                description="Define school days, holidays, and important dates per term. Every weekday is a school day by default; registrars mark holidays and overlay event labels (Math Week, Staff Dev). The attendance grid and parent portal consume this."
+                cta="Open school calendar"
+                role={role}
+                allowedRoles={["school_admin", "admin", "superadmin"]}
+              />
+            </div>
           </section>
 
-          <section className="grid gap-4 lg:grid-cols-2">
-            <AuditByModuleDrillCard
-              data={chartData}
-              rangeFrom={rangeInput.from}
-              rangeTo={rangeInput.to}
-            />
-            <ActivityByActorCard
-              data={actorActivity}
-              rangeFrom={rangeInput.from}
-              rangeTo={rangeInput.to}
-            />
+          {/* Organisation — AY-scoped structural config. */}
+          <section className="space-y-3">
+            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Organisation
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2">
+              <AdminCard
+                href="/sis/sections"
+                icon={LayoutGrid}
+                eyebrow="Organisation"
+                title="Sections"
+                description="Create and manage sections for the current academic year. Day-to-day operations (roster, grading sheets, attendance) stay in the Markbook module; setup lives here."
+                cta="Manage sections"
+                role={role}
+                allowedRoles={["school_admin", "admin", "superadmin"]}
+              />
+              <AdminCard
+                href="/sis/admin/discount-codes"
+                icon={Tag}
+                eyebrow="Admissions catalogue"
+                title="Discount Codes"
+                description="Time-bound enrolment discount codes for the current academic year. Per-student grants are written by the enrolment portal directly; this is the catalogue that the portal reads."
+                cta="Manage codes"
+                role={role}
+                allowedRoles={["school_admin", "admin", "superadmin"]}
+              />
+              <AdminCard
+                href="/sis/sync-students"
+                icon={Database}
+                eyebrow="Admissions ingest"
+                title="Sync from Admissions"
+                description="Preview then commit a bulk sync of students, enrolments, withdrawals, and reactivations from the admissions database. Individual students sync automatically on stage→Assigned; this tool handles the catch-up pass."
+                cta="Open sync tool"
+                role={role}
+                allowedRoles={["registrar", "school_admin", "admin", "superadmin"]}
+              />
+            </div>
+          </section>
+
+          {/* Access — rare, superadmin-only. */}
+          <section className="space-y-3">
+            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Access
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2">
+              <AdminCard
+                href="/sis/admin/approvers"
+                icon={ShieldCheck}
+                eyebrow="Access"
+                title="Approvers"
+                description="Manage who approves grade-change requests. Teachers pick primary + secondary from this list at submission; only those two see the request."
+                cta="Manage approvers"
+                role={role}
+                allowedRoles={["superadmin"]}
+              />
+              <AdminCard
+                href="/sis/admin/school-config"
+                icon={Building2}
+                eyebrow="School-wide"
+                title="School Config"
+                description="Principal + Founder/CEO signature names, PEI registration number, default publication window. Singleton — renders on every report card."
+                cta="Edit settings"
+                role={role}
+                allowedRoles={["superadmin"]}
+              />
+              <AdminCard
+                href="/sis/admin/users"
+                icon={UserCog}
+                eyebrow="Access"
+                title="Users"
+                description="Invite staff, change roles, enable/disable accounts. Parent accounts are created by the enrolment portal and aren't shown here."
+                cta="Manage users"
+                role={role}
+                allowedRoles={["superadmin"]}
+              />
+              <AdminCard
+                href="/sis/admin/settings"
+                icon={Settings2}
+                eyebrow="System"
+                title="Settings"
+                description="System-level toggles including the Production / Test environment switcher. Switching to Test auto-provisions a disposable academic year and seeds fake students for UAT."
+                cta="Open settings"
+                role={role}
+                allowedRoles={["superadmin"]}
+              />
+            </div>
+          </section>
+
+          {/* Related surfaces — not SIS Admin config, but useful jumps. */}
+          <section className="space-y-3">
+            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Related
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2">
+              <AdminCard
+                href="/records"
+                icon={FolderCog}
+                eyebrow="Operational + Analytics"
+                title="Records"
+                description="The consolidated Records dashboard — student profiles, family, stage pipeline, documents, and admissions analytics (conversion funnel, time-to-enroll, outdated applications, assessment outcomes, referral sources) in one surface."
+                cta="Open Records"
+                role={role}
+                allowedRoles={["school_admin", "admin", "superadmin"]}
+              />
+            </div>
           </section>
         </>
+      ) : (
+        <>
+          {rangeInput && auditResult ? (
+            <>
+              <ComparisonToolbar
+                ayCode={ayCode}
+                ayCodes={ayCodes}
+                range={{ from: rangeInput.from, to: rangeInput.to }}
+                comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+                termWindows={windows.term}
+                ayWindows={windows.ay}
+                showAySwitcher={false}
+              />
+
+              {insights.length > 0 && <InsightsPanel insights={insights} />}
+
+              <section className="grid gap-4 xl:grid-cols-4">
+                <MetricCard
+                  label="Audit events"
+                  value={currentTotal}
+                  icon={Activity}
+                  intent="default"
+                  delta={auditResult.delta}
+                  deltaGoodWhen="up"
+                  comparisonLabel={comparisonLabel}
+                />
+                <MetricCard
+                  label="Prior period total"
+                  value={comparisonTotal}
+                  icon={Activity}
+                  intent="default"
+                  subtext="For comparison"
+                />
+                <MetricCard
+                  label="Active modules"
+                  value={activeModules}
+                  icon={LayoutGrid}
+                  intent="default"
+                  subtext={`of ${trackedModules} tracked`}
+                />
+                <MetricCard
+                  label="Most-active module"
+                  value={topModule}
+                  format="raw"
+                  icon={Activity}
+                  intent="default"
+                  subtext={`${topModuleCount} events`}
+                />
+              </section>
+
+              <section className="grid gap-4 lg:grid-cols-2">
+                <AuditByModuleDrillCard
+                  data={chartData}
+                  rangeFrom={rangeInput.from}
+                  rangeTo={rangeInput.to}
+                />
+                <ActivityByActorCard
+                  data={actorActivity}
+                  rangeFrom={rangeInput.from}
+                  rangeTo={rangeInput.to}
+                />
+              </section>
+            </>
+          ) : (
+            <Card>
+              <CardContent className="py-12 text-center text-sm text-muted-foreground">
+                Audit data unavailable for this range. Try a different range or revisit later.
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
-
-      {/* Academic Year — rolls over once a year (AY rollover + calendar). */}
-      <section className="space-y-3">
-        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Academic Year
-        </h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          <AdminCard
-            href="/sis/ay-setup"
-            icon={CalendarCog}
-            eyebrow="Structural"
-            title="AY Setup"
-            description="Create a new academic year, switch the active AY, or retire an empty one. Creates the 4 AY-prefixed admissions tables + SIS reference rows in a single transaction."
-            cta="Open AY Setup"
-            role={role}
-            allowedRoles={["school_admin", "admin", "superadmin"]}
-          />
-          <AdminCard
-            href="/sis/calendar"
-            icon={CalendarDays}
-            eyebrow="Academic calendar"
-            title="School Calendar"
-            description="Define school days, holidays, and important dates per term. Every weekday is a school day by default; registrars mark holidays and overlay event labels (Math Week, Staff Dev). The attendance grid and parent portal consume this."
-            cta="Open school calendar"
-            role={role}
-            allowedRoles={["school_admin", "admin", "superadmin"]}
-          />
-        </div>
-      </section>
-
-      {/* Organisation — AY-scoped structural config. */}
-      <section className="space-y-3">
-        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Organisation
-        </h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          <AdminCard
-            href="/sis/sections"
-            icon={LayoutGrid}
-            eyebrow="Organisation"
-            title="Sections"
-            description="Create and manage sections for the current academic year. Day-to-day operations (roster, grading sheets, attendance) stay in the Markbook module; setup lives here."
-            cta="Manage sections"
-            role={role}
-            allowedRoles={["school_admin", "admin", "superadmin"]}
-          />
-          <AdminCard
-            href="/sis/admin/discount-codes"
-            icon={Tag}
-            eyebrow="Admissions catalogue"
-            title="Discount Codes"
-            description="Time-bound enrolment discount codes for the current academic year. Per-student grants are written by the enrolment portal directly; this is the catalogue that the portal reads."
-            cta="Manage codes"
-            role={role}
-            allowedRoles={["school_admin", "admin", "superadmin"]}
-          />
-          <AdminCard
-            href="/sis/sync-students"
-            icon={Database}
-            eyebrow="Admissions ingest"
-            title="Sync from Admissions"
-            description="Preview then commit a bulk sync of students, enrolments, withdrawals, and reactivations from the admissions database. Individual students sync automatically on stage→Assigned; this tool handles the catch-up pass."
-            cta="Open sync tool"
-            role={role}
-            allowedRoles={["registrar", "school_admin", "admin", "superadmin"]}
-          />
-        </div>
-      </section>
-
-      {/* Access — rare, superadmin-only. */}
-      <section className="space-y-3">
-        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Access
-        </h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          <AdminCard
-            href="/sis/admin/approvers"
-            icon={ShieldCheck}
-            eyebrow="Access"
-            title="Approvers"
-            description="Manage who approves grade-change requests. Teachers pick primary + secondary from this list at submission; only those two see the request."
-            cta="Manage approvers"
-            role={role}
-            allowedRoles={["superadmin"]}
-          />
-          <AdminCard
-            href="/sis/admin/school-config"
-            icon={Building2}
-            eyebrow="School-wide"
-            title="School Config"
-            description="Principal + Founder/CEO signature names, PEI registration number, default publication window. Singleton — renders on every report card."
-            cta="Edit settings"
-            role={role}
-            allowedRoles={["superadmin"]}
-          />
-          <AdminCard
-            href="/sis/admin/users"
-            icon={UserCog}
-            eyebrow="Access"
-            title="Users"
-            description="Invite staff, change roles, enable/disable accounts. Parent accounts are created by the enrolment portal and aren't shown here."
-            cta="Manage users"
-            role={role}
-            allowedRoles={["superadmin"]}
-          />
-          <AdminCard
-            href="/sis/admin/settings"
-            icon={Settings2}
-            eyebrow="System"
-            title="Settings"
-            description="System-level toggles including the Production / Test environment switcher. Switching to Test auto-provisions a disposable academic year and seeds fake students for UAT."
-            cta="Open settings"
-            role={role}
-            allowedRoles={["superadmin"]}
-          />
-        </div>
-      </section>
-
-      {/* Related surfaces — not SIS Admin config, but useful jumps. */}
-      <section className="space-y-3">
-        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Related
-        </h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          <AdminCard
-            href="/records"
-            icon={FolderCog}
-            eyebrow="Operational + Analytics"
-            title="Records"
-            description="The consolidated Records dashboard — student profiles, family, stage pipeline, documents, and admissions analytics (conversion funnel, time-to-enroll, outdated applications, assessment outcomes, referral sources) in one surface."
-            cta="Open Records"
-            role={role}
-            allowedRoles={["school_admin", "admin", "superadmin"]}
-          />
-        </div>
-      </section>
 
       {/* Trust strip */}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
