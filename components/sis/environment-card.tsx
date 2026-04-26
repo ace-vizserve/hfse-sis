@@ -215,12 +215,12 @@ export function EnvironmentCard({ current }: { current: Environment | null }) {
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
-              variant="outline"
+              variant="destructive"
               size="sm"
               disabled={resetting || submitting !== null}
-              className="shrink-0 gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="shrink-0"
             >
-              {resetting ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+              {resetting ? <Loader2 className="animate-spin" /> : <Trash2 />}
               {resetting ? 'Resetting…' : 'Reset Test data'}
             </Button>
           </AlertDialogTrigger>
@@ -240,11 +240,11 @@ export function EnvironmentCard({ current }: { current: Environment | null }) {
             <AlertDialogFooter>
               <AlertDialogCancel disabled={resetting}>Cancel</AlertDialogCancel>
               <AlertDialogAction
+                variant="destructive"
                 onClick={resetTestEnv}
                 disabled={resetting}
-                className="bg-destructive text-white hover:bg-destructive/90"
               >
-                {resetting && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                {resetting && <Loader2 className="animate-spin" />}
                 Delete Test environment
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -287,12 +287,15 @@ function EnvironmentOption({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
+          {/* §7.4 gradient icon tile — brand-indigo for Production (the
+              live default), brand-amber for Test (matches the warning-
+              tinted UAT environment indicators across the SIS). */}
           <div
             className={
-              'flex size-9 items-center justify-center rounded-lg ' +
+              'flex size-9 items-center justify-center rounded-xl text-white shadow-brand-tile bg-gradient-to-br ' +
               (target === 'test'
-                ? 'bg-brand-amber/10 text-brand-amber'
-                : 'bg-brand-indigo/10 text-brand-indigo')
+                ? 'from-brand-amber to-brand-amber/80'
+                : 'from-brand-indigo to-brand-navy')
             }
           >
             <Icon className="size-4" />
@@ -307,8 +310,9 @@ function EnvironmentOption({
           </div>
         </div>
         {active ? (
-          <Badge className="border-transparent bg-brand-mint text-foreground">
-            <CheckCircle2 className="mr-1 size-3" /> Current
+          <Badge variant="success">
+            <CheckCircle2 className="size-3" />
+            Current
           </Badge>
         ) : null}
       </div>
@@ -319,12 +323,11 @@ function EnvironmentOption({
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
-              variant={target === 'test' ? 'outline' : 'default'}
-              className={target === 'test' ? 'border-brand-amber/50 text-brand-amber hover:bg-brand-amber-light' : ''}
+              variant={target === 'test' ? 'warning' : 'default'}
               disabled={submitting}
               size="sm"
             >
-              {submitting && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+              {submitting && <Loader2 className="animate-spin" />}
               Switch to {title}
             </Button>
           </AlertDialogTrigger>
@@ -353,8 +356,12 @@ function EnvironmentOption({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={onSwitch} disabled={submitting}>
-                {submitting && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+              <AlertDialogAction
+                variant={target === 'test' ? 'warning' : 'default'}
+                onClick={onSwitch}
+                disabled={submitting}
+              >
+                {submitting && <Loader2 className="animate-spin" />}
                 Switch to {title}
               </AlertDialogAction>
             </AlertDialogFooter>
