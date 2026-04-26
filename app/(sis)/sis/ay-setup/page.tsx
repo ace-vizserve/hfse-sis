@@ -211,43 +211,41 @@ function AyRow({
           <TermDatesEditor ayCode={ay.ay_code} ayLabel={ay.label} terms={terms}>
             <Button
               size="sm"
-              variant="outline"
-              className={
-                'h-7 text-xs ' +
-                (datesIncomplete
-                  ? 'border-brand-amber/40 bg-brand-amber-light text-foreground hover:bg-brand-amber/20'
-                  : '')
-              }
+              variant={datesIncomplete ? 'warning' : 'outline'}
               title={datesIncomplete ? `Term dates: ${datesStatus}` : `Term dates (${datesStatus})`}
             >
-              <CalendarRange className="mr-1 size-3" />
+              <CalendarRange />
               Dates
-              <span className="ml-1 font-mono text-[10px] tabular-nums">{datesStatus}</span>
+              <span className="ml-1 font-mono text-[10px] tabular-nums opacity-80">
+                {datesStatus}
+              </span>
             </Button>
           </TermDatesEditor>
           {otherAys.length > 0 && (
-            <CopyTeacherAssignmentsDialog
-              targetAyCode={ay.ay_code}
-              sourceOptions={otherAys}
-            >
-              <Button size="sm" variant="outline" className="h-7 text-xs" title="Copy teachers from another AY">
-                <UserCheck className="mr-1 size-3" />
+            <CopyTeacherAssignmentsDialog targetAyCode={ay.ay_code} sourceOptions={otherAys}>
+              <Button size="sm" variant="outline" title="Copy teachers from another AY">
+                <UserCheck />
                 Copy teachers
               </Button>
             </CopyTeacherAssignmentsDialog>
           )}
           {ay.counts.subject_configs > 0 && ay.counts.sections > 0 && (
             <GenerateSheetsDialog scope={{ kind: 'ay', ayId: ay.id, ayCode: ay.ay_code }}>
-              <Button size="sm" variant="outline" className="h-7 text-xs" title="Generate every missing grading sheet for this AY">
-                <FilePlus2 className="mr-1 size-3" />
+              <Button
+                size="sm"
+                variant="outline"
+                title="Generate every missing grading sheet for this AY"
+              >
+                <FilePlus2 />
                 Generate sheets
               </Button>
             </GenerateSheetsDialog>
           )}
           {!ay.is_current && (
             <AySwitchActiveDialog targetAyCode={ay.ay_code} currentAyCode={activeAyCode}>
-              <Button size="sm" variant="outline" className="h-7 text-xs">
-                <RefreshCw className="mr-1 size-3" /> Switch active
+              <Button size="sm" variant="outline">
+                <RefreshCw />
+                Switch active
               </Button>
             </AySwitchActiveDialog>
           )}
@@ -256,10 +254,10 @@ function AyRow({
               <Button
                 size="sm"
                 variant="destructive"
-                className="h-7 text-xs"
                 title={blockers.length > 0 ? `Cannot delete: ${blockers.join(', ')}` : undefined}
               >
-                <Trash2 className="mr-1 size-3" /> Delete
+                <Trash2 />
+                Delete
               </Button>
             </AyDeleteDialog>
           )}
