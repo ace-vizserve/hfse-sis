@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-import { ModuleSwitcher } from '@/components/module-switcher';
+import { TopbarModuleSwitcher } from '@/components/topbar-module-switcher';
 import { getSessionUser } from '@/lib/supabase/server';
 
 // Neutral shared layout for pages that don't belong to any single module:
@@ -22,7 +22,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md">
-        <ModuleSwitcher currentModule={null} role={role} />
+        <TopbarModuleSwitcher role={role} />
       </header>
       <div className="flex-1 bg-muted px-6 py-8 md:px-10 md:py-10">
         {children}

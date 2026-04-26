@@ -19,10 +19,10 @@ import { getSessionUser } from '@/lib/supabase/server';
 // Root `/` is the SIS entry point. Single-module roles auto-redirect to
 // their module; multi-module roles see a "pick a module" tile picker
 // — same lifecycle order + same canonical role gate as the top-bar
-// ModuleSwitcher, so the picker can't drift from ROUTE_ACCESS.
+// switcher, so the picker can't drift from ROUTE_ACCESS.
 //
 // Lifecycle order: Admissions → Records → P-Files → Markbook → Attendance
-// → Evaluation → SIS Admin (matches components/module-switcher.tsx).
+// → Evaluation → SIS Admin (matches lib/sidebar/registry.ts MODULE_ORDER).
 const MODULES: Array<{ href: string; label: string; icon: LucideIcon }> = [
   { href: '/admissions', label: 'Admissions', icon: FileStack },
   { href: '/records', label: 'Records', icon: Users },
