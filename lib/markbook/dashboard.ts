@@ -1,6 +1,9 @@
 import { unstable_cache } from 'next/cache';
+import { ClipboardList, FileWarning } from 'lucide-react';
 
 import { createServiceClient } from '@/lib/supabase/service';
+import { loadAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import type { PriorityPayload } from '@/lib/dashboard/priority';
 import {
   computeDelta,
   daysInRange,
@@ -637,3 +640,217 @@ export function getChangeRequestVelocityRange(
 }
 
 export { emptyMarkbookKpis };
+
+// ──────────────────────────────────────────────────────────────────────────
+// PriorityPanel payload loaders — top-of-fold "what should I act on right
+// now?" answer for the operational Markbook dashboard. Two loaders, one per
+// role: teacher view ranks open subject sheets across the teacher's assigned
+// sections; registrar view ranks pending change requests + per-term unlocked
+// sheets across the school.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type MarkbookTeacherPriorityInput = {
+  ayCode: string;
+  teacherUserId: string;
+};
+
+async function loadMarkbookTeacherPriorityUncached(
+  input: MarkbookTeacherPriorityInput,
+): Promise<PriorityPayload> {
+  const service = createServiceClient();
+
+  // Resolve teacher's subject_teacher assignments → (section, subject) pairs.
+  const assignments = await loadAssignmentsForUser(service, input.teacherUserId);
+  const subjectPairs = assignments
+    .filter((a) => a.role === 'subject_teacher' && a.subject_id != null)
+    .map((a) => ({ section_id: a.section_id, subject_id: a.subject_id as string }));
+
+  if (subjectPairs.length === 0) {
+    return {
+      eyebrow: 'Priority · this term',
+      title: 'No assigned sections yet',
+      headline: { value: 0, label: 'sheets pending', severity: 'good' },
+      chips: [],
+      cta: undefined,
+      icon: ClipboardList,
+    };
+  }
+
+  const sectionIds = Array.from(new Set(subjectPairs.map((p) => p.section_id)));
+
+  // Resolve current AY → terms.
+  const { data: termRows } = await service
+    .from('terms')
+    .select('id, term_number, academic_years!inner(ay_code)')
+    .eq('academic_years.ay_code', input.ayCode);
+  const termIds = ((termRows ?? []) as Array<{ id: string }>).map((t) => t.id);
+
+  if (termIds.length === 0) {
+    return {
+      eyebrow: 'Priority · this term',
+      title: 'No grading sheets pending',
+      headline: { value: 0, label: 'sheets pending', severity: 'good' },
+      chips: [],
+      cta: undefined,
+      icon: ClipboardList,
+    };
+  }
+
+  // Load all sheets for this teacher's section+subject pairs in current AY,
+  // open (not locked) only.
+  const { data: sheetRows } = await service
+    .from('grading_sheets')
+    .select('id, section_id, subject_id, is_locked, sections!inner(name)')
+    .in('section_id', sectionIds)
+    .in('term_id', termIds)
+    .eq('is_locked', false);
+
+  type SheetRow = {
+    id: string;
+    section_id: string;
+    subject_id: string;
+    sections: { name: string } | { name: string }[];
+  };
+  const allSheets = (sheetRows ?? []) as SheetRow[];
+
+  // Filter to teacher's actual (section, subject) pairs.
+  const pairKey = (s: string, j: string) => `${s}::${j}`;
+  const allowed = new Set(subjectPairs.map((p) => pairKey(p.section_id, p.subject_id)));
+  const myOpenSheets = allSheets.filter((s) => allowed.has(pairKey(s.section_id, s.subject_id)));
+
+  // Group by section for chips.
+  const bySection = new Map<string, { name: string; count: number }>();
+  for (const sheet of myOpenSheets) {
+    const sec = Array.isArray(sheet.sections) ? sheet.sections[0] : sheet.sections;
+    const name = sec?.name ?? 'Section';
+    const cur = bySection.get(sheet.section_id) ?? { name, count: 0 };
+    cur.count += 1;
+    bySection.set(sheet.section_id, cur);
+  }
+
+  const chips = Array.from(bySection.entries())
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 4)
+    .map(([sectionId, info]) => ({
+      label: info.name,
+      count: info.count,
+      href: `/markbook/grading?section=${sectionId}`,
+      severity: 'warn' as const,
+    }));
+
+  const total = myOpenSheets.length;
+  return {
+    eyebrow: 'Priority · this term',
+    title: total === 0 ? 'All your sheets are locked or up to date' : 'Grading sheets need your input',
+    headline: {
+      value: total,
+      label: total === 0 ? 'all caught up' : 'open sheets across your sections',
+      severity: total === 0 ? 'good' : total <= 5 ? 'warn' : 'bad',
+    },
+    chips,
+    cta: total > 0 ? { label: 'Open grading', href: '/markbook/grading' } : undefined,
+    icon: ClipboardList,
+  };
+}
+
+export function getMarkbookTeacherPriority(
+  input: MarkbookTeacherPriorityInput,
+): Promise<PriorityPayload> {
+  return unstable_cache(
+    loadMarkbookTeacherPriorityUncached,
+    ['markbook', 'priority-teacher', input.ayCode, input.teacherUserId],
+    { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
+  )(input);
+}
+
+export type MarkbookRegistrarPriorityInput = {
+  ayCode: string;
+  changeRequestsPending: number;
+};
+
+async function loadMarkbookRegistrarPriorityUncached(
+  input: MarkbookRegistrarPriorityInput,
+): Promise<PriorityPayload> {
+  const service = createServiceClient();
+
+  // Per-term unlocked-sheet counts.
+  const { data: termRows } = await service
+    .from('terms')
+    .select('id, term_number, academic_years!inner(ay_code)')
+    .eq('academic_years.ay_code', input.ayCode)
+    .order('term_number');
+
+  const termList = ((termRows ?? []) as Array<{ id: string; term_number: number }>);
+
+  const perTermCounts = await Promise.all(
+    termList.map(async (t) => {
+      const { count } = await service
+        .from('grading_sheets')
+        .select('*', { count: 'exact', head: true })
+        .eq('term_id', t.id)
+        .eq('is_locked', false);
+      return { termNumber: t.term_number, unlocked: count ?? 0 };
+    }),
+  );
+
+  const totalOpen = perTermCounts.reduce((sum, t) => sum + t.unlocked, 0);
+
+  const chips = perTermCounts
+    .filter((t) => t.unlocked > 0)
+    .slice(0, 4)
+    .map((t) => ({
+      label: `Term ${t.termNumber}`,
+      count: t.unlocked,
+      href: `/markbook/grading?term=${t.termNumber}`,
+      severity: 'warn' as const,
+    }));
+
+  // Headline = pending change requests (decision queue is the most urgent)
+  // OR if zero, fall back to total open sheets metric.
+  const useChangeRequestHeadline = input.changeRequestsPending > 0;
+  const headlineValue = useChangeRequestHeadline ? input.changeRequestsPending : totalOpen;
+  const headlineLabel = useChangeRequestHeadline
+    ? input.changeRequestsPending === 1
+      ? 'change request awaiting your decision'
+      : 'change requests awaiting your decision'
+    : totalOpen === 0
+      ? 'all caught up'
+      : 'open grading sheets across all terms';
+  const headlineSeverity: 'bad' | 'warn' | 'good' = useChangeRequestHeadline
+    ? 'bad'
+    : totalOpen === 0
+      ? 'good'
+      : 'warn';
+
+  return {
+    eyebrow: 'Priority · today',
+    title: useChangeRequestHeadline
+      ? 'Change requests need your decision'
+      : totalOpen === 0
+        ? 'No outstanding markbook actions'
+        : 'Grading sheets still open across terms',
+    headline: { value: headlineValue, label: headlineLabel, severity: headlineSeverity },
+    chips,
+    cta: useChangeRequestHeadline
+      ? { label: 'Open change requests', href: '/markbook/change-requests' }
+      : totalOpen > 0
+        ? { label: 'Open grading', href: '/markbook/grading' }
+        : undefined,
+    icon: useChangeRequestHeadline ? FileWarning : ClipboardList,
+  };
+}
+
+export function getMarkbookRegistrarPriority(
+  input: MarkbookRegistrarPriorityInput,
+): Promise<PriorityPayload> {
+  return unstable_cache(
+    loadMarkbookRegistrarPriorityUncached,
+    [
+      'markbook',
+      'priority-registrar',
+      input.ayCode,
+      String(input.changeRequestsPending),
+    ],
+    { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
+  )(input);
+}

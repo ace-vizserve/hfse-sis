@@ -20,6 +20,7 @@ import { ComparisonToolbar } from "@/components/dashboard/comparison-toolbar";
 import { DashboardHero } from "@/components/dashboard/dashboard-hero";
 import { InsightsPanel } from "@/components/dashboard/insights-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { PriorityPanel } from "@/components/dashboard/priority-panel";
 import { ChangeRequestPanel } from "@/components/markbook/change-request-panel";
 import {
   GradeDistributionDrillCard,
@@ -52,6 +53,8 @@ import {
   getGradeDistribution,
   getGradeEntryVelocityRange,
   getMarkbookKpisRange,
+  getMarkbookRegistrarPriority,
+  getMarkbookTeacherPriority,
   getPublicationCoverage,
   getRecentMarkbookActivity,
   getSheetLockProgressByTerm,
@@ -167,6 +170,22 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
 
   const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
 
+  // Role-aware PriorityPanel payload — teacher gets "your open subject sheets",
+  // registrar gets "decisions queued + per-term unlocked sheets".
+  const userId = (claims?.sub as string | undefined) ?? null;
+  const isTeacher = role === "teacher";
+  const teacherPriority =
+    isTeacher && userId && ayCode
+      ? await getMarkbookTeacherPriority({ ayCode, teacherUserId: userId })
+      : null;
+  const registrarPriority =
+    canSeeAdmin && ayCode && kpisResult
+      ? await getMarkbookRegistrarPriority({
+          ayCode,
+          changeRequestsPending: kpisResult.current.changeRequestsPending,
+        })
+      : null;
+
   const insights = kpisResult
     ? markbookInsights({
         gradesEntered: kpisResult.current.gradesEntered,
@@ -188,6 +207,8 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
         badges={currentAy ? [{ label: currentAy.ay_code }, { label: "Current", tone: "mint" }] : []}
       />
 
+      {teacherPriority && <PriorityPanel payload={teacherPriority} />}
+
       {canSeeAdmin && ayCode && (
         <ComparisonToolbar
           ayCode={ayCode}
@@ -199,6 +220,8 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
           showAySwitcher={false}
         />
       )}
+
+      {registrarPriority && <PriorityPanel payload={registrarPriority} />}
 
       {canSeeAdmin && insights.length > 0 && <InsightsPanel insights={insights} />}
 
