@@ -12,6 +12,7 @@ import {
   type RangeResult,
 } from '@/lib/dashboard/range';
 import { getExpiringDocuments } from '@/lib/sis/dashboard';
+import { compareLevelLabels } from '@/lib/sis/levels';
 import type { PriorityPayload } from '@/lib/dashboard/priority';
 
 // P-Files dashboard aggregators — document-repository lens.
@@ -45,13 +46,6 @@ export type LevelCompletionRow = {
   rejected: number;
   missing: number;
 };
-
-// HFSE canonical order. Levels outside this list fold into "Unknown" and
-// appear last.
-const CANONICAL_LEVELS = [
-  'Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6',
-  'Secondary 1', 'Secondary 2', 'Secondary 3', 'Secondary 4',
-];
 
 async function loadCompletionByLevelUncached(ayCode: string): Promise<LevelCompletionRow[]> {
   const prefix = prefixFor(ayCode);
@@ -145,14 +139,7 @@ async function loadCompletionByLevelUncached(ayCode: string): Promise<LevelCompl
   }
 
   const entries = Array.from(buckets.values());
-  entries.sort((a, b) => {
-    const ai = CANONICAL_LEVELS.indexOf(a.level);
-    const bi = CANONICAL_LEVELS.indexOf(b.level);
-    if (ai === -1 && bi === -1) return a.level.localeCompare(b.level);
-    if (ai === -1) return 1;
-    if (bi === -1) return -1;
-    return ai - bi;
-  });
+  entries.sort((a, b) => compareLevelLabels(a.level, b.level));
   return entries;
 }
 

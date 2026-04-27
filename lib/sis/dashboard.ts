@@ -3,6 +3,7 @@ import { unstable_cache } from 'next/cache';
 import { loadActorActivity } from '@/lib/sis/drill';
 import { DOCUMENT_SLOTS, resolveStatus, type DocumentGroup } from '@/lib/p-files/document-config';
 import { STAGE_COLUMN_MAP, STAGE_KEYS, STAGE_LABELS, type StageKey } from '@/lib/schemas/sis';
+import { compareLevelLabels } from '@/lib/sis/levels';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -292,20 +293,9 @@ async function loadLevelDistributionUncached(ayCode: string): Promise<LevelCount
     counts.set(level, (counts.get(level) ?? 0) + 1);
   }
 
-  // Sort in HFSE canonical order (P1..P6, S1..S4), then Unknown last.
-  const canonicalOrder = [
-    'Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6',
-    'Secondary 1', 'Secondary 2', 'Secondary 3', 'Secondary 4',
-  ];
+  // Sort in HFSE canonical order (YS-L..CS2 per LEVEL_LABELS_ORDERED), then Unknown last.
   const entries = Array.from(counts.entries());
-  entries.sort(([a], [b]) => {
-    const ai = canonicalOrder.indexOf(a);
-    const bi = canonicalOrder.indexOf(b);
-    if (ai === -1 && bi === -1) return a.localeCompare(b);
-    if (ai === -1) return 1;
-    if (bi === -1) return -1;
-    return ai - bi;
-  });
+  entries.sort(([a], [b]) => compareLevelLabels(a, b));
   return entries.map(([level, count]) => ({ level, count }));
 }
 

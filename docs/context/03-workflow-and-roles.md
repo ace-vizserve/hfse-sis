@@ -76,19 +76,21 @@
 ### Primary
 | Level | Sections |
 |-------|---------|
-| Primary 1 | Patience, Obedience |
-| Primary 2 | Honesty, Humility |
-| Primary 3 | Courtesy, Courageous, Responsibility |
-| Primary 4 | Diligence, Trust |
-| Primary 5 | Commitment, Perseverance, Tenacity |
-| Primary 6 | Grit, Loyalty |
+| Primary One | Patience, Obedience |
+| Primary Two | Honesty, Humility |
+| Primary Three | Courtesy, Courageous, Responsibility |
+| Primary Four | Diligence, Trust |
+| Primary Five | Commitment, Perseverance, Tenacity |
+| Primary Six | Grit, Loyalty |
 
 ### Secondary
 | Level | Sections |
 |-------|---------|
-| Secondary 1 | Discipline 1, Discipline 2 |
-| Secondary 2 | Integrity 1, Integrity 2 |
-| Secondary 3 | Consistency |
-| Secondary 4 | Excellence |
+| Secondary One | Discipline 1, Discipline 2 |
+| Secondary Two | Integrity 1, Integrity 2 |
+| Secondary Three | Consistency |
+| Secondary Four | Excellence |
+
+> **Other levels in `levels` (no Markbook surface yet):** Youngstarters Little / Junior / Senior Stars (preschool tier, deferred until the YS report-card template is designed) and Cambridge Secondary One (Year 8) + Two (Year 9). Sections per AY for these levels are seeded by SIS Admin → AY Setup as they come online.
 
 > Note: "DO NOT USE" sheets in the Excel files indicate deprecated section tabs. Only the non-prefixed sheets are active.

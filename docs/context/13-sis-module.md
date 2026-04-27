@@ -78,7 +78,7 @@ Coordination notes:
 These need answers before a sprint opens:
 
 - [ ] **Directus feature parity** — what exactly does the admissions team do in Directus today? List every workflow so the MVP scope is grounded, not invented. (Student edit? Discount grant? Bulk status update? Reports?)
-- [x] ~~**`enrolment_discounts` schema**~~ — **Resolved 2026-04-18:** no new table. Per-student grants are written by the enrolment portal into `ay{YY}_enrolment_applications.discount{1,2,3}` (text slots referencing catalogue `discountCode`). SIS manages the `ay{YY}_discount_codes` catalogue only. `enroleeType` is a 6-value eligibility enum: `New` / `Current` / `Both` / `VizSchool New` / `VizSchool Current` / `VizSchool Both`.
+- [x] ~~**`enrolment_discounts` schema**~~ — **Resolved 2026-04-18:** no new table. Per-student grants are written by the enrolment portal into `ay{YY}_enrolment_applications.discount{1,2,3}` (text slots referencing catalogue `discountCode`). SIS manages the `ay{YY}_discount_codes` catalogue only. The discount-codes `enroleeType` is a **6-value eligibility superset** (`New` / `Current` / `Both` / `VizSchool New` / `VizSchool Current` / `VizSchool Both`) over the **4-value student-side `category` / `enroleeType` enum** on the apps + status tables (`New` / `Current` / `VizSchool New` / `VizSchool Current` — exported as `ENROLEE_CATEGORIES` in `lib/schemas/sis.ts`). The `Both` variants exist only on the catalogue side, for codes applicable to either New OR Current of the matching track. See `06-admissions-integration.md` § `category` ↔ `enroleeType` mirror.
 - [ ] **Role model** — option (a) reuse existing roles, or option (b) add a new `sis` role? If (b), who assigns it and via what UI?
 - [ ] **Student lifecycle edits** — who can change `applicationStatus`? `classSection`? Should section reassignment trigger a grade-entry migration, or is that a manual process?
 - [ ] **Write safety** — some admissions columns (e.g. `studentNumber`, `enroleeNumber`) are stable IDs referenced by other tables. Should SIS allow edits, prevent them, or require an audit-logged override?
@@ -108,11 +108,28 @@ Just to anchor the discussion — not a commitment:
 6. Audit log: new actions (`sis.profile.update`, `sis.family.update`, `sis.stage.update`, `sis.discount_code.*`, `sis.document.{approve,reject}`), new entity types (`enrolment_application`, `enrolment_status`, `discount_code`, `enrolment_document`), written via existing `logAction()`. Route `/records/audit-log` with a module-scoped view (same split pattern as `/p-files/audit-log`).
 7. No schema changes for Phases 1–3 — everything writes existing admissions tables.
 
+## STP application tracker
+
+HFSE is now Edutrust Certified, so the school can sponsor Singapore Student Pass applications via ICA on behalf of foreign students. `ay{YY}_enrolment_applications.stpApplicationType` gates 3 STP-conditional document slots in `enrolment_documents` — `icaPhoto`, `financialSupportDocs`, `vaccinationInformation` — plus the `residenceHistory` jsonb column on the apps row holds the 5-year residence history ICA requires.
+
+Full workflow + UI placement + the per-student STP tracker view: see `21-stp-application.md`.
+
+## Schema-DB drift to flag
+
+The Profile sheet's `ProfileUpdateSchema` in `lib/schemas/sis.ts` does **not** cover all real columns on `ay{YY}_enrolment_applications` yet. Sibling fields (`siblingFullName1..5`, `siblingBirthDay1..5`, `siblingReligion1..5`, `siblingEducationOccupation1..5`, `siblingSchoolCompany1..5`), structured medical flags (`allergies` / `allergyDetails` / `asthma` / `foodAllergies` / `foodAllergyDetails` / `heartConditions` / `epilepsy` / `diabetes` / `eczema` / `otherMedicalConditions` / `paracetamolConsent` / `dietaryRestrictions`), consent flags (`socialMediaConsent` / `feedbackConsent` / `motherWhatsappTeamsConsent` / `fatherWhatsappTeamsConsent` / `guardianWhatsappTeamsConsent`), `vizSchoolProgram`, and the feedback workflow (`feedbackRating` / `feedbackComments` / `feedbackSubmittedAt` / `preCourseAnswer` / `preCourseDate` / `preCourseAcknowledgedAt`) are all real production columns but **not editable via the SIS Profile sheet today**. P2 future work — extend the schema + add the corresponding form fields.
+
+Type-mismatch drift to flag separately:
+- `availSchoolBus` / `availUniform` / `availStudentCare` — real DB stores Yes/No **strings**, schema treats as `optionalBool`.
+- `postalCode` / `homePhone` / `contactPersonNumber` / `*Mobile` — real DB stores **numbers (bigint)**, schema treats as `optionalText`.
+
+These don't break runtime today (tolerant parsers), but the schema and DB should be aligned before the SIS lands a write surface that exercises them.
+
 ## References
 
 - Existing admissions reference: `docs/context/06-admissions-integration.md`
 - Admissions dashboard (Sprint 7 Part A): `docs/context/08-admission-dashboard.md`
 - Parent portal DDL + admissions table shapes: `docs/context/10-parent-portal.md`
 - P-Files module (sibling architecture): `docs/context/12-p-files-module.md`
+- STP application tracker: `docs/context/21-stp-application.md`
 - Performance patterns (apply to SIS): `docs/context/11-performance-patterns.md`
 - Module switcher implementation: `components/module-switcher.tsx`

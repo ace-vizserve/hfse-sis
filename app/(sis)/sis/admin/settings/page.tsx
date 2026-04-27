@@ -1,27 +1,21 @@
-import Link from 'next/link';
-import { redirect } from 'next/navigation';
-import { ArrowLeft, Settings2 } from 'lucide-react';
+import { ArrowLeft, Settings2 } from "lucide-react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { EnvironmentCard } from '@/components/sis/environment-card';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { PageShell } from '@/components/ui/page-shell';
-import { getCurrentEnvironment } from '@/lib/sis/environment';
-import { getSessionUser } from '@/lib/supabase/server';
-import { createServiceClient } from '@/lib/supabase/service';
+import { EnvironmentCard } from "@/components/sis/environment-card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageShell } from "@/components/ui/page-shell";
+import { getCurrentEnvironment } from "@/lib/sis/environment";
+import { getSessionUser } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 
 // System-level settings for the SIS. Superadmin only. Today this page
 // hosts the Environment switcher (Production / Test); future system
 // toggles that don't belong to School Config live here too.
 export default async function SettingsPage() {
   const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
-  if (sessionUser.role !== 'superadmin') redirect('/sis');
+  if (!sessionUser) redirect("/login");
+  if (sessionUser.role !== "superadmin") redirect("/sis");
 
   const service = createServiceClient();
   const { environment } = await getCurrentEnvironment(service);
@@ -30,8 +24,7 @@ export default async function SettingsPage() {
     <PageShell>
       <Link
         href="/sis"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
+        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
         <ArrowLeft className="h-3.5 w-3.5" />
         SIS Admin
       </Link>
@@ -44,8 +37,8 @@ export default async function SettingsPage() {
           System settings.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          System-level controls that aren&apos;t tied to a specific academic year. School-wide
-          details (principal, registration number) live on School Config.
+          System-level controls that aren&apos;t tied to a specific academic year. School-wide details (principal,
+          registration number) live on School Config.
         </p>
       </header>
 
@@ -56,7 +49,9 @@ export default async function SettingsPage() {
           </CardDescription>
           <CardTitle className="font-serif text-lg font-semibold tracking-tight text-foreground">
             <span className="inline-flex items-center gap-2">
-              <Settings2 className="size-4 text-primary" />
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                <Settings2 className="size-4" />
+              </div>
               Operating environment
             </span>
           </CardTitle>

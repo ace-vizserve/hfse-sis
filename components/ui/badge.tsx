@@ -13,12 +13,10 @@ const badgeVariants = cva(
       variant: {
         default:
           "border-transparent bg-gradient-to-b from-brand-indigo to-brand-indigo-deep text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)]",
-        secondary:
-          "border-hairline bg-muted text-ink-3",
+        secondary: "border-hairline bg-muted text-ink-3",
         destructive:
           "border-transparent bg-destructive text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)]",
-        outline:
-          "border-hairline bg-white text-foreground shadow-input",
+        outline: "border-hairline bg-white text-foreground shadow-input",
         // Muted filled — neutral state pills (e.g. "Inactive", "Archived") that
         // need a dark background so white text reads, without carrying the
         // attention weight of the default indigo gradient.
@@ -29,12 +27,9 @@ const badgeVariants = cva(
         // non-flat brand voice (status columns, lifecycle chips). Wash
         // recipes (Badge variant="outline" + per-tone className) are the
         // fallback when the table needs lighter visual weight.
-        success:
-          "border-transparent bg-gradient-to-br from-brand-mint to-brand-sky text-white shadow-sm",
-        warning:
-          "border-transparent bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-sm",
-        blocked:
-          "border-transparent bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-sm",
+        success: "border-transparent bg-gradient-to-br from-brand-mint to-brand-sky text-white shadow-sm",
+        warning: "border-transparent bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-sm",
+        blocked: "border-transparent bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-sm",
       },
     },
     defaultVariants: {
@@ -43,9 +38,7 @@ const badgeVariants = cva(
   },
 );
 
-export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof badgeVariants> {}
+export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
 
 function Badge({ className, variant, ...props }: BadgeProps) {
   return <div className={cn(badgeVariants({ variant }), className)} {...props} />;

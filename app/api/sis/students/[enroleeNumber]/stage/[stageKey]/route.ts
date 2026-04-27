@@ -5,7 +5,6 @@ import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import {
   ENROLLED_PREREQ_STAGES,
-  PREREQ_STAGE_PREDECESSOR,
   STAGE_COLUMN_MAP,
   STAGE_KEYS,
   STAGE_LABELS,
@@ -116,50 +115,7 @@ export async function PATCH(
     }
   }
 
-  // 2a) Predecessor gate — can't mark a prereq stage terminal (Finished /
-  // Signed / Paid) until the previous prereq is also terminal. In-progress
-  // values and Cancelled are always allowed; this only gates the terminal
-  // transition.
-  const predecessor = PREREQ_STAGE_PREDECESSOR[stageKey];
-  const expectedTerminalForThisStage = STAGE_TERMINAL_STATUS[stageKey];
-  if (
-    predecessor &&
-    expectedTerminalForThisStage &&
-    status === expectedTerminalForThisStage
-  ) {
-    const predCol = STAGE_COLUMN_MAP[predecessor].statusCol;
-    const { data: predRow, error: predErr } = await supabase
-      .from(statusTable)
-      .select(predCol)
-      .eq('enroleeNumber', enroleeNumber)
-      .maybeSingle();
-    if (predErr) {
-      console.error('[sis stage PATCH] predecessor fetch failed:', predErr.message);
-      return NextResponse.json({ error: 'Predecessor lookup failed' }, { status: 500 });
-    }
-    const predCurrent =
-      predRow && typeof predRow === 'object'
-        ? ((predRow as Record<string, string | null>)[predCol] ?? null)
-        : null;
-    const expectedPred = STAGE_TERMINAL_STATUS[predecessor]!;
-    if (predCurrent !== expectedPred) {
-      return NextResponse.json(
-        {
-          error: 'Previous stage not complete',
-          blockers: [
-            {
-              stage: STAGE_LABELS[predecessor],
-              current: predCurrent,
-              expected: expectedPred,
-            },
-          ],
-        },
-        { status: 422 },
-      );
-    }
-  }
-
-  // 2b) Enrolled-prereq gate + auto class assignment.
+  // 2a) Enrolled-prereq gate + auto class assignment.
   // Setting applicationStatus = 'Enrolled' requires all 5 prereq stages at
   // their terminal values AND a section with capacity. 'Enrolled (Conditional)'
   // deliberately bypasses this — it's the registrar override for edge cases

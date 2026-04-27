@@ -1,7 +1,13 @@
 import { unstable_cache } from 'next/cache';
 
+import {
+  STAGE_COLUMN_MAP,
+  STAGE_TERMINAL_STATUS,
+  ENROLLED_PREREQ_STAGES,
+} from '@/lib/schemas/sis';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
+import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -656,4 +662,494 @@ export function isModulePrefix(p: string): boolean {
 
 export function modulePrefixFor(slug: string): string {
   return MODULE_ACTION_PREFIXES[slug] ?? slug;
+}
+
+// ─── Lifecycle aggregate drill ──────────────────────────────────────────────
+// Drives the LifecycleAggregateCard's 8 buckets. Predicates mirror
+// `lib/sis/process.ts::loadLifecycleAggregateUncached` exactly — each target's
+// loader applies the same filter that increments that bucket's count.
+
+export type LifecycleDrillTarget =
+  | 'awaiting-fee-payment'
+  | 'awaiting-document-revalidation'
+  | 'awaiting-document-validation'
+  | 'awaiting-assessment-schedule'
+  | 'awaiting-contract-signature'
+  | 'missing-class-assignment'
+  | 'ungated-to-enroll'
+  | 'new-applications';
+
+export const LIFECYCLE_DRILL_TARGETS: LifecycleDrillTarget[] = [
+  'awaiting-fee-payment',
+  'awaiting-document-revalidation',
+  'awaiting-document-validation',
+  'awaiting-assessment-schedule',
+  'awaiting-contract-signature',
+  'missing-class-assignment',
+  'ungated-to-enroll',
+  'new-applications',
+];
+
+export type LifecycleDrillRow = {
+  enroleeNumber: string;
+  studentNumber: string | null;
+  enroleeFullName: string | null;
+  levelApplied: string | null;
+  applicationStatus: string | null;
+  applicationUpdatedDate: string | null;
+  daysSinceUpdate: number | null;
+  // Per-bucket extras — only populated for the bucket that needs them.
+  feeStatus?: string | null;
+  feeInvoice?: string | null;
+  feePaymentDate?: string | null;
+  documentStatus?: string | null;
+  rejectedSlots?: string[];
+  expiredSlots?: string[];
+  uploadedSlots?: string[];
+  assessmentStatus?: string | null;
+  assessmentSchedule?: string | null;
+  contractStatus?: string | null;
+  classSection?: string | null;
+};
+
+// Snapshot tuple holding the three table reads that every lifecycle predicate
+// needs. Cached per-AY so all 8 targets share one fetch.
+type LifecycleSnapshot = {
+  apps: Map<string, LifecycleAppLite>;
+  status: Map<string, LifecycleStatusRow>;
+  docs: Map<string, LifecycleDocRow>;
+};
+
+type LifecycleAppLite = {
+  enroleeNumber: string;
+  studentNumber: string | null;
+  enroleeFullName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  levelApplied: string | null;
+};
+
+// Use Record<string, ...> so we can address dynamic stage status columns by
+// name (registrationStatus, contractStatus, etc) without exhaustively typing
+// every column.
+type LifecycleStatusRow = Record<string, string | null> & {
+  enroleeNumber: string;
+};
+type LifecycleDocRow = Record<string, string | null> & {
+  enroleeNumber: string;
+};
+
+async function loadLifecycleSnapshotUncached(
+  ayCode: string,
+): Promise<LifecycleSnapshot> {
+  const prefix = prefixFor(ayCode);
+  const admissions = createAdmissionsClient();
+
+  // Status select list — all stage status cols + the bucket-specific extras.
+  const statusColumns = [
+    'enroleeNumber',
+    'applicationStatus',
+    'applicationUpdatedDate',
+    'feeStatus',
+    'feeInvoice',
+    'feePaymentDate',
+    'documentStatus',
+    'assessmentStatus',
+    'assessmentSchedule',
+    'contractStatus',
+    'classSection',
+    ...ENROLLED_PREREQ_STAGES.map((s) => STAGE_COLUMN_MAP[s].statusCol),
+  ];
+  const uniqStatusColumns = Array.from(new Set(statusColumns));
+
+  const docColumns = ['enroleeNumber', ...DOCUMENT_SLOTS.map((s) => s.statusCol)];
+
+  const [appsRes, statusRes, docsRes] = await Promise.all([
+    admissions
+      .from(`${prefix}_enrolment_applications`)
+      .select(
+        'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied',
+      ),
+    admissions.from(`${prefix}_enrolment_status`).select(uniqStatusColumns.join(', ')),
+    admissions.from(`${prefix}_enrolment_documents`).select(docColumns.join(', ')),
+  ]);
+
+  const apps = new Map<string, LifecycleAppLite>();
+  for (const a of (appsRes.data ?? []) as LifecycleAppLite[]) {
+    if (a.enroleeNumber) apps.set(a.enroleeNumber, a);
+  }
+
+  const status = new Map<string, LifecycleStatusRow>();
+  for (const r of (statusRes.data ?? []) as unknown as LifecycleStatusRow[]) {
+    if (r.enroleeNumber) status.set(r.enroleeNumber, r);
+  }
+
+  const docs = new Map<string, LifecycleDocRow>();
+  for (const r of (docsRes.data ?? []) as unknown as LifecycleDocRow[]) {
+    if (r.enroleeNumber) docs.set(r.enroleeNumber, r);
+  }
+
+  return { apps, status, docs };
+}
+
+async function getLifecycleSnapshot(ayCode: string): Promise<LifecycleSnapshot> {
+  // Map values can't round-trip through JSON; the Sprint 23 lesson taught us
+  // `unstable_cache` calls JSON.stringify under the hood. So we cache the raw
+  // arrays then rebuild Maps inside the wrapper. Same idea as
+  // `lib/auth/teacher-emails.ts::getTeacherEmailMap`.
+  type Cached = {
+    apps: LifecycleAppLite[];
+    status: LifecycleStatusRow[];
+    docs: LifecycleDocRow[];
+  };
+  const cached = await unstable_cache(
+    async (): Promise<Cached> => {
+      const snap = await loadLifecycleSnapshotUncached(ayCode);
+      return {
+        apps: Array.from(snap.apps.values()),
+        status: Array.from(snap.status.values()),
+        docs: Array.from(snap.docs.values()),
+      };
+    },
+    ['sis', 'lifecycle-drill', 'snapshot', ayCode],
+    { tags: [...tags(ayCode), 'sis', `sis:${ayCode}`], revalidate: CACHE_TTL_SECONDS },
+  )();
+
+  const apps = new Map<string, LifecycleAppLite>();
+  for (const a of cached.apps) apps.set(a.enroleeNumber, a);
+  const status = new Map<string, LifecycleStatusRow>();
+  for (const r of cached.status) status.set(r.enroleeNumber, r);
+  const docs = new Map<string, LifecycleDocRow>();
+  for (const r of cached.docs) docs.set(r.enroleeNumber, r);
+  return { apps, status, docs };
+}
+
+function nameOf(app: LifecycleAppLite | undefined): string | null {
+  if (!app) return null;
+  if (app.enroleeFullName && app.enroleeFullName.trim()) return app.enroleeFullName.trim();
+  const parts = [app.firstName, app.lastName].filter(
+    (p): p is string => !!p && p.trim().length > 0,
+  );
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
+function daysSince(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
+}
+
+function baseRow(
+  enroleeNumber: string,
+  app: LifecycleAppLite | undefined,
+  status: LifecycleStatusRow,
+): LifecycleDrillRow {
+  const updated = status.applicationUpdatedDate ?? null;
+  return {
+    enroleeNumber,
+    studentNumber: app?.studentNumber ?? null,
+    enroleeFullName: nameOf(app),
+    levelApplied: app?.levelApplied ?? null,
+    applicationStatus: status.applicationStatus ?? null,
+    applicationUpdatedDate: updated,
+    daysSinceUpdate: daysSince(updated),
+  };
+}
+
+const ACTIVE_FUNNEL = new Set(['Submitted', 'Ongoing Verification', 'Processing']);
+
+export async function buildLifecycleDrillRows(
+  ayCode: string,
+  target: LifecycleDrillTarget,
+): Promise<LifecycleDrillRow[]> {
+  const snap = await getLifecycleSnapshot(ayCode);
+  const out: LifecycleDrillRow[] = [];
+
+  for (const [enroleeNumber, status] of snap.status) {
+    const appStatus = (status.applicationStatus ?? '').trim();
+    const app = snap.apps.get(enroleeNumber);
+    const docs = snap.docs.get(enroleeNumber);
+
+    switch (target) {
+      case 'awaiting-fee-payment': {
+        if (status.feeStatus !== 'Paid' && ACTIVE_FUNNEL.has(appStatus)) {
+          out.push({
+            ...baseRow(enroleeNumber, app, status),
+            feeStatus: status.feeStatus ?? null,
+            feeInvoice: status.feeInvoice ?? null,
+            feePaymentDate: status.feePaymentDate ?? null,
+          });
+        }
+        break;
+      }
+      case 'awaiting-document-revalidation': {
+        if (!docs) break;
+        const rejectedSlots: string[] = [];
+        const expiredSlots: string[] = [];
+        for (const slot of DOCUMENT_SLOTS) {
+          const v = (docs[slot.statusCol] ?? '').toString().trim();
+          if (v === 'Rejected') rejectedSlots.push(slot.label);
+          else if (v === 'Expired') expiredSlots.push(slot.label);
+        }
+        if (rejectedSlots.length > 0 || expiredSlots.length > 0) {
+          out.push({
+            ...baseRow(enroleeNumber, app, status),
+            documentStatus: status.documentStatus ?? null,
+            rejectedSlots,
+            expiredSlots,
+          });
+        }
+        break;
+      }
+      case 'awaiting-document-validation': {
+        if (!docs) break;
+        const uploadedSlots: string[] = [];
+        for (const slot of DOCUMENT_SLOTS) {
+          const v = (docs[slot.statusCol] ?? '').toString().trim();
+          if (v === 'Uploaded') uploadedSlots.push(slot.label);
+        }
+        if (uploadedSlots.length > 0) {
+          out.push({
+            ...baseRow(enroleeNumber, app, status),
+            documentStatus: status.documentStatus ?? null,
+            uploadedSlots,
+          });
+        }
+        break;
+      }
+      case 'awaiting-assessment-schedule': {
+        if (status.assessmentStatus === 'Pending' && !status.assessmentSchedule) {
+          out.push({
+            ...baseRow(enroleeNumber, app, status),
+            assessmentStatus: status.assessmentStatus ?? null,
+            assessmentSchedule: status.assessmentSchedule ?? null,
+          });
+        }
+        break;
+      }
+      case 'awaiting-contract-signature': {
+        if (status.contractStatus === 'Generated' || status.contractStatus === 'Sent') {
+          out.push({
+            ...baseRow(enroleeNumber, app, status),
+            contractStatus: status.contractStatus ?? null,
+          });
+        }
+        break;
+      }
+      case 'missing-class-assignment': {
+        const cls = (status.classSection ?? '').trim();
+        if (
+          (appStatus === 'Enrolled' || appStatus === 'Enrolled (Conditional)') &&
+          cls.length === 0
+        ) {
+          out.push({
+            ...baseRow(enroleeNumber, app, status),
+            classSection: status.classSection ?? null,
+          });
+        }
+        break;
+      }
+      case 'ungated-to-enroll': {
+        const allPrereqsTerminal = ENROLLED_PREREQ_STAGES.every((s) => {
+          const col = STAGE_COLUMN_MAP[s].statusCol;
+          const terminal = STAGE_TERMINAL_STATUS[s];
+          return terminal && (status[col] ?? '').toString().trim() === terminal;
+        });
+        if (
+          allPrereqsTerminal &&
+          appStatus !== 'Enrolled' &&
+          appStatus !== 'Enrolled (Conditional)' &&
+          appStatus !== 'Cancelled' &&
+          appStatus !== 'Withdrawn'
+        ) {
+          out.push(baseRow(enroleeNumber, app, status));
+        }
+        break;
+      }
+      case 'new-applications': {
+        if (appStatus === 'Submitted') {
+          out.push(baseRow(enroleeNumber, app, status));
+        }
+        break;
+      }
+      default: {
+        const _exhaustive: never = target;
+        throw new Error(`unreachable lifecycle drill target: ${String(_exhaustive)}`);
+      }
+    }
+  }
+
+  // Stable secondary sort: oldest-first by daysSinceUpdate (most-stale at top).
+  out.sort((a, b) => {
+    const av = a.daysSinceUpdate ?? -1;
+    const bv = b.daysSinceUpdate ?? -1;
+    return bv - av;
+  });
+  return out;
+}
+
+// ─── Per-target columns ─────────────────────────────────────────────────────
+
+export type LifecycleDrillColumnKey =
+  | 'enroleeNumber'
+  | 'studentNumber'
+  | 'enroleeFullName'
+  | 'levelApplied'
+  | 'applicationStatus'
+  | 'applicationUpdatedDate'
+  | 'daysSinceUpdate'
+  | 'feeStatus'
+  | 'feeInvoice'
+  | 'feePaymentDate'
+  | 'documentStatus'
+  | 'rejectedSlots'
+  | 'expiredSlots'
+  | 'uploadedSlots'
+  | 'assessmentStatus'
+  | 'assessmentSchedule'
+  | 'contractStatus'
+  | 'classSection';
+
+export const ALL_LIFECYCLE_DRILL_COLUMNS: LifecycleDrillColumnKey[] = [
+  'enroleeFullName',
+  'enroleeNumber',
+  'studentNumber',
+  'levelApplied',
+  'applicationStatus',
+  'applicationUpdatedDate',
+  'daysSinceUpdate',
+  'feeStatus',
+  'feeInvoice',
+  'feePaymentDate',
+  'documentStatus',
+  'rejectedSlots',
+  'expiredSlots',
+  'uploadedSlots',
+  'assessmentStatus',
+  'assessmentSchedule',
+  'contractStatus',
+  'classSection',
+];
+
+export const LIFECYCLE_DRILL_COLUMN_LABELS: Record<LifecycleDrillColumnKey, string> = {
+  enroleeFullName: 'Student',
+  enroleeNumber: 'Enrolee #',
+  studentNumber: 'Student #',
+  levelApplied: 'Level',
+  applicationStatus: 'App status',
+  applicationUpdatedDate: 'Last updated',
+  daysSinceUpdate: 'Days since update',
+  feeStatus: 'Fee status',
+  feeInvoice: 'Invoice',
+  feePaymentDate: 'Paid on',
+  documentStatus: 'Doc status',
+  rejectedSlots: 'Rejected slots',
+  expiredSlots: 'Expired slots',
+  uploadedSlots: 'Uploaded slots',
+  assessmentStatus: 'Assessment',
+  assessmentSchedule: 'Schedule',
+  contractStatus: 'Contract',
+  classSection: 'Class section',
+};
+
+export function defaultColumnsForLifecycleTarget(
+  target: LifecycleDrillTarget,
+): LifecycleDrillColumnKey[] {
+  switch (target) {
+    case 'awaiting-fee-payment':
+      return [
+        'enroleeFullName',
+        'levelApplied',
+        'applicationStatus',
+        'feeStatus',
+        'feeInvoice',
+        'daysSinceUpdate',
+      ];
+    case 'awaiting-document-revalidation':
+      return [
+        'enroleeFullName',
+        'levelApplied',
+        'rejectedSlots',
+        'expiredSlots',
+        'applicationStatus',
+        'daysSinceUpdate',
+      ];
+    case 'awaiting-document-validation':
+      return [
+        'enroleeFullName',
+        'levelApplied',
+        'uploadedSlots',
+        'applicationStatus',
+        'daysSinceUpdate',
+      ];
+    case 'awaiting-assessment-schedule':
+      return [
+        'enroleeFullName',
+        'levelApplied',
+        'assessmentStatus',
+        'assessmentSchedule',
+        'applicationStatus',
+        'daysSinceUpdate',
+      ];
+    case 'awaiting-contract-signature':
+      return [
+        'enroleeFullName',
+        'levelApplied',
+        'contractStatus',
+        'applicationStatus',
+        'daysSinceUpdate',
+      ];
+    case 'missing-class-assignment':
+      return [
+        'enroleeFullName',
+        'levelApplied',
+        'applicationStatus',
+        'classSection',
+        'daysSinceUpdate',
+      ];
+    case 'ungated-to-enroll':
+      return [
+        'enroleeFullName',
+        'levelApplied',
+        'applicationStatus',
+        'applicationUpdatedDate',
+        'daysSinceUpdate',
+      ];
+    case 'new-applications':
+      return [
+        'enroleeFullName',
+        'levelApplied',
+        'applicationStatus',
+        'applicationUpdatedDate',
+        'daysSinceUpdate',
+      ];
+  }
+}
+
+export function lifecycleDrillHeaderForTarget(
+  target: LifecycleDrillTarget,
+): { eyebrow: string; title: string } {
+  switch (target) {
+    case 'awaiting-fee-payment':
+      return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting fee payment' };
+    case 'awaiting-document-revalidation':
+      return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting document revalidation' };
+    case 'awaiting-document-validation':
+      return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting document validation' };
+    case 'awaiting-assessment-schedule':
+      return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting assessment schedule' };
+    case 'awaiting-contract-signature':
+      return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting contract signature' };
+    case 'missing-class-assignment':
+      return { eyebrow: 'Drill · Lifecycle', title: 'Missing class assignment' };
+    case 'ungated-to-enroll':
+      return { eyebrow: 'Drill · Lifecycle', title: 'Ungated to enroll' };
+    case 'new-applications':
+      return { eyebrow: 'Drill · Lifecycle', title: 'New applications' };
+  }
+}
+
+export function isLifecycleDrillTarget(s: string): s is LifecycleDrillTarget {
+  return (LIFECYCLE_DRILL_TARGETS as readonly string[]).includes(s);
 }

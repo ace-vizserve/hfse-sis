@@ -23,7 +23,22 @@ Every module's dashboard landing page composes from **one** vocabulary:
 - `range.ts` — preset resolution + delta math + shared types (`RangeInput`, `RangeResult<T>`)
 - `windows.ts` — server-side term + AY window resolver (uses service client to stay inside `unstable_cache`)
 - `insights.ts` — 7 module-specific insight generators (pure, data-driven)
-- `priority.ts` — `PriorityPayload` type for the PriorityPanel; per-module computers live next to `dashboard.ts` (e.g. `lib/p-files/dashboard.ts::getPFilesPriority`)
+- `priority.ts` — `PriorityPayload` type for the PriorityPanel; per-module computers live next to `dashboard.ts` (e.g. `lib/p-files/dashboard.ts::getPFilesPriority`, `lib/admissions/priority.ts::getNewApplicationsPriority`)
+
+**Cross-module lifecycle widget on `/sis`** (Sprint 27, 2026-04-27): `<LifecycleAggregateCard>` reads `lib/sis/process.ts::getLifecycleAggregate(ayCode)` and renders 8 per-blocker buckets:
+
+| Bucket | Counts rows where… | Severity |
+|---|---|---|
+| Awaiting fee payment | `feeStatus !== 'Paid'` AND in active funnel (`Submitted`/`Ongoing Verification`/`Processing`) | warn |
+| Awaiting document revalidation | any document slot is `'Rejected'` OR `'Expired'` | bad |
+| Awaiting document validation (NEW) | any document slot is `'Uploaded'` (registrar action needed) — see KD #60 for the expiring vs non-expiring workflow | warn |
+| Awaiting assessment schedule | `assessmentStatus='Pending'` AND `assessmentSchedule IS NULL` | info |
+| Awaiting contract signature | `contractStatus IN ('Generated', 'Sent')` | info |
+| Missing class assignment | `applicationStatus='Enrolled'` AND `classSection IS NULL` | bad |
+| Ungated to enroll | all 5 prereq stages at terminal status, but `applicationStatus !== 'Enrolled'` (one click away) | good |
+| New applications | `applicationStatus='Submitted'` (also surfaced via the `<NewApplicationsPriority>` panel on `/admissions`) | info |
+
+Each row is click-drillable in principle (drill API wiring deferred to a future iteration). Cache: 60s `unstable_cache`, tag `sis:${ayCode}` per KD #46.
 
 ## URL-param contract
 

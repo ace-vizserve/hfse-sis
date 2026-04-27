@@ -60,8 +60,11 @@ Used by: `lib/supabase/admissions.ts::fetchAdmissionsRoster()`, `getStudentsByPa
 | `lastName`, `firstName`, `middleName` | `text` | yes | Name sync into `public.students` |
 | `motherEmail` | `text` | yes | Parent auth lookup (**case-insensitive** — the SIS matches with `.ilike`) |
 | `fatherEmail` | `text` | yes | Parent auth lookup (same) |
+| `applicationStatus` | `text` | yes | **Parent-portal-side** — tracks the application *form* submission state, not the enrollment pipeline. Production value seen: `"Registered"` (set when parent finishes the form). `"Draft"` is presumed for in-progress rows but unconfirmed. **Do not use this for enrollment filtering** — that lives on `ay{YY}_enrolment_status.applicationStatus`. The two columns share a name but have completely disjoint value spaces; see `06-admissions-integration.md` § The two `applicationStatus` columns. |
+| `category` | `varchar` | yes | One of `New` / `Current` / `VizSchool New` / `VizSchool Current`. Mirrors `enrolment_status.enroleeType`. |
+| `stpApplicationType` | `text` | yes | Gates the 3 STP-conditional document slots (`icaPhoto`, `financialSupportDocs`, `vaccinationInformation`). HFSE is now Edutrust Certified, so the school can sponsor Singapore Student Pass applications via ICA on behalf of foreign students. See `21-stp-application.md` for the full workflow. |
 
-Columns the SIS does **not** currently read (but which exist on the table and may be useful later): `guardianEmail`, `levelApplied`, `applicationStatus`, medical/allergy flags, all `father*` / `mother*` / `guardian*` personal data beyond email, sibling info, `residenceHistory`, `feedbackConsent`, etc.
+Columns the SIS does **not** currently read (but which exist on the table and may be useful later): `guardianEmail`, `levelApplied`, structured medical flags (`allergies`, `asthma`, `foodAllergies`, `heartConditions`, `epilepsy`, `diabetes`, `eczema`, etc.), all `father*` / `mother*` / `guardian*` personal data beyond email, sibling tracking columns (`siblingFullName1..5` etc.), `residenceHistory` (jsonb — used by the STP workflow), consent flags (`socialMediaConsent`, `feedbackConsent`, `*WhatsappTeamsConsent`), pre-course + feedback workflow columns (`preCourseAnswer`, `preCourseDate`, `feedbackRating`, `feedbackComments`, etc.), `vizSchoolProgram`, `enroleePhoto`, `creatorUid`. The full reference DDL lives at `10a-parent-portal-ddl.md`.
 
 > **`passCodeStudent` is legacy and should be ignored.** It was the parent-portal's pre-account auth mechanism (parents entered a per-student code to view their application back when there were no `auth.users` rows for them). Supabase Auth accounts superseded it. The SIS should **not** use `passCodeStudent` for anything, and new features shouldn't revive it as a fallback — if email matching ever proves unreliable, fix it at the account/email level, not by resurrecting a deprecated code.
 
@@ -72,18 +75,19 @@ Used by: `fetchAdmissionsRoster()`, `getStudentsByParentEmail()`.
 | Column | Type | Nullable | Used for |
 |---|---|---|---|
 | `enroleeNumber` | `text` | yes | Join to applications |
-| `classLevel` | `character varying` | yes | Section level label (e.g. `"Primary 1"`) — normalized by `lib/sync/level-normalizer.ts` |
+| `classLevel` | `character varying` | yes | Section level label in **word form** (e.g. `"Primary One"`, `"Secondary Three"`, `"Cambridge Secondary One (Year 8)"`, `"Youngstarters \| Little Stars"`). Migration 029 aligned both sides on word form, so admissions and SIS now agree on the canonical label; `lib/sync/level-normalizer.ts` is retained as a defensive fallback that still accepts legacy digit input (`"Primary 1"`) and known typos, normalizing them to the current word form. |
 | `classSection` | `character varying` | yes | Section name (e.g. `"Patience"`). **Primary liveness signal** — `classSection IS NOT NULL` filters to currently-enrolled students. May contain typos; normalized by `lib/sync/section-normalizer.ts`. |
 | `classAY` | `character varying` | yes | AY code (e.g. `"AY2026"`) |
-| `applicationStatus` | `character varying` | yes | Filter — rows where this is `"Cancelled"` or `"Withdrawn"` are excluded from sync |
+| `applicationStatus` | `character varying` | yes | **SIS-side workflow pipeline.** One of `Submitted` / `Ongoing Verification` / `Processing` / `Enrolled` / `Enrolled (Conditional)` / `Cancelled` / `Withdrawn` (canonical list in `lib/schemas/sis.ts:STAGE_STATUS_OPTIONS.application`). Filter — rows where this is `"Cancelled"` or `"Withdrawn"` are excluded from sync. **Not the same column as `ay{YY}_enrolment_applications.applicationStatus`** — see `06-admissions-integration.md` § The two `applicationStatus` columns. |
+| `enroleeType` | `character varying` | yes | One of `New` / `Current` / `VizSchool New` / `VizSchool Current`. Mirrors `enrolment_applications.category`. The discount-codes catalogue stores a 6-value superset that adds `Both` and `VizSchool Both`. |
 
 Columns the SIS does **not** read but that exist: `registrationStatus`, `documentStatus`, `assessmentStatus`, `assessmentGradeMath`, `assessmentGradeEnglish`, `contractStatus`, `feeStatus`, `suppliesStatus`, `orientationStatus`, all their `Remarks`/`UpdatedDate`/`Updatedby` siblings. These drive the admissions dashboard (Sprint 7 Part A) but are out of scope for the SIS proper.
 
 ### `ay{YY}_enrolment_documents` — per-enrolee document upload state
 
-Used by the parent portal for document upload tracking. **This repo does not read from it** today. Listed here because it's part of the same admissions bundle and a future "show uploaded birth certificate on the report card" feature would likely start here.
+Used by the parent portal for document upload tracking, and by the SIS's P-Files + Records modules for staff-side validation + history. The full canonical slot list (16 slots) is in `12-p-files-module.md` § Required Documents Per Student. The status workflow distinction (expiring vs non-expiring slots have different value spaces) is documented there too.
 
-Notable columns if you end up needing them: `form12`, `medical`, `passport`, `birthCert`, `educCert`, `idPicture`, `icaPhoto`, `financialSupportDocs`, `vaccinationInformation` — each paired with a `*Status` column (e.g. `form12Status`) that the parent portal uses to track "pending / uploaded / approved / rejected".
+Notable columns: `form12`, `medical`, `passport`, `birthCert`, `educCert`, `idPicture`, `icaPhoto`, `financialSupportDocs`, `vaccinationInformation` — each paired with a `*Status` column (e.g. `form12Status`). The 3 STP-conditional slots (`icaPhoto`, `financialSupportDocs`, `vaccinationInformation`) are gated on `enrolment_applications.stpApplicationType`; see `21-stp-application.md`.
 
 ## RLS consequences
 

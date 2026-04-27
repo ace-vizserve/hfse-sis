@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Pencil } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -31,9 +31,11 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  ENROLLED_PREREQ_STAGES,
   STAGE_COLUMN_MAP,
   STAGE_LABELS,
   STAGE_STATUS_OPTIONS,
+  STAGE_TERMINAL_STATUS,
   StageUpdateSchema,
   type StageKey,
   type StageUpdateInput,
@@ -50,6 +52,7 @@ export function EditStageDialog({
   initialStatus,
   initialRemarks,
   initialExtras,
+  prereqStatuses,
 }: {
   ayCode: string;
   enroleeNumber: string;
@@ -57,6 +60,15 @@ export function EditStageDialog({
   initialStatus: string | null;
   initialRemarks: string | null;
   initialExtras: ExtraValues;
+  /**
+   * Current statuses for the 5 ENROLLED_PREREQ_STAGES. Optional — when
+   * provided AND `stageKey === 'application'` AND the user picks `Enrolled`
+   * (or `Enrolled (Conditional)`), the dialog renders an advisory checklist
+   * above the status select so admin sees BEFORE submit which prereqs are
+   * incomplete. The server still re-validates and 422s on miss; this is
+   * purely a heads-up.
+   */
+  prereqStatuses?: Partial<Record<StageKey, string | null>>;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -98,6 +110,28 @@ export function EditStageDialog({
       form.setValue('status', statusChoice, { shouldDirty: true });
     }
   }, [statusChoice, statusOther, form]);
+
+  // Resolve the checklist's effective status from the same dropdown/free-text
+  // pair the form watches, so the checklist responds the moment the admin
+  // picks "Enrolled" — no submit round-trip required.
+  const effectiveStatus =
+    statusChoice === ''
+      ? null
+      : statusChoice === OTHER_SENTINEL
+        ? statusOther.trim() || null
+        : statusChoice;
+  const showPrereqChecklist =
+    stageKey === 'application' &&
+    !!prereqStatuses &&
+    (effectiveStatus === 'Enrolled' || effectiveStatus === 'Enrolled (Conditional)');
+  const prereqRows = showPrereqChecklist
+    ? ENROLLED_PREREQ_STAGES.map((k) => {
+        const current = prereqStatuses?.[k] ?? null;
+        const expected = STAGE_TERMINAL_STATUS[k] ?? '';
+        return { key: k, current, expected, ok: current === expected };
+      })
+    : [];
+  const incompleteCount = prereqRows.filter((r) => !r.ok).length;
 
   async function onSubmit(values: StageUpdateInput) {
     try {
@@ -185,6 +219,53 @@ export function EditStageDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+            {showPrereqChecklist && (
+              <div className="space-y-2.5 rounded-md border border-hairline bg-muted/30 p-3">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Prerequisites for Enrolled
+                </p>
+                <ul className="space-y-1.5">
+                  {prereqRows.map((row) => (
+                    <li key={row.key} className="flex items-center gap-2 text-xs">
+                      {row.ok ? (
+                        <CheckCircle2 className="size-3.5 shrink-0 text-brand-mint" />
+                      ) : (
+                        <AlertTriangle className="size-3.5 shrink-0 text-brand-amber" />
+                      )}
+                      <span className="font-medium text-foreground">
+                        {STAGE_LABELS[row.key]}
+                      </span>
+                      <span className="text-muted-foreground">·</span>
+                      <span
+                        className={
+                          row.ok
+                            ? 'text-muted-foreground'
+                            : 'text-foreground'
+                        }
+                      >
+                        {row.current ?? 'not started'}
+                      </span>
+                      {!row.ok && (
+                        <span className="ml-auto font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                          → needs {row.expected}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {incompleteCount === 0 ? (
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-mint">
+                    All prerequisites met
+                  </p>
+                ) : (
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-destructive">
+                    {incompleteCount} prerequisite{incompleteCount === 1 ? '' : 's'} incomplete
+                    {' · '}saving will fail
+                  </p>
+                )}
+              </div>
+            )}
+
             <FormItem>
               <FormLabel>Status</FormLabel>
               <Select value={statusChoice} onValueChange={setStatusChoice}>

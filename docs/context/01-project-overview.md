@@ -8,7 +8,7 @@ A Student Information System for HFSE International School (Singapore). It centr
 
 - **School:** HFSE International School, Singapore
 - **Curriculum:** Aligned with DepEd Order No. 8, s. 2015
-- **Levels:** Primary 1–6, Secondary 1–4
+- **Levels:** 15 in word form — Youngstarters Little / Junior / Senior Stars (preschool, no grading yet), Primary One–Six, Secondary One–Four, Cambridge Secondary One (Year 8) + Two (Year 9)
 - **Terms:** 4 terms per academic year (T1, T2, T3, T4)
 - **Class Types:** Global Class and Standard Class (different grading weights per subject)
 - **Current AY:** AY2026

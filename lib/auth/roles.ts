@@ -82,6 +82,17 @@ const RECORDS_NAV: NavSection[] = [
       },
     ],
   },
+  // Cohort views — pre-baked filtered lists for cross-cutting student
+  // attributes that previously required clicking into each student. Records
+  // scope = enrolled students only (per KD #51).
+  {
+    label: "Cohorts",
+    items: [
+      { href: "/records/cohorts/stp", label: "STP applications" },
+      { href: "/records/cohorts/medical", label: "Medical alerts" },
+      { href: "/records/cohorts/pass-expiry", label: "Pass expiry" },
+    ],
+  },
   {
     label: "Admin",
     items: [{ href: "/records/audit-log", label: "Audit Log" }],
@@ -129,6 +140,17 @@ const ADMISSIONS_NAV: NavSection[] = [
   {
     label: "Pipeline",
     items: [{ href: "/admissions/applications", label: "Applications" }],
+  },
+  // Cohort views — Admissions scope = funnel students (Submitted /
+  // Ongoing Verification / Processing). Mirrors the Records-side cohorts
+  // for the pre-enrolment side of the workflow.
+  {
+    label: "Cohorts",
+    items: [
+      { href: "/admissions/cohorts/stp", label: "STP applications" },
+      { href: "/admissions/cohorts/medical", label: "Medical alerts" },
+      { href: "/admissions/cohorts/pass-expiry", label: "Pass expiry" },
+    ],
   },
   {
     label: "Quicklinks",

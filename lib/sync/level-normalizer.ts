@@ -1,21 +1,23 @@
-// Admissions stores level labels as words ("Primary Two"), the grading app
-// stores them as digits ("Primary 2"). Normalize on sync.
-const WORD_TO_DIGIT: Record<string, string> = {
-  one: '1', two: '2', three: '3', four: '4', five: '5', six: '6',
+// HFSE level labels — canonical storage is word form ('Primary One', 'Secondary Four',
+// 'Youngstarters | Little Stars', 'Cambridge Secondary One (Year 8)') after migration 029.
+// This module defends against legacy digit-form inputs (e.g. cached parent-portal
+// payloads, half-migrated test fixtures) by canonicalizing them on read.
+const DIGIT_TO_WORD: Record<string, string> = {
+  'Primary 1':   'Primary One',
+  'Primary 2':   'Primary Two',
+  'Primary 3':   'Primary Three',
+  'Primary 4':   'Primary Four',
+  'Primary 5':   'Primary Five',
+  'Primary 6':   'Primary Six',
+  'Secondary 1': 'Secondary One',
+  'Secondary 2': 'Secondary Two',
+  'Secondary 3': 'Secondary Three',
+  'Secondary 4': 'Secondary Four',
 };
 
 export function normalizeLevelLabel(raw: string | null | undefined): string | null {
   if (raw == null) return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
-
-  // Match "Primary <word>" or "Secondary <word>" (case-insensitive).
-  const m = trimmed.match(/^(primary|secondary)\s+(\S+)$/i);
-  if (m) {
-    const kind = m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
-    const rest = m[2].toLowerCase();
-    const digit = WORD_TO_DIGIT[rest] ?? rest;
-    return `${kind} ${digit}`;
-  }
-  return trimmed;
+  return DIGIT_TO_WORD[trimmed] ?? trimmed;
 }

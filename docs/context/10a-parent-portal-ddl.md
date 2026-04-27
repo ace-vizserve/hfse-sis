@@ -6,6 +6,23 @@ Frozen copy of the admissions table definitions, as of 2026-04-20, pulled from t
 
 Column name identifiers are quoted camelCase. This is what PostgREST returns when you `.select('*')` from these tables in JavaScript; the Supabase JS client handles the quoting automatically in both `.select()` and `.or()` filter strings.
 
+## Notes on the two `applicationStatus` columns
+
+There are **two columns named `applicationStatus`** in the DDL below — one on `ay{YY}_enrolment_applications` (parent-portal-side; observed value: `"Registered"`), one on `ay{YY}_enrolment_status` (SIS-side workflow pipeline; canonical 7-value enum). They share a name but have completely disjoint value spaces. See `06-admissions-integration.md` § The two `applicationStatus` columns for the full distinction. Default to assuming the **status-table** column when code says `applicationStatus`; the apps-table column is only useful for "did the parent finish the form yet?"
+
+## Notes on document status workflow
+
+The `*Status` columns on `ay{YY}_enrolment_documents` follow two different state machines depending on whether the slot is expiring or non-expiring. Full reference: `12-p-files-module.md` § Required Documents Per Student.
+
+- **Non-expiring slots** (`idPicture`, `birthCert`, `educCert`, `medical`, `form12`, `icaPhoto`, `financialSupportDocs`, `vaccinationInformation`): `null` → `'Uploaded'` → `'Valid'` (or `'Rejected'`). The `'Uploaded'` intermediate means the parent uploaded the file but registrar hasn't validated yet.
+- **Expiring slots** (`passport`, `pass`, `motherPassport`, `motherPass`, `fatherPassport`, `fatherPass`, `guardianPassport`, `guardianPass`): `null` → `'Valid'` → `'Expired'` (auto-flip when the `*Expiry` column passes today's date). **No `'Uploaded'` intermediate** — the expiry date is itself the validation evidence.
+- `'To follow'` = parent-acknowledged-pending, applies to either type.
+- `'Rejected'` and `'Expired'` both mean the parent must re-upload.
+
+## Notes on the 3 STP-conditional slots
+
+`icaPhoto`, `financialSupportDocs`, `vaccinationInformation` (with their `*Status` columns) are STP-conditional — only required when `ay{YY}_enrolment_applications.stpApplicationType` indicates the school is sponsoring an ICA Student Pass application. The `residenceHistory` jsonb column on the apps row holds the 5-year residence history that ICA requires. Full STP workflow: `21-stp-application.md`.
+
 ### `ay2026_enrolment_applications`
 
 ```sql

@@ -1,6 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { computeQuarterly } from '@/lib/compute/quarterly';
+import {
+  LEVEL_LABELS,
+  LEVEL_CODES,
+  LEVEL_TYPE_BY_CODE,
+  type LevelCode,
+} from '@/lib/sis/levels';
+import { DOCUMENT_SLOTS, STP_CONDITIONAL_SLOT_KEYS } from '@/lib/sis/queries';
 
 import { pickNames } from './names';
 
@@ -24,6 +31,7 @@ export type PopulatedSeedResult = {
   teacher_subject_assignments: number;
   discount_codes_inserted: number;
   publications_inserted: number;
+  documents_inserted: number;
 };
 
 // Deterministic PRNG — seeded per-call so the same AY always produces the
@@ -66,6 +74,7 @@ export async function seedPopulated(
     teacher_subject_assignments: 0,
     discount_codes_inserted: 0,
     publications_inserted: 0,
+    documents_inserted: 0,
   };
 
   // ---- 1. Grade entries ----
@@ -99,6 +108,9 @@ export async function seedPopulated(
 
   // ---- 8. One demo publication window ----
   result.publications_inserted = await seedPublication(service, testAy);
+
+  // ---- 9. Admissions documents (P-Files dashboards + lifecycle widget) ----
+  result.documents_inserted = await seedAdmissionsDocuments(service, testAy);
 
   return result;
 }
@@ -473,9 +485,228 @@ async function seedEvaluationWriteups(
   return error ? 0 : writeupRows.length;
 }
 
-// Injects ~30 pre-enrolment applications (Inquiry/Applied/Interviewed/
-// Offered/Accepted) into ay9999_enrolment_applications + ay9999_enrolment_status
-// so the Admissions dashboard has a non-empty funnel + outdated list.
+// Canonical applicationStatus union — matches STAGE_STATUS_OPTIONS.application
+// in lib/schemas/sis.ts (post-Directus consolidation 2026-04-24).
+type ApplicationStatus =
+  | 'Submitted'
+  | 'Ongoing Verification'
+  | 'Processing'
+  | 'Enrolled'
+  | 'Enrolled (Conditional)'
+  | 'Cancelled'
+  | 'Withdrawn';
+
+// Per-funnel-stage 5-prereq fill profile. The five columns line up with
+// ENROLLED_PREREQ_STAGES + STAGE_TERMINAL_STATUS in lib/schemas/sis.ts.
+type StageProgression = {
+  registrationStatus: string | null;
+  documentStatus: string | null;
+  assessmentStatus: string | null;
+  contractStatus: string | null;
+  feeStatus: string | null;
+};
+
+// Builds a plausible per-stage status fill given a profile name. Profiles
+// map 1:1 to applicationStatus values except for "withdrawn-pre-enrolment"
+// which is a sub-flavor of Withdrawn (got far in the pipeline before pulling
+// out). The lifecycle aggregate widget keys off this column matrix to slot
+// rows into "ungated to enroll" / "at contract" / "at fees" buckets.
+function stageProgressionFor(
+  profile:
+    | 'submitted'
+    | 'ongoing-verification'
+    | 'processing'
+    | 'cancelled'
+    | 'withdrawn-pre-enrolment',
+  rand: () => number,
+): StageProgression & { ungatedToEnroll: boolean } {
+  switch (profile) {
+    case 'submitted':
+      return {
+        registrationStatus: null,
+        documentStatus: null,
+        assessmentStatus: null,
+        contractStatus: null,
+        feeStatus: null,
+        ungatedToEnroll: false,
+      };
+    case 'ongoing-verification':
+      return {
+        registrationStatus: 'Finished',
+        documentStatus: rand() < 0.5 ? 'Pending' : 'Verified',
+        assessmentStatus: 'Pending',
+        contractStatus: null,
+        feeStatus: null,
+        ungatedToEnroll: false,
+      };
+    case 'processing': {
+      // ~45% of Processing rows are fully ungated (all 5 prereqs at terminal
+      // status) — appears in the "Ungated to enroll" lifecycle bucket as
+      // ready-to-flip applicants the registrar should be processing.
+      const ungated = rand() < 0.45;
+      if (ungated) {
+        return {
+          registrationStatus: 'Finished',
+          documentStatus: 'Finished',
+          assessmentStatus: 'Finished',
+          contractStatus: 'Signed',
+          feeStatus: 'Paid',
+          ungatedToEnroll: true,
+        };
+      }
+      const r = rand();
+      if (r < 0.33) {
+        // At contract stage — assessment finished, contract drafted/sent.
+        return {
+          registrationStatus: 'Finished',
+          documentStatus: 'Finished',
+          assessmentStatus: 'Finished',
+          contractStatus: rand() < 0.5 ? 'Generated' : 'Sent',
+          feeStatus: 'Pending',
+          ungatedToEnroll: false,
+        };
+      } else if (r < 0.66) {
+        // At fee stage — contract signed, awaiting payment.
+        return {
+          registrationStatus: 'Finished',
+          documentStatus: 'Finished',
+          assessmentStatus: 'Finished',
+          contractStatus: 'Signed',
+          feeStatus: rand() < 0.5 ? 'Invoiced' : 'Re-invoiced',
+          ungatedToEnroll: false,
+        };
+      } else {
+        // At assessment stage — registration + docs done, assessment pending.
+        return {
+          registrationStatus: 'Finished',
+          documentStatus: 'Finished',
+          assessmentStatus: rand() < 0.5 ? 'Pending' : 'Ongoing Assessment',
+          contractStatus: null,
+          feeStatus: null,
+          ungatedToEnroll: false,
+        };
+      }
+    }
+    case 'cancelled':
+      return {
+        registrationStatus: rand() < 0.5 ? 'Cancelled' : 'Pending',
+        documentStatus: null,
+        assessmentStatus: null,
+        contractStatus: null,
+        feeStatus: null,
+        ungatedToEnroll: false,
+      };
+    case 'withdrawn-pre-enrolment':
+      // Got partway then pulled out — show effort-spent through assessment.
+      return {
+        registrationStatus: 'Finished',
+        documentStatus: 'Finished',
+        assessmentStatus: 'Finished',
+        contractStatus: null,
+        feeStatus: null,
+        ungatedToEnroll: false,
+      };
+    default:
+      return {
+        registrationStatus: null,
+        documentStatus: null,
+        assessmentStatus: null,
+        contractStatus: null,
+        feeStatus: null,
+        ungatedToEnroll: false,
+      };
+  }
+}
+
+// Canonical funnel mix used by seedAdmissionsFunnel — total 33 rows across
+// the five non-Enrolled applicationStatus values. Distribution chosen so the
+// dashboard's lifecycle aggregate has data in every bucket: Submitted (no
+// admin work), Ongoing Verification (in-flight), Processing (varied — some
+// ungated, some at contract/fees/assessment), Cancelled (admin-killed),
+// Withdrawn (pulled out partway).
+const FUNNEL_PROFILES: ReadonlyArray<{
+  applicationStatus: ApplicationStatus;
+  count: number;
+  stageProfile:
+    | 'submitted'
+    | 'ongoing-verification'
+    | 'processing'
+    | 'cancelled'
+    | 'withdrawn-pre-enrolment';
+}> = [
+  { applicationStatus: 'Submitted', count: 8, stageProfile: 'submitted' },
+  { applicationStatus: 'Ongoing Verification', count: 8, stageProfile: 'ongoing-verification' },
+  { applicationStatus: 'Processing', count: 12, stageProfile: 'processing' },
+  { applicationStatus: 'Cancelled', count: 3, stageProfile: 'cancelled' },
+  { applicationStatus: 'Withdrawn', count: 2, stageProfile: 'withdrawn-pre-enrolment' },
+];
+
+// 4-value enum mirrored across the apps row's `category` and the status row's
+// `enroleeType`. They always agree. Distribution: ~70% Current (returning),
+// ~25% New (first-time), ~3% VizSchool Current, ~2% VizSchool New.
+type EnroleeCategoryValue = 'New' | 'Current' | 'VizSchool New' | 'VizSchool Current';
+function pickEnroleeCategory(rand: () => number): EnroleeCategoryValue {
+  const r = rand();
+  if (r < 0.70) return 'Current';
+  if (r < 0.95) return 'New';
+  if (r < 0.98) return 'VizSchool Current';
+  return 'VizSchool New';
+}
+
+// Realistic class-type values seen in production parent-portal submissions.
+const CLASS_TYPES = [
+  'Enrichment Class',
+  'Global Class 3 (ENGLISH + FRENCH)',
+  'Global Class 1 (ENGLISH + CHINESE)',
+  'Cambridge Lower Secondary',
+  'Standard',
+] as const;
+const PAYMENT_OPTIONS = ['Option 1', 'Option 2'] as const;
+const CONTRACT_SIGNATORIES = ['Father', 'Mother', 'Guardian'] as const;
+const PASS_TYPES = ['Singapore PR', 'S-PASS', 'Dependent Pass', null] as const;
+const PLACEHOLDER_PHOTO = 'https://placeholder.test/student-photo.png';
+
+// Yes/No string flags — real production rows store these as strings, not bools.
+const YES_NO = ['Yes', 'No'] as const;
+
+// STP application type — set on the foreign-student personas (parent-portal
+// gates 3 specific document slots when this is non-null per the STP workflow).
+const STP_APPLICATION_TYPE = 'New Student Pass Application';
+
+// Sample residenceHistory JSON for STP applicants. Stored as a JSON string in
+// the column (matches production format).
+const STP_RESIDENCE_HISTORY =
+  '[{"toYear":"Present","country":"Singapore","fromYear":2020,"cityOrTown":"Singapore","purposeOfStay":"Schooling"}]';
+
+// Funnel-row level distribution. Heaviest in P1-S4 (the canonical mass
+// market), with 1-2 Youngstarters + 1 Cambridge Secondary sprinkled in so
+// the dashboard's level breakdowns show every band populated.
+function pickFunnelLevelCode(rand: () => number): LevelCode {
+  const r = rand();
+  // Youngstarters: ~6% (2/33), one row each across L/J/S families.
+  if (r < 0.06) {
+    const ys: LevelCode[] = ['YS-L', 'YS-J', 'YS-S'];
+    return ys[Math.floor(rand() * ys.length)];
+  }
+  // Cambridge Secondary: ~3% (1/33).
+  if (r < 0.09) {
+    const cs: LevelCode[] = ['CS1', 'CS2'];
+    return cs[Math.floor(rand() * cs.length)];
+  }
+  // Primary + standard Secondary share the remaining ~91%. Pick uniformly
+  // across all P1-S4 codes (10 of them).
+  const main = LEVEL_CODES.filter(
+    (c) => LEVEL_TYPE_BY_CODE[c] !== 'preschool' && c !== 'CS1' && c !== 'CS2',
+  );
+  return main[Math.floor(rand() * main.length)];
+}
+
+// Injects 33 pre-enrolment applications across the canonical applicationStatus
+// values (Submitted/Ongoing Verification/Processing/Cancelled/Withdrawn) into
+// ay{YY}_enrolment_applications + ay{YY}_enrolment_status. Each row gets a
+// realistic 5-prereq stage progression so the dashboard's lifecycle widget
+// shows non-zero buckets at each gate.
+//
 // Skips when any non-Enrolled rows already exist.
 async function seedAdmissionsFunnel(
   service: SupabaseClient,
@@ -492,50 +723,110 @@ async function seedAdmissionsFunnel(
     .not('applicationStatus', 'in', '("Enrolled","Enrolled (Conditional)")');
   if ((nonEnrolled ?? 0) > 0) return 0;
 
-  const STAGES = [
-    { status: 'Inquiry', count: 8 },
-    { status: 'Applied', count: 10 },
-    { status: 'Interviewed', count: 6 },
-    { status: 'Offered', count: 4 },
-    { status: 'Accepted', count: 4 },
-  ] as const;
-
-  const LEVELS = ['P1', 'P2', 'P3', 'P4', 'P5', 'S1', 'S2', 'S3'];
-  const REFERRALS = ['Facebook', 'Google', 'Word of Mouth', 'School Visit', 'Alumni', 'Parent Referral'];
+  const REFERRALS = [
+    'Facebook',
+    'Google',
+    'Word of Mouth',
+    'School Visit',
+    'Alumni',
+    'Parent Referral',
+  ];
 
   const rand = mulberry32(hashString(`${testAy.ay_code}:funnel`));
-  const names = pickNames(`${testAy.ay_code}:funnel`, STAGES.reduce((n, s) => n + s.count, 0));
+  const totalCount = FUNNEL_PROFILES.reduce((n, p) => n + p.count, 0);
+  const names = pickNames(`${testAy.ay_code}:funnel`, totalCount);
 
   const appRows: Array<Record<string, unknown>> = [];
   const statusRows: Array<Record<string, unknown>> = [];
   let nameIdx = 0;
 
-  for (const stage of STAGES) {
-    for (let i = 0; i < stage.count; i++) {
+  for (const profile of FUNNEL_PROFILES) {
+    for (let i = 0; i < profile.count; i++) {
       const n = names[nameIdx++];
       // Enrolee number format: <prefix>-TEST-<4-digit>
       const seq = String(5000 + nameIdx).padStart(4, '0');
       const enroleeNumber = `${prefix.toUpperCase()}-TEST-${seq}`;
-      const levelApplied = LEVELS[Math.floor(rand() * LEVELS.length)];
+      const levelCode = pickFunnelLevelCode(rand);
+      const levelLabel = LEVEL_LABELS[levelCode];
       const referral = REFERRALS[Math.floor(rand() * REFERRALS.length)];
       // Dates spread back ~60 days for outdated-applications demo.
       const daysBack = Math.floor(rand() * 60);
-      const dateIso = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+      const dateIso = new Date(
+        Date.now() - daysBack * 24 * 60 * 60 * 1000,
+      ).toISOString();
+
+      const stageFill = stageProgressionFor(profile.stageProfile, rand);
+      const category = pickEnroleeCategory(rand);
+      const classType = CLASS_TYPES[Math.floor(rand() * CLASS_TYPES.length)];
+      const paymentOption = PAYMENT_OPTIONS[Math.floor(rand() * PAYMENT_OPTIONS.length)];
+      const contractSignatory =
+        CONTRACT_SIGNATORIES[Math.floor(rand() * CONTRACT_SIGNATORIES.length)];
+      const passType = PASS_TYPES[Math.floor(rand() * PASS_TYPES.length)];
+      // STP application: ~30% of foreign-student rows (those without Singapore
+      // PR). The 4 STP-conditional doc slots only get populated when this is set.
+      const isStpApplicant = passType !== 'Singapore PR' && rand() < 0.45;
+      const stpApplicationType = isStpApplicant ? STP_APPLICATION_TYPE : null;
+      // 10% of funnel rows have allergy data (realistic distribution).
+      const hasAllergies = rand() < 0.10;
 
       appRows.push({
         enroleeNumber,
+        category,
         firstName: n.first_name,
         lastName: n.last_name,
         enroleeFullName: `${n.first_name} ${n.last_name}`,
-        levelApplied,
-        hearAboutUs: referral,
+        levelApplied: levelLabel,
+        classType,
+        paymentOption,
+        contractSignatory,
+        pass: passType,
+        enroleePhoto: PLACEHOLDER_PHOTO,
+        // Real DB stores avail* as Yes/No strings, not bools.
+        availSchoolBus: YES_NO[Math.floor(rand() * YES_NO.length)],
+        availUniform: YES_NO[Math.floor(rand() * YES_NO.length)],
+        availStudentCare: YES_NO[Math.floor(rand() * YES_NO.length)],
+        howDidYouKnowAboutHFSEIS: referral,
+        // Parent-portal-side status — always 'Registered' once the parent
+        // completes the registration form. SIS-side workflow status lives on
+        // the status row below as `applicationStatus`.
+        applicationStatus: 'Registered',
+        // STP application tracker (HFSE Edutrust Certified, sponsors Student
+        // Pass via ICA when applicable).
+        stpApplicationType,
+        residenceHistory: isStpApplicant ? STP_RESIDENCE_HISTORY : null,
+        // Medical flags — minimal realistic surface for now.
+        allergies: hasAllergies,
+        allergyDetails: hasAllergies ? 'Test allergy details' : null,
+        paracetamolConsent: true,
+        socialMediaConsent: rand() < 0.7,
       });
-      statusRows.push({
+
+      const applicationStatus: ApplicationStatus = profile.applicationStatus;
+      const statusRow: Record<string, unknown> = {
         enroleeNumber,
-        applicationStatus: stage.status,
-        levelApplied,
+        applicationStatus,
+        // Mirrors apps.category — same value, different column name.
+        enroleeType: category,
+        levelApplied: levelLabel,
         applicationUpdatedDate: dateIso,
-      });
+        registrationStatus: stageFill.registrationStatus,
+        documentStatus: stageFill.documentStatus,
+        assessmentStatus: stageFill.assessmentStatus,
+        contractStatus: stageFill.contractStatus,
+        feeStatus: stageFill.feeStatus,
+      };
+      // For Processing rows that landed on the fee stage with feeStatus='Paid'
+      // (i.e. the ungated-to-enroll branch), stamp a recent feePaymentDate so
+      // the lifecycle widget's payment-recency slice has data.
+      if (stageFill.feeStatus === 'Paid') {
+        const payDaysBack = Math.floor(rand() * 14);
+        statusRow.feePaymentDate = new Date(
+          Date.now() - payDaysBack * 24 * 60 * 60 * 1000,
+        )
+          .toISOString()
+          .slice(0, 10);
+      }
+      statusRows.push(statusRow);
     }
   }
 
@@ -551,7 +842,10 @@ async function seedAdmissionsFunnel(
   return appRows.length;
 }
 
-// Seeds ~5 plausible discount codes in the test AY's discount-codes table.
+// Seeds 7 plausible discount codes in the test AY's discount-codes table.
+// Real schema columns: discountCode, details, enroleeType, startDate, endDate.
+// (No `percentageDiscount` column — discount semantics live in `details` text.)
+// Code naming convention is AY-prefixed: AY99 = AY9999 test environment.
 async function seedDiscountCodes(
   service: SupabaseClient,
   testAy: { id: string; ay_code: string },
@@ -561,7 +855,7 @@ async function seedDiscountCodes(
 
   const { count: existing } = await service
     .from(table)
-    .select('code', { count: 'exact', head: true });
+    .select('discountCode', { count: 'exact', head: true });
   if ((existing ?? 0) > 0) return 0;
 
   const today = new Date();
@@ -571,39 +865,54 @@ async function seedDiscountCodes(
 
   const rows = [
     {
-      code: 'ALUMNI-15',
-      description: 'Alumni family — 15% off first term',
-      percentageDiscount: 15,
+      discountCode: 'AY99TEST01',
       startDate: today.toISOString().slice(0, 10),
       endDate: nextQuarter.toISOString().slice(0, 10),
+      details: 'Test alumni family — 15% off registration',
+      enroleeType: 'Both',
     },
     {
-      code: 'SIBLING-10',
-      description: 'Sibling discount — 10%',
-      percentageDiscount: 10,
+      discountCode: 'AY99TEST02',
       startDate: today.toISOString().slice(0, 10),
       endDate: nextQuarter.toISOString().slice(0, 10),
+      details: 'Test sibling discount — 10% off term fees',
+      enroleeType: 'Current',
     },
     {
-      code: 'EARLY-BIRD',
-      description: 'Early enrolment — 7% off',
-      percentageDiscount: 7,
+      discountCode: 'AY99TEST03',
       startDate: today.toISOString().slice(0, 10),
       endDate: nextMonth.toISOString().slice(0, 10),
+      details: 'Test early-bird — 200 SGD off registration',
+      enroleeType: 'New',
     },
     {
-      code: 'STAFF-20',
-      description: 'HFSE staff family — 20%',
-      percentageDiscount: 20,
+      discountCode: 'AY99TEST04',
       startDate: today.toISOString().slice(0, 10),
       endDate: nextQuarter.toISOString().slice(0, 10),
+      details: 'Test staff family — 20% off all fees',
+      enroleeType: 'Both',
     },
     {
-      code: 'SCHEDULED-05',
-      description: 'Future promotion (not yet active)',
-      percentageDiscount: 5,
+      discountCode: 'AY99TEST05',
       startDate: tomorrow.toISOString().slice(0, 10),
       endDate: nextQuarter.toISOString().slice(0, 10),
+      details: 'Future test promotion (not yet active) — 5% off',
+      enroleeType: 'New',
+    },
+    // VizSchool variants
+    {
+      discountCode: 'AY99TESTVZ01',
+      startDate: today.toISOString().slice(0, 10),
+      endDate: nextQuarter.toISOString().slice(0, 10),
+      details: 'Test VizSchool sibling — 10% off',
+      enroleeType: 'VizSchool Current',
+    },
+    {
+      discountCode: 'AY99TESTVZ02',
+      startDate: today.toISOString().slice(0, 10),
+      endDate: nextQuarter.toISOString().slice(0, 10),
+      details: 'Test VizSchool any — 5% off',
+      enroleeType: 'VizSchool Both',
     },
   ];
 
@@ -882,25 +1191,140 @@ async function seedEnrolledAdmissionsRows(
   const todayIso = new Date().toISOString().slice(0, 10);
   const upperPrefix = prefix.toUpperCase();
 
-  const appInserts = rows.map((r, i) => ({
-    enroleeNumber: `${upperPrefix}-ENR-${String(i + 1).padStart(4, '0')}`,
-    studentNumber: r.studentNumber,
-    firstName: r.firstName,
-    lastName: r.lastName,
-    middleName: r.middleName,
-    enroleeFullName: [r.firstName, r.middleName, r.lastName].filter(Boolean).join(' '),
-    levelApplied: r.levelCode,
-    applicationStatus: 'Enrolled',
-  }));
-  const statusInserts = rows.map((r, i) => ({
-    enroleeNumber: `${upperPrefix}-ENR-${String(i + 1).padStart(4, '0')}`,
-    applicationStatus: 'Enrolled',
-    levelApplied: r.levelCode,
-    classLevel: r.levelCode,
-    classSection: r.sectionName,
-    classStatus: 'Assigned',
-    applicationUpdatedDate: todayIso,
-  }));
+  // Persona quirks layered on top of the default "everything Finished, status
+  // Enrolled" baseline. Of ~200 rows:
+  //   - 3 are Enrolled (Conditional) — registrar carve-outs (waiver path).
+  //   - 5 are Enrolled with documentStatus='Verified' (not Finished) —
+  //     "documents almost done" tail; exercises the lifecycle widget's
+  //     near-complete bucket and the dashboard's docs-pending count.
+  //   - 2 are Withdrawn post-enrollment (~30 days back) so the
+  //     <StudentLifecycleTimeline> branches into the withdrawal path.
+  // Counted from the start of the rows array so they're deterministic across
+  // re-seeds.
+  const CONDITIONAL_RANGE = { start: 0, end: 3 };
+  const VERIFIED_DOCS_RANGE = { start: 3, end: 8 };
+  const WITHDRAWN_RANGE = { start: 8, end: 10 };
+
+  const personaApplicationStatus = (i: number): ApplicationStatus => {
+    if (i >= CONDITIONAL_RANGE.start && i < CONDITIONAL_RANGE.end) {
+      return 'Enrolled (Conditional)';
+    }
+    if (i >= WITHDRAWN_RANGE.start && i < WITHDRAWN_RANGE.end) {
+      return 'Withdrawn';
+    }
+    return 'Enrolled';
+  };
+
+  // Document status fill: standard rows get all 5 prereqs Finished/Signed/Paid.
+  // Verified-docs persona gets documentStatus='Verified' instead of 'Finished'.
+  // Withdrawn persona keeps prereqs at their last-known state (Finished) since
+  // they enrolled before withdrawing.
+  const personaStageFill = (i: number) => {
+    const isVerified = i >= VERIFIED_DOCS_RANGE.start && i < VERIFIED_DOCS_RANGE.end;
+    return {
+      registrationStatus: 'Finished',
+      documentStatus: isVerified ? 'Verified' : 'Finished',
+      assessmentStatus: 'Finished',
+      contractStatus: 'Signed',
+      feeStatus: 'Paid',
+    };
+  };
+
+  // Withdrawn rows backdate `applicationUpdatedDate` ~30 days so the timeline
+  // shows the withdrawal as a historical event rather than today.
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  const personaUpdatedDate = (i: number): string => {
+    if (i >= WITHDRAWN_RANGE.start && i < WITHDRAWN_RANGE.end) return thirtyDaysAgo;
+    return todayIso;
+  };
+
+  // Deterministic per-AY rand for category / classType / pass / STP picks. Same
+  // pattern as funnel — keeps re-runs stable.
+  const enrolledRand = mulberry32(hashString(`${testAy.ay_code}:enrolled-personas`));
+
+  // Per-row metadata computed once, then shared between appInserts and
+  // statusInserts so apps.category + status.enroleeType always agree (they
+  // mirror each other in production).
+  const personaMeta = rows.map(() => {
+    const category = pickEnroleeCategory(enrolledRand);
+    const classType = CLASS_TYPES[Math.floor(enrolledRand() * CLASS_TYPES.length)];
+    const paymentOption =
+      PAYMENT_OPTIONS[Math.floor(enrolledRand() * PAYMENT_OPTIONS.length)];
+    const contractSignatory =
+      CONTRACT_SIGNATORIES[Math.floor(enrolledRand() * CONTRACT_SIGNATORIES.length)];
+    const passType = PASS_TYPES[Math.floor(enrolledRand() * PASS_TYPES.length)];
+    const isStpApplicant = passType !== 'Singapore PR' && enrolledRand() < 0.20;
+    const availSchoolBus = YES_NO[Math.floor(enrolledRand() * YES_NO.length)];
+    const availUniform = YES_NO[Math.floor(enrolledRand() * YES_NO.length)];
+    const availStudentCare = YES_NO[Math.floor(enrolledRand() * YES_NO.length)];
+    const socialMediaConsent = enrolledRand() < 0.7;
+    return {
+      category,
+      classType,
+      paymentOption,
+      contractSignatory,
+      passType,
+      isStpApplicant,
+      availSchoolBus,
+      availUniform,
+      availStudentCare,
+      socialMediaConsent,
+    };
+  });
+
+  const appInserts = rows.map((r, i) => {
+    const m = personaMeta[i];
+    return {
+      enroleeNumber: `${upperPrefix}-ENR-${String(i + 1).padStart(4, '0')}`,
+      studentNumber: r.studentNumber,
+      category: m.category,
+      firstName: r.firstName,
+      lastName: r.lastName,
+      middleName: r.middleName,
+      enroleeFullName: [r.firstName, r.middleName, r.lastName].filter(Boolean).join(' '),
+      levelApplied: r.levelLabel,
+      classType: m.classType,
+      paymentOption: m.paymentOption,
+      contractSignatory: m.contractSignatory,
+      pass: m.passType,
+      enroleePhoto: PLACEHOLDER_PHOTO,
+      availSchoolBus: m.availSchoolBus,
+      availUniform: m.availUniform,
+      availStudentCare: m.availStudentCare,
+      // applications.applicationStatus = parent-portal-side. Always 'Registered'
+      // for an enrolled student (parent finished registration form). The SIS
+      // pipeline status lives on the status row.
+      applicationStatus: 'Registered',
+      stpApplicationType: m.isStpApplicant ? STP_APPLICATION_TYPE : null,
+      residenceHistory: m.isStpApplicant ? STP_RESIDENCE_HISTORY : null,
+      paracetamolConsent: true,
+      socialMediaConsent: m.socialMediaConsent,
+    };
+  });
+  const statusInserts = rows.map((r, i) => {
+    const fill = personaStageFill(i);
+    const m = personaMeta[i];
+    return {
+      enroleeNumber: `${upperPrefix}-ENR-${String(i + 1).padStart(4, '0')}`,
+      // SIS-side pipeline status — Enrolled / Enrolled (Conditional) / Withdrawn
+      // per the persona ranges.
+      applicationStatus: personaApplicationStatus(i),
+      // Mirrors apps.category — same value, same row index.
+      enroleeType: m.category,
+      levelApplied: r.levelLabel,
+      classLevel: r.levelLabel,
+      classSection: r.sectionName,
+      classStatus: 'Finished',
+      applicationUpdatedDate: personaUpdatedDate(i),
+      registrationStatus: fill.registrationStatus,
+      documentStatus: fill.documentStatus,
+      assessmentStatus: fill.assessmentStatus,
+      contractStatus: fill.contractStatus,
+      feeStatus: fill.feeStatus,
+    };
+  });
 
   let inserted = 0;
   const CHUNK = 200;
@@ -924,6 +1348,326 @@ async function seedEnrolledAdmissionsRows(
       continue;
     }
     inserted += appSlice.length;
+  }
+
+  return inserted;
+}
+
+// Seeds ay{YY}_enrolment_documents for every row in ay{YY}_enrolment_applications
+// (both funnel + enrolled). Document status mix per applicationStatus profile:
+//
+//   Submitted              — all 12 slots NULL (parent hasn't uploaded yet).
+//   Ongoing Verification   — ~5 Valid / ~3 Pending / ~2 Rejected / ~2 NULL.
+//   Processing             — ~9 Valid / 1-2 Rejected / 1-2 'To follow' / rest NULL.
+//   Cancelled              — partial: ~4 Valid / rest NULL.
+//   Withdrawn (pre-enrol)  — Valid through assessment-prereq slots, rest NULL.
+//   Enrolled               — most have all 12 Valid; ~5 have 1-2 Rejected.
+//   Enrolled (Conditional) — same as Enrolled (registrar bypassed the gate).
+//
+// Also stamps expiry dates on a subset to populate the P-Files dashboard's
+// "expiring documents" buckets:
+//   - 10 enrolled students: passportExpiry within next 30 days.
+//   - 3 enrolled students:  passportExpiry already in the past.
+//   - 5 enrolled students:  passExpiry mixed (3 expiring soon, 2 expired).
+//
+// Idempotent — bails entirely if any rows already exist for the AY.
+async function seedAdmissionsDocuments(
+  service: SupabaseClient,
+  testAy: { id: string; ay_code: string },
+): Promise<number> {
+  const prefix = prefixFor(testAy.ay_code);
+  const appsTable = `${prefix}_enrolment_applications`;
+  const statusTable = `${prefix}_enrolment_status`;
+  const docsTable = `${prefix}_enrolment_documents`;
+
+  // Skip-guard: any rows already → bail.
+  const { count: existing } = await service
+    .from(docsTable)
+    .select('enroleeNumber', { count: 'exact', head: true });
+  if ((existing ?? 0) > 0) return 0;
+
+  // Pull every application row + matching status (need applicationStatus to
+  // pick the per-row fill profile). Status rows are joined in JS to keep the
+  // PostgREST query simple. stpApplicationType gates the 3 STP-conditional
+  // slots (icaPhoto / financialSupportDocs / vaccinationInformation) so they
+  // only get populated for foreign-student personas.
+  const { data: appsData, error: appsErr } = await service
+    .from(appsTable)
+    .select('enroleeNumber, studentNumber, stpApplicationType');
+  if (appsErr || !appsData) {
+    console.error(
+      `[populated seeder] ${appsTable} read failed for documents seeder:`,
+      appsErr?.message,
+    );
+    return 0;
+  }
+  const apps = appsData as Array<{
+    enroleeNumber: string;
+    studentNumber: string | null;
+    stpApplicationType: string | null;
+  }>;
+  if (apps.length === 0) return 0;
+
+  const { data: statusData, error: statusErr } = await service
+    .from(statusTable)
+    .select('enroleeNumber, applicationStatus');
+  if (statusErr) {
+    console.error(
+      `[populated seeder] ${statusTable} read failed for documents seeder:`,
+      statusErr.message,
+    );
+    return 0;
+  }
+  const statusByEnrolee = new Map<string, string | null>();
+  for (const r of (statusData ?? []) as Array<{
+    enroleeNumber: string;
+    applicationStatus: string | null;
+  }>) {
+    statusByEnrolee.set(r.enroleeNumber, r.applicationStatus);
+  }
+
+  const rand = mulberry32(hashString(`${testAy.ay_code}:documents`));
+  const PLACEHOLDER_URL = 'test://document.pdf';
+  const REJECTION_REASONS = [
+    'Image too blurry — please re-scan with better lighting.',
+    'Document expired — upload the latest version.',
+    'Wrong file uploaded — this looks like a different document.',
+    'Signature missing — re-upload the signed copy.',
+    'Page cut off — please ensure the full page is captured.',
+  ];
+  const pickRejection = () =>
+    REJECTION_REASONS[Math.floor(rand() * REJECTION_REASONS.length)];
+
+  // Builds a slot-by-slot fill plan from a status profile. Returns a Map of
+  // slot.key -> { status, url } so the caller can stitch into the insert row.
+  type SlotFill = {
+    status: string | null;
+    url: string | null;
+    rejection: string | null;
+  };
+  const buildSlotFill = (profile: string): Record<string, SlotFill> => {
+    // Slot order from DOCUMENT_SLOTS (12 slots). Each profile picks a count
+    // distribution and walks slots in order assigning statuses.
+    const slots = DOCUMENT_SLOTS;
+    const fill: Record<string, SlotFill> = {};
+    // Default every slot to null first.
+    for (const s of slots) {
+      fill[s.key] = { status: null, url: null, rejection: null };
+    }
+
+    // Helper: assign statuses to indices [start, start+count) (clamped).
+    const assign = (
+      indices: number[],
+      status: string,
+      hasUrl: boolean,
+      withRejection: boolean,
+    ) => {
+      for (const idx of indices) {
+        if (idx < 0 || idx >= slots.length) continue;
+        const k = slots[idx].key;
+        fill[k] = {
+          status,
+          url: hasUrl ? PLACEHOLDER_URL : null,
+          rejection: withRejection ? pickRejection() : null,
+        };
+      }
+    };
+
+    // Pick `n` distinct indices from [0, slots.length) without replacement.
+    const pickIndices = (n: number, exclude: Set<number> = new Set()): number[] => {
+      const pool: number[] = [];
+      for (let i = 0; i < slots.length; i++) {
+        if (!exclude.has(i)) pool.push(i);
+      }
+      // Fisher-Yates shuffle (in-place via swap).
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      return pool.slice(0, Math.min(n, pool.length));
+    };
+
+    switch (profile) {
+      case 'submitted':
+        // All NULL — no work yet.
+        return fill;
+      case 'ongoing-verification': {
+        const validIdx = pickIndices(5);
+        assign(validIdx, 'Valid', true, false);
+        const used = new Set(validIdx);
+        const pendingIdx = pickIndices(3, used);
+        assign(pendingIdx, 'Pending', true, false);
+        for (const idx of pendingIdx) used.add(idx);
+        const rejectIdx = pickIndices(2, used);
+        assign(rejectIdx, 'Rejected', true, true);
+        // Remaining 2 stay NULL.
+        return fill;
+      }
+      case 'processing': {
+        const validIdx = pickIndices(9);
+        assign(validIdx, 'Valid', true, false);
+        const used = new Set(validIdx);
+        const rejectCount = rand() < 0.5 ? 1 : 2;
+        const rejectIdx = pickIndices(rejectCount, used);
+        assign(rejectIdx, 'Rejected', true, true);
+        for (const idx of rejectIdx) used.add(idx);
+        const toFollowCount = rand() < 0.5 ? 1 : 2;
+        const toFollowIdx = pickIndices(toFollowCount, used);
+        // 'To follow' = parent acknowledged pending; URL stays NULL.
+        assign(toFollowIdx, 'To follow', false, false);
+        return fill;
+      }
+      case 'cancelled': {
+        // Partial fill — ~4 slots Valid, rest NULL.
+        const validIdx = pickIndices(4);
+        assign(validIdx, 'Valid', true, false);
+        return fill;
+      }
+      case 'withdrawn-pre-enrolment': {
+        // Got most of the way through pre-enrolment docs.
+        const validIdx = pickIndices(8);
+        assign(validIdx, 'Valid', true, false);
+        return fill;
+      }
+      case 'enrolled-clean': {
+        // All 12 slots Valid.
+        const allIdx = Array.from({ length: slots.length }, (_, i) => i);
+        assign(allIdx, 'Valid', true, false);
+        return fill;
+      }
+      case 'enrolled-needs-revalidation': {
+        // All Valid except 1-2 Rejected (awaiting parent re-upload).
+        const allIdx = Array.from({ length: slots.length }, (_, i) => i);
+        assign(allIdx, 'Valid', true, false);
+        const rejectCount = rand() < 0.5 ? 1 : 2;
+        const rejectIdx = pickIndices(rejectCount);
+        assign(rejectIdx, 'Rejected', true, true);
+        return fill;
+      }
+      default:
+        return fill;
+    }
+  };
+
+  // Map applicationStatus → slot-fill profile.
+  const profileForStatus = (status: string | null, idx: number): string => {
+    switch (status) {
+      case 'Submitted':
+        return 'submitted';
+      case 'Ongoing Verification':
+        return 'ongoing-verification';
+      case 'Processing':
+        return 'processing';
+      case 'Cancelled':
+        return 'cancelled';
+      case 'Withdrawn':
+        return 'withdrawn-pre-enrolment';
+      case 'Enrolled':
+      case 'Enrolled (Conditional)':
+        // ~5 of every ~200 enrolled get the needs-revalidation flavor.
+        return idx % 40 === 0 ? 'enrolled-needs-revalidation' : 'enrolled-clean';
+      default:
+        return 'submitted';
+    }
+  };
+
+  // Expiry rosters — built from enrolled rows only. Index ranges chosen so
+  // the personas don't collide (10 + 3 + 5 = 18 distinct rows; 200 enrolled
+  // total leaves plenty of room).
+  const enrolledEnroleeNumbers = apps
+    .map((a) => a.enroleeNumber)
+    .filter((e) => {
+      const s = statusByEnrolee.get(e);
+      return s === 'Enrolled' || s === 'Enrolled (Conditional)';
+    });
+  const PASSPORT_EXPIRING_SOON = new Set(enrolledEnroleeNumbers.slice(0, 10));
+  const PASSPORT_ALREADY_EXPIRED = new Set(enrolledEnroleeNumbers.slice(10, 13));
+  const PASS_EXPIRING_SOON = new Set(enrolledEnroleeNumbers.slice(13, 16));
+  const PASS_ALREADY_EXPIRED = new Set(enrolledEnroleeNumbers.slice(16, 18));
+
+  // Generate ISO yyyy-MM-dd offsets relative to today.
+  const isoDateOffset = (days: number): string =>
+    new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  const inserts: Array<Record<string, unknown>> = [];
+  let enrolledIdx = 0;
+  for (const app of apps) {
+    const status = statusByEnrolee.get(app.enroleeNumber) ?? null;
+    const isEnrolled = status === 'Enrolled' || status === 'Enrolled (Conditional)';
+    const profile = profileForStatus(status, isEnrolled ? enrolledIdx++ : 0);
+    const slotFill = buildSlotFill(profile);
+
+    const row: Record<string, unknown> = {
+      enroleeNumber: app.enroleeNumber,
+      studentNumber: app.studentNumber,
+    };
+
+    const isStpApplicant = !!app.stpApplicationType;
+
+    for (const slot of DOCUMENT_SLOTS) {
+      // STP-conditional slots only populated for foreign-student personas.
+      // Non-STP applicants leave these slot+status columns NULL.
+      const isStpSlot = (STP_CONDITIONAL_SLOT_KEYS as readonly string[]).includes(slot.key);
+      if (isStpSlot && !isStpApplicant) {
+        row[slot.statusCol] = null;
+        row[slot.urlCol] = null;
+        continue;
+      }
+
+      const f = slotFill[slot.key];
+      // Workflow semantics:
+      //   - Non-expiring slots (no expiryCol): null → 'Uploaded' → 'Valid' / 'Rejected'.
+      //   - Expiring slots (has expiryCol):    null → 'Valid' → 'Expired' / 'Rejected'.
+      // 'Pending' is a legacy-ish state we collapse to 'Uploaded' on
+      // non-expiring slots since that's what real production rows use.
+      let status = f.status;
+      const isExpiring = !!slot.expiryCol;
+      if (status === 'Pending' && !isExpiring) {
+        status = 'Uploaded';
+      }
+      row[slot.statusCol] = status;
+      row[slot.urlCol] = f.url;
+      // Rejection reason column convention: `${slotKey}RejectionReason`.
+      // Some historical AYs may not have this column; PostgREST will silently
+      // drop the field on insert if absent, which is fine for the seeder.
+      if (f.rejection) {
+        row[`${slot.key}RejectionReason`] = f.rejection;
+      }
+    }
+
+    // Expiry stamps — only on enrolled rows that landed in the rosters.
+    // When the date is in the past, the matching status is 'Expired' (the
+    // auto-flipped state production produces when the expiry passes).
+    if (PASSPORT_EXPIRING_SOON.has(app.enroleeNumber)) {
+      row.passportExpiry = isoDateOffset(1 + Math.floor(rand() * 30));
+      // Status stays 'Valid' (set by buildSlotFill for enrolled-clean profile).
+    } else if (PASSPORT_ALREADY_EXPIRED.has(app.enroleeNumber)) {
+      row.passportExpiry = isoDateOffset(-(30 + Math.floor(rand() * 60)));
+      row.passportStatus = 'Expired';
+    }
+    if (PASS_EXPIRING_SOON.has(app.enroleeNumber)) {
+      row.passExpiry = isoDateOffset(1 + Math.floor(rand() * 30));
+    } else if (PASS_ALREADY_EXPIRED.has(app.enroleeNumber)) {
+      row.passExpiry = isoDateOffset(-(30 + Math.floor(rand() * 60)));
+      row.passStatus = 'Expired';
+    }
+
+    inserts.push(row);
+  }
+
+  let inserted = 0;
+  const CHUNK = 200;
+  for (let i = 0; i < inserts.length; i += CHUNK) {
+    const slice = inserts.slice(i, i + CHUNK);
+    const { error } = await service.from(docsTable).insert(slice);
+    if (error) {
+      console.error(
+        `[populated seeder] ${docsTable} insert failed (chunk ${i}..${i + slice.length}):`,
+        error.message,
+      );
+      continue;
+    }
+    inserted += slice.length;
   }
 
   return inserted;

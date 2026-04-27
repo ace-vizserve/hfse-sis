@@ -10,16 +10,21 @@ on conflict (ay_code) do nothing;
 
 -- ---------- Levels ----------
 insert into public.levels (code, label, level_type) values
-  ('P1', 'Primary 1',   'primary'),
-  ('P2', 'Primary 2',   'primary'),
-  ('P3', 'Primary 3',   'primary'),
-  ('P4', 'Primary 4',   'primary'),
-  ('P5', 'Primary 5',   'primary'),
-  ('P6', 'Primary 6',   'primary'),
-  ('S1', 'Secondary 1', 'secondary'),
-  ('S2', 'Secondary 2', 'secondary'),
-  ('S3', 'Secondary 3', 'secondary'),
-  ('S4', 'Secondary 4', 'secondary')
+  ('YS-L', 'Youngstarters | Little Stars',     'preschool'),
+  ('YS-J', 'Youngstarters | Junior Stars',     'preschool'),
+  ('YS-S', 'Youngstarters | Senior Stars',     'preschool'),
+  ('P1',   'Primary One',                       'primary'),
+  ('P2',   'Primary Two',                       'primary'),
+  ('P3',   'Primary Three',                     'primary'),
+  ('P4',   'Primary Four',                      'primary'),
+  ('P5',   'Primary Five',                      'primary'),
+  ('P6',   'Primary Six',                       'primary'),
+  ('S1',   'Secondary One',                     'secondary'),
+  ('S2',   'Secondary Two',                     'secondary'),
+  ('S3',   'Secondary Three',                   'secondary'),
+  ('S4',   'Secondary Four',                    'secondary'),
+  ('CS1',  'Cambridge Secondary One (Year 8)',  'secondary'),
+  ('CS2',  'Cambridge Secondary Two (Year 9)',  'secondary')
 on conflict (code) do nothing;
 
 -- ---------- Subjects — Primary ----------

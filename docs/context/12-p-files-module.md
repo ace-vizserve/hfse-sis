@@ -25,18 +25,22 @@ Three-tier access:
 
 ## Required Documents Per Student
 
-Two categories based on expiry behavior:
+Sixteen total slots, split by expiry behavior. The canonical list lives at `lib/sis/queries.ts:DOCUMENT_SLOTS` (16 entries; `STP_CONDITIONAL_SLOT_KEYS` exports the 3 STP-gated slot keys separately).
 
-### Non-expiring documents
+### Non-expiring documents (8 slots)
 
-| Document | DB column (URL) | DB column (status) |
-|----------|----------------|-------------------|
-| ID Picture | `idPicture` | `idPictureStatus` |
-| Birth Certificate | `birthCert` | `birthCertStatus` |
-| Educational Certificate | `educCert` | `educCertStatus` |
-| Medical Exam | `medical` | `medicalStatus` |
+| Document | DB column (URL) | DB column (status) | STP-conditional? |
+|----------|----------------|-------------------|------------------|
+| ID Picture | `idPicture` | `idPictureStatus` | — |
+| Birth Certificate | `birthCert` | `birthCertStatus` | — |
+| Educational Certificate | `educCert` | `educCertStatus` | — |
+| Medical Exam | `medical` | `medicalStatus` | — |
+| Form 12 | `form12` | `form12Status` | — |
+| ICA Photo | `icaPhoto` | `icaPhotoStatus` | ✅ STP only |
+| Financial Support Docs | `financialSupportDocs` | `financialSupportDocsStatus` | ✅ STP only |
+| Vaccination Information | `vaccinationInformation` | `vaccinationInformationStatus` | ✅ STP only |
 
-### Expiring documents
+### Expiring documents (8 slots)
 
 | Document | DB column (URL) | DB column (status) | Expiry column |
 |----------|----------------|-------------------|---------------|
@@ -54,6 +58,42 @@ Two categories based on expiry behavior:
 - Father documents required only if `fatherEmail` is present in `ay{YYYY}_enrolment_applications`
 - Guardian documents required only if `guardianEmail` is present in `ay{YYYY}_enrolment_applications`
 - Mother documents always required (assumption — validate with stakeholder)
+- The 3 STP-conditional slots required only if `ay{YYYY}_enrolment_applications.stpApplicationType` indicates an active STP application. See `21-stp-application.md` for the full STP workflow (Edutrust Certified school sponsoring Singapore Student Passes via ICA).
+
+## Document status workflow (canonical reference)
+
+The `*Status` raw column has two distinct state machines, depending on whether the slot has an expiry date. This is the canonical reference for the value spaces — every other doc points back here.
+
+### Non-expiring slots (`null → 'Uploaded' → 'Valid'`)
+
+```
+       (parent uploads)         (registrar validates)
+null ───────────────► Uploaded ─────────────────────► Valid
+                          │
+                          └──── (registrar rejects) ──► Rejected
+```
+
+- `null` — slot has no upload yet.
+- `'Uploaded'` — parent uploaded but registrar hasn't validated yet. **Registrar action needed.**
+- `'Valid'` — registrar accepted.
+- `'Rejected'` — registrar rejected; parent must re-upload.
+- `'To follow'` — parent acknowledged the requirement but is not ready to upload yet.
+
+### Expiring slots (`null → 'Valid' → 'Expired'`)
+
+```
+       (parent uploads + expiry date)        (expiry date passes)
+null ─────────────────────────────────► Valid ──────────────────► Expired
+```
+
+- `null` — slot has no upload yet.
+- `'Valid'` — parent uploaded with an expiry date in the future. **No `'Uploaded'` intermediate** — the expiry date itself is the validation evidence.
+- `'Expired'` — auto-flipped when the `*Expiry` column passes today's date. Parent must re-upload.
+- `'To follow'` — parent acknowledged the requirement but is not ready to upload yet.
+
+### Re-upload-required terminal states
+
+`'Rejected'` (non-expiring) and `'Expired'` (expiring) both mean the parent must re-upload. The lifecycle aggregate "Awaiting document revalidation" bucket on `/sis` counts both (see `20-dashboards.md`).
 
 ### Status model in P-Files
 
@@ -92,7 +132,7 @@ Join path: `enrolment_documents.studentNumber` → `enrolment_applications.stude
 
 ### 2. Student detail view
 
-- All 12 document slots with current status, file preview/download link, expiry date, **History button** for any slot with a file
+- All 16 document slots (8 non-expiring + 8 expiring; 3 of the non-expiring are STP-conditional and only show when `stpApplicationType` is set) with current status, file preview/download link, expiry date, **History button** for any slot with a file
 - Visual indicators: mint (on file), amber (pending review), red (expired), dashed (missing), muted (N/A)
 
 ### 3. Upload / Replace on behalf

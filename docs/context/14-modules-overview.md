@@ -87,6 +87,21 @@ Every admissions-owned table has one **primary writer**. Other modules may have 
 
 **Per-student discount grants** are written by the external enrolment portal directly into the `discount{1,2,3}` slot columns — the Records module only manages the code catalogue and edits the slot strings on the student's application row. There is no separate per-student grant ledger.
 
+### The two `applicationStatus` columns
+
+Two columns in the admissions schema are both named `applicationStatus`, in different tables, with completely different value spaces. This is the most common source of confusion when reading admissions code, so it lives here in the cross-module contract:
+
+| Table | Owner | Value space | Meaning |
+|---|---|---|---|
+| `ay{YY}_enrolment_applications.applicationStatus` | Parent portal | `Draft` (presumed) / `Registered` (observed) | Application *form* submission state — set when the parent finishes the form on `enrol.hfse.edu.sg`. |
+| `ay{YY}_enrolment_status.applicationStatus` | SIS / admissions team | `Submitted` / `Ongoing Verification` / `Processing` / `Enrolled` / `Enrolled (Conditional)` / `Cancelled` / `Withdrawn` | SIS-side workflow pipeline. Canonical list in `lib/schemas/sis.ts:STAGE_STATUS_OPTIONS.application`. |
+
+**Every drill, dashboard, lifecycle widget, sync filter, and roster builder reads from the SIS-side (status) column.** Default to assuming the **status table** when code says `applicationStatus`; the apps-table column is only useful for "did the parent finish the form yet?" Full discussion: `06-admissions-integration.md` § The two `applicationStatus` columns.
+
+### `category` ↔ `enroleeType` mirror
+
+`ay{YY}_enrolment_applications.category` and `ay{YY}_enrolment_status.enroleeType` mirror each other for the same `enroleeNumber` — both are the same 4-value enum (`New` / `Current` / `VizSchool New` / `VizSchool Current`, exported as `ENROLEE_CATEGORIES` in `lib/schemas/sis.ts`). The discount-codes catalogue's `enroleeType` is a **6-value superset** that adds `Both` and `VizSchool Both` for codes applicable to either New OR Current students. See `06-admissions-integration.md` for the full eligibility-matching rules.
+
 ### Coordination rules
 
 - **Document validation lives in the Records module, not P-Files.** P-Files is a repository — files, history, metadata. It never sets `'Rejected'`. The Records module's Documents tab is where staff send a document back for re-upload with a reason.

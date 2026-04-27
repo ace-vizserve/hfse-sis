@@ -16,7 +16,7 @@ The Markbook's student-roster sync is a one-way pull into the SIS's own `student
 ## Admissions DB Tables
 
 ### `ay{YY}_enrolment_applications`
-Contains full student personal and family info. The `applicationStatus` here is always `'Registered'` (it tracks the application form submission state, not the enrollment pipeline). **Do not use this table's `applicationStatus` for enrollment filtering.**
+Contains full student personal and family info. The `applicationStatus` here is **parent-portal-side** — it tracks the application *form* submission state, not the enrollment pipeline. The only production value observed in our samples is `"Registered"` (set when the parent finishes the registration form); `"Draft"` is presumed for in-progress rows but unconfirmed. **Do not use this table's `applicationStatus` for enrollment filtering** — every drill, dashboard, and lifecycle widget reads from `ay{YY}_enrolment_status.applicationStatus` instead. See [§ The two `applicationStatus` columns](#the-two-applicationstatus-columns) for the full distinction.
 
 Key fields:
 | Field | Type | Notes |
@@ -28,6 +28,8 @@ Key fields:
 | `firstName` | text | |
 | `middleName` | text | |
 | `levelApplied` | text | |
+| `category` | varchar | One of `New` / `Current` / `VizSchool New` / `VizSchool Current`. Mirrors `enrolment_status.enroleeType` for the same enroleeNumber. See [§ `category` ↔ `enroleeType` mirror](#category--enroleetype-mirror) |
+| `stpApplicationType` | text | Gates 3 STP-conditional document slots (`icaPhoto`, `financialSupportDocs`, `vaccinationInformation`). HFSE is Edutrust Certified and can sponsor Singapore Student Pass applications via ICA on behalf of foreign students. See `21-stp-application.md` |
 
 ### `ay{YY}_enrolment_status`
 Managed by the admissions team. Contains the actual enrollment pipeline status and class assignment.
@@ -39,11 +41,34 @@ Key fields:
 | `applicationStatus` | varchar | See values below |
 | `classStatus` | varchar | See values below |
 | `classAY` | varchar | Academic year (e.g., "AY2026") |
-| `classLevel` | varchar | e.g., "Primary 1", "Secondary 2" |
+| `classLevel` | varchar | Word form (post-migration 029), e.g., "Primary One", "Secondary Two", "Cambridge Secondary One (Year 8)", "Youngstarters \| Little Stars". Legacy digit form ("Primary 1") still tolerated by `lib/sync/level-normalizer.ts` as a defensive fallback. |
 | `classSection` | varchar | e.g., "Patience", "Discipline 2" |
 
 ### `ay{YY}_enrolment_documents`
 Document tracking. Read by the Records module's Documents tab and by P-Files dashboards; written by P-Files on staff upload (URL + status + expiry, Key Decision #34) and by the parent portal on parent self-serve upload. The `{slotKey}Status` column is the Records module's responsibility to set `Valid` / `Rejected` (Key Decision #37) — P-Files never sets `'Rejected'`.
+
+## The two `applicationStatus` columns
+
+There are **two columns named `applicationStatus`** in different tables, with completely different value spaces. Always specify which table you mean.
+
+| Table | Owner | Value space | Meaning |
+|---|---|---|---|
+| `ay{YY}_enrolment_applications.applicationStatus` | Parent portal | `Draft` (presumed) / `Registered` (observed) | Application *form* submission state. Set when the parent finishes the registration form on `enrol.hfse.edu.sg`. |
+| `ay{YY}_enrolment_status.applicationStatus` | SIS / admissions team | `Submitted` / `Ongoing Verification` / `Processing` / `Enrolled` / `Enrolled (Conditional)` / `Cancelled` / `Withdrawn` | SIS-side workflow pipeline. Canonical values listed in `lib/schemas/sis.ts:STAGE_STATUS_OPTIONS.application`. |
+
+**Every drill, dashboard, lifecycle widget, sync filter, and roster builder reads from the SIS-side (status) column.** When code says `applicationStatus`, default to assuming the status table — the apps-table column is only useful for "did the parent finish the form yet?"
+
+## `category` ↔ `enroleeType` mirror
+
+Two columns track the same enrollee categorisation, one on each side of the join. They mirror each other for the same `enroleeNumber`.
+
+| Column | Table | Value space |
+|---|---|---|
+| `category` | `ay{YY}_enrolment_applications` | `New` / `Current` / `VizSchool New` / `VizSchool Current` (4-value) |
+| `enroleeType` | `ay{YY}_enrolment_status` | Same 4 values |
+| `enroleeType` | `ay{YY}_discount_codes` | **Catalogue superset (6-value)** — adds `Both` and `VizSchool Both` for codes applicable to either New OR Current students of the respective track |
+
+The 4-value student-side enum is exported as `ENROLEE_CATEGORIES` in `lib/schemas/sis.ts` for code reference. The 6-value discount-codes superset is the eligibility filter — a code with `enroleeType='Both'` matches either `category='New'` or `category='Current'`.
 
 ## Status Values
 
@@ -123,6 +148,8 @@ WHERE s."classSection" IS NOT NULL
 | `classSection` has a typo: "Courageos" vs "Courageous" | Creates phantom section | Normalize section names on sync against a known sections list |
 | `applicationStatus` not updated to "Enrolled" consistently | May miss students if filtering strictly | Use `classSection IS NOT NULL` as primary filter |
 | Year-specific table names (`ay2026_*`) | Sync query needs manual update each AY | Store table prefix in app config |
+| `availSchoolBus` / `availUniform` / `availStudentCare` real DB type | Production stores Yes/No **strings**, not booleans. `lib/schemas/sis.ts` currently treats them as `optionalBool` — schema-DB drift. | Future: align schema to the real text shape (or migrate the DB). Until then, do not rely on boolean parsing for these fields. |
+| `postalCode` / `homePhone` / `contactPersonNumber` / `*Mobile` real DB type | Production stores **numbers** (`bigint`), schema treats as `optionalText`. Same drift class. | Future: align schema. The DDL in `10a-parent-portal-ddl.md` is the ground truth. |
 
 ## Connection Config
 

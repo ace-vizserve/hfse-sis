@@ -185,6 +185,14 @@ export type ApplicationRow = {
   passportExpiry: string | null;
   pass: string | null;
   passExpiry: string | null;
+  // Singapore ICA Student Pass workflow (KD #58 / docs/context/21-stp-application.md).
+  // Gate field — when set, the parent has opted into the STP sub-flow and the
+  // 3 STP-conditional doc slots (icaPhoto, financialSupportDocs,
+  // vaccinationInformation) become surface-relevant. Typical value:
+  // "New Student Pass Application". `residenceHistory` is jsonb of the past
+  // 5 years of residency.
+  stpApplicationType: string | null;
+  residenceHistory: unknown;
   // Contact
   homePhone: string | null;
   homeAddress: string | null;
@@ -198,10 +206,13 @@ export type ApplicationRow = {
   preferredSchedule: string | null;
   classType: string | null;
   paymentOption: string | null;
-  availSchoolBus: boolean | null;
-  availStudentCare: boolean | null;
+  // avail* fields — production DB stores 'Yes' / 'No' strings, not booleans.
+  // Type widened to string | null to match real shape; the schema enforces the
+  // 'Yes'|'No' enum on writes via lib/schemas/sis.ts::optionalYesNo.
+  availSchoolBus: string | null;
+  availStudentCare: string | null;
   studentCareProgram: string | null;
-  availUniform: boolean | null;
+  availUniform: string | null;
   additionalLearningNeeds: string | null;
   otherLearningNeeds: string | null;
   previousSchool: string | null;
@@ -279,6 +290,7 @@ const DETAIL_APP_COLUMNS = [
   'enroleeNumber', 'studentNumber', 'enroleeFullName', 'firstName', 'middleName', 'lastName', 'preferredName', 'category',
   'nric', 'birthDay', 'gender', 'nationality', 'primaryLanguage', 'religion', 'religionOther',
   'passportNumber', 'passportExpiry', 'pass', 'passExpiry',
+  'stpApplicationType', 'residenceHistory',
   'homePhone', 'homeAddress', 'postalCode', 'livingWithWhom', 'contactPerson', 'contactPersonNumber', 'parentMaritalStatus',
   'levelApplied', 'preferredSchedule', 'classType', 'paymentOption', 'availSchoolBus', 'availStudentCare', 'studentCareProgram',
   'availUniform', 'additionalLearningNeeds', 'otherLearningNeeds', 'previousSchool', 'howDidYouKnowAboutHFSEIS', 'otherSource',
@@ -396,6 +408,7 @@ export const DOCUMENT_SLOTS: Array<{ key: string; label: string; statusCol: stri
   { key: 'birthCert',         label: 'Birth Certificate',    statusCol: 'birthCertStatus',         urlCol: 'birthCert' },
   { key: 'educCert',          label: 'Education Certificate',statusCol: 'educCertStatus',          urlCol: 'educCert' },
   { key: 'medical',           label: 'Medical',              statusCol: 'medicalStatus',           urlCol: 'medical' },
+  { key: 'form12',            label: 'Form 12',              statusCol: 'form12Status',            urlCol: 'form12' },
   { key: 'passport',          label: 'Passport (Student)',   statusCol: 'passportStatus',          urlCol: 'passport',          expiryCol: 'passportExpiry' },
   { key: 'pass',              label: 'Pass (Student)',       statusCol: 'passStatus',              urlCol: 'pass',              expiryCol: 'passExpiry' },
   { key: 'motherPassport',    label: 'Mother Passport',      statusCol: 'motherPassportStatus',    urlCol: 'motherPassport',    expiryCol: 'motherPassportExpiry' },
@@ -404,7 +417,20 @@ export const DOCUMENT_SLOTS: Array<{ key: string; label: string; statusCol: stri
   { key: 'fatherPass',        label: 'Father Pass',          statusCol: 'fatherPassStatus',        urlCol: 'fatherPass',        expiryCol: 'fatherPassExpiry' },
   { key: 'guardianPassport',  label: 'Guardian Passport',    statusCol: 'guardianPassportStatus',  urlCol: 'guardianPassport',  expiryCol: 'guardianPassportExpiry' },
   { key: 'guardianPass',      label: 'Guardian Pass',        statusCol: 'guardianPassStatus',      urlCol: 'guardianPass',      expiryCol: 'guardianPassExpiry' },
+  // STP application slots — visible when stpApplicationType is set on the applications row
+  { key: 'icaPhoto',                label: 'ICA Photo (STP)',         statusCol: 'icaPhotoStatus',                urlCol: 'icaPhoto' },
+  { key: 'financialSupportDocs',    label: 'Financial Support (STP)', statusCol: 'financialSupportDocsStatus',    urlCol: 'financialSupportDocs' },
+  { key: 'vaccinationInformation',  label: 'Vaccination Info (STP)',  statusCol: 'vaccinationInformationStatus',  urlCol: 'vaccinationInformation' },
 ];
+
+// STP-conditional slot keys — UI consumers hide these when the apps row's
+// stpApplicationType is null. The columns always exist on the row; only display
+// is gated. See KD #51 + the parent-portal STP workflow.
+export const STP_CONDITIONAL_SLOT_KEYS = [
+  'icaPhoto',
+  'financialSupportDocs',
+  'vaccinationInformation',
+] as const;
 
 const DOCUMENT_COLUMNS = [
   'enroleeNumber', 'studentNumber',

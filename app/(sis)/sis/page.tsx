@@ -21,6 +21,7 @@ import { InsightsPanel } from "@/components/dashboard/insights-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { ActivityByActorCard } from "@/components/sis/activity-by-actor-card";
 import { AuditByModuleDrillCard } from "@/components/sis/drills/audit-by-module-drill-card";
+import { LifecycleAggregateCard } from "@/components/sis/lifecycle-aggregate-card";
 import { SystemHealthStrip } from "@/components/sis/system-health-strip";
 import {
   Card,
@@ -40,6 +41,7 @@ import { formatRangeLabel, resolveRange, type DashboardSearchParams } from "@/li
 import { getDashboardWindows } from "@/lib/dashboard/windows";
 import { getActivityByActor, getAuditActivityByModule } from "@/lib/sis/dashboard";
 import { getSystemHealth } from "@/lib/sis/health";
+import { getLifecycleAggregate } from "@/lib/sis/process";
 import { getSessionUser } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -65,12 +67,13 @@ export default async function SisAdminHub({
 
   // System-health strip is superadmin-only (approver counts are sensitive to
   // their operational awareness). school_admin/admin see the hub without it.
-  const [health, windows, ayCodes] = await Promise.all([
+  const [health, windows, ayCodes, lifecycleBuckets] = await Promise.all([
     role === "superadmin" ? getSystemHealth() : Promise.resolve(null),
     ayCode
       ? getDashboardWindows(ayCode)
       : Promise.resolve({ term: { thisTerm: null, lastTerm: null }, ay: { thisAY: null, lastAY: null } }),
     listAyCodes(service),
+    ayCode ? getLifecycleAggregate(ayCode) : Promise.resolve([]),
   ]);
   const rangeInput = ayCode ? resolveRange(resolvedSearch, windows, ayCode) : null;
 
@@ -214,6 +217,16 @@ export default async function SisAdminHub({
               />
             </div>
           </section>
+
+          {/* Lifecycle blockers — top-of-fold "what's blocking the funnel". */}
+          {lifecycleBuckets.length > 0 && (
+            <section className="space-y-3">
+              <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Lifecycle
+              </h2>
+              <LifecycleAggregateCard buckets={lifecycleBuckets} ayCode={ayCode} />
+            </section>
+          )}
 
           {/* Access — rare, superadmin-only. */}
           <section className="space-y-3">
