@@ -648,11 +648,13 @@ function MonthView({
   const canPrev = cursor.getTime() > firstOfTermStart.getTime();
   const canNext = cursor.getTime() < firstOfTermEnd.getTime();
 
-  // Today button — only meaningful when today's month overlaps the selected
-  // term. Calendar data is term-scoped, so jumping the cursor to today's month
-  // when today is outside the term would render cells with no day-type badges
-  // (the upstream `daysByType` map has no entries for those dates). Disable
-  // the button in that case + clamp goToday() defensively.
+  // Today button is always enabled — even when today's month is outside the
+  // selected term. The grid renders cells with date numbers + headers but
+  // without day-type badges (since term-scoped `daysByType` has no entries
+  // for non-term months). That's an honest representation of "this term
+  // doesn't cover today" rather than a broken-looking empty state. To see
+  // today's actual badges, the user switches to the term that contains today
+  // via the term selector.
   const todayMonth = (() => {
     const t = new Date();
     return new Date(t.getFullYear(), t.getMonth(), 1);
@@ -668,7 +670,6 @@ function MonthView({
     setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1));
   }
   function goToday() {
-    if (!todayInTerm) return; // safety: button is disabled, but guard anyway
     setCursor(todayMonth);
   }
 
@@ -739,11 +740,10 @@ function MonthView({
             type="button"
             size="sm"
             onClick={goToday}
-            disabled={!todayInTerm}
             title={
               todayInTerm
-                ? "Jump to today"
-                : "Today is outside this term — switch terms to see today's calendar"
+                ? 'Jump to today'
+                : "Today is outside this term — view will show today's month with empty cells; switch terms to see badges"
             }
             className="h-8 font-mono text-[10px] uppercase tracking-[0.14em]">
             Today
