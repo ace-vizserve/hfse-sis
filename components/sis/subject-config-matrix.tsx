@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 
-import { SubjectConfigEditDialog, type SubjectConfigDraft } from "@/components/sis/subject-config-edit-dialog";
 import { ChartLegendChip } from "@/components/dashboard/chart-legend-chip";
+import { SubjectConfigEditDialog, type SubjectConfigDraft } from "@/components/sis/subject-config-edit-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -34,22 +34,17 @@ function classifyProfile(ww: number, pt: number, qa: number): WeightProfile {
   return "custom";
 }
 
-// Per-profile visual recipe. Tints mirror the legend ChartLegendChip
-// gradients below (fresh→mint, primary→indigo, stale→amber, very-stale→
-// destructive). Each cell uses a low-opacity bg-gradient at the same
-// direction as the chip (-to-b) so the cell reads as a pale wash of the
-// chip's color, not a flat tint. Hover brightens both stops; invalid-weight
-// (sum ≠ 100) overrides with a destructive gradient.
+// Per-profile visual recipe — cells use the SAME gradient as the legend
+// ChartLegendChip below, full saturation + white text + inset highlight
+// shadow. Each cell reads as a large version of its corresponding legend
+// chip. Hover bumps brightness slightly; invalid-weight (sum ≠ 100)
+// overrides with the very-stale destructive gradient.
+const CHIP_BASE =
+  "border-transparent text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)] hover:brightness-105";
 const PROFILE_CLASS: Record<WeightProfile, string> = {
-  primary:
-    "border-brand-mint/50 bg-gradient-to-b from-chart-5/25 to-chart-3/15 " +
-    "hover:from-chart-5/40 hover:to-chart-3/25 hover:border-brand-mint",
-  secondary:
-    "border-brand-indigo/50 bg-gradient-to-b from-brand-indigo/15 to-brand-navy/10 " +
-    "hover:from-brand-indigo/25 hover:to-brand-navy/20 hover:border-brand-indigo",
-  custom:
-    "border-brand-amber/50 bg-gradient-to-b from-brand-amber/25 to-brand-amber/10 " +
-    "hover:from-brand-amber/35 hover:to-brand-amber/20 hover:border-brand-amber",
+  primary: cn(CHIP_BASE, "bg-gradient-to-b from-chart-5 to-chart-3"),
+  secondary: cn(CHIP_BASE, "bg-gradient-to-b from-brand-indigo to-brand-navy"),
+  custom: cn(CHIP_BASE, "bg-gradient-to-b from-brand-amber to-brand-amber/80"),
 };
 
 export function SubjectConfigMatrix({
@@ -104,7 +99,7 @@ export function SubjectConfigMatrix({
                 </TableHead>
                 {levels.map((l) => (
                   <TableHead key={l.id} className="min-w-[108px] p-2 text-center align-middle">
-                    <div className="mx-auto inline-flex flex-col items-center gap-0.5 rounded-md border border-hairline bg-gradient-to-b from-background to-muted/30 px-2 py-1 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.6)]">
+                    <div className="mx-auto inline-flex flex-col items-center gap-0.5 rounded-md border border-hairline bg-gradient-to-b from-background to-accent px-2 py-1 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.6)]">
                       <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground">
                         {l.code}
                       </span>
@@ -133,9 +128,7 @@ export function SubjectConfigMatrix({
                 const hoverBg =
                   "hover:from-accent/30 hover:to-accent/40 group-hover:from-accent/30 group-hover:to-accent/40";
                 return (
-                  <TableRow
-                    key={s.id}
-                    className={cn("group transition-colors", stripeBg, hoverBg)}>
+                  <TableRow key={s.id} className={cn("group transition-colors", stripeBg, hoverBg)}>
                     <TableCell
                       className={cn(
                         "sticky left-0 z-10 border-r border-hairline transition-colors",
@@ -171,21 +164,21 @@ export function SubjectConfigMatrix({
                             type="button"
                             onClick={() => openCell(s, l, cfg)}
                             className={cn(
-                              "inline-flex w-full flex-col items-center gap-0.5 rounded-md border px-2 py-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.6)] transition-all",
-                              "hover:-translate-y-0.5 hover:shadow-sm",
-                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/20 focus-visible:border-brand-indigo/60",
-                              // Profile tint (primary / secondary / custom)
+                              "inline-flex w-full flex-col items-center gap-0.5 rounded-md border px-2 py-1.5 transition-all",
+                              "hover:-translate-y-0.5 hover:shadow-md",
+                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40",
+                              // Profile gradient + white text (matches the legend ChartLegendChip)
                               PROFILE_CLASS[profile],
-                              // Invalid sum overrides profile tint with destructive gradient
-                              // (matches the very-stale legend chip's destructive gradient).
+                              // Invalid sum — destructive gradient + white text (matches
+                              // the very-stale legend chip)
                               !weightsOk &&
-                                "border-destructive/60 bg-gradient-to-b from-destructive/20 to-destructive/10 hover:from-destructive/30 hover:to-destructive/15 hover:border-destructive",
+                                "border-transparent bg-gradient-to-b from-destructive to-destructive/80 text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)] hover:brightness-105",
                             )}
                             title={`Edit ${s.name} × ${l.code} — weights ${ww}/${pt}/${qa} · slots ${cfg.ww_max_slots}/${cfg.pt_max_slots} · QA/${cfg.qa_max} · ${profile}`}>
-                            <span className="font-mono text-[12px] font-semibold tabular-nums text-ink">
+                            <span className="font-mono text-[12px] font-semibold tabular-nums text-white">
                               {ww}·{pt}·{qa}
                             </span>
-                            <span className="font-mono text-[9px] tabular-nums text-ink-4">
+                            <span className="font-mono text-[9px] tabular-nums text-white/80">
                               {cfg.ww_max_slots}/{cfg.pt_max_slots} · QA/{cfg.qa_max}
                             </span>
                           </button>
