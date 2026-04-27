@@ -12,20 +12,25 @@ import type { DayType } from '@/lib/schemas/attendance';
 export type LevelSeed = {
   code: string;
   label: string;
-  level_type: 'primary' | 'secondary';
+  level_type: 'primary' | 'secondary' | 'preschool';
 };
 
 export const LEVELS: LevelSeed[] = [
-  { code: 'P1', label: 'Primary 1', level_type: 'primary' },
-  { code: 'P2', label: 'Primary 2', level_type: 'primary' },
-  { code: 'P3', label: 'Primary 3', level_type: 'primary' },
-  { code: 'P4', label: 'Primary 4', level_type: 'primary' },
-  { code: 'P5', label: 'Primary 5', level_type: 'primary' },
-  { code: 'P6', label: 'Primary 6', level_type: 'primary' },
-  { code: 'S1', label: 'Secondary 1', level_type: 'secondary' },
-  { code: 'S2', label: 'Secondary 2', level_type: 'secondary' },
-  { code: 'S3', label: 'Secondary 3', level_type: 'secondary' },
-  { code: 'S4', label: 'Secondary 4', level_type: 'secondary' },
+  { code: 'YS-L', label: 'Youngstarters | Little Stars',     level_type: 'preschool' },
+  { code: 'YS-J', label: 'Youngstarters | Junior Stars',     level_type: 'preschool' },
+  { code: 'YS-S', label: 'Youngstarters | Senior Stars',     level_type: 'preschool' },
+  { code: 'P1',   label: 'Primary One',                       level_type: 'primary'   },
+  { code: 'P2',   label: 'Primary Two',                       level_type: 'primary'   },
+  { code: 'P3',   label: 'Primary Three',                     level_type: 'primary'   },
+  { code: 'P4',   label: 'Primary Four',                      level_type: 'primary'   },
+  { code: 'P5',   label: 'Primary Five',                      level_type: 'primary'   },
+  { code: 'P6',   label: 'Primary Six',                       level_type: 'primary'   },
+  { code: 'S1',   label: 'Secondary One',                     level_type: 'secondary' },
+  { code: 'S2',   label: 'Secondary Two',                     level_type: 'secondary' },
+  { code: 'S3',   label: 'Secondary Three',                   level_type: 'secondary' },
+  { code: 'S4',   label: 'Secondary Four',                    level_type: 'secondary' },
+  { code: 'CS1',  label: 'Cambridge Secondary One (Year 8)',  level_type: 'secondary' },
+  { code: 'CS2',  label: 'Cambridge Secondary Two (Year 9)',  level_type: 'secondary' },
 ];
 
 export type SubjectSeed = {

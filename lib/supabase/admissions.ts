@@ -15,7 +15,7 @@ export type AdmissionsRow = {
   last_name: string | null;
   first_name: string | null;
   middle_name: string | null;
-  class_level: string | null;   // e.g. "Primary 1"
+  class_level: string | null;   // e.g. "Primary One"
   class_section: string | null; // e.g. "Patience" (may contain known typos)
   class_ay: string | null;      // e.g. "AY2026"
 };

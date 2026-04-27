@@ -56,12 +56,16 @@ CREATE TABLE terms (
 ```sql
 CREATE TABLE levels (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  code TEXT UNIQUE NOT NULL,                 -- e.g., "P1", "P2", "S1", "S4"
-  label TEXT NOT NULL,                       -- e.g., "Primary 1", "Secondary 3"
-  level_type TEXT NOT NULL                   -- "primary" or "secondary"
-    CHECK (level_type IN ('primary', 'secondary'))
+  code TEXT UNIQUE NOT NULL,                 -- e.g., "YS-L", "P1", "S1", "CS1"
+  label TEXT NOT NULL,                       -- word form, e.g., "Primary One", "Secondary Three", "Cambridge Secondary One (Year 8)"
+  level_type TEXT NOT NULL                   -- "primary", "secondary", or "preschool"
+    CHECK (level_type IN ('primary', 'secondary', 'preschool'))
 );
 ```
+
+**Canonical 15-row seed (migration 029, word form):** 3 Youngstarters preschool tiers (`YS-L` Little Stars, `YS-J` Junior Stars, `YS-S` Senior Stars) + 6 Primary (`P1`–`P6`, "Primary One" through "Primary Six") + 4 Secondary (`S1`–`S4`, "Secondary One" through "Secondary Four") + 2 Cambridge Secondary tracks (`CS1` "Cambridge Secondary One (Year 8)", `CS2` "Cambridge Secondary Two (Year 9)").
+
+> **Youngstarters today:** preschool levels exist in `levels` but do **not** receive `subject_configs`, grading sheets, or report cards yet — that's deferred until the YS report-card template is designed. Admissions / Records / Attendance accept YS rows; Markbook + Evaluation skip them by `level_type <> 'preschool'`.
 
 ### `sections`
 ```sql
