@@ -2,7 +2,7 @@
 
 import { CalendarOff, CalendarPlus, CheckCheck, ChevronLeft, ChevronRight, Loader2, Trash2, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { CopyHolidaysDialog } from "@/components/attendance/copy-holidays-dialog";
@@ -605,6 +605,17 @@ function MonthView({
 
   // Cursor = first-of-month for the visible month. Starts at term-start month.
   const [cursor, setCursor] = useState<Date>(() => new Date(termStart.getFullYear(), termStart.getMonth(), 1));
+
+  // When the user switches to a different term via the dropdown, reset the
+  // cursor to the new term's start month. Without this, the cursor stays at
+  // whatever month the user navigated to in the prior term — which would
+  // often be out-of-range for the new term and force an extra "go back to
+  // start" click. Keyed on `term.startDate` (a stable string) rather than
+  // the parsed termStart Date object whose reference changes each render.
+  useEffect(() => {
+    setCursor(new Date(termStart.getFullYear(), termStart.getMonth(), 1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [term.startDate]);
 
   // Flatten daysByType into an iso → DayType map for O(1) lookup.
   const dayTypeByIso = useMemo(() => {
