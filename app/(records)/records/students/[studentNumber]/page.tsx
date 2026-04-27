@@ -21,6 +21,9 @@ import {
   type PlacementRow,
 } from '@/lib/sis/records-history';
 import { getEnrollmentHistory } from '@/lib/sis/queries';
+import { getStudentLifecycle } from '@/lib/sis/process';
+import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { StudentLifecycleTimeline } from '@/components/sis/student-lifecycle-timeline';
 import { getSessionUser } from '@/lib/supabase/server';
 
 function displayName(s: {
@@ -75,14 +78,33 @@ export default async function RecordsStudentCrossYearPage({
     notFound();
   }
 
-  const [placements, academics, attendance] = await Promise.all([
+  const [placements, academics, attendance, history, currentAy] = await Promise.all([
     getPlacementHistory(student.studentId),
     getAcademicHistory(student.studentId),
     getAttendanceHistory(student.studentId),
+    getEnrollmentHistory(studentNumber),
+    getCurrentAcademicYear(),
   ]);
 
   const ayCount = new Set(placements.map((p) => p.ayCode)).size;
   const activePlacement = placements.find((p) => p.enrollmentStatus === 'active');
+
+  // Resolve the (ayCode, enroleeNumber) pair for the lifecycle snapshot.
+  // Prefer the current-AY entry; fall back to the most recent prior AY when
+  // the student is only in legacy years; skip rendering altogether when no
+  // admissions row exists for this studentNumber at all.
+  const lifecycleEntry = (() => {
+    if (history.length === 0) return null;
+    if (currentAy) {
+      const match = history.find((h) => h.ayCode === currentAy.ay_code);
+      if (match) return match;
+    }
+    return [...history].sort((a, b) => b.ayCode.localeCompare(a.ayCode))[0];
+  })();
+
+  const lifecycleSnapshot = lifecycleEntry
+    ? await getStudentLifecycle(lifecycleEntry.ayCode, lifecycleEntry.enroleeNumber)
+    : null;
 
   return (
     <PageShell>
@@ -151,6 +173,9 @@ export default async function RecordsStudentCrossYearPage({
       <PlacementSection rows={placements} />
       <AcademicSection rows={academics} />
       <AttendanceSection rows={attendance} />
+      {lifecycleSnapshot && (
+        <StudentLifecycleTimeline snapshot={lifecycleSnapshot} history={history} />
+      )}
 
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         <GraduationCap className="size-3" strokeWidth={2.25} />
@@ -407,3 +432,4 @@ function AttendanceSection({ rows }: { rows: AttendanceHistoryRow[] }) {
     </Card>
   );
 }
+

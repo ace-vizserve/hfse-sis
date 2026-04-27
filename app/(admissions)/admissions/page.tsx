@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ApplicationsByLevelCard } from "@/components/admissions/applications-by-level-card";
 import { DocumentCompletionCard } from "@/components/admissions/document-completion-card";
 import { AdmissionsDrillSheet } from "@/components/admissions/drills/admissions-drill-sheet";
+import { NewApplicationsPriority } from "@/components/admissions/new-applications-priority";
 import {
   AssessmentDrillCard,
   FunnelDrillCard,
@@ -181,6 +182,9 @@ export default async function AdmissionsDashboard({ searchParams }: { searchPara
         termWindows={windows.term}
         ayWindows={windows.ay}
       />
+
+      {/* Operational top-of-fold (KD #57) — new applications waiting on triage. */}
+      <NewApplicationsPriority ayCode={selectedAy} />
 
       <InsightsPanel insights={insights} />
 

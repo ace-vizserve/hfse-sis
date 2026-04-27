@@ -1,6 +1,17 @@
 # Process Flow & Lifecycle Gates
 
-> **Status:** 📋 **Design sketch — discussion phase, no sprint committed.** Captures the "student lifecycle as an observable process" direction that came up after the SIS-first framing landed. The observation: Records' 9-stage pipeline already IS the process, but it's permissive (no gates, no auto-transitions, no unified view). This doc scopes the v1 enhancement layer that would close that loop without over-automating.
+> **Status:** ✅ **v1 shipped 2026-04-27 (observability layer); auto-completion deferred to v2 pending audit-log evidence per the binding "simplify, don't change business flow" principle.** See KD #59-62 for the four design decisions surfaced during this build.
+
+## What landed in v1 (Sprint 27, 2026-04-27)
+
+- **Per-student lifecycle composite** — `<StudentLifecycleTimeline>` dual-mounted on `/admissions/applications/[enroleeNumber]?tab=lifecycle` (6th tab) and `/records/students/[studentNumber]` (4th section). Reads from new `lib/sis/process.ts::getStudentLifecycle(ayCode, enroleeNumber)`. Renders the 9 admissions stages + 5 downstream Markbook/Attendance/Parent stages with bucket-coloured rail dots, severity chip per row, withdrawn-state branch (terminal pill + grayed timeline), and cross-AY chip strip via `getEnrollmentHistory()`.
+- **Aggregate per-blocker dashboard widget on `/sis`** — `<LifecycleAggregateCard>` with 8 buckets: Awaiting fee payment · Awaiting document revalidation (Rejected + Expired) · Awaiting document validation (NEW — Uploaded) · Awaiting assessment schedule · Awaiting contract signature · Missing class assignment · Ungated to enroll · New applications. Each row drill-target prepared (drill API wiring deferred to a later iteration). Fed by `lib/sis/process.ts::getLifecycleAggregate(ayCode)`.
+- **Soft-gate visual checklist on `EditStageDialog`** — when admin selects `Enrolled` (or `Enrolled (Conditional)`) on the application stage, a checklist of the 5 prereq stages renders above the dropdown with ✓/⚠ per stage. Purely advisory — server still 422s on missing prereqs (the outer `ENROLLED_PREREQ_STAGES` gate is preserved). Surfaces blockers before submit instead of after.
+- **Removed the per-stage sequential prerequisite chain** (`PREREQ_STAGE_PREDECESSOR`) — was forcing fake-serial order on parallel admissions work. The outer `applicationStatus='Enrolled'` flip gate stays.
+- **New-applications PriorityPanel on `/admissions`** — `<NewApplicationsPriority>` at top-of-fold (operational archetype per KD #57). Reads `lib/admissions/priority.ts::getNewApplicationsPriority(ayCode)`. Counts `applicationStatus='Submitted'` rows.
+- Cache: 60s `unstable_cache` per call, tag `sis:${ayCode}` per KD #46.
+
+**Auto-completion deferred to v2.** No PATCH-route auto-flip hooks were added. After 1 term of using the lifecycle view, audit-log evidence will tell us where intra-stage auto-flips are safe (e.g. `feePaymentDate` populated → `feeStatus='Paid'`).
 
 ## Why this doc exists
 

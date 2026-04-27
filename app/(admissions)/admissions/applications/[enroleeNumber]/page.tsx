@@ -1,6 +1,3 @@
-import { Fragment } from 'react';
-import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -29,28 +26,22 @@ import {
   UserCircle2,
   Users,
   X,
-} from 'lucide-react';
+} from "lucide-react";
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { Fragment } from "react";
 
-import { ApplicationStatusBadge, StageStatusBadge } from '@/components/sis/status-badge';
-import { DocumentValidationActions } from '@/components/sis/document-validation-actions';
-import { EditFamilySheet } from '@/components/sis/edit-family-sheet';
-import { EditProfileSheet } from '@/components/sis/edit-profile-sheet';
-import { EditStageDialog } from '@/components/sis/edit-stage-dialog';
-import { EnrollmentHistoryChips } from '@/components/sis/enrollment-history-chips';
-import { FieldGrid, FieldSectionsCard, type Field } from '@/components/sis/field-grid';
-import { StudentAttendanceTab } from '@/components/sis/student-attendance-tab';
-import { CompassionateAllowanceInline } from '@/components/sis/compassionate-allowance-inline';
-import {
-  ENROLLED_PREREQ_STAGES,
-  PREREQ_STAGE_PREDECESSOR,
-  STAGE_COLUMN_MAP,
-  STAGE_LABELS,
-  STAGE_TERMINAL_STATUS,
-  type ParentSlot,
-  type ProfileUpdateInput,
-  type StageKey,
-} from '@/lib/schemas/sis';
-import { Badge } from '@/components/ui/badge';
+import { CompassionateAllowanceInline } from "@/components/sis/compassionate-allowance-inline";
+import { DocumentValidationActions } from "@/components/sis/document-validation-actions";
+import { EditFamilySheet } from "@/components/sis/edit-family-sheet";
+import { EditProfileSheet } from "@/components/sis/edit-profile-sheet";
+import { EditStageDialog } from "@/components/sis/edit-stage-dialog";
+import { EnrollmentHistoryChips } from "@/components/sis/enrollment-history-chips";
+import { FieldGrid, type Field } from "@/components/sis/field-grid";
+import { ApplicationStatusBadge, StageStatusBadge } from "@/components/sis/status-badge";
+import { StudentAttendanceTab } from "@/components/sis/student-attendance-tab";
+import { StudentLifecycleTimeline } from "@/components/sis/student-lifecycle-timeline";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardAction,
@@ -59,20 +50,36 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { PageShell } from '@/components/ui/page-shell';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
-import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
-import { getEnrollmentHistory, getStudentDetail, type ApplicationRow, type DocumentSlot, type StatusRow } from '@/lib/sis/queries';
-import { getSessionUser } from '@/lib/supabase/server';
-import { createServiceClient } from '@/lib/supabase/service';
+} from "@/components/ui/card";
+import { PageShell } from "@/components/ui/page-shell";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getCurrentAcademicYear, listAyCodes } from "@/lib/academic-year";
+import {
+  ENROLLED_PREREQ_STAGES,
+  STAGE_COLUMN_MAP,
+  STAGE_LABELS,
+  STAGE_TERMINAL_STATUS,
+  type ParentSlot,
+  type ProfileUpdateInput,
+  type StageKey,
+} from "@/lib/schemas/sis";
+import { getStudentLifecycle } from "@/lib/sis/process";
+import {
+  getEnrollmentHistory,
+  getStudentDetail,
+  type ApplicationRow,
+  type DocumentSlot,
+  type StatusRow,
+} from "@/lib/sis/queries";
+import { getSessionUser } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
+import { cn } from "@/lib/utils";
 
-const FUNNEL_STAGES = ['Inquiry', 'Applied', 'Interviewed', 'Offered', 'Accepted'] as const;
-const ENROLLED_STATES = ['Enrolled', 'Enrolled (Conditional)'];
+const FUNNEL_STAGES = ["Inquiry", "Applied", "Interviewed", "Offered", "Accepted"] as const;
+const ENROLLED_STATES = ["Enrolled", "Enrolled (Conditional)"];
 
 function funnelIndexFor(status: string | null): number {
-  const v = (status ?? '').trim().toLowerCase();
+  const v = (status ?? "").trim().toLowerCase();
   if (!v) return -1;
   if (ENROLLED_STATES.some((e) => e.toLowerCase() === v)) return FUNNEL_STAGES.length;
   const idx = FUNNEL_STAGES.findIndex((s) => s.toLowerCase() === v);
@@ -87,15 +94,15 @@ export default async function SisStudentDetailPage({
   searchParams: Promise<{ ay?: string; tab?: string }>;
 }) {
   const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
+  if (!sessionUser) redirect("/login");
   if (
-    sessionUser.role !== 'admissions' &&
-    sessionUser.role !== 'registrar' &&
-    sessionUser.role !== 'school_admin' &&
-    sessionUser.role !== 'admin' &&
-    sessionUser.role !== 'superadmin'
+    sessionUser.role !== "admissions" &&
+    sessionUser.role !== "registrar" &&
+    sessionUser.role !== "school_admin" &&
+    sessionUser.role !== "admin" &&
+    sessionUser.role !== "superadmin"
   ) {
-    redirect('/');
+    redirect("/");
   }
 
   const { enroleeNumber } = await params;
@@ -119,9 +126,7 @@ export default async function SisStudentDetailPage({
 
   const { application, status, documents } = detail;
 
-  const history = application.studentNumber
-    ? await getEnrollmentHistory(application.studentNumber)
-    : [];
+  const history = application.studentNumber ? await getEnrollmentHistory(application.studentNumber) : [];
 
   // Look up the student's compassionate-leave allowance from the grading
   // schema (via studentNumber). Null when the student hasn't been synced yet
@@ -130,28 +135,32 @@ export default async function SisStudentDetailPage({
   let allowanceDisabledReason: string | null = null;
   if (application.studentNumber) {
     const { data: stu } = await service
-      .from('students')
-      .select('urgent_compassionate_allowance')
-      .eq('student_number', application.studentNumber)
+      .from("students")
+      .select("urgent_compassionate_allowance")
+      .eq("student_number", application.studentNumber)
       .maybeSingle();
     if (stu) {
-      allowance = (stu as { urgent_compassionate_allowance: number | null })
-        .urgent_compassionate_allowance ?? 5;
+      allowance = (stu as { urgent_compassionate_allowance: number | null }).urgent_compassionate_allowance ?? 5;
     } else {
-      allowanceDisabledReason = 'Not yet synced to grading schema';
+      allowanceDisabledReason = "Not yet synced to grading schema";
     }
   } else {
-    allowanceDisabledReason = 'No studentNumber assigned yet';
+    allowanceDisabledReason = "No studentNumber assigned yet";
   }
 
   const fullName =
     application.enroleeFullName ??
-    [application.lastName, application.firstName, application.middleName].filter(Boolean).join(' ') ??
-    '(no name on file)';
+    [application.lastName, application.firstName, application.middleName].filter(Boolean).join(" ") ??
+    "(no name on file)";
 
-  const tab = ['profile', 'family', 'enrollment', 'documents', 'attendance'].includes(tabParam ?? '')
-    ? (tabParam as 'profile' | 'family' | 'enrollment' | 'documents' | 'attendance')
-    : 'profile';
+  const tab = ["profile", "family", "enrollment", "documents", "attendance", "lifecycle"].includes(tabParam ?? "")
+    ? (tabParam as "profile" | "family" | "enrollment" | "documents" | "attendance" | "lifecycle")
+    : "profile";
+
+  const lifecycleSnapshot = await getStudentLifecycle(selectedAy, enroleeNumber);
+  const lifecycleHistory = lifecycleSnapshot.studentNumber
+    ? await getEnrollmentHistory(lifecycleSnapshot.studentNumber)
+    : [];
 
   // Document completion for the hero stats strip.
   const docsTotal = documents.length;
@@ -161,10 +170,10 @@ export default async function SisStudentDetailPage({
   const funnelIdx = funnelIndexFor(status?.applicationStatus ?? null);
   const currentStageLabel =
     funnelIdx === FUNNEL_STAGES.length
-      ? 'Enrolled'
+      ? "Enrolled"
       : funnelIdx >= 0
         ? FUNNEL_STAGES[funnelIdx]
-        : (status?.applicationStatus ?? 'Not staged');
+        : (status?.applicationStatus ?? "Not staged");
 
   // Most recent activity across all stages, for the "last activity" card.
   const stageUpdates: Array<string | null | undefined> = [
@@ -186,9 +195,8 @@ export default async function SisStudentDetailPage({
   return (
     <PageShell>
       <Link
-        href={{ pathname: '/admissions/applications', query: { ay: selectedAy } }}
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
+        href={{ pathname: "/admissions/applications", query: { ay: selectedAy } }}
+        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
         <ArrowLeft className="h-3.5 w-3.5" />
         Applications · {selectedAy}
       </Link>
@@ -207,30 +215,26 @@ export default async function SisStudentDetailPage({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <Badge
             variant="outline"
-            className="h-6 border-border bg-white px-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-          >
+            className="h-6 border-border bg-white px-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground">
             Enrolee · {application.enroleeNumber}
           </Badge>
           {application.studentNumber && (
             <Badge
               variant="outline"
-              className="h-6 border-border bg-white px-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-            >
+              className="h-6 border-border bg-white px-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground">
               Student · {application.studentNumber}
             </Badge>
           )}
           {(status?.classLevel || status?.classSection) && (
             <Badge
               variant="outline"
-              className="h-6 border-brand-mint bg-brand-mint/20 px-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink"
-            >
-              {[status?.classLevel, status?.classSection].filter(Boolean).join(' · ')}
+              className="h-6 border-brand-mint bg-brand-mint/20 px-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink">
+              {[status?.classLevel, status?.classSection].filter(Boolean).join(" · ")}
             </Badge>
           )}
           <Badge
             variant="outline"
-            className="h-6 border-border bg-white px-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-          >
+            className="h-6 border-border bg-white px-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             {selectedAy}
           </Badge>
         </div>
@@ -250,22 +254,20 @@ export default async function SisStudentDetailPage({
             icon={UserCircle2}
             footnote={
               lastActivity
-                ? `Last updated ${new Date(lastActivity).toLocaleDateString('en-SG', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: 'numeric',
+                ? `Last updated ${new Date(lastActivity).toLocaleDateString("en-SG", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
                   })}`
-                : 'No stage updates yet'
+                : "No stage updates yet"
             }
           />
           <StatCard
             label="Level applied"
-            value={application.levelApplied ?? status?.classLevel ?? '—'}
+            value={application.levelApplied ?? status?.classLevel ?? "—"}
             icon={GraduationCap}
             footnote={
-              status?.classSection
-                ? `Section ${status.classSection}`
-                : application.classType ?? 'No section assigned'
+              status?.classSection ? `Section ${status.classSection}` : (application.classType ?? "No section assigned")
             }
           />
           <StatCard
@@ -278,22 +280,22 @@ export default async function SisStudentDetailPage({
                 : docsExpiringSoon > 0
                   ? `${docsExpiringSoon} expiring in 60d`
                   : docsOnFile === docsTotal
-                    ? 'All slots filled'
-                    : `${docsTotal - docsOnFile} slot${docsTotal - docsOnFile === 1 ? '' : 's'} open`
+                    ? "All slots filled"
+                    : `${docsTotal - docsOnFile} slot${docsTotal - docsOnFile === 1 ? "" : "s"} open`
             }
           />
           <StatCard
             label="Enrolee type"
-            value={status?.enroleeType ?? 'New applicant'}
+            value={status?.enroleeType ?? "New applicant"}
             icon={ClipboardList}
             footnote={
               status?.enrolmentDate
-                ? `Enrolled ${new Date(status.enrolmentDate).toLocaleDateString('en-SG', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: 'numeric',
+                ? `Enrolled ${new Date(status.enrolmentDate).toLocaleDateString("en-SG", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
                   })}`
-                : application.category ?? 'Not classified'
+                : (application.category ?? "Not classified")
             }
           />
         </div>
@@ -306,6 +308,7 @@ export default async function SisStudentDetailPage({
           <TabsTrigger value="enrollment">Enrollment</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
+          <TabsTrigger value="lifecycle">Lifecycle</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="space-y-6">
@@ -339,6 +342,10 @@ export default async function SisStudentDetailPage({
         <TabsContent value="attendance" className="space-y-6">
           <StudentAttendanceTab studentNumber={application.studentNumber} fullName={fullName} />
         </TabsContent>
+
+        <TabsContent value="lifecycle" className="space-y-6">
+          <StudentLifecycleTimeline snapshot={lifecycleSnapshot} history={lifecycleHistory} />
+        </TabsContent>
       </Tabs>
     </PageShell>
   );
@@ -360,70 +367,93 @@ function ProfileTab({
   // Pre-populate the editor sheet with the current values. The schema and
   // sheet decide which fields are editable; the page just hands over the row.
   const initial: Partial<ProfileUpdateInput> = {
-    firstName: app.firstName, middleName: app.middleName, lastName: app.lastName,
-    preferredName: app.preferredName, enroleeFullName: app.enroleeFullName,
-    category: app.category, nric: app.nric, birthDay: app.birthDay,
-    gender: app.gender, nationality: app.nationality, primaryLanguage: app.primaryLanguage,
-    religion: app.religion, religionOther: app.religionOther,
-    passportNumber: app.passportNumber, passportExpiry: app.passportExpiry,
-    pass: app.pass, passExpiry: app.passExpiry,
-    homePhone: app.homePhone, homeAddress: app.homeAddress, postalCode: app.postalCode,
-    livingWithWhom: app.livingWithWhom, contactPerson: app.contactPerson,
-    contactPersonNumber: app.contactPersonNumber, parentMaritalStatus: app.parentMaritalStatus,
-    levelApplied: app.levelApplied, preferredSchedule: app.preferredSchedule,
-    classType: app.classType, paymentOption: app.paymentOption,
-    availSchoolBus: app.availSchoolBus, availStudentCare: app.availStudentCare,
-    studentCareProgram: app.studentCareProgram, availUniform: app.availUniform,
+    firstName: app.firstName,
+    middleName: app.middleName,
+    lastName: app.lastName,
+    preferredName: app.preferredName,
+    enroleeFullName: app.enroleeFullName,
+    category: app.category as ProfileUpdateInput['category'],
+    nric: app.nric,
+    birthDay: app.birthDay,
+    gender: app.gender,
+    nationality: app.nationality,
+    primaryLanguage: app.primaryLanguage,
+    religion: app.religion,
+    religionOther: app.religionOther,
+    passportNumber: app.passportNumber,
+    passportExpiry: app.passportExpiry,
+    pass: app.pass,
+    passExpiry: app.passExpiry,
+    homePhone: app.homePhone,
+    homeAddress: app.homeAddress,
+    postalCode: app.postalCode,
+    livingWithWhom: app.livingWithWhom,
+    contactPerson: app.contactPerson,
+    contactPersonNumber: app.contactPersonNumber,
+    parentMaritalStatus: app.parentMaritalStatus,
+    levelApplied: app.levelApplied,
+    preferredSchedule: app.preferredSchedule,
+    classType: app.classType,
+    paymentOption: app.paymentOption,
+    availSchoolBus: app.availSchoolBus,
+    availStudentCare: app.availStudentCare,
+    studentCareProgram: app.studentCareProgram,
+    availUniform: app.availUniform,
     additionalLearningNeeds: app.additionalLearningNeeds,
-    otherLearningNeeds: app.otherLearningNeeds, previousSchool: app.previousSchool,
-    howDidYouKnowAboutHFSEIS: app.howDidYouKnowAboutHFSEIS, otherSource: app.otherSource,
-    referrerName: app.referrerName, referrerMobile: app.referrerMobile,
+    otherLearningNeeds: app.otherLearningNeeds,
+    previousSchool: app.previousSchool,
+    howDidYouKnowAboutHFSEIS: app.howDidYouKnowAboutHFSEIS,
+    otherSource: app.otherSource,
+    referrerName: app.referrerName,
+    referrerMobile: app.referrerMobile,
     contractSignatory: app.contractSignatory,
-    discount1: app.discount1, discount2: app.discount2, discount3: app.discount3,
+    discount1: app.discount1,
+    discount2: app.discount2,
+    discount3: app.discount3,
   };
 
   const identityFields: Field[] = [
-    { label: 'Category', value: app.category },
-    { label: 'Preferred name', value: app.preferredName },
-    { label: 'NRIC / FIN', value: app.nric },
-    { label: 'Date of birth', value: app.birthDay, asDate: true },
-    { label: 'Gender', value: app.gender },
-    { label: 'Nationality', value: app.nationality },
-    { label: 'Religion', value: app.religion ?? app.religionOther },
-    { label: 'Primary language', value: app.primaryLanguage },
+    { label: "Category", value: app.category },
+    { label: "Preferred name", value: app.preferredName },
+    { label: "NRIC / FIN", value: app.nric },
+    { label: "Date of birth", value: app.birthDay, asDate: true },
+    { label: "Gender", value: app.gender },
+    { label: "Nationality", value: app.nationality },
+    { label: "Religion", value: app.religion ?? app.religionOther },
+    { label: "Primary language", value: app.primaryLanguage },
   ];
   const travelFields: Field[] = [
-    { label: 'Passport number', value: app.passportNumber },
-    { label: 'Passport expiry', value: app.passportExpiry, asDate: true },
-    { label: 'Pass type', value: app.pass },
-    { label: 'Pass expiry', value: app.passExpiry, asDate: true },
+    { label: "Passport number", value: app.passportNumber },
+    { label: "Passport expiry", value: app.passportExpiry, asDate: true },
+    { label: "Pass type", value: app.pass },
+    { label: "Pass expiry", value: app.passExpiry, asDate: true },
   ];
   const contactFields: Field[] = [
-    { label: 'Home phone', value: app.homePhone },
-    { label: 'Home address', value: app.homeAddress, wide: true },
-    { label: 'Postal code', value: app.postalCode },
-    { label: 'Living with', value: app.livingWithWhom },
-    { label: 'Contact person', value: app.contactPerson },
-    { label: 'Contact number', value: app.contactPersonNumber },
-    { label: 'Parent marital status', value: app.parentMaritalStatus },
+    { label: "Home phone", value: app.homePhone },
+    { label: "Home address", value: app.homeAddress, wide: true },
+    { label: "Postal code", value: app.postalCode },
+    { label: "Living with", value: app.livingWithWhom },
+    { label: "Contact person", value: app.contactPerson },
+    { label: "Contact number", value: app.contactPersonNumber },
+    { label: "Parent marital status", value: app.parentMaritalStatus },
   ];
   const preferencesFields: Field[] = [
-    { label: 'Level applied', value: app.levelApplied },
-    { label: 'Preferred schedule', value: app.preferredSchedule },
-    { label: 'Class type', value: app.classType },
-    { label: 'Payment option', value: app.paymentOption },
-    { label: 'School bus', value: app.availSchoolBus },
-    { label: 'Student care', value: app.availStudentCare },
-    { label: 'Student care program', value: app.studentCareProgram },
-    { label: 'Uniform', value: app.availUniform },
-    { label: 'Additional learning needs', value: app.additionalLearningNeeds, wide: true, multiline: true },
-    { label: 'Other learning needs', value: app.otherLearningNeeds, wide: true, multiline: true },
-    { label: 'Previous school', value: app.previousSchool },
-    { label: 'Referral source', value: app.howDidYouKnowAboutHFSEIS },
-    { label: 'Other source', value: app.otherSource },
-    { label: 'Referrer name', value: app.referrerName },
-    { label: 'Referrer mobile', value: app.referrerMobile },
-    { label: 'Contract signatory', value: app.contractSignatory },
+    { label: "Level applied", value: app.levelApplied },
+    { label: "Preferred schedule", value: app.preferredSchedule },
+    { label: "Class type", value: app.classType },
+    { label: "Payment option", value: app.paymentOption },
+    { label: "School bus", value: app.availSchoolBus },
+    { label: "Student care", value: app.availStudentCare },
+    { label: "Student care program", value: app.studentCareProgram },
+    { label: "Uniform", value: app.availUniform },
+    { label: "Additional learning needs", value: app.additionalLearningNeeds, wide: true, multiline: true },
+    { label: "Other learning needs", value: app.otherLearningNeeds, wide: true, multiline: true },
+    { label: "Previous school", value: app.previousSchool },
+    { label: "Referral source", value: app.howDidYouKnowAboutHFSEIS },
+    { label: "Other source", value: app.otherSource },
+    { label: "Referrer name", value: app.referrerName },
+    { label: "Referrer mobile", value: app.referrerMobile },
+    { label: "Contract signatory", value: app.contractSignatory },
   ];
 
   return (
@@ -445,24 +475,14 @@ function ProfileTab({
         disabled={!!allowanceDisabledReason}
         disabledReason={allowanceDisabledReason ?? undefined}
       />
-      <ProfileSectionCard
-        eyebrow="Identity"
-        title="Personal & demographic"
-        icon={User}
-        fields={identityFields}
-      />
+      <ProfileSectionCard eyebrow="Identity" title="Personal & demographic" icon={User} fields={identityFields} />
       <ProfileSectionCard
         eyebrow="Travel documents"
         title="Student passport & pass"
         icon={Globe}
         fields={travelFields}
       />
-      <ProfileSectionCard
-        eyebrow="Contact"
-        title="Household & emergency"
-        icon={Phone}
-        fields={contactFields}
-      />
+      <ProfileSectionCard eyebrow="Contact" title="Household & emergency" icon={Phone} fields={contactFields} />
       <ProfileSectionCard
         eyebrow="Application preferences"
         title="Level, schedule & services"
@@ -477,12 +497,8 @@ function ProfileTab({
 // booleans are counted only when explicitly set (null reads as missing).
 function countFilled(fields: Field[]): number {
   return fields.filter((f) => {
-    if (typeof f.value === 'boolean') return f.value !== null;
-    return (
-      f.value !== null &&
-      f.value !== undefined &&
-      !(typeof f.value === 'string' && f.value.trim() === '')
-    );
+    if (typeof f.value === "boolean") return f.value !== null;
+    return f.value !== null && f.value !== undefined && !(typeof f.value === "string" && f.value.trim() === "");
   }).length;
 }
 
@@ -505,9 +521,7 @@ function ProfileSectionCard({
         <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
           {eyebrow}
         </CardDescription>
-        <CardTitle className="font-serif text-base font-semibold tracking-tight text-foreground">
-          {title}
-        </CardTitle>
+        <CardTitle className="font-serif text-base font-semibold tracking-tight text-foreground">{title}</CardTitle>
         <CardAction>
           <div className="flex items-center gap-3">
             <span className="font-mono text-[10px] uppercase tracking-[0.14em] tabular-nums text-muted-foreground">
@@ -526,15 +540,7 @@ function ProfileSectionCard({
   );
 }
 
-function FamilyTab({
-  app,
-  ayCode,
-  enroleeNumber,
-}: {
-  app: ApplicationRow;
-  ayCode: string;
-  enroleeNumber: string;
-}) {
+function FamilyTab({ app, ayCode, enroleeNumber }: { app: ApplicationRow; ayCode: string; enroleeNumber: string }) {
   return (
     <div className="space-y-4">
       <ParentCard
@@ -545,28 +551,36 @@ function FamilyTab({
         enroleeNumber={enroleeNumber}
         parentSlot="father"
         initial={{
-          fatherFullName: app.fatherFullName, fatherFirstName: app.fatherFirstName, fatherLastName: app.fatherLastName,
-          fatherNric: app.fatherNric, fatherBirthDay: app.fatherBirthDay,
-          fatherMobile: app.fatherMobile, fatherEmail: app.fatherEmail, fatherNationality: app.fatherNationality,
-          fatherCompanyName: app.fatherCompanyName, fatherPosition: app.fatherPosition,
-          fatherPassport: app.fatherPassport, fatherPassportExpiry: app.fatherPassportExpiry,
-          fatherPass: app.fatherPass, fatherPassExpiry: app.fatherPassExpiry,
+          fatherFullName: app.fatherFullName,
+          fatherFirstName: app.fatherFirstName,
+          fatherLastName: app.fatherLastName,
+          fatherNric: app.fatherNric,
+          fatherBirthDay: app.fatherBirthDay,
+          fatherMobile: app.fatherMobile,
+          fatherEmail: app.fatherEmail,
+          fatherNationality: app.fatherNationality,
+          fatherCompanyName: app.fatherCompanyName,
+          fatherPosition: app.fatherPosition,
+          fatherPassport: app.fatherPassport,
+          fatherPassportExpiry: app.fatherPassportExpiry,
+          fatherPass: app.fatherPass,
+          fatherPassExpiry: app.fatherPassExpiry,
           fatherWhatsappTeamsConsent: app.fatherWhatsappTeamsConsent,
         }}
         fields={[
-          { label: 'Full name', value: app.fatherFullName },
-          { label: 'NRIC / FIN', value: app.fatherNric },
-          { label: 'Date of birth', value: app.fatherBirthDay, asDate: true },
-          { label: 'Mobile', value: app.fatherMobile },
-          { label: 'Email', value: app.fatherEmail, wide: true },
-          { label: 'Nationality', value: app.fatherNationality },
-          { label: 'Company', value: app.fatherCompanyName },
-          { label: 'Position', value: app.fatherPosition },
-          { label: 'Passport', value: app.fatherPassport },
-          { label: 'Passport expiry', value: app.fatherPassportExpiry, asDate: true },
-          { label: 'Pass type', value: app.fatherPass },
-          { label: 'Pass expiry', value: app.fatherPassExpiry, asDate: true },
-          { label: 'WhatsApp / Teams consent', value: app.fatherWhatsappTeamsConsent },
+          { label: "Full name", value: app.fatherFullName },
+          { label: "NRIC / FIN", value: app.fatherNric },
+          { label: "Date of birth", value: app.fatherBirthDay, asDate: true },
+          { label: "Mobile", value: app.fatherMobile },
+          { label: "Email", value: app.fatherEmail, wide: true },
+          { label: "Nationality", value: app.fatherNationality },
+          { label: "Company", value: app.fatherCompanyName },
+          { label: "Position", value: app.fatherPosition },
+          { label: "Passport", value: app.fatherPassport },
+          { label: "Passport expiry", value: app.fatherPassportExpiry, asDate: true },
+          { label: "Pass type", value: app.fatherPass },
+          { label: "Pass expiry", value: app.fatherPassExpiry, asDate: true },
+          { label: "WhatsApp / Teams consent", value: app.fatherWhatsappTeamsConsent },
         ]}
       />
       <ParentCard
@@ -577,28 +591,36 @@ function FamilyTab({
         enroleeNumber={enroleeNumber}
         parentSlot="mother"
         initial={{
-          motherFullName: app.motherFullName, motherFirstName: app.motherFirstName, motherLastName: app.motherLastName,
-          motherNric: app.motherNric, motherBirthDay: app.motherBirthDay,
-          motherMobile: app.motherMobile, motherEmail: app.motherEmail, motherNationality: app.motherNationality,
-          motherCompanyName: app.motherCompanyName, motherPosition: app.motherPosition,
-          motherPassport: app.motherPassport, motherPassportExpiry: app.motherPassportExpiry,
-          motherPass: app.motherPass, motherPassExpiry: app.motherPassExpiry,
+          motherFullName: app.motherFullName,
+          motherFirstName: app.motherFirstName,
+          motherLastName: app.motherLastName,
+          motherNric: app.motherNric,
+          motherBirthDay: app.motherBirthDay,
+          motherMobile: app.motherMobile,
+          motherEmail: app.motherEmail,
+          motherNationality: app.motherNationality,
+          motherCompanyName: app.motherCompanyName,
+          motherPosition: app.motherPosition,
+          motherPassport: app.motherPassport,
+          motherPassportExpiry: app.motherPassportExpiry,
+          motherPass: app.motherPass,
+          motherPassExpiry: app.motherPassExpiry,
           motherWhatsappTeamsConsent: app.motherWhatsappTeamsConsent,
         }}
         fields={[
-          { label: 'Full name', value: app.motherFullName },
-          { label: 'NRIC / FIN', value: app.motherNric },
-          { label: 'Date of birth', value: app.motherBirthDay, asDate: true },
-          { label: 'Mobile', value: app.motherMobile },
-          { label: 'Email', value: app.motherEmail, wide: true },
-          { label: 'Nationality', value: app.motherNationality },
-          { label: 'Company', value: app.motherCompanyName },
-          { label: 'Position', value: app.motherPosition },
-          { label: 'Passport', value: app.motherPassport },
-          { label: 'Passport expiry', value: app.motherPassportExpiry, asDate: true },
-          { label: 'Pass type', value: app.motherPass },
-          { label: 'Pass expiry', value: app.motherPassExpiry, asDate: true },
-          { label: 'WhatsApp / Teams consent', value: app.motherWhatsappTeamsConsent },
+          { label: "Full name", value: app.motherFullName },
+          { label: "NRIC / FIN", value: app.motherNric },
+          { label: "Date of birth", value: app.motherBirthDay, asDate: true },
+          { label: "Mobile", value: app.motherMobile },
+          { label: "Email", value: app.motherEmail, wide: true },
+          { label: "Nationality", value: app.motherNationality },
+          { label: "Company", value: app.motherCompanyName },
+          { label: "Position", value: app.motherPosition },
+          { label: "Passport", value: app.motherPassport },
+          { label: "Passport expiry", value: app.motherPassportExpiry, asDate: true },
+          { label: "Pass type", value: app.motherPass },
+          { label: "Pass expiry", value: app.motherPassExpiry, asDate: true },
+          { label: "WhatsApp / Teams consent", value: app.motherWhatsappTeamsConsent },
         ]}
       />
       <ParentCard
@@ -610,22 +632,26 @@ function FamilyTab({
         parentSlot="guardian"
         optional
         initial={{
-          guardianFullName: app.guardianFullName, guardianMobile: app.guardianMobile, guardianEmail: app.guardianEmail,
+          guardianFullName: app.guardianFullName,
+          guardianMobile: app.guardianMobile,
+          guardianEmail: app.guardianEmail,
           guardianNationality: app.guardianNationality,
-          guardianPassport: app.guardianPassport, guardianPassportExpiry: app.guardianPassportExpiry,
-          guardianPass: app.guardianPass, guardianPassExpiry: app.guardianPassExpiry,
+          guardianPassport: app.guardianPassport,
+          guardianPassportExpiry: app.guardianPassportExpiry,
+          guardianPass: app.guardianPass,
+          guardianPassExpiry: app.guardianPassExpiry,
           guardianWhatsappTeamsConsent: app.guardianWhatsappTeamsConsent,
         }}
         fields={[
-          { label: 'Full name', value: app.guardianFullName },
-          { label: 'Mobile', value: app.guardianMobile },
-          { label: 'Email', value: app.guardianEmail, wide: true },
-          { label: 'Nationality', value: app.guardianNationality },
-          { label: 'Passport', value: app.guardianPassport },
-          { label: 'Passport expiry', value: app.guardianPassportExpiry, asDate: true },
-          { label: 'Pass type', value: app.guardianPass },
-          { label: 'Pass expiry', value: app.guardianPassExpiry, asDate: true },
-          { label: 'WhatsApp / Teams consent', value: app.guardianWhatsappTeamsConsent },
+          { label: "Full name", value: app.guardianFullName },
+          { label: "Mobile", value: app.guardianMobile },
+          { label: "Email", value: app.guardianEmail, wide: true },
+          { label: "Nationality", value: app.guardianNationality },
+          { label: "Passport", value: app.guardianPassport },
+          { label: "Passport expiry", value: app.guardianPassportExpiry, asDate: true },
+          { label: "Pass type", value: app.guardianPass },
+          { label: "Pass expiry", value: app.guardianPassExpiry, asDate: true },
+          { label: "WhatsApp / Teams consent", value: app.guardianWhatsappTeamsConsent },
         ]}
       />
     </div>
@@ -654,15 +680,15 @@ function ParentCard({
   initial: Record<string, unknown>;
 }) {
   const allEmpty = fields.every((f) => {
-    if (typeof f.value === 'boolean') return f.value === null;
-    return f.value === null || f.value === undefined || (typeof f.value === 'string' && f.value.trim() === '');
+    if (typeof f.value === "boolean") return f.value === null;
+    return f.value === null || f.value === undefined || (typeof f.value === "string" && f.value.trim() === "");
   });
 
   // Compute filled-field count for the eyebrow subtext, ignoring booleans
   // (consents default to null which reads as "missing" in practice).
   const nonEmpty = fields.filter((f) => {
-    if (typeof f.value === 'boolean') return f.value !== null;
-    return f.value !== null && f.value !== undefined && !(typeof f.value === 'string' && f.value.trim() === '');
+    if (typeof f.value === "boolean") return f.value !== null;
+    return f.value !== null && f.value !== undefined && !(typeof f.value === "string" && f.value.trim() === "");
   }).length;
 
   return (
@@ -671,18 +697,15 @@ function ParentCard({
         <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
           {eyebrow}
         </CardDescription>
-        <CardTitle className="font-serif text-lg font-semibold tracking-tight text-foreground">
-          {title}
-        </CardTitle>
+        <CardTitle className="font-serif text-lg font-semibold tracking-tight text-foreground">{title}</CardTitle>
         <CardAction>
           <div
             className={cn(
-              'flex size-10 items-center justify-center rounded-xl text-white shadow-brand-tile',
+              "flex size-10 items-center justify-center rounded-xl text-white shadow-brand-tile",
               optional
-                ? 'bg-gradient-to-br from-muted-foreground/70 to-muted-foreground'
-                : 'bg-gradient-to-br from-brand-indigo to-brand-navy',
-            )}
-          >
+                ? "bg-gradient-to-br from-muted-foreground/70 to-muted-foreground"
+                : "bg-gradient-to-br from-brand-indigo to-brand-navy",
+            )}>
             <Icon className="size-5" />
           </div>
         </CardAction>
@@ -693,13 +716,11 @@ function ParentCard({
             <div className="flex size-10 items-center justify-center rounded-xl bg-muted">
               <Icon className="size-5 text-muted-foreground" />
             </div>
-            <p className="font-serif text-sm font-semibold text-foreground">
-              No {title.toLowerCase()} on file
-            </p>
+            <p className="font-serif text-sm font-semibold text-foreground">No {title.toLowerCase()} on file</p>
             <p className="max-w-[200px] text-xs leading-relaxed text-muted-foreground">
               {optional
-                ? 'Guardian is optional — add only if a non-parent adult is involved.'
-                : 'Add contact + identity details to unlock parent-portal linkage.'}
+                ? "Guardian is optional — add only if a non-parent adult is involved."
+                : "Add contact + identity details to unlock parent-portal linkage."}
             </p>
           </div>
         ) : (
@@ -707,15 +728,8 @@ function ParentCard({
         )}
       </CardContent>
       <CardFooter className="flex items-center justify-between gap-2 border-t border-border pt-5 text-xs text-muted-foreground">
-        <span className="font-mono tabular-nums">
-          {allEmpty ? '—' : `${nonEmpty} of ${fields.length} fields`}
-        </span>
-        <EditFamilySheet
-          ayCode={ayCode}
-          enroleeNumber={enroleeNumber}
-          parent={parentSlot}
-          initial={initial}
-        />
+        <span className="font-mono tabular-nums">{allEmpty ? "—" : `${nonEmpty} of ${fields.length} fields`}</span>
+        <EditFamilySheet ayCode={ayCode} enroleeNumber={enroleeNumber} parent={parentSlot} initial={initial} />
       </CardFooter>
     </Card>
   );
@@ -761,22 +775,28 @@ function EnrollmentTab({
     extrasInitial: Record<string, string | null>;
   }> = [
     {
-      key: 'application', label: 'Application',
-      status: s.applicationStatus, remarks: s.applicationRemarks,
-      updatedAt: s.applicationUpdatedDate, updatedBy: s.applicationUpdatedBy,
+      key: "application",
+      label: "Application",
+      status: s.applicationStatus,
+      remarks: s.applicationRemarks,
+      updatedAt: s.applicationUpdatedDate,
+      updatedBy: s.applicationUpdatedBy,
       extras: [
-        { label: 'Enrolment date', value: s.enrolmentDate, asDate: true },
-        { label: 'Enrolee type', value: s.enroleeType },
+        { label: "Enrolment date", value: s.enrolmentDate, asDate: true },
+        { label: "Enrolee type", value: s.enroleeType },
       ],
       extrasInitial: {},
     },
     {
-      key: 'registration', label: 'Registration',
-      status: s.registrationStatus, remarks: s.registrationRemarks,
-      updatedAt: s.registrationUpdatedDate, updatedBy: s.registrationUpdatedBy,
+      key: "registration",
+      label: "Registration",
+      status: s.registrationStatus,
+      remarks: s.registrationRemarks,
+      updatedAt: s.registrationUpdatedDate,
+      updatedBy: s.registrationUpdatedBy,
       extras: [
-        { label: 'Invoice', value: s.registrationInvoice },
-        { label: 'Payment date', value: s.registrationPaymentDate, asDate: true },
+        { label: "Invoice", value: s.registrationInvoice },
+        { label: "Payment date", value: s.registrationPaymentDate, asDate: true },
       ],
       extrasInitial: {
         invoice: s.registrationInvoice,
@@ -784,20 +804,26 @@ function EnrollmentTab({
       },
     },
     {
-      key: 'documents', label: 'Documents',
-      status: s.documentStatus, remarks: s.documentRemarks,
-      updatedAt: s.documentUpdatedDate, updatedBy: s.documentUpdatedBy,
+      key: "documents",
+      label: "Documents",
+      status: s.documentStatus,
+      remarks: s.documentRemarks,
+      updatedAt: s.documentUpdatedDate,
+      updatedBy: s.documentUpdatedBy,
       extrasInitial: {},
     },
     {
-      key: 'assessment', label: 'Assessment',
-      status: s.assessmentStatus, remarks: s.assessmentRemarks,
-      updatedAt: s.assessmentUpdatedDate, updatedBy: s.assessmentUpdatedBy,
+      key: "assessment",
+      label: "Assessment",
+      status: s.assessmentStatus,
+      remarks: s.assessmentRemarks,
+      updatedAt: s.assessmentUpdatedDate,
+      updatedBy: s.assessmentUpdatedBy,
       extras: [
-        { label: 'Schedule', value: s.assessmentSchedule, asDate: true },
-        { label: 'Math', value: s.assessmentGradeMath as string | number | null },
-        { label: 'English', value: s.assessmentGradeEnglish as string | number | null },
-        { label: 'Medical', value: s.assessmentMedical },
+        { label: "Schedule", value: s.assessmentSchedule, asDate: true },
+        { label: "Math", value: s.assessmentGradeMath as string | number | null },
+        { label: "English", value: s.assessmentGradeEnglish as string | number | null },
+        { label: "Medical", value: s.assessmentMedical },
       ],
       extrasInitial: {
         schedule: s.assessmentSchedule,
@@ -807,19 +833,25 @@ function EnrollmentTab({
       },
     },
     {
-      key: 'contract', label: 'Contract',
-      status: s.contractStatus, remarks: s.contractRemarks,
-      updatedAt: s.contractUpdatedDate, updatedBy: s.contractUpdatedBy,
+      key: "contract",
+      label: "Contract",
+      status: s.contractStatus,
+      remarks: s.contractRemarks,
+      updatedAt: s.contractUpdatedDate,
+      updatedBy: s.contractUpdatedBy,
       extrasInitial: {},
     },
     {
-      key: 'fees', label: 'Fees',
-      status: s.feeStatus, remarks: s.feeRemarks,
-      updatedAt: s.feeUpdatedDate, updatedBy: s.feeUpdatedBy,
+      key: "fees",
+      label: "Fees",
+      status: s.feeStatus,
+      remarks: s.feeRemarks,
+      updatedAt: s.feeUpdatedDate,
+      updatedBy: s.feeUpdatedBy,
       extras: [
-        { label: 'Invoice', value: s.feeInvoice },
-        { label: 'Payment date', value: s.feePaymentDate, asDate: true },
-        { label: 'Start date', value: s.feeStartDate, asDate: true },
+        { label: "Invoice", value: s.feeInvoice },
+        { label: "Payment date", value: s.feePaymentDate, asDate: true },
+        { label: "Start date", value: s.feeStartDate, asDate: true },
       ],
       extrasInitial: {
         invoice: s.feeInvoice,
@@ -828,13 +860,16 @@ function EnrollmentTab({
       },
     },
     {
-      key: 'class', label: 'Class assignment',
-      status: s.classStatus, remarks: s.classRemarks,
-      updatedAt: s.classUpdatedDate, updatedBy: s.classUpdatedBy,
+      key: "class",
+      label: "Class assignment",
+      status: s.classStatus,
+      remarks: s.classRemarks,
+      updatedAt: s.classUpdatedDate,
+      updatedBy: s.classUpdatedBy,
       extras: [
-        { label: 'Class AY', value: s.classAY },
-        { label: 'Level', value: s.classLevel },
-        { label: 'Section', value: s.classSection },
+        { label: "Class AY", value: s.classAY },
+        { label: "Level", value: s.classLevel },
+        { label: "Section", value: s.classSection },
       ],
       extrasInitial: {
         classAY: s.classAY,
@@ -843,17 +878,23 @@ function EnrollmentTab({
       },
     },
     {
-      key: 'supplies', label: 'Supplies',
-      status: s.suppliesStatus, remarks: s.suppliesRemarks,
-      updatedAt: s.suppliesUpdatedDate, updatedBy: s.suppliesUpdatedBy,
-      extras: [{ label: 'Claimed date', value: s.suppliesClaimedDate, asDate: true }],
+      key: "supplies",
+      label: "Supplies",
+      status: s.suppliesStatus,
+      remarks: s.suppliesRemarks,
+      updatedAt: s.suppliesUpdatedDate,
+      updatedBy: s.suppliesUpdatedBy,
+      extras: [{ label: "Claimed date", value: s.suppliesClaimedDate, asDate: true }],
       extrasInitial: { claimedDate: s.suppliesClaimedDate },
     },
     {
-      key: 'orientation', label: 'Orientation',
-      status: s.orientationStatus, remarks: s.orientationRemarks,
-      updatedAt: s.orientationUpdatedDate, updatedBy: s.orientationUpdatedBy,
-      extras: [{ label: 'Schedule', value: s.orientationScheduleDate, asDate: true }],
+      key: "orientation",
+      label: "Orientation",
+      status: s.orientationStatus,
+      remarks: s.orientationRemarks,
+      updatedAt: s.orientationUpdatedDate,
+      updatedBy: s.orientationUpdatedBy,
+      extras: [{ label: "Schedule", value: s.orientationScheduleDate, asDate: true }],
       extrasInitial: { scheduleDate: s.orientationScheduleDate },
     },
   ];
@@ -861,10 +902,15 @@ function EnrollmentTab({
   // Lookup by stage key.
   const stageByKey = new Map(stages.map((st) => [st.key, st]));
   const prereqSequence: StageKey[] = [...ENROLLED_PREREQ_STAGES];
-  const applicationStage = stageByKey.get('application')!;
-  const postList = (['class', 'supplies', 'orientation'] as StageKey[]).map(
-    (k) => stageByKey.get(k)!,
-  );
+  const applicationStage = stageByKey.get("application")!;
+  // Snapshot of the 5 prereq stage statuses, for the EditStageDialog
+  // advisory checklist when admin flips the application status to Enrolled.
+  // Server still re-validates on submit (KD-style soft-gate UI).
+  const prereqStatusesForApplication: Partial<Record<StageKey, string | null>> = {};
+  for (const k of ENROLLED_PREREQ_STAGES) {
+    prereqStatusesForApplication[k] = stageByKey.get(k)?.status ?? null;
+  }
+  const postList = (["class", "supplies", "orientation"] as StageKey[]).map((k) => stageByKey.get(k)!);
 
   // Phase groupings. The 5 prereq stages split into two workflow phases:
   //   Intake — qualifying the applicant (Registration, Documents, Assessment)
@@ -873,75 +919,60 @@ function EnrollmentTab({
   // gate into post-enrollment. Sequential locking still applies ACROSS
   // phases (Contract depends on Assessment, etc.) — the grouping is purely
   // visual and the StepRow lock state is driven by the full prereqSequence.
-  const intakeKeys: StageKey[] = ['registration', 'documents', 'assessment'];
-  const commitmentsKeys: StageKey[] = ['contract', 'fees'];
+  const intakeKeys: StageKey[] = ["registration", "documents", "assessment"];
+  const commitmentsKeys: StageKey[] = ["contract", "fees"];
   const intakeList = intakeKeys.map((k) => stageByKey.get(k)!);
   const commitmentsList = commitmentsKeys.map((k) => stageByKey.get(k)!);
 
   // Compute per-prereq lock state + identify the "active" (next-action) step.
-  // Rules:
+  // Stages now run in parallel — different team members touch documents,
+  // assessment, contract, fees, registration on different days. The only
+  // locks remaining are the terminal states themselves:
   //   - done        = current status equals this stage's terminal value
   //   - cancelled   = current status is 'Cancelled'
-  //   - locked      = this stage's predecessor isn't terminal yet
-  //   - unlocked    = otherwise (predecessor done, this stage still open)
-  // The FIRST 'unlocked' stage in sequence is the "active" next action.
-  type LockState = 'done' | 'cancelled' | 'locked' | 'unlocked';
+  //   - unlocked    = otherwise (still open / awaiting input)
+  // The FIRST 'unlocked' stage in sequence is highlighted as "active" — a
+  // hint, not a hard gate. The OUTER Enrolled-flip gate (all 5 prereqs at
+  // their terminal values) remains enforced server-side.
+  type LockState = "done" | "cancelled" | "unlocked";
   function lockFor(key: StageKey): LockState {
     const cur = (s as Record<string, string | null>)[STAGE_COLUMN_MAP[key].statusCol] ?? null;
-    if (cur === 'Cancelled') return 'cancelled';
+    if (cur === "Cancelled") return "cancelled";
     const terminal = STAGE_TERMINAL_STATUS[key];
-    if (terminal && cur === terminal) return 'done';
-    const predecessor = PREREQ_STAGE_PREDECESSOR[key];
-    if (predecessor) {
-      const predCur =
-        (s as Record<string, string | null>)[STAGE_COLUMN_MAP[predecessor].statusCol] ?? null;
-      const predTerminal = STAGE_TERMINAL_STATUS[predecessor];
-      if (predTerminal && predCur !== predTerminal) return 'locked';
-    }
-    return 'unlocked';
+    if (terminal && cur === terminal) return "done";
+    return "unlocked";
   }
   const prereqLocks = prereqSequence.map((k) => lockFor(k));
-  const activeIndex = prereqLocks.findIndex((l) => l === 'unlocked');
-  const prereqDoneCount = prereqLocks.filter((l) => l === 'done').length;
+  const activeIndex = prereqLocks.findIndex((l) => l === "unlocked");
+  const prereqDoneCount = prereqLocks.filter((l) => l === "done").length;
   const prereqPct = Math.round((prereqDoneCount / prereqSequence.length) * 100);
   const allPrereqsDone = prereqDoneCount === prereqSequence.length;
 
   // Enrollment state summary for the decision card.
   const applicationStatusValue = s.applicationStatus ?? null;
-  const isEnrolled =
-    applicationStatusValue === 'Enrolled' ||
-    applicationStatusValue === 'Enrolled (Conditional)';
-  const isTerminalApp =
-    isEnrolled ||
-    applicationStatusValue === 'Cancelled' ||
-    applicationStatusValue === 'Withdrawn';
+  const isEnrolled = applicationStatusValue === "Enrolled" || applicationStatusValue === "Enrolled (Conditional)";
+  const isTerminalApp = isEnrolled || applicationStatusValue === "Cancelled" || applicationStatusValue === "Withdrawn";
 
   // Exhaustive decision state. Drives the whole decision-card rendering:
   // border tint, eyebrow badge, hero block, and CTA wording.
-  type DecisionState =
-    | 'enrolled'
-    | 'enrolledConditional'
-    | 'ready'
-    | 'blocked'
-    | 'cancelled'
-    | 'withdrawn';
+  type DecisionState = "enrolled" | "enrolledConditional" | "ready" | "blocked" | "cancelled" | "withdrawn";
   const decisionState: DecisionState =
-    applicationStatusValue === 'Enrolled'
-      ? 'enrolled'
-      : applicationStatusValue === 'Enrolled (Conditional)'
-        ? 'enrolledConditional'
-        : applicationStatusValue === 'Cancelled'
-          ? 'cancelled'
-          : applicationStatusValue === 'Withdrawn'
-            ? 'withdrawn'
+    applicationStatusValue === "Enrolled"
+      ? "enrolled"
+      : applicationStatusValue === "Enrolled (Conditional)"
+        ? "enrolledConditional"
+        : applicationStatusValue === "Cancelled"
+          ? "cancelled"
+          : applicationStatusValue === "Withdrawn"
+            ? "withdrawn"
             : allPrereqsDone
-              ? 'ready'
-              : 'blocked';
+              ? "ready"
+              : "blocked";
 
   // Blockers for the Enrolled flip (re-uses the same data as prereqLocks).
   const blockers = prereqSequence
     .map((k, i) => ({ key: k, lock: prereqLocks[i] }))
-    .filter((b) => b.lock !== 'done' && b.lock !== 'cancelled');
+    .filter((b) => b.lock !== "done" && b.lock !== "cancelled");
 
   // The next step admissions needs to push forward on, when blocked.
   const nextActionKey = activeIndex >= 0 ? prereqSequence[activeIndex] : null;
@@ -954,10 +985,10 @@ function EnrollmentTab({
           <div className="space-y-1 text-xs leading-relaxed">
             <p className="font-medium text-foreground">Status row lookup returned an error.</p>
             <p className="text-muted-foreground">
-              This usually means multiple rows exist in{' '}
-              <code className="font-mono">{ayCode.toLowerCase()}_enrolment_status</code> for this
-              enrolee — the schema allows duplicates. The timeline below may not reflect reality;
-              contact an engineer to dedupe before using this pipeline.
+              This usually means multiple rows exist in{" "}
+              <code className="font-mono">{ayCode.toLowerCase()}_enrolment_status</code> for this enrolee — the schema
+              allows duplicates. The timeline below may not reflect reality; contact an engineer to dedupe before using
+              this pipeline.
             </p>
           </div>
         </div>
@@ -1006,35 +1037,32 @@ function EnrollmentTab({
           color rotation. Follows ui-ux-pro-max visual-hierarchy rule and
           the project's horizontal-flex + solid-tint pattern used by
           ParentCard / ProfileSectionCard / PhaseStepCard on this page. */}
-      <Card className={cn(decisionState === 'ready' && 'shadow-sm')}>
+      <Card className={cn(decisionState === "ready" && "shadow-sm")}>
         <CardHeader className="border-b border-border">
           <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
             Enrollment gate
           </CardDescription>
           <CardTitle className="font-serif text-lg font-semibold tracking-tight text-foreground">
-            {decisionState === 'enrolled' && 'Enrolled'}
-            {decisionState === 'enrolledConditional' && 'Enrolled (Conditional)'}
-            {decisionState === 'ready' && 'Ready to enroll'}
-            {decisionState === 'blocked' &&
-              `${blockers.length} prereq${blockers.length === 1 ? '' : 's'} remaining`}
-            {decisionState === 'cancelled' && 'Application cancelled'}
-            {decisionState === 'withdrawn' && 'Application withdrawn'}
+            {decisionState === "enrolled" && "Enrolled"}
+            {decisionState === "enrolledConditional" && "Enrolled (Conditional)"}
+            {decisionState === "ready" && "Ready to enroll"}
+            {decisionState === "blocked" && `${blockers.length} prereq${blockers.length === 1 ? "" : "s"} remaining`}
+            {decisionState === "cancelled" && "Application cancelled"}
+            {decisionState === "withdrawn" && "Application withdrawn"}
           </CardTitle>
           <CardAction>
             <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              {decisionState === 'enrolled' && <CheckCircle2 className="size-5" />}
-              {decisionState === 'enrolledConditional' && <ShieldCheck className="size-5" />}
-              {decisionState === 'ready' && <ArrowRight className="size-5" />}
-              {decisionState === 'blocked' && <Lock className="size-5" />}
-              {(decisionState === 'cancelled' || decisionState === 'withdrawn') && (
-                <X className="size-5" />
-              )}
+              {decisionState === "enrolled" && <CheckCircle2 className="size-5" />}
+              {decisionState === "enrolledConditional" && <ShieldCheck className="size-5" />}
+              {decisionState === "ready" && <ArrowRight className="size-5" />}
+              {decisionState === "blocked" && <Lock className="size-5" />}
+              {(decisionState === "cancelled" || decisionState === "withdrawn") && <X className="size-5" />}
             </div>
           </CardAction>
         </CardHeader>
         <CardContent className="space-y-4 pt-6">
           {/* Enrolled / Conditional — class-assigned hero. */}
-          {(decisionState === 'enrolled' || decisionState === 'enrolledConditional') && (
+          {(decisionState === "enrolled" || decisionState === "enrolledConditional") && (
             <div className="flex flex-wrap items-center gap-4 rounded-xl border border-hairline bg-muted/20 p-4">
               <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
                 <GraduationCap className="size-6" />
@@ -1052,7 +1080,7 @@ function EnrollmentTab({
                 ) : (
                   <>
                     <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      {decisionState === 'enrolled' ? 'Enrolled' : 'Enrolled (Conditional)'}
+                      {decisionState === "enrolled" ? "Enrolled" : "Enrolled (Conditional)"}
                     </p>
                     <p className="font-serif text-lg font-semibold leading-tight text-foreground">
                       Class placement pending
@@ -1061,11 +1089,11 @@ function EnrollmentTab({
                 )}
                 {applicationStage.updatedAt && (
                   <p className="mt-1 font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
-                    {decisionState === 'enrolled' ? 'Enrolled' : 'Marked conditional'}{' '}
-                    {new Date(applicationStage.updatedAt).toLocaleDateString('en-SG', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric',
+                    {decisionState === "enrolled" ? "Enrolled" : "Marked conditional"}{" "}
+                    {new Date(applicationStage.updatedAt).toLocaleDateString("en-SG", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
                     })}
                     {applicationStage.updatedBy && (
                       <span className="ml-1.5 normal-case text-muted-foreground/80">
@@ -1082,18 +1110,19 @@ function EnrollmentTab({
                 initialStatus={applicationStage.status}
                 initialRemarks={applicationStage.remarks}
                 initialExtras={applicationStage.extrasInitial}
+                prereqStatuses={prereqStatusesForApplication}
               />
             </div>
           )}
-          {decisionState === 'enrolledConditional' && (
+          {decisionState === "enrolledConditional" && (
             <p className="px-1 text-xs leading-relaxed text-muted-foreground">
-              Registrar override — the standard prereq gate was bypassed. Finish the remaining
-              prereqs to drop the conditional tag.
+              Registrar override — the standard prereq gate was bypassed. Finish the remaining prereqs to drop the
+              conditional tag.
             </p>
           )}
 
           {/* Ready CTA — all 5 prereqs clear; flip the application status. */}
-          {decisionState === 'ready' && (
+          {decisionState === "ready" && (
             <div className="flex flex-wrap items-center gap-4 rounded-xl border border-hairline bg-muted/20 p-4">
               <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
                 <Sparkles className="size-6" />
@@ -1103,9 +1132,8 @@ function EnrollmentTab({
                   All 5 prerequisites complete
                 </p>
                 <p className="font-serif text-base font-semibold leading-snug text-foreground">
-                  Flip application status to{' '}
-                  <span className="text-brand-indigo-deep">Enrolled</span> — a class section will be
-                  auto-assigned.
+                  Flip application status to <span className="text-brand-indigo-deep">Enrolled</span> — a class section
+                  will be auto-assigned.
                 </p>
               </div>
               <EditStageDialog
@@ -1115,13 +1143,14 @@ function EnrollmentTab({
                 initialStatus={applicationStage.status}
                 initialRemarks={applicationStage.remarks}
                 initialExtras={applicationStage.extrasInitial}
+                prereqStatuses={prereqStatusesForApplication}
               />
             </div>
           )}
 
           {/* Blocked — "next action" row on top, full blockers list below,
               override note at the bottom. */}
-          {decisionState === 'blocked' && (
+          {decisionState === "blocked" && (
             <>
               {nextActionKey && (
                 <div className="flex flex-wrap items-center gap-3 rounded-xl border border-hairline bg-muted/20 p-3">
@@ -1135,10 +1164,8 @@ function EnrollmentTab({
                     <p className="font-serif text-sm font-semibold leading-tight text-foreground">
                       {STAGE_LABELS[nextActionKey]}
                       <span className="ml-2 font-sans text-[11px] font-normal text-muted-foreground">
-                        → mark as{' '}
-                        <span className="font-medium text-foreground">
-                          {STAGE_TERMINAL_STATUS[nextActionKey]}
-                        </span>
+                        → mark as{" "}
+                        <span className="font-medium text-foreground">{STAGE_TERMINAL_STATUS[nextActionKey]}</span>
                       </span>
                     </p>
                   </div>
@@ -1147,7 +1174,7 @@ function EnrollmentTab({
               <div className="space-y-3 rounded-xl border border-hairline bg-muted/20 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    {blockers.length} step{blockers.length === 1 ? '' : 's'} remaining
+                    {blockers.length} step{blockers.length === 1 ? "" : "s"} remaining
                   </p>
                   <EditStageDialog
                     ayCode={ayCode}
@@ -1156,19 +1183,16 @@ function EnrollmentTab({
                     initialStatus={applicationStage.status}
                     initialRemarks={applicationStage.remarks}
                     initialExtras={applicationStage.extrasInitial}
+                    prereqStatuses={prereqStatusesForApplication}
                   />
                 </div>
                 <ul className="space-y-1.5">
                   {blockers.map((b) => {
-                    const Icon = b.lock === 'locked' ? Lock : Circle;
                     const isNext = b.key === nextActionKey;
                     return (
                       <li key={b.key} className="flex items-center gap-2.5 text-sm">
-                        <Icon
-                          className={cn(
-                            'size-3.5 shrink-0',
-                            isNext ? 'text-brand-indigo' : 'text-muted-foreground',
-                          )}
+                        <Circle
+                          className={cn("size-3.5 shrink-0", isNext ? "text-brand-indigo" : "text-muted-foreground")}
                         />
                         <span className="font-medium text-foreground">{STAGE_LABELS[b.key]}</span>
                         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -1179,17 +1203,15 @@ function EnrollmentTab({
                   })}
                 </ul>
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Finish every prereq to unlock{' '}
-                  <strong className="text-foreground">Enrolled</strong>, or use{' '}
-                  <strong className="text-foreground">Enrolled (Conditional)</strong> as the
-                  registrar override.
+                  Finish every prereq to unlock <strong className="text-foreground">Enrolled</strong>, or use{" "}
+                  <strong className="text-foreground">Enrolled (Conditional)</strong> as the registrar override.
                 </p>
               </div>
             </>
           )}
 
           {/* Cancelled / Withdrawn — terminal non-enrolled state. */}
-          {(decisionState === 'cancelled' || decisionState === 'withdrawn') && (
+          {(decisionState === "cancelled" || decisionState === "withdrawn") && (
             <div className="flex flex-wrap items-center gap-4 rounded-xl border border-hairline bg-muted/20 p-4">
               <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
                 <X className="size-6" />
@@ -1200,10 +1222,10 @@ function EnrollmentTab({
                 </p>
                 {applicationStage.updatedAt && (
                   <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
-                    {new Date(applicationStage.updatedAt).toLocaleDateString('en-SG', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric',
+                    {new Date(applicationStage.updatedAt).toLocaleDateString("en-SG", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
                     })}
                     {applicationStage.updatedBy && (
                       <span className="ml-1.5 normal-case text-muted-foreground/80">
@@ -1220,16 +1242,16 @@ function EnrollmentTab({
                 initialStatus={applicationStage.status}
                 initialRemarks={applicationStage.remarks}
                 initialExtras={applicationStage.extrasInitial}
+                prereqStatuses={prereqStatusesForApplication}
               />
             </div>
           )}
 
-          {applicationStage.extras &&
-            applicationStage.extras.some((e) => !isFieldEmpty(e)) && (
-              <div className="rounded-lg border border-hairline bg-muted/20 px-3 py-2.5">
-                <FieldGrid fields={applicationStage.extras} />
-              </div>
-            )}
+          {applicationStage.extras && applicationStage.extras.some((e) => !isFieldEmpty(e)) && (
+            <div className="rounded-lg border border-hairline bg-muted/20 px-3 py-2.5">
+              <FieldGrid fields={applicationStage.extras} />
+            </div>
+          )}
           {applicationStage.remarks && (
             <p className="whitespace-pre-line rounded-lg bg-muted/40 px-3 py-2 text-xs leading-relaxed text-foreground">
               {applicationStage.remarks}
@@ -1239,7 +1261,7 @@ function EnrollmentTab({
       </Card>
 
       {/* Phase 3 — Start */}
-      <Card className={cn(!isEnrolled && 'opacity-60')}>
+      <Card className={cn(!isEnrolled && "opacity-60")}>
         <CardHeader className="border-b border-border">
           <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
             Phase 3 · Start
@@ -1249,15 +1271,13 @@ function EnrollmentTab({
             {isEnrolled ? (
               <Badge
                 variant="outline"
-                className="border-brand-mint bg-brand-mint/20 font-mono text-[10px] uppercase tracking-[0.14em] text-brand-indigo-deep"
-              >
+                className="border-brand-mint bg-brand-mint/20 font-mono text-[10px] uppercase tracking-[0.14em] text-brand-indigo-deep">
                 Active
               </Badge>
             ) : (
               <Badge
                 variant="outline"
-                className="border-border bg-muted/40 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground"
-              >
+                className="border-border bg-muted/40 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                 Activates after Enrolled
               </Badge>
             )}
@@ -1271,7 +1291,7 @@ function EnrollmentTab({
         <CardContent className="pt-0">
           <ol className="-mx-6 divide-y divide-border border-y border-border">
             {postList.map((stage) => {
-              const isClassStage = stage.key === 'class';
+              const isClassStage = stage.key === "class";
               return (
                 <PostStepRow
                   key={stage.key}
@@ -1310,25 +1330,20 @@ type StepStage = {
 };
 
 // 4px left accent stripe per-row, colored by state using Aurora Vault tokens.
-function stripeForPrereqLock(
-  lock: 'done' | 'cancelled' | 'locked' | 'unlocked',
-  isActive: boolean,
-  hasStatus: boolean,
-): string {
-  if (lock === 'done') return 'bg-brand-mint';
-  if (lock === 'cancelled') return 'bg-destructive/70';
-  if (lock === 'locked') return 'bg-border';
-  if (isActive) return 'bg-brand-indigo';
-  if (hasStatus) return 'bg-brand-amber';
-  return 'bg-border';
+function stripeForPrereqLock(lock: "done" | "cancelled" | "unlocked", isActive: boolean, hasStatus: boolean): string {
+  if (lock === "done") return "bg-brand-mint";
+  if (lock === "cancelled") return "bg-destructive/70";
+  if (isActive) return "bg-brand-indigo";
+  if (hasStatus) return "bg-brand-amber";
+  return "bg-border";
 }
 
 function stripeForPostStage(stage: StepStage): string {
-  if (stageCompleted(stage.status)) return 'bg-brand-mint';
-  if (stageRejected(stage.status) || stage.status === 'Cancelled') return 'bg-destructive/70';
-  if (stagePending(stage.status)) return 'bg-brand-amber';
-  if (stage.status) return 'bg-brand-indigo';
-  return 'bg-border';
+  if (stageCompleted(stage.status)) return "bg-brand-mint";
+  if (stageRejected(stage.status) || stage.status === "Cancelled") return "bg-destructive/70";
+  if (stagePending(stage.status)) return "bg-brand-amber";
+  if (stage.status) return "bg-brand-indigo";
+  return "bg-border";
 }
 
 // Phase card that renders a subset of prereq stages with the workflow's
@@ -1357,7 +1372,7 @@ function PhaseStepCard({
   icon: React.ComponentType<{ className?: string }>;
   stages: StepStage[];
   stageIndices: number[];
-  prereqLocks: Array<'done' | 'cancelled' | 'locked' | 'unlocked'>;
+  prereqLocks: Array<"done" | "cancelled" | "unlocked">;
   activeIndex: number;
   progressLabel?: string;
   progressPct?: number;
@@ -1371,9 +1386,7 @@ function PhaseStepCard({
         <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
           {eyebrow}
         </CardDescription>
-        <CardTitle className="font-serif text-lg font-semibold tracking-tight text-foreground">
-          {title}
-        </CardTitle>
+        <CardTitle className="font-serif text-lg font-semibold tracking-tight text-foreground">{title}</CardTitle>
         <CardAction>
           <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
             <Icon className="size-5" />
@@ -1388,16 +1401,11 @@ function PhaseStepCard({
               <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                 {progressLabel}
               </span>
-              <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                {progressPct}%
-              </span>
+              <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{progressPct}%</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
               <div
-                className={cn(
-                  'h-full transition-all',
-                  allPrereqsDone ? 'bg-brand-mint' : 'bg-brand-indigo/70',
-                )}
+                className={cn("h-full transition-all", allPrereqsDone ? "bg-brand-mint" : "bg-brand-indigo/70")}
                 style={{ width: `${progressPct}%` }}
               />
             </div>
@@ -1408,7 +1416,6 @@ function PhaseStepCard({
             const globalIdx = stageIndices[localIdx];
             const lock = prereqLocks[globalIdx];
             const isActive = globalIdx === activeIndex;
-            const predecessor = PREREQ_STAGE_PREDECESSOR[stage.key];
             return (
               <StepRow
                 key={stage.key}
@@ -1416,9 +1423,6 @@ function PhaseStepCard({
                 lock={lock}
                 isActive={isActive}
                 stage={stage}
-                lockedPredecessorLabel={
-                  lock === 'locked' && predecessor ? STAGE_LABELS[predecessor] : null
-                }
                 ayCode={ayCode}
                 enroleeNumber={enroleeNumber}
               />
@@ -1439,20 +1443,17 @@ function ExtrasChips({ fields }: { fields: Field[] }) {
     <div className="flex flex-wrap items-center gap-1.5">
       {nonEmpty.map((f) => {
         const value =
-          f.asDate && typeof f.value === 'string'
-            ? new Date(f.value).toLocaleDateString('en-SG', {
-                day: '2-digit',
-                month: 'short',
+          f.asDate && typeof f.value === "string"
+            ? new Date(f.value).toLocaleDateString("en-SG", {
+                day: "2-digit",
+                month: "short",
               })
-            : String(f.value ?? '—');
+            : String(f.value ?? "—");
         return (
           <span
             key={f.label}
-            className="inline-flex items-center gap-1.5 rounded-md border border-hairline bg-muted/40 px-2 py-0.5 text-[11px] text-foreground"
-          >
-            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
-              {f.label}
-            </span>
+            className="inline-flex items-center gap-1.5 rounded-md border border-hairline bg-muted/40 px-2 py-0.5 text-[11px] text-foreground">
+            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground">{f.label}</span>
             <span className="font-medium tabular-nums">{value}</span>
           </span>
         );
@@ -1468,15 +1469,13 @@ function StepRow({
   lock,
   isActive,
   stage,
-  lockedPredecessorLabel,
   ayCode,
   enroleeNumber,
 }: {
   index: number;
-  lock: 'done' | 'cancelled' | 'locked' | 'unlocked';
+  lock: "done" | "cancelled" | "unlocked";
   isActive: boolean;
   stage: StepStage;
-  lockedPredecessorLabel: string | null;
   ayCode: string;
   enroleeNumber: string;
 }) {
@@ -1484,78 +1483,54 @@ function StepRow({
   return (
     <li
       className={cn(
-        'group relative flex items-center gap-3 px-6 py-3 transition-colors',
-        isActive && 'bg-brand-indigo/5',
-        lock === 'locked' && 'opacity-60',
-        lock !== 'locked' && !isActive && 'hover:bg-muted/40',
-      )}
-    >
-      <span aria-hidden="true" className={cn('absolute inset-y-0 left-0 w-1', stripe)} />
+        "group relative flex items-center gap-3 px-6 py-3 transition-colors",
+        isActive && "bg-brand-indigo/5",
+        !isActive && "hover:bg-muted/40",
+      )}>
+      <span aria-hidden="true" className={cn("absolute inset-y-0 left-0 w-1", stripe)} />
       <PrereqMarker index={index} lock={lock} status={stage.status} isActive={isActive} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-serif text-sm font-semibold tracking-tight text-foreground">
-            {stage.label}
-          </h3>
+          <h3 className="font-serif text-sm font-semibold tracking-tight text-foreground">{stage.label}</h3>
           <StageStatusBadge status={stage.status} />
           {isActive && (
-            <Badge
-              variant="outline"
-              className="gap-1 border-brand-indigo/40 bg-brand-indigo/5 text-brand-indigo-deep"
-            >
+            <Badge variant="outline" className="gap-1 border-brand-indigo/40 bg-brand-indigo/5 text-brand-indigo-deep">
               <Sparkles className="size-3" />
               Next action
             </Badge>
           )}
-          {lock === 'locked' && lockedPredecessorLabel && (
-            <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              <Lock className="size-3" />
-              Finish {lockedPredecessorLabel} first
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          {stage.updatedAt && (
+            <span className="font-mono text-[10px] uppercase tracking-wider tabular-nums">
+              {new Date(stage.updatedAt).toLocaleDateString("en-SG", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })}
+              {stage.updatedBy && (
+                <span className="ml-1.5 normal-case text-muted-foreground/80">by {stage.updatedBy}</span>
+              )}
             </span>
           )}
+          {stage.extras && <ExtrasChips fields={stage.extras} />}
+          {stage.remarks && <span className="line-clamp-1 max-w-md italic">“{stage.remarks}”</span>}
         </div>
-        {lock !== 'locked' && (
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            {stage.updatedAt && (
-              <span className="font-mono text-[10px] uppercase tracking-wider tabular-nums">
-                {new Date(stage.updatedAt).toLocaleDateString('en-SG', {
-                  day: '2-digit',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-                {stage.updatedBy && (
-                  <span className="ml-1.5 normal-case text-muted-foreground/80">
-                    by {stage.updatedBy}
-                  </span>
-                )}
-              </span>
-            )}
-            {stage.extras && <ExtrasChips fields={stage.extras} />}
-            {stage.remarks && (
-              <span className="line-clamp-1 max-w-md italic">“{stage.remarks}”</span>
-            )}
-          </div>
-        )}
       </div>
-      {lock !== 'locked' && (
-        <div
-          className={cn(
-            'shrink-0 transition-opacity',
-            isActive
-              ? 'opacity-100'
-              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
-          )}
-        >
-          <EditStageDialog
-            ayCode={ayCode}
-            enroleeNumber={enroleeNumber}
-            stageKey={stage.key}
-            initialStatus={stage.status}
-            initialRemarks={stage.remarks}
-            initialExtras={stage.extrasInitial}
-          />
-        </div>
-      )}
+      <div
+        className={cn(
+          "shrink-0 transition-opacity",
+          isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+        )}>
+        <EditStageDialog
+          ayCode={ayCode}
+          enroleeNumber={enroleeNumber}
+          stageKey={stage.key}
+          initialStatus={stage.status}
+          initialRemarks={stage.remarks}
+          initialExtras={stage.extrasInitial}
+        />
+      </div>
     </li>
   );
 }
@@ -1578,31 +1553,27 @@ function PostStepRow({
 }) {
   const stripe = stripeForPostStage(stage);
   const tone = stageTone(stage.status);
-  const marker = stageMarkerElement(stage.status, 'size-4');
+  const marker = stageMarkerElement(stage.status, "size-4");
   return (
     <li className="group relative flex items-center gap-3 px-6 py-3 transition-colors hover:bg-muted/40">
-      <span aria-hidden="true" className={cn('absolute inset-y-0 left-0 w-1', stripe)} />
+      <span aria-hidden="true" className={cn("absolute inset-y-0 left-0 w-1", stripe)} />
       <div
         className={cn(
-          'flex size-8 shrink-0 items-center justify-center rounded-full border-2 bg-background',
+          "flex size-8 shrink-0 items-center justify-center rounded-full border-2 bg-background",
           tone.border,
           tone.bg,
           tone.text,
-        )}
-      >
+        )}>
         {marker ?? <Circle className="size-3" aria-hidden="true" />}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-serif text-sm font-semibold tracking-tight text-foreground">
-            {stage.label}
-          </h3>
+          <h3 className="font-serif text-sm font-semibold tracking-tight text-foreground">{stage.label}</h3>
           <StageStatusBadge status={stage.status} />
           {isClassStage && !isEnrolled && (
             <Badge
               variant="outline"
-              className="gap-1 border-brand-indigo/30 bg-brand-indigo/5 font-mono text-[10px] text-brand-indigo-deep"
-            >
+              className="gap-1 border-brand-indigo/30 bg-brand-indigo/5 font-mono text-[10px] text-brand-indigo-deep">
               <Sparkles className="size-3" />
               Auto on Enrolled
             </Badge>
@@ -1611,22 +1582,18 @@ function PostStepRow({
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {stage.updatedAt && (
             <span className="font-mono text-[10px] uppercase tracking-wider tabular-nums">
-              {new Date(stage.updatedAt).toLocaleDateString('en-SG', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
+              {new Date(stage.updatedAt).toLocaleDateString("en-SG", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
               })}
               {stage.updatedBy && (
-                <span className="ml-1.5 normal-case text-muted-foreground/80">
-                  by {stage.updatedBy}
-                </span>
+                <span className="ml-1.5 normal-case text-muted-foreground/80">by {stage.updatedBy}</span>
               )}
             </span>
           )}
           {stage.extras && <ExtrasChips fields={stage.extras} />}
-          {stage.remarks && (
-            <span className="line-clamp-1 max-w-md italic">“{stage.remarks}”</span>
-          )}
+          {stage.remarks && <span className="line-clamp-1 max-w-md italic">“{stage.remarks}”</span>}
         </div>
       </div>
       <div className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
@@ -1649,33 +1616,30 @@ function PostStepRow({
 // Medical card when the parent ticked them. The order here matches the
 // visual priority — most safety-relevant first.
 const MEDICAL_FLAGS: Array<{ key: keyof ApplicationRow; label: string }> = [
-  { key: 'allergies', label: 'Allergies' },
-  { key: 'foodAllergies', label: 'Food allergies' },
-  { key: 'asthma', label: 'Asthma' },
-  { key: 'heartConditions', label: 'Heart conditions' },
-  { key: 'epilepsy', label: 'Epilepsy' },
-  { key: 'diabetes', label: 'Diabetes' },
-  { key: 'eczema', label: 'Eczema' },
+  { key: "allergies", label: "Allergies" },
+  { key: "foodAllergies", label: "Food allergies" },
+  { key: "asthma", label: "Asthma" },
+  { key: "heartConditions", label: "Heart conditions" },
+  { key: "epilepsy", label: "Epilepsy" },
+  { key: "diabetes", label: "Diabetes" },
+  { key: "eczema", label: "Eczema" },
 ];
 
 const MEDICAL_DETAILS: Array<{ key: keyof ApplicationRow; label: string }> = [
-  { key: 'allergyDetails', label: 'Allergy details' },
-  { key: 'foodAllergyDetails', label: 'Food allergy details' },
-  { key: 'otherMedicalConditions', label: 'Other conditions' },
-  { key: 'dietaryRestrictions', label: 'Dietary restrictions' },
+  { key: "allergyDetails", label: "Allergy details" },
+  { key: "foodAllergyDetails", label: "Food allergy details" },
+  { key: "otherMedicalConditions", label: "Other conditions" },
+  { key: "dietaryRestrictions", label: "Dietary restrictions" },
 ];
 
 function MedicalCard({ app }: { app: ApplicationRow }) {
   const raisedFlags = MEDICAL_FLAGS.filter((f) => app[f.key] === true);
   const detailEntries = MEDICAL_DETAILS.filter((f) => {
     const v = app[f.key] as string | null | undefined;
-    return v !== null && v !== undefined && String(v).trim() !== '';
+    return v !== null && v !== undefined && String(v).trim() !== "";
   });
   const paracetamolConsent = app.paracetamolConsent; // boolean | null
-  const hasAnyContent =
-    raisedFlags.length > 0 ||
-    detailEntries.length > 0 ||
-    paracetamolConsent !== null;
+  const hasAnyContent = raisedFlags.length > 0 || detailEntries.length > 0 || paracetamolConsent !== null;
 
   return (
     <Card>
@@ -1688,10 +1652,9 @@ function MedicalCard({ app }: { app: ApplicationRow }) {
           {raisedFlags.length > 0 && (
             <Badge
               variant="outline"
-              className="gap-1 border-brand-amber/40 bg-brand-amber-light/40 font-mono text-[10px] uppercase tracking-[0.14em] text-brand-amber"
-            >
+              className="gap-1 border-brand-amber/40 bg-brand-amber-light/40 font-mono text-[10px] uppercase tracking-[0.14em] text-brand-amber">
               <AlertTriangle className="size-3" />
-              {raisedFlags.length} flag{raisedFlags.length === 1 ? '' : 's'}
+              {raisedFlags.length} flag{raisedFlags.length === 1 ? "" : "s"}
             </Badge>
           )}
         </CardTitle>
@@ -1718,8 +1681,7 @@ function MedicalCard({ app }: { app: ApplicationRow }) {
               {raisedFlags.map((f) => (
                 <span
                   key={String(f.key)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-brand-amber/40 bg-brand-amber-light/40 px-2.5 py-1 text-xs font-medium text-foreground"
-                >
+                  className="inline-flex items-center gap-1.5 rounded-md border border-brand-amber/40 bg-brand-amber-light/40 px-2.5 py-1 text-xs font-medium text-foreground">
                   <AlertTriangle className="size-3 text-brand-amber" />
                   {f.label}
                 </span>
@@ -1736,11 +1698,9 @@ function MedicalCard({ app }: { app: ApplicationRow }) {
             <dl className="space-y-3">
               {detailEntries.map((f) => (
                 <div key={String(f.key)}>
-                  <dt className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                    {f.label}
-                  </dt>
+                  <dt className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{f.label}</dt>
                   <dd className="mt-1 whitespace-pre-line text-sm leading-relaxed text-foreground">
-                    {String(app[f.key] ?? '')}
+                    {String(app[f.key] ?? "")}
                   </dd>
                 </div>
               ))}
@@ -1751,22 +1711,16 @@ function MedicalCard({ app }: { app: ApplicationRow }) {
         {paracetamolConsent !== null && (
           <div
             className={cn(
-              'flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs',
-              paracetamolConsent
-                ? 'border-brand-mint/50 bg-brand-mint/10'
-                : 'border-hairline bg-muted/20',
-            )}
-          >
+              "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs",
+              paracetamolConsent ? "border-brand-mint/50 bg-brand-mint/10" : "border-hairline bg-muted/20",
+            )}>
             {paracetamolConsent ? (
               <CheckCircle2 className="size-3.5 shrink-0 text-brand-mint" />
             ) : (
               <X className="size-3.5 shrink-0 text-destructive" />
             )}
             <span className="text-foreground">
-              Paracetamol consent:{' '}
-              <span className="font-medium">
-                {paracetamolConsent ? 'Granted' : 'Withheld'}
-              </span>
+              Paracetamol consent: <span className="font-medium">{paracetamolConsent ? "Granted" : "Withheld"}</span>
             </span>
           </div>
         )}
@@ -1777,15 +1731,15 @@ function MedicalCard({ app }: { app: ApplicationRow }) {
 
 function BillingCard({ app }: { app: ApplicationRow }) {
   const discountSlots = [
-    { label: 'Discount 1', value: app.discount1 },
-    { label: 'Discount 2', value: app.discount2 },
-    { label: 'Discount 3', value: app.discount3 },
+    { label: "Discount 1", value: app.discount1 },
+    { label: "Discount 2", value: app.discount2 },
+    { label: "Discount 3", value: app.discount3 },
   ];
   const consents: Array<{ label: string; value: boolean | null }> = [
-    { label: 'Social media consent', value: app.socialMediaConsent ?? null },
-    { label: 'Feedback consent', value: app.feedbackConsent ?? null },
+    { label: "Social media consent", value: app.socialMediaConsent ?? null },
+    { label: "Feedback consent", value: app.feedbackConsent ?? null },
   ];
-  const activeDiscounts = discountSlots.filter((d) => d.value && String(d.value).trim() !== '');
+  const activeDiscounts = discountSlots.filter((d) => d.value && String(d.value).trim() !== "");
 
   return (
     <Card>
@@ -1798,9 +1752,8 @@ function BillingCard({ app }: { app: ApplicationRow }) {
           {activeDiscounts.length > 0 && (
             <Badge
               variant="outline"
-              className="border-brand-indigo/40 bg-brand-indigo/5 font-mono text-[10px] uppercase tracking-[0.14em] text-brand-indigo-deep"
-            >
-              {activeDiscounts.length} discount{activeDiscounts.length === 1 ? '' : 's'}
+              className="border-brand-indigo/40 bg-brand-indigo/5 font-mono text-[10px] uppercase tracking-[0.14em] text-brand-indigo-deep">
+              {activeDiscounts.length} discount{activeDiscounts.length === 1 ? "" : "s"}
             </Badge>
           )}
         </CardTitle>
@@ -1817,24 +1770,19 @@ function BillingCard({ app }: { app: ApplicationRow }) {
           </p>
           <ul className="space-y-1.5">
             {discountSlots.map((d) => {
-              const filled = !!d.value && String(d.value).trim() !== '';
+              const filled = !!d.value && String(d.value).trim() !== "";
               return (
                 <li
                   key={d.label}
                   className={cn(
-                    'flex items-center gap-2.5 rounded-md border px-3 py-2 text-xs',
-                    filled
-                      ? 'border-brand-indigo/30 bg-brand-indigo/5'
-                      : 'border-hairline bg-muted/20',
-                  )}
-                >
+                    "flex items-center gap-2.5 rounded-md border px-3 py-2 text-xs",
+                    filled ? "border-brand-indigo/30 bg-brand-indigo/5" : "border-hairline bg-muted/20",
+                  )}>
                   <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                     {d.label}
                   </span>
                   {filled ? (
-                    <span className="font-mono font-medium tabular-nums text-brand-indigo-deep">
-                      {String(d.value)}
-                    </span>
+                    <span className="font-mono font-medium tabular-nums text-brand-indigo-deep">{String(d.value)}</span>
                   ) : (
                     <span className="text-muted-foreground">Empty</span>
                   )}
@@ -1852,28 +1800,19 @@ function BillingCard({ app }: { app: ApplicationRow }) {
             {consents.map((c) => {
               const Icon = c.value === true ? CheckCircle2 : c.value === false ? X : Circle;
               const iconClass =
-                c.value === true
-                  ? 'text-brand-mint'
-                  : c.value === false
-                    ? 'text-destructive'
-                    : 'text-muted-foreground';
+                c.value === true ? "text-brand-mint" : c.value === false ? "text-destructive" : "text-muted-foreground";
               const bgClass =
                 c.value === true
-                  ? 'border-brand-mint/40 bg-brand-mint/10'
+                  ? "border-brand-mint/40 bg-brand-mint/10"
                   : c.value === false
-                    ? 'border-destructive/30 bg-destructive/5'
-                    : 'border-hairline bg-muted/20';
-              const valueLabel =
-                c.value === true ? 'Granted' : c.value === false ? 'Withheld' : 'Not answered';
+                    ? "border-destructive/30 bg-destructive/5"
+                    : "border-hairline bg-muted/20";
+              const valueLabel = c.value === true ? "Granted" : c.value === false ? "Withheld" : "Not answered";
               return (
                 <li
                   key={c.label}
-                  className={cn(
-                    'flex items-center gap-2.5 rounded-md border px-3 py-2 text-xs',
-                    bgClass,
-                  )}
-                >
-                  <Icon className={cn('size-3.5 shrink-0', iconClass)} />
+                  className={cn("flex items-center gap-2.5 rounded-md border px-3 py-2 text-xs", bgClass)}>
+                  <Icon className={cn("size-3.5 shrink-0", iconClass)} />
                   <span className="text-foreground">{c.label}</span>
                   <span className="ml-auto font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                     {valueLabel}
@@ -1895,95 +1834,80 @@ function PrereqMarker({
   isActive,
 }: {
   index: number;
-  lock: 'done' | 'cancelled' | 'locked' | 'unlocked';
+  lock: "done" | "cancelled" | "unlocked";
   status: string | null;
   isActive: boolean;
 }) {
   // Aurora Vault tokens. Done = mint + check. Cancelled = destructive + X.
-  // Locked = muted + lock icon. Active = solid brand-indigo + step number
-  // with soft ring. In-progress (unlocked, has a non-terminal status) →
-  // delegate to `stageTone` so Invoiced / Sent / Unpaid keep their existing
-  // informational tints.
-  const base =
-    'relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full border-2 bg-background';
-  if (lock === 'done') {
+  // Active = solid brand-indigo + step number with soft ring. In-progress
+  // (unlocked, has a non-terminal status) → delegate to `stageTone` so
+  // Invoiced / Sent / Unpaid keep their existing informational tints.
+  const base = "relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full border-2 bg-background";
+  if (lock === "done") {
     return (
-      <div className={cn(base, 'border-brand-mint bg-brand-mint/20 text-brand-indigo-deep')}>
+      <div className={cn(base, "border-brand-mint bg-brand-mint/20 text-brand-indigo-deep")}>
         <Check className="size-4" />
       </div>
     );
   }
-  if (lock === 'cancelled') {
+  if (lock === "cancelled") {
     return (
-      <div className={cn(base, 'border-destructive/50 bg-destructive/10 text-destructive')}>
+      <div className={cn(base, "border-destructive/50 bg-destructive/10 text-destructive")}>
         <X className="size-4" />
-      </div>
-    );
-  }
-  if (lock === 'locked') {
-    return (
-      <div className={cn(base, 'border-border bg-muted/40 text-muted-foreground')}>
-        <Lock className="size-3.5" />
       </div>
     );
   }
   if (isActive) {
     return (
-      <div
-        className={cn(
-          base,
-          'border-brand-indigo bg-brand-indigo text-white ring-4 ring-brand-indigo/20',
-        )}
-      >
+      <div className={cn(base, "border-brand-indigo bg-brand-indigo text-white ring-4 ring-brand-indigo/20")}>
         <span className="font-mono text-[11px] font-semibold tabular-nums">{index}</span>
       </div>
     );
   }
   const tone = stageTone(status);
-  const marker = stageMarkerElement(status, 'size-4');
+  const marker = stageMarkerElement(status, "size-4");
   return (
     <div className={cn(base, tone.border, tone.bg, tone.text)}>
-      {marker ?? (
-        <span className="font-mono text-[11px] font-semibold tabular-nums">{index}</span>
-      )}
+      {marker ?? <span className="font-mono text-[11px] font-semibold tabular-nums">{index}</span>}
     </div>
   );
 }
 
 function stageTone(status: string | null): { border: string; bg: string; text: string } {
-  const v = (status ?? '').trim();
+  const v = (status ?? "").trim();
   if (stageCompleted(v))
     return {
-      border: 'border-brand-mint',
-      bg: 'bg-brand-mint/20',
-      text: 'text-brand-indigo-deep',
+      border: "border-brand-mint",
+      bg: "bg-brand-mint/20",
+      text: "text-brand-indigo-deep",
     };
   if (stageRejected(v))
     return {
-      border: 'border-destructive/50',
-      bg: 'bg-destructive/10',
-      text: 'text-destructive',
+      border: "border-destructive/50",
+      bg: "bg-destructive/10",
+      text: "text-destructive",
     };
   if (stagePending(v))
     return {
-      border: 'border-brand-amber/60',
-      bg: 'bg-brand-amber-light/40',
-      text: 'text-brand-amber',
+      border: "border-brand-amber/60",
+      bg: "bg-brand-amber-light/40",
+      text: "text-brand-amber",
     };
   if (v && /invoic|upload/i.test(v))
     return {
-      border: 'border-brand-indigo/40',
-      bg: 'bg-accent',
-      text: 'text-brand-indigo-deep',
+      border: "border-brand-indigo/40",
+      bg: "bg-accent",
+      text: "text-brand-indigo-deep",
     };
-  return { border: 'border-border', bg: 'bg-muted/40', text: 'text-muted-foreground' };
+  return { border: "border-border", bg: "bg-muted/40", text: "text-muted-foreground" };
 }
 
 const EXPIRY_SOON_WINDOW_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
 
-function countExpiryBuckets(
-  documents: readonly { expiry?: string | null }[],
-): { expiringSoon: number; expired: number } {
+function countExpiryBuckets(documents: readonly { expiry?: string | null }[]): {
+  expiringSoon: number;
+  expired: number;
+} {
   const now = Date.now();
   let expiringSoon = 0;
   let expired = 0;
@@ -1997,11 +1921,8 @@ function countExpiryBuckets(
   return { expiringSoon, expired };
 }
 
-function stageMarkerElement(
-  status: string | null,
-  className = 'size-4',
-): React.ReactElement | null {
-  const v = (status ?? '').trim();
+function stageMarkerElement(status: string | null, className = "size-4"): React.ReactElement | null {
+  const v = (status ?? "").trim();
   if (stageCompleted(v)) return <Check className={className} />;
   if (stageRejected(v)) return <X className={className} />;
   if (stagePending(v)) return <Clock className={className} />;
@@ -2022,8 +1943,8 @@ function stageRejected(status: string | null): boolean {
 }
 
 function isFieldEmpty(f: Field): boolean {
-  if (typeof f.value === 'boolean') return false;
-  return f.value === null || f.value === undefined || (typeof f.value === 'string' && f.value.trim() === '');
+  if (typeof f.value === "boolean") return false;
+  return f.value === null || f.value === undefined || (typeof f.value === "string" && f.value.trim() === "");
 }
 
 // Document categorization. Keys come from DOCUMENT_SLOTS in lib/sis/queries.ts.
@@ -2031,15 +1952,15 @@ function isFieldEmpty(f: Field): boolean {
 // - Expiring: student-scoped time-limited documents (passport, pass).
 // - Parent/Guardian: mother/father/guardian-prefixed documents (all expiring).
 const DOC_CATEGORY_KEYS = {
-  nonExpiring: new Set(['idPicture', 'birthCert', 'educCert', 'medical']),
-  expiring: new Set(['passport', 'pass']),
+  nonExpiring: new Set(["idPicture", "birthCert", "educCert", "medical"]),
+  expiring: new Set(["passport", "pass"]),
   parentGuardian: new Set([
-    'motherPassport',
-    'motherPass',
-    'fatherPassport',
-    'fatherPass',
-    'guardianPassport',
-    'guardianPass',
+    "motherPassport",
+    "motherPass",
+    "fatherPassport",
+    "fatherPass",
+    "guardianPassport",
+    "guardianPass",
   ]),
 } as const;
 
@@ -2059,9 +1980,7 @@ function DocumentsTab({
 
   const nonExpiringDocs = documents.filter((d) => DOC_CATEGORY_KEYS.nonExpiring.has(d.key));
   const expiringDocs = documents.filter((d) => DOC_CATEGORY_KEYS.expiring.has(d.key));
-  const parentGuardianDocs = documents.filter((d) =>
-    DOC_CATEGORY_KEYS.parentGuardian.has(d.key),
-  );
+  const parentGuardianDocs = documents.filter((d) => DOC_CATEGORY_KEYS.parentGuardian.has(d.key));
 
   return (
     <Card>
@@ -2081,10 +2000,7 @@ function DocumentsTab({
       <CardContent className="space-y-6 pt-6">
         <div className="h-1.5 overflow-hidden rounded-full bg-muted">
           <div
-            className={cn(
-              'h-full transition-all',
-              pct === 100 ? 'bg-brand-mint' : 'bg-brand-indigo/70',
-            )}
+            className={cn("h-full transition-all", pct === 100 ? "bg-brand-mint" : "bg-brand-indigo/70")}
             style={{ width: `${pct}%` }}
           />
         </div>
@@ -2095,15 +2011,12 @@ function DocumentsTab({
               {expired > 0 && (
                 <>
                   <span className="font-medium text-foreground">{expired} expired</span>
-                  {' — replace via P-Files. '}
+                  {" — replace via P-Files. "}
                 </>
               )}
               {expiring > 0 && (
                 <>
-                  <span className="font-medium text-foreground">
-                    {expiring} expiring within 60 days
-                  </span>
-                  .
+                  <span className="font-medium text-foreground">{expiring} expiring within 60 days</span>.
                 </>
               )}
             </p>
@@ -2174,27 +2087,14 @@ function DocumentCategorySection({
       <p className="text-xs text-muted-foreground">{subtitle}</p>
       <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {docs.map((doc) => (
-          <DocumentCard
-            key={doc.key}
-            doc={doc}
-            enroleeNumber={enroleeNumber}
-            ayCode={ayCode}
-          />
+          <DocumentCard key={doc.key} doc={doc} enroleeNumber={enroleeNumber} ayCode={ayCode} />
         ))}
       </ul>
     </section>
   );
 }
 
-function DocumentCard({
-  doc,
-  enroleeNumber,
-  ayCode,
-}: {
-  doc: DocumentSlot;
-  enroleeNumber: string;
-  ayCode: string;
-}) {
+function DocumentCard({ doc, enroleeNumber, ayCode }: { doc: DocumentSlot; enroleeNumber: string; ayCode: string }) {
   const onFile = !!doc.url;
   return (
     <li className="flex items-start gap-3 rounded-xl border border-hairline bg-card p-4">
@@ -2207,21 +2107,18 @@ function DocumentCard({
           {doc.status ? (
             <StageStatusBadge status={doc.status} />
           ) : (
-            <Badge
-              variant="outline"
-              className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
-            >
+            <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
               Missing
             </Badge>
           )}
         </div>
         {doc.expiry && (
           <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            Expires{' '}
-            {new Date(doc.expiry).toLocaleDateString('en-SG', {
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric',
+            Expires{" "}
+            {new Date(doc.expiry).toLocaleDateString("en-SG", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
             })}
           </p>
         )}
@@ -2231,16 +2128,14 @@ function DocumentCard({
               href={doc.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-brand-indigo-deep underline transition-colors hover:text-brand-indigo"
-            >
+              className="inline-flex items-center gap-1 text-brand-indigo-deep underline transition-colors hover:text-brand-indigo">
               View file
               <ExternalLink className="size-3" />
             </a>
           )}
           <Link
             href={`/p-files/${enroleeNumber}#slot-${doc.key}`}
-            className="inline-flex items-center gap-1 text-muted-foreground underline transition-colors hover:text-foreground"
-          >
+            className="inline-flex items-center gap-1 text-muted-foreground underline transition-colors hover:text-foreground">
             Open in P-Files
             <ExternalLink className="size-3" />
           </Link>
@@ -2260,12 +2155,12 @@ function DocumentCard({
 
 function FunnelProgress({ currentIndex }: { currentIndex: number }) {
   const stages: Array<{ label: string; icon: React.ComponentType<{ className?: string }> }> = [
-    { label: 'Inquiry', icon: Mail },
-    { label: 'Applied', icon: ClipboardList },
-    { label: 'Interviewed', icon: MessageSquare },
-    { label: 'Offered', icon: HandHeart },
-    { label: 'Accepted', icon: CheckCircle2 },
-    { label: 'Enrolled', icon: GraduationCap },
+    { label: "Inquiry", icon: Mail },
+    { label: "Applied", icon: ClipboardList },
+    { label: "Interviewed", icon: MessageSquare },
+    { label: "Offered", icon: HandHeart },
+    { label: "Accepted", icon: CheckCircle2 },
+    { label: "Enrolled", icon: GraduationCap },
   ];
 
   return (
@@ -2278,21 +2173,17 @@ function FunnelProgress({ currentIndex }: { currentIndex: number }) {
           <Fragment key={stage.label}>
             <div
               className={cn(
-                'flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors',
-                past && 'border-brand-mint bg-brand-mint/30 text-ink',
-                current && 'border-brand-indigo bg-brand-indigo text-white shadow-sm',
-                !past && !current && 'border-border bg-muted/40 text-muted-foreground',
-              )}
-            >
+                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors",
+                past && "border-brand-mint bg-brand-mint/30 text-ink",
+                current && "border-brand-indigo bg-brand-indigo text-white shadow-sm",
+                !past && !current && "border-border bg-muted/40 text-muted-foreground",
+              )}>
               {past ? <Check className="size-3" /> : <Icon className="size-3" />}
               {stage.label}
             </div>
             {i < stages.length - 1 && (
               <div
-                className={cn(
-                  'h-px w-3 shrink-0 sm:w-5',
-                  i < currentIndex ? 'bg-brand-mint' : 'bg-border',
-                )}
+                className={cn("h-px w-3 shrink-0 sm:w-5", i < currentIndex ? "bg-brand-mint" : "bg-border")}
                 aria-hidden="true"
               />
             )}

@@ -42,6 +42,18 @@ const optionalBool = z.boolean().nullable();
 // Profile (demographics) — applications row, single-student
 // ──────────────────────────────────────────────────────────────────────────
 
+// Mirrors `ay{YY}_enrolment_status.enroleeType`. Same 4-value enum on both
+// sides — the apps row's `category` and the status row's `enroleeType` always
+// agree. Used to match a student against a discount code's eligibility filter
+// (DISCOUNT_ENROLEE_TYPES below adds the `Both` / `VizSchool Both` superset).
+export const ENROLEE_CATEGORIES = [
+  'New',
+  'Current',
+  'VizSchool New',
+  'VizSchool Current',
+] as const;
+export type EnroleeCategory = (typeof ENROLEE_CATEGORIES)[number];
+
 export const ProfileUpdateSchema = z.object({
   // Names — all optional (some students have only a first/last)
   firstName:      optionalText(120),
@@ -50,7 +62,7 @@ export const ProfileUpdateSchema = z.object({
   preferredName:  optionalText(120),
   enroleeFullName: optionalText(240),
   // Identity
-  category:       optionalText(60),
+  category:       z.enum(ENROLEE_CATEGORIES).nullable().optional(),
   nric:           optionalText(40),
   birthDay:       optionalDate,
   gender:         optionalText(40),
@@ -280,18 +292,6 @@ export const STAGE_TERMINAL_STATUS: Partial<Record<StageKey, string>> = {
   contract:     'Signed',
   fees:         'Paid',
   // class gets 'Finished' set by the auto-assign algorithm, not a prereq.
-};
-
-// Sequential predecessor per prereq stage. Used by the stage PATCH route to
-// enforce "can't mark stage N terminal until stage N-1 is terminal". Only
-// gates the terminal-value transition — in-progress statuses (Unpaid,
-// Ongoing Assessment, Sent, Invoiced, Re-invoiced) and Cancelled can be
-// set any time. Registration has no predecessor (first prereq).
-export const PREREQ_STAGE_PREDECESSOR: Partial<Record<StageKey, StageKey>> = {
-  documents:  'registration',
-  assessment: 'documents',
-  contract:   'assessment',
-  fees:       'contract',
 };
 
 // Each stage maps to status / remarks / extras column names on enrolment_status.
