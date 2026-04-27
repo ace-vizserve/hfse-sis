@@ -20,9 +20,10 @@ import {
   type AttendanceHistoryRow,
   type PlacementRow,
 } from '@/lib/sis/records-history';
-import { getEnrollmentHistory } from '@/lib/sis/queries';
+import { getEnrollmentHistory, getStudentDetail } from '@/lib/sis/queries';
 import { getStudentLifecycle } from '@/lib/sis/process';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { StpApplicationCard } from '@/components/sis/stp-application-card';
 import { StudentLifecycleTimeline } from '@/components/sis/student-lifecycle-timeline';
 import { getSessionUser } from '@/lib/supabase/server';
 
@@ -106,6 +107,13 @@ export default async function RecordsStudentCrossYearPage({
     ? await getStudentLifecycle(lifecycleEntry.ayCode, lifecycleEntry.enroleeNumber)
     : null;
 
+  // STP application card — only fetched + rendered when this student opted
+  // into the Singapore ICA Student Pass sub-flow. Same gate as the admissions
+  // detail page: `application.stpApplicationType IS NOT NULL`.
+  const stpDetail = lifecycleEntry
+    ? await getStudentDetail(lifecycleEntry.ayCode, lifecycleEntry.enroleeNumber)
+    : null;
+
   return (
     <PageShell>
       <Link
@@ -173,6 +181,13 @@ export default async function RecordsStudentCrossYearPage({
       <PlacementSection rows={placements} />
       <AcademicSection rows={academics} />
       <AttendanceSection rows={attendance} />
+      {stpDetail?.application.stpApplicationType && (
+        <StpApplicationCard
+          application={stpDetail.application}
+          documents={stpDetail.documents}
+          ayCode={stpDetail.ayCode}
+        />
+      )}
       {lifecycleSnapshot && (
         <StudentLifecycleTimeline snapshot={lifecycleSnapshot} history={history} />
       )}

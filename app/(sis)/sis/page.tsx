@@ -224,7 +224,7 @@ export default async function SisAdminHub({
               <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                 Lifecycle
               </h2>
-              <LifecycleAggregateCard buckets={lifecycleBuckets} />
+              <LifecycleAggregateCard buckets={lifecycleBuckets} ayCode={ayCode} />
             </section>
           )}
 

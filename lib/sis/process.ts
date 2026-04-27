@@ -612,30 +612,49 @@ async function loadLifecycleAggregateUncached(
 
   const docColumns = ['enroleeNumber', ...DOCUMENT_SLOTS.map((s) => s.statusCol)];
 
-  const [statusRes, docsRes] = await Promise.all([
+  // Apps row — pull only the columns that drive bucket predicates today
+  // (`stpApplicationType` for the STP completion bucket). Add to this list
+  // when a future bucket needs another column off the apps table.
+  const appColumns = ['enroleeNumber', 'stpApplicationType'];
+
+  const [statusRes, docsRes, appsRes] = await Promise.all([
     supabase.from(`${prefix}_enrolment_status`).select(uniqStatusColumns.join(', ')),
     supabase.from(`${prefix}_enrolment_documents`).select(docColumns.join(', ')),
+    supabase.from(`${prefix}_enrolment_applications`).select(appColumns.join(', ')),
   ]);
 
   if (statusRes.error) {
     console.warn('[sis/process] aggregate status fetch failed:', statusRes.error.message);
     return [];
   }
+  if (appsRes.error) {
+    console.warn('[sis/process] aggregate apps fetch failed:', appsRes.error.message);
+  }
 
   type StatusRow = Record<string, string | null> & { enroleeNumber: string | null };
   type DocRow = Record<string, string | null> & { enroleeNumber: string | null };
+  type AppRow = { enroleeNumber: string | null; stpApplicationType: string | null };
 
   const statusRows = ((statusRes.data ?? []) as unknown as StatusRow[]).filter((r) => !!r.enroleeNumber);
   const docRows = ((docsRes.data ?? []) as unknown as DocRow[]).filter((r) => !!r.enroleeNumber);
+  const appRows = ((appsRes.data ?? []) as unknown as AppRow[]).filter((r) => !!r.enroleeNumber);
 
   const docsByEnrolee = new Map<string, DocRow>();
   for (const d of docRows) {
     if (d.enroleeNumber) docsByEnrolee.set(d.enroleeNumber, d);
   }
+  const appsByEnrolee = new Map<string, AppRow>();
+  for (const a of appRows) {
+    if (a.enroleeNumber) appsByEnrolee.set(a.enroleeNumber, a);
+  }
+  // Hard-coded STP slot keys + status-cols pair so the predicate doesn't
+  // re-walk DOCUMENT_SLOTS by string match every iteration.
+  const STP_STATUS_COLS = ['icaPhotoStatus', 'financialSupportDocsStatus', 'vaccinationInformationStatus'];
 
   let awaitingFeePayment = 0;
   let awaitingDocRevalidation = 0;
   let awaitingDocValidation = 0;
+  let awaitingStpCompletion = 0;
   let awaitingAssessmentSchedule = 0;
   let awaitingContractSignature = 0;
   let missingClassAssignment = 0;
@@ -674,17 +693,43 @@ async function loadLifecycleAggregateUncached(
       if (rowHasValidation) awaitingDocValidation += 1;
     }
 
-    // 4. Awaiting assessment schedule.
+    // 4. Awaiting STP completion — the parent opted into the Singapore
+    //    Student Pass sub-flow (`stpApplicationType IS NOT NULL`) AND any of
+    //    the 3 STP-conditional doc slots (icaPhoto / financialSupportDocs /
+    //    vaccinationInformation) is not in the terminal `'Valid'` state.
+    //    null + 'Uploaded' + 'Rejected' + 'Expired' all qualify here. This is
+    //    a SUPERSET of the doc-validation/revalidation buckets above, scoped
+    //    to STP students — overlap is intentional, the registrar's STP queue
+    //    is its own surface that needs to clear independently of the rest of
+    //    the document family. See KD #58 + docs/context/21-stp-application.md.
+    const appRow = appsByEnrolee.get(r.enroleeNumber!);
+    if (appRow?.stpApplicationType && docs) {
+      let stpIncomplete = false;
+      for (const col of STP_STATUS_COLS) {
+        const v = (docs[col] ?? '').toString().trim();
+        if (v !== 'Valid') {
+          stpIncomplete = true;
+          break;
+        }
+      }
+      if (stpIncomplete) awaitingStpCompletion += 1;
+    } else if (appRow?.stpApplicationType && !docs) {
+      // Edge case — apps row says STP but documents row missing entirely.
+      // Counted as needing completion (every slot is implicitly null).
+      awaitingStpCompletion += 1;
+    }
+
+    // 5. Awaiting assessment schedule.
     if (r.assessmentStatus === 'Pending' && !r.assessmentSchedule) {
       awaitingAssessmentSchedule += 1;
     }
 
-    // 5. Awaiting contract signature.
+    // 6. Awaiting contract signature.
     if (r.contractStatus === 'Generated' || r.contractStatus === 'Sent') {
       awaitingContractSignature += 1;
     }
 
-    // 6. Missing class assignment — enrolled but no section.
+    // 7. Missing class assignment — enrolled but no section.
     if (
       (appStatus === 'Enrolled' || appStatus === 'Enrolled (Conditional)') &&
       (!r.classSection || r.classSection.trim().length === 0)
@@ -692,7 +737,7 @@ async function loadLifecycleAggregateUncached(
       missingClassAssignment += 1;
     }
 
-    // 7. Ungated to enroll — all 5 prereqs at terminal but applicationStatus
+    // 8. Ungated to enroll — all 5 prereqs at terminal but applicationStatus
     //    is not 'Enrolled'. Positive signal — one click away.
     const allPrereqsTerminal = ENROLLED_PREREQ_STAGES.every((s) => {
       const col = STAGE_COLUMN_MAP[s].statusCol;
@@ -709,7 +754,7 @@ async function loadLifecycleAggregateUncached(
       ungatedToEnroll += 1;
     }
 
-    // 8. New applications.
+    // 9. New applications.
     if (appStatus === 'Submitted') {
       newApplications += 1;
     }
@@ -736,6 +781,13 @@ async function loadLifecycleAggregateUncached(
       count: awaitingDocValidation,
       severity: 'warn',
       drillTarget: 'awaiting-document-validation',
+    },
+    {
+      key: 'awaiting-stp-completion',
+      label: 'Awaiting STP completion',
+      count: awaitingStpCompletion,
+      severity: 'warn',
+      drillTarget: 'awaiting-stp-completion',
     },
     {
       key: 'awaiting-assessment-schedule',

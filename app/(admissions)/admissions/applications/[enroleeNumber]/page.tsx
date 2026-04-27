@@ -39,6 +39,7 @@ import { EditStageDialog } from "@/components/sis/edit-stage-dialog";
 import { EnrollmentHistoryChips } from "@/components/sis/enrollment-history-chips";
 import { FieldGrid, type Field } from "@/components/sis/field-grid";
 import { ApplicationStatusBadge, StageStatusBadge } from "@/components/sis/status-badge";
+import { StpApplicationCard } from "@/components/sis/stp-application-card";
 import { StudentAttendanceTab } from "@/components/sis/student-attendance-tab";
 import { StudentLifecycleTimeline } from "@/components/sis/student-lifecycle-timeline";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +68,7 @@ import { getStudentLifecycle } from "@/lib/sis/process";
 import {
   getEnrollmentHistory,
   getStudentDetail,
+  STP_CONDITIONAL_SLOT_KEYS,
   type ApplicationRow,
   type DocumentSlot,
   type StatusRow,
@@ -162,10 +164,17 @@ export default async function SisStudentDetailPage({
     ? await getEnrollmentHistory(lifecycleSnapshot.studentNumber)
     : [];
 
-  // Document completion for the hero stats strip.
-  const docsTotal = documents.length;
-  const docsOnFile = documents.filter((d) => !!d.url).length;
-  const { expiringSoon: docsExpiringSoon, expired: docsExpired } = countExpiryBuckets(documents);
+  // Document completion for the hero stats strip. Mirrors the DocumentsTab
+  // visibility filter — when the parent didn't opt into the STP sub-flow,
+  // the 3 STP-conditional slots roll out of the denominator so the "X of N"
+  // count matches what the registrar actually has to chase.
+  const stpKeysForHero = new Set<string>(STP_CONDITIONAL_SLOT_KEYS);
+  const heroDocuments = application.stpApplicationType
+    ? documents
+    : documents.filter((d) => !stpKeysForHero.has(d.key));
+  const docsTotal = heroDocuments.length;
+  const docsOnFile = heroDocuments.filter((d) => !!d.url).length;
+  const { expiringSoon: docsExpiringSoon, expired: docsExpired } = countExpiryBuckets(heroDocuments);
 
   const funnelIdx = funnelIndexFor(status?.applicationStatus ?? null);
   const currentStageLabel =
@@ -336,7 +345,19 @@ export default async function SisStudentDetailPage({
         </TabsContent>
 
         <TabsContent value="documents" className="space-y-6">
-          <DocumentsTab documents={documents} enroleeNumber={application.enroleeNumber} ayCode={selectedAy} />
+          {application.stpApplicationType && (
+            <StpApplicationCard
+              application={application}
+              documents={documents}
+              ayCode={selectedAy}
+            />
+          )}
+          <DocumentsTab
+            application={application}
+            documents={documents}
+            enroleeNumber={application.enroleeNumber}
+            ayCode={selectedAy}
+          />
         </TabsContent>
 
         <TabsContent value="attendance" className="space-y-6">
@@ -395,10 +416,10 @@ function ProfileTab({
     preferredSchedule: app.preferredSchedule,
     classType: app.classType,
     paymentOption: app.paymentOption,
-    availSchoolBus: app.availSchoolBus,
-    availStudentCare: app.availStudentCare,
+    availSchoolBus: app.availSchoolBus as ProfileUpdateInput['availSchoolBus'],
+    availStudentCare: app.availStudentCare as ProfileUpdateInput['availStudentCare'],
     studentCareProgram: app.studentCareProgram,
-    availUniform: app.availUniform,
+    availUniform: app.availUniform as ProfileUpdateInput['availUniform'],
     additionalLearningNeeds: app.additionalLearningNeeds,
     otherLearningNeeds: app.otherLearningNeeds,
     previousSchool: app.previousSchool,
@@ -1965,22 +1986,35 @@ const DOC_CATEGORY_KEYS = {
 } as const;
 
 function DocumentsTab({
+  application,
   documents,
   enroleeNumber,
   ayCode,
 }: {
+  application: ApplicationRow;
   documents: DocumentSlot[];
   enroleeNumber: string;
   ayCode: string;
 }) {
-  const total = documents.length;
-  const onFile = documents.filter((d) => !!d.url).length;
-  const pct = total === 0 ? 0 : Math.round((onFile / total) * 100);
-  const { expiringSoon: expiring, expired } = countExpiryBuckets(documents);
+  // Filter out the 3 STP-conditional slots when the parent didn't opt into the
+  // STP sub-flow (`stpApplicationType IS NULL`). When stpApplicationType is
+  // set, the 3 slots remain visible and the StpApplicationCard at the top of
+  // the tab references them via the smooth-scroll `#slot-{key}` anchors.
+  // See docs/context/21-stp-application.md.
+  const stpKeys = new Set<string>(STP_CONDITIONAL_SLOT_KEYS);
+  const visibleDocuments = application.stpApplicationType
+    ? documents
+    : documents.filter((d) => !stpKeys.has(d.key));
 
-  const nonExpiringDocs = documents.filter((d) => DOC_CATEGORY_KEYS.nonExpiring.has(d.key));
-  const expiringDocs = documents.filter((d) => DOC_CATEGORY_KEYS.expiring.has(d.key));
-  const parentGuardianDocs = documents.filter((d) => DOC_CATEGORY_KEYS.parentGuardian.has(d.key));
+  const total = visibleDocuments.length;
+  const onFile = visibleDocuments.filter((d) => !!d.url).length;
+  const pct = total === 0 ? 0 : Math.round((onFile / total) * 100);
+  const { expiringSoon: expiring, expired } = countExpiryBuckets(visibleDocuments);
+
+  const nonExpiringDocs = visibleDocuments.filter((d) => DOC_CATEGORY_KEYS.nonExpiring.has(d.key));
+  const expiringDocs = visibleDocuments.filter((d) => DOC_CATEGORY_KEYS.expiring.has(d.key));
+  const parentGuardianDocs = visibleDocuments.filter((d) => DOC_CATEGORY_KEYS.parentGuardian.has(d.key));
+  const stpDocs = visibleDocuments.filter((d) => stpKeys.has(d.key));
 
   return (
     <Card>
@@ -2049,6 +2083,16 @@ function DocumentsTab({
           enroleeNumber={enroleeNumber}
           ayCode={ayCode}
         />
+        {stpDocs.length > 0 && (
+          <DocumentCategorySection
+            title="Singapore Student Pass (STP)"
+            subtitle="ICA-required documents on top of the standard package — only shown when the parent opted into the STP sub-flow."
+            icon={ShieldCheck}
+            docs={stpDocs}
+            enroleeNumber={enroleeNumber}
+            ayCode={ayCode}
+          />
+        )}
       </CardContent>
     </Card>
   );
@@ -2097,7 +2141,10 @@ function DocumentCategorySection({
 function DocumentCard({ doc, enroleeNumber, ayCode }: { doc: DocumentSlot; enroleeNumber: string; ayCode: string }) {
   const onFile = !!doc.url;
   return (
-    <li className="flex items-start gap-3 rounded-xl border border-hairline bg-card p-4">
+    <li
+      id={`slot-${doc.key}`}
+      className="scroll-mt-20 flex items-start gap-3 rounded-xl border border-hairline bg-card p-4"
+    >
       <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
         <FileText className="size-4" />
       </div>

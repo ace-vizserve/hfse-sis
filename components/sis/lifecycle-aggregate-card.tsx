@@ -1,10 +1,12 @@
 import {
   CalendarClockIcon,
   CheckCircle2Icon,
+  ClipboardCheckIcon,
   FileSignatureIcon,
   FileWarningIcon,
   InboxIcon,
   LayoutGridIcon,
+  PlaneIcon,
   SparklesIcon,
   WalletIcon,
   type LucideIcon,
@@ -22,8 +24,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
 import type { LifecycleBlockerBucket } from '@/lib/sis/process';
+import { LifecycleAggregateRow } from '@/components/sis/lifecycle-aggregate-row';
 
 /**
  * LifecycleAggregateCard — top-level "What's blocking the funnel" card for
@@ -67,6 +69,8 @@ const SEVERITY_LABEL: Record<Severity, string> = {
 const BUCKET_ICON: Record<string, LucideIcon> = {
   'awaiting-fee-payment': WalletIcon,
   'awaiting-document-revalidation': FileWarningIcon,
+  'awaiting-document-validation': ClipboardCheckIcon,
+  'awaiting-stp-completion': PlaneIcon,
   'awaiting-assessment-schedule': CalendarClockIcon,
   'awaiting-contract-signature': FileSignatureIcon,
   'missing-class-assignment': LayoutGridIcon,
@@ -80,6 +84,8 @@ const REMAINDER_ORDER: string[] = [
   'awaiting-document-revalidation',
   'missing-class-assignment',
   'awaiting-fee-payment',
+  'awaiting-document-validation',
+  'awaiting-stp-completion',
   'awaiting-contract-signature',
   'awaiting-assessment-schedule',
   'new-applications',
@@ -103,8 +109,10 @@ function sortBuckets(buckets: LifecycleBlockerBucket[]): LifecycleBlockerBucket[
 
 export function LifecycleAggregateCard({
   buckets,
+  ayCode,
 }: {
   buckets: LifecycleBlockerBucket[];
+  ayCode?: string;
 }) {
   const sorted = sortBuckets(buckets);
   const totalCount = sorted.reduce((acc, b) => acc + b.count, 0);
@@ -129,7 +137,7 @@ export function LifecycleAggregateCard({
       <CardContent className="p-0">
         <ul className="divide-y divide-hairline">
           {allClear ? (
-            <BucketRow
+            <LifecycleAggregateRow
               bucket={{
                 key: 'all-clear',
                 label: 'All clear',
@@ -137,17 +145,18 @@ export function LifecycleAggregateCard({
                 severity: 'good',
                 drillTarget: 'noop',
               }}
-              icon={CheckCircle2Icon}
+              iconKey={'check-circle' as const}
               titleOverride="All clear"
               bodyOverride="The funnel is fully unblocked."
               hideCount
             />
           ) : (
             sorted.map((bucket) => (
-              <BucketRow
+              <LifecycleAggregateRow
                 key={bucket.key}
                 bucket={bucket}
-                icon={BUCKET_ICON[bucket.key] ?? InboxIcon}
+                iconKey={bucket.key as never}
+                ayCode={ayCode}
               />
             ))
           )}
@@ -159,55 +168,9 @@ export function LifecycleAggregateCard({
 
 export default LifecycleAggregateCard;
 
-function BucketRow({
-  bucket,
-  icon: Icon,
-  titleOverride,
-  bodyOverride,
-  hideCount,
-}: {
-  bucket: LifecycleBlockerBucket;
-  icon: LucideIcon;
-  titleOverride?: string;
-  bodyOverride?: string;
-  hideCount?: boolean;
-}) {
-  // TODO: wire to drill API in Wave 3 — drillTarget: ${bucket.drillTarget}
-  const title = titleOverride ?? bucket.label;
-  const body =
-    bodyOverride ??
-    `${bucket.count.toLocaleString('en-SG')} student${bucket.count === 1 ? '' : 's'}`;
-
-  return (
-    <li className="group flex items-start gap-4 px-5 py-4 transition-colors hover:bg-muted/30">
-      {/* Crafted gradient icon tile — §7.4 pattern, severity-mapped. */}
-      <div
-        className={cn(
-          'flex size-10 shrink-0 items-center justify-center rounded-xl [&>svg]:size-[18px]',
-          SEVERITY_TILE[bucket.severity],
-        )}
-      >
-        <Icon strokeWidth={2.25} />
-      </div>
-      {/* Middle column — serif label + muted body. */}
-      <div className="min-w-0 flex-1 space-y-1">
-        <p className="font-serif text-[15px] font-semibold leading-snug text-foreground">
-          {title}
-        </p>
-        <p className="text-[13px] leading-relaxed text-muted-foreground">{body}</p>
-      </div>
-      {/* Right column — large tabular-nums count + severity chip. */}
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
-        {!hideCount && (
-          <span className="font-mono text-xl font-bold tabular-nums text-foreground">
-            {bucket.count.toLocaleString('en-SG')}
-          </span>
-        )}
-        <ChartLegendChip
-          color={SEVERITY_BADGE_COLOR[bucket.severity]}
-          label={SEVERITY_LABEL[bucket.severity]}
-        />
-      </div>
-    </li>
-  );
-}
+// Severity → tile + chip + label mappings — exported so the client row
+// component renders identically to this card's design language.
+export const LIFECYCLE_SEVERITY_TILE = SEVERITY_TILE;
+export const LIFECYCLE_SEVERITY_BADGE_COLOR = SEVERITY_BADGE_COLOR;
+export const LIFECYCLE_SEVERITY_LABEL = SEVERITY_LABEL;
+export const LIFECYCLE_BUCKET_ICON = BUCKET_ICON;

@@ -38,6 +38,31 @@ const optionalDate = z
 // every editor is React-controlled).
 const optionalBool = z.boolean().nullable();
 
+// 'Yes' / 'No' / null. Some columns on the production admissions table store
+// the literal strings 'Yes' / 'No' instead of true/false (e.g. availSchoolBus,
+// availUniform, availStudentCare, preCourseAnswer). Three-state tri-string.
+const optionalYesNo = z.enum(['Yes', 'No']).nullable();
+
+// Phone / postal columns. Production DB reads sometimes round-trip as JS
+// numbers from the parent portal; the SIS Profile sheet writes them as
+// strings (form-driven). Schema accepts string-form for write validation;
+// reads coerce numeric DB values to string at the row-mapping layer. Empty
+// string → null per optionalText.
+const optionalNumberOrText = optionalText(60);
+
+// Optional integer rating, 1..5. Accepts string-form numbers from the parent
+// portal too (e.g. "5"). null when blank/invalid.
+const optionalRating1to5 = z
+  .union([z.number(), z.string().trim()])
+  .nullable()
+  .transform((v) => {
+    if (v === null || v === undefined) return null;
+    const n = typeof v === 'number' ? v : v.length === 0 ? null : Number(v);
+    if (n === null || !Number.isFinite(n) || !Number.isInteger(n)) return null;
+    if (n < 1 || n > 5) return null;
+    return n as 1 | 2 | 3 | 4 | 5;
+  });
+
 // ──────────────────────────────────────────────────────────────────────────
 // Profile (demographics) — applications row, single-student
 // ──────────────────────────────────────────────────────────────────────────
@@ -77,35 +102,101 @@ export const ProfileUpdateSchema = z.object({
   pass:           optionalText(60),
   passExpiry:     optionalDate,
   // Contact
-  homePhone:           optionalText(60),
+  homePhone:           optionalNumberOrText,
   homeAddress:         optionalText(500),
-  postalCode:          optionalText(20),
+  postalCode:          optionalNumberOrText,
   livingWithWhom:      optionalText(120),
   contactPerson:       optionalText(120),
-  contactPersonNumber: optionalText(60),
+  contactPersonNumber: optionalNumberOrText,
   parentMaritalStatus: optionalText(60),
   // Application preferences
   levelApplied:             optionalText(80),
   preferredSchedule:        optionalText(80),
   classType:                optionalText(80),
   paymentOption:            optionalText(80),
-  availSchoolBus:           optionalBool,
-  availStudentCare:         optionalBool,
+  availSchoolBus:           optionalYesNo,
+  availStudentCare:         optionalYesNo,
   studentCareProgram:       optionalText(120),
-  availUniform:             optionalBool,
+  availUniform:             optionalYesNo,
   additionalLearningNeeds:  optionalText(2000),
   otherLearningNeeds:       optionalText(2000),
   previousSchool:           optionalText(240),
   howDidYouKnowAboutHFSEIS: optionalText(120),
   otherSource:              optionalText(240),
   referrerName:             optionalText(120),
-  referrerMobile:           optionalText(60),
+  referrerMobile:           optionalNumberOrText,
   contractSignatory:        optionalText(120),
   // Discount slots — these are codes; the future enrolment_discounts table
   // (Phase 3) is the per-student grant ledger
   discount1: optionalText(60),
   discount2: optionalText(60),
   discount3: optionalText(60),
+  // ── Item 5 (P2 expansion) ──────────────────────────────────────────────
+  // Sibling tracking — 5 slots × 5 fields. Parent portal writes these; SIS
+  // displays them. Editable from the SIS Profile sheet's Siblings section
+  // when that UI lands (form-side scope deferred from this schema sweep).
+  siblingFullName1: optionalText(240),
+  siblingBirthDay1: optionalDate,
+  siblingReligion1: optionalText(80),
+  siblingEducationOccupation1: optionalText(240),
+  siblingSchoolCompany1: optionalText(240),
+  siblingFullName2: optionalText(240),
+  siblingBirthDay2: optionalDate,
+  siblingReligion2: optionalText(80),
+  siblingEducationOccupation2: optionalText(240),
+  siblingSchoolCompany2: optionalText(240),
+  siblingFullName3: optionalText(240),
+  siblingBirthDay3: optionalDate,
+  siblingReligion3: optionalText(80),
+  siblingEducationOccupation3: optionalText(240),
+  siblingSchoolCompany3: optionalText(240),
+  siblingFullName4: optionalText(240),
+  siblingBirthDay4: optionalDate,
+  siblingReligion4: optionalText(80),
+  siblingEducationOccupation4: optionalText(240),
+  siblingSchoolCompany4: optionalText(240),
+  siblingFullName5: optionalText(240),
+  siblingBirthDay5: optionalDate,
+  siblingReligion5: optionalText(80),
+  siblingEducationOccupation5: optionalText(240),
+  siblingSchoolCompany5: optionalText(240),
+  // Medical history — bool flags + free-text details. Parent portal writes;
+  // SIS Profile sheet's future Medical section will edit.
+  allergies:               optionalBool,
+  allergyDetails:          optionalText(2000),
+  asthma:                  optionalBool,
+  foodAllergies:           optionalBool,
+  foodAllergyDetails:      optionalText(2000),
+  heartConditions:         optionalBool,
+  epilepsy:                optionalBool,
+  diabetes:                optionalBool,
+  eczema:                  optionalBool,
+  otherMedicalConditions:  optionalText(2000),
+  paracetamolConsent:      optionalBool,
+  dietaryRestrictions:     optionalText(2000),
+  // Consent flags + Pre-course / feedback workflow (parent-portal-side
+  // workflow; mostly read-only from SIS perspective but included so the
+  // round-trip schema covers them).
+  socialMediaConsent:      optionalBool,
+  feedbackConsent:         optionalBool,
+  preCourseAnswer:         optionalText(80),
+  preCourseDate:           optionalText(60),
+  preCourseAcknowledgedAt: optionalText(60),
+  feedbackRating:          z.number().int().min(1).max(5).nullable().optional(),
+  feedbackComments:        optionalText(2000),
+  feedbackSubmittedAt:     optionalText(60),
+  // VizSchool / STP track — also referenced from STP Application card per
+  // KD #61. stpApplicationType is a free-text field (typical value
+  // 'New Student Pass Application'; renewal types may differ).
+  vizSchoolProgram:        optionalText(120),
+  stpApplicationType:      optionalText(120),
+  // Other extras
+  enroleePhoto:            optionalText(500),
+  creatorUid:              optionalText(60),
+  // residenceHistory is jsonb in the DB; passes through as a string. Edits
+  // go through the dedicated /api/sis/students/[enroleeNumber]/residence-history
+  // route (KD #61) — included here for round-trip read coverage.
+  residenceHistory:        optionalText(4000),
 });
 
 export type ProfileUpdateInput = z.infer<typeof ProfileUpdateSchema>;
@@ -156,6 +247,57 @@ export const PROFILE_FIELD_LABELS: Partial<Record<keyof ProfileUpdateInput, stri
   discount1: 'Discount 1',
   discount2: 'Discount 2',
   discount3: 'Discount 3',
+  // Item 5 (P2 expansion) labels — surfaced in audit-log diffs.
+  siblingFullName1: 'Sibling 1 — full name',
+  siblingBirthDay1: 'Sibling 1 — birth date',
+  siblingReligion1: 'Sibling 1 — religion',
+  siblingEducationOccupation1: 'Sibling 1 — education / occupation',
+  siblingSchoolCompany1: 'Sibling 1 — school / company',
+  siblingFullName2: 'Sibling 2 — full name',
+  siblingBirthDay2: 'Sibling 2 — birth date',
+  siblingReligion2: 'Sibling 2 — religion',
+  siblingEducationOccupation2: 'Sibling 2 — education / occupation',
+  siblingSchoolCompany2: 'Sibling 2 — school / company',
+  siblingFullName3: 'Sibling 3 — full name',
+  siblingBirthDay3: 'Sibling 3 — birth date',
+  siblingReligion3: 'Sibling 3 — religion',
+  siblingEducationOccupation3: 'Sibling 3 — education / occupation',
+  siblingSchoolCompany3: 'Sibling 3 — school / company',
+  siblingFullName4: 'Sibling 4 — full name',
+  siblingBirthDay4: 'Sibling 4 — birth date',
+  siblingReligion4: 'Sibling 4 — religion',
+  siblingEducationOccupation4: 'Sibling 4 — education / occupation',
+  siblingSchoolCompany4: 'Sibling 4 — school / company',
+  siblingFullName5: 'Sibling 5 — full name',
+  siblingBirthDay5: 'Sibling 5 — birth date',
+  siblingReligion5: 'Sibling 5 — religion',
+  siblingEducationOccupation5: 'Sibling 5 — education / occupation',
+  siblingSchoolCompany5: 'Sibling 5 — school / company',
+  allergies: 'Allergies',
+  allergyDetails: 'Allergy details',
+  asthma: 'Asthma',
+  foodAllergies: 'Food allergies',
+  foodAllergyDetails: 'Food allergy details',
+  heartConditions: 'Heart conditions',
+  epilepsy: 'Epilepsy',
+  diabetes: 'Diabetes',
+  eczema: 'Eczema',
+  otherMedicalConditions: 'Other medical conditions',
+  paracetamolConsent: 'Paracetamol consent',
+  dietaryRestrictions: 'Dietary restrictions',
+  socialMediaConsent: 'Social media consent',
+  feedbackConsent: 'Feedback consent',
+  preCourseAnswer: 'Pre-course answer',
+  preCourseDate: 'Pre-course date',
+  preCourseAcknowledgedAt: 'Pre-course acknowledged at',
+  feedbackRating: 'Feedback rating',
+  feedbackComments: 'Feedback comments',
+  feedbackSubmittedAt: 'Feedback submitted at',
+  vizSchoolProgram: 'VizSchool program',
+  stpApplicationType: 'STP application type',
+  enroleePhoto: 'Enrolee photo',
+  creatorUid: 'Creator UID',
+  residenceHistory: 'Residence history',
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -178,12 +320,17 @@ const optionalEmail = z
 export const FatherUpdateSchema = z.object({
   fatherFullName:           optionalText(240),
   fatherFirstName:          optionalText(120),
+  fatherMiddleName:         optionalText(120),
   fatherLastName:           optionalText(120),
+  fatherPreferredName:      optionalText(120),
   fatherNric:               optionalText(40),
   fatherBirthDay:           optionalDate,
-  fatherMobile:             optionalText(60),
+  fatherMobile:             optionalNumberOrText,
   fatherEmail:              optionalEmail,
   fatherNationality:        optionalText(80),
+  fatherReligion:           optionalText(80),
+  fatherReligionOther:      optionalText(120),
+  fatherMarital:            optionalText(60),
   fatherCompanyName:        optionalText(240),
   fatherPosition:           optionalText(120),
   fatherPassport:           optionalText(40),
@@ -196,12 +343,17 @@ export const FatherUpdateSchema = z.object({
 export const MotherUpdateSchema = z.object({
   motherFullName:           optionalText(240),
   motherFirstName:          optionalText(120),
+  motherMiddleName:         optionalText(120),
   motherLastName:           optionalText(120),
+  motherPreferredName:      optionalText(120),
   motherNric:               optionalText(40),
   motherBirthDay:           optionalDate,
-  motherMobile:             optionalText(60),
+  motherMobile:             optionalNumberOrText,
   motherEmail:              optionalEmail,
   motherNationality:        optionalText(80),
+  motherReligion:           optionalText(80),
+  motherReligionOther:      optionalText(120),
+  motherMarital:            optionalText(60),
   motherCompanyName:        optionalText(240),
   motherPosition:           optionalText(120),
   motherPassport:           optionalText(40),
@@ -213,9 +365,20 @@ export const MotherUpdateSchema = z.object({
 
 export const GuardianUpdateSchema = z.object({
   guardianFullName:           optionalText(240),
-  guardianMobile:             optionalText(60),
+  guardianFirstName:          optionalText(120),
+  guardianMiddleName:         optionalText(120),
+  guardianLastName:           optionalText(120),
+  guardianPreferredName:      optionalText(120),
+  guardianNric:               optionalText(40),
+  guardianBirthDay:           optionalDate,
+  guardianMobile:             optionalNumberOrText,
   guardianEmail:              optionalEmail,
   guardianNationality:        optionalText(80),
+  guardianReligion:           optionalText(80),
+  guardianReligionOther:      optionalText(120),
+  guardianMarital:            optionalText(60),
+  guardianCompanyName:        optionalText(240),
+  guardianPosition:           optionalText(120),
   guardianPassport:           optionalText(40),
   guardianPassportExpiry:     optionalDate,
   guardianPass:               optionalText(60),
