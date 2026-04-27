@@ -24,6 +24,7 @@ import {
 import { SIDEBAR_REGISTRY, type SidebarModule } from "@/lib/sidebar/registry";
 import { useRealtimeBadges } from "@/lib/sidebar/use-realtime-badges";
 
+import { CommandPaletteTrigger } from "@/components/sis/command-palette";
 import { ModuleSidebarHeader } from "./module-sidebar/sidebar-header";
 import { SidebarNavItem } from "./module-sidebar/sidebar-nav-item";
 import { SidebarProfile } from "./module-sidebar/sidebar-profile";
@@ -116,6 +117,13 @@ export function ModuleSidebar({ module, role, email, userId, badges }: ModuleSid
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
         <ModuleSidebarHeader module={module} role={role} />
+        {/* Search trigger — clickable affordance for the global ⌘K command
+            palette. Both paths (button click + keyboard shortcut) open the
+            same dialog via CommandPaletteContext. */}
+        <CommandPaletteTrigger
+          className="mt-3 group-data-[collapsible=icon]:hidden"
+          placeholder="Search…"
+        />
       </SidebarHeader>
 
       <SidebarContent className="overflow-hidden px-0 py-0">

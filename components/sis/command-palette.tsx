@@ -32,6 +32,83 @@ import {
 } from '@/components/ui/command';
 import type { Role } from '@/lib/auth/roles';
 import { isRouteAllowed } from '@/lib/auth/roles';
+import { cn } from '@/lib/utils';
+
+// ──────────────────────────────────────────────────────────────────────────
+// Context — allows any component (sidebar, topbar, page header) to open the
+// palette via <CommandPaletteTrigger /> in addition to the global ⌘K binding.
+// ──────────────────────────────────────────────────────────────────────────
+
+type CommandPaletteContextValue = {
+  open: boolean;
+  setOpen: (next: boolean) => void;
+};
+
+const CommandPaletteContext = React.createContext<CommandPaletteContextValue | null>(
+  null,
+);
+
+function useCommandPaletteContext(): CommandPaletteContextValue {
+  const ctx = React.useContext(CommandPaletteContext);
+  if (!ctx) {
+    throw new Error(
+      'CommandPalette: useCommandPaletteContext used outside <CommandPaletteProvider>. Wrap the tree in app/layout.tsx.',
+    );
+  }
+  return ctx;
+}
+
+export function CommandPaletteProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const value = React.useMemo(() => ({ open, setOpen }), [open]);
+  return (
+    <CommandPaletteContext.Provider value={value}>
+      {children}
+    </CommandPaletteContext.Provider>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Trigger — visible, clickable button that opens the palette. Renders with a
+// search-input affordance + the ⌘K shortcut hint so users discover both
+// entry paths. Drop anywhere inside the provider tree.
+// ──────────────────────────────────────────────────────────────────────────
+
+export function CommandPaletteTrigger({
+  className,
+  hideShortcut = false,
+  placeholder = 'Search…',
+}: {
+  className?: string;
+  hideShortcut?: boolean;
+  placeholder?: string;
+}) {
+  const { setOpen } = useCommandPaletteContext();
+  return (
+    <button
+      type="button"
+      onClick={() => setOpen(true)}
+      className={cn(
+        'group flex h-9 w-full items-center gap-2 rounded-md border border-hairline bg-background px-2.5 text-left text-sm shadow-input transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/30',
+        className,
+      )}
+      aria-label="Open command palette">
+      <SearchIcon className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+      <span className="flex-1 truncate text-muted-foreground group-hover:text-foreground">
+        {placeholder}
+      </span>
+      {!hideShortcut && (
+        <kbd className="shrink-0 rounded border border-hairline bg-muted/60 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          ⌘K
+        </kbd>
+      )}
+    </button>
+  );
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Static navigation entries — every primary route the palette can jump to.
@@ -109,23 +186,24 @@ type StudentMatch = {
 
 export function CommandPalette({ role }: { role: Role | null }) {
   const router = useRouter();
-  const [open, setOpen] = React.useState(false);
+  const { open, setOpen } = useCommandPaletteContext();
   const [query, setQuery] = React.useState('');
   const [students, setStudents] = React.useState<StudentMatch[]>([]);
   const [loading, setLoading] = React.useState(false);
 
-  // Cmd+K (or Ctrl+K) toggles the palette globally. Skip when typing in
-  // text inputs so we don't steal the shortcut from form fields.
+  // Cmd+K (or Ctrl+K) toggles the palette globally — second entry point on
+  // top of the visible <CommandPaletteTrigger> button rendered in the
+  // sidebar. Both paths funnel into the same context-managed open state.
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        setOpen((prev) => !prev);
+        setOpen(!open);
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [open, setOpen]);
 
   // Reset query + result list when the dialog closes — keeps the next open
   // fresh + avoids stale matches flashing on re-open.

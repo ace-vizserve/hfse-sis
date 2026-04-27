@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 
-import { CommandPalette } from "@/components/sis/command-palette";
+import { CommandPalette, CommandPaletteProvider } from "@/components/sis/command-palette";
 import { getSessionUser } from "@/lib/supabase/server";
 
 const inter = Inter({
@@ -46,8 +46,10 @@ export default async function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} h-full`}>
       <body className="min-h-full bg-background text-foreground flex flex-col">
-        {children}
-        {role && <CommandPalette role={role} />}
+        <CommandPaletteProvider>
+          {children}
+          {role && <CommandPalette role={role} />}
+        </CommandPaletteProvider>
         <Toaster
           theme="light"
           position="top-center"

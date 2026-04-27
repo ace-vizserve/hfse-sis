@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 
+import { CommandPaletteTrigger } from '@/components/sis/command-palette';
 import { TopbarModuleSwitcher } from '@/components/topbar-module-switcher';
 import { getSessionUser } from '@/lib/supabase/server';
 
@@ -21,8 +22,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md">
+      <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md">
         <TopbarModuleSwitcher role={role} />
+        <div className="ml-auto w-full max-w-sm">
+          <CommandPaletteTrigger placeholder="Search students or navigate…" />
+        </div>
       </header>
       <div className="flex-1 bg-muted px-6 py-8 md:px-10 md:py-10">
         {children}
