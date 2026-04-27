@@ -123,14 +123,25 @@ export function SubjectConfigMatrix({
                 </TableRow>
               )}
               {subjects.map((s, rowIdx) => {
-                const stripeBg = rowIdx % 2 === 1 ? "bg-muted/10" : "bg-background";
+                // Alternating row stripes — both as low-opacity gradients so
+                // they read as part of the same gradient-craft language as the
+                // header row + cell tints (no flat washes).
+                const stripeBg =
+                  rowIdx % 2 === 1
+                    ? "bg-gradient-to-b from-muted/20 to-muted/30"
+                    : "bg-gradient-to-b from-background to-muted/10";
+                const hoverBg =
+                  "hover:from-accent/30 hover:to-accent/40 group-hover:from-accent/30 group-hover:to-accent/40";
                 return (
-                  <TableRow key={s.id} className={cn("group transition-colors hover:bg-accent/40", stripeBg)}>
+                  <TableRow
+                    key={s.id}
+                    className={cn("group transition-colors", stripeBg, hoverBg)}>
                     <TableCell
                       className={cn(
-                        "sticky left-0 z-10 border-r border-hairline transition-colors group-hover:bg-accent/40",
+                        "sticky left-0 z-10 border-r border-hairline transition-colors",
                         "border-l-2 border-l-brand-indigo",
                         stripeBg,
+                        hoverBg,
                       )}>
                       <div className="flex items-center gap-2">
                         <span className="font-serif text-sm font-semibold text-foreground">{s.name}</span>
