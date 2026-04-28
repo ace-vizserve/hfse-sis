@@ -25,7 +25,7 @@ The trigger is **page-entry**, not scheduled: each page that displays document s
 ## Non-goals
 
 - **No nightly scheduler.** Vercel Cron, pg_cron, npm-cron all evaluated and ruled out. Reasons: observability (cron failures are silent unless someone checks the Vercel dashboard), serverless mismatch with npm-cron, and the user's preference for in-codebase logic over scheduled infra.
-- **No "expiring soon" proactive signal.** This spec is the reactive expired flip only. The pass-expiry cohort already surfaces "expiring within 365 days" as its own observation surface; promoting that to top-of-fold is future work with its own design call.
+- ~~No "expiring soon" proactive signal.~~ **(Now in scope — see § 10.)** A 30-day proactive "expiring soon" drill is included alongside the reactive flip in this spec.
 - **No backfill migration.** The first time a page calls `freshenAyDocuments` after this ships, any pre-existing `'Valid' + past-expiry` rows in that AY get caught and flipped naturally. No one-off SQL needed.
 - **No DB-level triggers.** Postgres triggers fire on row INSERT/UPDATE, not on time passing — they don't solve this problem.
 - **No re-validation flow change.** When a parent uploads a new passport with a future expiry, the existing PATCH route flips the status back to `'Valid'`. That path is untouched.
@@ -311,9 +311,18 @@ Manual happy-path on AY9999 (test mode, KD #52):
 
 ### 8. Files touched
 
+**Reactive auto-flip (sections 1-7):**
 - **Create:** `lib/sis/freshen-document-statuses.ts`
 - **Modify:** `lib/audit/log-action.ts` — add `'sis.documents.auto-expire'` to the `AuditAction` enum and widen `actor.id` to `string | null`.
 - **Modify:** 7 page RSCs (one-line `await freshenAyDocuments(selectedAy)` each).
+
+**Proactive expiring-soon drill (section 10):**
+- **Modify:** `lib/sis/process.ts` — extend `scanDocStatusForActionFlags` to optionally compute `hasExpiringSoon` (looks for `slot.expiryCol` on the row, computes days-until-expiry, returns true when 0 ≤ daysLeft ≤ 30).
+- **Modify:** `lib/sis/document-chase-queue.ts` — extend `DocumentChaseQueueCounts` with `expiringSoon: number`; widen the SELECT to include the 8 expiring slots' `*Expiry` columns.
+- **Modify:** `components/sis/document-chase-queue-strip.tsx` — add a 4th tile `'awaiting-expiring-documents'` in the `TILES` array; severity `warn`; lucide icon `CalendarClock` (or similar). The chip rendering already uses `valueByTarget` keyed on the drill target — extend that map.
+- **Modify:** `lib/sis/drill.ts` — extend `LifecycleDrillTarget` union with `'awaiting-expiring-documents'`; extend `LIFECYCLE_DRILL_TARGETS` array; extend `LifecycleDrillRow` with `expiringSlots?: string[]` and `daysLeft?: number | null`; add a new switch case to `buildLifecycleDrillRows`; extend `LifecycleDrillColumnKey` with `'expiringSlots'` and `'daysLeft'`; extend the labels record; add to `defaultColumnsForLifecycleTarget` and `lifecycleDrillHeaderForTarget`.
+- **Modify:** `components/sis/drills/lifecycle-drill-sheet.tsx` — add column rendering cases for `'expiringSlots'` (uses `<SlotChips color="stale" />`) and `'daysLeft'` (small mono-tabular cell with the number + "d").
+- **Modify:** `app/api/sis/drill/[target]/route.ts` — add CSV-cell case for `'expiringSlots'` and `'daysLeft'` (TypeScript exhaustiveness).
 
 No DB migration. No new dependency. No new env var. No new API route.
 
@@ -327,6 +336,189 @@ The auto-flip half is now implemented. KD #60 stays as-is — the contract is wh
 
 A new entry in `.claude/rules/key-decisions.md` is **not** required for this work — it's filling in a contract KD #60 already documented. The new file `lib/sis/freshen-document-statuses.ts` should reference KD #60 in its header comment so the next dev knows where the contract is documented.
 
+### 10. Expiring-soon proactive drill
+
+**Detection:** read-time only, no DB writes. A slot is "expiring soon" when `<slot>Status === 'Valid'` AND `<slot>Expiry > today` AND `<slot>Expiry <= today + 30 days`.
+
+When the date passes, the reactive auto-flip from § 1 catches it and the row leaves "expiring soon" naturally — the column flips to `'Expired'` and the row joins the existing "Awaiting revalidation" queue. So the two signals are complementary, not overlapping.
+
+**Threshold:** 30 days. Constant exported from `lib/sis/document-chase-queue.ts` so a future change is one place:
+
+```ts
+export const EXPIRING_SOON_THRESHOLD_DAYS = 30;
+```
+
+**Helper extension (in `lib/sis/process.ts`):**
+
+```ts
+export type DocStatusActionFlags = {
+  hasRevalidation: boolean;
+  hasValidation: boolean;
+  hasPromised: boolean;
+  hasExpiringSoon: boolean;   // NEW
+};
+
+export function scanDocStatusForActionFlags(
+  docs: Record<string, string | null> | undefined,
+  options?: { todayMs?: number; expiringSoonThresholdDays?: number },
+): DocStatusActionFlags {
+  // existing logic for revalidation/validation/promised flags …
+
+  // NEW: walk slots that have an expiryCol; if status is 'Valid' and
+  // expiry parses to a date in [todayMs, todayMs + thresholdDays * 86_400_000],
+  // set hasExpiringSoon and break.
+}
+```
+
+The existing call sites (`loadLifecycleAggregateUncached`, `getDocumentChaseQueueCounts`) need to pass the expiry columns in their `docs` row argument for the new flag to evaluate. The lifecycle aggregate doesn't add a new bucket, but extending its SELECT to include expiry columns is cheap and keeps the helper's contract uniform across call sites.
+
+**Chase queue counts (in `lib/sis/document-chase-queue.ts`):**
+
+```ts
+export type DocumentChaseQueueCounts = {
+  promised: number;
+  validation: number;
+  revalidation: number;
+  expiringSoon: number;   // NEW — count of students with >=1 slot expiring within 30 days
+};
+
+// In loadChaseQueueUncached:
+const docColumns = [
+  'enroleeNumber',
+  ...DOCUMENT_SLOTS.map((s) => s.statusCol),
+  ...DOCUMENT_SLOTS.filter((s) => s.expiryCol).map((s) => s.expiryCol!),
+];
+
+// Counter increments alongside the existing 3:
+if (flags.hasExpiringSoon) expiringSoon += 1;
+```
+
+**Chase queue strip (in `components/sis/document-chase-queue-strip.tsx`):**
+
+Add a 4th tile to the `TILES` array, after the existing 3:
+
+```ts
+{
+  target: 'awaiting-expiring-documents',
+  label: 'Expiring soon',
+  description: 'Valid now, expiry within 30 days — chase parent for renewal',
+  icon: CalendarClock,    // from lucide-react
+  severity: 'warn',
+},
+```
+
+`valueByTarget` map in the same file gains the new key:
+```ts
+'awaiting-expiring-documents': counts.expiringSoon,
+```
+
+**Drill plumbing (in `lib/sis/drill.ts`):**
+
+Mirror the pattern of the 3 existing doc-chase drill targets:
+
+1. Extend `LifecycleDrillTarget` union: add `'awaiting-expiring-documents'`.
+2. Extend `LIFECYCLE_DRILL_TARGETS` array similarly.
+3. Extend `LifecycleDrillRow`:
+   ```ts
+   expiringSlots?: string[];     // labels of slots expiring within threshold
+   daysLeft?: number | null;     // soonest expiring slot's days-until-expiry
+   ```
+4. New switch case in `buildLifecycleDrillRows`:
+   ```ts
+   case 'awaiting-expiring-documents': {
+     if (!docs) break;
+     const expiringSlots: string[] = [];
+     let soonestDays: number | null = null;
+     const now = Date.now();
+     for (const slot of DOCUMENT_SLOTS) {
+       if (!slot.expiryCol) continue;
+       const status = (docs[slot.statusCol] ?? '').toString().trim();
+       if (status !== 'Valid') continue;
+       const raw = docs[slot.expiryCol];
+       if (!raw) continue;
+       const ms = Date.parse(raw.toString());
+       if (Number.isNaN(ms)) continue;
+       const days = Math.floor((ms - now) / 86_400_000);
+       if (days >= 0 && days <= EXPIRING_SOON_THRESHOLD_DAYS) {
+         expiringSlots.push(slot.label);
+         if (soonestDays === null || days < soonestDays) soonestDays = days;
+       }
+     }
+     if (expiringSlots.length > 0) {
+       out.push({
+         ...baseRow(enroleeNumber, app, status),
+         documentStatus: status.documentStatus ?? null,
+         expiringSlots,
+         daysLeft: soonestDays,
+       });
+     }
+     break;
+   }
+   ```
+5. Extend `LifecycleDrillColumnKey` with `'expiringSlots'` and `'daysLeft'`.
+6. Extend `ALL_LIFECYCLE_DRILL_COLUMNS` and `LIFECYCLE_DRILL_COLUMN_LABELS`.
+7. Add to `defaultColumnsForLifecycleTarget`:
+   ```ts
+   case 'awaiting-expiring-documents':
+     return [
+       'enroleeFullName',
+       'levelApplied',
+       'expiringSlots',
+       'daysLeft',
+       'applicationStatus',
+       'daysSinceUpdate',
+     ];
+   ```
+8. Add to `lifecycleDrillHeaderForTarget`:
+   ```ts
+   case 'awaiting-expiring-documents':
+     return { eyebrow: 'Drill · Lifecycle', title: 'Expiring within 30 days' };
+   ```
+
+**Drill sheet column renderers (in `components/sis/drills/lifecycle-drill-sheet.tsx`):**
+
+```tsx
+case 'expiringSlots':
+  return {
+    id: 'expiringSlots',
+    accessorKey: 'expiringSlots',
+    header,
+    cell: ({ row }) => (
+      <SlotChips slots={row.original.expiringSlots} color="stale" />
+    ),
+  };
+case 'daysLeft':
+  return {
+    id: 'daysLeft',
+    accessorKey: 'daysLeft',
+    header,
+    cell: ({ row }) => {
+      const v = row.original.daysLeft;
+      if (v === null || v === undefined) return <span className="text-ink-4">—</span>;
+      return (
+        <span className="font-mono tabular-nums text-[12px]">{v}d</span>
+      );
+    },
+  };
+```
+
+**API route CSV (in `app/api/sis/drill/[target]/route.ts`):**
+
+Add CSV-cell cases for `'expiringSlots'` (joins `';'` like the other slot fields) and `'daysLeft'` (returns the number or empty string).
+
+**Requirements:**
+- Drill works on the seeded AY9999 test environment — the seeder's `passportExpiry` rows include a few within-30-days dates already (per `lib/sis/seeder/populated.ts` — it generates a spread of expiry dates including some near-future ones for realistic chase data).
+- Reactive auto-flip and proactive expiring-soon are visually distinct: the chase strip's 4 tiles read left-to-right as the doc lifecycle (revalidation = bad, validation = warn, promised = warn, expiring-soon = warn).
+- The drill UI is identical to the 3 existing doc-chase drills (same `<LifecycleDrillSheet>` toolkit per KD #56) — only the title, columns, and chip color differ.
+
+### 11. Verification (extending § 7)
+
+In addition to the auto-flip checks in § 7:
+
+8. Set up a seeded student in AY9999 with `passportStatus = 'Valid'` and `passportExpiry = today + 14 days`. Open `/admissions?ay=AY9999`. The chase strip's 4th tile "Expiring soon" shows count ≥ 1. Click into it — the drill opens with title "Expiring within 30 days", the student's row shows `expiringSlots: [Passport (Student)]` and `daysLeft: 14`. CSV export captures both columns.
+9. Bump that student's `passportExpiry` to `today + 60 days` (past the threshold). Re-open the page — the count drops by 1, the drill no longer lists this student.
+10. Bump it back to `today - 1 day` (already expired). Re-open the page — the auto-flip fires (column → `'Expired'`); the student now appears in "Awaiting revalidation" instead of "Expiring soon". The two signals are mutually exclusive in steady state.
+
 ## Open questions
 
-None at design time. The "expiring soon" proactive signal is explicitly deferred per § Non-goals.
+None at design time.
