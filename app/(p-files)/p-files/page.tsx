@@ -36,6 +36,7 @@ import {
   getSlotStatusMix,
 } from "@/lib/p-files/dashboard";
 import { getDocumentDashboardData } from "@/lib/p-files/queries";
+import { freshenAyDocuments } from "@/lib/sis/freshen-document-statuses";
 import { getDocumentValidationBacklog, getExpiringDocuments } from "@/lib/sis/dashboard";
 import { getSessionUser } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -78,6 +79,11 @@ export default async function PFilesDashboard({
 
   const windows = await getDashboardWindows(selectedAy);
   const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
+
+  // Auto-flip any expired-but-still-Valid doc statuses for this AY before
+  // the dashboard reads the column. Cached 60s; existing PATCH routes
+  // invalidate via the sis:${ayCode} tag.
+  await freshenAyDocuments(selectedAy);
 
   const [
     { students, summary },
