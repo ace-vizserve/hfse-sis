@@ -38,6 +38,42 @@ function tag(ayCode: string): string[] {
   return ['sis', `sis:${ayCode}`];
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Document status action flags — per-row scan for cohort aggregate + chase
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Per-row scan over a documents row's slot status columns. Returns three
+ * orthogonal action flags used by both the cohort aggregate
+ * (loadLifecycleBlockerBucketsUncached) and the chase-queue loader
+ * (lib/sis/document-chase-queue.ts). Overlap allowed — a row with both an
+ * 'Uploaded' slot and a 'To follow' slot lights up multiple flags.
+ */
+export type DocStatusActionFlags = {
+  hasRevalidation: boolean; // any slot at 'Rejected' or 'Expired'
+  hasValidation: boolean;   // any slot at 'Uploaded'
+  hasPromised: boolean;     // any slot at 'To follow'
+};
+
+export function scanDocStatusForActionFlags(
+  docs: Record<string, string | null> | undefined,
+): DocStatusActionFlags {
+  const out: DocStatusActionFlags = {
+    hasRevalidation: false,
+    hasValidation: false,
+    hasPromised: false,
+  };
+  if (!docs) return out;
+  for (const slot of DOCUMENT_SLOTS) {
+    const v = (docs[slot.statusCol] ?? '').toString().trim();
+    if (v === 'Rejected' || v === 'Expired') out.hasRevalidation = true;
+    else if (v === 'Uploaded') out.hasValidation = true;
+    else if (v === 'To follow') out.hasPromised = true;
+    if (out.hasRevalidation && out.hasValidation && out.hasPromised) break;
+  }
+  return out;
+}
+
 // Bucket the timeline rows render against. Drives the left-rail color +
 // ChartLegendChip palette in the timeline component. Distinct from the
 // admissions stage status string ('Finished', 'Pending', etc) — that string
