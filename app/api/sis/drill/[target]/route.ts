@@ -107,6 +107,8 @@ function csvCell(row: LifecycleDrillRow, key: LifecycleDrillColumnKey): string |
     case 'expiredSlots': return (row.expiredSlots ?? []).join('; ');
     case 'uploadedSlots': return (row.uploadedSlots ?? []).join('; ');
     case 'promisedSlots': return (row.promisedSlots ?? []).join('; ');
+    case 'expiringSlots': return (row.expiringSlots ?? []).join('; ');
+    case 'daysLeft': return row.daysLeft ?? '';
     case 'assessmentStatus': return row.assessmentStatus ?? '';
     case 'assessmentSchedule': return row.assessmentSchedule?.slice(0, 10) ?? '';
     case 'contractStatus': return row.contractStatus ?? '';

@@ -674,6 +674,7 @@ export type LifecycleDrillTarget =
   | 'awaiting-document-revalidation'
   | 'awaiting-document-validation'
   | 'awaiting-promised-documents'
+  | 'awaiting-expiring-documents'
   | 'awaiting-assessment-schedule'
   | 'awaiting-contract-signature'
   | 'missing-class-assignment'
@@ -685,6 +686,7 @@ export const LIFECYCLE_DRILL_TARGETS: LifecycleDrillTarget[] = [
   'awaiting-document-revalidation',
   'awaiting-document-validation',
   'awaiting-promised-documents',
+  'awaiting-expiring-documents',
   'awaiting-assessment-schedule',
   'awaiting-contract-signature',
   'missing-class-assignment',
@@ -709,6 +711,8 @@ export type LifecycleDrillRow = {
   expiredSlots?: string[];
   uploadedSlots?: string[];
   promisedSlots?: string[];
+  expiringSlots?: string[];
+  daysLeft?: number | null;
   assessmentStatus?: string | null;
   assessmentSchedule?: string | null;
   contractStatus?: string | null;
@@ -765,7 +769,12 @@ async function loadLifecycleSnapshotUncached(
   ];
   const uniqStatusColumns = Array.from(new Set(statusColumns));
 
-  const docColumns = ['enroleeNumber', ...DOCUMENT_SLOTS.map((s) => s.statusCol)];
+  // Include both status and expiry columns so the drill can detect expiring-soon slots
+  const docColumns = [
+    'enroleeNumber',
+    ...DOCUMENT_SLOTS.map((s) => s.statusCol),
+    ...DOCUMENT_SLOTS.filter((s) => s.expiryCol).map((s) => s.expiryCol!),
+  ];
 
   const [appsRes, statusRes, docsRes] = await Promise.all([
     admissions
@@ -937,6 +946,36 @@ export async function buildLifecycleDrillRows(
         }
         break;
       }
+      case 'awaiting-expiring-documents': {
+        if (!docs) break;
+        const expiringSlots: string[] = [];
+        let soonestDays: number | null = null;
+        const now = Date.now();
+        const thresholdMs = 30 * 86_400_000;
+        for (const slot of DOCUMENT_SLOTS) {
+          if (!slot.expiryCol) continue;
+          const statusVal = (docs[slot.statusCol] ?? '').toString().trim();
+          if (statusVal !== 'Valid') continue;
+          const raw = docs[slot.expiryCol];
+          if (!raw) continue;
+          const ms = Date.parse(raw.toString());
+          if (Number.isNaN(ms)) continue;
+          const days = Math.floor((ms - now) / 86_400_000);
+          if (days >= 0 && days <= 30) {
+            expiringSlots.push(slot.label);
+            if (soonestDays === null || days < soonestDays) soonestDays = days;
+          }
+        }
+        if (expiringSlots.length > 0) {
+          out.push({
+            ...baseRow(enroleeNumber, app, status),
+            documentStatus: status.documentStatus ?? null,
+            expiringSlots,
+            daysLeft: soonestDays,
+          });
+        }
+        break;
+      }
       case 'awaiting-assessment-schedule': {
         if (status.assessmentStatus === 'Pending' && !status.assessmentSchedule) {
           out.push({
@@ -1026,6 +1065,8 @@ export type LifecycleDrillColumnKey =
   | 'expiredSlots'
   | 'uploadedSlots'
   | 'promisedSlots'
+  | 'expiringSlots'
+  | 'daysLeft'
   | 'assessmentStatus'
   | 'assessmentSchedule'
   | 'contractStatus'
@@ -1047,6 +1088,8 @@ export const ALL_LIFECYCLE_DRILL_COLUMNS: LifecycleDrillColumnKey[] = [
   'expiredSlots',
   'uploadedSlots',
   'promisedSlots',
+  'expiringSlots',
+  'daysLeft',
   'assessmentStatus',
   'assessmentSchedule',
   'contractStatus',
@@ -1069,6 +1112,8 @@ export const LIFECYCLE_DRILL_COLUMN_LABELS: Record<LifecycleDrillColumnKey, stri
   expiredSlots: 'Expired slots',
   uploadedSlots: 'Uploaded slots',
   promisedSlots: 'Promised slots',
+  expiringSlots: 'Expiring slots',
+  daysLeft: 'Days left',
   assessmentStatus: 'Assessment',
   assessmentSchedule: 'Schedule',
   contractStatus: 'Contract',
@@ -1110,6 +1155,15 @@ export function defaultColumnsForLifecycleTarget(
         'enroleeFullName',
         'levelApplied',
         'promisedSlots',
+        'applicationStatus',
+        'daysSinceUpdate',
+      ];
+    case 'awaiting-expiring-documents':
+      return [
+        'enroleeFullName',
+        'levelApplied',
+        'expiringSlots',
+        'daysLeft',
         'applicationStatus',
         'daysSinceUpdate',
       ];
@@ -1169,6 +1223,8 @@ export function lifecycleDrillHeaderForTarget(
       return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting document validation' };
     case 'awaiting-promised-documents':
       return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting promised documents' };
+    case 'awaiting-expiring-documents':
+      return { eyebrow: 'Drill · Lifecycle', title: 'Expiring within 30 days' };
     case 'awaiting-assessment-schedule':
       return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting assessment schedule' };
     case 'awaiting-contract-signature':

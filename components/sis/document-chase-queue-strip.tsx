@@ -1,4 +1,4 @@
-import { AlertTriangle, FileWarning, MailQuestion } from 'lucide-react';
+import { AlertTriangle, CalendarClock, FileWarning, MailQuestion } from 'lucide-react';
 
 import {
   ChartLegendChip,
@@ -61,6 +61,13 @@ const TILES: ChaseTile[] = [
     icon: MailQuestion,
     severity: 'warn',
   },
+  {
+    target: 'awaiting-expiring-documents',
+    label: 'Expiring soon',
+    description: 'Valid now, expiry within 30 days — chase parent for renewal',
+    icon: CalendarClock,
+    severity: 'warn',
+  },
 ];
 
 const TILE_CRAFT: Record<ChaseTile['severity'], string> = {
@@ -83,7 +90,7 @@ export async function DocumentChaseQueueStrip({
   ayCode,
 }: DocumentChaseQueueStripProps) {
   const counts = await getDocumentChaseQueueCounts(ayCode);
-  const total = counts.promised + counts.validation + counts.revalidation;
+  const total = counts.promised + counts.validation + counts.revalidation + counts.expiringSoon;
 
   if (total === 0) return null;
 
@@ -92,6 +99,7 @@ export async function DocumentChaseQueueStrip({
     'awaiting-document-revalidation': counts.revalidation,
     'awaiting-document-validation': counts.validation,
     'awaiting-promised-documents': counts.promised,
+    'awaiting-expiring-documents': counts.expiringSoon,
     'awaiting-assessment-schedule': undefined,
     'awaiting-contract-signature': undefined,
     'missing-class-assignment': undefined,
@@ -100,7 +108,7 @@ export async function DocumentChaseQueueStrip({
   };
 
   return (
-    <section className="grid gap-4 md:grid-cols-3" aria-label="Documents needing action">
+    <section className="grid gap-4 md:grid-cols-4" aria-label="Documents needing action">
       {TILES.map((tile) => {
         const value = valueByTarget[tile.target] ?? 0;
         const Icon = tile.icon;

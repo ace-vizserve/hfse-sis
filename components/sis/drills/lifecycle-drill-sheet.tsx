@@ -388,6 +388,30 @@ function buildColumnDef(
         ),
         enableSorting: true,
       };
+    case 'expiringSlots':
+      return {
+        id: 'expiringSlots',
+        accessorKey: 'expiringSlots',
+        header,
+        cell: ({ row }) => (
+          <SlotChips slots={row.original.expiringSlots} color="stale" />
+        ),
+        enableSorting: false,
+      };
+    case 'daysLeft':
+      return {
+        id: 'daysLeft',
+        accessorKey: 'daysLeft',
+        header,
+        cell: ({ row }) => {
+          const v = row.original.daysLeft;
+          if (v === null || v === undefined) return <span className="text-ink-4">—</span>;
+          return (
+            <span className="font-mono tabular-nums text-[12px]">{v}d</span>
+          );
+        },
+        enableSorting: true,
+      };
     default: {
       const _exhaustive: never = key;
       throw new Error(`unreachable column key: ${String(_exhaustive)}`);
