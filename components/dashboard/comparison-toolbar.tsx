@@ -71,6 +71,11 @@ export function ComparisonToolbar({
   function pushParams(params: URLSearchParams) {
     startTransition(() => {
       router.push(`?${params.toString()}`, { scroll: false });
+      // Force the RSC to re-fetch — `router.push` to the same pathname with
+      // new searchParams can hit Next.js's router/prefetch cache and serve
+      // stale data, so the dashboard would see the new URL but render the
+      // previous range's KPIs/charts.
+      router.refresh();
     });
   }
 
