@@ -952,7 +952,6 @@ export async function buildLifecycleDrillRows(
         const expiringSlots: string[] = [];
         let soonestDays: number | null = null;
         const now = Date.now();
-        const thresholdMs = EXPIRING_SOON_THRESHOLD_DAYS * 86_400_000;
         for (const slot of DOCUMENT_SLOTS) {
           if (!slot.expiryCol) continue;
           const statusVal = (docs[slot.statusCol] ?? '').toString().trim();
