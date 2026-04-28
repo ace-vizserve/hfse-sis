@@ -8,6 +8,7 @@ import { InsightsPanel } from "@/components/dashboard/insights-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { PriorityPanel } from "@/components/dashboard/priority-panel";
 import { CompletenessTable, type StatusFilter } from "@/components/p-files/completeness-table";
+import { DocumentChaseQueueStrip } from "@/components/sis/document-chase-queue-strip";
 import {
   CompletenessCsvButton,
   CompletionByLevelDrillCard,
@@ -142,6 +143,10 @@ export default async function PFilesDashboard({
       />
 
       <PriorityPanel payload={priority} />
+
+      {/* Document chase queue (spec 2026-04-28) — sibling to the expiring-docs
+          PriorityPanel. Together they form "Documents needing attention". */}
+      <DocumentChaseQueueStrip ayCode={selectedAy} />
 
       <InsightsPanel insights={insights} />
 
