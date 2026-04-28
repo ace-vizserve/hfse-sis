@@ -58,6 +58,10 @@ export type DateRangePickerProps = {
   className?: string;
 };
 
+// `'custom'` is a state, not an action — when no preset window matches the
+// current range, `detectPreset` returns `'custom'` and the trigger-button
+// chip is suppressed. The calendar itself is the custom-range UI; rendering
+// `'custom'` as a clickable preset row was misleading (it had no action).
 const DEFAULT_PRESETS: Preset[] = [
   'last7d',
   'last30d',
@@ -66,7 +70,6 @@ const DEFAULT_PRESETS: Preset[] = [
   'lastTerm',
   'thisAY',
   'lastAY',
-  'custom',
 ];
 
 export function DateRangePicker({
