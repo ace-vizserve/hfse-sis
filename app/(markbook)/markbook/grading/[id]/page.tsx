@@ -33,6 +33,23 @@ import { TotalsEditor } from '@/components/grading/totals-editor';
 import { listApproversForFlow } from '@/lib/sis/approvers/queries';
 import { RequestEditButton } from './request-edit-button';
 
+/**
+ * Human label for a change-request target field, e.g. WW1 / PT2 / QA /
+ * Letter grade / N/A. Used in the open-change-requests banner so the
+ * registrar sees which exact cell each request points at without having
+ * to open the queue.
+ */
+function fieldLabelForChangeRequest(
+  field: 'ww_scores' | 'pt_scores' | 'qa_score' | 'letter_grade' | 'is_na',
+  slotIndex: number | null,
+): string {
+  if (field === 'ww_scores') return `WW${(slotIndex ?? 0) + 1}`;
+  if (field === 'pt_scores') return `PT${(slotIndex ?? 0) + 1}`;
+  if (field === 'qa_score') return 'QA';
+  if (field === 'letter_grade') return 'Letter grade';
+  return 'N/A flag';
+}
+
 type Level = { code: string; label: string };
 type Section = { id: string; name: string; level: Level | Level[] | null };
 type Subject = { id: string; code: string; name: string; is_examinable: boolean };
@@ -107,7 +124,9 @@ export default async function GradingSheetPage({
   const [{ data: openRequestsRaw }, { data: entriesRaw }] = await Promise.all([
     supabase
       .from('grade_change_requests')
-      .select('id, status')
+      .select(
+        'id, status, grade_entry_id, field_changed, slot_index, proposed_value, current_value, requested_by_email, reason_category',
+      )
       .eq('grading_sheet_id', id)
       .in('status', ['pending', 'approved']),
     supabase
@@ -121,10 +140,18 @@ export default async function GradingSheetPage({
       )
       .eq('grading_sheet_id', id),
   ]);
-  const openRequests = (openRequestsRaw ?? []) as Array<{
+  type OpenRequestRow = {
     id: string;
     status: 'pending' | 'approved';
-  }>;
+    grade_entry_id: string;
+    field_changed: 'ww_scores' | 'pt_scores' | 'qa_score' | 'letter_grade' | 'is_na';
+    slot_index: number | null;
+    proposed_value: string;
+    current_value: string | null;
+    requested_by_email: string;
+    reason_category: string;
+  };
+  const openRequests = (openRequestsRaw ?? []) as OpenRequestRow[];
   const pendingCount = openRequests.filter((r) => r.status === 'pending').length;
   const approvedCount = openRequests.filter((r) => r.status === 'approved').length;
 
@@ -161,6 +188,22 @@ export default async function GradingSheetPage({
   const approvers = approversAll
     .filter((a) => a.user_id !== sessionUser?.id)
     .map((a) => ({ user_id: a.user_id, email: a.email, role: a.role }));
+
+  // Build a quick lookup so the open-change-requests banner can label each
+  // request with the affected student's name + index number. The banner
+  // tells the registrar exactly which student/cell to look at without
+  // forcing them to leave the page or scan the grid.
+  const rowsByEntryId = new Map<string, { index_number: number; student_name: string }>();
+  for (const e of entries) {
+    const ss = first(e.section_student);
+    const stu = first(ss?.student ?? null);
+    rowsByEntryId.set(e.id, {
+      index_number: ss?.index_number ?? 0,
+      student_name: stu
+        ? [stu.last_name, stu.first_name, stu.middle_name].filter(Boolean).join(', ')
+        : '(missing)',
+    });
+  }
 
   const rows = entries.map((e) => {
     const ss = first(e.section_student);
@@ -394,6 +437,69 @@ export default async function GradingSheetPage({
                 .join(' · ')}
               .
             </p>
+
+            {/* Per-cell list — shown to anyone with the apply gate
+                (`canManage` on a locked sheet) so the registrar sees which
+                exact cells each open request points at without leaving
+                the page. Sorted approved-first so the action queue is on
+                top. */}
+            {canManage && openRequests.length > 0 && (
+              <ul className="mt-2 space-y-1 border-t border-border/50 pt-2.5 text-sm">
+                {[...openRequests]
+                  .sort((a, b) => {
+                    if (a.status !== b.status) return a.status === 'approved' ? -1 : 1;
+                    const ai = rowsByEntryId.get(a.grade_entry_id)?.index_number ?? 0;
+                    const bi = rowsByEntryId.get(b.grade_entry_id)?.index_number ?? 0;
+                    return ai - bi;
+                  })
+                  .map((r) => {
+                    const student = rowsByEntryId.get(r.grade_entry_id);
+                    const cell = fieldLabelForChangeRequest(r.field_changed, r.slot_index);
+                    const from =
+                      r.current_value === null || r.current_value === '' ? '∅' : r.current_value;
+                    const isApproved = r.status === 'approved';
+                    return (
+                      <li
+                        key={r.id}
+                        className="flex flex-wrap items-center gap-x-2 gap-y-0.5 leading-snug"
+                      >
+                        <span
+                          aria-hidden
+                          className={
+                            isApproved
+                              ? 'inline-block size-1.5 shrink-0 rounded-full bg-brand-amber'
+                              : 'inline-block size-1.5 shrink-0 rounded-full bg-brand-indigo'
+                          }
+                        />
+                        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                          #{student?.index_number ?? '—'}
+                        </span>
+                        <span className="font-medium text-foreground">
+                          {student?.student_name ?? '(unknown student)'}
+                        </span>
+                        <span className="text-muted-foreground">·</span>
+                        <span className="font-mono text-[11px] uppercase tracking-wider text-foreground">
+                          {cell}
+                        </span>
+                        <span className="text-muted-foreground">·</span>
+                        <span className="font-mono tabular-nums text-foreground">
+                          {from} → {r.proposed_value}
+                        </span>
+                        <span
+                          className={
+                            isApproved
+                              ? 'ml-1 rounded bg-brand-amber/25 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-foreground'
+                              : 'ml-1 rounded bg-brand-indigo/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-brand-indigo-deep'
+                          }
+                        >
+                          {isApproved ? 'Apply' : 'Pending'}
+                        </span>
+                      </li>
+                    );
+                  })}
+              </ul>
+            )}
+
             <Link
               href={
                 canManage
