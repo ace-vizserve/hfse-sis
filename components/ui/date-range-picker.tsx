@@ -38,7 +38,14 @@ import {
 
 export type DateRangePickerProps = {
   value: DateRange;
-  onChange: (next: DateRange) => void;
+  /**
+   * Fires when the user picks a new range (calendar click or preset). The
+   * second arg is the picker's auto-computed comparison range — the parent
+   * should apply both in a single state/URL update so they don't stomp on
+   * each other (two separate router.push calls back-to-back read the same
+   * stale searchParams snapshot and the second one clobbers the first).
+   */
+  onChange: (next: DateRange, autoComparison?: DateRange) => void;
   comparison: DateRange;
   onComparisonChange?: (next: DateRange) => void;
   termWindows: TermWindows;
@@ -51,6 +58,10 @@ export type DateRangePickerProps = {
   className?: string;
 };
 
+// `'custom'` is a state, not an action — when no preset window matches the
+// current range, `detectPreset` returns `'custom'` and the trigger-button
+// chip is suppressed. The calendar itself is the custom-range UI; rendering
+// `'custom'` as a clickable preset row was misleading (it had no action).
 const DEFAULT_PRESETS: Preset[] = [
   'last7d',
   'last30d',
@@ -59,7 +70,6 @@ const DEFAULT_PRESETS: Preset[] = [
   'lastTerm',
   'thisAY',
   'lastAY',
-  'custom',
 ];
 
 export function DateRangePicker({
@@ -99,33 +109,102 @@ export function DateRangePicker({
     return { from, to };
   }, [comparison.from, comparison.to]);
 
+  // Calendar selection is staged here until the user hits Apply (or completes
+  // a multi-day range). Auto-committing on every click broke the flow:
+  // first click pushed `?from=A&to=A`, the picker re-rendered with that as a
+  // complete range, and react-day-picker started a fresh range on the next
+  // click — making multi-day selection impossible. Single-day selection is
+  // an explicit Apply.
+  const [pendingRange, setPendingRange] = React.useState<DayPickerRange | undefined>(undefined);
+  const [pendingComparison, setPendingComparison] = React.useState<DayPickerRange | undefined>(undefined);
+
+  // Seed the staged ranges from URL state whenever the popover opens.
+  React.useEffect(() => {
+    if (!open) return;
+    setPendingRange(calendarValue);
+    setPendingComparison(cmpCalendarValue);
+    // intentionally only on open — re-syncing on every value/comparison change
+    // would clobber an in-progress selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // What the calendar renders as `selected`. Prefer the staged range so the
+  // user sees their click feedback even before they hit Apply.
+  const liveCalendarValue = pendingRange ?? calendarValue;
+  const liveCmpCalendarValue = pendingComparison ?? cmpCalendarValue;
+
   function applyPreset(p: Preset) {
     if (p === 'custom') return;
     const range = resolvePreset(p, windows);
     if (!range) return;
-    onChange(range);
-    const auto = autoComparison(range);
-    if (auto && onComparisonChange) onComparisonChange(auto);
+    onChange(range, autoComparison(range) ?? undefined);
     setEditingComparison(false);
+    setPendingRange(undefined);
+    setPendingComparison(undefined);
+    setOpen(false);
   }
 
   function onRangeSelect(next: DayPickerRange | undefined) {
-    if (!next?.from) return;
-    const from = toISODate(next.from);
-    const to = toISODate(next.to ?? next.from);
-    const range: DateRange = { from, to };
-    onChange(range);
-    const auto = autoComparison(range);
-    if (auto && onComparisonChange) onComparisonChange(auto);
+    setPendingRange(next);
+    // Auto-commit when the user has picked two distinct days. Single-day
+    // selection still requires Apply.
+    if (next?.from && next.to && +next.from !== +next.to) {
+      const range: DateRange = {
+        from: toISODate(next.from),
+        to: toISODate(next.to),
+      };
+      onChange(range, autoComparison(range) ?? undefined);
+      setPendingRange(undefined);
+      setOpen(false);
+    }
   }
 
   function onComparisonSelect(next: DayPickerRange | undefined) {
-    if (!next?.from || !onComparisonChange) return;
-    onComparisonChange({
-      from: toISODate(next.from),
-      to: toISODate(next.to ?? next.from),
-    });
+    setPendingComparison(next);
+    if (next?.from && next.to && +next.from !== +next.to && onComparisonChange) {
+      onComparisonChange({
+        from: toISODate(next.from),
+        to: toISODate(next.to),
+      });
+      setPendingComparison(undefined);
+      setEditingComparison(false);
+    }
   }
+
+  function applyPending() {
+    if (editingComparison) {
+      if (!pendingComparison?.from || !onComparisonChange) return;
+      onComparisonChange({
+        from: toISODate(pendingComparison.from),
+        to: toISODate(pendingComparison.to ?? pendingComparison.from),
+      });
+      setPendingComparison(undefined);
+      setEditingComparison(false);
+      return;
+    }
+    if (!pendingRange?.from) return;
+    const range: DateRange = {
+      from: toISODate(pendingRange.from),
+      to: toISODate(pendingRange.to ?? pendingRange.from),
+    };
+    onChange(range, autoComparison(range) ?? undefined);
+    setPendingRange(undefined);
+    setOpen(false);
+  }
+
+  // True when the staged selection differs from the URL-committed value.
+  const hasUnappliedChanges = (() => {
+    if (editingComparison) {
+      if (!pendingComparison?.from) return false;
+      const draftFrom = toISODate(pendingComparison.from);
+      const draftTo = toISODate(pendingComparison.to ?? pendingComparison.from);
+      return draftFrom !== comparison.from || draftTo !== comparison.to;
+    }
+    if (!pendingRange?.from) return false;
+    const draftFrom = toISODate(pendingRange.from);
+    const draftTo = toISODate(pendingRange.to ?? pendingRange.from);
+    return draftFrom !== value.from || draftTo !== value.to;
+  })();
 
   function buildDisabledMatcher(
     min: string | undefined,
@@ -219,7 +298,7 @@ export function DateRangePicker({
             <Calendar
               mode="range"
               numberOfMonths={2}
-              selected={editingComparison ? cmpCalendarValue : calendarValue}
+              selected={editingComparison ? liveCmpCalendarValue : liveCalendarValue}
               onSelect={editingComparison ? onComparisonSelect : onRangeSelect}
               captionLayout="dropdown"
               disabled={buildDisabledMatcher(minDate, maxDate)}
@@ -255,6 +334,15 @@ export function DateRangePicker({
                     {editingComparison ? 'Done' : 'Edit'}
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="h-7 text-xs"
+                  disabled={!hasUnappliedChanges}
+                  onClick={applyPending}
+                >
+                  Apply
+                </Button>
               </div>
             </div>
           </div>

@@ -61,7 +61,7 @@ export default async function RecordsStudentsPage({
   const isCurrentAy = selectedAy === currentAy.ay_code;
 
   const [allStudents, summary] = await Promise.all([
-    listStudents(selectedAy),
+    listStudents(selectedAy, 'name_asc'),
     getSisDashboardSummary(selectedAy),
   ]);
 

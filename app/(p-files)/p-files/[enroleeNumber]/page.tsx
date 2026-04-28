@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle2, FileWarning, ShieldAlert } from 'lucide-react'
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+import { freshenAyDocuments } from '@/lib/sis/freshen-document-statuses';
 import { getStudentDocumentDetail } from '@/lib/p-files/queries';
 import { DOCUMENT_SLOTS, GROUP_LABELS, type DocumentGroup } from '@/lib/p-files/document-config';
 import { DocumentCard } from '@/components/p-files/document-card';
@@ -33,6 +34,11 @@ export default async function StudentDocumentDetailPage({
   const ayCodes = await listAyCodes(service);
   const selectedAy =
     ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
+
+  // Auto-flip any expired-but-still-Valid doc statuses for this AY before
+  // the page reads them. Cached 60s; existing PATCH routes invalidate via
+  // the sis:${ayCode} tag.
+  await freshenAyDocuments(selectedAy);
 
   const student = await getStudentDocumentDetail(selectedAy, enroleeNumber);
   if (!student) notFound();

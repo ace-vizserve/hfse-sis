@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import { Loader2, UserPlus } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { toast } from 'sonner';
+import { Loader2, UserPlus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { toast } from "sonner";
 
-import { Button } from '@/components/ui/button';
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -14,10 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { ApproverFlow } from '@/lib/schemas/approvers';
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { ApproverFlow } from "@/lib/schemas/approvers";
 
 type Candidate = { user_id: string; email: string; role: string };
 
@@ -30,30 +30,30 @@ type Props = {
 export function ApproverAssignDialog({ flow, flowLabel, candidates }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [userId, setUserId] = useState('');
+  const [userId, setUserId] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit() {
     if (!userId) return;
     setSubmitting(true);
     try {
-      const res = await fetch('/api/sis/admin/approvers', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+      const res = await fetch("/api/sis/admin/approvers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ user_id: userId, flow }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Failed to assign approver');
+      if (!res.ok) throw new Error(body.error ?? "Failed to assign approver");
       if (body.alreadyAssigned) {
-        toast.info('User is already assigned to this flow');
+        toast.info("User is already assigned to this flow");
       } else {
-        toast.success('Approver assigned');
+        toast.success("Approver assigned");
       }
       setOpen(false);
-      setUserId('');
+      setUserId("");
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to assign approver');
+      toast.error(e instanceof Error ? e.message : "Failed to assign approver");
     } finally {
       setSubmitting(false);
     }
@@ -67,13 +67,12 @@ export function ApproverAssignDialog({ flow, flowLabel, candidates }: Props) {
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) {
-          setUserId('');
+          setUserId("");
           setSubmitting(false);
         }
-      }}
-    >
+      }}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" disabled={noCandidates}>
+        <Button size="sm" disabled={noCandidates}>
           <UserPlus className="mr-1 size-3.5" />
           Add approver
         </Button>
@@ -82,14 +81,12 @@ export function ApproverAssignDialog({ flow, flowLabel, candidates }: Props) {
         <DialogHeader>
           <DialogTitle>Add approver to {flowLabel}</DialogTitle>
           <DialogDescription>
-            Assigned users will see change requests from teachers in their admin inbox and
-            receive the notification email when a new request is filed.
+            Assigned users will see change requests from teachers in their admin inbox and receive the notification
+            email when a new request is filed.
           </DialogDescription>
         </DialogHeader>
         {noCandidates ? (
-          <p className="text-sm text-muted-foreground">
-            Every admin and superadmin is already assigned to this flow.
-          </p>
+          <p className="text-sm text-muted-foreground">Every admin and superadmin is already assigned to this flow.</p>
         ) : (
           <div className="space-y-2">
             <Label className="text-xs font-medium">User</Label>

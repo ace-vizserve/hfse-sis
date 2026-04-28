@@ -304,7 +304,7 @@ async function loadPFilesKpisForRange(input: RangeInput): Promise<PFilesRangeKpi
         [
           'enroleeNumber',
           ...DOCUMENT_SLOTS.flatMap((s) =>
-            s.expires ? [`${s.key}Status`, `${s.key}Expiry`] : [`${s.key}Status`],
+            s.expires ? [s.key, `${s.key}Status`, `${s.key}Expiry`] : [s.key, `${s.key}Status`],
           ),
         ].join(', '),
       ),
@@ -320,18 +320,26 @@ async function loadPFilesKpisForRange(input: RangeInput): Promise<PFilesRangeKpi
   let pending = 0;
   let total = 0;
 
+  // Use the same resolveStatus helper that powers getCompletionByLevel and
+  // getSlotStatusMix so the KPI counts agree with what the drills + table
+  // show. Comparing raw `status === 'pending'` against the DB's PascalCase
+  // values ('Uploaded', 'Pending', etc.) was the previous bug — the strings
+  // never matched and the KPI cards showed 0.
   for (const row of docs) {
     for (const slot of DOCUMENT_SLOTS) {
-      const status = row[`${slot.key}Status`];
-      if (!status) continue;
+      const url = row[slot.key];
+      const rawStatus = row[`${slot.key}Status`];
+      const expiry = slot.expires ? row[`${slot.key}Expiry`] : null;
+      const status = resolveStatus(url, rawStatus, expiry, slot.expires);
+      // Skip slots that are entirely absent (no URL, no status) — these
+      // would resolve to 'missing' but they're not "tracked" yet, so leave
+      // them out of the totalDocuments tally.
+      if (!url && !rawStatus) continue;
       total += 1;
-      if (status === 'pending' || status === 'uploaded') pending += 1;
-      if (slot.expires) {
-        const expiry = row[`${slot.key}Expiry`];
-        if (expiry) {
-          const exp = parseLocalDate(expiry);
-          if (exp && exp >= endDate && exp <= sixtyDaysOut) expiringSoon += 1;
-        }
+      if (status === 'uploaded') pending += 1;
+      if (slot.expires && expiry) {
+        const exp = parseLocalDate(expiry);
+        if (exp && exp >= endDate && exp <= sixtyDaysOut) expiringSoon += 1;
       }
     }
   }

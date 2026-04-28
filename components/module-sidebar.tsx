@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -89,26 +89,64 @@ function resolveSectionsForRole(module: SidebarModule, role: Role | null): NavSe
     .filter((section) => section.items.length > 0);
 }
 
-function findActiveHref(items: NavItem[], pathname: string): string | undefined {
+// Split a sidebar href into its pathname and (optional) query params.
+// Quicklinks like `/p-files?status=missing` and
+// `/evaluation/sections?term=1` use query strings to express a pre-applied
+// filter on the destination page; the active-state matcher below treats
+// each as "this href is active iff the current URL is on the same path
+// AND every query param the href declares is set to the same value in the
+// current URL." Extra params in the current URL (e.g. `?ay=AY9999`) are
+// ignored — they don't break the match.
+function parseHrefWithQuery(href: string): {
+  path: string;
+  params: URLSearchParams;
+} {
+  const idx = href.indexOf("?");
+  if (idx < 0) return { path: href, params: new URLSearchParams() };
+  return {
+    path: href.slice(0, idx),
+    params: new URLSearchParams(href.slice(idx + 1)),
+  };
+}
+
+function findActiveHref(
+  items: NavItem[],
+  pathname: string,
+  searchParams: URLSearchParams,
+): string | undefined {
   return items
     .filter((i) => {
-      if (PREFIX_MATCH_HREFS.has(i.href)) {
-        return pathname === i.href || pathname.startsWith(i.href + "/");
+      const { path, params } = parseHrefWithQuery(i.href);
+      const pathMatches = PREFIX_MATCH_HREFS.has(path)
+        ? pathname === path || pathname.startsWith(path + "/")
+        : pathname === path;
+      if (!pathMatches) return false;
+      for (const [key, value] of params) {
+        if (searchParams.get(key) !== value) return false;
       }
-      return pathname === i.href;
+      return true;
     })
+    // Longest-href wins. Query-aware items (e.g. `/p-files?status=missing`)
+    // are longer than their path-only parent (`/p-files`), so when both
+    // match we pick the more specific quicklink — that's the desired
+    // behavior when the URL has a `?status=` filter set.
     .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 }
 
 export function ModuleSidebar({ module, role, email, userId, badges }: ModuleSidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const config = SIDEBAR_REGISTRY[module];
 
   const liveBadges = useRealtimeBadges(role, userId, badges ?? EMPTY_BADGES);
 
   const sections = resolveSectionsForRole(module, role);
   const allItems = sections.flatMap((s) => s.items);
-  const activeHref = findActiveHref(allItems, pathname ?? "");
+  const activeHref = findActiveHref(
+    allItems,
+    pathname ?? "",
+    new URLSearchParams(searchParams?.toString() ?? ""),
+  );
 
   const quickAction = role ? config.quickActionByRole[role] : config.quickActionByRole.parent;
   const profileRole: Role | "parent" = role ?? "parent";

@@ -44,6 +44,7 @@ export type AuditAction =
   | 'sis.discount_code.expire'
   | 'sis.document.approve'
   | 'sis.document.reject'
+  | 'sis.documents.auto-expire'
   | 'sis.allowance.update'
   | 'ay.create'
   | 'ay.switch_current'
@@ -106,7 +107,7 @@ export type AuditEntityType =
 
 type LogActionParams = {
   service: SupabaseClient;
-  actor: Pick<User, 'id' | 'email'> | { id: string; email: string | null };
+  actor: Pick<User, 'id' | 'email'> | { id: string | null; email: string | null };
   action: AuditAction;
   entityType: AuditEntityType;
   entityId?: string | null;

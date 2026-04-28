@@ -64,6 +64,7 @@ import {
   type ProfileUpdateInput,
   type StageKey,
 } from "@/lib/schemas/sis";
+import { freshenAyDocuments } from "@/lib/sis/freshen-document-statuses";
 import { getStudentLifecycle } from "@/lib/sis/process";
 import {
   getEnrollmentHistory,
@@ -122,6 +123,11 @@ export default async function SisStudentDetailPage({
 
   const ayCodes = await listAyCodes(service);
   const selectedAy = ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
+
+  // Auto-flip any expired-but-still-Valid doc statuses for this AY before
+  // the page reads them. Cached 60s; existing PATCH routes invalidate via
+  // the sis:${ayCode} tag.
+  await freshenAyDocuments(selectedAy);
 
   const detail = await getStudentDetail(selectedAy, enroleeNumber);
   if (!detail) notFound();

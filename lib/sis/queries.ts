@@ -1,6 +1,6 @@
-import { unstable_cache } from 'next/cache';
+import { unstable_cache } from "next/cache";
 
-import { createAdmissionsClient } from '@/lib/supabase/admissions';
+import { createAdmissionsClient } from "@/lib/supabase/admissions";
 
 // Sprint 10 Phase 1 — read-only Student Information System.
 //
@@ -17,11 +17,11 @@ import { createAdmissionsClient } from '@/lib/supabase/admissions';
 const CACHE_TTL_SECONDS = 600;
 
 function prefixFor(ayCode: string): string {
-  return `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
+  return `ay${ayCode.replace(/^AY/i, "").toLowerCase()}`;
 }
 
 function tag(ayCode: string): string[] {
-  return ['sis', `sis:${ayCode}`];
+  return ["sis", `sis:${ayCode}`];
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -42,33 +42,50 @@ export type StudentListRow = {
   classSection: string | null;
   applicationStatus: string | null;
   applicationUpdatedDate: string | null;
+  created_at: string | null;
 };
 
+// `created_at` carries the application's submission timestamp (Supabase default
+// column). Surfaced on StudentListRow so the admissions list can sort/show
+// "newest first" client-side without a second round-trip.
 const LIST_APP_COLUMNS =
-  'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied';
-const LIST_STATUS_COLUMNS =
-  'enroleeNumber, classLevel, classSection, applicationStatus, applicationUpdatedDate';
+  "enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied, created_at";
+const LIST_STATUS_COLUMNS = "enroleeNumber, classLevel, classSection, applicationStatus, applicationUpdatedDate";
 
-// Stub: full implementation lands when /sis/students page is built.
-// Returns the joined applications × status shape for one AY, filtered/paginated
-// at the call site for now (in-memory) — push to DB once we have real volume.
-export async function listStudents(ayCode: string): Promise<StudentListRow[]> {
+export type StudentListOrder = "created_at_desc" | "name_asc";
+
+// Returns the joined applications × status shape for one AY. `orderBy` picks
+// the SQL order — admissions wants newest applications first, records prefers
+// alphabetical. `enroleeNumber` is the stable tiebreaker either way.
+export async function listStudents(
+  ayCode: string,
+  orderBy: StudentListOrder = "name_asc",
+): Promise<StudentListRow[]> {
   return unstable_cache(
     async () => {
       const prefix = prefixFor(ayCode);
       const supabase = createAdmissionsClient();
 
+      const appsQuery = supabase.from(`${prefix}_enrolment_applications`).select(LIST_APP_COLUMNS);
+      const orderedAppsQuery =
+        orderBy === "created_at_desc"
+          ? appsQuery.order("created_at", { ascending: false }).order("enroleeNumber", { ascending: true })
+          : appsQuery
+              .order("lastName", { ascending: true })
+              .order("firstName", { ascending: true })
+              .order("enroleeNumber", { ascending: true });
+
       const [appsRes, statusRes] = await Promise.all([
-        supabase.from(`${prefix}_enrolment_applications`).select(LIST_APP_COLUMNS),
+        orderedAppsQuery,
         supabase.from(`${prefix}_enrolment_status`).select(LIST_STATUS_COLUMNS),
       ]);
 
       if (appsRes.error) {
-        console.error('[sis] listStudents apps fetch failed:', appsRes.error.message);
+        console.error("[sis] listStudents apps fetch failed:", appsRes.error.message);
         return [];
       }
       if (statusRes.error) {
-        console.error('[sis] listStudents status fetch failed:', statusRes.error.message);
+        console.error("[sis] listStudents status fetch failed:", statusRes.error.message);
         return [];
       }
 
@@ -80,6 +97,7 @@ export async function listStudents(ayCode: string): Promise<StudentListRow[]> {
         lastName: string | null;
         enroleeFullName: string | null;
         levelApplied: string | null;
+        created_at: string | null;
       };
       type StatusLite = {
         enroleeNumber: string | null;
@@ -113,11 +131,12 @@ export async function listStudents(ayCode: string): Promise<StudentListRow[]> {
           classSection: s?.classSection ?? null,
           applicationStatus: s?.applicationStatus ?? null,
           applicationUpdatedDate: s?.applicationUpdatedDate ?? null,
+          created_at: a.created_at,
         });
       }
       return out;
     },
-    ['sis', 'list-students', ayCode],
+    ["sis", "list-students", ayCode, orderBy],
     { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS },
   )();
 }
@@ -133,14 +152,14 @@ export type SisDashboardSummary = {
 };
 
 export async function getSisDashboardSummary(ayCode: string): Promise<SisDashboardSummary> {
-  const rows = await listStudents(ayCode);
+  const rows = await listStudents(ayCode, "name_asc");
   let enrolled = 0;
   let pending = 0;
   let withdrawn = 0;
   for (const r of rows) {
-    const s = (r.applicationStatus ?? '').trim();
-    if (s === 'Enrolled' || s === 'Enrolled (Conditional)') enrolled += 1;
-    else if (s === 'Withdrawn') withdrawn += 1;
+    const s = (r.applicationStatus ?? "").trim();
+    if (s === "Enrolled" || s === "Enrolled (Conditional)") enrolled += 1;
+    else if (s === "Withdrawn") withdrawn += 1;
     else if (s) pending += 1;
   }
   return {
@@ -287,27 +306,108 @@ export type ApplicationRow = {
 };
 
 const DETAIL_APP_COLUMNS = [
-  'enroleeNumber', 'studentNumber', 'enroleeFullName', 'firstName', 'middleName', 'lastName', 'preferredName', 'category',
-  'nric', 'birthDay', 'gender', 'nationality', 'primaryLanguage', 'religion', 'religionOther',
-  'passportNumber', 'passportExpiry', 'pass', 'passExpiry',
-  'stpApplicationType', 'residenceHistory',
-  'homePhone', 'homeAddress', 'postalCode', 'livingWithWhom', 'contactPerson', 'contactPersonNumber', 'parentMaritalStatus',
-  'levelApplied', 'preferredSchedule', 'classType', 'paymentOption', 'availSchoolBus', 'availStudentCare', 'studentCareProgram',
-  'availUniform', 'additionalLearningNeeds', 'otherLearningNeeds', 'previousSchool', 'howDidYouKnowAboutHFSEIS', 'otherSource',
-  'discount1', 'discount2', 'discount3', 'referrerName', 'referrerMobile', 'contractSignatory',
-  'fatherFullName', 'fatherFirstName', 'fatherLastName', 'fatherNric', 'fatherBirthDay', 'fatherMobile', 'fatherEmail',
-  'fatherNationality', 'fatherCompanyName', 'fatherPosition', 'fatherPassport', 'fatherPassportExpiry', 'fatherPass',
-  'fatherPassExpiry', 'fatherWhatsappTeamsConsent',
-  'motherFullName', 'motherFirstName', 'motherLastName', 'motherNric', 'motherBirthDay', 'motherMobile', 'motherEmail',
-  'motherNationality', 'motherCompanyName', 'motherPosition', 'motherPassport', 'motherPassportExpiry', 'motherPass',
-  'motherPassExpiry', 'motherWhatsappTeamsConsent',
-  'guardianFullName', 'guardianMobile', 'guardianEmail', 'guardianNationality', 'guardianPassport', 'guardianPassportExpiry',
-  'guardianPass', 'guardianPassExpiry', 'guardianWhatsappTeamsConsent',
-  'asthma', 'allergies', 'allergyDetails', 'foodAllergies', 'foodAllergyDetails', 'heartConditions', 'epilepsy', 'eczema',
-  'diabetes', 'paracetamolConsent', 'otherMedicalConditions', 'dietaryRestrictions',
-  'socialMediaConsent', 'feedbackConsent',
-  'created_at',
-].join(', ');
+  "enroleeNumber",
+  "studentNumber",
+  "enroleeFullName",
+  "firstName",
+  "middleName",
+  "lastName",
+  "preferredName",
+  "category",
+  "nric",
+  "birthDay",
+  "gender",
+  "nationality",
+  "primaryLanguage",
+  "religion",
+  "religionOther",
+  "passportNumber",
+  "passportExpiry",
+  "pass",
+  "passExpiry",
+  "stpApplicationType",
+  "residenceHistory",
+  "homePhone",
+  "homeAddress",
+  "postalCode",
+  "livingWithWhom",
+  "contactPerson",
+  "contactPersonNumber",
+  "parentMaritalStatus",
+  "levelApplied",
+  "preferredSchedule",
+  "classType",
+  "paymentOption",
+  "availSchoolBus",
+  "availStudentCare",
+  "studentCareProgram",
+  "availUniform",
+  "additionalLearningNeeds",
+  "otherLearningNeeds",
+  "previousSchool",
+  "howDidYouKnowAboutHFSEIS",
+  "otherSource",
+  "discount1",
+  "discount2",
+  "discount3",
+  "referrerName",
+  "referrerMobile",
+  "contractSignatory",
+  "fatherFullName",
+  "fatherFirstName",
+  "fatherLastName",
+  "fatherNric",
+  "fatherBirthDay",
+  "fatherMobile",
+  "fatherEmail",
+  "fatherNationality",
+  "fatherCompanyName",
+  "fatherPosition",
+  "fatherPassport",
+  "fatherPassportExpiry",
+  "fatherPass",
+  "fatherPassExpiry",
+  "fatherWhatsappTeamsConsent",
+  "motherFullName",
+  "motherFirstName",
+  "motherLastName",
+  "motherNric",
+  "motherBirthDay",
+  "motherMobile",
+  "motherEmail",
+  "motherNationality",
+  "motherCompanyName",
+  "motherPosition",
+  "motherPassport",
+  "motherPassportExpiry",
+  "motherPass",
+  "motherPassExpiry",
+  "motherWhatsappTeamsConsent",
+  "guardianFullName",
+  "guardianMobile",
+  "guardianEmail",
+  "guardianNationality",
+  "guardianPassport",
+  "guardianPassportExpiry",
+  "guardianPass",
+  "guardianPassExpiry",
+  "guardianWhatsappTeamsConsent",
+  "asthma",
+  "allergies",
+  "allergyDetails",
+  "foodAllergies",
+  "foodAllergyDetails",
+  "heartConditions",
+  "epilepsy",
+  "eczema",
+  "diabetes",
+  "paracetamolConsent",
+  "otherMedicalConditions",
+  "dietaryRestrictions",
+  "socialMediaConsent",
+  "feedbackConsent",
+  "created_at",
+].join(", ");
 
 export type StatusRow = {
   enroleeNumber: string;
@@ -374,26 +474,60 @@ export type StatusRow = {
 // rhs — it matches what's in `ay{YYYY}_enrolment_status` per
 // docs/context/10a-parent-portal-ddl.md.
 const DETAIL_STATUS_COLUMNS = [
-  'enroleeNumber', 'enroleeType', 'enrolmentDate',
-  'applicationStatus', 'applicationRemarks', 'applicationUpdatedDate', 'applicationUpdatedBy',
-  'registrationStatus', 'registrationInvoice', 'registrationPaymentDate', 'registrationRemarks',
-  'registrationUpdatedDate:registrationUpdateDate', 'registrationUpdatedBy:registrationUpdatedby',
-  'documentStatus', 'documentRemarks', 'documentUpdatedDate',
-  'documentUpdatedBy:documentUpdatedby',
-  'assessmentStatus', 'assessmentSchedule', 'assessmentGradeMath', 'assessmentGradeEnglish', 'assessmentMedical',
-  'assessmentRemarks', 'assessmentUpdatedDate',
-  'assessmentUpdatedBy:assessmentUpdatedby',
-  'contractStatus', 'contractRemarks', 'contractUpdatedDate',
-  'contractUpdatedBy:contractUpdatedby',
-  'feeStatus', 'feeInvoice', 'feePaymentDate', 'feeStartDate', 'feeRemarks', 'feeUpdatedDate',
-  'feeUpdatedBy:feeUpdatedby',
-  'classStatus', 'classAY', 'classLevel', 'classSection', 'classRemarks', 'classUpdatedDate',
-  'classUpdatedBy:classUpdatedby',
-  'suppliesStatus', 'suppliesClaimedDate', 'suppliesRemarks', 'suppliesUpdatedDate',
-  'suppliesUpdatedBy:suppliesUpdatedby',
-  'orientationStatus', 'orientationScheduleDate', 'orientationRemarks', 'orientationUpdatedDate',
-  'orientationUpdatedBy:orientationUpdateby',
-].join(', ');
+  "enroleeNumber",
+  "enroleeType",
+  "enrolmentDate",
+  "applicationStatus",
+  "applicationRemarks",
+  "applicationUpdatedDate",
+  "applicationUpdatedBy",
+  "registrationStatus",
+  "registrationInvoice",
+  "registrationPaymentDate",
+  "registrationRemarks",
+  "registrationUpdatedDate:registrationUpdateDate",
+  "registrationUpdatedBy:registrationUpdatedby",
+  "documentStatus",
+  "documentRemarks",
+  "documentUpdatedDate",
+  "documentUpdatedBy:documentUpdatedby",
+  "assessmentStatus",
+  "assessmentSchedule",
+  "assessmentGradeMath",
+  "assessmentGradeEnglish",
+  "assessmentMedical",
+  "assessmentRemarks",
+  "assessmentUpdatedDate",
+  "assessmentUpdatedBy:assessmentUpdatedby",
+  "contractStatus",
+  "contractRemarks",
+  "contractUpdatedDate",
+  "contractUpdatedBy:contractUpdatedby",
+  "feeStatus",
+  "feeInvoice",
+  "feePaymentDate",
+  "feeStartDate",
+  "feeRemarks",
+  "feeUpdatedDate",
+  "feeUpdatedBy:feeUpdatedby",
+  "classStatus",
+  "classAY",
+  "classLevel",
+  "classSection",
+  "classRemarks",
+  "classUpdatedDate",
+  "classUpdatedBy:classUpdatedby",
+  "suppliesStatus",
+  "suppliesClaimedDate",
+  "suppliesRemarks",
+  "suppliesUpdatedDate",
+  "suppliesUpdatedBy:suppliesUpdatedby",
+  "orientationStatus",
+  "orientationScheduleDate",
+  "orientationRemarks",
+  "orientationUpdatedDate",
+  "orientationUpdatedBy:orientationUpdateby",
+].join(", ");
 
 export type DocumentSlot = {
   key: string;
@@ -403,39 +537,94 @@ export type DocumentSlot = {
   expiry: string | null;
 };
 
-export const DOCUMENT_SLOTS: Array<{ key: string; label: string; statusCol: string; urlCol: string; expiryCol?: string }> = [
-  { key: 'idPicture',         label: 'ID Picture',           statusCol: 'idPictureStatus',         urlCol: 'idPicture' },
-  { key: 'birthCert',         label: 'Birth Certificate',    statusCol: 'birthCertStatus',         urlCol: 'birthCert' },
-  { key: 'educCert',          label: 'Education Certificate',statusCol: 'educCertStatus',          urlCol: 'educCert' },
-  { key: 'medical',           label: 'Medical',              statusCol: 'medicalStatus',           urlCol: 'medical' },
-  { key: 'form12',            label: 'Form 12',              statusCol: 'form12Status',            urlCol: 'form12' },
-  { key: 'passport',          label: 'Passport (Student)',   statusCol: 'passportStatus',          urlCol: 'passport',          expiryCol: 'passportExpiry' },
-  { key: 'pass',              label: 'Pass (Student)',       statusCol: 'passStatus',              urlCol: 'pass',              expiryCol: 'passExpiry' },
-  { key: 'motherPassport',    label: 'Mother Passport',      statusCol: 'motherPassportStatus',    urlCol: 'motherPassport',    expiryCol: 'motherPassportExpiry' },
-  { key: 'motherPass',        label: 'Mother Pass',          statusCol: 'motherPassStatus',        urlCol: 'motherPass',        expiryCol: 'motherPassExpiry' },
-  { key: 'fatherPassport',    label: 'Father Passport',      statusCol: 'fatherPassportStatus',    urlCol: 'fatherPassport',    expiryCol: 'fatherPassportExpiry' },
-  { key: 'fatherPass',        label: 'Father Pass',          statusCol: 'fatherPassStatus',        urlCol: 'fatherPass',        expiryCol: 'fatherPassExpiry' },
-  { key: 'guardianPassport',  label: 'Guardian Passport',    statusCol: 'guardianPassportStatus',  urlCol: 'guardianPassport',  expiryCol: 'guardianPassportExpiry' },
-  { key: 'guardianPass',      label: 'Guardian Pass',        statusCol: 'guardianPassStatus',      urlCol: 'guardianPass',      expiryCol: 'guardianPassExpiry' },
+export const DOCUMENT_SLOTS: Array<{
+  key: string;
+  label: string;
+  statusCol: string;
+  urlCol: string;
+  expiryCol?: string;
+}> = [
+  { key: "idPicture", label: "ID Picture", statusCol: "idPictureStatus", urlCol: "idPicture" },
+  { key: "birthCert", label: "Birth Certificate", statusCol: "birthCertStatus", urlCol: "birthCert" },
+  { key: "educCert", label: "Education Certificate", statusCol: "educCertStatus", urlCol: "educCert" },
+  { key: "medical", label: "Medical", statusCol: "medicalStatus", urlCol: "medical" },
+  { key: "form12", label: "Form 12", statusCol: "form12Status", urlCol: "form12" },
+  {
+    key: "passport",
+    label: "Passport (Student)",
+    statusCol: "passportStatus",
+    urlCol: "passport",
+    expiryCol: "passportExpiry",
+  },
+  { key: "pass", label: "Pass (Student)", statusCol: "passStatus", urlCol: "pass", expiryCol: "passExpiry" },
+  {
+    key: "motherPassport",
+    label: "Mother Passport",
+    statusCol: "motherPassportStatus",
+    urlCol: "motherPassport",
+    expiryCol: "motherPassportExpiry",
+  },
+  {
+    key: "motherPass",
+    label: "Mother Pass",
+    statusCol: "motherPassStatus",
+    urlCol: "motherPass",
+    expiryCol: "motherPassExpiry",
+  },
+  {
+    key: "fatherPassport",
+    label: "Father Passport",
+    statusCol: "fatherPassportStatus",
+    urlCol: "fatherPassport",
+    expiryCol: "fatherPassportExpiry",
+  },
+  {
+    key: "fatherPass",
+    label: "Father Pass",
+    statusCol: "fatherPassStatus",
+    urlCol: "fatherPass",
+    expiryCol: "fatherPassExpiry",
+  },
+  {
+    key: "guardianPassport",
+    label: "Guardian Passport",
+    statusCol: "guardianPassportStatus",
+    urlCol: "guardianPassport",
+    expiryCol: "guardianPassportExpiry",
+  },
+  {
+    key: "guardianPass",
+    label: "Guardian Pass",
+    statusCol: "guardianPassStatus",
+    urlCol: "guardianPass",
+    expiryCol: "guardianPassExpiry",
+  },
   // STP application slots — visible when stpApplicationType is set on the applications row
-  { key: 'icaPhoto',                label: 'ICA Photo (STP)',         statusCol: 'icaPhotoStatus',                urlCol: 'icaPhoto' },
-  { key: 'financialSupportDocs',    label: 'Financial Support (STP)', statusCol: 'financialSupportDocsStatus',    urlCol: 'financialSupportDocs' },
-  { key: 'vaccinationInformation',  label: 'Vaccination Info (STP)',  statusCol: 'vaccinationInformationStatus',  urlCol: 'vaccinationInformation' },
+  { key: "icaPhoto", label: "ICA Photo (STP)", statusCol: "icaPhotoStatus", urlCol: "icaPhoto" },
+  {
+    key: "financialSupportDocs",
+    label: "Financial Support (STP)",
+    statusCol: "financialSupportDocsStatus",
+    urlCol: "financialSupportDocs",
+  },
+  {
+    key: "vaccinationInformation",
+    label: "Vaccination Info (STP)",
+    statusCol: "vaccinationInformationStatus",
+    urlCol: "vaccinationInformation",
+  },
 ];
 
 // STP-conditional slot keys — UI consumers hide these when the apps row's
 // stpApplicationType is null. The columns always exist on the row; only display
 // is gated. See KD #51 + the parent-portal STP workflow.
-export const STP_CONDITIONAL_SLOT_KEYS = [
-  'icaPhoto',
-  'financialSupportDocs',
-  'vaccinationInformation',
-] as const;
+export const STP_CONDITIONAL_SLOT_KEYS = ["icaPhoto", "financialSupportDocs", "vaccinationInformation"] as const;
 
 const DOCUMENT_COLUMNS = [
-  'enroleeNumber', 'studentNumber',
+  "enroleeNumber",
+  "studentNumber",
   ...DOCUMENT_SLOTS.flatMap((s) => [s.statusCol, s.urlCol, s.expiryCol].filter(Boolean) as string[]),
-].join(', ');
+].join(", ");
 
 export type StudentDetail = {
   ayCode: string;
@@ -459,16 +648,28 @@ export type StudentDetail = {
 // were added later). Keeps the admissions detail page renderable with basic
 // identity data instead of 404ing.
 const MINIMAL_APP_COLUMNS =
-  'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied';
+  "enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied";
 
 export async function getStudentDetail(ayCode: string, enroleeNumber: string): Promise<StudentDetail | null> {
   const prefix = prefixFor(ayCode);
   const supabase = createAdmissionsClient();
 
   const [appRes, statusRes, docsRes] = await Promise.all([
-    supabase.from(`${prefix}_enrolment_applications`).select(DETAIL_APP_COLUMNS).eq('enroleeNumber', enroleeNumber).maybeSingle(),
-    supabase.from(`${prefix}_enrolment_status`).select(DETAIL_STATUS_COLUMNS).eq('enroleeNumber', enroleeNumber).maybeSingle(),
-    supabase.from(`${prefix}_enrolment_documents`).select(DOCUMENT_COLUMNS).eq('enroleeNumber', enroleeNumber).maybeSingle(),
+    supabase
+      .from(`${prefix}_enrolment_applications`)
+      .select(DETAIL_APP_COLUMNS)
+      .eq("enroleeNumber", enroleeNumber)
+      .maybeSingle(),
+    supabase
+      .from(`${prefix}_enrolment_status`)
+      .select(DETAIL_STATUS_COLUMNS)
+      .eq("enroleeNumber", enroleeNumber)
+      .maybeSingle(),
+    supabase
+      .from(`${prefix}_enrolment_documents`)
+      .select(DOCUMENT_COLUMNS)
+      .eq("enroleeNumber", enroleeNumber)
+      .maybeSingle(),
   ]);
 
   // App-row fallback: if the full SELECT errored (typically because the
@@ -478,20 +679,14 @@ export async function getStudentDetail(ayCode: string, enroleeNumber: string): P
   // error is logged so an operator can ALTER TABLE to add missing cols.
   let appData: unknown = appRes.error ? null : appRes.data;
   if (appRes.error) {
-    console.warn(
-      '[sis] getStudentDetail full apps select failed, retrying minimal:',
-      appRes.error.message,
-    );
+    console.warn("[sis] getStudentDetail full apps select failed, retrying minimal:", appRes.error.message);
     const fallback = await supabase
       .from(`${prefix}_enrolment_applications`)
       .select(MINIMAL_APP_COLUMNS)
-      .eq('enroleeNumber', enroleeNumber)
+      .eq("enroleeNumber", enroleeNumber)
       .maybeSingle();
     if (fallback.error) {
-      console.error(
-        '[sis] getStudentDetail minimal apps select also failed:',
-        fallback.error.message,
-      );
+      console.error("[sis] getStudentDetail minimal apps select also failed:", fallback.error.message);
       return null;
     }
     appData = fallback.data;
@@ -509,16 +704,10 @@ export async function getStudentDetail(ayCode: string, enroleeNumber: string): P
   // (timeline shows null markers + amber alert), so this is a recoverable
   // data-quality issue, not a crash.
   if (statusFetchError) {
-    console.warn(
-      '[sis] getStudentDetail status fetch failed:',
-      statusRes.error?.message,
-    );
+    console.warn("[sis] getStudentDetail status fetch failed:", statusRes.error?.message);
   }
   if (docsFetchError) {
-    console.warn(
-      '[sis] getStudentDetail documents fetch failed:',
-      docsRes.error?.message,
-    );
+    console.warn("[sis] getStudentDetail documents fetch failed:", docsRes.error?.message);
   }
 
   const app = appData as unknown as ApplicationRow;
@@ -566,11 +755,11 @@ export async function searchStudentsAcrossAY(query: string): Promise<CrossAyMatc
   // 1) Pull every active AY code from academic_years (sorted desc so the most
   //    recent matches surface first).
   const { data: ays, error: ayErr } = await supabase
-    .from('academic_years')
-    .select('ay_code')
-    .order('ay_code', { ascending: false });
+    .from("academic_years")
+    .select("ay_code")
+    .order("ay_code", { ascending: false });
   if (ayErr) {
-    console.error('[sis] searchStudentsAcrossAY academic_years lookup failed:', ayErr.message);
+    console.error("[sis] searchStudentsAcrossAY academic_years lookup failed:", ayErr.message);
     return [];
   }
   const ayCodes = ((ays ?? []) as { ay_code: string }[]).map((a) => a.ay_code);
@@ -593,10 +782,11 @@ export async function searchStudentsAcrossAY(query: string): Promise<CrossAyMatc
     const prefix = prefixFor(ayCode);
     const { data: appsData, error: appsErr } = await supabase
       .from(`${prefix}_enrolment_applications`)
-      .select('enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, middleName')
+      .select("enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, middleName")
       .or(
         `enroleeNumber.ilike.${pattern},studentNumber.ilike.${pattern},enroleeFullName.ilike.${pattern},firstName.ilike.${pattern},lastName.ilike.${pattern}`,
       )
+      .order("created_at", { ascending: false })
       .limit(20);
     if (appsErr) {
       console.warn(`[sis] cross-AY search apps fail (${ayCode}):`, appsErr.message);
@@ -608,8 +798,8 @@ export async function searchStudentsAcrossAY(query: string): Promise<CrossAyMatc
     const enroleeNumbers = apps.map((a) => a.enroleeNumber).filter((x): x is string => !!x);
     const { data: statusData } = await supabase
       .from(`${prefix}_enrolment_status`)
-      .select('enroleeNumber, classLevel, classSection, applicationStatus')
-      .in('enroleeNumber', enroleeNumbers);
+      .select("enroleeNumber, classLevel, classSection, applicationStatus")
+      .in("enroleeNumber", enroleeNumbers);
     type StatusHit = {
       enroleeNumber: string | null;
       classLevel: string | null;
@@ -626,9 +816,7 @@ export async function searchStudentsAcrossAY(query: string): Promise<CrossAyMatc
       .map((a) => {
         const s = byEnrolee.get(a.enroleeNumber!);
         const fullName =
-          a.enroleeFullName ??
-          [a.firstName, a.lastName].filter(Boolean).join(' ') ??
-          '(no name on file)';
+          a.enroleeFullName ?? [a.firstName, a.lastName].filter(Boolean).join(" ") ?? "(no name on file)";
         return {
           ayCode,
           enroleeNumber: a.enroleeNumber!,
@@ -663,11 +851,11 @@ export async function getEnrollmentHistory(studentNumber: string): Promise<Enrol
 
   const supabase = createAdmissionsClient();
   const { data: ays, error: ayErr } = await supabase
-    .from('academic_years')
-    .select('ay_code')
-    .order('ay_code', { ascending: false });
+    .from("academic_years")
+    .select("ay_code")
+    .order("ay_code", { ascending: false });
   if (ayErr) {
-    console.error('[sis] getEnrollmentHistory academic_years lookup failed:', ayErr.message);
+    console.error("[sis] getEnrollmentHistory academic_years lookup failed:", ayErr.message);
     return [];
   }
   const ayCodes = ((ays ?? []) as { ay_code: string }[]).map((a) => a.ay_code);
@@ -685,8 +873,8 @@ export async function getEnrollmentHistory(studentNumber: string): Promise<Enrol
       const prefix = prefixFor(ayCode);
       const { data: appsData, error: appsErr } = await supabase
         .from(`${prefix}_enrolment_applications`)
-        .select('enroleeNumber, studentNumber')
-        .eq('studentNumber', trimmed)
+        .select("enroleeNumber, studentNumber")
+        .eq("studentNumber", trimmed)
         .limit(5);
       if (appsErr || !appsData || appsData.length === 0) return [] as EnrollmentHistoryEntry[];
 
@@ -696,8 +884,8 @@ export async function getEnrollmentHistory(studentNumber: string): Promise<Enrol
 
       const { data: statusData } = await supabase
         .from(`${prefix}_enrolment_status`)
-        .select('enroleeNumber, classLevel, classSection, applicationStatus')
-        .in('enroleeNumber', enroleeNumbers);
+        .select("enroleeNumber, classLevel, classSection, applicationStatus")
+        .in("enroleeNumber", enroleeNumbers);
       const byEnrolee = new Map<string, StatusHit>();
       for (const s of (statusData ?? []) as StatusHit[]) {
         if (s.enroleeNumber) byEnrolee.set(s.enroleeNumber, s);
@@ -736,10 +924,10 @@ export async function listDiscountCodes(ayCode: string): Promise<DiscountCode[]>
       const supabase = createAdmissionsClient();
       const { data, error } = await supabase
         .from(`${prefix}_discount_codes`)
-        .select('id, discountCode, enroleeType, startDate, endDate, details')
-        .order('endDate', { ascending: false });
+        .select("id, discountCode, enroleeType, startDate, endDate, details")
+        .order("endDate", { ascending: false });
       if (error) {
-        console.error('[sis] listDiscountCodes fetch failed:', error.message);
+        console.error("[sis] listDiscountCodes fetch failed:", error.message);
         return [];
       }
       type Row = {
@@ -761,7 +949,7 @@ export async function listDiscountCodes(ayCode: string): Promise<DiscountCode[]>
           details: r.details,
         }));
     },
-    ['sis', 'discount-codes', ayCode],
+    ["sis", "discount-codes", ayCode],
     { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS },
   )();
 }

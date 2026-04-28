@@ -324,7 +324,7 @@ function buildColumnDef(
         accessorKey: 'expiredSlots',
         header,
         cell: ({ row }) => (
-          <SlotChips slots={row.original.expiredSlots} color="stale" />
+          <SlotChips slots={row.original.expiredSlots} color="very-stale" />
         ),
         enableSorting: false,
       };
@@ -334,7 +334,17 @@ function buildColumnDef(
         accessorKey: 'uploadedSlots',
         header,
         cell: ({ row }) => (
-          <SlotChips slots={row.original.uploadedSlots} color="primary" />
+          <SlotChips slots={row.original.uploadedSlots} color="very-stale" />
+        ),
+        enableSorting: false,
+      };
+    case 'promisedSlots':
+      return {
+        id: 'promisedSlots',
+        accessorKey: 'promisedSlots',
+        header,
+        cell: ({ row }) => (
+          <SlotChips slots={row.original.promisedSlots} color="very-stale" />
         ),
         enableSorting: false,
       };
@@ -376,6 +386,30 @@ function buildColumnDef(
             {row.original.classSection ?? '—'}
           </span>
         ),
+        enableSorting: true,
+      };
+    case 'expiringSlots':
+      return {
+        id: 'expiringSlots',
+        accessorKey: 'expiringSlots',
+        header,
+        cell: ({ row }) => (
+          <SlotChips slots={row.original.expiringSlots} color="very-stale" />
+        ),
+        enableSorting: false,
+      };
+    case 'daysLeft':
+      return {
+        id: 'daysLeft',
+        accessorKey: 'daysLeft',
+        header,
+        cell: ({ row }) => {
+          const v = row.original.daysLeft;
+          if (v === null || v === undefined) return <span className="text-ink-4">—</span>;
+          return (
+            <span className="font-mono tabular-nums text-[12px]">{v}d</span>
+          );
+        },
         enableSorting: true,
       };
     default: {

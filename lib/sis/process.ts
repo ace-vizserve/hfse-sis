@@ -30,12 +30,90 @@ import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 
 const CACHE_TTL_SECONDS = 60;
 
+// Threshold (in days) for the proactive "expiring soon" signal. Owned by
+// this module because scanDocStatusForActionFlags is the canonical detection
+// point; lib/sis/document-chase-queue.ts and lib/sis/drill.ts import from
+// here to keep the threshold in one place. Defined here, not in
+// document-chase-queue.ts, to avoid a circular import (that module already
+// imports scanDocStatusForActionFlags from process.ts).
+export const EXPIRING_SOON_THRESHOLD_DAYS = 30;
+
 function prefixFor(ayCode: string): string {
   return `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
 }
 
 function tag(ayCode: string): string[] {
   return ['sis', `sis:${ayCode}`];
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Document status action flags — per-row scan for cohort aggregate + chase
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Per-row scan over a documents row's slot status columns. Returns four
+ * orthogonal action flags used by both the cohort aggregate
+ * (loadLifecycleBlockerBucketsUncached) and the chase-queue loader
+ * (lib/sis/document-chase-queue.ts). Overlap allowed — a row with both an
+ * 'Uploaded' slot and a 'To follow' slot lights up multiple flags.
+ *
+ * Optional `options` parameter controls the expiring-soon threshold:
+ * - `todayMs`: current time in milliseconds (defaults to Date.now())
+ * - `expiringSoonThresholdDays`: window in days (defaults to 30)
+ */
+export type DocStatusActionFlags = {
+  hasRevalidation: boolean; // any slot at 'Rejected' or 'Expired'
+  hasValidation: boolean;   // any slot at 'Uploaded'
+  hasPromised: boolean;     // any slot at 'To follow'
+  hasExpiringSoon: boolean; // any Valid slot expiring within 30 days
+};
+
+export function scanDocStatusForActionFlags(
+  docs: Record<string, string | null> | undefined,
+  options?: { todayMs?: number; expiringSoonThresholdDays?: number },
+): DocStatusActionFlags {
+  const out: DocStatusActionFlags = {
+    hasRevalidation: false,
+    hasValidation: false,
+    hasPromised: false,
+    hasExpiringSoon: false,
+  };
+  if (!docs) return out;
+
+  const todayMs = options?.todayMs ?? Date.now();
+  const thresholdDays = options?.expiringSoonThresholdDays ?? EXPIRING_SOON_THRESHOLD_DAYS;
+  const thresholdMs = thresholdDays * 86_400_000;
+
+  for (const slot of DOCUMENT_SLOTS) {
+    const statusVal = (docs[slot.statusCol] ?? '').toString().trim();
+
+    // Existing 3 flags
+    if (statusVal === 'Rejected' || statusVal === 'Expired') {
+      out.hasRevalidation = true;
+    } else if (statusVal === 'Uploaded') {
+      out.hasValidation = true;
+    } else if (statusVal === 'To follow') {
+      out.hasPromised = true;
+    }
+
+    // Expiring-soon flag: only for slots with an expiry column, status Valid,
+    // and a future expiry within the threshold window.
+    if (!out.hasExpiringSoon && slot.expiryCol && statusVal === 'Valid') {
+      const expiryRaw = docs[slot.expiryCol];
+      if (expiryRaw) {
+        const expiryMs = Date.parse(expiryRaw.toString());
+        if (!Number.isNaN(expiryMs) && expiryMs >= todayMs && expiryMs <= todayMs + thresholdMs) {
+          out.hasExpiringSoon = true;
+        }
+      }
+    }
+
+    // Micro-optimization: early exit when all 4 flags are true
+    if (out.hasRevalidation && out.hasValidation && out.hasPromised && out.hasExpiringSoon) {
+      break;
+    }
+  }
+  return out;
 }
 
 // Bucket the timeline rows render against. Drives the left-rail color +
@@ -235,7 +313,8 @@ async function loadStudentLifecycleUncached(
       // 'Rejected' + 'Expired' both mean parent must re-upload (revalidation).
       let needsAction = 0; // null + Pending + Rejected + Expired
       let inFlight = 0;    // Uploaded (registrar needs to validate)
-      let settled = 0;     // Valid + To follow
+      let promised = 0;    // To follow (parent acknowledged, file not sent)
+      let settled = 0;     // Valid (terminal)
       let blank = 0;       // null specifically (subset of needsAction)
       for (const slot of DOCUMENT_SLOTS) {
         const slotStatus = (docs?.[slot.statusCol] ?? null)?.toString().trim() ?? '';
@@ -248,10 +327,11 @@ async function loadStudentLifecycleUncached(
           needsAction += 1;
         } else if (slotStatus === 'Uploaded') {
           inFlight += 1;
-        } else if (slotStatus === 'Valid' || slotStatus === 'To follow') {
+        } else if (slotStatus === 'To follow') {
+          promised += 1;
+        } else if (slotStatus === 'Valid') {
           settled += 1;
         } else {
-          // Unknown legacy values stay in needs-action so admin notices.
           needsAction += 1;
         }
       }
@@ -259,6 +339,7 @@ async function loadStudentLifecycleUncached(
         stageStatus ? `Status: ${stageStatus}` : null,
         `${settled}/${DOCUMENT_SLOTS.length} settled`,
         inFlight > 0 ? `${inFlight} awaiting validation` : null,
+        promised > 0 ? `${promised} promised` : null,
         needsAction > settled ? `${needsAction} needs action` : null,
         blank > 0 ? `${blank} blank` : null,
       ]);
@@ -654,6 +735,7 @@ async function loadLifecycleAggregateUncached(
   let awaitingFeePayment = 0;
   let awaitingDocRevalidation = 0;
   let awaitingDocValidation = 0;
+  let awaitingPromisedDocs = 0;     // NEW: any slot at 'To follow'
   let awaitingStpCompletion = 0;
   let awaitingAssessmentSchedule = 0;
   let awaitingContractSignature = 0;
@@ -679,19 +761,13 @@ async function loadLifecycleAggregateUncached(
     //    registrar hasn't validated yet — only meaningful for non-expiring slots).
     //    A row with both 'Uploaded' and 'Rejected' slots counts in BOTH buckets;
     //    that's intentional — they're orthogonal action queues for the registrar.
+    // 3.5. Awaiting promised documents — any slot at 'To follow' (parent
+    //      acknowledged but file not yet sent).
     const docs = docsByEnrolee.get(r.enroleeNumber!);
-    if (docs) {
-      let rowHasRevalidation = false;
-      let rowHasValidation = false;
-      for (const slot of DOCUMENT_SLOTS) {
-        const v = (docs[slot.statusCol] ?? '').toString().trim();
-        if (v === 'Rejected' || v === 'Expired') rowHasRevalidation = true;
-        else if (v === 'Uploaded') rowHasValidation = true;
-        if (rowHasRevalidation && rowHasValidation) break;
-      }
-      if (rowHasRevalidation) awaitingDocRevalidation += 1;
-      if (rowHasValidation) awaitingDocValidation += 1;
-    }
+    const docFlags = scanDocStatusForActionFlags(docs);
+    if (docFlags.hasRevalidation) awaitingDocRevalidation += 1;
+    if (docFlags.hasValidation) awaitingDocValidation += 1;
+    if (docFlags.hasPromised) awaitingPromisedDocs += 1;
 
     // 4. Awaiting STP completion — the parent opted into the Singapore
     //    Student Pass sub-flow (`stpApplicationType IS NOT NULL`) AND any of
@@ -781,6 +857,13 @@ async function loadLifecycleAggregateUncached(
       count: awaitingDocValidation,
       severity: 'warn',
       drillTarget: 'awaiting-document-validation',
+    },
+    {
+      key: 'awaiting-promised-documents',
+      label: 'Awaiting promised documents',
+      count: awaitingPromisedDocs,
+      severity: 'warn',
+      drillTarget: 'awaiting-promised-documents',
     },
     {
       key: 'awaiting-stp-completion',

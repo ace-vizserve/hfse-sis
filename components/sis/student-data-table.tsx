@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import {
   flexRender,
@@ -13,7 +13,7 @@ import {
   type ColumnFiltersState,
   type SortingState,
   type VisibilityState,
-} from '@tanstack/react-table';
+} from "@tanstack/react-table";
 import {
   ArrowUpDown,
   ChevronLeft,
@@ -25,15 +25,16 @@ import {
   Search,
   Users,
   X,
-} from 'lucide-react';
-import Link from 'next/link';
-import * as React from 'react';
+} from "lucide-react";
+import Link from "next/link";
+import * as React from "react";
 
-import { SisEmptyState } from '@/components/sis/empty-state';
+import { SisEmptyState } from "@/components/sis/empty-state";
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { ApplicationStatusBadge } from "@/components/sis/status-badge";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -41,28 +42,34 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ApplicationStatusBadge } from '@/components/sis/status-badge';
-import type { StudentListRow } from '@/lib/sis/queries';
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { StudentListRow } from "@/lib/sis/queries";
 
-export type StatusBucket = 'all' | 'enrolled' | 'pipeline' | 'withdrawn';
+export type StatusBucket = "all" | "enrolled" | "pipeline" | "withdrawn";
 
 function statusBucket(status: string | null): StatusBucket {
-  const s = (status ?? '').trim();
-  if (!s) return 'pipeline';
-  if (s === 'Enrolled' || s === 'Enrolled (Conditional)') return 'enrolled';
-  if (s === 'Withdrawn' || s === 'Cancelled') return 'withdrawn';
-  return 'pipeline';
+  const s = (status ?? "").trim();
+  if (!s) return "pipeline";
+  if (s === "Enrolled" || s === "Enrolled (Conditional)") return "enrolled";
+  if (s === "Withdrawn" || s === "Cancelled") return "withdrawn";
+  return "pipeline";
 }
 
 function studentDisplayName(row: StudentListRow): string {
   if (row.enroleeFullName) return row.enroleeFullName;
   const parts = [row.lastName, row.firstName, row.middleName].filter(Boolean);
-  return parts.length ? parts.join(' ') : '(no name on file)';
+  return parts.length ? parts.join(" ") : "(no name on file)";
+}
+
+function formatSubmittedDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 // `linkBase` controls where the name link points — defaults to Admissions
@@ -76,67 +83,72 @@ function studentDisplayName(row: StudentListRow): string {
 // or the detail page falls back to the current AY and 404s.
 export function StudentDataTable({
   data,
-  linkBase = '/admissions/applications',
-  linkAttribute = 'enroleeNumber',
+  linkBase = "/admissions/applications",
+  linkAttribute = "enroleeNumber",
   linkQuery,
+  defaultSorting,
+  showSubmittedColumn = false,
 }: {
   data: StudentListRow[];
   linkBase?: string;
-  linkAttribute?: 'enroleeNumber' | 'studentNumber';
+  linkAttribute?: "enroleeNumber" | "studentNumber";
   linkQuery?: Record<string, string>;
+  defaultSorting?: SortingState;
+  showSubmittedColumn?: boolean;
 }) {
   const querySuffix = React.useMemo(() => {
-    if (!linkQuery) return '';
+    if (!linkQuery) return "";
     const entries = Object.entries(linkQuery).filter(([, v]) => v);
-    if (entries.length === 0) return '';
+    if (entries.length === 0) return "";
     const params = new URLSearchParams(entries);
     return `?${params.toString()}`;
   }, [linkQuery]);
-  const [sorting, setSorting] = React.useState<SortingState>([
-    { id: 'level', desc: false },
-    { id: 'section', desc: false },
-  ]);
+  const [sorting, setSorting] = React.useState<SortingState>(
+    defaultSorting ?? [
+      { id: "level", desc: false },
+      { id: "section", desc: false },
+    ],
+  );
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
-  const [globalFilter, setGlobalFilter] = React.useState('');
-  const [bucket, setBucket] = React.useState<StatusBucket>('all');
+  const [globalFilter, setGlobalFilter] = React.useState("");
+  const [bucket, setBucket] = React.useState<StatusBucket>("all");
 
   const columns: ColumnDef<StudentListRow>[] = React.useMemo(
     () => [
       {
         accessorFn: (row) => studentDisplayName(row),
-        id: 'name',
+        id: "name",
         header: ({ column }) => (
           <SortableHeader
             label="Name"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => {
           // studentNumber may be null for unsynced enrolled rows; fall back
           // to enroleeNumber so the row still links somewhere useful.
           const linkId =
-            linkAttribute === 'studentNumber'
-              ? row.original.studentNumber ?? row.original.enroleeNumber
+            linkAttribute === "studentNumber"
+              ? (row.original.studentNumber ?? row.original.enroleeNumber)
               : row.original.enroleeNumber;
           return (
             <Link
               href={`${linkBase}/${linkId}${querySuffix}`}
-              className="font-medium text-foreground underline transition-colors hover:text-primary"
-            >
+              className="font-medium text-foreground underline transition-colors hover:text-primary">
               {studentDisplayName(row.original)}
             </Link>
           );
         },
       },
       {
-        accessorKey: 'studentNumber',
+        accessorKey: "studentNumber",
         header: ({ column }) => (
           <SortableHeader
             label="Student #"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => (
@@ -146,12 +158,12 @@ export function StudentDataTable({
         ),
       },
       {
-        accessorKey: 'enroleeNumber',
+        accessorKey: "enroleeNumber",
         header: ({ column }) => (
           <SortableHeader
             label="Enrolee #"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => (
@@ -159,13 +171,13 @@ export function StudentDataTable({
         ),
       },
       {
-        accessorFn: (row) => row.classLevel ?? row.levelApplied ?? '',
-        id: 'level',
+        accessorFn: (row) => row.classLevel ?? row.levelApplied ?? "",
+        id: "level",
         header: ({ column }) => (
           <SortableHeader
             label="Level"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => {
@@ -182,13 +194,13 @@ export function StudentDataTable({
         },
       },
       {
-        accessorKey: 'classSection',
-        id: 'section',
+        accessorKey: "classSection",
+        id: "section",
         header: ({ column }) => (
           <SortableHeader
             label="Section"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) =>
@@ -203,24 +215,48 @@ export function StudentDataTable({
         },
       },
       {
-        accessorKey: 'applicationStatus',
-        id: 'status',
+        accessorKey: "applicationStatus",
+        id: "status",
         header: ({ column }) => (
           <SortableHeader
             label="Status"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => <ApplicationStatusBadge status={row.original.applicationStatus} />,
         filterFn: (row, _id, value) => {
           // Filtered via the bucket tabs, not column filter — handled in useEffect below.
-          if (typeof value !== 'string') return true;
+          if (typeof value !== "string") return true;
           return statusBucket(row.original.applicationStatus) === value;
         },
       },
+      ...(showSubmittedColumn
+        ? [
+            {
+              accessorKey: "created_at",
+              id: "submitted",
+              sortingFn: "datetime",
+              header: ({ column }) => (
+                <SortableHeader
+                  label="Submitted"
+                  sorted={column.getIsSorted()}
+                  onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                />
+              ),
+              cell: ({ row }) => {
+                const formatted = formatSubmittedDate(row.original.created_at);
+                return formatted ? (
+                  <span className="font-mono text-[11px] tabular-nums text-foreground">{formatted}</span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                );
+              },
+            } satisfies ColumnDef<StudentListRow>,
+          ]
+        : []),
     ],
-    [linkBase, linkAttribute, querySuffix],
+    [linkBase, linkAttribute, querySuffix, showSubmittedColumn],
   );
 
   const table = useReactTable({
@@ -244,7 +280,7 @@ export function StudentDataTable({
         r.levelApplied,
       ]
         .filter(Boolean)
-        .join(' ')
+        .join(" ")
         .toLowerCase();
       return haystack.includes(q);
     },
@@ -259,25 +295,25 @@ export function StudentDataTable({
 
   // Bucket tab → status column filter.
   React.useEffect(() => {
-    const col = table.getColumn('status');
+    const col = table.getColumn("status");
     if (!col) return;
-    if (bucket === 'all') col.setFilterValue(undefined);
+    if (bucket === "all") col.setFilterValue(undefined);
     else col.setFilterValue(bucket);
   }, [bucket, table]);
 
-  const levelColumn = table.getColumn('level');
-  const sectionColumn = table.getColumn('section');
+  const levelColumn = table.getColumn("level");
+  const sectionColumn = table.getColumn("section");
 
   const levelValues = React.useMemo(() => {
     if (!levelColumn) return [] as string[];
     return Array.from(levelColumn.getFacetedUniqueValues().keys())
-      .filter((v): v is string => typeof v === 'string' && v.length > 0)
+      .filter((v): v is string => typeof v === "string" && v.length > 0)
       .sort();
   }, [levelColumn]);
   const sectionValues = React.useMemo(() => {
     if (!sectionColumn) return [] as string[];
     return Array.from(sectionColumn.getFacetedUniqueValues().keys())
-      .filter((v): v is string => typeof v === 'string' && v.length > 0)
+      .filter((v): v is string => typeof v === "string" && v.length > 0)
       .sort();
   }, [sectionColumn]);
 
@@ -285,7 +321,7 @@ export function StudentDataTable({
   const selectedSections = (sectionColumn?.getFilterValue() as string[] | undefined) ?? [];
 
   const hasFilter =
-    globalFilter.length > 0 || selectedLevels.length > 0 || selectedSections.length > 0 || bucket !== 'all';
+    globalFilter.length > 0 || selectedLevels.length > 0 || selectedSections.length > 0 || bucket !== "all";
 
   const counts = React.useMemo(() => {
     const c = { all: data.length, enrolled: 0, pipeline: 0, withdrawn: 0 };
@@ -344,8 +380,7 @@ export function StudentDataTable({
                     checked={col.getIsVisible()}
                     onCheckedChange={(v) => col.toggleVisibility(!!v)}
                     onSelect={(e) => e.preventDefault()}
-                    className="capitalize"
-                  >
+                    className="capitalize">
                     {col.id}
                   </DropdownMenuCheckboxItem>
                 ))}
@@ -357,11 +392,10 @@ export function StudentDataTable({
               variant="ghost"
               size="sm"
               onClick={() => {
-                setGlobalFilter('');
-                setBucket('all');
+                setGlobalFilter("");
+                setBucket("all");
                 setColumnFilters([]);
-              }}
-            >
+              }}>
               <X className="h-3 w-3" />
               Clear
             </Button>
@@ -371,16 +405,16 @@ export function StudentDataTable({
         <Tabs value={bucket} onValueChange={(v) => setBucket(v as StatusBucket)}>
           <TabsList>
             <TabsTrigger value="all">
-              All <span className="ml-1 font-mono text-[10px] text-muted-foreground">{counts.all}</span>
+              All <span className="ml-1 font-mono text-[10px] ">{counts.all}</span>
             </TabsTrigger>
             <TabsTrigger value="enrolled">
-              Enrolled <span className="ml-1 font-mono text-[10px] text-muted-foreground">{counts.enrolled}</span>
+              Enrolled <span className="ml-1 font-mono text-[10px] ">{counts.enrolled}</span>
             </TabsTrigger>
             <TabsTrigger value="pipeline">
-              Pipeline <span className="ml-1 font-mono text-[10px] text-muted-foreground">{counts.pipeline}</span>
+              Pipeline <span className="ml-1 font-mono text-[10px] ">{counts.pipeline}</span>
             </TabsTrigger>
             <TabsTrigger value="withdrawn">
-              Withdrawn <span className="ml-1 font-mono text-[10px] text-muted-foreground">{counts.withdrawn}</span>
+              Withdrawn <span className="ml-1 font-mono text-[10px] ">{counts.withdrawn}</span>
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -432,8 +466,7 @@ export function StudentDataTable({
             <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Rows per page</span>
             <Select
               value={`${table.getState().pagination.pageSize}`}
-              onValueChange={(v) => table.setPageSize(Number(v))}
-            >
+              onValueChange={(v) => table.setPageSize(Number(v))}>
               <SelectTrigger className="h-8 w-[70px]">
                 <SelectValue />
               </SelectTrigger>
@@ -455,8 +488,7 @@ export function StudentDataTable({
               size="icon"
               className="size-8"
               onClick={() => table.setPageIndex(0)}
-              disabled={!table.getCanPreviousPage()}
-            >
+              disabled={!table.getCanPreviousPage()}>
               <ChevronsLeft className="h-4 w-4" />
             </Button>
             <Button
@@ -464,8 +496,7 @@ export function StudentDataTable({
               size="icon"
               className="size-8"
               onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
+              disabled={!table.getCanPreviousPage()}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
@@ -473,8 +504,7 @@ export function StudentDataTable({
               size="icon"
               className="size-8"
               onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
+              disabled={!table.getCanNextPage()}>
               <ChevronRight className="h-4 w-4" />
             </Button>
             <Button
@@ -482,8 +512,7 @@ export function StudentDataTable({
               size="icon"
               className="size-8"
               onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-              disabled={!table.getCanNextPage()}
-            >
+              disabled={!table.getCanNextPage()}>
               <ChevronsRight className="h-4 w-4" />
             </Button>
           </div>
@@ -535,8 +564,7 @@ function FacetFilter({
                 else current.delete(v);
                 onChange(Array.from(current));
               }}
-              onSelect={(e) => e.preventDefault()}
-            >
+              onSelect={(e) => e.preventDefault()}>
               {v}
             </DropdownMenuCheckboxItem>
           );
@@ -562,19 +590,18 @@ function SortableHeader({
   onToggle,
 }: {
   label: string;
-  sorted: false | 'asc' | 'desc';
+  sorted: false | "asc" | "desc";
   onToggle: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      className="group -ml-2 inline-flex h-8 items-center gap-1 rounded-md px-2 text-left font-medium transition-colors hover:bg-muted"
-    >
+      className="group -ml-2 inline-flex h-8 items-center gap-1 rounded-md px-2 text-left font-medium transition-colors hover:bg-muted">
       {label}
       <ArrowUpDown
         className={
-          'h-3 w-3 transition-opacity ' + (sorted ? 'opacity-100 text-foreground' : 'opacity-40 group-hover:opacity-70')
+          "h-3 w-3 transition-opacity " + (sorted ? "opacity-100 text-foreground" : "opacity-40 group-hover:opacity-70")
         }
       />
     </button>

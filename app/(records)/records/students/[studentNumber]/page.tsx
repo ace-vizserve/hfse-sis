@@ -26,6 +26,7 @@ import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { StpApplicationCard } from '@/components/sis/stp-application-card';
 import { StudentLifecycleTimeline } from '@/components/sis/student-lifecycle-timeline';
 import { getSessionUser } from '@/lib/supabase/server';
+import { freshenAyDocuments } from '@/lib/sis/freshen-document-statuses';
 
 function displayName(s: {
   firstName: string | null;
@@ -102,6 +103,13 @@ export default async function RecordsStudentCrossYearPage({
     }
     return [...history].sort((a, b) => b.ayCode.localeCompare(a.ayCode))[0];
   })();
+
+  // Auto-flip any expired-but-still-Valid doc statuses for this AY before
+  // the page reads them. Cached 60s; existing PATCH routes invalidate via
+  // the sis:${ayCode} tag.
+  if (lifecycleEntry) {
+    await freshenAyDocuments(lifecycleEntry.ayCode);
+  }
 
   const lifecycleSnapshot = lifecycleEntry
     ? await getStudentLifecycle(lifecycleEntry.ayCode, lifecycleEntry.enroleeNumber)

@@ -8,6 +8,7 @@ import {
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
+import { EXPIRING_SOON_THRESHOLD_DAYS } from '@/lib/sis/process';
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -673,6 +674,8 @@ export type LifecycleDrillTarget =
   | 'awaiting-fee-payment'
   | 'awaiting-document-revalidation'
   | 'awaiting-document-validation'
+  | 'awaiting-promised-documents'
+  | 'awaiting-expiring-documents'
   | 'awaiting-assessment-schedule'
   | 'awaiting-contract-signature'
   | 'missing-class-assignment'
@@ -683,6 +686,8 @@ export const LIFECYCLE_DRILL_TARGETS: LifecycleDrillTarget[] = [
   'awaiting-fee-payment',
   'awaiting-document-revalidation',
   'awaiting-document-validation',
+  'awaiting-promised-documents',
+  'awaiting-expiring-documents',
   'awaiting-assessment-schedule',
   'awaiting-contract-signature',
   'missing-class-assignment',
@@ -706,6 +711,9 @@ export type LifecycleDrillRow = {
   rejectedSlots?: string[];
   expiredSlots?: string[];
   uploadedSlots?: string[];
+  promisedSlots?: string[];
+  expiringSlots?: string[];
+  daysLeft?: number | null;
   assessmentStatus?: string | null;
   assessmentSchedule?: string | null;
   contractStatus?: string | null;
@@ -762,7 +770,12 @@ async function loadLifecycleSnapshotUncached(
   ];
   const uniqStatusColumns = Array.from(new Set(statusColumns));
 
-  const docColumns = ['enroleeNumber', ...DOCUMENT_SLOTS.map((s) => s.statusCol)];
+  // Include both status and expiry columns so the drill can detect expiring-soon slots
+  const docColumns = [
+    'enroleeNumber',
+    ...DOCUMENT_SLOTS.map((s) => s.statusCol),
+    ...DOCUMENT_SLOTS.filter((s) => s.expiryCol).map((s) => s.expiryCol!),
+  ];
 
   const [appsRes, statusRes, docsRes] = await Promise.all([
     admissions
@@ -918,6 +931,51 @@ export async function buildLifecycleDrillRows(
         }
         break;
       }
+      case 'awaiting-promised-documents': {
+        if (!docs) break;
+        const promisedSlots: string[] = [];
+        for (const slot of DOCUMENT_SLOTS) {
+          const v = (docs[slot.statusCol] ?? '').toString().trim();
+          if (v === 'To follow') promisedSlots.push(slot.label);
+        }
+        if (promisedSlots.length > 0) {
+          out.push({
+            ...baseRow(enroleeNumber, app, status),
+            documentStatus: status.documentStatus ?? null,
+            promisedSlots,
+          });
+        }
+        break;
+      }
+      case 'awaiting-expiring-documents': {
+        if (!docs) break;
+        const expiringSlots: string[] = [];
+        let soonestDays: number | null = null;
+        const now = Date.now();
+        for (const slot of DOCUMENT_SLOTS) {
+          if (!slot.expiryCol) continue;
+          const statusVal = (docs[slot.statusCol] ?? '').toString().trim();
+          if (statusVal !== 'Valid') continue;
+          const raw = docs[slot.expiryCol];
+          if (!raw) continue;
+          const ms = Date.parse(raw.toString());
+          if (Number.isNaN(ms)) continue;
+          const days = Math.floor((ms - now) / 86_400_000);
+          if (days >= 0 && days <= EXPIRING_SOON_THRESHOLD_DAYS) {
+            expiringSlots.push(slot.label);
+            if (soonestDays === null || days < soonestDays) soonestDays = days;
+          }
+        }
+        if (expiringSlots.length > 0) {
+          out.push({
+            ...baseRow(enroleeNumber, app, status),
+            documentStatus: status.documentStatus ?? null,
+            expiringSlots,
+            daysLeft: soonestDays,
+          });
+        }
+        break;
+      }
       case 'awaiting-assessment-schedule': {
         if (status.assessmentStatus === 'Pending' && !status.assessmentSchedule) {
           out.push({
@@ -1006,6 +1064,9 @@ export type LifecycleDrillColumnKey =
   | 'rejectedSlots'
   | 'expiredSlots'
   | 'uploadedSlots'
+  | 'promisedSlots'
+  | 'expiringSlots'
+  | 'daysLeft'
   | 'assessmentStatus'
   | 'assessmentSchedule'
   | 'contractStatus'
@@ -1026,6 +1087,9 @@ export const ALL_LIFECYCLE_DRILL_COLUMNS: LifecycleDrillColumnKey[] = [
   'rejectedSlots',
   'expiredSlots',
   'uploadedSlots',
+  'promisedSlots',
+  'expiringSlots',
+  'daysLeft',
   'assessmentStatus',
   'assessmentSchedule',
   'contractStatus',
@@ -1047,6 +1111,9 @@ export const LIFECYCLE_DRILL_COLUMN_LABELS: Record<LifecycleDrillColumnKey, stri
   rejectedSlots: 'Rejected slots',
   expiredSlots: 'Expired slots',
   uploadedSlots: 'Uploaded slots',
+  promisedSlots: 'Promised slots',
+  expiringSlots: 'Expiring slots',
+  daysLeft: 'Days left',
   assessmentStatus: 'Assessment',
   assessmentSchedule: 'Schedule',
   contractStatus: 'Contract',
@@ -1080,6 +1147,23 @@ export function defaultColumnsForLifecycleTarget(
         'enroleeFullName',
         'levelApplied',
         'uploadedSlots',
+        'applicationStatus',
+        'daysSinceUpdate',
+      ];
+    case 'awaiting-promised-documents':
+      return [
+        'enroleeFullName',
+        'levelApplied',
+        'promisedSlots',
+        'applicationStatus',
+        'daysSinceUpdate',
+      ];
+    case 'awaiting-expiring-documents':
+      return [
+        'enroleeFullName',
+        'levelApplied',
+        'expiringSlots',
+        'daysLeft',
         'applicationStatus',
         'daysSinceUpdate',
       ];
@@ -1137,6 +1221,10 @@ export function lifecycleDrillHeaderForTarget(
       return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting document revalidation' };
     case 'awaiting-document-validation':
       return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting document validation' };
+    case 'awaiting-promised-documents':
+      return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting promised documents' };
+    case 'awaiting-expiring-documents':
+      return { eyebrow: 'Drill · Lifecycle', title: 'Expiring within 30 days' };
     case 'awaiting-assessment-schedule':
       return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting assessment schedule' };
     case 'awaiting-contract-signature':

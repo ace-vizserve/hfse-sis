@@ -83,7 +83,7 @@ export default async function AdmissionsApplicationsPage({
   const selectedAy = ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
   const isCurrentAy = selectedAy === currentAy.ay_code;
 
-  const allStudents = await listStudents(selectedAy);
+  const allStudents = await listStudents(selectedAy, 'created_at_desc');
   const applications = allStudents.filter(
     (s) => !ENROLLED_STAGES.has((s.applicationStatus ?? '').trim()),
   );
@@ -226,6 +226,8 @@ export default async function AdmissionsApplicationsPage({
             data={applications}
             linkBase="/admissions/applications"
             linkQuery={isCurrentAy ? undefined : { ay: selectedAy }}
+            showSubmittedColumn
+            defaultSorting={[{ id: 'submitted', desc: true }]}
           />
         </CardContent>
       </Card>

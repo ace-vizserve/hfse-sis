@@ -19,6 +19,7 @@ import { DashboardHero } from "@/components/dashboard/dashboard-hero";
 import { InsightsPanel } from "@/components/dashboard/insights-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { ClassAssignmentReadinessCard } from "@/components/sis/class-assignment-readiness-card";
+import { DocumentChaseQueueStrip } from "@/components/sis/document-chase-queue-strip";
 import {
   DocumentBacklogDrillCard,
   ExpiringDocsDrillCard,
@@ -52,6 +53,7 @@ import {
   getRecordsKpisRange,
   getWithdrawalVelocityRange,
 } from "@/lib/sis/dashboard";
+import { freshenAyDocuments } from "@/lib/sis/freshen-document-statuses";
 import { getSisDashboardSummary } from "@/lib/sis/queries";
 import { getSessionUser } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -92,6 +94,11 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
 
   const windows = await getDashboardWindows(selectedAy);
   const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
+
+  // Auto-flip any expired-but-still-Valid doc statuses for this AY before
+  // the dashboard reads the column. Cached 60s; existing PATCH routes
+  // invalidate via the sis:${ayCode} tag.
+  await freshenAyDocuments(selectedAy);
 
   const [
     summary,
@@ -158,6 +165,10 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
         termWindows={windows.term}
         ayWindows={windows.ay}
       />
+
+      {/* Document chase queue (spec 2026-04-28) — top-of-fold navigation
+          to revalidation / validation / promised drill sheets. */}
+      <DocumentChaseQueueStrip ayCode={selectedAy} />
 
       <InsightsPanel insights={insights} />
 
