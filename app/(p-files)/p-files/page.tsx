@@ -1,4 +1,5 @@
-import { AlertTriangle, Clock, FileStack, FolderKanban, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Clock, FileStack, FolderKanban, TrendingUp } from "lucide-react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ChartLegendChip } from "@/components/dashboard/chart-legend-chip";
@@ -50,6 +51,33 @@ function parseStatusFilter(raw: string | undefined): StatusFilter | undefined {
   return (STATUS_FILTER_VALUES as readonly string[]).includes(raw) ? (raw as StatusFilter) : undefined;
 }
 
+// Per-status focused-view metadata. When a sidebar Quicklink sets `?status=`
+// to a non-`all` value, the page renders a stripped-down "operational list"
+// layout — no KPIs, no charts, just the table + filters at the top — using
+// these strings for the hero title/description.
+const STATUS_VIEW_META: Record<Exclude<StatusFilter, "all">, { eyebrow: string; title: string; description: string }> = {
+  missing: {
+    eyebrow: "P-Files · Missing documents",
+    title: "Students missing documents",
+    description: "Students with at least one document slot not yet uploaded. Filter further by AY, level, section, or search.",
+  },
+  expired: {
+    eyebrow: "P-Files · Expired documents",
+    title: "Students with expired documents",
+    description: "Passport, pass, or guardian docs whose expiry date has passed. Filter further by AY, level, section, or search.",
+  },
+  uploaded: {
+    eyebrow: "P-Files · Pending review",
+    title: "Documents awaiting registrar review",
+    description: "Parent uploaded — registrar to validate. Filter further by AY, level, section, or search.",
+  },
+  complete: {
+    eyebrow: "P-Files · Fully validated",
+    title: "Fully validated students",
+    description: "Students whose required document slots are all validated and on file.",
+  },
+};
+
 export default async function PFilesDashboard({
   searchParams,
 }: {
@@ -84,6 +112,71 @@ export default async function PFilesDashboard({
   // the dashboard reads the column. Cached 60s; existing PATCH routes
   // invalidate via the sis:${ayCode} tag.
   await freshenAyDocuments(selectedAy);
+
+  // ──────────────────────────────────────────────────────────────────
+  // Focused-view branch — when a sidebar Quicklink set ?status=missing |
+  // expired | uploaded | complete, render a stripped-down operational
+  // list (just hero + AY/range toolbar + the filtered table + trust
+  // strip). KPIs, charts, chase strip, and heatmap are dropped because
+  // they always show AY-wide data and would mislead users who expected
+  // a focused list view.
+  // ──────────────────────────────────────────────────────────────────
+  if (initialStatusFilter && initialStatusFilter !== "all") {
+    const meta = STATUS_VIEW_META[initialStatusFilter];
+    const { students, summary } = await getDocumentDashboardData(selectedAy);
+
+    return (
+      <PageShell>
+        <DashboardHero
+          eyebrow={meta.eyebrow}
+          title={meta.title}
+          description={meta.description}
+          badges={[
+            { label: selectedAy },
+            { label: isCurrentAy ? "Current" : "Historical", tone: isCurrentAy ? "mint" : "muted" },
+          ]}
+        />
+
+        <ComparisonToolbar
+          ayCode={selectedAy}
+          ayCodes={ayCodes}
+          range={{ from: rangeInput.from, to: rangeInput.to }}
+          comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+          termWindows={windows.term}
+          ayWindows={windows.ay}
+        />
+
+        {/* Escape hatch back to the full dashboard. The AY param is preserved
+            so the user doesn't lose their AY selection. */}
+        <Link
+          href={`/p-files?ay=${encodeURIComponent(selectedAy)}`}
+          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to dashboard
+        </Link>
+
+        <CompletenessCsvButton ayCode={selectedAy} />
+        <CompletenessTable
+          key={`${selectedAy}:${initialStatusFilter}`}
+          students={students}
+          ayCode={isCurrentAy ? undefined : selectedAy}
+          initialStatusFilter={initialStatusFilter}
+        />
+
+        <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <FolderKanban className="size-3" strokeWidth={2.25} />
+          <span>{selectedAy}</span>
+          <span className="text-border">·</span>
+          <span>{summary.totalStudents.toLocaleString("en-SG")} students total</span>
+          <span className="text-border">·</span>
+          <span>Filter: {initialStatusFilter}</span>
+          <span className="text-border">·</span>
+          <span>Audit-logged</span>
+        </div>
+      </PageShell>
+    );
+  }
 
   const [
     { students, summary },
