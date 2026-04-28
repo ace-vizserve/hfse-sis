@@ -38,7 +38,14 @@ import {
 
 export type DateRangePickerProps = {
   value: DateRange;
-  onChange: (next: DateRange) => void;
+  /**
+   * Fires when the user picks a new range (calendar click or preset). The
+   * second arg is the picker's auto-computed comparison range — the parent
+   * should apply both in a single state/URL update so they don't stomp on
+   * each other (two separate router.push calls back-to-back read the same
+   * stale searchParams snapshot and the second one clobbers the first).
+   */
+  onChange: (next: DateRange, autoComparison?: DateRange) => void;
   comparison: DateRange;
   onComparisonChange?: (next: DateRange) => void;
   termWindows: TermWindows;
@@ -103,9 +110,7 @@ export function DateRangePicker({
     if (p === 'custom') return;
     const range = resolvePreset(p, windows);
     if (!range) return;
-    onChange(range);
-    const auto = autoComparison(range);
-    if (auto && onComparisonChange) onComparisonChange(auto);
+    onChange(range, autoComparison(range) ?? undefined);
     setEditingComparison(false);
   }
 
@@ -114,9 +119,7 @@ export function DateRangePicker({
     const from = toISODate(next.from);
     const to = toISODate(next.to ?? next.from);
     const range: DateRange = { from, to };
-    onChange(range);
-    const auto = autoComparison(range);
-    if (auto && onComparisonChange) onComparisonChange(auto);
+    onChange(range, autoComparison(range) ?? undefined);
   }
 
   function onComparisonSelect(next: DayPickerRange | undefined) {

@@ -78,8 +78,13 @@ export function ComparisonToolbar({
     pushParams(updateParams(searchParams, { ay: code }));
   }
 
-  function onRangeChange(next: DateRange) {
-    pushParams(updateParams(searchParams, { range: next }));
+  function onRangeChange(next: DateRange, autoComparison?: DateRange) {
+    // Apply range + auto-comparison in ONE push. Two separate router.push
+    // calls in the same tick both read the same stale `searchParams` from
+    // useSearchParams(), and the second one wins — clobbering the first.
+    const update: Parameters<typeof updateParams>[1] = { range: next };
+    if (autoComparison) update.comparison = autoComparison;
+    pushParams(updateParams(searchParams, update));
   }
 
   function onComparisonChange(next: DateRange) {
