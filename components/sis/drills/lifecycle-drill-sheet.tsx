@@ -338,6 +338,16 @@ function buildColumnDef(
         ),
         enableSorting: false,
       };
+    case 'promisedSlots':
+      return {
+        id: 'promisedSlots',
+        accessorKey: 'promisedSlots',
+        header,
+        cell: ({ row }) => (
+          <SlotChips slots={row.original.promisedSlots} color="stale" />
+        ),
+        enableSorting: false,
+      };
     case 'assessmentStatus':
       return {
         id: 'assessmentStatus',

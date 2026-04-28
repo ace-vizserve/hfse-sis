@@ -673,6 +673,7 @@ export type LifecycleDrillTarget =
   | 'awaiting-fee-payment'
   | 'awaiting-document-revalidation'
   | 'awaiting-document-validation'
+  | 'awaiting-promised-documents'
   | 'awaiting-assessment-schedule'
   | 'awaiting-contract-signature'
   | 'missing-class-assignment'
@@ -683,6 +684,7 @@ export const LIFECYCLE_DRILL_TARGETS: LifecycleDrillTarget[] = [
   'awaiting-fee-payment',
   'awaiting-document-revalidation',
   'awaiting-document-validation',
+  'awaiting-promised-documents',
   'awaiting-assessment-schedule',
   'awaiting-contract-signature',
   'missing-class-assignment',
@@ -706,6 +708,7 @@ export type LifecycleDrillRow = {
   rejectedSlots?: string[];
   expiredSlots?: string[];
   uploadedSlots?: string[];
+  promisedSlots?: string[];
   assessmentStatus?: string | null;
   assessmentSchedule?: string | null;
   contractStatus?: string | null;
@@ -918,6 +921,22 @@ export async function buildLifecycleDrillRows(
         }
         break;
       }
+      case 'awaiting-promised-documents': {
+        if (!docs) break;
+        const promisedSlots: string[] = [];
+        for (const slot of DOCUMENT_SLOTS) {
+          const v = (docs[slot.statusCol] ?? '').toString().trim();
+          if (v === 'To follow') promisedSlots.push(slot.label);
+        }
+        if (promisedSlots.length > 0) {
+          out.push({
+            ...baseRow(enroleeNumber, app, status),
+            documentStatus: status.documentStatus ?? null,
+            promisedSlots,
+          });
+        }
+        break;
+      }
       case 'awaiting-assessment-schedule': {
         if (status.assessmentStatus === 'Pending' && !status.assessmentSchedule) {
           out.push({
@@ -1006,6 +1025,7 @@ export type LifecycleDrillColumnKey =
   | 'rejectedSlots'
   | 'expiredSlots'
   | 'uploadedSlots'
+  | 'promisedSlots'
   | 'assessmentStatus'
   | 'assessmentSchedule'
   | 'contractStatus'
@@ -1026,6 +1046,7 @@ export const ALL_LIFECYCLE_DRILL_COLUMNS: LifecycleDrillColumnKey[] = [
   'rejectedSlots',
   'expiredSlots',
   'uploadedSlots',
+  'promisedSlots',
   'assessmentStatus',
   'assessmentSchedule',
   'contractStatus',
@@ -1047,6 +1068,7 @@ export const LIFECYCLE_DRILL_COLUMN_LABELS: Record<LifecycleDrillColumnKey, stri
   rejectedSlots: 'Rejected slots',
   expiredSlots: 'Expired slots',
   uploadedSlots: 'Uploaded slots',
+  promisedSlots: 'Promised slots',
   assessmentStatus: 'Assessment',
   assessmentSchedule: 'Schedule',
   contractStatus: 'Contract',
@@ -1080,6 +1102,14 @@ export function defaultColumnsForLifecycleTarget(
         'enroleeFullName',
         'levelApplied',
         'uploadedSlots',
+        'applicationStatus',
+        'daysSinceUpdate',
+      ];
+    case 'awaiting-promised-documents':
+      return [
+        'enroleeFullName',
+        'levelApplied',
+        'promisedSlots',
         'applicationStatus',
         'daysSinceUpdate',
       ];
@@ -1137,6 +1167,8 @@ export function lifecycleDrillHeaderForTarget(
       return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting document revalidation' };
     case 'awaiting-document-validation':
       return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting document validation' };
+    case 'awaiting-promised-documents':
+      return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting promised documents' };
     case 'awaiting-assessment-schedule':
       return { eyebrow: 'Drill · Lifecycle', title: 'Awaiting assessment schedule' };
     case 'awaiting-contract-signature':
