@@ -271,7 +271,8 @@ async function loadStudentLifecycleUncached(
       // 'Rejected' + 'Expired' both mean parent must re-upload (revalidation).
       let needsAction = 0; // null + Pending + Rejected + Expired
       let inFlight = 0;    // Uploaded (registrar needs to validate)
-      let settled = 0;     // Valid + To follow
+      let promised = 0;    // To follow (parent acknowledged, file not sent)
+      let settled = 0;     // Valid (terminal)
       let blank = 0;       // null specifically (subset of needsAction)
       for (const slot of DOCUMENT_SLOTS) {
         const slotStatus = (docs?.[slot.statusCol] ?? null)?.toString().trim() ?? '';
@@ -284,10 +285,11 @@ async function loadStudentLifecycleUncached(
           needsAction += 1;
         } else if (slotStatus === 'Uploaded') {
           inFlight += 1;
-        } else if (slotStatus === 'Valid' || slotStatus === 'To follow') {
+        } else if (slotStatus === 'To follow') {
+          promised += 1;
+        } else if (slotStatus === 'Valid') {
           settled += 1;
         } else {
-          // Unknown legacy values stay in needs-action so admin notices.
           needsAction += 1;
         }
       }
@@ -295,6 +297,7 @@ async function loadStudentLifecycleUncached(
         stageStatus ? `Status: ${stageStatus}` : null,
         `${settled}/${DOCUMENT_SLOTS.length} settled`,
         inFlight > 0 ? `${inFlight} awaiting validation` : null,
+        promised > 0 ? `${promised} promised` : null,
         needsAction > settled ? `${needsAction} needs action` : null,
         blank > 0 ? `${blank} blank` : null,
       ]);
