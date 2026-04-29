@@ -3,7 +3,6 @@ import {
   ArrowUpRight,
   CalendarClock,
   CheckCircle2,
-  FileText,
   Users,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
@@ -29,6 +28,10 @@ import {
 } from '@/components/ui/table';
 import { PublishWindowPanel } from '@/components/admin/publish-window-panel';
 import { BulkPublishDialog } from '@/components/admin/bulk-publish-dialog';
+import {
+  AllPublicationsOverview,
+  type PublicationOverviewRow,
+} from '@/components/markbook/all-publications-overview';
 import { SectionPicker } from './section-picker';
 
 type LevelLite = { id: string; code: string; label: string; level_type: 'primary' | 'secondary' };
@@ -76,6 +79,83 @@ export default async function ReportCardsListPage({
     is_current: boolean;
   }>;
   const currentTermId = termList.find((t) => t.is_current)?.id ?? termList[0]?.id ?? null;
+
+  // Cross-section publications overview — fetched only when no section is
+  // picked, since the section-detail flow takes over the page in that case.
+  let overviewRows: PublicationOverviewRow[] = [];
+  if (!q.section_id && ay) {
+    const ayId = ay.id;
+    const sectionsList = (sections ?? []) as Array<{
+      id: string;
+      name: string;
+      level: LevelLite | LevelLite[] | null;
+    }>;
+    const sectionIds = sectionsList.map((s) => s.id);
+
+    if (sectionIds.length > 0) {
+      const [pubsRes, enrolmentsRes] = await Promise.all([
+        supabase
+          .from('report_card_publications')
+          .select('id, section_id, term_id, publish_from, publish_until')
+          .in('section_id', sectionIds),
+        supabase
+          .from('section_students')
+          .select('section_id, enrollment_status')
+          .in('section_id', sectionIds),
+      ]);
+
+      // Active-student counts per section.
+      const countBySection = new Map<string, number>();
+      for (const e of (enrolmentsRes.data ?? []) as Array<{
+        section_id: string;
+        enrollment_status: string;
+      }>) {
+        if (e.enrollment_status !== 'withdrawn') {
+          countBySection.set(e.section_id, (countBySection.get(e.section_id) ?? 0) + 1);
+        }
+      }
+
+      // Lookups for section + term metadata.
+      const sectionById = new Map(sectionsList.map((s) => [s.id, s]));
+      const termById = new Map(termList.map((t) => [t.id, t]));
+
+      // Server component runs per-request; current time is required to
+      // bucket publications into active / scheduled / expired.
+      // eslint-disable-next-line react-hooks/purity
+      const now = Date.now();
+      // Suppress: ayId is captured for closure scoping clarity even though it
+      // isn't read inside the map — the if-guard above narrows ay to non-null.
+      void ayId;
+      overviewRows = ((pubsRes.data ?? []) as Array<{
+        id: string;
+        section_id: string;
+        term_id: string;
+        publish_from: string;
+        publish_until: string;
+      }>).map((p) => {
+        const sec = sectionById.get(p.section_id);
+        const lvl = first(sec?.level as LevelLite | LevelLite[] | null | undefined);
+        const term = termById.get(p.term_id);
+        const from = new Date(p.publish_from).getTime();
+        const until = new Date(p.publish_until).getTime();
+        const status: PublicationOverviewRow['status'] =
+          now < from ? 'scheduled' : now > until ? 'expired' : 'active';
+        return {
+          id: p.id,
+          section_id: p.section_id,
+          section_name: sec?.name ?? '(unknown)',
+          level_label: lvl?.label ?? '',
+          level_code: lvl?.code ?? '',
+          term_number: term?.term_number ?? 0,
+          term_label: term?.label ?? '',
+          publish_from: p.publish_from,
+          publish_until: p.publish_until,
+          status,
+          student_count: countBySection.get(p.section_id) ?? 0,
+        };
+      });
+    }
+  }
 
   // Section-detail data (only when a section is selected)
   let selectedLabel: string | null = null;
@@ -194,25 +274,8 @@ export default async function ReportCardsListPage({
         </div>
       </header>
 
-      {/* No section picked — empty state */}
-      {!q.section_id && (
-        <Card className="items-center py-16 text-center">
-          <CardContent className="flex flex-col items-center gap-4">
-            <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              <FileText className="size-5" />
-            </div>
-            <div className="space-y-1">
-              <div className="font-serif text-xl font-semibold text-foreground">
-                Pick a section to begin
-              </div>
-              <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
-                Use the selector in the top right to load a section&apos;s roster and publication
-                windows.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* No section picked — show cross-section publications overview */}
+      {!q.section_id && <AllPublicationsOverview publications={overviewRows} />}
 
       {/* Section picked — stats, publish windows, roster */}
       {q.section_id && (
