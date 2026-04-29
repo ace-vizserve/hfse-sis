@@ -57,17 +57,35 @@ export default async function MyRequestsPage() {
 
   // Teachers see only their own; anyone else can still view this page as a
   // history of their own-filed requests (admin usually files none).
+  //
+  // AY-scoped: without the nested filter teachers saw their requests from
+  // previous AYs mixed in with current ones.
   const service = createServiceClient();
-  const { data: rawRows } = await service
+
+  const { data: ayData } = await service
+    .from("academic_years")
+    .select("ay_code")
+    .eq("is_current", true)
+    .maybeSingle();
+  const currentAyCode = (ayData as { ay_code: string } | null)?.ay_code ?? null;
+
+  let listQuery = service
     .from("grade_change_requests")
     .select(
       `id, grading_sheet_id, grade_entry_id, field_changed, slot_index,
        current_value, proposed_value, reason_category, justification,
        status, requested_at, reviewed_at, reviewed_by_email, decision_note,
-       applied_at`,
+       applied_at,
+       grading_sheet:grading_sheets!inner(section:sections!inner(ay_code))`,
     )
     .eq("requested_by", userId)
     .order("requested_at", { ascending: false });
+
+  if (currentAyCode) {
+    listQuery = listQuery.eq("grading_sheet.section.ay_code", currentAyCode);
+  }
+
+  const { data: rawRows } = await listQuery;
 
   const rows = (rawRows ?? []) as RequestRow[];
 

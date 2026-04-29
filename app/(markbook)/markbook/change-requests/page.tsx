@@ -23,11 +23,22 @@ export default async function AdminChangeRequestsPage({
 
   const service = createServiceClient();
 
+  // Current AY — used to scope the queue. Without this filter admins saw
+  // change requests from every AY mixed in.
+  const { data: ayData } = await service
+    .from('academic_years')
+    .select('ay_code')
+    .eq('is_current', true)
+    .maybeSingle();
+  const currentAyCode = (ayData as { ay_code: string } | null)?.ay_code ?? null;
+
   // Designated-approver scope: admins (and superadmins) see only requests
   // where they are the primary or secondary approver. Legacy rows with
   // both approver columns NULL (pre-feature) stay broadcast-visible so
   // nothing strands mid-migration. Registrar keeps full visibility —
   // they're the ones applying approved requests (Path A/B).
+  //
+  // AY scope: nested `!inner` join via grading_sheet → section.ay_code.
   let query = service
     .from('grade_change_requests')
     .select(
@@ -36,9 +47,14 @@ export default async function AdminChangeRequestsPage({
        status, requested_by_email, requested_at,
        reviewed_by_email, reviewed_at, decision_note,
        applied_by, applied_at,
-       primary_approver_id, secondary_approver_id`,
+       primary_approver_id, secondary_approver_id,
+       grading_sheet:grading_sheets!inner(section:sections!inner(ay_code))`,
     )
     .order('requested_at', { ascending: false });
+
+  if (currentAyCode) {
+    query = query.eq('grading_sheet.section.ay_code', currentAyCode);
+  }
 
   if (canDecide) {
     query = query.or(

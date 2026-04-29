@@ -71,16 +71,16 @@ export default async function GradingListPage() {
   const role = getRoleFromClaims(claims);
   const canCreate = role === 'registrar' || role === 'admin' || role === 'superadmin';
 
-  // Current AY — used by the registrar-only "Create all sheets" bulk action.
-  const ayPromise = supabase
+  // Current AY — needed before we can scope the sheets query, so awaited
+  // up front rather than batched with the others.
+  const { data: ayData } = await supabase
     .from('academic_years')
     .select('id, ay_code')
     .eq('is_current', true)
     .maybeSingle();
+  const currentAy = (ayData as { id: string; ay_code: string } | null) ?? null;
 
-  // Three independent, RLS-scoped queries run in parallel. All are
-  // authoritative per-request (no caching) because the rows each teacher can
-  // see differ — but the round-trips overlap instead of stacking.
+  // Three independent, RLS-scoped queries run in parallel.
   const advisorPromise = userId
     ? supabase
         .from('teacher_assignments')
@@ -89,33 +89,35 @@ export default async function GradingListPage() {
         .eq('role', 'form_adviser')
     : Promise.resolve({ data: [] as unknown });
 
-  // Term grading-lock dates for the current AY — used by the advisory chip
-  // strip. Fires in parallel with the other queries; cheap (4 rows / AY).
-  const termLocksPromise = ayPromise.then(async (r) => {
-    const ay = r.data as { id: string } | null;
-    if (!ay) return { data: [] };
-    return supabase
-      .from('terms')
-      .select('id, term_number, label, grading_lock_date, is_current')
-      .eq('academic_year_id', ay.id)
-      .order('term_number');
-  });
+  // Sheets are scoped to the current AY via `section.ay_code` — the
+  // `!inner` modifier is required for PostgREST to honour the nested
+  // filter (otherwise the join is LEFT and the filter is silently dropped).
+  // Without this filter the table renders sheets across every AY.
+  const sheetsPromise = currentAy
+    ? supabase
+        .from('grading_sheets')
+        .select(
+          `id, is_locked, teacher_name,
+           term:terms(id, term_number, label),
+           subject:subjects(id, code, name, is_examinable),
+           section:sections!inner(id, name, ay_code, level:levels(id, code, label, level_type))`,
+        )
+        .eq('section.ay_code', currentAy.ay_code)
+    : Promise.resolve({ data: [] as Array<{ id: string }> });
 
-  // Fetch sheets + advisor + current AY in parallel.
-  const [sheetsRes, advisorRes, ayRes] = await Promise.all([
-    supabase
-      .from('grading_sheets')
-      .select(
-        `id, is_locked, teacher_name,
-         term:terms(id, term_number, label),
-         subject:subjects(id, code, name, is_examinable),
-         section:sections(id, name, level:levels(id, code, label, level_type))`,
-      ),
+  const termLocksPromise = currentAy
+    ? supabase
+        .from('terms')
+        .select('id, term_number, label, grading_lock_date, is_current')
+        .eq('academic_year_id', currentAy.id)
+        .order('term_number')
+    : Promise.resolve({ data: [] });
+
+  const [sheetsRes, advisorRes, termLocksRes] = await Promise.all([
+    sheetsPromise,
     advisorPromise,
-    ayPromise,
+    termLocksPromise,
   ]);
-  const currentAy = (ayRes.data as { id: string; ay_code: string } | null) ?? null;
-  const termLocksRes = await termLocksPromise;
   type TermLockRow = {
     id: string;
     term_number: number;

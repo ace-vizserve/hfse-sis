@@ -139,7 +139,7 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
     drillRowSets,
     teacherVelocity,
   ] = await Promise.all([
-    ayId ? loadStats(ayId) : Promise.resolve(null),
+    ayId ? loadStats(ayId, ayCode) : Promise.resolve(null),
     canSeeAdmin ? getMarkbookKpisRange(rangeInput) : Promise.resolve(null),
     canSeeAdmin ? getGradeEntryVelocityRange(rangeInput) : Promise.resolve(null),
     canSeeAdmin ? getChangeRequestVelocityRange(rangeInput) : Promise.resolve(null),
@@ -576,7 +576,18 @@ async function loadStatsUncached(academicYearId: string): Promise<Stats> {
   };
 }
 
-const loadStats = unstable_cache(loadStatsUncached, ["dashboard-stats"], { revalidate: 60, tags: ["dashboard-stats"] });
+// AY-keyed cache wrapper (KD #46). The previous tuple `["dashboard-stats"]`
+// shared a single cache slot across every AY, so two users on different
+// AYs saw each other's stats and a single user switching AYs got stale
+// numbers for up to 60 seconds. Per-AY tag invalidation already exists
+// elsewhere via `markbook:${ayCode}` — wire it through here too.
+function loadStats(academicYearId: string, ayCode: string): Promise<Stats> {
+  return unstable_cache(
+    () => loadStatsUncached(academicYearId),
+    ["dashboard-stats", academicYearId],
+    { revalidate: 60, tags: ["dashboard-stats", `markbook:${ayCode}`] },
+  )();
+}
 
 function formatNumber(n: number): string {
   return n.toLocaleString("en-SG");

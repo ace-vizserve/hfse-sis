@@ -445,18 +445,31 @@ async function loadMarkbookKpisForRange(input: RangeInput): Promise<MarkbookRang
   const fromIso = `${input.from}T00:00:00+08:00`;
   const toIso = `${input.to}T23:59:59+08:00`;
 
+  // All three queries scope to `input.ayCode` via the `section.ay_code`
+  // path (direct for grading_sheets, two hops for grade_entries +
+  // grade_change_requests via grading_sheet → section). PostgREST
+  // requires `!inner` on every link in the chain or the filter is silently
+  // dropped — without it the dashboard mixed counts from every AY.
   const [entriesRes, sheetsRes, changeReqRes] = await Promise.all([
     service
       .from('grade_entries')
-      .select('id', { count: 'exact', head: true })
+      .select('id, grading_sheet:grading_sheets!inner(section:sections!inner(ay_code))', {
+        count: 'exact',
+        head: true,
+      })
+      .eq('grading_sheet.section.ay_code', input.ayCode)
       .gte('created_at', fromIso)
       .lte('created_at', toIso),
     service
       .from('grading_sheets')
-      .select('is_locked, locked_at'),
+      .select('is_locked, locked_at, section:sections!inner(ay_code)')
+      .eq('section.ay_code', input.ayCode),
     service
       .from('grade_change_requests')
-      .select('status, requested_at, reviewed_at')
+      .select(
+        'status, requested_at, reviewed_at, grading_sheet:grading_sheets!inner(section:sections!inner(ay_code))',
+      )
+      .eq('grading_sheet.section.ay_code', input.ayCode)
       .gte('requested_at', fromIso)
       .lte('requested_at', toIso),
   ]);
@@ -565,9 +578,12 @@ async function loadGradeEntryVelocityRangeUncached(
   const earliest = input.cmpFrom < input.from ? input.cmpFrom : input.from;
   const latest = input.to > input.cmpTo ? input.to : input.cmpTo;
 
+  // AY-scoped via grading_sheet → section.ay_code. Without this filter the
+  // velocity chart blended grade entries across every AY in the date range.
   const { data } = await service
     .from('grade_entries')
-    .select('created_at')
+    .select('created_at, grading_sheet:grading_sheets!inner(section:sections!inner(ay_code))')
+    .eq('grading_sheet.section.ay_code', input.ayCode)
     .gte('created_at', `${earliest}T00:00:00+08:00`)
     .lte('created_at', `${latest}T23:59:59+08:00`);
 
@@ -606,9 +622,12 @@ async function loadChangeRequestVelocityRangeUncached(
   const earliest = input.cmpFrom < input.from ? input.cmpFrom : input.from;
   const latest = input.to > input.cmpTo ? input.to : input.cmpTo;
 
+  // AY-scoped via grading_sheet → section.ay_code. Same fix as the grade
+  // entry velocity helper above.
   const { data } = await service
     .from('grade_change_requests')
-    .select('requested_at')
+    .select('requested_at, grading_sheet:grading_sheets!inner(section:sections!inner(ay_code))')
+    .eq('grading_sheet.section.ay_code', input.ayCode)
     .gte('requested_at', `${earliest}T00:00:00+08:00`)
     .lte('requested_at', `${latest}T23:59:59+08:00`);
 
