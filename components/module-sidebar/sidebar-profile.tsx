@@ -40,8 +40,29 @@ export function SidebarProfile({ email, role }: SidebarProfileProps) {
   const router = useRouter();
   const initials = deriveInitials(email);
   const roleLabel = ROLE_LABEL[role];
+  const isParent = role === "parent";
 
   async function signOut() {
+    if (isParent) {
+      // Parents don't have a Supabase session in the SIS — their auth is
+      // the parent_session cookie. Clear it and bounce back to the parent
+      // portal so a staff user sharing the same browser keeps their
+      // staff Supabase session intact.
+      try {
+        await fetch("/api/parent/exit", {
+          method: "POST",
+          credentials: "same-origin",
+        });
+      } catch {
+        // Best-effort. If the network call fails, the cookie's TTL (2h)
+        // will expire it on its own.
+      }
+      const portalUrl =
+        process.env.NEXT_PUBLIC_PARENT_PORTAL_URL ??
+        "https://enrol.hfse.edu.sg/admission/dashboard";
+      window.location.href = portalUrl;
+      return;
+    }
     const supabase = createClient();
     await supabase.auth.signOut();
     router.replace("/login");
@@ -83,19 +104,23 @@ export function SidebarProfile({ email, role }: SidebarProfileProps) {
           </div>
         </div>
         <div className="p-1.5">
-          <Link
-            href="/account"
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring">
-            <UserCog className="size-4 text-muted-foreground" />
-            <span>Account</span>
-          </Link>
-          <Separator className="my-1.5" />
+          {!isParent && (
+            <>
+              <Link
+                href="/account"
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+                <UserCog className="size-4 text-muted-foreground" />
+                <span>Account</span>
+              </Link>
+              <Separator className="my-1.5" />
+            </>
+          )}
           <button
             type="button"
             onClick={signOut}
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive focus-visible:ring-2 focus-visible:ring-sidebar-ring">
             <LogOut className="size-4" />
-            <span>Sign out</span>
+            <span>{isParent ? "Done viewing" : "Sign out"}</span>
           </button>
         </div>
       </PopoverContent>

@@ -1,10 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, Printer } from 'lucide-react';
-import { getSessionUser } from '@/lib/supabase/server';
+import { getParentSession } from '@/lib/parent/get-parent-session';
 import { createServiceClient } from '@/lib/supabase/service';
-import { getStudentsByParentEmail } from '@/lib/supabase/admissions';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { getAllStudentsByParentEmail } from '@/lib/supabase/admissions';
 import { buildReportCard } from '@/lib/report-card/build-report-card';
 import { ReportCardDocument } from '@/components/report-card/report-card-document';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,19 +14,19 @@ export default async function ParentReportCardPage({
   params: Promise<{ studentId: string }>;
 }) {
   const { studentId } = await params;
-  const sessionUser = await getSessionUser();
-  const email = sessionUser?.email ?? '';
+  const session = await getParentSession();
+  // Layout already verified the cookie. Trust here.
+  const email = session?.email ?? '';
 
-  // 1) Verify parent→student linkage via admissions, for the current AY.
   const service = createServiceClient();
-  const currentAy = await getCurrentAcademicYear(service);
-  if (!currentAy) notFound();
-  const admissionsRows = await getStudentsByParentEmail(email, currentAy.ay_code);
+
+  // 1) Verify parent → student linkage across ALL AYs (KD #4 — student_number
+  //    is the stable cross-AY identifier). The dashboard listing already uses
+  //    the same cross-AY resolver, so a child visible there is viewable here.
+  const admissionsRows = await getAllStudentsByParentEmail(email);
   const allowedStudentNumbers = new Set(admissionsRows.map((r) => r.student_number));
 
-  // 2) Resolve studentId → student_number to check ownership (student may
-  //    exist in grading DB under a student_number we know belongs to this
-  //    parent).
+  // 2) Resolve the URL studentId → student_number to check ownership.
   const { data: student } = await service
     .from('students')
     .select('id, student_number')
@@ -37,9 +36,8 @@ export default async function ParentReportCardPage({
     notFound();
   }
 
-  // 3) Build the report card payload via the shared helper (using service
-  //    client since the parent's cookie-bound client can't read grade
-  //    tables per RLS 005).
+  // 3) Build the report card payload (service client — parent has no
+  //    grading-side RLS access).
   const result = await buildReportCard(service, studentId);
   if (!result.ok) {
     if (result.error.kind === 'student_not_found' || result.error.kind === 'level_not_found') {
@@ -59,9 +57,9 @@ export default async function ParentReportCardPage({
   if (!result.ok) notFound();
   const payload = result.payload;
 
-  // 4) Gate: is there at least one active publication window for this
-  //    student's section? If none, show a polite "not available yet" state
-  //    instead of rendering the report card.
+  // 4) Gate: at least one publication for this student's section must be
+  //    inside its active window. Same gate the dashboard listing applies —
+  //    don't let a parent deep-link to a card whose window closed.
   const { data: publications } = await service
     .from('report_card_publications')
     .select('id, term_id, publish_from, publish_until')

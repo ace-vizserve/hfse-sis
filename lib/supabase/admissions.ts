@@ -247,3 +247,49 @@ export async function getStudentsByParentEmail(
   }
   return out;
 }
+
+// Cross-AY parent → children resolver. Walks every academic_years row,
+// runs the per-AY lookup against `ay{YY}_enrolment_applications`, and
+// dedupes by student_number. Newer AYs win — if a student appears in
+// both AY2026 and AY2027 admissions, the AY2027 row wins because we
+// list AYs in descending ay_code order.
+//
+// Used by the parent dashboard so a parent can see report cards for
+// any year their child is enrolled in, without the SIS having to know
+// which AY is "current" — publication windows are the actual gate.
+export async function getAllStudentsByParentEmail(
+  email: string,
+): Promise<ParentStudentRow[]> {
+  const trimmed = email.trim();
+  if (!trimmed) return [];
+
+  const supabase = createAdmissionsClient();
+  const { data: ays, error: ayErr } = await supabase
+    .from('academic_years')
+    .select('ay_code')
+    .order('ay_code', { ascending: false });
+  if (ayErr) {
+    console.error('[admissions] cross-AY parent lookup: AY list failed:', ayErr.message);
+    return [];
+  }
+  const ayCodes = ((ays ?? []) as Array<{ ay_code: string }>)
+    .map((r) => r.ay_code)
+    .filter((c): c is string => !!c);
+
+  // Some AYs in the table may not yet have admissions tables created
+  // (e.g. a freshly-flipped test AY). Each per-AY call already returns
+  // [] on schema errors, so a missing-table case fails soft.
+  const perAy = await Promise.all(
+    ayCodes.map((ay) => getStudentsByParentEmail(trimmed, ay)),
+  );
+
+  const seen = new Map<string, ParentStudentRow>();
+  for (const rows of perAy) {
+    for (const r of rows) {
+      if (r.student_number && !seen.has(r.student_number)) {
+        seen.set(r.student_number, r);
+      }
+    }
+  }
+  return Array.from(seen.values());
+}
