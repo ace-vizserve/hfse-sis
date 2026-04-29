@@ -1,9 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { Clock, Download, History, Loader2 } from 'lucide-react';
+import { Clock, Download, ExternalLink, History, Loader2, UserCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -110,11 +111,19 @@ export function HistoryDialog({ enroleeNumber, slotKey, label, trigger }: Histor
             <ul className="divide-y divide-border/50 rounded-lg border border-border/60 bg-background">
               {revisions.map((rev, i) => {
                 const expiry = formatExpiry(rev.expirySnapshot);
+                const isParentPortal = rev.source === 'parent-portal';
+                // The archived file is only accessible when the SIS officer
+                // flow moved the prior file (archivedUrl set). Parent-portal
+                // re-uploads only capture metadata + previousUrl — the file
+                // bytes may have been overwritten in storage if the parent
+                // portal writes to the canonical path.
+                const fileLink = rev.archivedUrl ?? rev.previousUrl;
+                const fileLinkLabel = rev.archivedUrl ? 'Open' : 'Try previous URL';
                 return (
                   <li key={rev.id} className="flex flex-col gap-2 px-4 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 space-y-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Clock className="size-3.5 shrink-0 text-muted-foreground" />
                           <span className="font-mono text-[11px] tabular-nums text-foreground">
                             {formatTimestamp(rev.replacedAt)}
@@ -122,20 +131,40 @@ export function HistoryDialog({ enroleeNumber, slotKey, label, trigger }: Histor
                           <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                             Version {revisions.length - i}
                           </span>
+                          {isParentPortal && (
+                            <Badge variant="warning" className="gap-1">
+                              <UserCircle2 className="size-3" />
+                              Parent re-uploaded
+                            </Badge>
+                          )}
                         </div>
                         {rev.replacedByEmail && (
                           <p className="truncate font-mono text-[10px] text-muted-foreground">
-                            Replaced by {rev.replacedByEmail}
+                            {isParentPortal ? 'By parent' : 'Replaced by'} {rev.replacedByEmail}
                           </p>
                         )}
                       </div>
-                      <Button asChild variant="outline" size="sm" className="h-7 shrink-0 gap-1.5 text-xs">
-                        <a href={rev.archivedUrl} target="_blank" rel="noopener noreferrer">
-                          <Download className="size-3" />
-                          Open
-                        </a>
-                      </Button>
+                      {fileLink && (
+                        <Button asChild variant="outline" size="sm" className="h-7 shrink-0 gap-1.5 text-xs">
+                          <a href={fileLink} target="_blank" rel="noopener noreferrer">
+                            {rev.archivedUrl ? (
+                              <Download className="size-3" />
+                            ) : (
+                              <ExternalLink className="size-3" />
+                            )}
+                            {fileLinkLabel}
+                          </a>
+                        </Button>
+                      )}
                     </div>
+
+                    {isParentPortal && (
+                      <p className="rounded-md border border-brand-amber/30 bg-brand-amber-light/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                        Parent re-uploaded directly via the enrolment portal — the prior file may
+                        have been overwritten in storage. Metadata (status, expiry, who, when) is
+                        preserved here.
+                      </p>
+                    )}
 
                     {(rev.passportNumberSnapshot || rev.passTypeSnapshot || expiry) && (
                       <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-muted-foreground">

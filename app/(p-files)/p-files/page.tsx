@@ -51,6 +51,16 @@ function parseStatusFilter(raw: string | undefined): StatusFilter | undefined {
   return (STATUS_FILTER_VALUES as readonly string[]).includes(raw) ? (raw as StatusFilter) : undefined;
 }
 
+// Companion to ?status — sidebar Quicklinks for renewal-outreach use
+// `?expiring=30|60|90` to narrow the roster to students with at least
+// one Valid expiring slot whose expiry falls within the window.
+type ExpiringWindow = 30 | 60 | 90;
+
+function parseExpiringWindow(raw: string | undefined): ExpiringWindow | undefined {
+  if (raw === "30" || raw === "60" || raw === "90") return Number(raw) as ExpiringWindow;
+  return undefined;
+}
+
 // Per-status focused-view metadata. When a sidebar Quicklink sets `?status=`
 // to a non-`all` value, the page renders a stripped-down "operational list"
 // layout — no KPIs, no charts, just the table + filters at the top — using
@@ -78,10 +88,28 @@ const STATUS_VIEW_META: Record<Exclude<StatusFilter, "all">, { eyebrow: string; 
   },
 };
 
+const EXPIRING_VIEW_META: Record<ExpiringWindow, { eyebrow: string; title: string; description: string }> = {
+  30: {
+    eyebrow: "P-Files · Expiring within 30 days",
+    title: "Documents expiring within 30 days",
+    description: "Passport, pass, and guardian docs lapsing in the next 30 days. Use the bulk action to remind parents in one go.",
+  },
+  60: {
+    eyebrow: "P-Files · Expiring within 60 days",
+    title: "Documents expiring within 60 days",
+    description: "Documents lapsing in the next 60 days. Send reminders ahead of expiry to give parents lead time.",
+  },
+  90: {
+    eyebrow: "P-Files · Expiring within 90 days",
+    title: "Documents expiring within 90 days",
+    description: "Quarterly view of upcoming expirations. Useful for planning renewal outreach.",
+  },
+};
+
 export default async function PFilesDashboard({
   searchParams,
 }: {
-  searchParams: Promise<DashboardSearchParams & { status?: string }>;
+  searchParams: Promise<DashboardSearchParams & { status?: string; expiring?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect("/login");
@@ -100,10 +128,12 @@ export default async function PFilesDashboard({
   const resolvedSearch = await searchParams;
   const ayParam = typeof resolvedSearch.ay === "string" ? resolvedSearch.ay : undefined;
   const statusParam = typeof resolvedSearch.status === "string" ? resolvedSearch.status : undefined;
+  const expiringParam = typeof resolvedSearch.expiring === "string" ? resolvedSearch.expiring : undefined;
   const ayCodes = await listAcademicAyCodes(service);
   const selectedAy = ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
   const isCurrentAy = selectedAy === currentAy.ay_code;
   const initialStatusFilter = parseStatusFilter(statusParam);
+  const expiringWindow = parseExpiringWindow(expiringParam);
 
   const windows = await getDashboardWindows(selectedAy);
   const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
@@ -121,9 +151,29 @@ export default async function PFilesDashboard({
   // they always show AY-wide data and would mislead users who expected
   // a focused list view.
   // ──────────────────────────────────────────────────────────────────
-  if (initialStatusFilter && initialStatusFilter !== "all") {
-    const meta = STATUS_VIEW_META[initialStatusFilter];
+  if ((initialStatusFilter && initialStatusFilter !== "all") || expiringWindow) {
+    const meta = expiringWindow
+      ? EXPIRING_VIEW_META[expiringWindow]
+      : STATUS_VIEW_META[initialStatusFilter as Exclude<StatusFilter, "all">];
     const { students, summary } = await getDocumentDashboardData(selectedAy);
+
+    let visibleStudents = students;
+    if (expiringWindow) {
+      const todayMs = Date.now();
+      const horizonMs = todayMs + expiringWindow * 86_400_000;
+      visibleStudents = students.filter((s) =>
+        s.slots.some((slot) => {
+          if (slot.status !== "valid" || !slot.expiryDate) return false;
+          const t = new Date(slot.expiryDate).getTime();
+          return t >= todayMs && t <= horizonMs;
+        }),
+      );
+    }
+
+    const filterLabel = expiringWindow
+      ? `expiring ≤${expiringWindow}d`
+      : (initialStatusFilter ?? "all");
+    const enableBulk = !!expiringWindow || initialStatusFilter === "expired";
 
     return (
       <PageShell>
@@ -158,19 +208,21 @@ export default async function PFilesDashboard({
 
         <CompletenessCsvButton ayCode={selectedAy} />
         <CompletenessTable
-          key={`${selectedAy}:${initialStatusFilter}`}
-          students={students}
+          key={`${selectedAy}:${filterLabel}`}
+          students={visibleStudents}
           ayCode={isCurrentAy ? undefined : selectedAy}
           initialStatusFilter={initialStatusFilter}
+          bulkRemindEnabled={enableBulk}
+          bulkRemindWindowDays={expiringWindow}
         />
 
         <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
           <FolderKanban className="size-3" strokeWidth={2.25} />
           <span>{selectedAy}</span>
           <span className="text-border">·</span>
-          <span>{summary.totalStudents.toLocaleString("en-SG")} students total</span>
+          <span>{visibleStudents.length.toLocaleString("en-SG")} of {summary.totalStudents.toLocaleString("en-SG")} students</span>
           <span className="text-border">·</span>
-          <span>Filter: {initialStatusFilter}</span>
+          <span>Filter: {filterLabel}</span>
           <span className="text-border">·</span>
           <span>Audit-logged</span>
         </div>

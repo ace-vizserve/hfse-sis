@@ -106,7 +106,11 @@ export function resolveStatus(
     if (expiry < today) return 'expired';
   }
 
-  if (s === 'uploaded') return 'uploaded';
+  // 'Uploaded' is the canonical "parent uploaded, awaiting registrar
+  // review" value per KD #60. 'Pending' is a non-canonical synonym that
+  // surfaces in legacy / mis-seeded data — treat it the same so the
+  // P-Files "Pending review" quick filter doesn't silently miss rows.
+  if (s === 'uploaded' || s === 'pending') return 'uploaded';
   if (url) return 'valid';
 
   return 'missing';

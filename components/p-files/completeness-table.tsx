@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Mail,
   Search,
   X,
 } from 'lucide-react';
@@ -15,6 +16,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -31,8 +33,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { BulkNotifyDialog, type BulkNotifyItem } from '@/components/p-files/bulk-notify-dialog';
 import type { StudentCompleteness } from '@/lib/p-files/queries';
-import type { DocumentStatus } from '@/lib/p-files/document-config';
+import { DOCUMENT_SLOTS, type DocumentStatus } from '@/lib/p-files/document-config';
 
 export type StatusFilter = 'all' | 'complete' | 'missing' | 'expired' | 'uploaded';
 
@@ -55,10 +58,55 @@ function completenessPercent(s: StudentCompleteness): number {
   return s.total > 0 ? Math.round((s.complete / s.total) * 100) : 0;
 }
 
+// Build the bulk-reminder targets for a single row. Returns one entry
+// per slot that's eligible for a reminder under the current filter:
+//   - Expired status (always actionable)
+//   - Rejected status (always actionable)
+//   - Valid + expiry within `windowDays` (when windowDays is set — i.e.
+//     the page is in a `?expiring=N` focused view)
+function targetsForRow(
+  student: StudentCompleteness,
+  windowDays: number | null,
+): BulkNotifyItem[] {
+  const slotMeta = new Map(DOCUMENT_SLOTS.map((s) => [s.key, s]));
+  const todayMs = Date.now();
+  const horizonMs = windowDays ? todayMs + windowDays * 86_400_000 : null;
+  const out: BulkNotifyItem[] = [];
+  for (const slot of student.slots) {
+    if (slot.status === 'expired' || slot.status === 'rejected') {
+      out.push({
+        enroleeNumber: student.enroleeNumber,
+        studentName: student.fullName,
+        slotKey: slot.key,
+        slotLabel: slotMeta.get(slot.key)?.label ?? slot.label,
+      });
+      continue;
+    }
+    if (
+      horizonMs !== null &&
+      slot.status === 'valid' &&
+      slot.expiryDate
+    ) {
+      const t = new Date(slot.expiryDate).getTime();
+      if (t >= todayMs && t <= horizonMs) {
+        out.push({
+          enroleeNumber: student.enroleeNumber,
+          studentName: student.fullName,
+          slotKey: slot.key,
+          slotLabel: slotMeta.get(slot.key)?.label ?? slot.label,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 export function CompletenessTable({
   students,
   ayCode,
   initialStatusFilter,
+  bulkRemindEnabled = false,
+  bulkRemindWindowDays,
 }: {
   students: StudentCompleteness[];
   /**
@@ -73,6 +121,18 @@ export function CompletenessTable({
    * via the toolbar `Select`; we just seed the initial state.
    */
   initialStatusFilter?: StatusFilter;
+  /**
+   * When true, render the row-selection checkbox column + sticky bulk
+   * "Send reminders" footer. Page enables this for `?status=expired` and
+   * `?expiring=N` views.
+   */
+  bulkRemindEnabled?: boolean;
+  /**
+   * Optional 30/60/90-day window — when set, slot eligibility for a
+   * bulk reminder also includes Valid slots whose expiry falls within
+   * the window. When null, only Expired / Rejected count.
+   */
+  bulkRemindWindowDays?: number;
 }) {
   const querySuffix = ayCode ? `?ay=${encodeURIComponent(ayCode)}` : '';
   const [search, setSearch] = React.useState('');
@@ -83,6 +143,9 @@ export function CompletenessTable({
   );
   const [pageIndex, setPageIndex] = React.useState(0);
   const [pageSize, setPageSize] = React.useState(25);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = React.useState(false);
+  const windowDaysOrNull = bulkRemindWindowDays ?? null;
 
   const levels = React.useMemo(
     () => [...new Set(students.map((s) => s.level).filter((l): l is string => !!l))].sort(),
@@ -126,8 +189,55 @@ export function CompletenessTable({
     setPageIndex(0);
   }, [search, levelFilter, sectionFilter, statusFilter]);
 
+  // Drop selections that no longer match the visible filtered set.
+  React.useEffect(() => {
+    setSelected((prev) => {
+      const visibleIds = new Set(filtered.map((s) => s.enroleeNumber));
+      const next = new Set<string>();
+      for (const id of prev) if (visibleIds.has(id)) next.add(id);
+      return next;
+    });
+  }, [filtered]);
+
   const pageCount = Math.max(Math.ceil(filtered.length / pageSize), 1);
   const paged = filtered.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+
+  const pageIds = React.useMemo(() => paged.map((s) => s.enroleeNumber), [paged]);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const somePageSelected = !allPageSelected && pageIds.some((id) => selected.has(id));
+
+  function togglePage(checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of pageIds) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleRow(id: string, checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  // Expand selected students into BulkNotifyItem[] (one entry per
+  // eligible slot per student, scoped by the active window filter).
+  const bulkItems = React.useMemo(() => {
+    if (!bulkRemindEnabled || selected.size === 0) return [] as BulkNotifyItem[];
+    const idSet = selected;
+    const out: BulkNotifyItem[] = [];
+    for (const s of filtered) {
+      if (!idSet.has(s.enroleeNumber)) continue;
+      out.push(...targetsForRow(s, windowDaysOrNull));
+    }
+    return out;
+  }, [bulkRemindEnabled, selected, filtered, windowDaysOrNull]);
 
   const hasFilter =
     search.length > 0 || levelFilter !== 'all' || sectionFilter !== 'all' || statusFilter !== 'all';
@@ -233,6 +343,15 @@ export function CompletenessTable({
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40">
+                {bulkRemindEnabled && (
+                  <TableHead className="w-10 px-2">
+                    <Checkbox
+                      aria-label="Select all on this page"
+                      checked={allPageSelected ? true : somePageSelected ? 'indeterminate' : false}
+                      onCheckedChange={(v) => togglePage(v === true)}
+                    />
+                  </TableHead>
+                )}
                 <TableHead className="sticky left-0 bg-muted/40 px-4">Student</TableHead>
                 <TableHead className="whitespace-nowrap px-2">Level</TableHead>
                 <TableHead className="whitespace-nowrap px-2">Section</TableHead>
@@ -256,7 +375,7 @@ export function CompletenessTable({
               {paged.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={slotHeaders.length + 5}
+                    colSpan={slotHeaders.length + 5 + (bulkRemindEnabled ? 1 : 0)}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
                     No students match the current filters.
@@ -266,8 +385,18 @@ export function CompletenessTable({
                 paged.map((s) => {
                   const pct = completenessPercent(s);
                   const slotMap = new Map(s.slots.map((sl) => [sl.key, sl.status]));
+                  const isSelected = selected.has(s.enroleeNumber);
                   return (
-                    <TableRow key={s.enroleeNumber}>
+                    <TableRow key={s.enroleeNumber} data-selected={isSelected || undefined}>
+                      {bulkRemindEnabled && (
+                        <TableCell className="px-2">
+                          <Checkbox
+                            aria-label={`Select ${s.fullName}`}
+                            checked={isSelected}
+                            onCheckedChange={(v) => toggleRow(s.enroleeNumber, v === true)}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="sticky left-0 bg-background px-4">
                         <div className="text-sm font-medium">{s.fullName}</div>
                         <div className="font-mono text-[10px] text-muted-foreground">
@@ -400,6 +529,43 @@ export function CompletenessTable({
           </div>
         </div>
       </div>
+
+      {bulkRemindEnabled && selected.size > 0 && (
+        <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-border bg-card px-6 py-3 shadow-[0_-4px_6px_-2px_oklch(0_0_0/0.04)]">
+          <div className="flex items-center gap-3">
+            <Mail className="size-4 text-brand-amber" />
+            <span className="text-sm">
+              {selected.size} student{selected.size === 1 ? '' : 's'} selected
+              {' · '}
+              <span className="font-mono text-[11px] text-muted-foreground">
+                {bulkItems.length} reminder{bulkItems.length === 1 ? '' : 's'} queued
+              </span>
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+              Clear
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setBulkOpen(true)}
+              disabled={bulkItems.length === 0}
+            >
+              <Mail className="size-3.5" />
+              Send reminders
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {bulkRemindEnabled && (
+        <BulkNotifyDialog
+          items={bulkItems}
+          open={bulkOpen}
+          onOpenChange={setBulkOpen}
+          onSuccess={() => setSelected(new Set())}
+        />
+      )}
     </Card>
   );
 }

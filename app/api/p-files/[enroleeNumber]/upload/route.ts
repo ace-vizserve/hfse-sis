@@ -235,6 +235,13 @@ export async function POST(
           slotKey,
           archivedUrl,
           archivedPath: archivePath,
+          // previousUrl mirrors the row's pre-replacement URL so the
+          // migration-033 trigger's INSERT (which fires after the docs
+          // UPDATE below) collides with this row via the partial unique
+          // index on (ay_code, enrolee_number, slot_key, previous_url)
+          // and silently no-ops via ON CONFLICT DO NOTHING. Without this
+          // we'd get duplicate revision rows for every officer upload.
+          previousUrl: currentUrl,
           statusSnapshot: currentStatus,
           expirySnapshot: currentExpiry,
           passportNumberSnapshot: currentPassportNumber,
