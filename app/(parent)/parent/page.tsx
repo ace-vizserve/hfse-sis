@@ -1,5 +1,15 @@
 import Link from 'next/link';
-import { ArrowUpRight, BookOpen, CheckCircle2, Clock, GraduationCap, Lock } from 'lucide-react';
+import {
+  ArrowUpRight,
+  BookOpen,
+  CalendarX,
+  CheckCircle2,
+  Clock,
+  GraduationCap,
+  Lock,
+  ShieldOff,
+  UserSearch,
+} from 'lucide-react';
 import { getParentSession } from '@/lib/parent/get-parent-session';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getAllStudentsByParentEmail } from '@/lib/supabase/admissions';
@@ -47,19 +57,13 @@ export default async function ParentHomePage() {
     return (
       <PageShell className="max-w-3xl">
         <ParentHero email={email} subtitle="Signed in." />
-        <Card className="p-8">
-          <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <BookOpen className="h-8 w-8 text-muted-foreground" />
-            <div className="font-serif text-lg font-semibold text-foreground">
-              No student records linked to this email
-            </div>
-            <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
-              We couldn&apos;t find any HFSE student applications where this email is listed as
-              the mother or father contact. If you think this is a mistake, please contact the
-              school office.
-            </p>
-          </div>
-        </Card>
+        <EmptyStateCard
+          variant="indigo"
+          icon={UserSearch}
+          eyebrow="No records found"
+          title="No student records linked to this email"
+          description="We couldn't find any HFSE student applications where this email is listed as the mother or father contact. If you think this is a mistake, please contact the school office."
+        />
       </PageShell>
     );
   }
@@ -191,21 +195,78 @@ export default async function ParentHomePage() {
   });
 
   if (children.length === 0) {
+    // Distinguish three sub-cases so the parent gets a precise message
+    // (rather than a generic "no cards" line that's wrong half the time):
+    //   - hasAnyPub === false  → never published, or every publication
+    //                            was revoked (DELETE leaves no row).
+    //   - allExpired           → every publication's window has closed.
+    //   - allScheduled         → every publication is in the future.
+    // pubRows is already fetched above — no extra query.
+    const hasAnyPub = pubRows.length > 0;
+    const allExpired =
+      hasAnyPub && pubRows.every((p) => new Date(p.publish_until).getTime() < now);
+    const allScheduled =
+      hasAnyPub && pubRows.every((p) => new Date(p.publish_from).getTime() > now);
+
+    let icon: React.ComponentType<{ className?: string }> = BookOpen;
+    let variant: 'amber' | 'destructive' | 'indigo' = 'indigo';
+    let eyebrow: string;
+    let title: string;
+    let description: string;
+
+    if (allScheduled) {
+      // Show the soonest start date so parents have a concrete date to
+      // plan around (rather than a vague "soon").
+      const earliest = Math.min(
+        ...pubRows.map((p) => new Date(p.publish_from).getTime()),
+      );
+      const earliestDate = new Date(earliest).toLocaleDateString('en-SG', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+      icon = Clock;
+      variant = 'amber';
+      eyebrow = 'Coming soon';
+      title = 'Report cards aren’t available yet';
+      description = `The school has scheduled the next publication window to open on ${earliestDate}. Check back then.`;
+    } else if (allExpired) {
+      // Show the latest end date so parents know when the window closed
+      // (in case they're trying to figure out if they missed it).
+      const latest = Math.max(
+        ...pubRows.map((p) => new Date(p.publish_until).getTime()),
+      );
+      const latestDate = new Date(latest).toLocaleDateString('en-SG', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+      icon = CalendarX;
+      variant = 'amber';
+      eyebrow = 'Window closed';
+      title = 'The viewing window has ended';
+      description = `Your most recent report card was available until ${latestDate}. Contact the school office if you need access to a past report.`;
+    } else {
+      // No publication rows at all — never published, or revoked
+      // (revoke is a DELETE; we can't tell the two apart from here).
+      icon = ShieldOff;
+      variant = 'destructive';
+      eyebrow = 'Unavailable';
+      title = 'No report cards to view';
+      description =
+        'The school hasn’t published any report cards for your child yet, or a previous publication was withdrawn. We’ll let you know when a new window opens.';
+    }
+
     return (
       <PageShell className="max-w-3xl">
         <ParentHero email={email} subtitle="Signed in." />
-        <Card className="p-8">
-          <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <BookOpen className="h-8 w-8 text-muted-foreground" />
-            <div className="font-serif text-lg font-semibold text-foreground">
-              No report cards available right now
-            </div>
-            <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
-              The school hasn&apos;t opened a publication window yet, or the most recent window
-              has closed. We&apos;ll let you know when the next one is available.
-            </p>
-          </div>
-        </Card>
+        <EmptyStateCard
+          variant={variant}
+          icon={icon}
+          eyebrow={eyebrow}
+          title={title}
+          description={description}
+        />
       </PageShell>
     );
   }
@@ -295,7 +356,7 @@ export default async function ParentHomePage() {
 
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         <Lock className="size-3" strokeWidth={2.25} />
-        <span>Secure Parent Portal</span>
+        <span>Secure access</span>
         <span className="text-border">·</span>
         <span>Published reports only</span>
       </div>
@@ -307,7 +368,7 @@ function ParentHero({ email, subtitle }: { email: string; subtitle: string }) {
   return (
     <header className="space-y-4">
       <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        Parent Portal
+        Report cards
       </p>
       <h1 className="font-serif text-[30px] font-semibold leading-[1.05] tracking-tight text-foreground sm:text-[38px] md:text-[44px]">
         My children.
@@ -316,5 +377,52 @@ function ParentHero({ email, subtitle }: { email: string; subtitle: string }) {
         Signed in as <span className="font-medium text-foreground">{email}</span>. {subtitle}
       </p>
     </header>
+  );
+}
+
+// Polished dedicated empty-state card for /parent — used when the parent
+// has no linked admissions records OR no children with active publications.
+// Matches the visual recipe from the report-card detail page's
+// `<UnavailableState>` (gradient icon tile + serif title + mono eyebrow)
+// so the parent surface speaks with one voice across both empty states.
+function EmptyStateCard({
+  variant,
+  icon: Icon,
+  eyebrow,
+  title,
+  description,
+}: {
+  variant: 'amber' | 'destructive' | 'indigo';
+  icon: React.ComponentType<{ className?: string }>;
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  const tileClass =
+    variant === 'amber'
+      ? 'bg-gradient-to-br from-brand-amber to-brand-amber/80 shadow-brand-tile-amber'
+      : variant === 'destructive'
+        ? 'bg-gradient-to-br from-destructive to-destructive/80 shadow-brand-tile-destructive'
+        : 'bg-gradient-to-br from-brand-indigo to-brand-navy shadow-brand-tile';
+
+  return (
+    <Card className="@container/card">
+      <CardContent className="flex flex-col items-center gap-5 py-12 text-center sm:px-10">
+        <div className={`flex size-12 items-center justify-center rounded-xl text-white ${tileClass}`}>
+          <Icon className="size-5" />
+        </div>
+        <div className="space-y-2">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            {eyebrow}
+          </p>
+          <h2 className="font-serif text-xl font-semibold tracking-tight text-foreground sm:text-[22px]">
+            {title}
+          </h2>
+          <p className="mx-auto max-w-md text-[14px] leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

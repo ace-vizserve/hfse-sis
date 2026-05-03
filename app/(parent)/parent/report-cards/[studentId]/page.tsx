@@ -1,11 +1,18 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, Printer } from 'lucide-react';
+import {
+  ArrowLeft,
+  CalendarClock,
+  CalendarX,
+  Printer,
+  ShieldOff,
+} from 'lucide-react';
 import { getParentSession } from '@/lib/parent/get-parent-session';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getAllStudentsByParentEmail } from '@/lib/supabase/admissions';
 import { buildReportCard } from '@/lib/report-card/build-report-card';
 import { ReportCardDocument } from '@/components/report-card/report-card-document';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
 export default async function ParentReportCardPage({
@@ -43,14 +50,31 @@ export default async function ParentReportCardPage({
     if (result.error.kind === 'student_not_found' || result.error.kind === 'level_not_found') {
       notFound();
     }
+    // Render a friendly dedicated page for the cases that can legitimately
+    // happen via parent navigation (rather than the raw-text fallbacks the
+    // page used to drop in mid-route).
     if (result.error.kind === 'no_current_ay') {
-      return <div className="text-destructive">No current academic year.</div>;
+      return (
+        <UnavailableState
+          variant="generic"
+          studentName={null}
+          subtitle={null}
+          ay={null}
+          title="Report cards aren't available right now"
+          description="The school hasn't set up the current academic year yet. Please check back later or contact the office if this is unexpected."
+        />
+      );
     }
     if (result.error.kind === 'not_enrolled_this_ay') {
       return (
-        <div className="text-sm text-muted-foreground">
-          Student is not enrolled in the current academic year ({result.error.ayLabel}).
-        </div>
+        <UnavailableState
+          variant="generic"
+          studentName={null}
+          subtitle={null}
+          ay={result.error.ayLabel}
+          title="Not enrolled in the current academic year"
+          description={`This student isn't enrolled in ${result.error.ayLabel}. Once enrollment is finalised and a publication window opens, the report card will appear here.`}
+        />
       );
     }
   }
@@ -88,35 +112,76 @@ export default async function ParentReportCardPage({
   ) as 1 | 2 | 3 | 4;
 
   if (activePubs.length === 0) {
+    // Differentiate the three reasons a parent could land here without an
+    // active window. The publication row stays in the table when expired
+    // (just publish_until in the past); revoke is a DELETE so the row is
+    // gone. So a missing-row + expired-row split distinguishes "the
+    // window has closed" from "no window has been set yet (or it was
+    // revoked entirely)".
+    //
+    // Date.now() is fine here — force-dynamic page, no client cache.
+    // eslint-disable-next-line react-hooks/purity
+    const nowMs = Date.now();
+    const allPubs = publications ?? [];
+    const hasAnyPub = allPubs.length > 0;
+    const allExpired =
+      hasAnyPub &&
+      allPubs.every((p) => new Date(p.publish_until as string).getTime() < nowMs);
+    const allScheduled =
+      hasAnyPub &&
+      allPubs.every((p) => new Date(p.publish_from as string).getTime() > nowMs);
+
+    let variant: 'expired' | 'scheduled' | 'revoked';
+    let title: string;
+    let description: string;
+    if (allScheduled) {
+      // Pick the soonest start date so the parent has something concrete
+      // to plan around (rather than "soon").
+      const earliestFrom = Math.min(
+        ...allPubs.map((p) => new Date(p.publish_from as string).getTime()),
+      );
+      const earliestDate = new Date(earliestFrom).toLocaleDateString('en-SG', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+      variant = 'scheduled';
+      title = 'Coming soon';
+      description = `The school has scheduled this report card to be available from ${earliestDate}. Check back then to view it.`;
+    } else if (allExpired) {
+      // Show the latest publish_until so the parent knows when the window
+      // closed (in case they're trying to figure out when they should
+      // have looked).
+      const latestUntil = Math.max(
+        ...allPubs.map((p) => new Date(p.publish_until as string).getTime()),
+      );
+      const latestDate = new Date(latestUntil).toLocaleDateString('en-SG', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+      variant = 'expired';
+      title = 'The viewing window has ended';
+      description = `This report card was available until ${latestDate}. Contact the school office if you still need access.`;
+    } else {
+      // Either the publication was revoked (DELETE — row gone) or it was
+      // never published. Indistinguishable from the parent's POV; we
+      // frame it neutrally so it works in both cases.
+      variant = 'revoked';
+      title = 'Report card no longer available';
+      description =
+        "This report card isn't available to view. It may have been withdrawn, or the school hasn't published it yet. Contact the school office if you have questions.";
+    }
+
     return (
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
-        <Link
-          href="/parent"
-          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          My children
-        </Link>
-
-        <header className="space-y-4">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Report card · {payload.ay.label}
-          </p>
-          <h1 className="font-serif text-[26px] font-semibold leading-[1.05] tracking-tight text-foreground sm:text-[32px] md:text-[38px]">
-            {payload.student.full_name}.
-          </h1>
-          <p className="text-[15px] leading-relaxed text-muted-foreground">
-            {payload.level.label} · {payload.section.name}
-          </p>
-        </header>
-
-        <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            This report card is not currently available to view. The school will publish it when
-            it&apos;s ready.
-          </CardContent>
-        </Card>
-      </div>
+      <UnavailableState
+        variant={variant}
+        studentName={payload.student.full_name}
+        subtitle={`${payload.level.label} · ${payload.section.name}`}
+        ay={payload.ay.label}
+        title={title}
+        description={description}
+      />
     );
   }
 
@@ -155,6 +220,128 @@ export default async function ParentReportCardPage({
       </div>
 
       <ReportCardDocument payload={payload} viewingTermNumber={viewingTermNumber} />
+    </div>
+  );
+}
+
+// Dedicated empty-state surface for every "report card isn't viewable
+// right now" branch — revoked, expired, scheduled, no-current-AY,
+// not-enrolled-this-AY, or generic. Same visual recipe across all
+// cases (gradient icon tile + serif title + description + back link),
+// only the variant + copy differ. Replaces the prior raw-text fallbacks
+// that returned mid-route divs.
+function UnavailableState({
+  variant,
+  studentName,
+  subtitle,
+  ay,
+  title,
+  description,
+}: {
+  variant: 'expired' | 'scheduled' | 'revoked' | 'generic';
+  studentName: string | null;
+  subtitle: string | null;
+  ay: string | null;
+  title: string;
+  description: string;
+}) {
+  // Per-variant icon + tile gradient. Aurora Vault tokens only —
+  // amber for time-bounded states (scheduled / expired), destructive
+  // for revoked, indigo for the generic no-AY / not-enrolled cases.
+  const variantConfig: Record<
+    typeof variant,
+    {
+      icon: React.ComponentType<{ className?: string }>;
+      tileClass: string;
+      eyebrow: string;
+    }
+  > = {
+    scheduled: {
+      icon: CalendarClock,
+      tileClass:
+        'bg-gradient-to-br from-brand-amber to-brand-amber/80 shadow-brand-tile-amber',
+      eyebrow: 'Scheduled',
+    },
+    expired: {
+      icon: CalendarX,
+      tileClass:
+        'bg-gradient-to-br from-brand-amber to-brand-amber/80 shadow-brand-tile-amber',
+      eyebrow: 'Window closed',
+    },
+    revoked: {
+      icon: ShieldOff,
+      tileClass:
+        'bg-gradient-to-br from-destructive to-destructive/80 shadow-brand-tile-destructive',
+      eyebrow: 'Unavailable',
+    },
+    generic: {
+      icon: ShieldOff,
+      tileClass:
+        'bg-gradient-to-br from-brand-indigo to-brand-navy shadow-brand-tile',
+      eyebrow: 'Unavailable',
+    },
+  };
+  const { icon: Icon, tileClass, eyebrow } = variantConfig[variant];
+
+  return (
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+      <Link
+        href="/parent"
+        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        My children
+      </Link>
+
+      {/* Optional student header — present when we have payload data
+          (revoked / expired / scheduled / not-enrolled). Suppressed on
+          the no-current-AY case since there's no AY label to show. */}
+      {(studentName || ay) && (
+        <header className="space-y-4">
+          {ay && (
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Report card · {ay}
+            </p>
+          )}
+          {studentName && (
+            <h1 className="font-serif text-[26px] font-semibold leading-[1.05] tracking-tight text-foreground sm:text-[32px] md:text-[38px]">
+              {studentName}.
+            </h1>
+          )}
+          {subtitle && (
+            <p className="text-[15px] leading-relaxed text-muted-foreground">
+              {subtitle}
+            </p>
+          )}
+        </header>
+      )}
+
+      <Card className="@container/card">
+        <CardContent className="flex flex-col items-center gap-5 py-10 text-center sm:px-10">
+          <div
+            className={`flex size-12 items-center justify-center rounded-xl text-white ${tileClass}`}
+          >
+            <Icon className="size-5" />
+          </div>
+          <div className="space-y-2">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              {eyebrow}
+            </p>
+            <h2 className="font-serif text-xl font-semibold tracking-tight text-foreground sm:text-[22px]">
+              {title}
+            </h2>
+            <p className="mx-auto max-w-md text-[14px] leading-relaxed text-muted-foreground">
+              {description}
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/parent">
+              <ArrowLeft className="size-3.5" />
+              Back to my children
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

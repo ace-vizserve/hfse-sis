@@ -49,14 +49,28 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { StudentListRow } from "@/lib/sis/queries";
 
-export type StatusBucket = "all" | "enrolled" | "pipeline" | "withdrawn";
+// Each bucket defines its own match list. The first bucket is always treated
+// as the "show everything" default — by convention it has no `statuses` array
+// (matches all). Pages pass module-specific buckets via the `statusBuckets`
+// prop; the default list below is records-shaped (KD #51 — enrolled-first).
+export type StatusBucketDef = {
+  key: string;
+  label: string;
+  // undefined = match all rows; explicit array = exact-match against trimmed
+  // applicationStatus. Empty status falls into the "All" bucket only.
+  statuses?: string[];
+};
 
-function statusBucket(status: string | null): StatusBucket {
-  const s = (status ?? "").trim();
-  if (!s) return "pipeline";
-  if (s === "Enrolled" || s === "Enrolled (Conditional)") return "enrolled";
-  if (s === "Withdrawn" || s === "Cancelled") return "withdrawn";
-  return "pipeline";
+const DEFAULT_STATUS_BUCKETS: StatusBucketDef[] = [
+  { key: "all", label: "All" },
+  { key: "enrolled", label: "Enrolled", statuses: ["Enrolled", "Enrolled (Conditional)"] },
+  { key: "pipeline", label: "Pipeline", statuses: ["Submitted", "Ongoing Verification", "Processing"] },
+  { key: "withdrawn", label: "Withdrawn", statuses: ["Withdrawn", "Cancelled"] },
+];
+
+function bucketMatchesStatus(def: StatusBucketDef, status: string | null): boolean {
+  if (!def.statuses) return true;
+  return def.statuses.includes((status ?? "").trim());
 }
 
 function studentDisplayName(row: StudentListRow): string {
@@ -88,6 +102,7 @@ export function StudentDataTable({
   linkQuery,
   defaultSorting,
   showSubmittedColumn = false,
+  statusBuckets = DEFAULT_STATUS_BUCKETS,
 }: {
   data: StudentListRow[];
   linkBase?: string;
@@ -95,7 +110,9 @@ export function StudentDataTable({
   linkQuery?: Record<string, string>;
   defaultSorting?: SortingState;
   showSubmittedColumn?: boolean;
+  statusBuckets?: StatusBucketDef[];
 }) {
+  const firstBucketKey = statusBuckets[0]?.key ?? "all";
   const querySuffix = React.useMemo(() => {
     if (!linkQuery) return "";
     const entries = Object.entries(linkQuery).filter(([, v]) => v);
@@ -112,7 +129,7 @@ export function StudentDataTable({
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
   const [globalFilter, setGlobalFilter] = React.useState("");
-  const [bucket, setBucket] = React.useState<StatusBucket>("all");
+  const [bucket, setBucket] = React.useState<string>(firstBucketKey);
 
   const columns: ColumnDef<StudentListRow>[] = React.useMemo(
     () => [
@@ -228,7 +245,9 @@ export function StudentDataTable({
         filterFn: (row, _id, value) => {
           // Filtered via the bucket tabs, not column filter — handled in useEffect below.
           if (typeof value !== "string") return true;
-          return statusBucket(row.original.applicationStatus) === value;
+          const def = statusBuckets.find((b) => b.key === value);
+          if (!def) return true;
+          return bucketMatchesStatus(def, row.original.applicationStatus);
         },
       },
       ...(showSubmittedColumn
@@ -256,7 +275,7 @@ export function StudentDataTable({
           ]
         : []),
     ],
-    [linkBase, linkAttribute, querySuffix, showSubmittedColumn],
+    [linkBase, linkAttribute, querySuffix, showSubmittedColumn, statusBuckets],
   );
 
   const table = useReactTable({
@@ -293,13 +312,14 @@ export function StudentDataTable({
     autoResetPageIndex: false,
   });
 
-  // Bucket tab → status column filter.
+  // Bucket tab → status column filter. The first bucket is the "match all"
+  // default, so clear the column filter when it's selected.
   React.useEffect(() => {
     const col = table.getColumn("status");
     if (!col) return;
-    if (bucket === "all") col.setFilterValue(undefined);
+    if (bucket === firstBucketKey) col.setFilterValue(undefined);
     else col.setFilterValue(bucket);
-  }, [bucket, table]);
+  }, [bucket, firstBucketKey, table]);
 
   const levelColumn = table.getColumn("level");
   const sectionColumn = table.getColumn("section");
@@ -321,16 +341,21 @@ export function StudentDataTable({
   const selectedSections = (sectionColumn?.getFilterValue() as string[] | undefined) ?? [];
 
   const hasFilter =
-    globalFilter.length > 0 || selectedLevels.length > 0 || selectedSections.length > 0 || bucket !== "all";
+    globalFilter.length > 0 || selectedLevels.length > 0 || selectedSections.length > 0 || bucket !== firstBucketKey;
 
+  // Per-bucket counts — every bucket gets one pass. "All"-style buckets
+  // (no statuses) trivially match every row, so the first bucket always
+  // reports the full row count.
   const counts = React.useMemo(() => {
-    const c = { all: data.length, enrolled: 0, pipeline: 0, withdrawn: 0 };
+    const c: Record<string, number> = {};
+    for (const def of statusBuckets) c[def.key] = 0;
     for (const r of data) {
-      const b = statusBucket(r.applicationStatus);
-      c[b] += 1;
+      for (const def of statusBuckets) {
+        if (bucketMatchesStatus(def, r.applicationStatus)) c[def.key] += 1;
+      }
     }
     return c;
-  }, [data]);
+  }, [data, statusBuckets]);
 
   return (
     <div className="space-y-4">
@@ -393,7 +418,7 @@ export function StudentDataTable({
               size="sm"
               onClick={() => {
                 setGlobalFilter("");
-                setBucket("all");
+                setBucket(firstBucketKey);
                 setColumnFilters([]);
               }}>
               <X className="h-3 w-3" />
@@ -402,20 +427,13 @@ export function StudentDataTable({
           )}
         </div>
 
-        <Tabs value={bucket} onValueChange={(v) => setBucket(v as StatusBucket)}>
+        <Tabs value={bucket} onValueChange={setBucket}>
           <TabsList>
-            <TabsTrigger value="all">
-              All <span className="ml-1 font-mono text-[10px] ">{counts.all}</span>
-            </TabsTrigger>
-            <TabsTrigger value="enrolled">
-              Enrolled <span className="ml-1 font-mono text-[10px] ">{counts.enrolled}</span>
-            </TabsTrigger>
-            <TabsTrigger value="pipeline">
-              Pipeline <span className="ml-1 font-mono text-[10px] ">{counts.pipeline}</span>
-            </TabsTrigger>
-            <TabsTrigger value="withdrawn">
-              Withdrawn <span className="ml-1 font-mono text-[10px] ">{counts.withdrawn}</span>
-            </TabsTrigger>
+            {statusBuckets.map((def) => (
+              <TabsTrigger key={def.key} value={def.key}>
+                {def.label} <span className="ml-1 font-mono text-[10px] ">{counts[def.key] ?? 0}</span>
+              </TabsTrigger>
+            ))}
           </TabsList>
         </Tabs>
       </div>

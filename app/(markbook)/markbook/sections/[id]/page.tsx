@@ -1,14 +1,14 @@
+import { SectionAttendanceSummary } from "@/components/markbook/section-attendance-summary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageShell } from "@/components/ui/page-shell";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
-import { ArrowLeft, ArrowUpRight, Calendar, Clock, MessageSquare, UserCheck, UserCog, UserMinus } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, BookOpen, Calendar, Clock, MessageSquare, UserCheck, UserCog, UserMinus } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ManualAddStudent } from "./manual-add";
 import { RosterTable, type RosterRow } from "./roster-table";
-import { SectionAttendanceSummary } from "@/components/markbook/section-attendance-summary";
 
 type LevelLite = { id: string; code: string; label: string; level_type: "primary" | "secondary" };
 
@@ -63,6 +63,15 @@ export default async function SectionRosterPage({ params }: { params: Promise<{ 
     .eq("is_current", true)
     .maybeSingle();
 
+  // Count grading sheets for this section — drives the "Grading sheets"
+  // stat card's value + footnote. ~10 subjects × 4 terms ≈ 40 sheets per
+  // section in steady state. The card itself is a Link to the grading
+  // list pre-filtered to this section.
+  const { count: gradingSheetsCount } = await supabase
+    .from("grading_sheets")
+    .select("id", { count: "exact", head: true })
+    .eq("section_id", id);
+
   const levelFromSection = (Array.isArray(section.level) ? section.level[0] : section.level) as LevelLite | null;
 
   const enrolments = (rows ?? []) as unknown as EnrolmentRow[];
@@ -77,6 +86,7 @@ export default async function SectionRosterPage({ params }: { params: Promise<{ 
     const s = e.student;
     return {
       id: e.id,
+      student_id: s?.id ?? null,
       index_number: e.index_number,
       student_number: s?.student_number ?? "",
       student_name: s ? [s.last_name, s.first_name, s.middle_name].filter(Boolean).join(", ") : "(missing student)",
@@ -119,6 +129,14 @@ export default async function SectionRosterPage({ params }: { params: Promise<{ 
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Cross-module deep links — every CTA below trails an
+              ArrowUpRight to signal it leaves Markbook. Each module owns
+              its own surface (KD #47 attendance, KD #48 sis sections,
+              KD #49 evaluation writeups). The markbook-internal action
+              is ManualAddStudent (last), which manipulates this section's
+              roster inline. The grading-sheets entry point lives below
+              as a clickable card in the stat strip — keeps the hero from
+              getting cramped. */}
           {canManage && (
             <Button asChild variant="outline" size="sm">
               <Link href={`/sis/sections/${section.id}?tab=teachers`}>
@@ -136,9 +154,10 @@ export default async function SectionRosterPage({ params }: { params: Promise<{ 
             </Link>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link href={`/markbook/sections/${section.id}/attendance`}>
+            <Link href={`/attendance/${section.id}`}>
               <Calendar className="h-4 w-4" />
               Attendance
+              <ArrowUpRight className="h-3 w-3" />
             </Link>
           </Button>
           <ManualAddStudent sectionId={section.id} nextIndex={nextIndex} />
@@ -147,7 +166,7 @@ export default async function SectionRosterPage({ params }: { params: Promise<{ 
 
       {/* Stat cards */}
       <div className="@container/main">
-        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
           <StatCard
             description="Active"
             value={activeCount}
@@ -169,16 +188,20 @@ export default async function SectionRosterPage({ params }: { params: Promise<{ 
             footerTitle={withdrawnCount === 0 ? "None this year" : "Retained for audit"}
             footerDetail="Kept in the roster permanently"
           />
+          <LinkStatCard
+            description="Grading sheets"
+            value={gradingSheetsCount ?? 0}
+            icon={BookOpen}
+            footerTitle="Open the list"
+            footerDetail="Filtered to this section"
+            href={`/markbook/grading?section=${section.id}`}
+          />
         </div>
       </div>
 
       {/* Attendance summary — reads the Attendance module's rollup. */}
       {currentTerm && (
-        <SectionAttendanceSummary
-          sectionId={section.id}
-          termId={currentTerm.id}
-          termLabel={currentTerm.label}
-        />
+        <SectionAttendanceSummary sectionId={section.id} termId={currentTerm.id} termLabel={currentTerm.label} />
       )}
 
       {/* Roster */}
@@ -186,9 +209,7 @@ export default async function SectionRosterPage({ params }: { params: Promise<{ 
         <div className="flex items-baseline justify-between">
           <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             Roster
-            <span className="ml-2 font-mono text-[10px] text-muted-foreground">
-              {enrolments.length}
-            </span>
+            <span className="ml-2 font-mono text-[10px] text-muted-foreground">{enrolments.length}</span>
           </h2>
         </div>
         <RosterTable data={rosterRows} sectionId={section.id} />
@@ -230,5 +251,55 @@ function StatCard({
         <p className="text-xs text-muted-foreground">{footerDetail}</p>
       </CardFooter>
     </Card>
+  );
+}
+
+// Clickable variant of StatCard — same visual recipe but wraps the whole
+// card in a Link with hover-lift + border-promote. Used for the Grading
+// sheets card so the count + the redirect affordance share one tile,
+// which keeps the hero CTA row uncramped.
+function LinkStatCard({
+  description,
+  value,
+  icon: Icon,
+  footerTitle,
+  footerDetail,
+  href,
+}: {
+  description: string;
+  value: number;
+  icon: React.ComponentType<{ className?: string }>;
+  footerTitle: string;
+  footerDetail: string;
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group block transition-all hover:-translate-y-0.5 focus-visible:outline-none"
+    >
+      <Card className="@container/card h-full transition-all group-hover:border-brand-indigo/40 group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-brand-indigo/40">
+        <CardHeader>
+          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+            {description}
+          </CardDescription>
+          <CardTitle className="font-serif text-[32px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]">
+            {value.toLocaleString("en-SG")}
+          </CardTitle>
+          <CardAction>
+            <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <Icon className="size-4" />
+            </div>
+          </CardAction>
+        </CardHeader>
+        <CardFooter className="flex-col items-start gap-1 text-sm">
+          <p className="inline-flex items-center gap-1 font-medium text-foreground">
+            {footerTitle}
+            <ArrowUpRight className="size-3 opacity-60 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100" />
+          </p>
+          <p className="text-xs text-muted-foreground">{footerDetail}</p>
+        </CardFooter>
+      </Card>
+    </Link>
   );
 }

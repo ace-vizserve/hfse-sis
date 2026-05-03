@@ -1,16 +1,34 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { GraduationCap, Loader2, Plus, Sliders, Target, UserRound } from "lucide-react";
+import {
+  Check,
+  ChevronsUpDown,
+  GraduationCap,
+  Loader2,
+  Plus,
+  Sliders,
+  Target,
+  UserRound,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -21,6 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { NewSheetSchema, type NewSheetInput } from "@/lib/schemas/new-sheet";
+import { cn } from "@/lib/utils";
 
 type Term = { id: string; term_number: number; label: string; is_current: boolean };
 type Level = { id: string; code: string; label: string; level_type: "primary" | "secondary" };
@@ -32,6 +51,7 @@ type Config = {
   ww_max_slots: number;
   pt_max_slots: number;
 };
+type Teacher = { id: string; email: string; name: string };
 
 const first = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null));
 
@@ -48,13 +68,16 @@ export function NewSheetForm({
   sections,
   subjects,
   configs,
+  teachers,
 }: {
   terms: Term[];
   sections: Section[];
   subjects: Subject[];
   configs: Config[];
+  teachers: Teacher[];
 }) {
   const router = useRouter();
+  const [teacherOpen, setTeacherOpen] = useState(false);
   const defaultTerm = terms.find((t) => t.is_current) ?? terms[0];
 
   const form = useForm<NewSheetInput>({
@@ -332,16 +355,118 @@ export function NewSheetForm({
               <FormField
                 control={form.control}
                 name="teacher_name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Teacher name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g. Ms. Tan" {...field} value={field.value ?? ""} />
-                    </FormControl>
-                    <FormDescription>Optional. Shown on the grading sheet list and on the report card.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const current = field.value ?? "";
+                  const matched = teachers.find(
+                    (t) => t.name === current || t.email === current,
+                  );
+                  return (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Teacher</FormLabel>
+                      <Popover open={teacherOpen} onOpenChange={setTeacherOpen}>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={teacherOpen}
+                              className={cn(
+                                "w-full justify-between font-normal",
+                                !current && "text-muted-foreground",
+                              )}
+                            >
+                              {current ? (
+                                <span className="truncate">
+                                  {matched ? matched.name : current}
+                                  {matched && matched.name !== matched.email && (
+                                    <span className="ml-2 font-mono text-[10px] text-muted-foreground">
+                                      {matched.email}
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                "Pick a teacher…"
+                              )}
+                              <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          className="w-[--radix-popover-trigger-width] p-0"
+                          align="start"
+                        >
+                          <Command
+                            filter={(value, search) => {
+                              if (!search) return 1;
+                              return value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
+                            }}
+                          >
+                            <CommandInput placeholder="Search by name or email…" />
+                            <CommandList>
+                              <CommandEmpty>No staff member found.</CommandEmpty>
+                              {current && (
+                                <CommandGroup heading="Selected">
+                                  <CommandItem
+                                    value="__clear__"
+                                    onSelect={() => {
+                                      field.onChange("");
+                                      setTeacherOpen(false);
+                                    }}
+                                  >
+                                    <span className="text-muted-foreground">Clear selection</span>
+                                  </CommandItem>
+                                </CommandGroup>
+                              )}
+                              <CommandGroup heading="Teachers">
+                                {teachers.length === 0 && (
+                                  <CommandItem disabled value="__empty__">
+                                    <span className="text-muted-foreground">
+                                      No teacher accounts on record.
+                                    </span>
+                                  </CommandItem>
+                                )}
+                                {teachers.map((t) => {
+                                  const selected = current === t.name || current === t.email;
+                                  return (
+                                    <CommandItem
+                                      key={t.id}
+                                      value={`${t.name} ${t.email}`}
+                                      onSelect={() => {
+                                        field.onChange(t.name);
+                                        setTeacherOpen(false);
+                                      }}
+                                    >
+                                      <Check
+                                        className={cn(
+                                          "mr-2 size-4",
+                                          selected ? "opacity-100" : "opacity-0",
+                                        )}
+                                      />
+                                      <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                                        <span className="truncate text-foreground">{t.name}</span>
+                                        {t.name !== t.email && (
+                                          <span className="truncate font-mono text-[10px] text-muted-foreground">
+                                            {t.email}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </CommandItem>
+                                  );
+                                })}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <FormDescription>
+                        Optional. Pick from the list of teacher accounts — the name appears on the
+                        grading sheet list and the report card.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
             </CardContent>
           </Card>

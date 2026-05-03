@@ -127,10 +127,52 @@ const PASS_EXPIRY_CSV: CsvSpec = {
   ],
 };
 
+const PROMISED_CSV: CsvSpec = {
+  headers: [
+    'Enrolee #',
+    'Student #',
+    'Full name',
+    'Level',
+    'App status',
+    'To-follow slots',
+    'Earliest promised',
+    'Days until earliest',
+    'Past-due?',
+    'Promised slots',
+    'Latest note',
+  ],
+  build: (r) => {
+    const slots = r.toFollowSlots ?? [];
+    const slotPairs = slots
+      .map((s) =>
+        s.promisedUntil
+          ? `${s.label}: ${s.promisedUntil.slice(0, 10)}`
+          : `${s.label}: (no date)`,
+      )
+      .join('; ');
+    const earliestNote =
+      slots.find((s) => s.promisedUntil === r.earliestPromisedUntil)?.note ?? '';
+    return [
+      r.enroleeNumber,
+      r.studentNumber ?? '',
+      r.enroleeFullName ?? '',
+      r.levelApplied ?? '',
+      r.applicationStatus ?? '',
+      r.toFollowCount ?? 0,
+      r.earliestPromisedUntil?.slice(0, 10) ?? '',
+      r.daysUntilEarliestPromise ?? '',
+      r.hasPastDuePromise ? 'Yes' : 'No',
+      slotPairs,
+      earliestNote,
+    ];
+  },
+};
+
 const CSV_BY_COHORT: Record<CohortKey, CsvSpec> = {
   stp: STP_CSV,
   medical: MEDICAL_CSV,
   'pass-expiry': PASS_EXPIRY_CSV,
+  promised: PROMISED_CSV,
 };
 
 // ─── Handler ───────────────────────────────────────────────────────────────

@@ -1,3 +1,6 @@
+'use client';
+
+import * as React from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, FileText } from 'lucide-react';
 
@@ -17,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // Cross-section view of every publication window in the current AY.
 // Renders on /markbook/report-cards when no section is picked, so registrars
@@ -32,6 +36,7 @@ export type PublicationOverviewRow = {
   section_name: string;
   level_label: string;
   level_code: string;
+  term_id: string;
   term_number: number;
   term_label: string;
   publish_from: string;
@@ -50,9 +55,20 @@ const DATE_FMT: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short' };
 
 export function AllPublicationsOverview({
   publications,
+  currentTermId,
 }: {
   publications: PublicationOverviewRow[];
+  /** When set + the table is on the "Current term" tab (default), only
+   *  rows for that term render. Setting null disables the filter. */
+  currentTermId?: string | null;
 }) {
+  // Term-scope tab — defaults to "current" so the registrar lands on
+  // this term's publications. Falls back to "all" when no current term
+  // is configured (legacy AY edge case) so the table stays useful.
+  const [termScope, setTermScope] = React.useState<'current' | 'all'>(
+    currentTermId ? 'current' : 'all',
+  );
+
   if (publications.length === 0) {
     return (
       <Card className="items-center py-16 text-center">
@@ -74,19 +90,33 @@ export function AllPublicationsOverview({
     );
   }
 
+  // Apply term scope before sorting + counting so the badges + table
+  // both reflect the visible set.
+  const scoped =
+    termScope === 'current' && currentTermId
+      ? publications.filter((p) => p.term_id === currentTermId)
+      : publications;
+
   // Sort: active first, then scheduled, then expired. Within group: by level
   // code, section name, term number — so the most relevant rows are on top
   // and registrars can scan a single section's term run downward.
-  const sorted = publications.slice().sort((a, b) => {
+  const sorted = scoped.slice().sort((a, b) => {
     if (a.status !== b.status) return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
     if (a.level_code !== b.level_code) return a.level_code.localeCompare(b.level_code);
     if (a.section_name !== b.section_name) return a.section_name.localeCompare(b.section_name);
     return a.term_number - b.term_number;
   });
 
-  const activeCount = publications.filter((p) => p.status === 'active').length;
-  const scheduledCount = publications.filter((p) => p.status === 'scheduled').length;
-  const expiredCount = publications.filter((p) => p.status === 'expired').length;
+  const activeCount = scoped.filter((p) => p.status === 'active').length;
+  const scheduledCount = scoped.filter((p) => p.status === 'scheduled').length;
+  const expiredCount = scoped.filter((p) => p.status === 'expired').length;
+
+  // Tab counts (full-set numbers — show what's available across all
+  // terms vs. what falls inside the current term).
+  const currentTermCount = currentTermId
+    ? publications.filter((p) => p.term_id === currentTermId).length
+    : 0;
+  const allTermsCount = publications.length;
 
   return (
     <Card className="@container/card gap-0 overflow-hidden p-0">
@@ -97,10 +127,33 @@ export function AllPublicationsOverview({
         <CardTitle className="font-serif text-[20px] font-semibold tracking-tight text-foreground">
           Published report cards
         </CardTitle>
-        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-          {activeCount > 0 && <Badge variant="success">{activeCount} active</Badge>}
-          {scheduledCount > 0 && <Badge variant="warning">{scheduledCount} scheduled</Badge>}
-          {expiredCount > 0 && <Badge variant="muted">{expiredCount} expired</Badge>}
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {activeCount > 0 && <Badge variant="success">{activeCount} active</Badge>}
+            {scheduledCount > 0 && <Badge variant="warning">{scheduledCount} scheduled</Badge>}
+            {expiredCount > 0 && <Badge variant="muted">{expiredCount} expired</Badge>}
+          </div>
+          {currentTermId && (
+            <Tabs
+              value={termScope}
+              onValueChange={(v) => setTermScope(v as 'current' | 'all')}
+            >
+              <TabsList>
+                <TabsTrigger value="current">
+                  Current term
+                  <span className="ml-1 font-mono text-[10px] text-muted-foreground">
+                    {currentTermCount}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="all">
+                  All terms
+                  <span className="ml-1 font-mono text-[10px] text-muted-foreground">
+                    {allTermsCount}
+                  </span>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
         </div>
       </CardHeader>
       <div className="overflow-x-auto">
@@ -117,6 +170,21 @@ export function AllPublicationsOverview({
             </TableRow>
           </TableHeader>
           <TableBody>
+            {sorted.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                  No publication windows for this term yet. Switch to{' '}
+                  <button
+                    type="button"
+                    onClick={() => setTermScope('all')}
+                    className="font-medium text-foreground underline underline-offset-2"
+                  >
+                    All terms
+                  </button>{' '}
+                  to see other terms&apos; windows.
+                </TableCell>
+              </TableRow>
+            )}
             {sorted.map((row) => (
               <TableRow key={row.id} className="group">
                 <TableCell>

@@ -36,7 +36,7 @@ import {
   getSlotStatusMix,
 } from "@/lib/p-files/dashboard";
 import { getDocumentDashboardData } from "@/lib/p-files/queries";
-import { freshenAyDocuments } from "@/lib/sis/freshen-document-statuses";
+import { freshenAyDocuments } from "@/lib/p-files/freshen-document-statuses";
 import { getExpiringDocuments } from "@/lib/sis/dashboard";
 import { getSessionUser } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -99,7 +99,20 @@ export default async function PFilesDashboard({
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect("/login");
-  if (sessionUser.role !== "p-file" && sessionUser.role !== "admin" && sessionUser.role !== "superadmin") redirect("/");
+  if (
+    sessionUser.role !== "p-file" &&
+    sessionUser.role !== "school_admin" &&
+    sessionUser.role !== "admin" &&
+    sessionUser.role !== "superadmin"
+  ) {
+    redirect("/");
+  }
+  // KD #2 + KD #31: p-file/superadmin = officer (writes); school_admin/admin =
+  // oversight (read-only monitoring lens). The two roles share KPIs +
+  // completion charts + revision trends, but the chase queue, priority
+  // panel, and chase narrative are officer-only — admins can't act on
+  // them and the framing ("you owe these reminders") doesn't fit.
+  const isOfficer = sessionUser.role === "p-file" || sessionUser.role === "superadmin";
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
@@ -163,7 +176,10 @@ export default async function PFilesDashboard({
     const filterLabel = expiringWindow
       ? `expiring ≤${expiringWindow}d`
       : (initialStatusFilter ?? "all");
-    const enableBulk = !!expiringWindow || initialStatusFilter === "expired";
+    // Bulk notify is an officer write action — oversight roles see the same
+    // focused list but without the bulk-remind footer.
+    const enableBulk =
+      isOfficer && (!!expiringWindow || initialStatusFilter === "expired");
 
     return (
       <PageShell>
@@ -239,7 +255,9 @@ export default async function PFilesDashboard({
     getRevisionVelocityRange(rangeInput),
     getSlotStatusMix(selectedAy),
     getRevisionsHeatmap(selectedAy, 12),
-    getPFilesPriority({ ayCode: selectedAy }),
+    // Priority panel is officer-only; skip the fetch entirely for oversight
+    // roles so the dashboard renders one fewer trip on every load.
+    isOfficer ? getPFilesPriority({ ayCode: selectedAy }) : Promise.resolve(null),
   ]);
 
   const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
@@ -255,9 +273,13 @@ export default async function PFilesDashboard({
   return (
     <PageShell>
       <DashboardHero
-        eyebrow="P-Files · Document tracking"
-        title="Student document completeness"
-        description="Retrieve validated student, parent, and guardian documents. Prior versions preserved in revision history."
+        eyebrow={isOfficer ? "P-Files · Document tracking" : "P-Files · Read-only oversight"}
+        title={isOfficer ? "Student document completeness" : "Student documents — monitoring"}
+        description={
+          isOfficer
+            ? "Retrieve validated student, parent, and guardian documents. Prior versions preserved in revision history."
+            : "Read-only view of student document completeness. The P-Files officer owns chasing, validation, and renewal — this surface is for oversight."
+        }
         badges={[
           { label: selectedAy },
           { label: isCurrentAy ? "Current" : "Historical", tone: isCurrentAy ? "mint" : "muted" },
@@ -273,13 +295,14 @@ export default async function PFilesDashboard({
         ayWindows={windows.ay}
       />
 
-      <PriorityPanel payload={priority} />
-
-      {/* Document chase queue (spec 2026-04-28) — sibling to the expiring-docs
-          PriorityPanel. Together they form "Documents needing attention".
-          Phase 2B: P-Files only chases renewal (revalidation=Expired +
-          expiringSoon); validation + promised tiles are admissions-side. */}
-      <DocumentChaseQueueStrip ayCode={selectedAy} module="p-files" />
+      {/* Officer-only operational top-of-fold (KD #57) — chase priority +
+          chase queue strip. Oversight roles (school_admin/admin) skip these
+          because they can't act on the rows, and the framing speaks in the
+          officer's voice ("you owe these reminders"). */}
+      {isOfficer && priority && <PriorityPanel payload={priority} />}
+      {isOfficer && (
+        <DocumentChaseQueueStrip ayCode={selectedAy} module="p-files" />
+      )}
 
       <InsightsPanel insights={insights} />
 

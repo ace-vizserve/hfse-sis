@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CalendarClockIcon,
   ClipboardListIcon,
   FileTextIcon,
   GraduationCapIcon,
@@ -138,7 +139,12 @@ const NAV_ENTRIES: NavEntry[] = [
     group: "Cohorts",
     icon: StethoscopeIcon,
   },
-  { href: "/admissions/cohorts/pass-expiry", label: "Pass expiry (admissions)", group: "Cohorts", icon: WalletIcon },
+  {
+    href: "/admissions/cohorts/promised",
+    label: "Promised follow-ups (admissions)",
+    group: "Cohorts",
+    icon: CalendarClockIcon,
+  },
   { href: "/records/cohorts/stp", label: "STP applications (records)", group: "Cohorts", icon: PlaneIcon },
   { href: "/records/cohorts/medical", label: "Medical alerts (records)", group: "Cohorts", icon: StethoscopeIcon },
   { href: "/records/cohorts/pass-expiry", label: "Pass expiry (records)", group: "Cohorts", icon: WalletIcon },

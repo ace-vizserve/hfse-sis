@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import {
+  AlertCircle,
   ArrowUpRight,
   CalendarClock,
   CheckCircle2,
+  Eye,
   Users,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
@@ -83,6 +85,13 @@ export default async function ReportCardsListPage({
   // Cross-section publications overview — fetched only when no section is
   // picked, since the section-detail flow takes over the page in that case.
   let overviewRows: PublicationOverviewRow[] = [];
+  // Top-of-page KPIs (current-term focused) — only computed on the
+  // no-section landing.
+  let totalSections = 0;
+  let publishedNowCurrentTerm = 0;
+  let scheduledCurrentTerm = 0;
+  let sectionsPendingCurrentTerm = 0;
+  let studentsReachedCurrentTerm = 0;
   if (!q.section_id && ay) {
     const ayId = ay.id;
     const sectionsList = (sections ?? []) as Array<{
@@ -146,6 +155,7 @@ export default async function ReportCardsListPage({
           section_name: sec?.name ?? '(unknown)',
           level_label: lvl?.label ?? '',
           level_code: lvl?.code ?? '',
+          term_id: p.term_id,
           term_number: term?.term_number ?? 0,
           term_label: term?.label ?? '',
           publish_from: p.publish_from,
@@ -154,6 +164,33 @@ export default async function ReportCardsListPage({
           student_count: countBySection.get(p.section_id) ?? 0,
         };
       });
+
+      // Current-term KPIs for the stat cards above the overview. Counts
+      // are unique-per-section (one section can have multiple publication
+      // attempts for the same term — we only count the section once).
+      totalSections = sectionsList.length;
+      if (currentTermId) {
+        const sectionsPublishedNow = new Set<string>();
+        const sectionsScheduled = new Set<string>();
+        const sectionsAnyForCurrentTerm = new Set<string>();
+        let reach = 0;
+        for (const row of overviewRows) {
+          if (row.term_id !== currentTermId) continue;
+          sectionsAnyForCurrentTerm.add(row.section_id);
+          if (row.status === 'active') {
+            if (!sectionsPublishedNow.has(row.section_id)) {
+              reach += row.student_count;
+              sectionsPublishedNow.add(row.section_id);
+            }
+          } else if (row.status === 'scheduled') {
+            sectionsScheduled.add(row.section_id);
+          }
+        }
+        publishedNowCurrentTerm = sectionsPublishedNow.size;
+        scheduledCurrentTerm = sectionsScheduled.size;
+        studentsReachedCurrentTerm = reach;
+        sectionsPendingCurrentTerm = totalSections - sectionsAnyForCurrentTerm.size;
+      }
     }
   }
 
@@ -274,8 +311,70 @@ export default async function ReportCardsListPage({
         </div>
       </header>
 
-      {/* No section picked — show cross-section publications overview */}
-      {!q.section_id && <AllPublicationsOverview publications={overviewRows} />}
+      {/* No section picked — current-term KPIs + cross-section publications overview */}
+      {!q.section_id && (
+        <>
+          {/* Current-term KPI strip — answers "where do we stand on
+              this term's report cards right now?" without forcing the
+              registrar to mentally aggregate the table below. Sections-
+              counted-once: one section can have multiple publication
+              attempts for the same term but only counts as 1 here. */}
+          {ay && termList.length > 0 && (
+            <div className="@container/main">
+              <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
+                <StatCard
+                  description="Visible to parents now"
+                  value={`${publishedNowCurrentTerm} / ${totalSections}`}
+                  icon={Eye}
+                  footerTitle={
+                    publishedNowCurrentTerm === 0
+                      ? 'No section visible'
+                      : `${publishedNowCurrentTerm} section${publishedNowCurrentTerm === 1 ? '' : 's'} live`
+                  }
+                  footerDetail={`${termList.find((t) => t.id === currentTermId)?.label ?? 'Current term'} only`}
+                />
+                <StatCard
+                  description="Students reached"
+                  value={studentsReachedCurrentTerm.toLocaleString('en-SG')}
+                  icon={Users}
+                  footerTitle={
+                    studentsReachedCurrentTerm === 0
+                      ? 'No parents will see a card yet'
+                      : 'Active publication windows'
+                  }
+                  footerDetail="Sum across visible sections"
+                />
+                <StatCard
+                  description="Scheduled"
+                  value={scheduledCurrentTerm.toLocaleString('en-SG')}
+                  icon={CalendarClock}
+                  footerTitle={
+                    scheduledCurrentTerm === 0
+                      ? 'None upcoming'
+                      : `${scheduledCurrentTerm} window${scheduledCurrentTerm === 1 ? '' : 's'} pending`
+                  }
+                  footerDetail="Will open when the start date arrives"
+                />
+                <StatCard
+                  description="Pending publish"
+                  value={sectionsPendingCurrentTerm.toLocaleString('en-SG')}
+                  icon={AlertCircle}
+                  footerTitle={
+                    sectionsPendingCurrentTerm === 0
+                      ? 'Every section configured'
+                      : `${sectionsPendingCurrentTerm} section${sectionsPendingCurrentTerm === 1 ? '' : 's'} need a window`
+                  }
+                  footerDetail="No publication for this term yet"
+                />
+              </div>
+            </div>
+          )}
+          <AllPublicationsOverview
+            publications={overviewRows}
+            currentTermId={currentTermId}
+          />
+        </>
+      )}
 
       {/* Section picked — stats, publish windows, roster */}
       {q.section_id && (

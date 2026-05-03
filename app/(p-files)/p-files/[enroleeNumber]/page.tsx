@@ -21,7 +21,7 @@ import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { DOCUMENT_SLOTS, GROUP_LABELS, type DocumentGroup } from '@/lib/p-files/document-config';
 import { getStudentDocumentDetail, isStudentEnrolled } from '@/lib/p-files/queries';
 import { compareSlotsByUrgency, isActionable, classifyUrgency } from '@/lib/p-files/urgency';
-import { freshenAyDocuments } from '@/lib/sis/freshen-document-statuses';
+import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -38,7 +38,14 @@ export default async function StudentDocumentDetailPage({
   const { ay: ayParam } = await searchParams;
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
-  if (sessionUser.role !== 'p-file' && sessionUser.role !== 'admin' && sessionUser.role !== 'superadmin') redirect('/');
+  if (
+    sessionUser.role !== 'p-file' &&
+    sessionUser.role !== 'school_admin' &&
+    sessionUser.role !== 'admin' &&
+    sessionUser.role !== 'superadmin'
+  ) {
+    redirect('/');
+  }
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
@@ -137,7 +144,7 @@ export default async function StudentDocumentDetailPage({
       {/* ── Hero ──────────────────────────────────────────────────────── */}
       <header className="space-y-5">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          P-Files · Student documents
+          {canWrite ? 'P-Files · Student documents' : 'P-Files · Read-only oversight'}
         </p>
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between md:gap-6">
           <div className="space-y-3">

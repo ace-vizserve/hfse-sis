@@ -18,6 +18,7 @@ export type StudentHeader = {
 export type PlacementRow = {
   ayCode: string;
   ayLabel: string;
+  sectionId: string;
   sectionName: string;
   levelCode: string;
   levelLabel: string;
@@ -88,7 +89,7 @@ export async function getPlacementHistory(studentId: string): Promise<PlacementR
       `
         enrollment_status, enrollment_date, withdrawal_date, index_number,
         section:sections(
-          name,
+          id, name,
           level:levels(code, label),
           academic_year:academic_years(ay_code, label)
         )
@@ -103,6 +104,7 @@ export async function getPlacementHistory(studentId: string): Promise<PlacementR
     index_number: number;
     section:
       | {
+          id: string;
           name: string;
           level: { code: string; label: string } | { code: string; label: string }[] | null;
           academic_year:
@@ -126,6 +128,7 @@ export async function getPlacementHistory(studentId: string): Promise<PlacementR
       return {
         ayCode: ay.ay_code,
         ayLabel: ay.label,
+        sectionId: section.id,
         sectionName: section.name,
         levelCode: level.code,
         levelLabel: level.label,

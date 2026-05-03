@@ -36,8 +36,8 @@ const PFILES_NAV: NavSection[] = [
   { items: [{ href: "/p-files", label: "Dashboard" }] },
   {
     // Quick filters land on the dashboard with a `?status=` preset so the
-    // P-Files officer can jump straight to the work queue. The completeness
-    // table reads the searchParam and applies it as its initial filter.
+    // P-Files officer can jump straight to the work queue (oversight roles —
+    // school_admin/admin — see the same lists but in read-only mode).
     label: "Quick filters",
     items: [
       { href: "/p-files?status=missing", label: "Missing documents" },
@@ -47,28 +47,41 @@ const PFILES_NAV: NavSection[] = [
     ],
   },
   {
-    // Renewal-outreach windows. `?expiring=N` pre-filters to students
-    // with at least one Valid expiring slot whose expiry falls within
-    // the next N days. Pairs with the table's bulk "Send reminders".
+    // Renewal-outreach windows — officer-only because these are the lists
+    // the bulk-remind action operates on. Oversight roles get the same data
+    // via the read-only completeness table on the dashboard.
     label: "Expiring soon",
     items: [
-      { href: "/p-files?expiring=30", label: "Within 30 days" },
-      { href: "/p-files?expiring=60", label: "Within 60 days" },
-      { href: "/p-files?expiring=90", label: "Within 90 days" },
+      {
+        href: "/p-files?expiring=30",
+        label: "Within 30 days",
+        requiresRoles: ["p-file", "superadmin"],
+      },
+      {
+        href: "/p-files?expiring=60",
+        label: "Within 60 days",
+        requiresRoles: ["p-file", "superadmin"],
+      },
+      {
+        href: "/p-files?expiring=90",
+        label: "Within 90 days",
+        requiresRoles: ["p-file", "superadmin"],
+      },
     ],
   },
   {
     // Workflow shortcut — symmetric with Admissions's "Document validation"
     // quicklink. P-Files validates Expired + Rejected slots for ENROLLED
     // students (post-enrolment renewals); the Expired bucket is the most
-    // common trigger so the link routes there. Rejected is reachable via
-    // the dashboard chase strip drill until a dedicated focused-view lands.
+    // common trigger so the link routes there. school_admin/admin see this
+    // as a read-only watchlist; the actual validate/notify CTAs are gated
+    // by `canWrite` on the detail + completeness rows.
     label: "Quicklinks",
     items: [
       {
         href: "/p-files?status=expired",
         label: "Document validation",
-        requiresRoles: ["p-file", "admin", "superadmin"],
+        requiresRoles: ["p-file", "school_admin", "admin", "superadmin"],
       },
     ],
   },
@@ -168,14 +181,29 @@ const ADMISSIONS_NAV: NavSection[] = [
     items: [{ href: "/admissions/applications", label: "Applications" }],
   },
   // Cohort views — Admissions scope = funnel students (Submitted /
-  // Ongoing Verification / Processing). Mirrors the Records-side cohorts
-  // for the pre-enrolment side of the workflow.
+  // Ongoing Verification / Processing). STP + medical mirror the
+  // Records-side cohorts; "Promised follow-ups" is admissions-only —
+  // documents the parent committed to upload by a specific date, sorted
+  // by soonest with past-due rows pinned to the top. Pass-expiry lives
+  // on the Records side only (enrolled scope) — pre-enrolment travel-doc
+  // lapses are surfaced via /admissions?status=expired (KD #70).
   {
     label: "Cohorts",
     items: [
       { href: "/admissions/cohorts/stp", label: "STP applications" },
       { href: "/admissions/cohorts/medical", label: "Medical alerts" },
-      { href: "/admissions/cohorts/pass-expiry", label: "Pass expiry" },
+      { href: "/admissions/cohorts/promised", label: "Promised follow-ups" },
+    ],
+  },
+  // History — terminal applicants (Cancelled / Withdrawn) who exited the
+  // funnel without ever being classified as Enrolled. Read-only archive;
+  // no chase actions, no analytics. Pure observability piece — the
+  // active-funnel page filters these out of the in-flight list, so
+  // without this group they are operationally orphaned.
+  {
+    label: "History",
+    items: [
+      { href: "/admissions/applications/closed", label: "Closed applications" },
     ],
   },
   {

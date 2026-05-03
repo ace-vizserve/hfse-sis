@@ -9,7 +9,9 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import { getRoleFromClaims } from '@/lib/auth/roles';
+import { getTeacherList } from '@/lib/auth/staff-list';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -62,8 +64,27 @@ function formatRelativeDays(days: number): string {
   return `in ${weeks}w`;
 }
 
-export default async function GradingListPage() {
+export default async function GradingListPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ section?: string }>;
+}) {
   const supabase = await createClient();
+  // Optional `?section=<uuid>` deep-link from /markbook/sections/[id]'s
+  // "Grading sheets →" CTA. Resolve the section's name and seed the
+  // table's global search with it so the list opens pre-filtered. The
+  // global filter matches `section` substring (case-insensitive) so
+  // every sheet for that section appears.
+  const sectionParam = searchParams ? (await searchParams).section : undefined;
+  let initialSearch: string | undefined;
+  if (sectionParam) {
+    const { data: sec } = await supabase
+      .from('sections')
+      .select('name')
+      .eq('id', sectionParam)
+      .maybeSingle();
+    if (sec) initialSearch = (sec as { name: string }).name;
+  }
 
   const { data: claimsData } = await supabase.auth.getClaims();
   const claims = claimsData?.claims ?? null;
@@ -217,6 +238,80 @@ export default async function GradingListPage() {
 
   const allRows = (sheets ?? []) as SheetRow[];
 
+  // Resolve teacher assignments for the visible sections via
+  // `teacher_assignments` (KD #3 — canonical source for SIS-Admin's
+  // "Manage teachers" tab). Two lookups built from one query:
+  //   - subjectTeacherBySectionSubject  — drives the Teacher column +
+  //     dropdown + the row's `subject_teacher_id` (used by "My sheets")
+  //   - formAdviserBySection            — drives the Form Adviser
+  //     dropdown + the row's `form_adviser_id` (used by "My sheets")
+  //
+  // `grading_sheets.teacher_name` (legacy text field) stays as a
+  // graceful fallback when no subject_teacher assignment exists.
+  const visibleSectionIds = Array.from(
+    new Set(allRows.map((s) => first(s.section)?.id).filter((v): v is string => !!v)),
+  );
+  const subjectTeacherBySectionSubject = new Map<
+    string,
+    { userId: string; name: string }
+  >(); // key = `${sectionId}|${subjectId}`
+  const formAdviserBySection = new Map<string, { userId: string; name: string }>();
+  const subjectTeacherUserIds = new Set<string>();
+  const formAdviserUserIds = new Set<string>();
+
+  if (visibleSectionIds.length > 0) {
+    const service = createServiceClient();
+    const [{ data: assignments }, teacherList] = await Promise.all([
+      service
+        .from('teacher_assignments')
+        .select('section_id, subject_id, teacher_user_id, role')
+        .in('role', ['subject_teacher', 'form_adviser'])
+        .in('section_id', visibleSectionIds),
+      getTeacherList(),
+    ]);
+    const teacherById = new Map(teacherList.map((t) => [t.id, t]));
+
+    for (const a of (assignments ?? []) as Array<{
+      section_id: string;
+      subject_id: string | null;
+      teacher_user_id: string;
+      role: 'subject_teacher' | 'form_adviser';
+    }>) {
+      const t = teacherById.get(a.teacher_user_id);
+      if (!t) continue;
+      if (a.role === 'subject_teacher' && a.subject_id) {
+        const key = `${a.section_id}|${a.subject_id}`;
+        // First-write-wins for multi-teacher (section, subject) pairs —
+        // comma-joining is too dense for a list cell.
+        if (!subjectTeacherBySectionSubject.has(key)) {
+          subjectTeacherBySectionSubject.set(key, { userId: t.id, name: t.name });
+          subjectTeacherUserIds.add(t.id);
+        }
+      } else if (a.role === 'form_adviser') {
+        // form_adviser is per-section (subject_id is null on this role).
+        if (!formAdviserBySection.has(a.section_id)) {
+          formAdviserBySection.set(a.section_id, { userId: t.id, name: t.name });
+          formAdviserUserIds.add(t.id);
+        }
+      }
+    }
+  }
+
+  // Curated dropdown options — all teachers in the AY who have at least
+  // one assignment of the given role. Sorted alphabetically by display
+  // name (getTeacherList already does this). Independent of other
+  // filters' state — the dropdown shows the same options regardless of
+  // which level/subject/term is currently active.
+  const teacherListAll = subjectTeacherUserIds.size > 0 || formAdviserUserIds.size > 0
+    ? await getTeacherList()
+    : [];
+  const teacherOptions = teacherListAll
+    .filter((t) => subjectTeacherUserIds.has(t.id))
+    .map((t) => t.name);
+  const formAdviserOptions = teacherListAll
+    .filter((t) => formAdviserUserIds.has(t.id))
+    .map((t) => t.name);
+
   // Flatten to GradingSheetRow[] for the data table.
   const tableRows: GradingSheetRow[] = allRows.map((s) => {
     const section = first(s.section);
@@ -224,13 +319,21 @@ export default async function GradingListPage() {
     const subject = first(s.subject);
     const term = first(s.term);
     const bucket = blanksBySheet.get(s.id) ?? { blanks: 0, total: 0 };
+    const subjectTeacher =
+      section?.id && subject?.id
+        ? subjectTeacherBySectionSubject.get(`${section.id}|${subject.id}`) ?? null
+        : null;
+    const formAdviser = section?.id ? formAdviserBySection.get(section.id) ?? null : null;
     return {
       id: s.id,
       section: section?.name ?? '—',
       level: level?.label ?? 'Unknown',
       subject: subject?.name ?? '—',
       term: term?.label ?? '—',
-      teacher: s.teacher_name ?? null,
+      teacher: subjectTeacher?.name ?? s.teacher_name ?? null,
+      subject_teacher_id: subjectTeacher?.userId ?? null,
+      form_adviser: formAdviser?.name ?? null,
+      form_adviser_id: formAdviser?.userId ?? null,
       is_locked: s.is_locked,
       blanks_remaining: bucket.blanks,
       total_students: bucket.total,
@@ -403,7 +506,16 @@ export default async function GradingListPage() {
           </CardContent>
         </Card>
       ) : (
-        <GradingDataTable data={tableRows} />
+        <GradingDataTable
+          data={tableRows}
+          initialSearch={initialSearch}
+          teacherOptions={teacherOptions}
+          formAdviserOptions={formAdviserOptions}
+          // "My sheets" is teacher-scoped — registrars + admins manage
+          // every section, so the toggle has no useful narrowing for
+          // them. Pass null to hide it.
+          currentUserId={role === 'teacher' ? userId : null}
+        />
       )}
     </PageShell>
   );

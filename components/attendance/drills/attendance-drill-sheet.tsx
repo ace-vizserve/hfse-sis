@@ -1,7 +1,9 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import type { ColumnDef } from '@tanstack/react-table';
+import { ArrowUpRight } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
@@ -249,6 +251,23 @@ function buildCompassionateColumns(visible: DrillColumnKey[]): ColumnDef<Compass
         break;
     }
   }
+  // Always-on action column — deep-link to the per-student attendance
+  // detail page (canonical edit surface for the quota allowance + daily
+  // ledger). Not driven by `visible` because it's an affordance, not data.
+  cols.push({
+    id: 'action',
+    header: '',
+    cell: ({ row }) => (
+      <Link
+        href={`/attendance/students/${encodeURIComponent(row.original.studentNumber)}`}
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        View
+        <ArrowUpRight className="size-3" />
+      </Link>
+    ),
+    enableSorting: false,
+  });
   return cols;
 }
 

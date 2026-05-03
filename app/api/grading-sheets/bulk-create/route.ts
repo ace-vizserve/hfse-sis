@@ -43,9 +43,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const inserted = typeof data === 'object' && data && 'inserted' in data
-    ? Number((data as { inserted: unknown }).inserted ?? 0)
-    : 0;
+  const r = (typeof data === 'object' && data ? data : {}) as Record<string, unknown>;
+  const inserted = Number(r.inserted ?? 0);
+  const repairedUnconfigured = Number(r.repaired_unconfigured_sheets ?? 0);
+  const resizedEntries = Number(r.resized_entry_arrays ?? 0);
+  const sheetsSeeded = Number(r.sheets_seeded ?? 0);
 
   await logAction({
     service,
@@ -58,8 +60,17 @@ export async function POST(request: NextRequest) {
       ay_id: ayId,
       section_id: sectionId,
       inserted,
+      repaired_unconfigured_sheets: repairedUnconfigured,
+      resized_entry_arrays: resizedEntries,
+      sheets_seeded: sheetsSeeded,
     },
   });
 
-  return NextResponse.json({ ok: true, inserted });
+  return NextResponse.json({
+    ok: true,
+    inserted,
+    repaired_unconfigured_sheets: repairedUnconfigured,
+    resized_entry_arrays: resizedEntries,
+    sheets_seeded: sheetsSeeded,
+  });
 }

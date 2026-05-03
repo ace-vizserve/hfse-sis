@@ -151,7 +151,16 @@ export async function listHolidaysForPriorTerm(
     .order('ay_code', { ascending: false });
   if (ayErr || !ays) return { sourceAy: null, holidays: [] };
 
-  for (const ay of ays as Array<{ id: string; ay_code: string; label: string }>) {
+  // Exclude test AYs (KD #52 — `^AY9` is the test-environment pattern).
+  // Without this filter, lexicographic ordering picks AY9999 as the
+  // "most recent prior" because '9' > '2', leaking seeded test fixtures
+  // into production carry-forwards. Same convention used by the AY-setup
+  // wizard's source-AY filter and `lib/sis/seeder`.
+  const productionAys = (ays as Array<{ id: string; ay_code: string; label: string }>).filter(
+    (ay) => !/^AY9/i.test(ay.ay_code),
+  );
+
+  for (const ay of productionAys) {
     const { data: term } = await service
       .from('terms')
       .select('id')

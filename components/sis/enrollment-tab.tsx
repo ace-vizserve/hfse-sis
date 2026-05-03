@@ -1,25 +1,32 @@
+import Link from 'next/link';
 import {
+  Activity,
   AlertTriangle,
-  ArrowRight,
-  Check,
+  ArrowRightLeft,
   CheckCircle2,
   Circle,
   ClipboardList,
-  Clock,
+  Compass,
+  CreditCard,
+  FileCheck,
   GraduationCap,
   Heart,
-  Lock,
+  Package,
+  PenLine,
+  ReceiptText,
   ShieldCheck,
   Sparkles,
   Tags,
+  Users,
   X,
   type LucideIcon,
 } from 'lucide-react';
 
 import { EditStageDialog } from '@/components/sis/edit-stage-dialog';
-import { FieldGrid, type Field } from '@/components/sis/field-grid';
+import { type Field } from '@/components/sis/field-grid';
 import { StageStatusBadge } from '@/components/sis/status-badge';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardAction,
@@ -28,36 +35,31 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import {
-  ENROLLED_PREREQ_STAGES,
-  STAGE_COLUMN_MAP,
-  STAGE_LABELS,
-  STAGE_TERMINAL_STATUS,
-  type StageKey,
-} from '@/lib/schemas/sis';
+import { ENROLLED_PREREQ_STAGES, type StageKey } from '@/lib/schemas/sis';
 import { isFieldEmpty } from '@/lib/sis/field-helpers';
 import type { ApplicationRow, StatusRow } from '@/lib/sis/queries';
 import { cn } from '@/lib/utils';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EnrollmentTab — pipeline + decision gate + phase cards + medical/billing.
+// EnrollmentTab — STATUS UI (take 2: status-driven richness, no progress).
 //
-// Top-level shape (post-redesign):
-//   1. Pipeline header — 9-stage horizontal indicator with "next action"
-//      summary + progress bar. Click a step to scroll to its phase card.
-//   2. Decision gate — state-aware tile + hero block (mint = enrolled,
-//      amber = conditional, indigo = ready, muted = blocked,
-//      destructive = cancelled / withdrawn).
-//   3. Phase 1 · Intake — Registration, Documents, Assessment.
-//   4. Phase 2 · Commitments — Contract, Fees.
-//   5. Phase 3 · Start — Class, Supplies, Orientation (post-enrollment).
-//   6. Medical + Billing — 2-col side cards.
+// HFSE freely changes any stage status at any time and in any order before
+// the final enrollment decision is recorded. This tab presents each of the
+// 9 stages as an independent editable status — no pipeline stepper, no
+// prereq lock visualization, no "next action" pressure, no progress bar.
 //
-// Behaviour preserved exactly:
-//   - Enrolled-prereq gate is server-side; UI shows blockers as advisory.
-//   - Documents-stage Verified/Finished gate (KD #60) — handled by
-//     EditStageDialog's existing 422 branch.
-//   - All EditStageDialog wiring is unchanged.
+// Visual richness is added via STATUS-driven signals (not sequence):
+//   - left-edge stripe color-keyed to the current stage status (mint=done,
+//     amber=pending, destructive=cancelled, indigo=in-progress)
+//   - per-stage gradient icon tile + serif title (mental-map by glyph)
+//   - prominent StageStatusBadge as the visual anchor
+//   - hover lift per the §7 craft standard
+//   - always-visible edit button (no hover-to-reveal)
+//
+// Server-side enforcement still applies: the application stage's terminal
+// `Enrolled` status requires all 5 prereqs to be marked complete. That
+// enforcement lives in EditStageDialog + the stage PATCH route; the UI
+// shows the resulting error if the user attempts an invalid transition.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -66,9 +68,14 @@ type Props = {
   ayCode: string;
   enroleeNumber: string;
   statusFetchError: boolean;
+  /** Current assigned section's UUID — resolved by the page from
+   *  classLevel + classSection. Drives the "Move to another section →"
+   *  CTA on the class stage tile. Null when pre-Enrolled or section was
+   *  renamed/dropped after AY rollover. */
+  currentSectionId?: string | null;
 };
 
-type StepStage = {
+type StageCard = {
   key: StageKey;
   label: string;
   status: string | null;
@@ -79,151 +86,180 @@ type StepStage = {
   extrasInitial: Record<string, string | null>;
 };
 
-type LockState = 'done' | 'cancelled' | 'unlocked';
+type ApplicationTone = 'enrolled' | 'enrolledConditional' | 'cancelled' | 'withdrawn' | 'open';
 
-type DecisionState =
-  | 'enrolled'
-  | 'enrolledConditional'
-  | 'ready'
-  | 'blocked'
-  | 'cancelled'
-  | 'withdrawn';
-
-const DECISION_TILE: Record<
-  DecisionState,
-  { gradient: string; bandTint: string; bandBorder: string; icon: LucideIcon }
+const APPLICATION_TILE: Record<
+  ApplicationTone,
+  { gradient: string; bandTint: string; bandBorder: string; icon: LucideIcon; label: string }
 > = {
   enrolled: {
     gradient: 'from-brand-mint to-brand-sky',
     bandTint: 'bg-brand-mint/10',
     bandBorder: 'border-brand-mint/30',
     icon: CheckCircle2,
+    label: 'Enrolled',
   },
   enrolledConditional: {
     gradient: 'from-brand-amber to-brand-amber/80',
     bandTint: 'bg-brand-amber/10',
     bandBorder: 'border-brand-amber/40',
     icon: ShieldCheck,
-  },
-  ready: {
-    gradient: 'from-brand-indigo to-brand-navy',
-    bandTint: 'bg-brand-indigo/10',
-    bandBorder: 'border-brand-indigo/30',
-    icon: ArrowRight,
-  },
-  blocked: {
-    gradient: 'from-ink-4 to-ink-3',
-    bandTint: 'bg-muted/40',
-    bandBorder: 'border-hairline',
-    icon: Lock,
+    label: 'Enrolled (Conditional)',
   },
   cancelled: {
     gradient: 'from-destructive to-destructive/80',
     bandTint: 'bg-destructive/10',
     bandBorder: 'border-destructive/30',
     icon: X,
+    label: 'Cancelled',
   },
   withdrawn: {
     gradient: 'from-destructive to-destructive/80',
     bandTint: 'bg-destructive/10',
     bandBorder: 'border-destructive/30',
     icon: X,
+    label: 'Withdrawn',
+  },
+  open: {
+    gradient: 'from-brand-indigo to-brand-navy',
+    bandTint: 'bg-muted/30',
+    bandBorder: 'border-hairline',
+    icon: ClipboardList,
+    label: 'In progress',
   },
 };
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-function stageCompleted(status: string | null): boolean {
-  return !!status && /^(finished|valid|signed|paid|claimed)$/i.test(status.trim());
-}
-
-function stagePending(status: string | null): boolean {
-  return !!status && /^(pending|incomplete|unpaid)$/i.test(status.trim());
-}
-
-function stageRejected(status: string | null): boolean {
-  return !!status && /^(rejected|expired)$/i.test(status.trim());
-}
-
-function stageMarkerElement(
-  status: string | null,
-  className = 'size-4',
-): React.ReactElement | null {
-  const v = (status ?? '').trim();
-  if (stageCompleted(v)) return <Check className={className} />;
-  if (stageRejected(v)) return <X className={className} />;
-  if (stagePending(v)) return <Clock className={className} />;
-  if (v && /invoic|upload|sent|generated|ongoing/i.test(v)) return <Circle className={className} />;
-  return null;
-}
-
-function stageTone(status: string | null): { border: string; bg: string; text: string } {
-  const v = (status ?? '').trim();
-  if (stageCompleted(v))
-    return {
-      border: 'border-brand-mint',
-      bg: 'bg-brand-mint/20',
-      text: 'text-brand-indigo-deep',
-    };
-  if (stageRejected(v))
-    return {
-      border: 'border-destructive/50',
-      bg: 'bg-destructive/10',
-      text: 'text-destructive',
-    };
-  if (stagePending(v))
-    return {
-      border: 'border-brand-amber/60',
-      bg: 'bg-brand-amber-light/40',
-      text: 'text-brand-amber',
-    };
-  if (v && /invoic|upload|sent|generated|ongoing/i.test(v))
-    return {
-      border: 'border-brand-indigo/40',
-      bg: 'bg-accent',
-      text: 'text-brand-indigo-deep',
-    };
-  return { border: 'border-border', bg: 'bg-muted/40', text: 'text-muted-foreground' };
-}
-
-function stripeForPrereqLock(lock: LockState, isActive: boolean, hasStatus: boolean): string {
-  if (lock === 'done') return 'bg-brand-mint';
-  if (lock === 'cancelled') return 'bg-destructive/70';
-  if (isActive) return 'bg-brand-indigo';
-  if (hasStatus) return 'bg-brand-amber';
+// Status-driven left-stripe color. Single source of truth — the stage tile's
+// stripe and the StageStatusBadge variant must read as the SAME tone, since
+// both answer the same question ("what state is this stage in?"). Status
+// values are the canonical set from STAGE_STATUS_OPTIONS in lib/schemas/sis.
+function statusStripeClass(status: string | null): string {
+  const s = (status ?? '').trim();
+  if (!s) return 'bg-border';
+  // Done — terminal-positive.
+  if (
+    /^(finished|verified|paid|signed|claimed|enrolled|enrolled \(conditional\))$/i.test(s)
+  ) {
+    return 'bg-brand-mint';
+  }
+  // Failed — terminal-negative.
+  if (/^(cancelled|withdrawn|rejected|expired)$/i.test(s)) {
+    return 'bg-destructive/70';
+  }
+  // Pending — needs attention.
+  if (/^(pending|unpaid|incomplete)$/i.test(s)) {
+    return 'bg-brand-amber';
+  }
+  // Active / in-flight.
+  if (
+    /^(submitted|ongoing verification|processing|ongoing assessment|generated|sent|invoiced|re-invoiced)$/i.test(
+      s,
+    )
+  ) {
+    return 'bg-brand-indigo';
+  }
   return 'bg-border';
 }
 
-function stripeForPostStage(stage: StepStage): string {
-  if (stageCompleted(stage.status)) return 'bg-brand-mint';
-  if (stageRejected(stage.status) || stage.status === 'Cancelled') return 'bg-destructive/70';
-  if (stagePending(stage.status)) return 'bg-brand-amber';
-  if (stage.status) return 'bg-brand-indigo';
-  return 'bg-border';
+// Per-stage iconography. Used in the stage-tile's top-left gradient tile
+// and in the section-card's CardAction. Builds an admissions-officer mental
+// map: "the assessment one with the cap" beats "the third tile in the
+// second card" when scanning the page.
+const STAGE_ICON: Record<StageKey, LucideIcon> = {
+  application: ClipboardList,
+  registration: ReceiptText,
+  documents: FileCheck,
+  assessment: GraduationCap,
+  contract: PenLine,
+  fees: CreditCard,
+  class: Users,
+  supplies: Package,
+  orientation: Compass,
+};
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-SG', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function ExtrasChips({ fields }: { fields: Field[] }) {
+  const nonEmpty = fields.filter((f) => !isFieldEmpty(f));
+  if (nonEmpty.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {nonEmpty.map((f) => {
+        const value =
+          f.asDate && typeof f.value === 'string'
+            ? new Date(f.value).toLocaleDateString('en-SG', { day: '2-digit', month: 'short' })
+            : String(f.value ?? '—');
+        return (
+          <span
+            key={f.label}
+            className="inline-flex items-center gap-1.5 rounded-md border border-hairline bg-muted/40 px-2 py-0.5 text-[11px] text-foreground"
+          >
+            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
+              {f.label}
+            </span>
+            <span className="font-medium tabular-nums">{value}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// Stage-count rollup for the section-card meta strip. Pure status-driven
+// (does NOT compute a "next action" — that would re-introduce sequence).
+function stageBucketCounts(stages: StageCard[]): {
+  total: number;
+  done: number;
+  pending: number;
+  failed: number;
+  active: number;
+  empty: number;
+} {
+  const counts = { total: stages.length, done: 0, pending: 0, failed: 0, active: 0, empty: 0 };
+  for (const s of stages) {
+    const stripe = statusStripeClass(s.status);
+    if (stripe === 'bg-brand-mint') counts.done += 1;
+    else if (stripe === 'bg-destructive/70') counts.failed += 1;
+    else if (stripe === 'bg-brand-amber') counts.pending += 1;
+    else if (stripe === 'bg-brand-indigo') counts.active += 1;
+    else counts.empty += 1;
+  }
+  return counts;
 }
 
 // ─── main component ─────────────────────────────────────────────────────────
 
-export function EnrollmentTab({ status, app, ayCode, enroleeNumber, statusFetchError }: Props) {
-  // `status` may be null either because the row is legitimately missing OR
-  // because the status fetch errored (typically duplicate rows). The amber
-  // alert below signals the latter; the timeline still renders.
+export function EnrollmentTab({
+  status,
+  app,
+  ayCode,
+  enroleeNumber,
+  statusFetchError,
+  currentSectionId,
+}: Props) {
   const s = status ?? ({} as StatusRow);
 
-  const stages: StepStage[] = [
-    {
-      key: 'application',
-      label: 'Application',
-      status: s.applicationStatus,
-      remarks: s.applicationRemarks,
-      updatedAt: s.applicationUpdatedDate,
-      updatedBy: s.applicationUpdatedBy,
-      extras: [
-        { label: 'Enrolment date', value: s.enrolmentDate, asDate: true },
-        { label: 'Enrolee type', value: s.enroleeType },
-      ],
-      extrasInitial: {},
-    },
+  const applicationCard: StageCard = {
+    key: 'application',
+    label: 'Application',
+    status: s.applicationStatus,
+    remarks: s.applicationRemarks,
+    updatedAt: s.applicationUpdatedDate,
+    updatedBy: s.applicationUpdatedBy,
+    extras: [
+      { label: 'Enrolment date', value: s.enrolmentDate, asDate: true },
+      { label: 'Enrolee type', value: s.enroleeType },
+    ],
+    extrasInitial: {},
+  };
+
+  const intakeCards: StageCard[] = [
     {
       key: 'registration',
       label: 'Registration',
@@ -269,6 +305,9 @@ export function EnrollmentTab({ status, app, ayCode, enroleeNumber, statusFetchE
         medical: s.assessmentMedical,
       },
     },
+  ];
+
+  const commitmentsCards: StageCard[] = [
     {
       key: 'contract',
       label: 'Contract',
@@ -296,6 +335,9 @@ export function EnrollmentTab({ status, app, ayCode, enroleeNumber, statusFetchE
         startDate: s.feeStartDate,
       },
     },
+  ];
+
+  const placementCards: StageCard[] = [
     {
       key: 'class',
       label: 'Class assignment',
@@ -336,56 +378,17 @@ export function EnrollmentTab({ status, app, ayCode, enroleeNumber, statusFetchE
     },
   ];
 
-  const stageByKey = new Map(stages.map((st) => [st.key, st]));
-  const prereqSequence: StageKey[] = [...ENROLLED_PREREQ_STAGES];
-  const applicationStage = stageByKey.get('application')!;
-  const prereqStatusesForApplication: Partial<Record<StageKey, string | null>> = {};
-  for (const k of ENROLLED_PREREQ_STAGES) {
-    prereqStatusesForApplication[k] = stageByKey.get(k)?.status ?? null;
-  }
-  const postList = (['class', 'supplies', 'orientation'] as StageKey[]).map(
-    (k) => stageByKey.get(k)!,
-  );
-
-  const intakeKeys: StageKey[] = ['registration', 'documents', 'assessment'];
-  const commitmentsKeys: StageKey[] = ['contract', 'fees'];
-  const intakeList = intakeKeys.map((k) => stageByKey.get(k)!);
-  const commitmentsList = commitmentsKeys.map((k) => stageByKey.get(k)!);
-
-  function lockFor(key: StageKey): LockState {
-    const cur = (s as Record<string, string | null>)[STAGE_COLUMN_MAP[key].statusCol] ?? null;
-    if (cur === 'Cancelled') return 'cancelled';
-    const terminal = STAGE_TERMINAL_STATUS[key];
-    if (terminal && cur === terminal) return 'done';
-    return 'unlocked';
-  }
-  const prereqLocks = prereqSequence.map((k) => lockFor(k));
-  const activeIndex = prereqLocks.findIndex((l) => l === 'unlocked');
-  const prereqDoneCount = prereqLocks.filter((l) => l === 'done').length;
-  const prereqPct = Math.round((prereqDoneCount / prereqSequence.length) * 100);
-  const allPrereqsDone = prereqDoneCount === prereqSequence.length;
-
-  const applicationStatusValue = s.applicationStatus ?? null;
-  const isEnrolled =
-    applicationStatusValue === 'Enrolled' || applicationStatusValue === 'Enrolled (Conditional)';
-
-  const decisionState: DecisionState =
-    applicationStatusValue === 'Enrolled'
+  const applicationStatus = s.applicationStatus ?? null;
+  const applicationTone: ApplicationTone =
+    applicationStatus === 'Enrolled'
       ? 'enrolled'
-      : applicationStatusValue === 'Enrolled (Conditional)'
+      : applicationStatus === 'Enrolled (Conditional)'
         ? 'enrolledConditional'
-        : applicationStatusValue === 'Cancelled'
+        : applicationStatus === 'Cancelled'
           ? 'cancelled'
-          : applicationStatusValue === 'Withdrawn'
+          : applicationStatus === 'Withdrawn'
             ? 'withdrawn'
-            : allPrereqsDone
-              ? 'ready'
-              : 'blocked';
-
-  const blockers = prereqSequence
-    .map((k, i) => ({ key: k, lock: prereqLocks[i] }))
-    .filter((b) => b.lock !== 'done' && b.lock !== 'cancelled');
-  const nextActionKey = activeIndex >= 0 ? prereqSequence[activeIndex] : null;
+            : 'open';
 
   return (
     <div className="space-y-5">
@@ -397,106 +400,56 @@ export function EnrollmentTab({ status, app, ayCode, enroleeNumber, statusFetchE
             <p className="text-muted-foreground">
               This usually means multiple rows exist in{' '}
               <code className="font-mono">{ayCode.toLowerCase()}_enrolment_status</code> for this
-              enrolee — the schema allows duplicates. The timeline below may not reflect reality;
-              contact an engineer to dedupe before using this pipeline.
+              enrolee — the schema allows duplicates. Status fields below may not reflect reality;
+              contact an engineer to dedupe before editing.
             </p>
           </div>
         </div>
       )}
 
-      {/* Pipeline header — 9-stage horizontal indicator */}
-      <PipelineHeader
-        stages={stages}
-        prereqSequence={prereqSequence}
-        prereqLocks={prereqLocks}
-        activeIndex={activeIndex}
-        prereqDoneCount={prereqDoneCount}
-        prereqPct={prereqPct}
-        allPrereqsDone={allPrereqsDone}
-        nextActionKey={nextActionKey}
-      />
-
-      {/* Decision gate — state-aware tile + hero block */}
-      <DecisionGate
-        decisionState={decisionState}
-        applicationStage={applicationStage}
-        prereqStatusesForApplication={prereqStatusesForApplication}
-        blockers={blockers}
-        nextActionKey={nextActionKey}
+      <ApplicationStatusCard
+        applicationCard={applicationCard}
+        applicationTone={applicationTone}
         s={s}
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
       />
 
-      {/* Phase 1 — Intake */}
-      <PhaseStepCard
-        eyebrow="Phase 1 · Intake"
-        title="Qualification"
-        subtitle="Registration, documents & assessment — verifying the applicant."
+      <ProgressOverviewCard
+        prereqStages={[...intakeCards, ...commitmentsCards].filter((c) =>
+          (ENROLLED_PREREQ_STAGES as readonly StageKey[]).includes(c.key),
+        )}
+        postEnrolStages={placementCards}
+      />
+
+      <StatusGroupCard
+        eyebrow="Intake"
+        title="Registration, documents & assessment"
         icon={ClipboardList}
-        stages={intakeList}
-        stageIndices={intakeKeys.map((k) => prereqSequence.indexOf(k))}
-        prereqLocks={prereqLocks}
-        activeIndex={activeIndex}
-        progressLabel={`${prereqDoneCount} of ${prereqSequence.length} prereqs`}
-        progressPct={prereqPct}
-        allPrereqsDone={allPrereqsDone}
+        stages={intakeCards}
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
       />
 
-      {/* Phase 2 — Commitments */}
-      <PhaseStepCard
-        eyebrow="Phase 2 · Commitments"
-        title="Contract & payment"
-        subtitle="Binding decisions — sign the contract and clear fees."
+      <StatusGroupCard
+        eyebrow="Commitments"
+        title="Contract & fees"
         icon={ShieldCheck}
-        stages={commitmentsList}
-        stageIndices={commitmentsKeys.map((k) => prereqSequence.indexOf(k))}
-        prereqLocks={prereqLocks}
-        activeIndex={activeIndex}
+        stages={commitmentsCards}
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
       />
 
-      {/* Phase 3 — Start */}
-      <Card
-        id="phase-start"
-        className={cn('scroll-mt-20 gap-0 overflow-hidden p-0', !isEnrolled && 'opacity-60')}
-      >
-        <CardHeader className="border-b border-border px-5 py-4">
-          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-            Phase 3 · Start
-          </CardDescription>
-          <CardTitle className="flex flex-wrap items-baseline gap-2 font-serif text-[18px] font-semibold tracking-tight text-foreground">
-            Class, supplies &amp; orientation
-            {isEnrolled ? (
-              <Badge variant="success">Active</Badge>
-            ) : (
-              <Badge variant="muted">Activates after Enrolled</Badge>
-            )}
-          </CardTitle>
-          <CardAction>
-            <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              <GraduationCap className="size-5" />
-            </div>
-          </CardAction>
-        </CardHeader>
-        <ol className="divide-y divide-border">
-          {postList.map((stage) => (
-            <PostStepRow
-              key={stage.key}
-              stage={stage}
-              isClassStage={stage.key === 'class'}
-              isEnrolled={isEnrolled}
-              ayCode={ayCode}
-              enroleeNumber={enroleeNumber}
-            />
-          ))}
-        </ol>
-      </Card>
+      <StatusGroupCard
+        eyebrow="Placement"
+        title="Class, supplies & orientation"
+        icon={GraduationCap}
+        stages={placementCards}
+        ayCode={ayCode}
+        enroleeNumber={enroleeNumber}
+        currentSectionId={currentSectionId}
+      />
 
-      {/* Medical + Billing */}
       <div className="grid gap-4 md:grid-cols-2">
         <MedicalCard app={app} />
         <BillingCard app={app} />
@@ -505,180 +458,39 @@ export function EnrollmentTab({ status, app, ayCode, enroleeNumber, statusFetchE
   );
 }
 
-// ─── pipeline header ────────────────────────────────────────────────────────
+// ─── application status card ────────────────────────────────────────────────
 
-function PipelineHeader({
-  stages,
-  prereqSequence,
-  prereqLocks,
-  activeIndex,
-  prereqDoneCount,
-  prereqPct,
-  allPrereqsDone,
-  nextActionKey,
-}: {
-  stages: StepStage[];
-  prereqSequence: StageKey[];
-  prereqLocks: LockState[];
-  activeIndex: number;
-  prereqDoneCount: number;
-  prereqPct: number;
-  allPrereqsDone: boolean;
-  nextActionKey: StageKey | null;
-}) {
-  // Map a stage to its scroll target — application + prereqs go to their
-  // phase card (Intake / Commitments). Class/Supplies/Orientation go to
-  // the Start phase card.
-  function scrollTargetFor(key: StageKey): string {
-    if (key === 'class' || key === 'supplies' || key === 'orientation') return '#phase-start';
-    if (key === 'contract' || key === 'fees') return '#phase-commitments';
-    return '#phase-intake';
-  }
-
-  return (
-    <Card className="@container/pipeline gap-0 overflow-hidden p-0">
-      <CardHeader className="border-b border-border px-5 py-4">
-        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          Pipeline · 9 stages
-        </CardDescription>
-        <CardTitle className="font-serif text-[18px] font-semibold tracking-tight text-foreground">
-          Enrollment progress
-        </CardTitle>
-        <CardAction>
-          <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <ClipboardList className="size-5" />
-          </div>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="space-y-3 px-5 py-4">
-        <ol className="flex flex-wrap items-start gap-x-1 gap-y-3">
-          {stages.map((stage, idx) => {
-            const inPrereq = prereqSequence.includes(stage.key);
-            const prereqIdx = inPrereq ? prereqSequence.indexOf(stage.key) : -1;
-            const prereqLock = inPrereq ? prereqLocks[prereqIdx] : null;
-            const isActive = inPrereq && prereqIdx === activeIndex;
-            const isLast = idx === stages.length - 1;
-            return (
-              <li key={stage.key} className="flex shrink-0 items-start">
-                <a
-                  href={scrollTargetFor(stage.key)}
-                  className="group flex flex-col items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40"
-                  title={`${stage.label} · ${stage.status ?? '—'}`}
-                >
-                  <PrereqMarker
-                    index={idx + 1}
-                    lock={prereqLock}
-                    status={stage.status}
-                    isActive={isActive}
-                  />
-                  <div className="flex max-w-[88px] flex-col items-center text-center">
-                    <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                      Step {idx + 1}
-                    </span>
-                    <span className="font-serif text-[11px] font-semibold leading-tight tracking-tight text-foreground">
-                      {stage.label}
-                    </span>
-                  </div>
-                </a>
-                {!isLast && (
-                  <div
-                    aria-hidden="true"
-                    className={cn(
-                      'mt-4 h-0.5 w-3 shrink-0 sm:w-5',
-                      prereqLock === 'done' ? 'bg-brand-mint' : 'bg-border',
-                    )}
-                  />
-                )}
-              </li>
-            );
-          })}
-        </ol>
-        <div className="flex flex-col gap-2 border-t border-hairline pt-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-baseline gap-2">
-            {nextActionKey ? (
-              <>
-                <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Active prereq
-                </span>
-                <span className="font-serif text-sm font-semibold tracking-tight text-foreground">
-                  {STAGE_LABELS[nextActionKey]}
-                </span>
-                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                  → mark as {STAGE_TERMINAL_STATUS[nextActionKey]}
-                </span>
-              </>
-            ) : (
-              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-mint">
-                All prereqs complete
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-              {prereqDoneCount} of {prereqSequence.length} prereqs
-            </span>
-            <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn(
-                  'h-full transition-all',
-                  allPrereqsDone
-                    ? 'bg-gradient-to-r from-brand-mint to-brand-mint/70'
-                    : 'bg-gradient-to-r from-brand-indigo to-brand-indigo/70',
-                )}
-                style={{ width: `${prereqPct}%` }}
-              />
-            </div>
-            <span className="font-mono text-[11px] font-semibold tabular-nums text-foreground">
-              {prereqPct}%
-            </span>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── decision gate ──────────────────────────────────────────────────────────
-
-function DecisionGate({
-  decisionState,
-  applicationStage,
-  prereqStatusesForApplication,
-  blockers,
-  nextActionKey,
+function ApplicationStatusCard({
+  applicationCard,
+  applicationTone,
   s,
   ayCode,
   enroleeNumber,
 }: {
-  decisionState: DecisionState;
-  applicationStage: StepStage;
-  prereqStatusesForApplication: Partial<Record<StageKey, string | null>>;
-  blockers: Array<{ key: StageKey; lock: LockState }>;
-  nextActionKey: StageKey | null;
+  applicationCard: StageCard;
+  applicationTone: ApplicationTone;
   s: StatusRow;
   ayCode: string;
   enroleeNumber: string;
 }) {
-  const tile = DECISION_TILE[decisionState];
+  const tile = APPLICATION_TILE[applicationTone];
   const TileIcon = tile.icon;
+  const isEnrolled =
+    applicationTone === 'enrolled' || applicationTone === 'enrolledConditional';
 
-  const titleByState: Record<DecisionState, string> = {
-    enrolled: 'Enrolled',
-    enrolledConditional: 'Enrolled (Conditional)',
-    ready: 'Ready to enroll',
-    blocked: `${blockers.length} prereq${blockers.length === 1 ? '' : 's'} remaining`,
-    cancelled: 'Application cancelled',
-    withdrawn: 'Application withdrawn',
-  };
+  // Headline: status label (always) + class assignment when Enrolled.
+  // Single horizontal row — no nested "Current value" framing.
+  const classChip =
+    isEnrolled && s.classLevel && s.classSection ? `${s.classLevel} · ${s.classSection}` : null;
 
   return (
     <Card className="gap-0 overflow-hidden p-0">
       <CardHeader className={cn('border-b px-5 py-4', tile.bandBorder)}>
         <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          Enrollment gate
+          Application status
         </CardDescription>
         <CardTitle className="font-serif text-[18px] font-semibold tracking-tight text-foreground">
-          {titleByState[decisionState]}
+          {tile.label}
         </CardTitle>
         <CardAction>
           <div
@@ -691,173 +503,61 @@ function DecisionGate({
           </div>
         </CardAction>
       </CardHeader>
-      <CardContent className={cn('space-y-4 px-5 py-4', tile.bandTint)}>
-        {(decisionState === 'enrolled' || decisionState === 'enrolledConditional') && (
-          <DecisionHero
-            tileGradient={tile.gradient}
-            icon={GraduationCap}
-            eyebrow={
-              s.classLevel && s.classSection
-                ? 'Class assigned'
-                : decisionState === 'enrolled'
-                  ? 'Enrolled'
-                  : 'Enrolled (Conditional)'
-            }
-            title={
-              s.classLevel && s.classSection
-                ? `${s.classLevel} · ${s.classSection}`
-                : 'Class placement pending'
-            }
-            footer={
-              applicationStage.updatedAt
-                ? `${decisionState === 'enrolled' ? 'Enrolled' : 'Marked conditional'} ${formatDate(applicationStage.updatedAt)}${applicationStage.updatedBy ? ` by ${applicationStage.updatedBy}` : ''}`
-                : null
-            }
-            cta={
-              <EditStageDialog
-                ayCode={ayCode}
-                enroleeNumber={enroleeNumber}
-                stageKey="application"
-                initialStatus={applicationStage.status}
-                initialRemarks={applicationStage.remarks}
-                initialExtras={applicationStage.extrasInitial}
-                prereqStatuses={prereqStatusesForApplication}
-              />
-            }
-          />
-        )}
-        {decisionState === 'enrolledConditional' && (
-          <p className="px-1 text-xs leading-relaxed text-muted-foreground">
-            Registrar override — the standard prereq gate was bypassed. Finish the remaining
-            prereqs to drop the conditional tag.
-          </p>
-        )}
-
-        {decisionState === 'ready' && (
-          <DecisionHero
-            tileGradient={tile.gradient}
-            icon={Sparkles}
-            eyebrow="All 5 prerequisites complete"
-            title={
-              <>
-                Flip application status to{' '}
-                <span className="text-brand-indigo-deep">Enrolled</span> — a class section will be
-                auto-assigned.
-              </>
-            }
-            cta={
-              <EditStageDialog
-                ayCode={ayCode}
-                enroleeNumber={enroleeNumber}
-                stageKey="application"
-                initialStatus={applicationStage.status}
-                initialRemarks={applicationStage.remarks}
-                initialExtras={applicationStage.extrasInitial}
-                prereqStatuses={prereqStatusesForApplication}
-              />
-            }
-          />
-        )}
-
-        {decisionState === 'blocked' && (
-          <>
-            {nextActionKey && (
-              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-hairline bg-card p-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-                  <ArrowRight className="size-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Next action
-                  </p>
-                  <p className="font-serif text-sm font-semibold leading-tight text-foreground">
-                    {STAGE_LABELS[nextActionKey]}
-                    <span className="ml-2 font-sans text-[11px] font-normal text-muted-foreground">
-                      → mark as{' '}
-                      <span className="font-medium text-foreground">
-                        {STAGE_TERMINAL_STATUS[nextActionKey]}
-                      </span>
-                    </span>
-                  </p>
-                </div>
-              </div>
+      <CardContent className={cn('space-y-3 px-5 py-4', tile.bandTint)}>
+        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-hairline bg-gradient-to-t from-primary/5 to-card p-4 shadow-xs">
+          <div
+            className={cn(
+              'flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-brand-tile',
+              tile.gradient,
             )}
-            <div className="space-y-3 rounded-xl border border-hairline bg-card p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  {blockers.length} step{blockers.length === 1 ? '' : 's'} remaining
-                </p>
-                <EditStageDialog
-                  ayCode={ayCode}
-                  enroleeNumber={enroleeNumber}
-                  stageKey="application"
-                  initialStatus={applicationStage.status}
-                  initialRemarks={applicationStage.remarks}
-                  initialExtras={applicationStage.extrasInitial}
-                  prereqStatuses={prereqStatusesForApplication}
-                />
-              </div>
-              <ul className="space-y-1.5">
-                {blockers.map((b) => {
-                  const isNext = b.key === nextActionKey;
-                  return (
-                    <li key={b.key} className="flex items-center gap-2.5 text-sm">
-                      <Circle
-                        className={cn(
-                          'size-3.5 shrink-0',
-                          isNext ? 'text-brand-indigo' : 'text-muted-foreground',
-                        )}
-                      />
-                      <span className="font-medium text-foreground">{STAGE_LABELS[b.key]}</span>
-                      <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                        → needs {STAGE_TERMINAL_STATUS[b.key]}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                Finish every prereq to unlock <strong className="text-foreground">Enrolled</strong>
-                , or use <strong className="text-foreground">Enrolled (Conditional)</strong> as the
-                registrar override.
+          >
+            <TileIcon className="size-6" />
+          </div>
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-baseline gap-2">
+              <p className="font-serif text-base font-semibold leading-snug text-foreground">
+                {tile.label}
               </p>
+              {classChip && (
+                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                  · {classChip}
+                </span>
+              )}
+              {isEnrolled && !classChip && (
+                <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                  · Class placement pending
+                </span>
+              )}
             </div>
-          </>
-        )}
-
-        {(decisionState === 'cancelled' || decisionState === 'withdrawn') && (
-          <DecisionHero
-            tileGradient={tile.gradient}
-            icon={X}
-            eyebrow={`Application ${decisionState}`}
-            title={null}
-            footer={
-              applicationStage.updatedAt
-                ? `${formatDate(applicationStage.updatedAt)}${applicationStage.updatedBy ? ` by ${applicationStage.updatedBy}` : ''}`
-                : null
-            }
-            cta={
-              <EditStageDialog
-                ayCode={ayCode}
-                enroleeNumber={enroleeNumber}
-                stageKey="application"
-                initialStatus={applicationStage.status}
-                initialRemarks={applicationStage.remarks}
-                initialExtras={applicationStage.extrasInitial}
-                prereqStatuses={prereqStatusesForApplication}
-              />
-            }
+            {applicationCard.updatedAt && (
+              <p className="font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
+                Updated {formatDate(applicationCard.updatedAt)}
+                {applicationCard.updatedBy && (
+                  <span className="ml-1.5 normal-case text-muted-foreground/80">
+                    by {applicationCard.updatedBy}
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+          <EditStageDialog
+            ayCode={ayCode}
+            enroleeNumber={enroleeNumber}
+            stageKey="application"
+            initialStatus={applicationCard.status}
+            initialRemarks={applicationCard.remarks}
+            initialExtras={applicationCard.extrasInitial}
           />
-        )}
+        </div>
 
-        {applicationStage.extras && applicationStage.extras.some((e) => !isFieldEmpty(e)) && (
+        {applicationCard.extras && applicationCard.extras.some((e) => !isFieldEmpty(e)) && (
           <div className="rounded-lg border border-hairline bg-card px-3 py-2.5">
-            <FieldGrid fields={applicationStage.extras} />
+            <ExtrasChips fields={applicationCard.extras} />
           </div>
         )}
-        {applicationStage.remarks && (
+        {applicationCard.remarks && (
           <p className="whitespace-pre-line rounded-lg bg-muted/40 px-3 py-2 text-xs leading-relaxed text-foreground">
-            {applicationStage.remarks}
+            {applicationCard.remarks}
           </p>
         )}
       </CardContent>
@@ -865,390 +565,274 @@ function DecisionGate({
   );
 }
 
-function DecisionHero({
-  tileGradient,
-  icon: Icon,
-  eyebrow,
-  title,
-  footer,
-  cta,
+// ─── progress overview card ─────────────────────────────────────────────────
+//
+// Two clearly-separated rollups so the Enrolled-prereq gate is obvious:
+//   1. Required for Enrolled — the 5 prereq stages enforced server-side
+//      (ENROLLED_PREREQ_STAGES). Setting applicationStatus='Enrolled' is
+//      rejected unless every one is in its terminal-done state.
+//   2. Post-enrollment — Class / Supplies / Orientation. These activate
+//      after Enrolled and don't gate anything.
+//
+// Both sections are observational (status rollups, not sequence steppers)
+// — order doesn't matter, the bar just shows how many of each set are
+// currently in a done state. Single source of truth for color: every chip
+// dot, tile left-stripe, and bucket count reuses statusStripeClass.
+//
+// The application stage itself is excluded — it's the OUTCOME, surfaced by
+// ApplicationStatusCard above. Including it here would inflate the count
+// once the applicant flips to Enrolled.
+
+function ProgressOverviewCard({
+  prereqStages,
+  postEnrolStages,
 }: {
-  tileGradient: string;
-  icon: LucideIcon;
-  eyebrow: string;
-  title: React.ReactNode;
-  footer?: string | null;
-  cta: React.ReactNode;
+  prereqStages: StageCard[];
+  postEnrolStages: StageCard[];
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-4 rounded-xl border border-hairline bg-card p-4">
-      <div
-        className={cn(
-          'flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-brand-tile',
-          tileGradient,
-        )}
-      >
-        <Icon className="size-6" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          {eyebrow}
-        </p>
-        {title && (
-          <p className="font-serif text-base font-semibold leading-snug text-foreground">{title}</p>
-        )}
-        {footer && (
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
-            {footer}
-          </p>
-        )}
-      </div>
-      {cta}
-    </div>
-  );
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-SG', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
-// ─── phase card ─────────────────────────────────────────────────────────────
-
-function PhaseStepCard({
-  eyebrow,
-  title,
-  subtitle,
-  icon: Icon,
-  stages,
-  stageIndices,
-  prereqLocks,
-  activeIndex,
-  progressLabel,
-  progressPct,
-  allPrereqsDone,
-  ayCode,
-  enroleeNumber,
-}: {
-  eyebrow: string;
-  title: string;
-  subtitle: string;
-  icon: LucideIcon;
-  stages: StepStage[];
-  stageIndices: number[];
-  prereqLocks: LockState[];
-  activeIndex: number;
-  progressLabel?: string;
-  progressPct?: number;
-  allPrereqsDone?: boolean;
-  ayCode: string;
-  enroleeNumber: string;
-}) {
-  const phaseId = eyebrow.toLowerCase().includes('intake')
-    ? 'phase-intake'
-    : eyebrow.toLowerCase().includes('commitments')
-      ? 'phase-commitments'
-      : 'phase-card';
-
-  return (
-    <Card id={phaseId} className="scroll-mt-20 gap-0 overflow-hidden p-0">
+    <Card className="@container/card gap-0 overflow-hidden p-0">
       <CardHeader className="border-b border-border px-5 py-4">
         <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          {eyebrow}
+          Stage progress
         </CardDescription>
         <CardTitle className="font-serif text-[18px] font-semibold tracking-tight text-foreground">
-          {title}
+          Completion rollup
         </CardTitle>
         <CardAction>
-          <div className="flex items-center gap-3">
-            {progressPct !== undefined && (
-              <Badge variant={allPrereqsDone ? 'success' : 'muted'}>
-                {progressPct}%
-              </Badge>
-            )}
-            <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              <Icon className="size-5" />
-            </div>
+          <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <Activity className="size-5" />
           </div>
         </CardAction>
       </CardHeader>
-      <div className="space-y-3 px-5 py-3">
-        <p className="text-xs text-muted-foreground">{subtitle}</p>
-        {progressLabel !== undefined && progressPct !== undefined && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                {progressLabel}
-              </span>
-              <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                {progressPct}%
-              </span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn(
-                  'h-full transition-all',
-                  allPrereqsDone
-                    ? 'bg-gradient-to-r from-brand-mint to-brand-mint/70'
-                    : 'bg-gradient-to-r from-brand-indigo to-brand-indigo/70',
-                )}
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-      <ol className="divide-y divide-border border-t border-border">
-        {stages.map((stage, localIdx) => {
-          const globalIdx = stageIndices[localIdx];
-          const lock = prereqLocks[globalIdx];
-          const isActive = globalIdx === activeIndex;
-          return (
-            <StepRow
-              key={stage.key}
-              index={globalIdx + 1}
-              lock={lock}
-              isActive={isActive}
-              stage={stage}
-              ayCode={ayCode}
-              enroleeNumber={enroleeNumber}
-            />
-          );
-        })}
-      </ol>
+      <CardContent className="space-y-5 px-5 py-4">
+        <ProgressSection eyebrow="Required for Enrolled" stages={prereqStages} />
+        <ProgressSection eyebrow="Post-enrollment" stages={postEnrolStages} />
+      </CardContent>
     </Card>
   );
 }
 
-// ─── prereq marker ──────────────────────────────────────────────────────────
-
-function PrereqMarker({
-  index,
-  lock,
-  status,
-  isActive,
+function ProgressSection({
+  eyebrow,
+  stages,
 }: {
-  index: number;
-  lock: LockState | null;
-  status: string | null;
-  isActive: boolean;
+  eyebrow: string;
+  stages: StageCard[];
 }) {
-  const base =
-    'relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full border-2 bg-background';
-  if (lock === 'done') {
-    return (
-      <div className={cn(base, 'border-brand-mint bg-brand-mint/20 text-brand-indigo-deep')}>
-        <Check className="size-4" />
-      </div>
-    );
-  }
-  if (lock === 'cancelled') {
-    return (
-      <div className={cn(base, 'border-destructive/50 bg-destructive/10 text-destructive')}>
-        <X className="size-4" />
-      </div>
-    );
-  }
-  if (isActive) {
-    return (
-      <div
-        className={cn(base, 'border-brand-indigo bg-brand-indigo text-white ring-4 ring-brand-indigo/20')}
-      >
-        <span className="font-mono text-[11px] font-semibold tabular-nums">{index}</span>
-      </div>
-    );
-  }
-  const tone = stageTone(status);
-  const marker = stageMarkerElement(status, 'size-4');
-  return (
-    <div className={cn(base, tone.border, tone.bg, tone.text)}>
-      {marker ?? <span className="font-mono text-[11px] font-semibold tabular-nums">{index}</span>}
-    </div>
-  );
-}
+  const counts = stageBucketCounts(stages);
+  const pct = counts.total > 0 ? Math.round((counts.done / counts.total) * 100) : 0;
+  const isComplete = counts.total > 0 && counts.done === counts.total;
 
-// ─── extras chips ───────────────────────────────────────────────────────────
-
-function ExtrasChips({ fields }: { fields: Field[] }) {
-  const nonEmpty = fields.filter((f) => !isFieldEmpty(f));
-  if (nonEmpty.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {nonEmpty.map((f) => {
-        const value =
-          f.asDate && typeof f.value === 'string'
-            ? new Date(f.value).toLocaleDateString('en-SG', { day: '2-digit', month: 'short' })
-            : String(f.value ?? '—');
-        return (
-          <span
-            key={f.label}
-            className="inline-flex items-center gap-1.5 rounded-md border border-hairline bg-muted/40 px-2 py-0.5 text-[11px] text-foreground"
-          >
-            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
-              {f.label}
-            </span>
-            <span className="font-medium tabular-nums">{value}</span>
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            {eyebrow}
           </span>
-        );
-      })}
+          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+            {counts.done} of {counts.total} · {pct}%
+          </span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn(
+              'h-full transition-all',
+              isComplete
+                ? 'bg-gradient-to-r from-brand-mint to-brand-mint/70'
+                : 'bg-gradient-to-r from-brand-indigo to-brand-indigo/70',
+            )}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {stages.map((stage) => (
+          <StageProgressChip key={stage.key} stage={stage} />
+        ))}
+      </div>
     </div>
   );
 }
 
-// ─── step rows ──────────────────────────────────────────────────────────────
-
-function StepRow({
-  index,
-  lock,
-  isActive,
-  stage,
-  ayCode,
-  enroleeNumber,
-}: {
-  index: number;
-  lock: LockState;
-  isActive: boolean;
-  stage: StepStage;
-  ayCode: string;
-  enroleeNumber: string;
-}) {
-  const stripe = stripeForPrereqLock(lock, isActive, !!stage.status);
+function StageProgressChip({ stage }: { stage: StageCard }) {
+  const stripe = statusStripeClass(stage.status);
   return (
-    <li
-      className={cn(
-        'group relative flex items-center gap-3 px-5 py-3 transition-colors',
-        isActive && 'bg-brand-indigo/5',
-        !isActive && 'hover:bg-muted/40',
-      )}
-    >
-      <span aria-hidden="true" className={cn('absolute inset-y-0 left-0 w-1', stripe)} />
-      <PrereqMarker index={index} lock={lock} status={stage.status} isActive={isActive} />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-serif text-sm font-semibold tracking-tight text-foreground">
-            {stage.label}
-          </h3>
-          <StageStatusBadge status={stage.status} />
-          {isActive && (
-            <Badge variant="default" className="gap-1">
-              <Sparkles className="size-3" />
-              Next action
-            </Badge>
-          )}
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          {stage.updatedAt && (
-            <span className="font-mono text-[10px] uppercase tracking-wider tabular-nums">
-              {new Date(stage.updatedAt).toLocaleDateString('en-SG', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-              })}
-              {stage.updatedBy && (
-                <span className="ml-1.5 normal-case text-muted-foreground/80">
-                  by {stage.updatedBy}
-                </span>
-              )}
-            </span>
-          )}
-          {stage.extras && <ExtrasChips fields={stage.extras} />}
-          {stage.remarks && <span className="line-clamp-1 max-w-md italic">&ldquo;{stage.remarks}&rdquo;</span>}
-        </div>
-      </div>
-      <div
-        className={cn(
-          'shrink-0 transition-opacity',
-          isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
-        )}
-      >
-        <EditStageDialog
-          ayCode={ayCode}
-          enroleeNumber={enroleeNumber}
-          stageKey={stage.key}
-          initialStatus={stage.status}
-          initialRemarks={stage.remarks}
-          initialExtras={stage.extrasInitial}
-        />
-      </div>
-    </li>
+    <div className="inline-flex items-center gap-2 rounded-md border border-hairline bg-card px-2.5 py-1.5 shadow-xs">
+      <span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', stripe)} />
+      <span className="font-serif text-xs font-semibold tracking-tight text-foreground">
+        {stage.label}
+      </span>
+      <span className="font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
+        {stage.status ?? '—'}
+      </span>
+    </div>
   );
 }
 
-function PostStepRow({
-  stage,
-  isClassStage,
-  isEnrolled,
+// ─── status group card ──────────────────────────────────────────────────────
+
+function StatusGroupCard({
+  eyebrow,
+  title,
+  icon: Icon,
+  stages,
   ayCode,
   enroleeNumber,
+  currentSectionId,
 }: {
-  stage: StepStage;
-  isClassStage: boolean;
-  isEnrolled: boolean;
+  eyebrow: string;
+  title: string;
+  icon: LucideIcon;
+  stages: StageCard[];
   ayCode: string;
   enroleeNumber: string;
+  /** Optional — only meaningful for the Placement group's class tile. */
+  currentSectionId?: string | null;
 }) {
-  const stripe = stripeForPostStage(stage);
-  const tone = stageTone(stage.status);
-  const marker = stageMarkerElement(stage.status, 'size-4');
+  const counts = stageBucketCounts(stages);
+
+  // Meta-strip parts — only render the buckets that have rows. Keeps the
+  // strip tight; rolls up cleanly to one or two segments on the common
+  // case of all-empty or all-pending.
+  const metaParts: string[] = [];
+  if (counts.done) metaParts.push(`${counts.done} done`);
+  if (counts.active) metaParts.push(`${counts.active} active`);
+  if (counts.pending) metaParts.push(`${counts.pending} pending`);
+  if (counts.failed) metaParts.push(`${counts.failed} cancelled`);
+  if (counts.empty) metaParts.push(`${counts.empty} empty`);
+
   return (
-    <li className="group relative flex items-center gap-3 px-5 py-3 transition-colors hover:bg-muted/40">
-      <span aria-hidden="true" className={cn('absolute inset-y-0 left-0 w-1', stripe)} />
-      <div
-        className={cn(
-          'flex size-8 shrink-0 items-center justify-center rounded-full border-2 bg-background',
-          tone.border,
-          tone.bg,
-          tone.text,
-        )}
-      >
-        {marker ?? <Circle className="size-3" aria-hidden="true" />}
+    <Card className="@container/card gap-0 overflow-hidden p-0">
+      <CardHeader className="border-b border-border px-6 py-5">
+        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+          {eyebrow}
+        </CardDescription>
+        <CardTitle className="font-serif text-[22px] font-semibold tracking-tight text-foreground">
+          {title}
+        </CardTitle>
+        <CardAction>
+          <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <Icon className="size-5" />
+          </div>
+        </CardAction>
+      </CardHeader>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-border bg-muted/30 px-6 py-3">
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          {counts.total} {counts.total === 1 ? 'stage' : 'stages'}
+        </span>
+        {metaParts.map((part) => (
+          <span
+            key={part}
+            className="font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground"
+          >
+            · {part}
+          </span>
+        ))}
       </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-serif text-sm font-semibold tracking-tight text-foreground">
+      <div className="grid gap-3 p-6 md:grid-cols-2 lg:grid-cols-3">
+        {stages.map((stage) => (
+          <StageStatusTile
+            key={stage.key}
+            stage={stage}
+            ayCode={ayCode}
+            enroleeNumber={enroleeNumber}
+            currentSectionId={stage.key === 'class' ? currentSectionId : null}
+          />
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function StageStatusTile({
+  stage,
+  ayCode,
+  enroleeNumber,
+  currentSectionId,
+}: {
+  stage: StageCard;
+  ayCode: string;
+  enroleeNumber: string;
+  /** Set only for the `class` stage when the section ID is known.
+   *  Drives the "Move to another section →" CTA. */
+  currentSectionId?: string | null;
+}) {
+  const StageIcon = STAGE_ICON[stage.key];
+  const stripe = statusStripeClass(stage.status);
+  // Class assignment is auto-populated by pickSectionForApplicant when
+  // applicationStatus flips to Enrolled. Post-Enrolled changes route
+  // through the dedicated section-transfer endpoint (KD #67), not the
+  // stage edit dialog. Hide the edit button here and label as auto.
+  const autoManaged = stage.key === 'class';
+
+  return (
+    <div className="group relative flex flex-col gap-2.5 overflow-hidden rounded-xl border border-hairline bg-gradient-to-t from-primary/5 to-card p-4 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+      <span aria-hidden="true" className={cn('absolute inset-y-0 left-0 w-1', stripe)} />
+
+      <div className="flex items-start justify-between gap-2 pl-1">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <StageIcon className="size-4" />
+          </div>
+          <h3 className="font-serif text-sm font-semibold leading-tight tracking-tight text-foreground">
             {stage.label}
           </h3>
-          <StageStatusBadge status={stage.status} />
-          {isClassStage && !isEnrolled && (
-            <Badge variant="default" className="gap-1">
-              <Sparkles className="size-3" />
-              Auto on Enrolled
-            </Badge>
-          )}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          {stage.updatedAt && (
-            <span className="font-mono text-[10px] uppercase tracking-wider tabular-nums">
-              {new Date(stage.updatedAt).toLocaleDateString('en-SG', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-              })}
-              {stage.updatedBy && (
-                <span className="ml-1.5 normal-case text-muted-foreground/80">
-                  by {stage.updatedBy}
-                </span>
-              )}
-            </span>
+        {autoManaged ? (
+          <Badge variant="muted" className="shrink-0 gap-1">
+            <Sparkles className="size-3" />
+            Auto
+          </Badge>
+        ) : (
+          <EditStageDialog
+            ayCode={ayCode}
+            enroleeNumber={enroleeNumber}
+            stageKey={stage.key}
+            initialStatus={stage.status}
+            initialRemarks={stage.remarks}
+            initialExtras={stage.extrasInitial}
+          />
+        )}
+      </div>
+
+      <div className="pl-1">
+        <StageStatusBadge status={stage.status} />
+      </div>
+
+      {stage.updatedAt ? (
+        <span className="pl-1 font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
+          {autoManaged && 'Auto-assigned · '}
+          {formatDate(stage.updatedAt)}
+          {stage.updatedBy && (
+            <span className="ml-1.5 normal-case text-muted-foreground/80">by {stage.updatedBy}</span>
           )}
-          {stage.extras && <ExtrasChips fields={stage.extras} />}
-          {stage.remarks && <span className="line-clamp-1 max-w-md italic">&ldquo;{stage.remarks}&rdquo;</span>}
+        </span>
+      ) : autoManaged ? (
+        <span className="pl-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Auto-assigned when Enrolled
+        </span>
+      ) : null}
+      {stage.extras && stage.extras.some((e) => !isFieldEmpty(e)) && (
+        <div className="pl-1">
+          <ExtrasChips fields={stage.extras} />
         </div>
-      </div>
-      <div className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-        <EditStageDialog
-          ayCode={ayCode}
-          enroleeNumber={enroleeNumber}
-          stageKey={stage.key}
-          initialStatus={stage.status}
-          initialRemarks={stage.remarks}
-          initialExtras={stage.extrasInitial}
-        />
-      </div>
-    </li>
+      )}
+      {stage.remarks && (
+        <p className="ml-1 whitespace-pre-line rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-relaxed text-foreground">
+          {stage.remarks}
+        </p>
+      )}
+      {autoManaged && currentSectionId && (
+        <Button asChild variant="outline" size="sm" className="ml-1 self-start">
+          <Link href={`/sis/sections/${currentSectionId}`}>
+            <ArrowRightLeft className="size-3.5" />
+            Move to another section
+          </Link>
+        </Button>
+      )}
+    </div>
   );
 }
 

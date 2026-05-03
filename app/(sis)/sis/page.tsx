@@ -128,10 +128,37 @@ export default async function SisAdminHub({
 
   return (
     <PageShell>
+      {/* Hero framing varies by access tier (KD #39):
+          - school_admin → day-to-day school administration (no system-level
+            access; superadmin cards render greyed)
+          - admin → academic admin (approver-pool eligibility differs from
+            school_admin but no dedicated UI surfaces that)
+          - superadmin → full system administration including Access + System
+            sections + the audit overview tab + the system-health strip
+          The card-level `allowedRoles` already gates per-tile visibility;
+          this hero copy makes the tier explicit at a glance. */}
       <DashboardHero
-        eyebrow="SIS · Admin hub"
-        title="System administration"
-        description="Structural + system-level controls. Day-to-day operational work lives in Records; this page is for AY rollovers, approver management, and cross-module setup."
+        eyebrow={
+          role === "superadmin"
+            ? "SIS · Admin hub"
+            : role === "admin"
+              ? "SIS · Academic admin"
+              : "SIS · School administration"
+        }
+        title={
+          role === "superadmin"
+            ? "System administration"
+            : role === "admin"
+              ? "Academic administration"
+              : "School administration"
+        }
+        description={
+          role === "superadmin"
+            ? "Structural + system-level controls. Day-to-day operational work lives in Records; this page is for AY rollovers, approver management, and cross-module setup."
+            : role === "admin"
+              ? "Day-to-day academic administration. AY setup + calendar + sections + discount codes; system-level controls are reserved for superadmin."
+              : "Day-to-day school administration. AY setup + calendar + sections + discount codes; system-level controls are reserved for superadmin."
+        }
         badges={ayCode ? [{ label: ayCode }] : []}
       />
 
@@ -228,54 +255,58 @@ export default async function SisAdminHub({
             </section>
           )}
 
-          {/* Access — rare, superadmin-only. */}
-          <section className="space-y-3">
-            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Access
-            </h2>
-            <div className="grid gap-4 md:grid-cols-2">
-              <AdminCard
-                href="/sis/admin/approvers"
-                icon={ShieldCheck}
-                eyebrow="Access"
-                title="Approvers"
-                description="Manage who approves grade-change requests. Teachers pick primary + secondary from this list at submission; only those two see the request."
-                cta="Manage approvers"
-                role={role}
-                allowedRoles={["superadmin"]}
-              />
-              <AdminCard
-                href="/sis/admin/school-config"
-                icon={Building2}
-                eyebrow="School-wide"
-                title="School Config"
-                description="Principal + Founder/CEO signature names, PEI registration number, default publication window. Singleton — renders on every report card."
-                cta="Edit settings"
-                role={role}
-                allowedRoles={["superadmin"]}
-              />
-              <AdminCard
-                href="/sis/admin/users"
-                icon={UserCog}
-                eyebrow="Access"
-                title="Users"
-                description="Invite staff, change roles, enable/disable accounts. Parent accounts are created by the enrolment portal and aren't shown here."
-                cta="Manage users"
-                role={role}
-                allowedRoles={["superadmin"]}
-              />
-              <AdminCard
-                href="/sis/admin/settings"
-                icon={Settings2}
-                eyebrow="System"
-                title="Settings"
-                description="System-level toggles including the Production / Test environment switcher. Switching to Test auto-provisions a disposable academic year and seeds fake students for UAT."
-                cta="Open settings"
-                role={role}
-                allowedRoles={["superadmin"]}
-              />
-            </div>
-          </section>
+          {/* Access + System — superadmin-only. school_admin/admin previously
+              saw these as greyed-out cards which is noise; hiding the
+              section header entirely cleans up their hub. */}
+          {role === "superadmin" && (
+            <section className="space-y-3">
+              <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Access
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2">
+                <AdminCard
+                  href="/sis/admin/approvers"
+                  icon={ShieldCheck}
+                  eyebrow="Access"
+                  title="Approvers"
+                  description="Manage who approves grade-change requests. Teachers pick primary + secondary from this list at submission; only those two see the request."
+                  cta="Manage approvers"
+                  role={role}
+                  allowedRoles={["superadmin"]}
+                />
+                <AdminCard
+                  href="/sis/admin/school-config"
+                  icon={Building2}
+                  eyebrow="School-wide"
+                  title="School Config"
+                  description="Principal + Founder/CEO signature names, PEI registration number, default publication window. Singleton — renders on every report card."
+                  cta="Edit settings"
+                  role={role}
+                  allowedRoles={["superadmin"]}
+                />
+                <AdminCard
+                  href="/sis/admin/users"
+                  icon={UserCog}
+                  eyebrow="Access"
+                  title="Users"
+                  description="Invite staff, change roles, enable/disable accounts. Parent accounts are created by the enrolment portal and aren't shown here."
+                  cta="Manage users"
+                  role={role}
+                  allowedRoles={["superadmin"]}
+                />
+                <AdminCard
+                  href="/sis/admin/settings"
+                  icon={Settings2}
+                  eyebrow="System"
+                  title="Settings"
+                  description="System-level toggles including the Production / Test environment switcher. Switching to Test auto-provisions a disposable academic year and seeds fake students for UAT."
+                  cta="Open settings"
+                  role={role}
+                  allowedRoles={["superadmin"]}
+                />
+              </div>
+            </section>
+          )}
 
           {/* Related surfaces — not SIS Admin config, but useful jumps. */}
           <section className="space-y-3">

@@ -6,6 +6,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { DOCUMENT_SLOTS } from '@/lib/p-files/document-config';
 import { createRevision } from '@/lib/p-files/mutations';
+import { isStudentEnrolled } from '@/lib/p-files/queries';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB per file
 const MAX_TOTAL_SIZE = 30 * 1024 * 1024; // 30 MB total
@@ -130,6 +131,22 @@ export async function POST(
   const service = createServiceClient();
   const ayCode = await requireCurrentAyCode(service);
   const prefix = `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
+
+  // ── Enrollment gate ──
+  // P-Files is the post-enrolment document repository (KD #31, KD #71).
+  // Reject uploads against funnel applicants — pre-enrolment doc work
+  // belongs to the parent portal + admissions module, not the P-Files
+  // officer's queue. Rejecting here closes the only write-leak surfaced
+  // in the practical-rule audit (the role gate alone wasn't enough).
+  if (!(await isStudentEnrolled(ayCode, enroleeNumber))) {
+    return NextResponse.json(
+      {
+        error:
+          'P-Files uploads are only available for enrolled students. Pre-enrolment document handling lives in the Admissions module.',
+      },
+      { status: 422 },
+    );
+  }
 
   // ── Look up current state for this slot to see if we need to archive ──
   const selectCols = [

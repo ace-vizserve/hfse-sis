@@ -1,4 +1,5 @@
 import { PageShell } from "@/components/ui/page-shell";
+import { getTeacherList } from "@/lib/auth/staff-list";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -13,7 +14,7 @@ export default async function NewGradingSheetPage() {
     .eq("is_current", true)
     .single();
 
-  const [termsRes, sectionsRes, subjectsRes, configsRes] = await Promise.all([
+  const [termsRes, sectionsRes, subjectsRes, configsRes, teachers] = await Promise.all([
     supabase.from("terms").select("id, term_number, label, is_current").order("term_number"),
     supabase
       .from("sections")
@@ -25,6 +26,7 @@ export default async function NewGradingSheetPage() {
       .from("subject_configs")
       .select("subject_id, level_id, ww_max_slots, pt_max_slots")
       .eq("academic_year_id", ay?.id ?? "00000000-0000-0000-0000-000000000000"),
+    getTeacherList(),
   ]);
 
   return (
@@ -56,6 +58,7 @@ export default async function NewGradingSheetPage() {
         sections={(sectionsRes.data ?? []) as never}
         subjects={subjectsRes.data ?? []}
         configs={configsRes.data ?? []}
+        teachers={teachers}
       />
     </PageShell>
   );
