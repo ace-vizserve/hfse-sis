@@ -303,6 +303,18 @@ export type MonthlyBreakdownRow = {
 
 // Computes monthly breakdown from the latest-per-(date,period_id) rows in
 // `attendance_daily`. Pass `termId` to scope; otherwise covers all terms.
+//
+// `schoolDays` per month is the count of encodable days from
+// `school_calendar` (`day_type IN ('school_day', 'hbl')`) — NOT the count
+// of days the student has rows for. Rows-based counting under-reports
+// when entries are missing (late enrollee, ungraded days, etc.). The
+// calendar is the source of truth for "how many school days were there
+// this month"; entries tell us "how many of those the student attended".
+//
+// Pct is calendar-based: present / schoolDays. Days without entries
+// drag the percentage down — that's the intended signal so missing
+// attendance entries surface (vs. silently appearing 100% on whatever
+// rows happen to exist).
 export async function getMonthlyBreakdown(
   sectionStudentId: string,
   termId?: string,
@@ -319,10 +331,39 @@ export async function getMonthlyBreakdown(
     byMonth.get(key)![r.status] += 1;
   }
 
+  // Calendar-based schoolDays per month. Range = first of earliest month
+  // seen → last of latest month seen. Encodable day_types only —
+  // public_holiday / school_holiday / no_class don't count toward
+  // schoolDays per migration 019 (KD #50).
+  const months = Array.from(byMonth.keys()).sort();
+  const [latestY, latestM] = months[months.length - 1].split('-').map(Number);
+  const startDate = `${months[0]}-01`;
+  const lastDayOfLatest = new Date(latestY, latestM, 0).getDate();
+  const endDate = `${months[months.length - 1]}-${String(lastDayOfLatest).padStart(2, '0')}`;
+
+  const service = createServiceClient();
+  const { data: calRows } = await service
+    .from('school_calendar')
+    .select('date')
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .in('day_type', ['school_day', 'hbl']);
+
+  const calByMonth = new Map<string, number>();
+  for (const row of (calRows ?? []) as Array<{ date: string }>) {
+    const month = row.date.slice(0, 7);
+    calByMonth.set(month, (calByMonth.get(month) ?? 0) + 1);
+  }
+
   const rows: MonthlyBreakdownRow[] = [];
   for (const [month, counts] of byMonth.entries()) {
     const present = counts.P + counts.L + counts.EX;
-    const schoolDays = present + counts.A;  // excludes NC
+    // Fallback: if the calendar isn't seeded for this date range
+    // (legacy data or a test env without seeded calendar), fall back to
+    // the records-based count so we don't render a misleading "0".
+    const calendarDays = calByMonth.get(month) ?? 0;
+    const recordsBasedDays = present + counts.A;
+    const schoolDays = calendarDays > 0 ? calendarDays : recordsBasedDays;
     const pct = schoolDays > 0 ? Math.round((present / schoolDays) * 10000) / 100 : null;
     const [y, m] = month.split('-');
     const d = new Date(Number(y), Number(m) - 1, 1);

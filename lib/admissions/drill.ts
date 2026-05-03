@@ -323,6 +323,15 @@ export async function buildDrillRows(
 // Per-target filter — narrows the unified row set to the rows the user
 // expected to see when they clicked the surface.
 
+// Practical-rule scope: when an admissions surface clicks into "applications",
+// "applicants with missing docs", or any in-flight chase queue, the user
+// expects to see funnel rows only — Enrolled and Enrolled (Conditional)
+// belong to Records, Cancelled / Withdrawn live on the dedicated closed list.
+// Analytical targets (conversion / time-to-enroll / referral / assessment /
+// funnel-stage) intentionally return the full pipeline because the metrics
+// they compute require seeing enrolled outcomes.
+const ACTIVE_FUNNEL_STATUSES = new Set(['Submitted', 'Ongoing Verification', 'Processing']);
+
 export function applyTargetFilter(
   rows: DrillRow[],
   target: DrillTarget,
@@ -330,7 +339,7 @@ export function applyTargetFilter(
 ): DrillRow[] {
   switch (target) {
     case 'applications':
-      return rows;
+      return rows.filter((r) => ACTIVE_FUNNEL_STATUSES.has(r.status));
     case 'enrolled':
       return rows.filter(
         (r) => r.status === 'Enrolled' || r.status === 'Enrolled (Conditional)',
@@ -395,12 +404,16 @@ export function applyTargetFilter(
     case 'applications-by-level':
       if (!segment) return rows;
       return rows.filter((r) => r.level === segment);
-    case 'doc-completion':
-      if (!segment) return rows.filter((r) => r.hasMissingDocs);
+    case 'doc-completion': {
+      // Admissions cares about completeness for funnel applicants only;
+      // enrolled-side missing-doc work belongs to P-Files renewal queue.
+      const funnelOnly = rows.filter((r) => ACTIVE_FUNNEL_STATUSES.has(r.status));
+      if (!segment) return funnelOnly.filter((r) => r.hasMissingDocs);
       // segment can be a level string OR "missing" / "complete"
-      if (segment === 'missing') return rows.filter((r) => r.hasMissingDocs);
-      if (segment === 'complete') return rows.filter((r) => !r.hasMissingDocs);
-      return rows.filter((r) => r.level === segment);
+      if (segment === 'missing') return funnelOnly.filter((r) => r.hasMissingDocs);
+      if (segment === 'complete') return funnelOnly.filter((r) => !r.hasMissingDocs);
+      return funnelOnly.filter((r) => r.level === segment);
+    }
     case 'outdated':
       // Outdated = stale & active (≥7 days since update, status not closed).
       return rows.filter((r) => {

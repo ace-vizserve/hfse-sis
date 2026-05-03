@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 
 import { createAdmissionsClient } from "@/lib/supabase/admissions";
+import { createServiceClient } from "@/lib/supabase/service";
 
 // Sprint 10 Phase 1 — read-only Student Information System.
 //
@@ -913,6 +914,49 @@ export async function getEnrollmentHistory(studentNumber: string): Promise<Enrol
   );
 
   return perAy.flat();
+}
+
+// Look up the `sections.id` (UUID) for a given AY + level label + section
+// name. Used by the Enrollment tab's "Move to another section →" CTA, which
+// needs the section ID to deep-link into `/sis/sections/[id]` (the SIS Admin
+// section detail page that hosts the SectionTransferDialog per KD #67).
+//
+// Returns null when no match — the caller hides the CTA gracefully (e.g.
+// the section was renamed or dropped after AY rollover).
+export async function getSectionIdByLevelAndName(
+  ayCode: string,
+  levelLabel: string,
+  sectionName: string,
+): Promise<string | null> {
+  return unstable_cache(
+    async () => {
+      const trimmedLabel = (levelLabel ?? '').trim();
+      const trimmedName = (sectionName ?? '').trim();
+      if (!trimmedLabel || !trimmedName) return null;
+
+      const service = createServiceClient();
+      // Resolve AY id first (sections.academic_year_id is a UUID FK).
+      const { data: ayRow } = await service
+        .from('academic_years')
+        .select('id')
+        .eq('ay_code', ayCode)
+        .maybeSingle();
+      if (!ayRow) return null;
+      const ayId = (ayRow as { id: string }).id;
+
+      const { data, error } = await service
+        .from('sections')
+        .select('id, name, levels!inner(label)')
+        .eq('academic_year_id', ayId)
+        .eq('name', trimmedName)
+        .filter('levels.label', 'eq', trimmedLabel)
+        .maybeSingle();
+      if (error || !data) return null;
+      return (data as { id: string }).id ?? null;
+    },
+    ['sis', 'section-id-by-name', ayCode, levelLabel, sectionName],
+    { revalidate: CACHE_TTL_SECONDS, tags: tag(ayCode) },
+  )();
 }
 
 export type DiscountCode = {

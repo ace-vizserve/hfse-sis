@@ -6,7 +6,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import { CompassionateAllowanceInline } from '@/components/sis/compassionate-allowance-inline';
 import { EditProfileSheet } from '@/components/sis/edit-profile-sheet';
 import { FieldGrid, type Field } from '@/components/sis/field-grid';
 import { Badge } from '@/components/ui/badge';
@@ -31,24 +30,22 @@ import { cn } from '@/lib/utils';
 // (Identity / Travel / Contact / Preferences) sit in a 2×2 grid (lg+) with
 // gradient icon tiles and per-section completion badges. Empty fields are
 // dimmed via `<FieldGrid dimEmpty />` so eyes skip past missing data.
-// CompassionateAllowanceInline is preserved at the bottom of the tab as
-// its own concern.
+//
+// Compassionate-leave quota editor was moved off this tab — quota is
+// enrolled-student metadata (lives on `public.students`) and now belongs
+// on Records / Attendance per the practical rule + KD #51.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Props = {
   app: ApplicationRow;
   ayCode: string;
   enroleeNumber: string;
-  allowance: number | null;
-  allowanceDisabledReason: string | null;
 };
 
 export function ProfileTab({
   app,
   ayCode,
   enroleeNumber,
-  allowance,
-  allowanceDisabledReason,
 }: Props) {
   const initial: Partial<ProfileUpdateInput> = {
     firstName: app.firstName,
@@ -219,13 +216,6 @@ export function ProfileTab({
           </div>
         </CardContent>
       </Card>
-
-      <CompassionateAllowanceInline
-        enroleeNumber={enroleeNumber}
-        initial={allowance}
-        disabled={!!allowanceDisabledReason}
-        disabledReason={allowanceDisabledReason ?? undefined}
-      />
 
       {/* 2×2 section grid — collapses to 1 column on smaller viewports */}
       <div className="grid gap-5 lg:grid-cols-2">

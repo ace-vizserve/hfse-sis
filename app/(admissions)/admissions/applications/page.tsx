@@ -12,7 +12,7 @@ import {
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { CrossAySearch } from '@/components/sis/cross-ay-search';
-import { StudentDataTable } from '@/components/sis/student-data-table';
+import { StudentDataTable, type StatusBucketDef } from '@/components/sis/student-data-table';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -70,6 +70,19 @@ const STAGES: Array<{
   { key: 'submitted', status: 'Submitted', label: 'Submitted', icon: Mail },
   { key: 'ongoing-verification', status: 'Ongoing Verification', label: 'Ongoing Verification', icon: ClipboardList },
   { key: 'processing', status: 'Processing', label: 'Processing', icon: Hourglass },
+];
+
+// Bucket tabs on the applications table mirror the 3 funnel stages instead
+// of the generic enrolled/pipeline/withdrawn split — `/admissions/applications`
+// pre-filters to ACTIVE_FUNNEL_STAGES server-side, so every row here belongs
+// to exactly one of these three buckets and the generic tabs (Enrolled,
+// Withdrawn) would always read 0. KD #59 — exact-equality match against the
+// canonical SIS-side `applicationStatus` value space.
+const APPLICATIONS_STATUS_BUCKETS: StatusBucketDef[] = [
+  { key: 'all', label: 'All' },
+  { key: 'submitted', label: 'Submitted', statuses: ['Submitted'] },
+  { key: 'ongoing-verification', label: 'Ongoing Verification', statuses: ['Ongoing Verification'] },
+  { key: 'processing', label: 'Processing', statuses: ['Processing'] },
 ];
 
 export default async function AdmissionsApplicationsPage({
@@ -263,6 +276,7 @@ export default async function AdmissionsApplicationsPage({
             linkQuery={isCurrentAy ? undefined : { ay: selectedAy }}
             showSubmittedColumn
             defaultSorting={[{ id: 'submitted', desc: true }]}
+            statusBuckets={APPLICATIONS_STATUS_BUCKETS}
           />
         </CardContent>
       </Card>

@@ -57,13 +57,34 @@ export function GenerateSheetsDialog({
       if (!res.ok) throw new Error(json?.error ?? 'generation failed');
 
       const inserted = Number(json?.inserted ?? 0);
+      const repaired = Number(json?.repaired_unconfigured_sheets ?? 0);
+      const resized = Number(json?.resized_entry_arrays ?? 0);
       const label = scope.kind === 'ay' ? scope.ayCode : scope.sectionLabel;
 
-      if (inserted === 0) {
-        toast.info(`No new sheets needed for ${label} — every combination already exists.`);
-      } else {
+      // Three meaningful outcomes:
+      //   - inserted > 0  → fresh sheets created (initial generate)
+      //   - inserted = 0 + repaired > 0 → re-click repaired previously-
+      //     unconfigured sheets in place (fills WW/PT/QA defaults from
+      //     subject_configs onto sheets created before the defaults
+      //     migration was applied)
+      //   - inserted = 0 + repaired = 0 → genuinely nothing to do
+      if (inserted > 0) {
         toast.success(
-          `Generated ${inserted.toLocaleString('en-SG')} sheet${inserted === 1 ? '' : 's'} for ${label}.`,
+          `Generated ${inserted.toLocaleString('en-SG')} sheet${inserted === 1 ? '' : 's'} for ${label}.` +
+            (repaired > 0 ? ` Repaired ${repaired} unconfigured.` : ''),
+        );
+      } else if (repaired > 0 || resized > 0) {
+        const parts: string[] = [];
+        if (repaired > 0) {
+          parts.push(`${repaired} sheet${repaired === 1 ? '' : 's'} defaulted`);
+        }
+        if (resized > 0) {
+          parts.push(`${resized} entr${resized === 1 ? 'y' : 'ies'} resized`);
+        }
+        toast.success(`${label}: ${parts.join(' · ')}.`);
+      } else {
+        toast.info(
+          `${label} is already fully configured — every sheet has totals + every roster row has an entry.`,
         );
       }
       setOpen(false);

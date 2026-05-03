@@ -117,6 +117,21 @@ export default async function GradingSheetPage({
     .single();
   if (!sheet) notFound();
 
+  // Roster-sync seed — ensure every section_student has a grade_entries
+  // row for this sheet so the grid below renders the full roster, not
+  // just students with already-saved scores. Idempotent via the unique
+  // constraint added in migration 035; runs on every sheet open so
+  // late-enrollees added after sheet generation are picked up
+  // automatically (self-healing). Bulk generate (migration 036) seeds
+  // up-front, so this is typically a no-op insert.
+  const sectionForSeed = first(sheet.section as Section | Section[] | null);
+  if (sectionForSeed?.id) {
+    await supabase.rpc('seed_grade_entries_for_sheet', {
+      p_sheet_id: id,
+      p_section_id: sectionForSeed.id,
+    });
+  }
+
   const readOnly = sheet.is_locked && !canManage;
   const requireApproval = sheet.is_locked && canManage;
 

@@ -54,7 +54,7 @@ import { formatRangeLabel, resolveRange, type DashboardSearchParams } from "@/li
 import { getDashboardWindows } from "@/lib/dashboard/windows";
 import { getPipelineStageBreakdown } from "@/lib/sis/dashboard";
 import { getSisDashboardSummary } from "@/lib/sis/queries";
-import { freshenAyDocuments } from "@/lib/sis/freshen-document-statuses";
+import { freshenAyDocuments } from "@/lib/p-files/freshen-document-statuses";
 import { getSessionUser } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -127,6 +127,12 @@ export default async function AdmissionsDashboard({
   ) {
     redirect("/");
   }
+  // KD #51: admissions team owns the funnel; registrar joins on enrolled
+  // hand-off. Both are operational here — they triage new applications,
+  // chase documents, and validate uploads. school_admin/admin/superadmin
+  // are oversight: same KPIs + analytics, no priority/chase top-of-fold.
+  const isOperational =
+    sessionUser.role === "admissions" || sessionUser.role === "registrar";
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
@@ -200,7 +206,7 @@ export default async function AdmissionsDashboard({
           students={students}
           ayCode={isCurrentAy ? undefined : selectedAy}
           initialStatusFilter={focusedStatus}
-          bulkRemindEnabled
+          bulkRemindEnabled={isOperational}
         />
 
         <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
@@ -310,9 +316,13 @@ export default async function AdmissionsDashboard({
   return (
     <PageShell>
       <DashboardHero
-        eyebrow="Admissions · Pre-enrolment funnel"
-        title="Admissions dashboard"
-        description="Inquiry → applied → interviewed → offered → accepted. Once enrolled, the permanent record lives in Records."
+        eyebrow={isOperational ? "Admissions · Pre-enrolment funnel" : "Admissions · School-wide overview"}
+        title={isOperational ? "Admissions dashboard" : "Admissions — oversight"}
+        description={
+          isOperational
+            ? "Inquiry → applied → interviewed → offered → accepted. Once enrolled, the permanent record lives in Records."
+            : "Read-only oversight of the pre-enrolment funnel. Day-to-day triage, document chase, and validation are owned by the admissions team and registrar."
+        }
         badges={[
           { label: selectedAy },
           { label: isCurrentAy ? "Current" : "Historical", tone: isCurrentAy ? "mint" : "muted" },
@@ -328,21 +338,21 @@ export default async function AdmissionsDashboard({
         ayWindows={windows.ay}
       />
 
-      {/* Operational top-of-fold (KD #57) — new applications waiting on triage. */}
-      <NewApplicationsPriority ayCode={selectedAy} />
+      {/* Operational top-of-fold — new applications waiting on triage. Only
+          rendered for admissions/registrar; oversight roles skip this
+          because they don't action triage. */}
+      {isOperational && <NewApplicationsPriority ayCode={selectedAy} />}
 
-      {/* Document chase queue (spec 2026-04-28; Workstream A 2026-04-29) —
-          admissions surface gates buckets to revalidation (Rejected only),
-          validation (Uploaded), promised (To follow). expiringSoon hidden
-          per the un-enrolled vs enrolled split. */}
-      <DocumentChaseQueueStrip ayCode={selectedAy} module="admissions" />
-
-      {/* Workstream A — chase priority + chase narrative panel sit
-          immediately after the chase strip so the operator's eye flows
-          from "what buckets are full?" to "which applicants are heaviest?"
-          to "what should I do about it?" without scrolling. */}
-      <PriorityPanel payload={admissionsChasePriority} />
-      <InsightsPanel insights={chaseInsights} />
+      {/* Operational chase strip + chase priority + chase narrative —
+          gated to admissions/registrar. Oversight roles see the same
+          counts via the KPI grid + drill sheets below. */}
+      {isOperational && (
+        <>
+          <DocumentChaseQueueStrip ayCode={selectedAy} module="admissions" />
+          <PriorityPanel payload={admissionsChasePriority} />
+          <InsightsPanel insights={chaseInsights} />
+        </>
+      )}
 
       <InsightsPanel insights={insights} />
 

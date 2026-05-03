@@ -53,7 +53,7 @@ import {
   getRecordsKpisRange,
   getWithdrawalVelocityRange,
 } from "@/lib/sis/dashboard";
-import { freshenAyDocuments } from "@/lib/sis/freshen-document-statuses";
+import { freshenAyDocuments } from "@/lib/p-files/freshen-document-statuses";
 import { getSisDashboardSummary } from "@/lib/sis/queries";
 import { getSessionUser } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -75,6 +75,13 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
   ) {
     redirect("/");
   }
+  // Registrar = operational user (writes admissions data per KD #37); the
+  // other allowed roles (school_admin/admin/superadmin) are oversight. The
+  // analytics + KPIs are shared, but the operational top-of-fold pieces
+  // (chase queue strip, "Documents to collect" action list, class-assignment
+  // readiness) only matter to the registrar; oversight users see the
+  // dashboard framed as a school-wide overview.
+  const isOperational = sessionUser.role === "registrar";
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
@@ -148,9 +155,13 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
   return (
     <PageShell>
       <DashboardHero
-        eyebrow="Records · Enrolled students"
-        title="Student records"
-        description="Permanent cross-year record of every enrolled student. Document backlog, expiring documents, level distribution, recent edits. Pre-enrolment applications live on Admissions."
+        eyebrow={isOperational ? "Records · Enrolled students" : "Records · School-wide overview"}
+        title={isOperational ? "Student records" : "Student records — oversight"}
+        description={
+          isOperational
+            ? "Permanent cross-year record of every enrolled student. Document backlog, expiring documents, level distribution, recent edits. Pre-enrolment applications live on Admissions."
+            : "Read-only oversight of enrolled students across every academic year. Day-to-day record management is owned by the registrar."
+        }
         badges={[
           { label: selectedAy },
           { label: isCurrentAy ? "Current" : "Historical", tone: isCurrentAy ? "mint" : "muted" },
@@ -166,9 +177,10 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
         ayWindows={windows.ay}
       />
 
-      {/* Document chase queue (spec 2026-04-28) — top-of-fold navigation
-          to revalidation / validation / promised drill sheets. */}
-      <DocumentChaseQueueStrip ayCode={selectedAy} />
+      {/* Document chase queue — registrar-only operational top-of-fold.
+          Oversight roles see the same data via the analytical cards below
+          but skip this top strip because they don't act on the buckets. */}
+      {isOperational && <DocumentChaseQueueStrip ayCode={selectedAy} />}
 
       <InsightsPanel insights={insights} />
 
@@ -348,17 +360,24 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
         </div>
       </section>
 
-      {/* Spec §2 row 9 — action list for docs to collect */}
-      <ActionList
-        id="recent-withdrawals"
-        title="Documents to collect"
-        description="Students with documents expiring soon or already overdue."
-        items={expiringItems}
-        emptyLabel="No documents expiring in range."
-        viewAllHref="/p-files"
-      />
+      {/* Operational action lists — registrar-only. Oversight roles see the
+          underlying counts in the KPI grid + drill sheets, but the
+          chase-style action list + class-assignment readiness card frame
+          the data as work to do, which doesn't fit the oversight role. */}
+      {isOperational && (
+        <>
+          <ActionList
+            id="recent-withdrawals"
+            title="Documents to collect"
+            description="Students with documents expiring soon or already overdue."
+            items={expiringItems}
+            emptyLabel="No documents expiring in range."
+            viewAllHref="/p-files"
+          />
 
-      <ClassAssignmentReadinessCard data={classAssignment} ayCode={selectedAy} />
+          <ClassAssignmentReadinessCard data={classAssignment} ayCode={selectedAy} />
+        </>
+      )}
 
       <RecentActivityFeed rows={activity} />
 

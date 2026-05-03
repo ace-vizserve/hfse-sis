@@ -21,12 +21,15 @@ import {
   getMonthlyBreakdown,
 } from '@/lib/attendance/queries';
 
+// Status tone — gradient bg per the project's "we don't do flats" rule
+// (and Aurora Vault tokens only per Hard Rule #7). White text reads on
+// every variant.
 const STATUS_TONE: Record<AttendanceStatus, string> = {
-  P: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200',
-  L: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-200',
-  EX: 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-200',
-  A: 'border-destructive/30 bg-destructive/10 text-destructive',
-  NC: 'border-border bg-muted/30 text-muted-foreground',
+  P: 'border-transparent bg-gradient-to-br from-brand-mint to-brand-sky text-white shadow-sm',
+  L: 'border-transparent bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-sm',
+  EX: 'border-transparent bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-sm',
+  A: 'border-transparent bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-sm',
+  NC: 'border-transparent bg-gradient-to-br from-ink-4 to-ink-3 text-white shadow-sm',
 };
 
 // Renders the chronological attendance log for one student in the current AY.
@@ -170,17 +173,17 @@ export async function StudentAttendanceTab({
               <SummaryChip label="Late" value={s.summary.late} tone="L" />
               <SummaryChip label="Excused" value={s.summary.excused} tone="EX" />
               <SummaryChip label="Absent" value={s.summary.absent} tone="A" />
-              <span className="rounded-full border border-border bg-card px-2.5 py-1 font-mono tabular-nums text-foreground">
+              <span className="rounded-full border border-transparent bg-gradient-to-b from-brand-indigo to-brand-indigo-deep px-2.5 py-1 font-mono tabular-nums text-white shadow-sm">
                 {s.summary.pct != null ? `${s.summary.pct.toFixed(1)}%` : '—'}
               </span>
               <span
                 className={
-                  'rounded-full border px-2.5 py-1 font-mono tabular-nums ' +
+                  'rounded-full border border-transparent px-2.5 py-1 font-mono tabular-nums text-white shadow-sm ' +
                   (quota.remaining <= 0
-                    ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                    ? 'bg-gradient-to-br from-destructive to-destructive/80'
                     : quota.remaining <= 1
-                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-200'
-                    : 'border-border bg-card text-foreground')
+                      ? 'bg-gradient-to-br from-brand-amber to-brand-amber/80'
+                      : 'bg-gradient-to-br from-brand-mint to-brand-sky')
                 }
                 title={`Urgent / compassionate leave used ${quota.used} of ${quota.allowance}; ${quota.remaining} remaining this AY`}
               >

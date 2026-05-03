@@ -12,5 +12,6 @@ load: on-demand
 
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` (server-only, bypasses RLS).
 - `NEXT_PUBLIC_PARENT_PORTAL_URL` — per-environment, see `10-parent-portal.md`.
+- `PARENT_HANDOFF_SECRET` — server-only, ≥32 chars (`openssl rand -hex 32`); HMAC key for the `parent_session` cookie (KD #65). MUST differ per environment; rotating invalidates all live parent sessions.
 - `RESEND_API_KEY` (server-only); `RESEND_FROM_EMAIL` optional.
 - `PDF_SERVICE_URL` reserved, currently unused.

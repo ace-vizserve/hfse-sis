@@ -21,7 +21,6 @@ import { FamilyTab } from "@/components/sis/family-tab";
 import { ProfileTab } from "@/components/sis/profile-tab";
 import { ApplicationStatusBadge } from "@/components/sis/status-badge";
 import { StpApplicationCard } from "@/components/sis/stp-application-card";
-import { StudentAttendanceTab } from "@/components/sis/student-attendance-tab";
 import { StudentLifecycleTimeline } from "@/components/sis/student-lifecycle-timeline";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -35,10 +34,11 @@ import {
 import { PageShell } from "@/components/ui/page-shell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getCurrentAcademicYear, listAyCodes } from "@/lib/academic-year";
-import { freshenAyDocuments } from "@/lib/sis/freshen-document-statuses";
+import { freshenAyDocuments } from "@/lib/p-files/freshen-document-statuses";
 import { getStudentLifecycle } from "@/lib/sis/process";
 import {
   getEnrollmentHistory,
+  getSectionIdByLevelAndName,
   getStudentDetail,
   STP_CONDITIONAL_SLOT_KEYS,
 } from "@/lib/sis/queries";
@@ -104,33 +104,22 @@ export default async function SisStudentDetailPage({
 
   const history = application.studentNumber ? await getEnrollmentHistory(application.studentNumber) : [];
 
-  // Look up the student's compassionate-leave allowance from the grading
-  // schema (via studentNumber). Null when the student hasn't been synced yet
-  // or has no studentNumber — disables the inline editor with a reason.
-  let allowance: number | null = null;
-  let allowanceDisabledReason: string | null = null;
-  if (application.studentNumber) {
-    const { data: stu } = await service
-      .from("students")
-      .select("urgent_compassionate_allowance")
-      .eq("student_number", application.studentNumber)
-      .maybeSingle();
-    if (stu) {
-      allowance = (stu as { urgent_compassionate_allowance: number | null }).urgent_compassionate_allowance ?? 5;
-    } else {
-      allowanceDisabledReason = "Not yet synced to grading schema";
-    }
-  } else {
-    allowanceDisabledReason = "No studentNumber assigned yet";
-  }
+  // Resolve the assigned section's UUID for the Enrollment tab's
+  // "Move to another section →" CTA. Null when class isn't assigned yet
+  // (pre-Enrolled) or the section was renamed/dropped after AY rollover —
+  // EnrollmentTab hides the CTA gracefully on null.
+  const currentSectionId =
+    status?.classLevel && status?.classSection
+      ? await getSectionIdByLevelAndName(selectedAy, status.classLevel, status.classSection)
+      : null;
 
   const fullName =
     application.enroleeFullName ??
     [application.lastName, application.firstName, application.middleName].filter(Boolean).join(" ") ??
     "(no name on file)";
 
-  const tab = ["profile", "family", "enrollment", "documents", "attendance", "lifecycle"].includes(tabParam ?? "")
-    ? (tabParam as "profile" | "family" | "enrollment" | "documents" | "attendance" | "lifecycle")
+  const tab = ["profile", "family", "enrollment", "documents", "lifecycle"].includes(tabParam ?? "")
+    ? (tabParam as "profile" | "family" | "enrollment" | "documents" | "lifecycle")
     : "profile";
 
   const lifecycleSnapshot = await getStudentLifecycle(selectedAy, enroleeNumber);
@@ -290,7 +279,6 @@ export default async function SisStudentDetailPage({
           <TabsTrigger value="family">Family</TabsTrigger>
           <TabsTrigger value="enrollment">Enrollment</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
-          <TabsTrigger value="attendance">Attendance</TabsTrigger>
           <TabsTrigger value="lifecycle">Lifecycle</TabsTrigger>
         </TabsList>
 
@@ -299,8 +287,6 @@ export default async function SisStudentDetailPage({
             app={application}
             ayCode={selectedAy}
             enroleeNumber={application.enroleeNumber}
-            allowance={allowance}
-            allowanceDisabledReason={allowanceDisabledReason}
           />
         </TabsContent>
 
@@ -315,6 +301,7 @@ export default async function SisStudentDetailPage({
             ayCode={selectedAy}
             enroleeNumber={application.enroleeNumber}
             statusFetchError={detail.statusFetchError}
+            currentSectionId={currentSectionId}
           />
         </TabsContent>
 
@@ -338,10 +325,6 @@ export default async function SisStudentDetailPage({
             enroleeNumber={application.enroleeNumber}
             ayCode={selectedAy}
           />
-        </TabsContent>
-
-        <TabsContent value="attendance" className="space-y-6">
-          <StudentAttendanceTab studentNumber={application.studentNumber} fullName={fullName} />
         </TabsContent>
 
         <TabsContent value="lifecycle" className="space-y-6">

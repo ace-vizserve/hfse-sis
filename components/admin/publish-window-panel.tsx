@@ -1,6 +1,20 @@
 "use client";
 
-import { ArrowRight, CheckCircle2, Clock, Loader2, Share2, X, XCircle } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  CalendarCheck2,
+  CheckCircle2,
+  ClipboardCheck,
+  Clock,
+  FileCheck2,
+  Loader2,
+  MessageSquare,
+  Share2,
+  X,
+  XCircle,
+} from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -119,35 +133,95 @@ function fmt(iso: string): string {
   });
 }
 
-function CheckItem({ passed, label, detail }: { passed: boolean; label: string; detail?: string }) {
+// One row in the publishing checklist. Each row carries:
+//   - A status-tinted gradient icon tile (mint for passed, amber for
+//     warning) so the eye picks out failing rows at a glance.
+//   - The check title + summary line + optional detail (subjects /
+//     student names).
+//   - A quick-link button on the right that deep-links into the module
+//     where the registrar can fix the issue. Always rendered so the
+//     dialog doubles as a navigation hub — even passing rows let the
+//     registrar verify in one click.
+function ChecklistRow({
+  passed,
+  icon: Icon,
+  eyebrow,
+  title,
+  summary,
+  detail,
+  studentList,
+  href,
+  actionLabel,
+}: {
+  passed: boolean;
+  icon: React.ComponentType<{ className?: string }>;
+  eyebrow: string;
+  title: string;
+  summary: string;
+  detail?: string;
+  studentList?: { name: string; index: number | null }[];
+  href: string;
+  actionLabel: string;
+}) {
+  const tileClass = passed
+    ? "bg-gradient-to-br from-brand-mint to-brand-sky shadow-brand-tile-mint"
+    : "bg-gradient-to-br from-brand-amber to-brand-amber/80 shadow-brand-tile-amber";
+
   return (
-    <div className="flex items-start gap-2">
-      {passed ? (
-        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-mint" />
-      ) : (
-        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-brand-amber" />
-      )}
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground">{label}</p>
-        {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
+    <div className="rounded-xl border border-hairline bg-card p-3.5 ring-1 ring-inset ring-border/40">
+      <div className="flex items-start gap-3">
+        {/* Status icon tile — mint→sky gradient when passed, amber when
+            warning. shadow-brand-tile-{mint,amber} per non-flat T1 tile
+            recipe (09a-design-patterns.md §8). */}
+        <div
+          className={`flex size-9 shrink-0 items-center justify-center rounded-xl text-white ${tileClass}`}>
+          <Icon className="size-4" />
+        </div>
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            {eyebrow}
+          </p>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="font-serif text-[15px] font-semibold leading-tight tracking-tight text-foreground">
+              {title}
+            </p>
+            <Badge variant={passed ? "success" : "warning"} className="h-5">
+              {passed ? <CheckCircle2 /> : <XCircle />}
+              {summary}
+            </Badge>
+          </div>
+          {detail && (
+            <p className="text-xs leading-relaxed text-muted-foreground">{detail}</p>
+          )}
+          {studentList && studentList.length > 0 && (
+            <ScrollArea className="mt-1 h-20">
+              <ul className="space-y-0.5 pr-3 text-xs text-muted-foreground">
+                {studentList.map((s, i) => (
+                  <li key={i} className="tabular-nums">
+                    {s.index != null && (
+                      <span className="mr-1.5 font-mono text-[10px] text-hairline-strong">
+                        #{s.index}
+                      </span>
+                    )}
+                    {s.name}
+                  </li>
+                ))}
+              </ul>
+            </ScrollArea>
+          )}
+        </div>
+        {/* Quick-link button — deep-links into the relevant module surface
+            so the registrar can jump straight to the fix without losing
+            their place. Navigating away dismisses the dialog naturally;
+            re-publish trigger picks up the fixed state. */}
+        <Button asChild size="sm" variant="outline" className="shrink-0">
+          <Link href={href}>
+            {actionLabel}
+            <ArrowUpRight className="size-3" />
+          </Link>
+        </Button>
       </div>
     </div>
-  );
-}
-
-function StudentList({ items }: { items: { name: string; index: number | null }[] }) {
-  if (items.length === 0) return null;
-  return (
-    <ScrollArea className="mt-1.5 h-28 pl-6">
-      <ul className="space-y-0.5 pr-3 text-xs text-muted-foreground">
-        {items.map((s, i) => (
-          <li key={i}>
-            {s.index != null && <span className="mr-1.5 font-mono text-[10px]">#{s.index}</span>}
-            {s.name}
-          </li>
-        ))}
-      </ul>
-    </ScrollArea>
   );
 }
 
@@ -430,7 +504,12 @@ export function PublishWindowPanel({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Publish readiness checklist */}
+      {/* Publish readiness checklist — surfaces grading-sheet locks,
+          adviser-comment coverage, attendance, and (T4 only) annual-grade
+          completeness. Each row deep-links into the module where the
+          registrar can fix the issue without losing their place. The
+          checks are warnings (not blockers) — registrar can always
+          "Publish anyway" per KD #28. */}
       <AlertDialog
         open={checklistOpen}
         onOpenChange={(open) => {
@@ -439,95 +518,143 @@ export function PublishWindowPanel({
             setPendingPublishTermId(null);
           }
         }}>
-        <AlertDialogContent className="max-w-xl!">
+        <AlertDialogContent className="max-w-2xl!">
           <AlertDialogHeader>
-            <AlertDialogTitle>Publishing checklist</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-3">
-                <p>
-                  Some items need attention before publishing. You can still proceed — these are warnings, not blockers.
-                </p>
-
-                <div className="space-y-2.5 rounded-lg border border-border bg-muted/30 p-3">
-                  <CheckItem
-                    passed={sheetsOk}
-                    label={
-                      sheetsOk
-                        ? `All ${checklist?.grading_sheets.total ?? 0} grading sheets are locked`
-                        : `${checklist?.grading_sheets.unlocked.length} unlocked grading sheet${(checklist?.grading_sheets.unlocked.length ?? 0) === 1 ? "" : "s"}`
-                    }
-                    detail={
-                      !sheetsOk ? checklist?.grading_sheets.unlocked.map((s) => s.subject_name).join(", ") : undefined
-                    }
-                  />
-
-                  <CheckItem
-                    passed={commentsOk}
-                    label={
-                      commentsOk
-                        ? `All ${checklist?.evaluations.total_active ?? 0} adviser comments written`
-                        : `${checklist?.evaluations.missing.length} missing adviser comment${(checklist?.evaluations.missing.length ?? 0) === 1 ? "" : "s"}`
-                    }
-                  />
-                  {!commentsOk && <StudentList items={checklist?.evaluations.missing ?? []} />}
-
-                  <CheckItem
-                    passed={attendanceOk}
-                    label={
-                      attendanceOk
-                        ? `All ${checklist?.attendance.total_active ?? 0} attendance records complete`
-                        : `${checklist?.attendance.missing.length} missing attendance record${(checklist?.attendance.missing.length ?? 0) === 1 ? "" : "s"}`
-                    }
-                  />
-                  {!attendanceOk && <StudentList items={checklist?.attendance.missing ?? []} />}
-
-                  {checklist?.t4_readiness && (
-                    <>
-                      <div className="border-t border-border pt-2">
-                        <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          Term 4 Final Card
-                        </p>
-                      </div>
-                      <CheckItem
-                        passed={t4LockedOk}
-                        label={
-                          t4LockedOk
-                            ? "All four terms are locked"
-                            : `${checklist.t4_readiness.unlocked_terms.length} term${checklist.t4_readiness.unlocked_terms.length === 1 ? " has" : "s have"} unlocked sheets`
-                        }
-                        detail={
-                          !t4LockedOk
-                            ? checklist.t4_readiness.unlocked_terms
-                                .map((t) => `T${t.term_number}: ${t.subjects.join(", ")}`)
-                                .join(" · ")
-                            : undefined
-                        }
-                      />
-                      <CheckItem
-                        passed={t4GradesOk}
-                        label={
-                          t4GradesOk
-                            ? "All quarterly grades present for Final Grade computation"
-                            : `${checklist.t4_readiness.missing_annual_count} missing quarterly grade${checklist.t4_readiness.missing_annual_count === 1 ? "" : "s"}`
-                        }
-                        detail={
-                          !t4GradesOk
-                            ? checklist.t4_readiness.missing_annual_grades
-                                .slice(0, 5)
-                                .map((g) => `${g.student_name} — ${g.subject_name} (T${g.missing_terms.join(",")})`)
-                                .join("; ") +
-                              (checklist.t4_readiness.missing_annual_count > 5
-                                ? ` … and ${checklist.t4_readiness.missing_annual_count - 5} more`
-                                : "")
-                            : undefined
-                        }
-                      />
-                    </>
-                  )}
-                </div>
-              </div>
+            <AlertDialogTitle className="font-serif text-[22px] font-semibold tracking-tight">
+              Publishing checklist
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Some items need attention before publishing to parents. You can still proceed — these
+              are warnings, not blockers. Use the quick-links to jump into each module and fix
+              issues, then re-publish.
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          {checklist && (
+            <div className="space-y-2.5">
+              {/* Core three checks — same scope across every term. */}
+              <ChecklistRow
+                passed={sheetsOk}
+                icon={FileCheck2}
+                eyebrow="Markbook"
+                title="Grading sheets"
+                summary={
+                  sheetsOk
+                    ? `${checklist.grading_sheets.total} locked`
+                    : `${checklist.grading_sheets.unlocked.length} unlocked`
+                }
+                detail={
+                  sheetsOk
+                    ? `All ${checklist.grading_sheets.total} sheet${checklist.grading_sheets.total === 1 ? "" : "s"} locked and ready to publish.`
+                    : `Unlocked subject${checklist.grading_sheets.unlocked.length === 1 ? "" : "s"}: ${checklist.grading_sheets.unlocked.map((s) => s.subject_name).join(", ")}`
+                }
+                href={`/markbook/grading?section=${sectionId}`}
+                actionLabel={sheetsOk ? "View" : "Lock sheets"}
+              />
+
+              <ChecklistRow
+                passed={commentsOk}
+                icon={MessageSquare}
+                eyebrow="Evaluation"
+                title="Adviser comments"
+                summary={
+                  commentsOk
+                    ? `${checklist.evaluations.total_active} written`
+                    : `${checklist.evaluations.missing.length} missing`
+                }
+                detail={
+                  commentsOk
+                    ? `All ${checklist.evaluations.total_active} active student comment${checklist.evaluations.total_active === 1 ? "" : "s"} on file.`
+                    : undefined
+                }
+                studentList={!commentsOk ? checklist.evaluations.missing : undefined}
+                href={`/evaluation/sections/${sectionId}`}
+                actionLabel={commentsOk ? "View" : "Write comments"}
+              />
+
+              <ChecklistRow
+                passed={attendanceOk}
+                icon={CalendarCheck2}
+                eyebrow="Attendance"
+                title="Attendance records"
+                summary={
+                  attendanceOk
+                    ? `${checklist.attendance.total_active} complete`
+                    : `${checklist.attendance.missing.length} missing`
+                }
+                detail={
+                  attendanceOk
+                    ? `All ${checklist.attendance.total_active} active student record${checklist.attendance.total_active === 1 ? "" : "s"} marked.`
+                    : undefined
+                }
+                studentList={!attendanceOk ? checklist.attendance.missing : undefined}
+                href={`/attendance/${sectionId}`}
+                actionLabel={attendanceOk ? "View" : "Mark attendance"}
+              />
+
+              {/* T4 final-card sub-checks — only render on the T4 publish path. */}
+              {checklist.t4_readiness && (
+                <>
+                  <div className="flex items-center gap-3 pt-2">
+                    <div className="h-px flex-1 bg-border" />
+                    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      Term 4 final card
+                    </p>
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+
+                  <ChecklistRow
+                    passed={t4LockedOk}
+                    icon={ClipboardCheck}
+                    eyebrow="Markbook · T1–T4"
+                    title="All terms locked"
+                    summary={
+                      t4LockedOk
+                        ? "4 of 4 locked"
+                        : `${checklist.t4_readiness.unlocked_terms.length} unlocked`
+                    }
+                    detail={
+                      t4LockedOk
+                        ? "Every term's grading sheets are locked — Final Grade can be computed."
+                        : checklist.t4_readiness.unlocked_terms
+                            .map((t) => `T${t.term_number}: ${t.subjects.join(", ")}`)
+                            .join(" · ")
+                    }
+                    href={`/markbook/grading?section=${sectionId}`}
+                    actionLabel={t4LockedOk ? "View" : "Lock prior terms"}
+                  />
+
+                  <ChecklistRow
+                    passed={t4GradesOk}
+                    icon={FileCheck2}
+                    eyebrow="Markbook · Final grade"
+                    title="Quarterly grades"
+                    summary={
+                      t4GradesOk
+                        ? "All present"
+                        : `${checklist.t4_readiness.missing_annual_count} missing`
+                    }
+                    detail={
+                      t4GradesOk
+                        ? "Every (student × subject) has Q1–Q4 grades for Final Grade computation."
+                        : checklist.t4_readiness.missing_annual_grades
+                            .slice(0, 5)
+                            .map(
+                              (g) => `${g.student_name} — ${g.subject_name} (T${g.missing_terms.join(",")})`,
+                            )
+                            .join("; ") +
+                          (checklist.t4_readiness.missing_annual_count > 5
+                            ? ` … and ${checklist.t4_readiness.missing_annual_count - 5} more`
+                            : "")
+                    }
+                    href={`/markbook/grading?section=${sectionId}`}
+                    actionLabel={t4GradesOk ? "View" : "Backfill grades"}
+                  />
+                </>
+              )}
+            </div>
+          )}
+
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction

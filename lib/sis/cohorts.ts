@@ -47,6 +47,19 @@ function inScope(applicationStatus: string | null, scope: CohortScope): boolean 
 
 export type ParentPassExpiry = { kind: string; date: string };
 
+// Promised-cohort slot shape. One entry per `'to-follow'` slot on the
+// applicant. `promisedUntil === null` means the slot is flagged but no
+// `kind='promise'` row exists yet — registrar can backfill the date from
+// the per-applicant detail page.
+export type PromisedSlot = {
+  key: string;
+  label: string;
+  promisedUntil: string | null;
+  note: string | null;
+  daysUntil: number | null;
+  pastDue: boolean;
+};
+
 export type CohortStudentRow = {
   enroleeNumber: string;
   studentNumber: string | null;
@@ -76,6 +89,13 @@ export type CohortStudentRow = {
   parentPassExpiries?: ParentPassExpiry[];
   earliestExpiry?: string | null;
   daysUntilEarliestExpiry?: number | null;
+
+  // Promised-follow-ups-specific
+  toFollowSlots?: PromisedSlot[];
+  toFollowCount?: number;
+  earliestPromisedUntil?: string | null;
+  daysUntilEarliestPromise?: number | null;
+  hasPastDuePromise?: boolean;
 };
 
 // ─── Snapshot read helpers ──────────────────────────────────────────────────
@@ -464,11 +484,135 @@ export async function getPassExpiryCohort(
   )();
 }
 
+// ─── Promised follow-ups cohort ─────────────────────────────────────────────
+//
+// Admissions-only chase queue for documents the parent committed to upload by
+// a specific date. Funnel scope only — `'enrolled'` returns []. Composes
+// `getAdmissionsCompletenessForChase` (per-applicant slots already filtered
+// to active funnel statuses) with `getLatestPromisesForRoster` (latest
+// kind='promise' row per (enrolee, slot), past-due included).
+
+const MS_PER_DAY_PROMISED = 86_400_000;
+
+function promiseDaysUntil(promisedUntil: string, todayMs: number): number {
+  const ms = Date.parse(promisedUntil);
+  if (Number.isNaN(ms)) return 0;
+  return Math.floor((ms - todayMs) / MS_PER_DAY_PROMISED);
+}
+
+async function loadPromisedCohortUncached(
+  ayCode: string,
+  scope: CohortScope,
+): Promise<CohortStudentRow[]> {
+  if (scope !== 'funnel') return [];
+
+  // Lazy-imported to keep `lib/admissions/dashboard.ts` out of the eager
+  // dep graph for the other cohort loaders.
+  const { getAdmissionsCompletenessForChase } = await import('@/lib/admissions/dashboard');
+  const { getLatestPromisesForRoster } = await import('@/lib/p-files/outreach');
+
+  const { students } = await getAdmissionsCompletenessForChase(ayCode, 'to-follow');
+  if (students.length === 0) return [];
+
+  const enroleeNumbers = students.map((s) => s.enroleeNumber);
+  const promisesByEnrolee = await getLatestPromisesForRoster(ayCode, enroleeNumbers);
+
+  const todayMs = Date.now();
+  const rows: CohortStudentRow[] = [];
+
+  for (const s of students) {
+    const promisesBySlot = promisesByEnrolee.get(s.enroleeNumber) ?? new Map();
+    const toFollowSlots: PromisedSlot[] = [];
+    let earliestMs: number | null = null;
+    let earliestIso: string | null = null;
+    let hasPastDue = false;
+
+    for (const slot of s.slots) {
+      if (slot.status !== 'to-follow') continue;
+      const promise = promisesBySlot.get(slot.key);
+      if (promise) {
+        const days = promiseDaysUntil(promise.promisedUntil, todayMs);
+        const pastDue = days < 0;
+        if (pastDue) hasPastDue = true;
+        toFollowSlots.push({
+          key: slot.key,
+          label: slot.label,
+          promisedUntil: promise.promisedUntil,
+          note: promise.note,
+          daysUntil: days,
+          pastDue,
+        });
+        const ms = Date.parse(promise.promisedUntil);
+        if (!Number.isNaN(ms) && (earliestMs === null || ms < earliestMs)) {
+          earliestMs = ms;
+          earliestIso = promise.promisedUntil;
+        }
+      } else {
+        toFollowSlots.push({
+          key: slot.key,
+          label: slot.label,
+          promisedUntil: null,
+          note: null,
+          daysUntil: null,
+          pastDue: false,
+        });
+      }
+    }
+
+    if (toFollowSlots.length === 0) continue;
+
+    rows.push({
+      enroleeNumber: s.enroleeNumber,
+      studentNumber: s.studentNumber,
+      enroleeFullName: s.fullName,
+      levelApplied: s.level,
+      applicationStatus: s.applicationStatus,
+      toFollowSlots,
+      toFollowCount: toFollowSlots.length,
+      earliestPromisedUntil: earliestIso,
+      daysUntilEarliestPromise:
+        earliestMs === null ? null : Math.floor((earliestMs - todayMs) / MS_PER_DAY_PROMISED),
+      hasPastDuePromise: hasPastDue,
+    });
+  }
+
+  // Sort: past-due first (most negative days first → 1d past-due before
+  // 30d past-due), then upcoming ascending, then no-date rows last.
+  rows.sort((a, b) => {
+    const av = a.daysUntilEarliestPromise ?? null;
+    const bv = b.daysUntilEarliestPromise ?? null;
+    if (av === null && bv === null) {
+      return (a.enroleeFullName ?? '').localeCompare(b.enroleeFullName ?? '');
+    }
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return av - bv;
+  });
+
+  return rows;
+}
+
+export async function getPromisedCohort(
+  ayCode: string,
+  scope: CohortScope,
+): Promise<CohortStudentRow[]> {
+  return unstable_cache(
+    () => loadPromisedCohortUncached(ayCode, scope),
+    ['sis', 'cohort', 'promised', ayCode, scope],
+    { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS },
+  )();
+}
+
 // ─── Cohort key + dispatcher ────────────────────────────────────────────────
 
-export type CohortKey = 'stp' | 'medical' | 'pass-expiry';
+export type CohortKey = 'stp' | 'medical' | 'pass-expiry' | 'promised';
 
-export const COHORT_KEYS: readonly CohortKey[] = ['stp', 'medical', 'pass-expiry'] as const;
+export const COHORT_KEYS: readonly CohortKey[] = [
+  'stp',
+  'medical',
+  'pass-expiry',
+  'promised',
+] as const;
 
 export function isCohortKey(value: unknown): value is CohortKey {
   return typeof value === 'string' && (COHORT_KEYS as readonly string[]).includes(value);
@@ -486,6 +630,8 @@ export async function getCohort(
       return getMedicalCohort(ayCode, scope);
     case 'pass-expiry':
       return getPassExpiryCohort(ayCode, scope);
+    case 'promised':
+      return getPromisedCohort(ayCode, scope);
   }
 }
 
@@ -495,10 +641,13 @@ export const COHORT_TITLES: Record<CohortKey, string> = {
   stp: 'STP applications',
   medical: 'Medical alerts',
   'pass-expiry': 'Pass expiry',
+  promised: 'Promised follow-ups',
 };
 
 export const COHORT_DESCRIPTIONS: Record<CohortKey, string> = {
   stp: 'Singapore ICA Student Pass applicants — track residence history and the 3 STP-conditional document slots.',
   medical: 'Students with any medical flag, allergy, dietary restriction, or paracetamol-consent on file.',
   'pass-expiry': 'Students with a student or parent travel-document expiry within the next 12 months (or already expired).',
+  promised:
+    'Funnel applicants with documents marked To follow — sorted by the soonest date the parent committed to upload by.',
 };

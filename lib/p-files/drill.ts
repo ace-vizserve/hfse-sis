@@ -102,9 +102,13 @@ async function loadPFilesRowsUncached(ayCode: string): Promise<PFilesDrillRow[]>
     admissions
       .from(docsTable)
       .select(`enroleeNumber, ${CORE_SLOTS.map((s) => s.column).join(', ')}, passportExpiryDate`),
+    // Enrollment gate at the loader (practical rule: P-Files = enrolled-only,
+    // KD #71). Filter at the SQL layer so funnel rows never enter the cache.
     admissions
       .from(statusTable)
-      .select('enroleeNumber, classLevel'),
+      .select('enroleeNumber, classLevel, applicationStatus, classSection')
+      .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)'])
+      .not('classSection', 'is', null),
     service
       .from('p_file_revisions')
       .select('enrolee_number, slot_key, ay_code, replaced_at')
@@ -127,10 +131,18 @@ async function loadPFilesRowsUncached(ayCode: string): Promise<PFilesDrillRow[]>
   const statuses = (statusRes.data ?? []) as Array<{
     enroleeNumber: string | null;
     classLevel: string | null;
+    applicationStatus: string | null;
+    classSection: string | null;
   }>;
   const classLevelByEnrolee = new Map<string, string>();
+  // Set of enrolled enroleeNumbers — only these emit drill rows below.
+  // The status fetch already filtered at SQL but we materialize the Set
+  // for the iteration filter (`apps` is not pre-filtered).
+  const enrolledEnrolees = new Set<string>();
   for (const s of statuses) {
-    if (s.enroleeNumber && s.classLevel) classLevelByEnrolee.set(s.enroleeNumber, s.classLevel);
+    if (!s.enroleeNumber) continue;
+    enrolledEnrolees.add(s.enroleeNumber);
+    if (s.classLevel) classLevelByEnrolee.set(s.enroleeNumber, s.classLevel);
   }
 
   // Revisions counted per (enrolee, slot)
@@ -149,6 +161,10 @@ async function loadPFilesRowsUncached(ayCode: string): Promise<PFilesDrillRow[]>
   const out: PFilesDrillRow[] = [];
   for (const app of apps) {
     if (!app.enroleeNumber) continue;
+    // Enrollment gate: skip funnel applicants. The status query above
+    // already filters to enrolled at SQL; this Set check makes the
+    // intent explicit at the iteration site too.
+    if (!enrolledEnrolees.has(app.enroleeNumber)) continue;
     const docRow = docByEnrolee.get(app.enroleeNumber);
     const level = classLevelByEnrolee.get(app.enroleeNumber) ?? app.levelApplied ?? null;
     const expiryDate = (docRow?.['passportExpiryDate'] as string | null | undefined) ?? null;

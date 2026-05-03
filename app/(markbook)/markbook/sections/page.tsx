@@ -1,10 +1,8 @@
 import Link from 'next/link';
 import {
   ArrowUpRight,
-  ChevronRight,
   GraduationCap,
   LayoutGrid,
-  School,
   Settings,
   Users,
   UserX,
@@ -22,11 +20,13 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { compareLevelLabels } from '@/lib/sis/levels';
 
 type LevelLite = { id: string; code: string; label: string; level_type: 'primary' | 'secondary' };
 type SectionCard = {
   id: string;
   name: string;
+  level_code: string;
   level_label: string;
   level_type: 'primary' | 'secondary' | 'unknown';
   active: number;
@@ -77,6 +77,7 @@ export default async function SectionsListPage() {
     return {
       id: s.id,
       name: s.name,
+      level_code: lvl?.code ?? '',
       level_label: lvl?.label ?? 'Unknown',
       level_type: (lvl?.level_type ?? 'unknown') as SectionCard['level_type'],
       active: counts[s.id]?.active ?? 0,
@@ -89,7 +90,16 @@ export default async function SectionsListPage() {
     if (!grouped.has(c.level_label)) grouped.set(c.level_label, []);
     grouped.get(c.level_label)!.push(c);
   }
-  const sortedLevels = Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b));
+  // Canonical pedagogical order (P1→P2→…→S4) per `lib/sis/levels.ts` —
+  // matches `/sis/sections`. localeCompare gave alphabetical order
+  // ("Primary Five" before "Primary One") which read wrong.
+  const sortedLevels = Array.from(grouped.entries()).sort(([a], [b]) =>
+    compareLevelLabels(a, b),
+  );
+  // Sort sections within each level alphabetically (Diamond before Pearl).
+  for (const [, sects] of sortedLevels) {
+    sects.sort((a, b) => a.name.localeCompare(b.name));
+  }
 
   const totalSections = cards.length;
   const totalActive = cards.reduce((n, c) => n + c.active, 0);
@@ -184,49 +194,20 @@ export default async function SectionsListPage() {
         </Card>
       )}
 
-      {/* Grouped sections — each level is one big container Card with a list of section rows */}
+      {/* Grouped sections — pill design mirrors /sis/sections so the
+          structural-config surface (SIS Admin) and the operational
+          surface (this page) read as one family. Each pill links into
+          the markbook section detail page where the roster + grading
+          surfaces live. */}
       {sortedLevels.length > 0 && (
         <div className="space-y-2">
           <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             By level
           </h2>
-          <div className="space-y-5">
-            {sortedLevels.map(([level, sects]) => {
-              const levelActive = sects.reduce((n, s) => n + s.active, 0);
-              const sorted = sects.slice().sort((a, b) => a.name.localeCompare(b.name));
-              return (
-                <Card key={level} className="@container/card gap-0 py-0">
-                  <CardHeader className="border-b border-border py-5">
-                    <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                      Level
-                    </CardDescription>
-                    <CardTitle className="font-serif text-[22px] font-semibold tracking-tight text-foreground">
-                      {level}
-                    </CardTitle>
-                    <CardAction>
-                      <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-                        <School className="size-5" />
-                      </div>
-                    </CardAction>
-                  </CardHeader>
-                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-border bg-muted/30 px-6 py-3">
-                    <MetaBlock
-                      label="Sections"
-                      value={sects.length.toLocaleString('en-SG')}
-                    />
-                    <MetaBlock
-                      label="Active students"
-                      value={levelActive.toLocaleString('en-SG')}
-                    />
-                  </div>
-                  <ul className="divide-y divide-border">
-                    {sorted.map((s) => (
-                      <SectionRow key={s.id} section={s} />
-                    ))}
-                  </ul>
-                </Card>
-              );
-            })}
+          <div className="space-y-4">
+            {sortedLevels.map(([level, sects]) => (
+              <LevelGroup key={level} levelLabel={level} sections={sects} />
+            ))}
           </div>
         </div>
       )}
@@ -234,52 +215,70 @@ export default async function SectionsListPage() {
   );
 }
 
-function MetaBlock({ label, value }: { label: string; value: string }) {
+function LevelGroup({
+  levelLabel,
+  sections,
+}: {
+  levelLabel: string;
+  sections: SectionCard[];
+}) {
+  const levelCode = sections[0]?.level_code ?? '';
+  const totalActive = sections.reduce((n, s) => n + s.active, 0);
   return (
-    <div className="flex items-baseline gap-1.5">
-      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        {label}
-      </span>
-      <span className="font-serif text-base font-semibold tabular-nums text-foreground">
-        {value}
-      </span>
-    </div>
+    <Card className="@container/card gap-0 overflow-hidden py-0">
+      <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-5 py-3">
+        {levelCode && (
+          <Badge
+            variant="outline"
+            className="h-6 border-border bg-white px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+          >
+            {levelCode}
+          </Badge>
+        )}
+        <div className="font-serif text-[15px] font-semibold tracking-tight text-foreground">
+          {levelLabel}
+        </div>
+        <Badge variant="muted" className="ml-auto">
+          {sections.length} section{sections.length === 1 ? '' : 's'}
+          <span className="ml-1.5 text-muted-foreground">·</span>
+          <span className="ml-1.5 font-mono tabular-nums text-muted-foreground">
+            {totalActive} active
+          </span>
+        </Badge>
+      </div>
+      <div className="flex flex-wrap gap-2 p-4">
+        {sections.map((s) => (
+          <SectionPill key={s.id} section={s} />
+        ))}
+      </div>
+    </Card>
   );
 }
 
-function SectionRow({ section }: { section: SectionCard }) {
+function SectionPill({ section }: { section: SectionCard }) {
   return (
-    <li>
-      <Link
-        href={`/markbook/sections/${section.id}`}
-        className="group flex items-center gap-4 px-6 py-4 transition-colors hover:bg-muted/40"
-      >
-        <div className="flex size-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-          <GraduationCap className="size-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="font-serif text-[17px] font-semibold leading-snug tracking-tight text-foreground">
-            {section.name}
-          </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs">
-            <span className="font-mono tabular-nums text-foreground">
-              {section.active}
-              <span className="ml-1 text-muted-foreground">active</span>
-            </span>
-            {section.withdrawn > 0 && (
-              <>
-                <span className="text-border">·</span>
-                <span className="font-mono tabular-nums text-muted-foreground">
-                  {section.withdrawn}
-                  <span className="ml-1">withdrawn</span>
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-        <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-      </Link>
-    </li>
+    <Link
+      href={`/markbook/sections/${section.id}`}
+      className="group/pill inline-flex items-center gap-2.5 rounded-xl border border-hairline bg-gradient-to-b from-card to-muted/20 py-2 pl-2.5 pr-3 shadow-xs transition-all hover:-translate-y-0.5 hover:border-brand-indigo/40 hover:shadow-md"
+    >
+      <div className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+        <GraduationCap className="size-3.5" />
+      </div>
+      <div className="flex flex-col leading-tight">
+        <span className="font-serif text-[14px] font-semibold tracking-tight text-foreground">
+          {section.name}
+        </span>
+        <span className="font-mono text-[9px] uppercase tracking-[0.12em] tabular-nums text-muted-foreground">
+          {section.active} active
+          {section.withdrawn > 0 && (
+            <>
+              <span className="mx-1">·</span>
+              {section.withdrawn} withdrawn
+            </>
+          )}
+        </span>
+      </div>
+    </Link>
   );
 }
 

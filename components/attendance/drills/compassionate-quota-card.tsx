@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { Heart } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowUpRight, Heart } from 'lucide-react';
 
 import { AttendanceDrillSheet } from '@/components/attendance/drills/attendance-drill-sheet';
 import { Badge } from '@/components/ui/badge';
@@ -96,6 +97,7 @@ export function CompassionateQuotaCard({
                   <th className="py-2">Section</th>
                   <th className="py-2 text-right">Used</th>
                   <th className="py-2 text-right">Remaining</th>
+                  <th className="py-2"></th>
                 </tr>
               </thead>
               <tbody>
@@ -117,6 +119,15 @@ export function CompassionateQuotaCard({
                       }
                     >
                       {r.remaining}
+                    </td>
+                    <td className="py-2 text-right">
+                      <Link
+                        href={`/attendance/students/${encodeURIComponent(r.studentNumber)}`}
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        View
+                        <ArrowUpRight className="size-3" />
+                      </Link>
                     </td>
                   </tr>
                 ))}

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
   flexRender,
   getCoreRowModel,
@@ -12,7 +13,17 @@ import {
   type ColumnFiltersState,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Pencil, Search, X } from "lucide-react";
+import {
+  ArrowUpDown,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Pencil,
+  Search,
+  X,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +36,11 @@ import { EnrolmentEditSheet } from "@/components/markbook/enrolment-edit-sheet";
 
 export type RosterRow = {
   id: string;
+  /** UUID from `public.students.id` — drives the per-student report-card
+   *  link (the markbook surface for this student's grades). Null when
+   *  the enrolment row references a student record that's been deleted
+   *  or was never synced from admissions. */
+  student_id: string | null;
   index_number: number;
   student_number: string;
   student_name: string;
@@ -150,22 +166,35 @@ export function RosterTable({ data, sectionId }: { data: RosterRow[]; sectionId:
         id: "actions",
         header: "",
         cell: ({ row }) => (
-          <EnrolmentEditSheet
-            sectionId={sectionId}
-            enrolmentId={row.original.id}
-            studentName={row.original.student_name}
-            indexNumber={row.original.index_number}
-            initial={{
-              bus_no: row.original.bus_no,
-              classroom_officer_role: row.original.classroom_officer_role,
-              enrollment_status: row.original.enrollment_status,
-            }}
-          >
-            <Button variant="ghost" size="sm" className="h-7 px-2">
-              <Pencil className="size-3" />
-              <span className="sr-only">Edit enrolment</span>
-            </Button>
-          </EnrolmentEditSheet>
+          <div className="flex items-center justify-end gap-1">
+            {row.original.student_id && (
+              <Button asChild variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs">
+                <Link
+                  href={`/markbook/report-cards/${row.original.student_id}`}
+                  title={`Open ${row.original.student_name}'s report card`}
+                >
+                  <BookOpen className="size-3" />
+                  <span>Grades</span>
+                </Link>
+              </Button>
+            )}
+            <EnrolmentEditSheet
+              sectionId={sectionId}
+              enrolmentId={row.original.id}
+              studentName={row.original.student_name}
+              indexNumber={row.original.index_number}
+              initial={{
+                bus_no: row.original.bus_no,
+                classroom_officer_role: row.original.classroom_officer_role,
+                enrollment_status: row.original.enrollment_status,
+              }}
+            >
+              <Button variant="ghost" size="sm" className="h-7 px-2" title="Edit enrolment metadata">
+                <Pencil className="size-3" />
+                <span className="sr-only">Edit enrolment</span>
+              </Button>
+            </EnrolmentEditSheet>
+          </div>
         ),
       },
     ],

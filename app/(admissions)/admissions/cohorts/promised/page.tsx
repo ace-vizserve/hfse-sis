@@ -1,12 +1,12 @@
 import { redirect } from 'next/navigation';
 
 import { CohortPageShell } from '@/components/sis/cohorts/cohort-page-shell';
-import { PassExpiryCohortTable } from '@/components/sis/cohorts/pass-expiry-cohort-table';
+import { PromisedCohortTable } from '@/components/sis/cohorts/promised-cohort-table';
 import type { Role } from '@/lib/auth/roles';
 import {
   COHORT_DESCRIPTIONS,
   COHORT_TITLES,
-  getPassExpiryCohort,
+  getPromisedCohort,
 } from '@/lib/sis/cohorts';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -20,7 +20,7 @@ const ALLOWED_ROLES: Role[] = [
   'superadmin',
 ];
 
-export default async function AdmissionsCohortsPassExpiryPage({
+export default async function AdmissionsCohortsPromisedPage({
   searchParams,
 }: {
   searchParams: Promise<{ ay?: string }>;
@@ -34,18 +34,18 @@ export default async function AdmissionsCohortsPassExpiryPage({
   const currentAy = await getCurrentAcademicYear(service);
   const ayCode = resolved.ay ?? currentAy?.ay_code ?? '';
 
-  const rows = ayCode ? await getPassExpiryCohort(ayCode, 'funnel') : [];
+  const rows = ayCode ? await getPromisedCohort(ayCode, 'funnel') : [];
 
   return (
     <CohortPageShell
-      cohort="pass-expiry"
-      title={COHORT_TITLES['pass-expiry']}
-      description={COHORT_DESCRIPTIONS['pass-expiry']}
+      cohort="promised"
+      title={COHORT_TITLES['promised']}
+      description={COHORT_DESCRIPTIONS['promised']}
       count={rows.length}
       scope="funnel"
       ayCode={ayCode}
     >
-      <PassExpiryCohortTable rows={rows} scope="funnel" ayCode={ayCode} />
+      <PromisedCohortTable rows={rows} ayCode={ayCode} />
     </CohortPageShell>
   );
 }

@@ -10,10 +10,15 @@ import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 // ──────────────────────────────────────────────────────────────────────────
 // freshen-document-statuses — KD #60 reactive auto-flip.
 //
-// Implements the "auto-flip when expiry passes" half of KD #60's expiring-
-// document contract, in both directions. Called at the top of every page RSC
-// that displays document status. Each call runs 16 parallel idempotent
-// UPDATEs (8 expiring slots × 2 directions):
+// P-Files owns "validity over time" per the practical rule: once a document
+// has an expiry date, the auto-flip Valid↔Expired logic is P-Files territory
+// even when admissions surfaces also depend on the column being current
+// (admissions chase `?status=expired` reads the same column). This module
+// runs AY-wide so admissions chase + records cohorts + the P-Files renewal
+// dashboard all see consistent Expired flags within 60s of expiry crossing.
+//
+// Each call runs 16 parallel idempotent UPDATEs (8 expiring slots × 2
+// directions):
 //   • expire:  `<slot>Status = 'Valid'`   AND `<slot>Expiry < today`  → 'Expired'
 //   • revive:  `<slot>Status = 'Expired'` AND `<slot>Expiry >= today` → 'Valid'
 //
@@ -23,6 +28,11 @@ import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 // that fixed the date but missed the status pill). Cached for 60s per AY so
 // rapid refreshes don't repeat work; tag-invalidated by `sis:${ayCode}` so
 // manual edits via existing PATCH routes don't see stale freshen results.
+//
+// Audit-log action names stay `sis.documents.auto-{expire,revive}` — the
+// data lives on the admissions-side `_documents` tables (sis-prefix in the
+// audit taxonomy), even though the logic that flips them now belongs to
+// P-Files.
 //
 // Spec: docs/superpowers/specs/2026-04-28-document-expiry-auto-flip-design.md
 // ──────────────────────────────────────────────────────────────────────────
@@ -89,7 +99,7 @@ async function freshenAyDocumentsUncached(ayCode: string): Promise<FreshenResult
 
         if (error) {
           console.warn(
-            `[sis/freshen-documents] ${direction} failed for ${slotKey} in ${ayCode}:`,
+            `[p-files/freshen-documents] ${direction} failed for ${slotKey} in ${ayCode}:`,
             error.message,
           );
           return { slotKey, direction, rows: [] as Array<{ enroleeNumber: string | null }> };
@@ -118,7 +128,7 @@ async function freshenAyDocumentsUncached(ayCode: string): Promise<FreshenResult
   } catch (e) {
     // Catch-all: never break a page render because freshen failed.
     console.warn(
-      `[sis/freshen-documents] unexpected failure for ${ayCode}:`,
+      `[p-files/freshen-documents] unexpected failure for ${ayCode}:`,
       e instanceof Error ? e.message : String(e),
     );
     return result;
@@ -148,7 +158,7 @@ async function freshenAyDocumentsUncached(ayCode: string): Promise<FreshenResult
       });
     } catch (e) {
       console.warn(
-        `[sis/freshen-documents] audit log failed for ${ayCode}:`,
+        `[p-files/freshen-documents] audit log failed for ${ayCode}:`,
         e instanceof Error ? e.message : String(e),
       );
     }
@@ -172,7 +182,7 @@ async function freshenAyDocumentsUncached(ayCode: string): Promise<FreshenResult
       });
     } catch (e) {
       console.warn(
-        `[sis/freshen-documents] revive audit log failed for ${ayCode}:`,
+        `[p-files/freshen-documents] revive audit log failed for ${ayCode}:`,
         e instanceof Error ? e.message : String(e),
       );
     }
@@ -184,7 +194,7 @@ async function freshenAyDocumentsUncached(ayCode: string): Promise<FreshenResult
 export function freshenAyDocuments(ayCode: string): Promise<FreshenResult> {
   return unstable_cache(
     () => freshenAyDocumentsUncached(ayCode),
-    ['sis', 'freshen-documents', ayCode],
+    ['p-files', 'freshen-documents', ayCode],
     {
       revalidate: CACHE_TTL_SECONDS,
       tags: ['sis', `sis:${ayCode}`],

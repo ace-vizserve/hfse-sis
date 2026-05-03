@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Archive,
   BookOpen,
   Building2,
   CalendarCheck,
@@ -171,6 +172,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
     iconByHref: {
       "/admissions": LayoutDashboard,
       "/admissions/applications": FileStack,
+      "/admissions/applications/closed": Archive,
       "/admissions/audit-log": History,
       // Pre-enrolment chase quicklinks (Workstream A) — focused-view
       // filters on the dashboard for the un-enrolled scope. Mirror the
