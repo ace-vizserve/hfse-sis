@@ -182,7 +182,7 @@ export function EditFamilySheet({
               Edit {PARENT_LABELS[parent].toLowerCase()}
             </SheetTitle>
             <SheetDescription className="text-sm text-muted-foreground">
-              Audit-logged on save. Empty fields are stored as null.
+              Empty fields won&apos;t be saved.
             </SheetDescription>
           </SheetHeader>
 

@@ -197,7 +197,11 @@ export default async function PFilesDashboard({
           ayCode={selectedAy}
           ayCodes={ayCodes}
           range={{ from: rangeInput.from, to: rangeInput.to }}
-          comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+          comparison={
+            rangeInput.cmpFrom && rangeInput.cmpTo
+              ? { from: rangeInput.cmpFrom, to: rangeInput.cmpTo }
+              : null
+          }
           termWindows={windows.term}
           ayWindows={windows.ay}
         />
@@ -229,8 +233,6 @@ export default async function PFilesDashboard({
           <span>{visibleStudents.length.toLocaleString("en-SG")} of {summary.totalStudents.toLocaleString("en-SG")} students</span>
           <span className="text-border">·</span>
           <span>Filter: {filterLabel}</span>
-          <span className="text-border">·</span>
-          <span>Audit-logged</span>
         </div>
       </PageShell>
     );
@@ -260,14 +262,16 @@ export default async function PFilesDashboard({
     isOfficer ? getPFilesPriority({ ayCode: selectedAy }) : Promise.resolve(null),
   ]);
 
-  const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
+  const comparisonLabel = kpisResult.comparisonRange
+    ? `vs ${formatRangeLabel(kpisResult.comparisonRange)}`
+    : undefined;
 
   const insights = pfilesInsights({
     revisionsInRange: kpisResult.current.revisionsInRange,
-    revisionsInRangePrior: kpisResult.comparison.revisionsInRange,
+    revisionsInRangePrior: kpisResult.comparison?.revisionsInRange,
     expiringSoon: kpisResult.current.expiringSoon,
     totalDocuments: kpisResult.current.totalDocuments,
-    revisionsDelta: kpisResult.delta,
+    revisionsDelta: kpisResult.delta ?? undefined,
   });
 
   return (
@@ -290,7 +294,11 @@ export default async function PFilesDashboard({
         ayCode={selectedAy}
         ayCodes={ayCodes}
         range={{ from: rangeInput.from, to: rangeInput.to }}
-        comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+        comparison={
+          rangeInput.cmpFrom && rangeInput.cmpTo
+            ? { from: rangeInput.cmpFrom, to: rangeInput.cmpTo }
+            : null
+        }
         termWindows={windows.term}
         ayWindows={windows.ay}
       />
@@ -313,7 +321,7 @@ export default async function PFilesDashboard({
           value={kpisResult.current.revisionsInRange}
           icon={FileStack}
           intent="default"
-          delta={kpisResult.delta}
+          delta={kpisResult.delta ?? undefined}
           deltaGoodWhen="up"
           comparisonLabel={comparisonLabel}
           sparkline={velocity.current.slice(-14)}
@@ -442,9 +450,7 @@ export default async function PFilesDashboard({
         <span className="text-border">·</span>
         <span>{summary.totalStudents.toLocaleString("en-SG")} students</span>
         <span className="text-border">·</span>
-        <span>Cache 10m</span>
-        <span className="text-border">·</span>
-        <span>Audit-logged</span>
+        <span>Refreshes every 10 minutes</span>
       </div>
     </PageShell>
   );

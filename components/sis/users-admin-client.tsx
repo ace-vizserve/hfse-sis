@@ -154,11 +154,11 @@ function UserRow({ user, isSelf }: { user: AdminUserRow; isSelf: boolean }) {
       </TableCell>
       <TableCell>
         {user.disabled ? (
-          <Badge variant="outline" className="gap-1 border-destructive/40 text-destructive">
+          <Badge variant="blocked">
             <Ban className="size-3" /> Disabled
           </Badge>
         ) : (
-          <Badge variant="outline" className="gap-1 border-emerald-500/40 text-emerald-900 dark:text-emerald-200">
+          <Badge variant="success">
             <CheckCircle2 className="size-3" /> Active
           </Badge>
         )}

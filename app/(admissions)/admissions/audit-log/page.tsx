@@ -84,8 +84,8 @@ export default async function AdmissionsAuditLogPage() {
           Audit log.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Application edits, stage-pipeline moves, discount grants, document validations.
-          Append-only.
+          A history of every application edit, stage move, discount granted, and document validation.
+          Past entries are kept on the record — corrections add a new entry rather than overwriting old ones.
         </p>
       </header>
 

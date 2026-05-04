@@ -77,23 +77,23 @@ const ADMIN_TOOLS: Tool[] = [
     icon: RefreshCw,
     eyebrow: "Admissions",
     title: "Sync Students",
-    description: "Pull new, updated, and withdrawn students from the admissions tables for the current academic year.",
-    href: "/markbook/sync-students",
+    description: "Pull new, updated, and withdrawn students from the admissions tables. Lives in SIS Admin (KD #48) — opens the canonical surface.",
+    href: "/sis/sync-students",
     cta: "Open sync",
   },
   {
     icon: Users,
     eyebrow: "Rosters",
-    title: "Sections & Advisers",
-    description: "View every section for the current AY and manage enrolment, class advisers, and comments.",
+    title: "Browse sections",
+    description: "Read-only roster launcher into per-section grading sheets, attendance, and report cards. Section + adviser config lives in SIS Admin (KD #48).",
     href: "/markbook/sections",
-    cta: "Open sections",
+    cta: "Open roster",
   },
   {
     icon: History,
     eyebrow: "Compliance",
     title: "Audit Log",
-    description: "Append-only record of every post-lock grade change, with field diffs and approval references.",
+    description: "A history of every grade change made after a sheet is locked, including which fields changed and the approval reference.",
     href: "/markbook/audit-log",
     cta: "Open audit log",
   },
@@ -168,7 +168,9 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
       : Promise.resolve(null),
   ]);
 
-  const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
+  const comparisonLabel = kpisResult?.comparisonRange
+    ? `vs ${formatRangeLabel(kpisResult.comparisonRange)}`
+    : undefined;
 
   // Role-aware PriorityPanel payload — teacher gets "your open subject sheets",
   // registrar gets "decisions queued + per-term unlocked sheets".
@@ -189,7 +191,7 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
   const insights = kpisResult
     ? markbookInsights({
         gradesEntered: kpisResult.current.gradesEntered,
-        gradesDelta: kpisResult.delta,
+        gradesDelta: kpisResult.delta ?? undefined,
         sheetsLocked: kpisResult.current.sheetsLocked,
         sheetsTotal: kpisResult.current.sheetsTotal,
         lockedPct: kpisResult.current.lockedPct,
@@ -214,7 +216,11 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
           ayCode={ayCode}
           ayCodes={ayCodes}
           range={{ from: rangeInput.from, to: rangeInput.to }}
-          comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+          comparison={
+            rangeInput.cmpFrom && rangeInput.cmpTo
+              ? { from: rangeInput.cmpFrom, to: rangeInput.cmpTo }
+              : null
+          }
           termWindows={windows.term}
           ayWindows={windows.ay}
           showAySwitcher={false}
@@ -233,7 +239,7 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
             value={kpisResult.current.gradesEntered}
             icon={ClipboardList}
             intent="default"
-            delta={kpisResult.delta}
+            delta={kpisResult.delta ?? undefined}
             deltaGoodWhen="up"
             comparisonLabel={comparisonLabel}
             sparkline={velocity?.current.slice(-14)}
@@ -269,7 +275,11 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
             value={kpisResult.current.changeRequestsPending}
             icon={TrendingUp}
             intent={kpisResult.current.changeRequestsPending > 0 ? "warning" : "good"}
-            subtext={`${kpisResult.comparison.changeRequestsPending} in prior period`}
+            subtext={
+              kpisResult.comparison
+                ? `${kpisResult.comparison.changeRequestsPending} in prior period`
+                : undefined
+            }
             drillSheet={
               <MarkbookDrillSheet
                 target="change-requests"
@@ -288,9 +298,11 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
             icon={Clock}
             intent="default"
             subtext={
-              kpisResult.comparison.avgDecisionHours != null
+              kpisResult.comparison?.avgDecisionHours != null
                 ? `${kpisResult.comparison.avgDecisionHours.toFixed(1)}d prior`
-                : "No prior decisions"
+                : kpisResult.comparison
+                  ? "No prior decisions"
+                  : undefined
             }
             drillSheet={
               <MarkbookDrillSheet
@@ -494,9 +506,7 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
         <BarChart3 className="size-3" strokeWidth={2.25} />
         <span>{currentAy?.ay_code ?? "—"}</span>
         <span className="text-border">·</span>
-        <span>Supabase Auth</span>
-        <span className="text-border">·</span>
-        <span>Audit-logged</span>
+        <span>Secure sign-in</span>
       </div>
     </PageShell>
   );

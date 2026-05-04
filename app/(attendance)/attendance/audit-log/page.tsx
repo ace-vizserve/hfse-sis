@@ -87,8 +87,8 @@ export default async function AttendanceAuditLogPage() {
             Daily-attendance history.
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Every mark, correction, and bulk import since this module came online. Append-only —
-            edits write new rows rather than updating old ones.
+            Every attendance mark, correction, and bulk import since this section started. Corrections
+            add a new entry rather than overwriting the original — past entries are kept on the record.
           </p>
         </div>
       </header>

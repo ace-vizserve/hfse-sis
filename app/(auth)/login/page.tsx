@@ -146,11 +146,9 @@ export default function LoginPage() {
         {/* Trust footer */}
         <div className="mt-10 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-5">
           <Lock className="size-3" strokeWidth={2.25} />
-          <span>TLS 1.3</span>
+          <span>Encrypted (TLS 1.3)</span>
           <span className="text-hairline-strong">·</span>
-          <span>Supabase Auth</span>
-          <span className="text-hairline-strong">·</span>
-          <span>Audit-logged</span>
+          <span>Secure sign-in</span>
         </div>
       </div>
 

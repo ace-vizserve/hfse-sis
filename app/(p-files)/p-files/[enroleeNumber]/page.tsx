@@ -309,8 +309,6 @@ export default async function StudentDocumentDetailPage({
         <span>{selectedAy}</span>
         <span className="text-border">·</span>
         <span>{enroleeNumber}</span>
-        <span className="text-border">·</span>
-        <span>Audit-logged</span>
       </div>
     </PageShell>
   );

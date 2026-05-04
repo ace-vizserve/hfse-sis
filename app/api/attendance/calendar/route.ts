@@ -4,12 +4,21 @@ import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { weekdaysBetween } from '@/lib/attendance/calendar';
-import { resolveDayType, SchoolCalendarUpsertSchema } from '@/lib/schemas/attendance';
+import {
+  AUDIENCE_VALUES,
+  resolveDayType,
+  SchoolCalendarUpsertSchema,
+  type Audience,
+} from '@/lib/schemas/attendance';
 
 // POST /api/attendance/calendar
 // Body — either:
-//   { termId, entries: [{ date, isHoliday, label? }, ...] }
-//   { termId, action: 'autofill_weekdays', start?, end? }  ← seeds school days
+//   { termId, audience?, entries: [{ date, dayType|isHoliday, label? }, ...] }
+//   { termId, audience?, action: 'autofill_weekdays', start?, end? }
+//
+// `audience` (default 'all') tags every row so primary/secondary overrides
+// can coexist with the global 'all' baseline (migration 037, KD audience-
+// precedence rule).
 //
 // Registrar+ only. Audit action: `attendance.calendar.upsert`.
 export async function POST(request: NextRequest) {
@@ -29,6 +38,9 @@ export async function POST(request: NextRequest) {
     if (!termId) {
       return NextResponse.json({ error: 'termId required' }, { status: 400 });
     }
+    const audience: Audience = AUDIENCE_VALUES.includes(body.audience)
+      ? (body.audience as Audience)
+      : 'all';
     const { data: term, error: termErr } = await service
       .from('terms')
       .select('id, start_date, end_date')
@@ -45,13 +57,18 @@ export async function POST(request: NextRequest) {
       term_id: termId,
       date,
       day_type: 'school_day' as const,
+      audience,
       is_holiday: false,
       label: null,
       created_by: auth.user.id,
     }));
     const { error: upsertErr, count } = await service
       .from('school_calendar')
-      .upsert(rows, { onConflict: 'term_id,date', ignoreDuplicates: true, count: 'exact' });
+      .upsert(rows, {
+        onConflict: 'term_id,audience,date',
+        ignoreDuplicates: true,
+        count: 'exact',
+      });
     if (upsertErr) {
       return NextResponse.json({ error: upsertErr.message }, { status: 500 });
     }
@@ -61,7 +78,7 @@ export async function POST(request: NextRequest) {
       action: 'attendance.calendar.upsert',
       entityType: 'school_calendar',
       entityId: termId,
-      context: { action: 'autofill_weekdays', start, end, inserted: count ?? rows.length },
+      context: { action: 'autofill_weekdays', audience, start, end, inserted: count ?? rows.length },
     });
     return NextResponse.json({ ok: true, seeded: rows.length, inserted: count });
   }
@@ -75,14 +92,17 @@ export async function POST(request: NextRequest) {
     );
   }
   const { termId, entries } = parsed.data;
+  const audience: Audience = parsed.data.audience;
 
-  // Load previous day_types for these (term, date) pairs so the audit diff
-  // captures what changed. Cheap — HFSE volumes are small and entries max 200.
+  // Load previous day_types for these (term, date, audience) tuples so the
+  // audit diff captures what changed. Cheap — HFSE volumes are small and
+  // entries max 200.
   const dates = entries.map((e) => e.date);
   const { data: beforeRows } = await service
     .from('school_calendar')
-    .select('date, day_type')
+    .select('date, day_type, audience')
     .eq('term_id', termId)
+    .eq('audience', audience)
     .in('date', dates);
   const beforeByDate = new Map<string, string>(
     ((beforeRows ?? []) as Array<{ date: string; day_type: string }>).map((r) => [
@@ -97,6 +117,7 @@ export async function POST(request: NextRequest) {
       term_id: termId,
       date: e.date,
       day_type: dayType,
+      audience,
       // is_holiday is derived by the migration-019 trigger; we still pass a
       // value here for rows that existed pre-migration and haven't been
       // re-written yet. Trigger will overwrite anyway.
@@ -108,13 +129,14 @@ export async function POST(request: NextRequest) {
 
   const { error: upsertErr } = await service
     .from('school_calendar')
-    .upsert(rows, { onConflict: 'term_id,date' });
+    .upsert(rows, { onConflict: 'term_id,audience,date' });
   if (upsertErr) {
     return NextResponse.json({ error: upsertErr.message }, { status: 500 });
   }
 
   const diffs = rows.map((r) => ({
     date: r.date,
+    audience: r.audience,
     before_day_type: beforeByDate.get(r.date) ?? null,
     after_day_type: r.day_type,
     label: r.label,
@@ -126,20 +148,25 @@ export async function POST(request: NextRequest) {
     action: 'attendance.calendar.upsert',
     entityType: 'school_calendar',
     entityId: termId,
-    context: { action: 'upsert', rows: rows.length, diffs },
+    context: { action: 'upsert', audience, rows: rows.length, diffs },
   });
 
   return NextResponse.json({ ok: true, upserted: rows.length });
 }
 
-// DELETE /api/attendance/calendar?termId=...&date=YYYY-MM-DD
-// Removes the calendar entry for a specific (term, date).
+// DELETE /api/attendance/calendar?termId=...&date=YYYY-MM-DD&audience=all|primary|secondary
+// Removes the calendar entry for a specific (term, date, audience).
+// Default audience='all' — matches the legacy single-row-per-date behavior.
 export async function DELETE(request: NextRequest) {
   const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const termId = request.nextUrl.searchParams.get('termId');
   const date = request.nextUrl.searchParams.get('date');
+  const rawAudience = request.nextUrl.searchParams.get('audience') ?? 'all';
+  const audience: Audience = AUDIENCE_VALUES.includes(rawAudience as Audience)
+    ? (rawAudience as Audience)
+    : 'all';
   if (!termId || !date) {
     return NextResponse.json({ error: 'termId and date are required' }, { status: 400 });
   }
@@ -149,6 +176,7 @@ export async function DELETE(request: NextRequest) {
     .from('school_calendar')
     .delete()
     .eq('term_id', termId)
+    .eq('audience', audience)
     .eq('date', date);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -160,7 +188,7 @@ export async function DELETE(request: NextRequest) {
     action: 'attendance.calendar.delete',
     entityType: 'school_calendar',
     entityId: termId,
-    context: { date },
+    context: { date, audience },
   });
 
   return NextResponse.json({ ok: true });

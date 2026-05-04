@@ -14,7 +14,7 @@ import {
 import { cn } from '@/lib/utils';
 import {
   PRESET_LABEL,
-  autoComparison,
+  autoComparisonAcademic,
   detectPreset,
   formatRangeLabel,
   parseLocalDate,
@@ -40,14 +40,16 @@ export type DateRangePickerProps = {
   value: DateRange;
   /**
    * Fires when the user picks a new range (calendar click or preset). The
-   * second arg is the picker's auto-computed comparison range — the parent
-   * should apply both in a single state/URL update so they don't stomp on
-   * each other (two separate router.push calls back-to-back read the same
-   * stale searchParams snapshot and the second one clobbers the first).
+   * second arg is the picker's auto-computed comparison range — only set
+   * when the user already has a comparison enabled, so changing the current
+   * range slides the comparison along with it. The parent applies both in a
+   * single state/URL update.
    */
   onChange: (next: DateRange, autoComparison?: DateRange) => void;
-  comparison: DateRange;
-  onComparisonChange?: (next: DateRange) => void;
+  /** Null when no comparison is set — comparison is opt-in. */
+  comparison: DateRange | null;
+  /** Pass `null` to clear the comparison entirely. */
+  onComparisonChange?: (next: DateRange | null) => void;
   termWindows: TermWindows;
   ayWindows: AYWindows;
   presets?: Preset[];
@@ -103,11 +105,12 @@ export function DateRangePicker({
   }, [value.from, value.to]);
 
   const cmpCalendarValue: DayPickerRange | undefined = React.useMemo(() => {
+    if (!comparison) return undefined;
     const from = parseLocalDate(comparison.from);
     const to = parseLocalDate(comparison.to);
     if (!from || !to) return undefined;
     return { from, to };
-  }, [comparison.from, comparison.to]);
+  }, [comparison]);
 
   // Calendar selection is staged here until the user hits Apply (or completes
   // a multi-day range). Auto-committing on every click broke the flow:
@@ -133,11 +136,20 @@ export function DateRangePicker({
   const liveCalendarValue = pendingRange ?? calendarValue;
   const liveCmpCalendarValue = pendingComparison ?? cmpCalendarValue;
 
+  // Comparison auto-slides with the current range only when the user
+  // already opted into a comparison. Passing the auto-comparison
+  // unconditionally would silently re-introduce a comparison the user had
+  // explicitly removed.
+  function autoCmpIfEnabled(range: DateRange): DateRange | undefined {
+    if (!comparison) return undefined;
+    return autoComparisonAcademic(range, windows) ?? undefined;
+  }
+
   function applyPreset(p: Preset) {
     if (p === 'custom') return;
     const range = resolvePreset(p, windows);
     if (!range) return;
-    onChange(range, autoComparison(range) ?? undefined);
+    onChange(range, autoCmpIfEnabled(range));
     setEditingComparison(false);
     setPendingRange(undefined);
     setPendingComparison(undefined);
@@ -153,7 +165,7 @@ export function DateRangePicker({
         from: toISODate(next.from),
         to: toISODate(next.to),
       };
-      onChange(range, autoComparison(range) ?? undefined);
+      onChange(range, autoCmpIfEnabled(range));
       setPendingRange(undefined);
       setOpen(false);
     }
@@ -187,7 +199,7 @@ export function DateRangePicker({
       from: toISODate(pendingRange.from),
       to: toISODate(pendingRange.to ?? pendingRange.from),
     };
-    onChange(range, autoComparison(range) ?? undefined);
+    onChange(range, autoCmpIfEnabled(range));
     setPendingRange(undefined);
     setOpen(false);
   }
@@ -198,7 +210,7 @@ export function DateRangePicker({
       if (!pendingComparison?.from) return false;
       const draftFrom = toISODate(pendingComparison.from);
       const draftTo = toISODate(pendingComparison.to ?? pendingComparison.from);
-      return draftFrom !== comparison.from || draftTo !== comparison.to;
+      return draftFrom !== comparison?.from || draftTo !== comparison?.to;
     }
     if (!pendingRange?.from) return false;
     const draftFrom = toISODate(pendingRange.from);
@@ -220,9 +232,25 @@ export function DateRangePicker({
 
   function resetComparison() {
     if (!onComparisonChange) return;
-    const auto = autoComparison(value);
+    const auto = autoComparisonAcademic(value, windows);
     if (auto) onComparisonChange(auto);
     setEditingComparison(false);
+  }
+
+  function addComparison() {
+    if (!onComparisonChange) return;
+    const auto = autoComparisonAcademic(value, windows);
+    if (auto) {
+      onComparisonChange(auto);
+      setEditingComparison(true);
+    }
+  }
+
+  function removeComparison() {
+    if (!onComparisonChange) return;
+    onComparisonChange(null);
+    setEditingComparison(false);
+    setPendingComparison(undefined);
   }
 
   return (
@@ -290,7 +318,7 @@ export function DateRangePicker({
                 {editingComparison ? 'Comparison period' : 'Current period'}
               </div>
               <div className="mt-0.5 font-mono text-[12px] tabular-nums text-foreground">
-                {editingComparison
+                {editingComparison && comparison
                   ? formatRangeLabel(comparison)
                   : formatRangeLabel(value)}
               </div>
@@ -305,16 +333,34 @@ export function DateRangePicker({
             />
             <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/30 px-4 py-2.5">
               <div className="flex items-center gap-2 text-xs text-ink-4">
-                <span className="font-mono text-[10px] uppercase tracking-wider">
-                  Compared to
-                </span>
-                <ArrowRightIcon className="size-3 text-ink-5" />
-                <span className="font-mono text-[11px] tabular-nums text-foreground">
-                  {formatRangeLabel(comparison)}
-                </span>
+                {comparison ? (
+                  <>
+                    <span className="font-mono text-[10px] uppercase tracking-wider">
+                      Compared to
+                    </span>
+                    <ArrowRightIcon className="size-3 text-ink-5" />
+                    <span className="font-mono text-[11px] tabular-nums text-foreground">
+                      {formatRangeLabel(comparison)}
+                    </span>
+                  </>
+                ) : (
+                  <span className="font-mono text-[10px] uppercase tracking-wider">
+                    No comparison
+                  </span>
+                )}
               </div>
               <div className="flex gap-1.5">
-                {onComparisonChange && editingComparison && (
+                {onComparisonChange && !comparison && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={addComparison}
+                  >
+                    Add comparison
+                  </Button>
+                )}
+                {onComparisonChange && comparison && editingComparison && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -324,7 +370,17 @@ export function DateRangePicker({
                     Auto
                   </Button>
                 )}
-                {onComparisonChange && (
+                {onComparisonChange && comparison && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-ink-4 hover:text-foreground"
+                    onClick={removeComparison}
+                  >
+                    Remove
+                  </Button>
+                )}
+                {onComparisonChange && comparison && (
                   <Button
                     size="sm"
                     variant={editingComparison ? 'default' : 'outline'}

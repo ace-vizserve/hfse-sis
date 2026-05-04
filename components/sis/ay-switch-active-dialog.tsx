@@ -71,16 +71,16 @@ export function AySwitchActiveDialog({ targetAyCode, currentAyCode, children }: 
           <AlertDialogDescription>
             {currentAyCode && currentAyCode !== targetAyCode ? (
               <>
-                The current AY is <strong>{currentAyCode}</strong>. After this switch, every module
-                defaults to <strong>{targetAyCode}</strong> and all parent-visible surfaces follow.
+                The current AY is <strong>{currentAyCode}</strong>. After this switch, every page in
+                the SIS and the parent portal will show <strong>{targetAyCode}</strong>.
               </>
             ) : (
               <>
-                After this switch, every module defaults to <strong>{targetAyCode}</strong> and all
-                parent-visible surfaces follow.
+                After this switch, every page in the SIS and the parent portal will show{' '}
+                <strong>{targetAyCode}</strong>.
               </>
             )}{' '}
-            This is reversible (you can switch back), but changes the live AY everyone sees.
+            You can switch back later, but this changes the live AY everyone sees.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-2">

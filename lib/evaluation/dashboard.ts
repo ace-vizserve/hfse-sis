@@ -157,6 +157,15 @@ async function loadEvaluationKpisRangeUncached(
   const { writeups, termIdsByNumber, totalStudents } = await loadWriteups(input.ayCode);
   const termCount = termIdsByNumber.size || 3;
   const current = kpisFrom(writeups, input.from, input.to, totalStudents, termCount);
+  if (input.cmpFrom == null || input.cmpTo == null) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
   const comparison = kpisFrom(writeups, input.cmpFrom, input.cmpTo, totalStudents, termCount);
   return {
     current,
@@ -172,7 +181,7 @@ export function getEvaluationKpisRange(
 ): Promise<RangeResult<EvaluationKpis>> {
   return unstable_cache(
     loadEvaluationKpisRangeUncached,
-    ['evaluation', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['evaluation', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { revalidate: CACHE_TTL_SECONDS, tags: tag(input.ayCode) },
   )(input);
 }
@@ -206,6 +215,15 @@ async function loadSubmissionVelocityRangeUncached(
   const { writeups } = await loadWriteups(input.ayCode);
   const submittedAtDates = writeups.filter((w) => w.submitted).map((w) => w.submitted_at);
   const current = bucketByDay(submittedAtDates, input.from, input.to);
+  if (input.cmpFrom == null || input.cmpTo == null) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
   const comparison = bucketByDay(submittedAtDates, input.cmpFrom, input.cmpTo);
   const currentTotal = current.reduce((s, p) => s + p.y, 0);
   const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
@@ -223,7 +241,7 @@ export function getSubmissionVelocityRange(
 ): Promise<RangeResult<VelocityPoint[]>> {
   return unstable_cache(
     loadSubmissionVelocityRangeUncached,
-    ['evaluation', 'velocity', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['evaluation', 'velocity', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { revalidate: CACHE_TTL_SECONDS, tags: tag(input.ayCode) },
   )(input);
 }

@@ -13,6 +13,8 @@ export type AcademicYearRow = {
   ay_code: string;
   label: string;
   is_current: boolean;
+  /** KD #77: parent portal can submit applications for this AY when true. */
+  accepting_applications: boolean;
   created_at: string;
 };
 
@@ -74,7 +76,7 @@ export async function listAcademicYears(): Promise<AcademicYearListItem[]> {
   const service = createServiceClient();
   const { data, error } = await service
     .from('academic_years')
-    .select('id, ay_code, label, is_current, created_at')
+    .select('id, ay_code, label, is_current, accepting_applications, created_at')
     .order('ay_code', { ascending: false });
 
   if (error) {

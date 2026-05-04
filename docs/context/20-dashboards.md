@@ -125,6 +125,19 @@ return sessionUser.role === 'teacher' ? <TeacherView /> : <RegistrarView />;
 
 The two views live in `components/<module>/<module>-{teacher,registrar}-view.tsx`. The URL stays single — the user always lands at `/markbook`, never at a per-role route.
 
+### Page-level role differentiation (KD #74)
+
+Beyond the teacher/registrar split, four module dashboards differentiate operational roles from read-only oversight roles by gating only the *operational top-of-fold tiles* (PriorityPanel, chase strip, ActionList, readiness card, etc.) without splitting into per-role views. The page RSC computes a single `isOperational` (or `isOfficer`) boolean and branches inline:
+
+| Module | Operational role(s) | Oversight role(s) | What gets gated |
+|---|---|---|---|
+| `/p-files` | `p-file`, `superadmin` (`isOfficer`) | `school_admin`, `admin` | `<PriorityPanel>` + `<DocumentChaseQueueStrip>` + bulk-notify; hero copy reframed for oversight |
+| `/records` | `registrar` (`isOperational`) | `school_admin`, `admin`, `superadmin` | `<DocumentChaseQueueStrip>` + "Documents to collect" `ActionList` + `<ClassAssignmentReadinessCard>` |
+| `/admissions` | `admissions`, `registrar` (`isOperational`) | `school_admin`, `admin`, `superadmin` | `<NewApplicationsPriority>` + chase strip + chase `<PriorityPanel>` + chaseInsights |
+| `/sis` | `superadmin` (full hub access) | `admin`, `school_admin` | Access + System nav sections (Approvers / School Config / Users / Settings) **hidden entirely** for non-superadmin instead of greyed-out; hero copy branches by access tier |
+
+Oversight roles always keep the analytical surface (KPIs, charts, drill cards) — the gating subtracts the work-surface tiles only. This pattern is **not** the same as the teacher/registrar split above; it's an in-place subtraction at one URL, not a per-role view component. KD #57 archetype assignment is unchanged — the dashboard's archetype (operational / analytical / hub) reflects the operational role's task; the oversight roles see a degraded version.
+
 ### When to use which
 
 - Default to **Analytical** for any new dashboard unless the user lands with a single concrete action

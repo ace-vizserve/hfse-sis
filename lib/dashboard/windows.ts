@@ -5,11 +5,15 @@ import { toISODate, type AYWindows, type DateRange, type TermWindows } from './r
 
 /**
  * Server-side window resolver — turns the `terms` table into the
- * `thisTerm`/`lastTerm` and `thisAY`/`lastAY` ranges the ComparisonToolbar
- * and preset resolver need.
+ * `thisTerm`/`lastTerm` ranges and derives `thisAY`/`lastAY` deterministically
+ * from the AY code per KD #13 (HFSE AY runs January through November of a
+ * single calendar year — AY2026 = Jan 1 → Nov 30 2026).
  *
- * `academic_years` has no start/end columns, so AY windows are computed
- * from min/max term dates per AY.
+ * Term windows stay data-driven — the registrar configures real term-start /
+ * term-end dates in `terms.start_date` / `terms.end_date` and those drive
+ * "This term" / "Last term" presets. AY windows do NOT depend on term dates
+ * being populated, so dashboards land on a sensible default range even when
+ * a freshly-created AY's terms still have NULL dates.
  */
 
 type TermRow = {
@@ -88,31 +92,30 @@ export async function getDashboardWindows(
     ? { from: prior.start_date, to: prior.end_date }
     : null;
 
-  // AY window = min(start_date) … max(end_date) across that AY's terms
-  const thisAY: DateRange | null = sortedAy.length
-    ? {
-        from: sortedAy[0].start_date!,
-        to: sortedAy[sortedAy.length - 1].end_date!,
-      }
-    : null;
-
+  // AY windows are derived from the AY code per KD #13 (single calendar year
+  // Jan–Nov). Robust to NULL term dates and matches the AY-label convention.
+  const thisAY = computeAyWindowFromCode(ayCode);
   const priorAyCode = computePriorAyCode(ayCode);
-  const priorAyTerms = priorAyCode
-    ? terms
-        .filter((t) => t.ay_code === priorAyCode && t.start_date && t.end_date)
-        .sort((a, b) => (a.start_date! < b.start_date! ? -1 : 1))
-    : [];
-  const lastAY: DateRange | null = priorAyTerms.length
-    ? {
-        from: priorAyTerms[0].start_date!,
-        to: priorAyTerms[priorAyTerms.length - 1].end_date!,
-      }
-    : null;
+  const lastAY = priorAyCode ? computeAyWindowFromCode(priorAyCode) : null;
 
   return {
     term: { thisTerm, lastTerm },
     ay: { thisAY, lastAY },
   };
+}
+
+/**
+ * "AY2026" → { from: '2026-01-01', to: '2026-11-30' }.
+ * Returns null if the code doesn't fit `^AY[0-9]{4}$`.
+ *
+ * KD #13: HFSE academic year runs January through November of a single
+ * calendar year — the four digits in the AY code ARE the calendar year.
+ */
+export function computeAyWindowFromCode(ayCode: string): DateRange | null {
+  const m = /^AY(\d{4})$/.exec(ayCode);
+  if (!m) return null;
+  const year = m[1];
+  return { from: `${year}-01-01`, to: `${year}-11-30` };
 }
 
 /** "AY2026" → "AY2025". Returns null if the code doesn't fit that shape. */

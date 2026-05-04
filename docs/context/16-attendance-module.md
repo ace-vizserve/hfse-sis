@@ -72,7 +72,17 @@ Writes to `/api/attendance/daily` reject with 409 on any non-encodable day-type.
 
 `is_holiday` stays on the column via a BEFORE INSERT/UPDATE trigger (`is_holiday = day_type NOT IN ('school_day','hbl')`) for backwards-compat until every consumer migrates to `day_type`.
 
-"Special events" (Math Week, school photos, PTC) stay on the separate `calendar_events` overlay table — they're labels, not day-types. Rendered as a primary-colored dot on calendar + grid headers.
+"Special events" (Math Week, school photos, PTC) stay on the separate `calendar_events` overlay table — they're labels, not day-types. Rendered as a typed gradient chip on calendar + grid headers.
+
+### 4.1 Audience scope + typed event categories (migration 037 — KD #76)
+
+Both `school_calendar` and `calendar_events` now carry `audience IN ('all', 'primary', 'secondary')` (default `all`). `calendar_events` also carries `category IN ('term_exam', 'term_break', 'start_of_term', 'parents_dialogue', 'subject_week', 'school_event', 'pfe', 'ptc', 'other')` and a `tentative bool` flag. KD #50 day-types are unchanged — new event types (term exam, parents dialogue, PFE, PTC, etc.) live on the overlay layer, never as day-types.
+
+**Audience-precedence rule.** `school_calendar` unique key widened to `(term_id, audience, date)` so primary and secondary can each hold a row for the same date. On read, an audience-specific row beats the matching `'all'` row. Attendance writer at `app/api/attendance/daily/route.ts` resolves the section's level via `lib/sis/levels.ts::levelTypeForAudienceLookup` and queries `audience IN ('all', $level_type)` with `audience = $level_type` taking precedence. Preschool sections (YS-L/J/S) fall back to `audience='all'` (preschool-specific overrides deferred for a later iteration).
+
+**Calendar admin filter** at `/sis/calendar` exposes an `?audience=all|primary|secondary` filter tab. The active filter scopes day-type click-cycles + event-create to the selected audience; `'Reset to All'` removes the override row. Tentative events render dashed/dimmed; "Tentative only" toggle filters the view for a quick review sweep. `'Confirm dates'` action on the Events panel flips `tentative=false`.
+
+**Carry-forward** stays manual via the `Copy from prior AY` dialog (`components/attendance/copy-from-prior-ay-dialog.tsx` — replaces the legacy holiday-only copy dialog). Two tabs (day-type overrides + events) with year-shift; default `markTentative=true` flips every copied row to `tentative=true` so the registrar reviews each before locking. No template table, no auto-copy on AY creation.
 
 ## Routes (planned)
 

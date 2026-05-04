@@ -81,9 +81,8 @@ export default async function SubjectConfigPage({
             Subject weights &amp; slots.
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            WW / PT / QA weights per (subject × level × AY) plus max-slots for WW and PT.
-            High-blast-radius — every grading sheet for the pair re-renders against the new
-            values. Changes are audit-logged under <code className="font-mono text-[12px]">subject_config.update</code>.
+            WW / PT / QA weights and max slot counts per subject + level + AY. Changes here apply to
+            <strong> every grading sheet</strong> for that subject + level — handle with care.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

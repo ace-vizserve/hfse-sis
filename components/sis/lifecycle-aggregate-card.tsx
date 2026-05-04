@@ -125,10 +125,10 @@ export function LifecycleAggregateCard({
     <Card className="@container/card">
       <CardHeader>
         <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          Lifecycle · pipeline blockers
+          Enrolment lifecycle · what&apos;s holding up enrolment
         </CardDescription>
         <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-          What&apos;s blocking the funnel
+          What&apos;s holding up the enrolment funnel
         </CardTitle>
         <CardAction>
           <ChartLegendChip

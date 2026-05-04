@@ -123,6 +123,15 @@ async function loadAttendanceKpisRangeUncached(
 ): Promise<RangeResult<AttendanceKpis>> {
   const rows = await loadDailyRows(input.ayCode);
   const current = kpisFor(slice(rows, input.from, input.to));
+  if (input.cmpFrom == null || input.cmpTo == null) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
   const comparison = kpisFor(slice(rows, input.cmpFrom, input.cmpTo));
   return {
     current,
@@ -138,7 +147,7 @@ export function getAttendanceKpisRange(
 ): Promise<RangeResult<AttendanceKpis>> {
   return unstable_cache(
     loadAttendanceKpisRangeUncached,
-    ['attendance', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['attendance', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { revalidate: CACHE_TTL_SECONDS, tags: tag(input.ayCode) },
   )(input);
 }
@@ -176,6 +185,15 @@ async function loadDailyAttendanceRangeUncached(
 ): Promise<RangeResult<DailyAttendancePoint[]>> {
   const rows = await loadDailyRows(input.ayCode);
   const current = dailyPctSeries(slice(rows, input.from, input.to), input.from, input.to);
+  if (input.cmpFrom == null || input.cmpTo == null) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
   const comparison = dailyPctSeries(slice(rows, input.cmpFrom, input.cmpTo), input.cmpFrom, input.cmpTo);
   const currentAvg =
     current.length > 0 ? current.reduce((s, p) => s + p.y, 0) / current.length : 0;
@@ -195,7 +213,7 @@ export function getDailyAttendanceRange(
 ): Promise<RangeResult<DailyAttendancePoint[]>> {
   return unstable_cache(
     loadDailyAttendanceRangeUncached,
-    ['attendance', 'daily-pct', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['attendance', 'daily-pct', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { revalidate: CACHE_TTL_SECONDS, tags: tag(input.ayCode) },
   )(input);
 }
@@ -309,9 +327,17 @@ async function loadDayTypeDistributionRangeUncached(
   input: RangeInput,
 ): Promise<DayTypePoint[]> {
   const service = createServiceClient();
+  // Filter to the school-wide baseline (`audience='all'`) so the donut
+  // counts each calendar date exactly once. Migration 037 (KD #76) lets
+  // primary + secondary each have their own row for the same date; without
+  // this filter, a date with both an `'all'` row and a `'primary'` override
+  // would double-count. Audience-specific divergences are visible on
+  // `/sis/calendar` via the audience filter — the registrar oversight donut
+  // shows the global term shape.
   const { data } = await service
     .from('school_calendar')
     .select('day_type, date')
+    .eq('audience', 'all')
     .gte('date', input.from)
     .lte('date', input.to);
   const counts: Record<string, number> = {};
@@ -386,7 +412,10 @@ async function loadAttendancePriorityUncached(
 
   // Confirm today is a school day. school_calendar lacks an ay_code column;
   // it joins to AY via terms.academic_year_id. Filter terms to this AY,
-  // then look up the single row for today.
+  // then look up today's row at audience='all' (the school-wide baseline).
+  // Per KD #76 a date can have multiple rows (one per audience) — the
+  // registrar priority check uses the baseline; level-specific overrides
+  // are honored by the per-section attendance writer (KD #50 precedence).
   const { data: termRows } = await service
     .from('terms')
     .select('id')
@@ -400,6 +429,7 @@ async function loadAttendancePriorityUncached(
       .select('day_type')
       .in('term_id', termIds)
       .eq('date', today)
+      .eq('audience', 'all')
       .maybeSingle();
     dayType = (calRow?.day_type as string | undefined) ?? null;
   }

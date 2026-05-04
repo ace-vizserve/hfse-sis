@@ -163,7 +163,7 @@ export function StudentDataTable({
         accessorKey: "studentNumber",
         header: ({ column }) => (
           <SortableHeader
-            label="Student #"
+            label="Student ID"
             sorted={column.getIsSorted()}
             onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
@@ -178,7 +178,7 @@ export function StudentDataTable({
         accessorKey: "enroleeNumber",
         header: ({ column }) => (
           <SortableHeader
-            label="Enrolee #"
+            label="Applicant Number"
             sorted={column.getIsSorted()}
             onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />

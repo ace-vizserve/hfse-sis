@@ -370,16 +370,23 @@ async function loadPFilesKpisForRange(input: RangeInput): Promise<PFilesRangeKpi
 async function loadPFilesKpisRangeUncached(
   input: RangeInput,
 ): Promise<RangeResult<PFilesRangeKpis>> {
-  const [current, comparison] = await Promise.all([
-    loadPFilesKpisForRange(input),
-    loadPFilesKpisForRange({
-      ayCode: input.ayCode,
-      from: input.cmpFrom,
-      to: input.cmpTo,
-      cmpFrom: input.cmpFrom,
-      cmpTo: input.cmpTo,
-    }),
-  ]);
+  const current = await loadPFilesKpisForRange(input);
+  if (input.cmpFrom == null || input.cmpTo == null) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
+  const comparison = await loadPFilesKpisForRange({
+    ayCode: input.ayCode,
+    from: input.cmpFrom,
+    to: input.cmpTo,
+    cmpFrom: input.cmpFrom,
+    cmpTo: input.cmpTo,
+  });
   return {
     current,
     comparison,
@@ -392,7 +399,7 @@ async function loadPFilesKpisRangeUncached(
 export function getPFilesKpisRange(input: RangeInput): Promise<RangeResult<PFilesRangeKpis>> {
   return unstable_cache(
     loadPFilesKpisRangeUncached,
-    ['p-files', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['p-files', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
   )(input);
 }
@@ -424,8 +431,9 @@ async function loadRevisionVelocityRangeUncached(
   input: RangeInput,
 ): Promise<RangeResult<VelocityPoint[]>> {
   const service = createServiceClient();
-  const earliest = input.cmpFrom < input.from ? input.cmpFrom : input.from;
-  const latest = input.to > input.cmpTo ? input.to : input.cmpTo;
+  const hasCmp = input.cmpFrom != null && input.cmpTo != null;
+  const earliest = hasCmp && input.cmpFrom! < input.from ? input.cmpFrom! : input.from;
+  const latest = hasCmp && input.to < input.cmpTo! ? input.cmpTo! : input.to;
 
   const { data } = await service
     .from('p_file_revisions')
@@ -437,7 +445,16 @@ async function loadRevisionVelocityRangeUncached(
   type Row = { replaced_at: string };
   const rows = ((data ?? []) as Row[]).map((r) => ({ ts: r.replaced_at }));
   const current = bucketByDay(rows, input.from, input.to);
-  const comparison = bucketByDay(rows, input.cmpFrom, input.cmpTo);
+  if (!hasCmp) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
+  const comparison = bucketByDay(rows, input.cmpFrom!, input.cmpTo!);
   const currentTotal = current.reduce((s, p) => s + p.y, 0);
   const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
   return {
@@ -445,7 +462,7 @@ async function loadRevisionVelocityRangeUncached(
     comparison,
     delta: computeDelta(currentTotal, comparisonTotal),
     range: { from: input.from, to: input.to },
-    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+    comparisonRange: { from: input.cmpFrom!, to: input.cmpTo! },
   };
 }
 
@@ -454,7 +471,7 @@ export function getRevisionVelocityRange(
 ): Promise<RangeResult<VelocityPoint[]>> {
   return unstable_cache(
     loadRevisionVelocityRangeUncached,
-    ['p-files', 'revision-velocity', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['p-files', 'revision-velocity', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
   )(input);
 }

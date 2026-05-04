@@ -236,7 +236,7 @@ export function EditStageDialog({
             Edit {STAGE_LABELS[stageKey]}
           </DialogTitle>
           <DialogDescription>
-            Update the status, remarks, and any stage-specific fields. Audit-logged on save.
+            Update the status, remarks, and any stage-specific fields.
           </DialogDescription>
         </DialogHeader>
 
@@ -245,7 +245,7 @@ export function EditStageDialog({
             {showPrereqChecklist && (
               <div className="space-y-2.5 rounded-md border border-hairline bg-muted/30 p-3">
                 <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Prerequisites for Enrolled
+                  Required steps before enrolment
                 </p>
                 <ul className="space-y-1.5">
                   {prereqRows.map((row) => (
@@ -278,11 +278,11 @@ export function EditStageDialog({
                 </ul>
                 {incompleteCount === 0 ? (
                   <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-mint">
-                    All prerequisites met
+                    All requirements met
                   </p>
                 ) : (
                   <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-destructive">
-                    {incompleteCount} prerequisite{incompleteCount === 1 ? '' : 's'} incomplete
+                    {incompleteCount} requirement{incompleteCount === 1 ? '' : 's'} not met yet
                     {' · '}saving will fail
                   </p>
                 )}

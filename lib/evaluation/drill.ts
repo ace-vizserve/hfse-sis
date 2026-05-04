@@ -463,7 +463,7 @@ export type DrillColumnKey =
 
 export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
   studentName: 'Student',
-  studentNumber: 'Student #',
+  studentNumber: 'Student ID',
   sectionName: 'Section',
   level: 'Level',
   termNumber: 'Term',

@@ -72,11 +72,11 @@ export function AyDeleteDialog({ ayCode, blockers, children }: Props) {
           <AlertDialogTitle>Delete {ayCode}?</AlertDialogTitle>
           <AlertDialogDescription>
             {disabledByBlockers ? (
-              <>This AY has data and cannot be deleted. Resolve the blockers below first.</>
+              <>This academic year has data and can&apos;t be deleted. Resolve the items below first.</>
             ) : (
               <>
-                This will <strong>drop the 4 admissions tables</strong> for {ayCode} and remove its
-                terms + sections + subject_configs rows. This cannot be undone.
+                This will <strong>permanently delete</strong> {ayCode} and everything set up for it
+                (terms, sections, subjects, admissions data). This cannot be undone.
               </>
             )}
           </AlertDialogDescription>
@@ -85,7 +85,7 @@ export function AyDeleteDialog({ ayCode, blockers, children }: Props) {
         {disabledByBlockers && (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3">
             <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
-              Blockers ({blockers.length})
+              Reasons it can&apos;t be deleted ({blockers.length})
             </p>
             <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-foreground">
               {blockers.map((b) => (

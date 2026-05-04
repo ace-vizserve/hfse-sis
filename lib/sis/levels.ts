@@ -42,6 +42,32 @@ export const LEVEL_TYPE_BY_CODE: Record<LevelCode, 'preschool' | 'primary' | 'se
   'CS1': 'secondary', 'CS2': 'secondary',
 };
 
+// Calendar audience values. Mirrors the school_calendar.audience CHECK
+// (migration 037). Preschool falls through to 'all' (deferred — no
+// preschool-specific overrides yet).
+export const CALENDAR_AUDIENCE_VALUES = ['all', 'primary', 'secondary'] as const;
+export type CalendarAudience = (typeof CALENDAR_AUDIENCE_VALUES)[number];
+
+// For an attendance writer or grid reader, return the audience value to
+// match against `school_calendar.audience` for the section's level.
+// Preschool returns null — caller should match only audience='all' rows.
+// Primary / Secondary return the matching audience.
+//
+// Used by app/api/attendance/daily/route.ts to scope the day-type lookup
+// (audience IN ('all', $level_type) with audience=$level_type winning).
+export function levelTypeForAudienceLookup(
+  levelOrCode: string | null | undefined,
+): 'primary' | 'secondary' | null {
+  if (!levelOrCode) return null;
+  const code = (levelOrCode in LEVEL_LABELS
+    ? (levelOrCode as LevelCode)
+    : LEVEL_CODE_BY_LABEL[canonicalizeLevelLabel(levelOrCode) ?? '']) as LevelCode | undefined;
+  if (!code) return null;
+  const t = LEVEL_TYPE_BY_CODE[code];
+  if (t === 'primary' || t === 'secondary') return t;
+  return null;
+}
+
 // Inverse lookup — label -> code.
 export const LEVEL_CODE_BY_LABEL: Record<string, LevelCode> = Object.fromEntries(
   LEVEL_CODES.map((c) => [LEVEL_LABELS[c], c]),

@@ -74,9 +74,10 @@ Since the parent portal also writes to these tables (KD #12 parent-portal integr
 Multi-step form at `/sis/ay-setup` (superadmin-only; `ROUTE_ACCESS` gate + layout check), modelled on the `edit-stage-dialog.tsx` + `new-sheet` form patterns already in use.
 
 ### Step 1 — AY identity
-- `ay_code` (required, format `AY\d{4}`, uniqueness checked against `academic_years`)
+- `ay_code` (required, format `AY\d{4}`, uniqueness checked against `academic_years`). **HFSE convention:** the four digits are the calendar year. AY2026 = January–November 2026 (single calendar year, not a 2025–2026 split).
 - `label` (auto-suggested from code, e.g. `AY2027` → `Academic Year 2027`; editable)
 - `is_current` stays `false` at creation (separate step to switch the active AY — see §Safety rails)
+- `accepting_applications` (KD #77, default off) — when checked, the new AY immediately surfaces in the Admissions sidebar's "Upcoming AY applications" entry and the parent portal accepts submissions for it. Leave off if you're staging the AY ahead of opening early-bird; flip on later from the AY-list row's "Open for apps" toggle.
 
 Uniqueness is validated both client-side (the API `POST` pre-check returns `{ ok: true, alreadyExisted: true }` without mutating) and server-side (the `academic_years.ay_code` unique constraint is the safety net against races).
 

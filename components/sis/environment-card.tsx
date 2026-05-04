@@ -180,7 +180,7 @@ export function EnvironmentCard({ current }: { current: Environment | null }) {
           icon={Globe}
           title="Production"
           caption="Live student records"
-          description="Real rosters, grades, and parent-visible report cards. Every mutation audits against the operational AY."
+          description="Real rosters, grades, and parent-visible report cards. Every change is recorded against the active academic year."
           active={current === 'production'}
           submitting={submitting === 'production'}
           onSwitch={() => switchTo('production')}
@@ -236,10 +236,9 @@ export function EnvironmentCard({ current }: { current: Environment | null }) {
                 Delete the Test environment?
               </AlertDialogTitle>
               <AlertDialogDescription>
-                Every grade entry, attendance row, evaluation writeup, application, publication,
-                and seeded test student in AY9999 will be permanently deleted. The four{' '}
-                <code className="font-mono">ay9999_enrolment_*</code> tables are dropped. Production
-                data is untouched. This cannot be undone.
+                Every grade entry, attendance mark, evaluation write-up, application, publication,
+                and seeded test student in AY9999 will be permanently deleted. The test year&apos;s
+                admissions data is also wiped. Production data is untouched. This cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

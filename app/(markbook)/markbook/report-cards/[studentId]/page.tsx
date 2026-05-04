@@ -38,10 +38,13 @@ export default async function ReportCardPreview({
   if (!result.ok) notFound();
   const payload = result.payload;
 
-  // Determine which term to view: from URL param, or default to current term
+  // Determine which term to view: from URL param, or default to current term.
+  // AY-scope the lookup so stale `is_current=true` flags on past-AY terms
+  // don't make `.maybeSingle()` throw a "more than one row" error.
   const { data: currentTermRow } = await supabase
     .from('terms')
     .select('term_number')
+    .eq('academic_year_id', payload.ay.id)
     .eq('is_current', true)
     .maybeSingle();
   const parsedTerm = termParam ? parseInt(termParam, 10) : NaN;

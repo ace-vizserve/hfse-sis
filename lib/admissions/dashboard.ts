@@ -450,6 +450,15 @@ async function loadAdmissionsKpisRangeUncached(
 ): Promise<RangeResult<AdmissionsRangeKpis>> {
   const rows = await loadJoinedRows(input.ayCode);
   const current = computeRangeKpis(rows, input.from, input.to);
+  if (input.cmpFrom == null || input.cmpTo == null) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
   const comparison = computeRangeKpis(rows, input.cmpFrom, input.cmpTo);
   return {
     current,
@@ -465,7 +474,7 @@ export function getAdmissionsKpisRange(
 ): Promise<RangeResult<AdmissionsRangeKpis>> {
   return unstable_cache(
     loadAdmissionsKpisRangeUncached,
-    ['admissions', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['admissions', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
   )(input);
 }
@@ -505,6 +514,15 @@ async function loadApplicationsVelocityRangeUncached(
   const rows = await loadJoinedRows(input.ayCode);
   const createdDates = rows.map((r) => r.created_at);
   const current = bucketByDay(createdDates, input.from, input.to);
+  if (input.cmpFrom == null || input.cmpTo == null) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
   const comparison = bucketByDay(createdDates, input.cmpFrom, input.cmpTo);
   const currentTotal = current.reduce((s, p) => s + p.y, 0);
   const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
@@ -522,7 +540,7 @@ export function getApplicationsVelocityRange(
 ): Promise<RangeResult<VelocityPoint[]>> {
   return unstable_cache(
     loadApplicationsVelocityRangeUncached,
-    ['admissions', 'apps-velocity', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['admissions', 'apps-velocity', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
   )(input);
 }
@@ -665,6 +683,15 @@ async function loadApplicationsByLevelRangeUncached(
 ): Promise<ApplicationsByLevelResult> {
   const rows = await loadJoinedRows(input.ayCode);
   const current = bucketByLevel(rows, input.from, input.to);
+  if (input.cmpFrom == null || input.cmpTo == null) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
   const comparison = bucketByLevel(rows, input.cmpFrom, input.cmpTo);
   const currentTotal = current.reduce((s, r) => s + r.count, 0);
   const comparisonTotal = comparison.reduce((s, r) => s + r.count, 0);
@@ -682,7 +709,7 @@ export function getApplicationsByLevelRange(
 ): Promise<ApplicationsByLevelResult> {
   return unstable_cache(
     loadApplicationsByLevelRangeUncached,
-    ['admissions', 'apps-by-level', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['admissions', 'apps-by-level', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
   )(input);
 }

@@ -288,9 +288,7 @@ export default async function AdmissionsApplicationsPage({
         <span className="text-border">·</span>
         <span>{applications.length.toLocaleString('en-SG')} pre-enrolment</span>
         <span className="text-border">·</span>
-        <span>Cache 10m</span>
-        <span className="text-border">·</span>
-        <span>Audit-logged</span>
+        <span>Refreshes every 10 minutes</span>
       </div>
     </PageShell>
   );

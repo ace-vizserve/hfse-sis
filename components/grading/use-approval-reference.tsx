@@ -178,8 +178,8 @@ export function useChangeReference() {
         <DialogHeader>
           <DialogTitle>Post-lock edit</DialogTitle>
           <DialogDescription>
-            This sheet is locked. Apply an approved change request, or log a data entry
-            correction. Either path is appended to the audit log.
+            This sheet is locked. Apply an approved change request, or log a data-entry
+            correction. Either way the change is recorded on the activity history.
           </DialogDescription>
         </DialogHeader>
 
@@ -282,7 +282,7 @@ export function useChangeReference() {
               </p>
             </Field>
             <p className="text-[11px] text-muted-foreground">
-              Corrections are tagged separately in the audit log so misuse is easy to spot.
+              Corrections are flagged separately on the activity history so misuse is easy to spot.
             </p>
           </TabsContent>
         </Tabs>

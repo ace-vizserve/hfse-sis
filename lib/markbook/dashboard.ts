@@ -531,16 +531,23 @@ function emptyMarkbookKpis(): MarkbookRangeKpis {
 async function loadMarkbookKpisRangeUncached(
   input: RangeInput,
 ): Promise<RangeResult<MarkbookRangeKpis>> {
-  const [current, comparison] = await Promise.all([
-    loadMarkbookKpisForRange(input),
-    loadMarkbookKpisForRange({
-      ayCode: input.ayCode,
-      from: input.cmpFrom,
-      to: input.cmpTo,
-      cmpFrom: input.cmpFrom,
-      cmpTo: input.cmpTo,
-    }),
-  ]);
+  const current = await loadMarkbookKpisForRange(input);
+  if (input.cmpFrom == null || input.cmpTo == null) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
+  const comparison = await loadMarkbookKpisForRange({
+    ayCode: input.ayCode,
+    from: input.cmpFrom,
+    to: input.cmpTo,
+    cmpFrom: input.cmpFrom,
+    cmpTo: input.cmpTo,
+  });
   return {
     current,
     comparison,
@@ -553,7 +560,7 @@ async function loadMarkbookKpisRangeUncached(
 export function getMarkbookKpisRange(input: RangeInput): Promise<RangeResult<MarkbookRangeKpis>> {
   return unstable_cache(
     loadMarkbookKpisRangeUncached,
-    ['markbook', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['markbook', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { tags: ['markbook', `markbook:${input.ayCode}`], revalidate: CACHE_TTL_SECONDS },
   )(input);
 }
@@ -585,8 +592,9 @@ async function loadGradeEntryVelocityRangeUncached(
   input: RangeInput,
 ): Promise<RangeResult<VelocityPoint[]>> {
   const service = createServiceClient();
-  const earliest = input.cmpFrom < input.from ? input.cmpFrom : input.from;
-  const latest = input.to > input.cmpTo ? input.to : input.cmpTo;
+  const hasCmp = input.cmpFrom != null && input.cmpTo != null;
+  const earliest = hasCmp && input.cmpFrom! < input.from ? input.cmpFrom! : input.from;
+  const latest = hasCmp && input.to < input.cmpTo! ? input.cmpTo! : input.to;
 
   // Resolve the AY's UUID — `sections.academic_year_id` is the FK column,
   // not text `ay_code`. Without the correct column the filter silently
@@ -600,10 +608,10 @@ async function loadGradeEntryVelocityRangeUncached(
   if (!ayId) {
     return {
       current: [],
-      comparison: [],
-      delta: computeDelta(0, 0),
+      comparison: hasCmp ? [] : null,
+      delta: hasCmp ? computeDelta(0, 0) : null,
       range: { from: input.from, to: input.to },
-      comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+      comparisonRange: hasCmp ? { from: input.cmpFrom!, to: input.cmpTo! } : null,
     };
   }
 
@@ -620,7 +628,16 @@ async function loadGradeEntryVelocityRangeUncached(
   type Row = { created_at: string };
   const rows = ((data ?? []) as Row[]).map((r) => ({ ts: r.created_at }));
   const current = bucketByDay(rows, input.from, input.to);
-  const comparison = bucketByDay(rows, input.cmpFrom, input.cmpTo);
+  if (!hasCmp) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
+  const comparison = bucketByDay(rows, input.cmpFrom!, input.cmpTo!);
 
   const currentTotal = current.reduce((s, p) => s + p.y, 0);
   const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
@@ -629,7 +646,7 @@ async function loadGradeEntryVelocityRangeUncached(
     comparison,
     delta: computeDelta(currentTotal, comparisonTotal),
     range: { from: input.from, to: input.to },
-    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+    comparisonRange: { from: input.cmpFrom!, to: input.cmpTo! },
   };
 }
 
@@ -638,7 +655,7 @@ export function getGradeEntryVelocityRange(
 ): Promise<RangeResult<VelocityPoint[]>> {
   return unstable_cache(
     loadGradeEntryVelocityRangeUncached,
-    ['markbook', 'grade-velocity-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['markbook', 'grade-velocity-range', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { tags: ['markbook', `markbook:${input.ayCode}`], revalidate: CACHE_TTL_SECONDS },
   )(input);
 }
@@ -649,8 +666,9 @@ async function loadChangeRequestVelocityRangeUncached(
   input: RangeInput,
 ): Promise<RangeResult<VelocityPoint[]>> {
   const service = createServiceClient();
-  const earliest = input.cmpFrom < input.from ? input.cmpFrom : input.from;
-  const latest = input.to > input.cmpTo ? input.to : input.cmpTo;
+  const hasCmp = input.cmpFrom != null && input.cmpTo != null;
+  const earliest = hasCmp && input.cmpFrom! < input.from ? input.cmpFrom! : input.from;
+  const latest = hasCmp && input.to < input.cmpTo! ? input.cmpTo! : input.to;
 
   // Resolve the AY's UUID — same fix as the grade-entry velocity helper.
   const { data: ayRow } = await service
@@ -662,10 +680,10 @@ async function loadChangeRequestVelocityRangeUncached(
   if (!ayId) {
     return {
       current: [],
-      comparison: [],
-      delta: computeDelta(0, 0),
+      comparison: hasCmp ? [] : null,
+      delta: hasCmp ? computeDelta(0, 0) : null,
       range: { from: input.from, to: input.to },
-      comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+      comparisonRange: hasCmp ? { from: input.cmpFrom!, to: input.cmpTo! } : null,
     };
   }
 
@@ -682,7 +700,16 @@ async function loadChangeRequestVelocityRangeUncached(
   type Row = { requested_at: string };
   const rows = ((data ?? []) as Row[]).map((r) => ({ ts: r.requested_at }));
   const current = bucketByDay(rows, input.from, input.to);
-  const comparison = bucketByDay(rows, input.cmpFrom, input.cmpTo);
+  if (!hasCmp) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
+  const comparison = bucketByDay(rows, input.cmpFrom!, input.cmpTo!);
 
   const currentTotal = current.reduce((s, p) => s + p.y, 0);
   const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
@@ -691,7 +718,7 @@ async function loadChangeRequestVelocityRangeUncached(
     comparison,
     delta: computeDelta(currentTotal, comparisonTotal),
     range: { from: input.from, to: input.to },
-    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+    comparisonRange: { from: input.cmpFrom!, to: input.cmpTo! },
   };
 }
 
@@ -700,7 +727,7 @@ export function getChangeRequestVelocityRange(
 ): Promise<RangeResult<VelocityPoint[]>> {
   return unstable_cache(
     loadChangeRequestVelocityRangeUncached,
-    ['markbook', 'cr-velocity-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['markbook', 'cr-velocity-range', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { tags: ['markbook', `markbook:${input.ayCode}`], revalidate: CACHE_TTL_SECONDS },
   )(input);
 }

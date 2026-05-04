@@ -463,7 +463,7 @@ Nothing dramatic. Superadmin runs `/sis/ay-setup` → creates AY2027, copies sec
 
 | Term | Meaning |
 | --- | --- |
-| **AY** | Academic Year (e.g., AY2026 = 2026-2027 school year) |
+| **AY** | Academic Year — single calendar year, January through November (e.g., AY2026 = Jan–Nov 2026) |
 | **`studentNumber`** | Permanent student ID, persists across all academic years |
 | **`enroleeNumber`** | Per-AY working ID, resets each year — do not use for cross-year linking |
 | **WW / PT / QA** | Written Work / Performance Task / Quarterly Assessment — the three grading components |

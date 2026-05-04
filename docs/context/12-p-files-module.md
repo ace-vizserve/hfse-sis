@@ -18,10 +18,12 @@ Three-tier access:
 |---|---|---|
 | `p-file` officer | ✅ | ✅ |
 | `superadmin` | ✅ | ✅ |
-| `admin` | ✅ (via module switcher) | ❌ |
+| `admin` / `school_admin` | ✅ (read-only oversight, KD #74) | ❌ |
 | `teacher`, `registrar`, parents | ❌ | ❌ |
 
-`proxy.ts::ROUTE_ACCESS` allows `p-file + admin + superadmin` to reach `/p-files/*`; the layouts re-assert this. Write gates live at the API layer — `POST /api/p-files/[enroleeNumber]/upload` requires `['p-file', 'superadmin']`, so even if an admin bypasses UI their request is rejected. `DocumentCard` takes a `canWrite` prop (server-rendered from the session role) that hides the Upload / Replace button for admin viewers.
+`proxy.ts::ROUTE_ACCESS` allows `p-file + admin + school_admin + superadmin` to reach `/p-files/*`; the layouts re-assert this. Write gates live at the API layer — `POST /api/p-files/[enroleeNumber]/upload` requires `['p-file', 'superadmin']`, so even if an oversight role bypasses UI their request is rejected. `DocumentCard` takes a `canWrite` prop (server-rendered from the session role) that hides the Upload / Replace button for read-only viewers. Per KD #74, the page RSC also branches on `isOfficer = role === 'p-file' || role === 'superadmin'` to gate `<PriorityPanel>` + `<DocumentChaseQueueStrip>` + bulk-notify; oversight roles see the analytical surface only.
+
+**Enrolled-students-only scope (KD #71)**: `/p-files/[enroleeNumber]` 404s when the student isn't currently enrolled — gated by `lib/p-files/queries.ts::isStudentEnrolled` (whitelist: `applicationStatus IN ('Enrolled', 'Enrolled (Conditional)') AND classSection IS NOT NULL`). Pre-enrolment document churn is admissions-side workflow and lives in the audit log, not P-Files history. Sidebar has been pruned to renewal-only quicklinks (`?status=expired` + `?expiring=30|60|90`); admissions-territory filters (`?status=missing|uploaded|complete`) live on `/admissions` per KD #70.
 
 ## Required Documents Per Student
 

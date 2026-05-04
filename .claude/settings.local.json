@@ -95,7 +95,8 @@
       "Bash(git cherry-pick *)",
       "Bash(awk *)",
       "Bash(bash \"C:/Users/Ace/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/brainstorming/scripts/stop-server.sh\" \"C:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-vizserve projects/hfse-markbook/.superpowers/brainstorm/718-1777199958\")",
-      "Bash(npx eslint *)"
+      "Bash(npx eslint *)",
+      "Bash(npx --no-install --yes)"
     ],
     "deny": [
       "Read(./.env.local)"

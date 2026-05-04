@@ -27,6 +27,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { CreateAySchema, type CreateAyInput } from '@/lib/schemas/ay-setup';
 import { TEMPLATE_SOURCE_SENTINEL } from '@/lib/sis/ay-setup/constants';
 
@@ -51,7 +52,7 @@ type Props = {
 
 type Step = 'identity' | 'review' | 'follow-up';
 
-const BLANK: CreateAyInput = { ay_code: '', label: '' };
+const BLANK: CreateAyInput = { ay_code: '', label: '', accepting_applications: false };
 
 export function AySetupWizard({ preview, children }: Props) {
   const router = useRouter();
@@ -172,6 +173,30 @@ export function AySetupWizard({ preview, children }: Props) {
                     </FormItem>
                   )}
                 />
+                <FormField
+                  control={form.control}
+                  name="accepting_applications"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start gap-3 rounded-lg border border-border bg-muted/20 p-3">
+                      <FormControl>
+                        <Checkbox
+                          checked={!!field.value}
+                          onCheckedChange={(v) => field.onChange(Boolean(v))}
+                        />
+                      </FormControl>
+                      <div className="flex-1 space-y-1">
+                        <FormLabel className="text-[13px] font-semibold leading-none">
+                          Open this AY for early-bird applications now
+                        </FormLabel>
+                        <FormDescription className="text-[12px] leading-snug">
+                          Surfaces in the Admissions sidebar as &quot;Upcoming AY applications&quot; and lets the parent
+                          portal submit applications for this AY. Leave off if you&apos;re staging the AY ahead of
+                          opening early-bird — you can flip the switch later from the AY list.
+                        </FormDescription>
+                      </div>
+                    </FormItem>
+                  )}
+                />
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
                     Cancel
@@ -190,7 +215,7 @@ export function AySetupWizard({ preview, children }: Props) {
             <DialogHeader>
               <DialogTitle>Review — {ayCode}</DialogTitle>
               <DialogDescription>
-                Step 2 of 2 — everything below runs in a single transaction.
+                Step 2 of 2 — everything below is set up at once.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 py-2 text-sm">
@@ -243,6 +268,14 @@ export function AySetupWizard({ preview, children }: Props) {
                   preview.ay_already_exists
                     ? `${aySlug}_enrolment_applications, _status, _documents, _discount_codes — created if missing, existing rows preserved`
                     : `4 created: ${aySlug}_enrolment_applications, _status, _documents, ${aySlug}_discount_codes`
+                }
+              />
+              <ReviewRow
+                label="Early-bird"
+                value={
+                  form.watch('accepting_applications')
+                    ? 'Open — appears in Admissions sidebar as "Upcoming AY applications"; parent portal can submit'
+                    : 'Closed — applications gated until you flip the switch from the AY list'
                 }
               />
             </div>

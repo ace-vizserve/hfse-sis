@@ -23,10 +23,10 @@ Both systems authenticate against the **same `auth.users` table**.
 
 This is enforced in two layers:
 
-1. **`proxy.ts`** — the middleware branches on `getUserRole()`. Null-role users are allowed only on `/parent/*`, `/account`, and `/login`; any other path redirects to `/parent`.
-2. **`app/(parent)/layout.tsx`** — the parent route group's layout re-checks that `role === null` and redirects staff-role users back to `/`.
+1. **`proxy.ts`** — treats `/parent/*` as fully cookie-gated by the HMAC-signed `parent_session` cookie (KD #65); skips Supabase claim checks inside `/parent`. Null-role users *outside* `/parent` get bounced to `/login`. The `(parent-handoff)` route group (`/parent/enter`) is the one bypass for the HMAC gate so the handoff itself can land.
+2. **`app/(parent)/layout.tsx`** — verifies the `parent_session` cookie. If invalid: real staff (`role !== null`) → `/`; **everyone else** (anonymous OR null-role Supabase JWT leftover from pre-KD-#65 `setSession` flow) → `NEXT_PUBLIC_PARENT_PORTAL_URL`. Never bounces parents to `/` or `/login` (KD #73).
 
-Never add `'parent'` to the `Role` type — it would break this heuristic and require schema-level role storage that neither system needs.
+Never add `'parent'` to the `Role` type — it would break this heuristic and require schema-level role storage that neither system needs. KD #11's "parents = null-role Supabase users" pattern is **deprecated for fresh logins** (KD #73) but still tolerated as fallback identity.
 
 ## Parent → student linkage: via admissions emails
 
@@ -102,9 +102,9 @@ Never change this to "parents read directly via RLS." The parent↔student relat
 
 1. Parent signs in at the parent portal (`https://enrol.hfse.edu.sg/`) — that's their existing, primary auth point.
 2. From the authenticated parent dashboard (`/admission/dashboard`), the parent clicks "View report card". The parent-portal code reads `supabase.auth.getSession()` and navigates the browser to `https://<sis>/parent/enter#access_token=…&refresh_token=…&next=/parent/...` (see [§ Parent portal → SIS handoff](#parent-portal--sis-handoff) below for the integration snippet).
-3. The SIS's `/parent/enter` client page reads the URL fragment, calls `supabase.auth.setSession()` with the tokens, and the `@supabase/ssr` browser client writes the session cookies. Parent never sees a login screen on the SIS side.
-4. Post-handoff, `router.replace(next)` redirects to `/parent` or directly to `/parent/report-cards/{studentId}`. `proxy.ts` now sees a cookie-bound session with `role === null` and allows parent paths.
-5. `/parent` calls `getStudentsByParentEmail(user.email, currentAy.ay_code)` to look up children in `ay{YY}_enrolment_applications` where `motherEmail` or `fatherEmail` matches (case-insensitive).
+3. The SIS's `/parent/enter` client page reads the URL fragment, POSTs the tokens to `/api/parent/handoff`. The handoff route verifies the inbound `access_token` via the service client (without `setSession`) and sets the HMAC-signed `parent_session` cookie scoped to the SIS (2h TTL, KD #65). Parent never sees a login screen on the SIS side. The Supabase session cookies are **not** written — that was the pre-KD-#65 behavior and clobbered staff sessions in shared browsers.
+4. Post-handoff, `router.replace(next)` redirects to `/parent` or directly to `/parent/report-cards/{studentId}`. `proxy.ts` sees the valid `parent_session` cookie and admits the request to `/parent/*`.
+5. `/parent` calls `getStudentsByParentEmail(user.email, currentAy.ay_code)` to look up children in `ay{YY}_enrolment_applications` where `motherEmail` or `fatherEmail` matches (case-insensitive). Cross-AY visibility: `getAllStudentsByParentEmail` walks every `academic_years` row and dedupes by `student_number`.
 6. For each admissions row, the server resolves `studentNumber` → grading `students.id` via the service-role client.
 7. For each student, the server finds their current-AY `section_students` enrolment and any `report_card_publications` on that section.
 8. Per term, the server computes whether each publication is `active` / `scheduled` / `expired` based on `publish_from` / `publish_until` vs `now()`.
@@ -122,32 +122,47 @@ The handoff mechanism that lets parents cross from `enrol.hfse.edu.sg` into the 
 
 Parent accounts live in the shared Supabase project's `auth.users`. The parent portal and the SIS are separate codebases on **different origins**, which means their Supabase Auth session cookies are not shared. Without a handoff mechanism, a parent who signed in at the parent portal would face a second login screen on the SIS — same credentials, different cookie jar, bad UX. The handoff lets us hand over the signed-in session cleanly.
 
-### How it works
+### How it works (canonical — KD #65, since Sprint 28)
 
 1. **Parent portal builds a URL** with the parent's current Supabase session tokens in the **URL fragment** (the part after `#`):
    ```
    https://<sis-domain>/parent/enter#access_token=<jwt>&refresh_token=<jwt>&next=/parent/report-cards/<studentId>
    ```
-2. **Browser navigates** to the SIS. The URL fragment is **not sent to any server** — it stays in the browser, so the tokens never appear in the SIS's access logs, the parent-portal's `Referer` header, or any intermediate proxy.
-3. **Markbook's `/parent/enter` client page** (at `app/(parent)/parent/enter/page.tsx`) reads `window.location.hash` on mount, parses `access_token` / `refresh_token` / `next`, and calls `supabase.auth.setSession({ access_token, refresh_token })`. The `@supabase/ssr` browser client writes the `sb-*-auth-token` cookies via its cookie adapter.
-4. **`router.replace(next)`** navigates to the target path. The URL fragment drops from history, and `proxy.ts` on the next hop sees a valid session cookie → parent routing kicks in → the report card renders.
+2. **Browser navigates** to the SIS. The URL fragment is **not sent to any server** — it stays in the browser, so the tokens never appear in the SIS's access logs, the parent-portal's `Referer` header, or any intermediate proxy. `/parent/enter` lives in its own `(parent-handoff)` route group so `proxy.ts` can bypass the `parent_session` cookie gate just for this endpoint without making the rest of `/parent` permissive.
+3. **The SIS's `/parent/enter` client page** reads `window.location.hash` on mount, parses `access_token` / `refresh_token` / `next`, and POSTs them to `/api/parent/handoff`. The handoff route verifies the `access_token` via the service client (no `setSession` — that's what KD #12 did and clobbered staff sessions in shared browsers) and sets a separate HMAC-signed `parent_session` cookie scoped to the SIS, 2h TTL. Signing key is `PARENT_HANDOFF_SECRET` (≥32 chars per `lib/parent/cookie.ts`), MUST differ per environment; rotating invalidates all live parent sessions.
+4. **`router.replace(next)`** navigates to the target path. The URL fragment drops from history, and `proxy.ts` on the next hop sees the valid `parent_session` cookie → parent routing kicks in → the report card renders.
+5. **Sign-out** is a parent-only path: `<SidebarProfile>` (in the sidebar-less parent layout, KD #73) branches on role — parents call `/api/parent/exit` (clears the cookie) + `window.location` to the portal, so a co-resident staff Supabase session is untouched. `<ParentSessionWatcher>` also clears the cookie via `navigator.sendBeacon` on `pagehide`.
+
+### Why this design (vs the prior `setSession` flow)
+
+The previous KD #12 flow called `supabase.auth.setSession()` on the SIS browser client, which wrote the standard `sb-*-auth-token` cookies. In a shared browser where a staff member was also signed in to the SIS, those writes clobbered the staff session — staff would discover they'd been silently logged out (or worse, granted parent-scoped null-role access on their next request) when the parent visited their machine. The HMAC parallel-cookie design isolates the parent session from the staff Supabase session: the two cookies have different names, different sign keys, and different scopes.
 
 ### Security
 
 - The fragment is origin-local to the browser — it's not in Referer (browsers strip fragments), not in access logs, not in redirect chains.
 - The `next` parameter is validated to start with `/parent` — anything else falls back to `/parent`. No open redirect.
-- Tokens are never logged, sent to telemetry, or passed through `fetch`. The only consumer is `setSession`.
-- If the access token is expired, `setSession` uses the refresh token to mint a new one. If the refresh token is also expired, the handoff shows an error state with a "Back to parent portal" button pointing at `NEXT_PUBLIC_PARENT_PORTAL_URL`.
-- The real authorization gate is still `getStudentsByParentEmail()` in the parent-scoped pages — an attacker with stolen tokens can still only see children linked to that parent's email, which is the same access they'd have via a direct parent-portal login. The handoff does not widen the blast radius.
-- No HMAC signing or referrer origin check was added this sprint. The parent↔student gate is sufficient for UAT. Revisit if a real threat materializes; prefer HMAC over referrer if you ever need hardening.
+- Tokens are never logged, sent to telemetry, or passed through `fetch` to anything other than the same-origin `/api/parent/handoff`. The handoff route does **not** call `setSession`; it only verifies the JWT against the Supabase service client and mints the parallel signed cookie.
+- If the access token is expired, the handoff returns an error and the `/parent/enter` page renders a "Back to parent portal" button pointing at `NEXT_PUBLIC_PARENT_PORTAL_URL`.
+- The real authorization gate is still `getStudentsByParentEmail()` (Sprint 28 update: `getAllStudentsByParentEmail` walks every AY) in the parent-scoped pages — an attacker with stolen tokens can still only see children linked to that parent's email. The handoff does not widen the blast radius.
+- The HMAC cookie is signed (not encrypted); its body is `{ email, exp, sub }` — enough to look up the parent. Tampering invalidates the signature.
 
 ### Environment variables
 
 Both sides of the handoff need **per-environment** env vars — the staging parent portal talks to the SIS's staging/preview deployment, and the production parent portal talks to the SIS's production. Vercel (and most platforms) support different env var values per environment on the same project, so you set each variable multiple times, once per environment, without touching the code.
 
+#### Markbook — `PARENT_HANDOFF_SECRET`
+
+Server-only HMAC signing key for the `parent_session` cookie (KD #65). ≥32 chars (`openssl rand -hex 32`). MUST differ per environment. Rotating invalidates all live parent sessions; nobody currently signed in via the SIS will retain access until they re-handoff from the parent portal.
+
+| Vercel environment | Notes |
+|---|---|
+| **Production** | Generate a fresh secret per environment; never share with non-production. |
+| **Preview** | Distinct from production. |
+| **Development** (local `.env.local`) | Distinct again; rotating doesn't break anyone. |
+
 #### Markbook — `NEXT_PUBLIC_PARENT_PORTAL_URL`
 
-Used by `/parent/enter` as the "Back to parent portal" button destination when the handoff fails. Read on every request, so changing it takes effect on the next page load — no redeploy needed.
+Used by `/parent/enter` as the "Back to parent portal" button destination when the handoff fails, **and** by `app/(parent)/layout.tsx` as the redirect target when an anonymous or null-role JWT visitor lands on `/parent/*` without a valid `parent_session` cookie (KD #73). Read on every request, so changing it takes effect on the next page load — no redeploy needed.
 
 | Vercel environment | Value |
 |---|---|
@@ -293,15 +308,36 @@ If you ever want to skip the SIS's list view and jump straight into one child's 
 
 - **"This handoff link is missing its session tokens"** — the URL fragment is empty or malformed. Check that the parent-portal snippet is constructing the URL correctly with `#` (not `?`) and that both `access_token` and `refresh_token` are present.
 - **"Your session has expired"** — the refresh token is no longer valid. The parent needs to sign in fresh on the parent portal, then click the button again.
-- **Parent lands on the SIS's `/login` instead of `/parent/enter`** — `PUBLIC_PATHS` in `proxy.ts` didn't get `/parent/enter` added. Verify the middleware allows the route without authentication.
+- **Parent lands on the SIS's `/login` instead of `/parent/enter`** — `/parent/enter` should be living in the `(parent-handoff)` route group so `proxy.ts` bypasses the `parent_session` cookie gate just for the handoff endpoint (KD #65). Verify the route is in the right group and that `proxy.ts`'s `/parent/*` cookie-gate carve-out still covers it.
+- **Parent's SIS session got logged out unexpectedly when a colleague used the same browser** — almost certainly a regression to the pre-KD-#65 `setSession` flow (parent writes clobbered staff `sb-*` cookies). Verify the handoff still POSTs to `/api/parent/handoff` rather than calling `setSession` directly.
 - **Handoff succeeds but parent sees "no students linked to this email"** — the parent portal's `motherEmail`/`fatherEmail` on the admissions row doesn't match their `auth.users.email`. The SIS does a case-insensitive match (`.ilike`), but a genuine email mismatch (typo, different provider) will show an empty state. Fix at the admissions side.
 
 ## Out of scope
 
 - **Parent self-service**: no enrolment, no application editing, no document upload, no profile edit in this repo. Parents do all of that in the parent portal.
 - **Email notifications**: when the registrar publishes a window, parents are not emailed. They navigate to the URL on their own. Wiring Resend / SMTP / WhatsApp is a future sprint.
-- **Cross-AY history**: parents only see current-AY report cards. Historical term cards are not exposed.
+- **Cross-AY history**: replaced Sprint 28 — parents now see published cards across every AY their child was enrolled in (`getAllStudentsByParentEmail`). Publication-window per KD #28 is the actual gate, not current AY.
 - **Account linking UI**: parents cannot "add another child" from within the SIS — the link is purely via email in admissions.
+
+---
+
+## Historical: pre-Sprint-28 `setSession` flow (KD #12, deprecated)
+
+> Archive only. The flow described here is **not the current implementation** — it was replaced by KD #65 in Sprint 28. Kept here so future readers can recognize the shape of the legacy mechanism if they encounter it in older branches, prior PRs, or someone else's mental model.
+
+The pre-KD-#65 handoff used the parent's Supabase session tokens directly:
+
+1. Parent portal built the same fragment URL as today.
+2. The SIS's `/parent/enter` client page called `supabase.auth.setSession({ access_token, refresh_token })` from the URL fragment. The `@supabase/ssr` browser client wrote the standard `sb-*-auth-token` cookies via its cookie adapter.
+3. `proxy.ts` then saw a cookie-bound Supabase session with `role === null` and routed it to `/parent/*`.
+
+### Why it was replaced
+
+In a shared browser where staff were also signed in to the SIS, the parent's `setSession` write clobbered the staff member's `sb-*-auth-token` cookies — staff would discover they'd been silently logged out (or worse, attributed null-role parent identity) on their next request. The HMAC parallel-cookie design (KD #65) isolates the parent session from the staff Supabase session.
+
+The legacy flow also bounced edge cases (anonymous visitors, stale null-role JWTs leftover from `setSession`) into the SIS module picker on `/`. KD #73 closes that gap separately.
+
+KD #12 itself is the canonical history pointer for the deprecated mechanism; KD #65 is the canonical replacement. KD #11 ("parents = null-role Supabase users") is **deprecated for fresh logins** but tolerated as fallback identity.
 
 ---
 

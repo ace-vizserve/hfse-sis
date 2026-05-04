@@ -123,7 +123,16 @@ export default async function SisDiscountCodesPage({
           </div>
           <div className="flex items-center gap-2">
             <AySwitcher current={selectedAy} options={ayCodes} />
-            <NewDiscountCodeButton ayCode={selectedAy} />
+            {/* Pass the operational current AY as the dialog default — the
+                page AY-switcher is for *viewing* historical codes, while the
+                dialog picker (same `ayCodes` list <AySwitcher> uses) selects
+                *where to write* the new code. Test AYs (KD #52, `^AY9`) are
+                excluded — creating real discount codes on a disposable test
+                AY would be misleading. */}
+            <NewDiscountCodeButton
+              ayCode={currentAy.ay_code}
+              ayCodes={ayCodes.filter((c) => !/^AY9/i.test(c))}
+            />
           </div>
         </div>
       </header>
@@ -261,9 +270,7 @@ export default async function SisDiscountCodesPage({
         <span className="text-border">·</span>
         <span>{codes.length.toLocaleString('en-SG')} codes</span>
         <span className="text-border">·</span>
-        <span>Soft-delete only</span>
-        <span className="text-border">·</span>
-        <span>Audit-logged</span>
+        <span>Codes are kept in history when expired</span>
       </div>
     </PageShell>
   );

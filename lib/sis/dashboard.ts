@@ -505,6 +505,10 @@ export function getRecentSisActivity(limit: number = 8): Promise<RecentActivityR
 
 export type RecordsRangeKpis = {
   enrollmentsInRange: number;
+  /** Subset of enrollmentsInRange — registrar-tagged late enrollees per
+   *  KD #68. Surfaces alongside the New Enrollments MetricCard so oversight
+   *  can spot late starts at-a-glance without drilling. */
+  lateEnroleesInRange: number;
   withdrawalsInRange: number;
   activeEnrolled: number;
   expiringSoon: number;
@@ -515,11 +519,20 @@ async function loadRecordsKpisForRange(input: RangeInput): Promise<RecordsRangeK
   const admissions = createAdmissionsClient();
   const prefix = prefixFor(input.ayCode);
 
-  const [enrolRes, withdrawRes, activeRes, docsRes] = await Promise.all([
+  // KD #68: late enrollees are real new enrollments tagged for term-of-entry
+  // visibility — count them in both `enrollmentsInRange` (so the headline
+  // KPI is honest) and `lateEnroleesInRange` (so the breakdown surfaces).
+  const [enrolRes, lateRes, withdrawRes, activeRes, docsRes] = await Promise.all([
     service
       .from('section_students')
       .select('id', { count: 'exact', head: true })
-      .eq('enrollment_status', 'active')
+      .in('enrollment_status', ['active', 'late_enrollee'])
+      .gte('enrollment_date', input.from)
+      .lte('enrollment_date', input.to),
+    service
+      .from('section_students')
+      .select('id', { count: 'exact', head: true })
+      .eq('enrollment_status', 'late_enrollee')
       .gte('enrollment_date', input.from)
       .lte('enrollment_date', input.to),
     service
@@ -531,7 +544,7 @@ async function loadRecordsKpisForRange(input: RangeInput): Promise<RecordsRangeK
     service
       .from('section_students')
       .select('id', { count: 'exact', head: true })
-      .eq('enrollment_status', 'active'),
+      .in('enrollment_status', ['active', 'late_enrollee']),
     admissions
       .from(`${prefix}_enrolment_documents`)
       .select(
@@ -561,6 +574,7 @@ async function loadRecordsKpisForRange(input: RangeInput): Promise<RecordsRangeK
 
   return {
     enrollmentsInRange: enrolRes.count ?? 0,
+    lateEnroleesInRange: lateRes.count ?? 0,
     withdrawalsInRange: withdrawRes.count ?? 0,
     activeEnrolled: activeRes.count ?? 0,
     expiringSoon,
@@ -570,16 +584,23 @@ async function loadRecordsKpisForRange(input: RangeInput): Promise<RecordsRangeK
 async function loadRecordsKpisRangeUncached(
   input: RangeInput,
 ): Promise<RangeResult<RecordsRangeKpis>> {
-  const [current, comparison] = await Promise.all([
-    loadRecordsKpisForRange(input),
-    loadRecordsKpisForRange({
-      ayCode: input.ayCode,
-      from: input.cmpFrom,
-      to: input.cmpTo,
-      cmpFrom: input.cmpFrom,
-      cmpTo: input.cmpTo,
-    }),
-  ]);
+  const current = await loadRecordsKpisForRange(input);
+  if (input.cmpFrom == null || input.cmpTo == null) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
+  const comparison = await loadRecordsKpisForRange({
+    ayCode: input.ayCode,
+    from: input.cmpFrom,
+    to: input.cmpTo,
+    cmpFrom: input.cmpFrom,
+    cmpTo: input.cmpTo,
+  });
   return {
     current,
     comparison,
@@ -594,7 +615,7 @@ export function getRecordsKpisRange(
 ): Promise<RangeResult<RecordsRangeKpis>> {
   return unstable_cache(
     loadRecordsKpisRangeUncached,
-    ['sis', 'records-kpis-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['sis', 'records-kpis-range', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
   )(input);
 }
@@ -626,8 +647,9 @@ async function loadEnrollmentVelocityRangeUncached(
   input: RangeInput,
 ): Promise<RangeResult<VelocityPoint[]>> {
   const service = createServiceClient();
-  const earliest = input.cmpFrom < input.from ? input.cmpFrom : input.from;
-  const latest = input.to > input.cmpTo ? input.to : input.cmpTo;
+  const hasCmp = input.cmpFrom != null && input.cmpTo != null;
+  const earliest = hasCmp && input.cmpFrom! < input.from ? input.cmpFrom! : input.from;
+  const latest = hasCmp && input.to < input.cmpTo! ? input.cmpTo! : input.to;
 
   const { data } = await service
     .from('section_students')
@@ -641,7 +663,16 @@ async function loadEnrollmentVelocityRangeUncached(
     .filter((r) => r.enrollment_date)
     .map((r) => ({ ts: r.enrollment_date }));
   const current = bucketByDay(rows, input.from, input.to);
-  const comparison = bucketByDay(rows, input.cmpFrom, input.cmpTo);
+  if (!hasCmp) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
+  const comparison = bucketByDay(rows, input.cmpFrom!, input.cmpTo!);
   const currentTotal = current.reduce((s, p) => s + p.y, 0);
   const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
   return {
@@ -649,7 +680,7 @@ async function loadEnrollmentVelocityRangeUncached(
     comparison,
     delta: computeDelta(currentTotal, comparisonTotal),
     range: { from: input.from, to: input.to },
-    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+    comparisonRange: { from: input.cmpFrom!, to: input.cmpTo! },
   };
 }
 
@@ -658,7 +689,7 @@ export function getEnrollmentVelocityRange(
 ): Promise<RangeResult<VelocityPoint[]>> {
   return unstable_cache(
     loadEnrollmentVelocityRangeUncached,
-    ['sis', 'enrollment-velocity', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['sis', 'enrollment-velocity', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
   )(input);
 }
@@ -671,8 +702,9 @@ async function loadWithdrawalVelocityRangeUncached(
   input: RangeInput,
 ): Promise<RangeResult<VelocityPoint[]>> {
   const service = createServiceClient();
-  const earliest = input.cmpFrom < input.from ? input.cmpFrom : input.from;
-  const latest = input.to > input.cmpTo ? input.to : input.cmpTo;
+  const hasCmp = input.cmpFrom != null && input.cmpTo != null;
+  const earliest = hasCmp && input.cmpFrom! < input.from ? input.cmpFrom! : input.from;
+  const latest = hasCmp && input.to < input.cmpTo! ? input.cmpTo! : input.to;
 
   const { data } = await service
     .from('section_students')
@@ -686,7 +718,16 @@ async function loadWithdrawalVelocityRangeUncached(
     .filter((r) => r.withdrawal_date)
     .map((r) => ({ ts: r.withdrawal_date }));
   const current = bucketByDay(rows, input.from, input.to);
-  const comparison = bucketByDay(rows, input.cmpFrom, input.cmpTo);
+  if (!hasCmp) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
+  const comparison = bucketByDay(rows, input.cmpFrom!, input.cmpTo!);
   const currentTotal = current.reduce((s, p) => s + p.y, 0);
   const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
   return {
@@ -694,7 +735,7 @@ async function loadWithdrawalVelocityRangeUncached(
     comparison,
     delta: computeDelta(currentTotal, comparisonTotal),
     range: { from: input.from, to: input.to },
-    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+    comparisonRange: { from: input.cmpFrom!, to: input.cmpTo! },
   };
 }
 
@@ -703,7 +744,7 @@ export function getWithdrawalVelocityRange(
 ): Promise<RangeResult<VelocityPoint[]>> {
   return unstable_cache(
     loadWithdrawalVelocityRangeUncached,
-    ['sis', 'withdrawal-velocity', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['sis', 'withdrawal-velocity', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
   )(input);
 }
@@ -745,10 +786,17 @@ async function loadAuditActivityByModuleUncached(
     return results;
   }
 
-  const [current, comparison] = await Promise.all([
-    countsFor(input.from, input.to),
-    countsFor(input.cmpFrom, input.cmpTo),
-  ]);
+  const current = await countsFor(input.from, input.to);
+  if (input.cmpFrom == null || input.cmpTo == null) {
+    return {
+      current,
+      comparison: null,
+      delta: null,
+      range: { from: input.from, to: input.to },
+      comparisonRange: null,
+    };
+  }
+  const comparison = await countsFor(input.cmpFrom, input.cmpTo);
   const currentTotal = current.reduce((s, p) => s + p.count, 0);
   const comparisonTotal = comparison.reduce((s, p) => s + p.count, 0);
   return {
@@ -765,7 +813,7 @@ export function getAuditActivityByModule(
 ): Promise<RangeResult<AuditModulePoint[]>> {
   return unstable_cache(
     loadAuditActivityByModuleUncached,
-    ['sis', 'audit-by-module', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    ['sis', 'audit-by-module', input.ayCode, input.from, input.to, input.cmpFrom ?? '', input.cmpTo ?? ''],
     { tags: ['sis'], revalidate: 120 },
   )(input);
 }

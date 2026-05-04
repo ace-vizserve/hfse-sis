@@ -291,7 +291,7 @@ export function TotalsEditor({
             <DialogTitle>Log a data entry correction</DialogTitle>
             <DialogDescription>
               This sheet is locked. Totals changes are treated as registrar-only
-              corrections and are tagged in the audit log.
+              corrections and are flagged on the activity history.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 pt-1">

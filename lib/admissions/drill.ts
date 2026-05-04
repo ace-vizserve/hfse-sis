@@ -526,8 +526,8 @@ export function defaultColumnsForTarget(target: DrillTarget): DrillColumnKey[] {
 }
 
 export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
-  enroleeNumber: 'Enrolee #',
-  studentNumber: 'Student #',
+  enroleeNumber: 'Applicant Number',
+  studentNumber: 'Student ID',
   fullName: 'Applicant',
   status: 'Status',
   level: 'Level',

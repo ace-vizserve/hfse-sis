@@ -69,7 +69,7 @@ export default async function PFilesAuditLogPage() {
           Audit log.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Document uploads and replacements. Append-only.
+          A history of every document upload and replacement. Past entries are kept on the record.
         </p>
       </header>
 

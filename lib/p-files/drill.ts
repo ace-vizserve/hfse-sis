@@ -274,7 +274,7 @@ export const ALL_DRILL_COLUMNS: DrillColumnKey[] = [
 
 export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
   fullName: 'Applicant',
-  enroleeNumber: 'Enrolee #',
+  enroleeNumber: 'Applicant Number',
   level: 'Level',
   slotLabel: 'Slot',
   status: 'Status',

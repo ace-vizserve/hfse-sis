@@ -33,7 +33,8 @@ function formatterFor(format: YFormat | undefined): ((n: number) => string) | un
 export type TrendChartProps = {
   label: string;
   current: TrendPoint[];
-  comparison?: TrendPoint[];
+  /** Null when no comparison is set — overlay is hidden. */
+  comparison?: TrendPoint[] | null;
   height?: number;
   yFormat?: YFormat;
   alignComparison?: boolean;

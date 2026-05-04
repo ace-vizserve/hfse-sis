@@ -76,16 +76,18 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
     compassionate: drillRowSets.compassionate,
   });
 
-  const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
+  const comparisonLabel = kpisResult.comparisonRange
+    ? `vs ${formatRangeLabel(kpisResult.comparisonRange)}`
+    : undefined;
 
   const insights = attendanceInsights({
     attendancePct: kpisResult.current.attendancePct,
-    attendancePctPrior: kpisResult.comparison.attendancePct,
+    attendancePctPrior: kpisResult.comparison?.attendancePct,
     late: kpisResult.current.late,
-    latePrior: kpisResult.comparison.late,
+    latePrior: kpisResult.comparison?.late,
     excused: kpisResult.current.excused,
     absent: kpisResult.current.absent,
-    absentPrior: kpisResult.comparison.absent,
+    absentPrior: kpisResult.comparison?.absent,
     encodedDays: kpisResult.current.encodedDays,
   });
 
@@ -110,7 +112,11 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
         ayCode={selectedAy}
         ayCodes={ayCodes}
         range={{ from: rangeInput.from, to: rangeInput.to }}
-        comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+        comparison={
+          rangeInput.cmpFrom && rangeInput.cmpTo
+            ? { from: rangeInput.cmpFrom, to: rangeInput.cmpTo }
+            : null
+        }
         termWindows={windows.term}
         ayWindows={windows.ay}
         showAySwitcher={false}
@@ -128,7 +134,7 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
           format="percent"
           icon={UserCheck}
           intent={kpisResult.current.attendancePct >= 95 ? "good" : "warning"}
-          delta={kpisResult.delta}
+          delta={kpisResult.delta ?? undefined}
           deltaGoodWhen="up"
           comparisonLabel={comparisonLabel}
           sparkline={dailySeries.current.slice(-14)}
@@ -146,9 +152,15 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
           label="Late incidents"
           value={kpisResult.current.late}
           icon={Clock}
-          intent={kpisResult.current.late > kpisResult.comparison.late ? "warning" : "default"}
+          intent={
+            kpisResult.comparison && kpisResult.current.late > kpisResult.comparison.late
+              ? "warning"
+              : "default"
+          }
           deltaGoodWhen="down"
-          subtext={`${kpisResult.comparison.late} prior`}
+          subtext={
+            kpisResult.comparison ? `${kpisResult.comparison.late} prior` : undefined
+          }
           drillSheet={
             <AttendanceDrillSheet
               target="lates"
@@ -164,7 +176,9 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
           value={kpisResult.current.excused}
           icon={CalendarCheck}
           intent="default"
-          subtext={`${kpisResult.comparison.excused} prior`}
+          subtext={
+            kpisResult.comparison ? `${kpisResult.comparison.excused} prior` : undefined
+          }
           drillSheet={
             <AttendanceDrillSheet
               target="excused"
@@ -181,7 +195,9 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
           icon={UserX}
           intent={kpisResult.current.absent > 0 ? "bad" : "good"}
           deltaGoodWhen="down"
-          subtext={`${kpisResult.comparison.absent} prior`}
+          subtext={
+            kpisResult.comparison ? `${kpisResult.comparison.absent} prior` : undefined
+          }
           drillSheet={
             <AttendanceDrillSheet
               target="absent"
@@ -250,11 +266,9 @@ export default async function AttendanceDashboard({ searchParams }: { searchPara
         <CalendarCheck className="size-3" strokeWidth={2.25} />
         <span>{selectedAy}</span>
         <span className="text-border">·</span>
-        <span>{kpisResult.current.encodedDays.toLocaleString("en-SG")} encoded days</span>
+        <span>{kpisResult.current.encodedDays.toLocaleString("en-SG")} school days marked</span>
         <span className="text-border">·</span>
-        <span>Cache 5m</span>
-        <span className="text-border">·</span>
-        <span>Audit-logged</span>
+        <span>Refreshes every 5 minutes</span>
       </div>
     </PageShell>
   );

@@ -26,6 +26,17 @@ export function AySwitcher({
   function onChange(code: string) {
     const next = new URLSearchParams(searchParams.toString());
     next.set('ay', code);
+    // Reset the date-range params — they were chosen against the previous
+    // AY's calendar and would otherwise carry over into the new AY's view
+    // (e.g., switching from AY2025 to AY2027 with a 2025-04 → 2025-06
+    // range filter, which then surfaces as wrong-year dates in every
+    // drilldown / chart / stat card). The page's resolveRange() falls back
+    // to the new AY's default cascade (this term → this AY → last 30 days)
+    // on its own.
+    next.delete('from');
+    next.delete('to');
+    next.delete('cmpFrom');
+    next.delete('cmpTo');
     startTransition(() => {
       router.push(`?${next.toString()}`, { scroll: false });
     });

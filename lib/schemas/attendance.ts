@@ -84,9 +84,48 @@ export const DAY_TYPE_LABELS: Record<DayType, string> = {
   no_class: 'No class',
 };
 
+// Audience scope (migration 037). Mirrors the CHECK on
+// school_calendar.audience and calendar_events.audience.
+export const AUDIENCE_VALUES = ['all', 'primary', 'secondary'] as const;
+export type Audience = (typeof AUDIENCE_VALUES)[number];
+
+export const AUDIENCE_LABELS: Record<Audience, string> = {
+  all: 'All',
+  primary: 'Primary',
+  secondary: 'Secondary',
+};
+
+// Event category (migration 037). Drives color-coding + filtering on
+// calendar_events. Display-only — does NOT gate attendance.
+export const EVENT_CATEGORY_VALUES = [
+  'term_exam',
+  'term_break',
+  'start_of_term',
+  'parents_dialogue',
+  'subject_week',
+  'school_event',
+  'pfe',
+  'ptc',
+  'other',
+] as const;
+export type EventCategory = (typeof EVENT_CATEGORY_VALUES)[number];
+
+export const EVENT_CATEGORY_LABELS: Record<EventCategory, string> = {
+  term_exam: 'Term examination',
+  term_break: 'Term break',
+  start_of_term: 'Start of term',
+  parents_dialogue: 'Parents dialogue',
+  subject_week: 'Subject week',
+  school_event: 'School event',
+  pfe: 'Partners for Excellence',
+  ptc: 'Parent-teacher child conference',
+  other: 'Other',
+};
+
 // Schemas for the school-calendar admin surface.
 export const SchoolCalendarUpsertSchema = z.object({
   termId: uuidString,
+  audience: z.enum(AUDIENCE_VALUES).optional().default('all'),
   entries: z
     .array(
       z
@@ -109,6 +148,14 @@ export const SchoolCalendarUpsertSchema = z.object({
 });
 export type SchoolCalendarUpsertInput = z.infer<typeof SchoolCalendarUpsertSchema>;
 
+// DELETE /api/attendance/calendar?termId=&date=&audience=
+// audience is optional; omitted = 'all' (legacy).
+export const SchoolCalendarDeleteQuerySchema = z.object({
+  termId: uuidString,
+  date: dateString,
+  audience: z.enum(AUDIENCE_VALUES).optional().default('all'),
+});
+
 /** Resolves the `day_type` value to persist from either a new-shape or
  *  legacy-shape upsert entry. */
 export function resolveDayType(entry: {
@@ -125,12 +172,82 @@ export const CalendarEventCreateSchema = z
     startDate: dateString,
     endDate: dateString,
     label: z.string().trim().min(1).max(200),
+    category: z.enum(EVENT_CATEGORY_VALUES).optional().default('other'),
+    audience: z.enum(AUDIENCE_VALUES).optional().default('all'),
+    tentative: z.boolean().optional().default(false),
   })
   .refine((v) => v.endDate >= v.startDate, {
     message: 'endDate must be on or after startDate',
     path: ['endDate'],
   });
 export type CalendarEventCreateInput = z.infer<typeof CalendarEventCreateSchema>;
+
+// PATCH /api/attendance/calendar/events — partial update for an existing
+// row. Used by the "Confirm dates" affordance (flips tentative=false) and
+// for editing category / audience / label after creation.
+export const CalendarEventUpdateSchema = z
+  .object({
+    id: uuidString,
+    startDate: dateString.optional(),
+    endDate: dateString.optional(),
+    label: z.string().trim().min(1).max(200).optional(),
+    category: z.enum(EVENT_CATEGORY_VALUES).optional(),
+    audience: z.enum(AUDIENCE_VALUES).optional(),
+    tentative: z.boolean().optional(),
+  })
+  .refine(
+    (v) =>
+      v.startDate === undefined ||
+      v.endDate === undefined ||
+      v.endDate >= v.startDate,
+    { message: 'endDate must be on or after startDate', path: ['endDate'] },
+  );
+export type CalendarEventUpdateInput = z.infer<typeof CalendarEventUpdateSchema>;
+
+// POST /api/attendance/calendar/copy-from-prior-ay
+// Bulk copy of school_calendar overrides + calendar_events from a prior
+// AY's term to the target term, with year-shifted dates. Default
+// tentative=true on every copied row (registrar reviews + locks).
+export const CopyFromPriorAyPayloadSchema = z.object({
+  targetTermId: uuidString,
+  // Source rows the user opted to include. Each entry already carries
+  // its already-shifted target date — server validates but does not
+  // re-shift (UI is the source of truth for what gets copied).
+  dayTypeRows: z
+    .array(
+      z.object({
+        date: dateString, // already year-shifted
+        dayType: z.enum(DAY_TYPE_VALUES),
+        audience: z.enum(AUDIENCE_VALUES),
+        label: z.string().trim().max(200).optional().nullable(),
+      }),
+    )
+    .max(500)
+    .optional()
+    .default([]),
+  events: z
+    .array(
+      z
+        .object({
+          startDate: dateString, // already year-shifted
+          endDate: dateString,
+          label: z.string().trim().min(1).max(200),
+          category: z.enum(EVENT_CATEGORY_VALUES),
+          audience: z.enum(AUDIENCE_VALUES),
+        })
+        .refine((v) => v.endDate >= v.startDate, {
+          message: 'endDate must be on or after startDate',
+          path: ['endDate'],
+        }),
+    )
+    .max(500)
+    .optional()
+    .default([]),
+  // When true (default), every copied row lands with tentative=true so the
+  // registrar reviews each before locking.
+  markTentative: z.boolean().optional().default(true),
+});
+export type CopyFromPriorAyPayload = z.infer<typeof CopyFromPriorAyPayloadSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Bulk daily write (grid paste or multi-cell save)

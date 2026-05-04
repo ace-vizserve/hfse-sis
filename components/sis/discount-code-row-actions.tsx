@@ -122,8 +122,7 @@ export function DiscountCodeRowActions({ ayCode, code }: Props) {
                 <AlertDialogTitle>Expire this discount code?</AlertDialogTitle>
                 <AlertDialogDescription>
                   Sets the end date to today. The code stops appearing in active offers immediately.
-                  This is a soft delete — the row stays in the catalogue and the audit log records it.
-                  To re-activate, edit the end date back to a future day.
+                  Expiring keeps the code in your records — to bring it back, edit the end date to a future day.
                 </AlertDialogDescription>
               </div>
             </div>

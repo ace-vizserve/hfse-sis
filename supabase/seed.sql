@@ -5,7 +5,7 @@
 
 -- ---------- Academic year ----------
 insert into public.academic_years (ay_code, label, is_current) values
-  ('AY2026', 'Academic Year 2025-2026', true)
+  ('AY2026', 'Academic Year 2026', true)
 on conflict (ay_code) do nothing;
 
 -- ---------- Levels ----------

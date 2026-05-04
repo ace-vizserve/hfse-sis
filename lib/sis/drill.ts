@@ -388,8 +388,8 @@ export const ALL_DRILL_COLUMNS: DrillColumnKey[] = [
 
 export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
   fullName: 'Student',
-  studentNumber: 'Student #',
-  enroleeNumber: 'Enrolee #',
+  studentNumber: 'Student ID',
+  enroleeNumber: 'Applicant Number',
   enrollmentStatus: 'Enrollment',
   applicationStatus: 'App status',
   level: 'Level',
@@ -1098,8 +1098,8 @@ export const ALL_LIFECYCLE_DRILL_COLUMNS: LifecycleDrillColumnKey[] = [
 
 export const LIFECYCLE_DRILL_COLUMN_LABELS: Record<LifecycleDrillColumnKey, string> = {
   enroleeFullName: 'Student',
-  enroleeNumber: 'Enrolee #',
-  studentNumber: 'Student #',
+  enroleeNumber: 'Applicant Number',
+  studentNumber: 'Student ID',
   levelApplied: 'Level',
   applicationStatus: 'App status',
   applicationUpdatedDate: 'Last updated',

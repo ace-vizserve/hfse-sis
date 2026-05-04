@@ -46,10 +46,13 @@ export type AdmissionsInsightInput = {
   applications: number;
   enrolled: number;
   conversionPct: number;
-  conversionPctPrior: number;
+  /** Undefined when the user hasn't opted into a comparison. */
+  conversionPctPrior?: number;
   avgDaysToEnroll: number;
-  avgDaysToEnrollPrior: number;
-  appsDelta: Delta;
+  /** Undefined when the user hasn't opted into a comparison. */
+  avgDaysToEnrollPrior?: number;
+  /** Undefined when the user hasn't opted into a comparison. */
+  appsDelta?: Delta;
   outdatedCount: number;
   topReferral?: { source: string; count: number; totalCount: number };
   funnelDropOff?: { stage: string; dropOffPct: number };
@@ -59,7 +62,7 @@ export function admissionsInsights(input: AdmissionsInsightInput): Insight[] {
   const out: Insight[] = [];
 
   // Applications velocity vs prior
-  if (input.appsDelta.pct !== null && Math.abs(input.appsDelta.pct) >= 5) {
+  if (input.appsDelta && input.appsDelta.pct !== null && Math.abs(input.appsDelta.pct) >= 5) {
     const up = input.appsDelta.direction === 'up';
     out.push({
       severity: up ? 'good' : 'warn',
@@ -69,18 +72,24 @@ export function admissionsInsights(input: AdmissionsInsightInput): Insight[] {
   }
 
   // Conversion trend
-  const convDelta = input.conversionPct - input.conversionPctPrior;
-  if (Math.abs(convDelta) >= 3) {
-    const up = convDelta > 0;
-    out.push({
-      severity: up ? 'good' : 'bad',
-      title: up ? 'Conversion improving' : 'Conversion dropping',
-      detail: `${input.conversionPct.toFixed(1)}% this period vs ${input.conversionPctPrior.toFixed(1)}% prior — ${up ? '+' : ''}${convDelta.toFixed(1)} pp`,
-    });
+  if (input.conversionPctPrior != null) {
+    const convDelta = input.conversionPct - input.conversionPctPrior;
+    if (Math.abs(convDelta) >= 3) {
+      const up = convDelta > 0;
+      out.push({
+        severity: up ? 'good' : 'bad',
+        title: up ? 'Conversion improving' : 'Conversion dropping',
+        detail: `${input.conversionPct.toFixed(1)}% this period vs ${input.conversionPctPrior.toFixed(1)}% prior — ${up ? '+' : ''}${convDelta.toFixed(1)} pp`,
+      });
+    }
   }
 
   // Time-to-enroll drift
-  if (input.avgDaysToEnrollPrior > 0 && input.avgDaysToEnroll > 0) {
+  if (
+    input.avgDaysToEnrollPrior != null &&
+    input.avgDaysToEnrollPrior > 0 &&
+    input.avgDaysToEnroll > 0
+  ) {
     const driftDays = input.avgDaysToEnroll - input.avgDaysToEnrollPrior;
     if (Math.abs(driftDays) >= 5) {
       const slower = driftDays > 0;
@@ -207,47 +216,68 @@ export function admissionsChaseInsights(input: AdmissionsChaseInsightInput): Ins
 export type RecordsInsightInput = {
   newEnrollments: number;
   withdrawals: number;
-  newEnrollmentsPrior: number;
-  withdrawalsPrior: number;
+  /** Undefined when the user hasn't opted into a comparison. */
+  newEnrollmentsPrior?: number;
+  /** Undefined when the user hasn't opted into a comparison. */
+  withdrawalsPrior?: number;
   activeEnrolled: number;
   expiringSoon: number;
-  enrollmentDelta: Delta;
+  /** Undefined when the user hasn't opted into a comparison. */
+  enrollmentDelta?: Delta;
 };
 
 export function recordsInsights(input: RecordsInsightInput): Insight[] {
   const out: Insight[] = [];
+  const hasCmp = input.enrollmentDelta != null;
 
   // Good-signal only when the delta is materially positive (spec §2: Δ ≥ +5%).
   // Volume-only fallback when no prior period to compare against yet.
   if (
     input.newEnrollments > 0 &&
-    input.enrollmentDelta.pct !== null &&
-    input.enrollmentDelta.pct >= 5
+    hasCmp &&
+    input.enrollmentDelta!.pct !== null &&
+    input.enrollmentDelta!.pct >= 5
   ) {
     out.push({
       severity: 'good',
       title: `${pluralize(input.newEnrollments, 'new enrollment', 'new enrollments')} rising`,
-      detail: `${pct(input.enrollmentDelta.pct)} vs prior period`,
+      detail: `${pct(input.enrollmentDelta!.pct!)} vs prior period`,
     });
-  } else if (input.newEnrollments > 0 && input.enrollmentDelta.pct === null) {
+  } else if (
+    input.newEnrollments > 0 &&
+    hasCmp &&
+    input.enrollmentDelta!.pct === null
+  ) {
     out.push({
       severity: 'info',
       title: `${pluralize(input.newEnrollments, 'new enrollment', 'new enrollments')}`,
-      detail: `${input.newEnrollmentsPrior} in prior period`,
+      detail: `${input.newEnrollmentsPrior ?? 0} in prior period`,
+    });
+  } else if (input.newEnrollments > 0 && !hasCmp) {
+    out.push({
+      severity: 'info',
+      title: `${pluralize(input.newEnrollments, 'new enrollment', 'new enrollments')}`,
+      detail: 'In current range',
     });
   }
 
   if (input.withdrawals > 0) {
-    const severity: InsightSeverity =
-      input.withdrawals > input.withdrawalsPrior * 1.5 && input.withdrawalsPrior > 0
+    const prior = input.withdrawalsPrior ?? 0;
+    const severity: InsightSeverity = hasCmp
+      ? input.withdrawals > prior * 1.5 && prior > 0
         ? 'bad'
         : input.withdrawals > 3
           ? 'warn'
-          : 'info';
+          : 'info'
+      : input.withdrawals > 3
+        ? 'warn'
+        : 'info';
     out.push({
       severity,
       title: `${pluralize(input.withdrawals, 'withdrawal', 'withdrawals')} logged`,
-      detail: `${input.withdrawalsPrior} in prior period — ${severity === 'bad' ? 'investigate' : 'monitor'}`,
+      detail: hasCmp
+        ? `${prior} in prior period — ${severity === 'bad' ? 'investigate' : 'monitor'}`
+        : `${severity === 'warn' ? 'Above the usual cadence — investigate' : 'In current range'}`,
       cta: { label: 'Review withdrawals', href: '#recent-withdrawals' },
     });
   }
@@ -278,10 +308,12 @@ export function recordsInsights(input: RecordsInsightInput): Insight[] {
 
 export type PfilesInsightInput = {
   revisionsInRange: number;
-  revisionsInRangePrior: number;
+  /** Undefined when the user hasn't opted into a comparison. */
+  revisionsInRangePrior?: number;
   expiringSoon: number;
   totalDocuments: number;
-  revisionsDelta: Delta;
+  /** Undefined when the user hasn't opted into a comparison. */
+  revisionsDelta?: Delta;
 };
 
 export function pfilesInsights(input: PfilesInsightInput): Insight[] {
@@ -299,7 +331,12 @@ export function pfilesInsights(input: PfilesInsightInput): Insight[] {
   // both belonged to admissions (initial chase). P-Files surfaces the
   // renewal lens only — expiring-soon above + revision-volume below.
 
-  if (input.revisionsInRange > 0 && input.revisionsDelta.pct !== null && Math.abs(input.revisionsDelta.pct) >= 20) {
+  if (
+    input.revisionsInRange > 0 &&
+    input.revisionsDelta &&
+    input.revisionsDelta.pct !== null &&
+    Math.abs(input.revisionsDelta.pct) >= 20
+  ) {
     const up = input.revisionsDelta.direction === 'up';
     out.push({
       severity: 'info',
@@ -317,7 +354,8 @@ export function pfilesInsights(input: PfilesInsightInput): Insight[] {
 
 export type MarkbookInsightInput = {
   gradesEntered: number;
-  gradesDelta: Delta;
+  /** Undefined when the user hasn't opted into a comparison. */
+  gradesDelta?: Delta;
   sheetsLocked: number;
   sheetsTotal: number;
   lockedPct: number;
@@ -353,7 +391,12 @@ export function markbookInsights(input: MarkbookInsightInput): Insight[] {
     });
   }
 
-  if (input.gradesEntered > 0 && input.gradesDelta.pct !== null && Math.abs(input.gradesDelta.pct) >= 15) {
+  if (
+    input.gradesEntered > 0 &&
+    input.gradesDelta &&
+    input.gradesDelta.pct !== null &&
+    Math.abs(input.gradesDelta.pct) >= 15
+  ) {
     const up = input.gradesDelta.direction === 'up';
     out.push({
       severity: 'info',
@@ -371,12 +414,15 @@ export function markbookInsights(input: MarkbookInsightInput): Insight[] {
 
 export type AttendanceInsightInput = {
   attendancePct: number;
-  attendancePctPrior: number;
+  /** Undefined when the user hasn't opted into a comparison. */
+  attendancePctPrior?: number;
   late: number;
-  latePrior: number;
+  /** Undefined when the user hasn't opted into a comparison. */
+  latePrior?: number;
   excused: number;
   absent: number;
-  absentPrior: number;
+  /** Undefined when the user hasn't opted into a comparison. */
+  absentPrior?: number;
   encodedDays: number;
 };
 
@@ -384,18 +430,25 @@ export function attendanceInsights(input: AttendanceInsightInput): Insight[] {
   const out: Insight[] = [];
 
   // Attendance rate vs prior
-  const diff = input.attendancePct - input.attendancePctPrior;
-  if (input.encodedDays > 0 && Math.abs(diff) >= 1) {
-    const up = diff > 0;
-    out.push({
-      severity: up ? 'good' : input.attendancePct < 90 ? 'bad' : 'warn',
-      title: up ? 'Attendance improving' : 'Attendance dropping',
-      detail: `${input.attendancePct.toFixed(1)}% vs ${input.attendancePctPrior.toFixed(1)}% prior (${up ? '+' : ''}${diff.toFixed(1)} pp)`,
-    });
+  if (input.attendancePctPrior != null) {
+    const diff = input.attendancePct - input.attendancePctPrior;
+    if (input.encodedDays > 0 && Math.abs(diff) >= 1) {
+      const up = diff > 0;
+      out.push({
+        severity: up ? 'good' : input.attendancePct < 90 ? 'bad' : 'warn',
+        title: up ? 'Attendance improving' : 'Attendance dropping',
+        detail: `${input.attendancePct.toFixed(1)}% vs ${input.attendancePctPrior.toFixed(1)}% prior (${up ? '+' : ''}${diff.toFixed(1)} pp)`,
+      });
+    }
   }
 
   // Absolute absence spike
-  if (input.absent > 0 && input.absentPrior > 0 && input.absent > input.absentPrior * 1.5) {
+  if (
+    input.absentPrior != null &&
+    input.absent > 0 &&
+    input.absentPrior > 0 &&
+    input.absent > input.absentPrior * 1.5
+  ) {
     out.push({
       severity: 'bad',
       title: 'Absence spike',
@@ -404,7 +457,12 @@ export function attendanceInsights(input: AttendanceInsightInput): Insight[] {
   }
 
   // Late incidents spike
-  if (input.late > 0 && input.latePrior > 0 && input.late > input.latePrior * 1.5) {
+  if (
+    input.latePrior != null &&
+    input.late > 0 &&
+    input.latePrior > 0 &&
+    input.late > input.latePrior * 1.5
+  ) {
     out.push({
       severity: 'warn',
       title: 'Late incidents up',
@@ -439,7 +497,8 @@ export type EvaluationInsightInput = {
   submitted: number;
   expected: number;
   medianTimeToSubmitDays: number | null;
-  medianTimeToSubmitDaysPrior: number | null;
+  /** Null when the user hasn't opted into a comparison. */
+  medianTimeToSubmitDaysPrior?: number | null;
   lateSubmissions: number;
 };
 
@@ -497,8 +556,10 @@ export function evaluationInsights(input: EvaluationInsightInput): Insight[] {
 
 export type SisInsightInput = {
   auditEventsCurrent: number;
-  auditEventsComparison: number;
-  auditDelta: Delta;
+  /** Undefined when the user hasn't opted into a comparison. */
+  auditEventsComparison?: number;
+  /** Undefined when the user hasn't opted into a comparison. */
+  auditDelta?: Delta;
   topModule?: { module: string; count: number };
   activeModules: number;
   trackedModules: number;
@@ -507,7 +568,11 @@ export type SisInsightInput = {
 export function sisInsights(input: SisInsightInput): Insight[] {
   const out: Insight[] = [];
 
-  if (input.auditDelta.pct !== null && Math.abs(input.auditDelta.pct) >= 25) {
+  if (
+    input.auditDelta &&
+    input.auditDelta.pct !== null &&
+    Math.abs(input.auditDelta.pct) >= 25
+  ) {
     const up = input.auditDelta.direction === 'up';
     out.push({
       severity: up ? 'info' : 'warn',

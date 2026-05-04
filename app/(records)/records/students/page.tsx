@@ -205,11 +205,9 @@ export default async function RecordsStudentsPage({
         <Table2 className="size-3" strokeWidth={2.25} />
         <span>{selectedAy}</span>
         <span className="text-border">·</span>
-        <span>{students.length.toLocaleString('en-SG')} rows</span>
+        <span>{students.length.toLocaleString('en-SG')} students</span>
         <span className="text-border">·</span>
-        <span>Cache 10m</span>
-        <span className="text-border">·</span>
-        <span>Audit-logged</span>
+        <span>Refreshes every 10 minutes</span>
       </div>
     </PageShell>
   );

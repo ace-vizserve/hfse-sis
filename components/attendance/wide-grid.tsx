@@ -608,7 +608,7 @@ export function AttendanceWideGrid({
           <DayTypeLegendChip dayType="school_day" letter="·" description="School day (default)" />
           <DayTypeLegendChip dayType="public_holiday" letter="PH" description="Public holiday" />
           <DayTypeLegendChip dayType="school_holiday" letter="SH" description="School holiday" />
-          <DayTypeLegendChip dayType="hbl" letter="HBL" description="HBL · Encodable" />
+          <DayTypeLegendChip dayType="hbl" letter="HBL" description="HBL · Attendance recorded" />
           <DayTypeLegendChip dayType="no_class" letter="NC" description="No class" />
         </div>
         <p className="mt-3 text-[10px] text-muted-foreground">

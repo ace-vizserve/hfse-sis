@@ -17,8 +17,9 @@ import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   getCalendarEventsForTerm,
-  getSchoolCalendarForTerm,
+  getDedupedSchoolCalendarForTerm,
 } from '@/lib/attendance/calendar';
+import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import {
   getCompassionateUsageForSection,
   getDailyForSection,
@@ -137,9 +138,17 @@ export default async function SectionAttendancePage({
   const enrolmentList = (enrolmentsRaw ?? []) as EnrolmentRow[];
 
   // Fetch calendar + events + daily + quota in parallel.
+  // Audience scope (KD #76): the section's level type drives which calendar
+  // rows + events are visible. `getDedupedSchoolCalendarForTerm` returns
+  // exactly one row per date (level-specific override wins over the 'all'
+  // baseline) so the grid never renders the same date twice. Calendar
+  // events filter to ['all', levelType] so primary/secondary-only events
+  // stay scoped to the right cohort.
+  const sectionLevelType = levelTypeForAudienceLookup(level?.code ?? null);
+  const audienceForEvents = sectionLevelType ?? 'all';
   const [calendar, events, daily, quotaByEnrolmentId, summary] = await Promise.all([
-    getSchoolCalendarForTerm(selectedTermId),
-    getCalendarEventsForTerm(selectedTermId),
+    getDedupedSchoolCalendarForTerm(selectedTermId, sectionLevelType),
+    getCalendarEventsForTerm(selectedTermId, audienceForEvents),
     getDailyForSection(sectionId, selectedTermId),
     getCompassionateUsageForSection(sectionId, section.academic_year_id),
     getSectionAttendanceSummary(sectionId, selectedTermId),

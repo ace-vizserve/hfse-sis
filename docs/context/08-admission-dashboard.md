@@ -138,12 +138,26 @@ Shows both count and percentage at each stage.
 
 ---
 
+## Document chase scope split (KD #70)
+
+Documents flow through two distinct workflows that share the same status values but differ semantically:
+
+- **Chase** = parent owes us something. Statuses: `'To follow'` + `'Rejected'` + `'Expired'`.
+- **Awaiting validation** = we owe a review. Status: `'Uploaded'`.
+
+The Admissions `<PriorityPanel>` ranks by chase-only signals (`toFollow + rejected + expired`) so headlines aren't inflated by routine pending-review items. The expired counter, the `'expired'` member of `AdmissionsChaseStatusFilter`, the `?status=expired` sidebar quicklink, and the `chaseExpired` narrative branch in `admissionsChaseInsights` (severity `bad`, "chase before enrollment stalls") all flow from this distinction.
+
+Sidebar's "Document validation" entry is split per module — admissions routes to `/admissions?status=uploaded` (un-enrolled validation queue), P-Files routes to `/p-files?status=expired` (enrolled renewal queue per KD #71). Each module owns its own validation surface; no cross-module link.
+
+Phase-1 shared infra: notify/promise/bulk-notify routes accept `module: 'p-files' | 'admissions'`; email template (`lib/notifications/email-pfile-reminder.ts`) accepts `kind: 'renewal' | 'initial-chase'`; `getDocumentChaseQueueCounts(ayCode, module)` per-module bucket gating (admissions → revalidation = Rejected only, drops expiringSoon; p-files → revalidation = Expired only, drops promised + validation).
+
 ## Access Control
 
 | Role         | Access                                          |
 | ------------ | ----------------------------------------------- |
-| `registrar`  | View only — applications relevant to their work |
-| `admin`      | Full dashboard access                           |
+| `admissions` | Operational — full dashboard + chase actions    |
+| `registrar`  | Operational — full dashboard + chase actions    |
+| `school_admin` / `admin` | Read-only oversight — KPIs + drill cards only; chase tiles hidden per KD #74 |
 | `superadmin` | Full access including data export               |
 | `teacher`    | No access                                       |
 

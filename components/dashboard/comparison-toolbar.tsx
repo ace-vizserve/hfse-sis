@@ -28,7 +28,11 @@ export type ComparisonToolbarProps = {
   ayCode: string;
   ayCodes: readonly string[];
   range: DateRange;
-  comparison: DateRange;
+  /**
+   * Comparison is opt-in — null until the user adds one via the
+   * DateRangePicker's "Add comparison" button.
+   */
+  comparison: DateRange | null;
   termWindows: TermWindows;
   ayWindows: AYWindows;
   showAySwitcher?: boolean;
@@ -80,7 +84,18 @@ export function ComparisonToolbar({
   }
 
   function onAyChange(code: string) {
-    pushParams(updateParams(searchParams, { ay: code }));
+    // Reset date-range params on AY change — they were picked against the
+    // previous AY's calendar and would otherwise resurface as wrong-year
+    // dates in the new AY's view (and in every drilldown / chart card the
+    // page renders). resolveRange() rebuilds them from the new AY's
+    // default cascade (this term → this AY → last 30d).
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('ay', code);
+    params.delete('from');
+    params.delete('to');
+    params.delete('cmpFrom');
+    params.delete('cmpTo');
+    pushParams(params);
   }
 
   function onRangeChange(next: DateRange, autoComparison?: DateRange) {
@@ -92,8 +107,16 @@ export function ComparisonToolbar({
     pushParams(updateParams(searchParams, update));
   }
 
-  function onComparisonChange(next: DateRange) {
-    pushParams(updateParams(searchParams, { comparison: next }));
+  function onComparisonChange(next: DateRange | null) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next) {
+      params.set('cmpFrom', next.from);
+      params.set('cmpTo', next.to);
+    } else {
+      params.delete('cmpFrom');
+      params.delete('cmpTo');
+    }
+    pushParams(params);
   }
 
   return (
@@ -141,10 +164,12 @@ export function ComparisonToolbar({
           termWindows={termWindows}
           ayWindows={ayWindows}
         />
-        <div className="hidden items-center gap-1.5 text-[11px] text-ink-4 sm:flex">
-          <span className="font-mono uppercase tracking-wider text-ink-5">vs</span>
-          <span className="font-mono tabular-nums">{formatRangeLabel(comparison)}</span>
-        </div>
+        {comparison && (
+          <div className="hidden items-center gap-1.5 text-[11px] text-ink-4 sm:flex">
+            <span className="font-mono uppercase tracking-wider text-ink-5">vs</span>
+            <span className="font-mono tabular-nums">{formatRangeLabel(comparison)}</span>
+          </div>
+        )}
       </div>
       {trustStrip && <div className="flex items-center gap-2">{trustStrip}</div>}
     </div>

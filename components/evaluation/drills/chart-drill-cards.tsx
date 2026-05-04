@@ -37,7 +37,7 @@ export function SubmissionVelocityDrillCard({
   rangeFrom,
   rangeTo,
   initialWriteups,
-}: CommonProps & { current: DailyPoint[]; comparison: DailyPoint[] }) {
+}: CommonProps & { current: DailyPoint[]; comparison: DailyPoint[] | null }) {
   const [segment, setSegment] = React.useState<string | null>(null);
   const recentDays = React.useMemo(() => current.slice(-14).filter((d) => d.y > 0).reverse(), [current]);
   return (

@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { ay_code: ayCode, label } = parsed.data;
+  const { ay_code: ayCode, label, accepting_applications: acceptingApplications } = parsed.data;
   const supabase = createServiceClient();
 
   // The RPC is fully idempotent (migration 030): if the AY row exists it
@@ -48,6 +48,22 @@ export async function POST(request: Request) {
   if (rpcErr) {
     console.error('[ay-setup POST] create_academic_year rpc failed:', rpcErr.message);
     return NextResponse.json({ error: rpcErr.message }, { status: 500 });
+  }
+
+  // KD #77: apply the early-bird gate after the RPC commits. The RPC itself
+  // doesn't know about `accepting_applications` (added in migration 038)
+  // and we don't want to wedge that into the RPC contract — a focused
+  // UPDATE here is simpler and re-running is safe (idempotent overwrite).
+  if (acceptingApplications) {
+    const { error: gateErr } = await supabase
+      .from('academic_years')
+      .update({ accepting_applications: true })
+      .eq('ay_code', ayCode);
+    if (gateErr) {
+      // Non-fatal: the AY exists; the registrar can flip the switch from
+      // the AY list. Log and surface so the toast tells them why.
+      console.error('[ay-setup POST] accepting_applications flip failed:', gateErr.message);
+    }
   }
 
   const summary = (result ?? {}) as Record<string, unknown>;

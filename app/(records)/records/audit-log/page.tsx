@@ -71,7 +71,8 @@ export default async function SisAuditLogPage() {
           Audit log.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Student record edits, status pipeline moves, discount grants, and document validations. Append-only.
+          A history of student record edits, status moves, discounts granted, and document validations.
+          Past entries are kept on the record.
         </p>
       </header>
 

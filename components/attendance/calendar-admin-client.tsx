@@ -5,10 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { CopyHolidaysDialog } from "@/components/attendance/copy-holidays-dialog";
+import { CopyFromPriorAyDialog, type CopyFromPriorAyProps } from "@/components/attendance/copy-from-prior-ay-dialog";
 import { ChartLegendChip, type ChartLegendChipColor } from "@/components/dashboard/chart-legend-chip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
   Dialog,
@@ -24,7 +25,18 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CalendarEventRow, SchoolCalendarRow } from "@/lib/attendance/calendar";
-import { DAY_TYPE_LABELS, DAY_TYPE_VALUES, isEncodableDayType, type DayType } from "@/lib/schemas/attendance";
+import {
+  AUDIENCE_LABELS,
+  AUDIENCE_VALUES,
+  DAY_TYPE_LABELS,
+  DAY_TYPE_VALUES,
+  EVENT_CATEGORY_LABELS,
+  EVENT_CATEGORY_VALUES,
+  isEncodableDayType,
+  type Audience,
+  type DayType,
+  type EventCategory,
+} from "@/lib/schemas/attendance";
 
 // School-calendar admin. Two views — Month grid and Full-term strip — both
 // rendered as custom 5-column (Mon–Fri) grids. Weekends are not school days
@@ -52,14 +64,6 @@ type TermOption = {
   isCurrent: boolean;
 };
 
-type CopyHolidaysProps = {
-  targetTermId: string;
-  targetTermLabel: string;
-  targetYear: number;
-  sourceAyCode: string;
-  sourceHolidays: SchoolCalendarRow[];
-};
-
 // Short banner labels printed inside each cell (below the day number).
 // Keep terse — cell is ~80px wide.
 const DAY_TYPE_SHORT_LABEL: Record<DayType, string> = {
@@ -68,6 +72,30 @@ const DAY_TYPE_SHORT_LABEL: Record<DayType, string> = {
   school_holiday: "School hol.",
   hbl: "HBL",
   no_class: "No class",
+};
+
+// Color tone per event category. Drives the gradient on EventChip and the
+// pill in the Events panel. Uses ChartLegendChip palette tokens (see
+// chart-legend-chip.tsx). Mapping rationale (KD #50 §9.3 status palette):
+//   term_exam        → very-stale (destructive red — high stakes)
+//   term_break       → stale (amber — time-bounded window)
+//   start_of_term    → fresh (mint — positive milestone)
+//   parents_dialogue → primary (indigo — relational/informational)
+//   subject_week     → chart-3 (themed/programmatic)
+//   school_event     → chart-4 (event tone — same gold/amber as legacy)
+//   pfe              → chart-2 (partnership tone)
+//   ptc              → chart-5 (parent-touchpoint, sky)
+//   other            → neutral
+const EVENT_CATEGORY_LEGEND_COLOR: Record<EventCategory, ChartLegendChipColor> = {
+  term_exam: "very-stale",
+  term_break: "stale",
+  start_of_term: "fresh",
+  parents_dialogue: "primary",
+  subject_week: "chart-3",
+  school_event: "chart-4",
+  pfe: "chart-2",
+  ptc: "chart-5",
+  other: "neutral",
 };
 
 // Tint + descriptive copy per day-type (KD #50). Spec §4.1 recipe: solid
@@ -128,15 +156,17 @@ function formatHumanDate(iso: string): string {
 export function CalendarAdminClient({
   terms,
   termId,
+  audience,
   calendar,
   events,
-  copyHolidaysProps,
+  copyFromPriorAyProps,
 }: {
   terms: TermOption[];
   termId: string;
+  audience: Audience;
   calendar: SchoolCalendarRow[];
   events: CalendarEventRow[];
-  copyHolidaysProps?: CopyHolidaysProps | null;
+  copyFromPriorAyProps?: CopyFromPriorAyProps | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -145,6 +175,7 @@ export function CalendarAdminClient({
 
   const [dateDialogIso, setDateDialogIso] = useState<string | null>(null);
   const [addEventOpen, setAddEventOpen] = useState(false);
+  const [tentativeOnly, setTentativeOnly] = useState(false);
 
   // Multi-select bulk-classify flow. When `multiSelect` is true, clicking a
   // weekday toggles it into `selectedDates` instead of opening the single
@@ -157,12 +188,39 @@ export function CalendarAdminClient({
 
   const selectedTerm = terms.find((t) => t.id === termId) ?? terms[0];
 
-  // Index calendar rows by ISO date for O(1) lookup.
+  // Index calendar rows by ISO date with audience precedence.
+  // - Filter='all': cell shows the 'all' baseline day-type — overrides surface
+  //   via the corner Primary / Secondary badges. The cell click-cycle edits
+  //   the 'all' row (changing the baseline). To edit a primary or secondary
+  //   override, switch the filter tab first.
+  // - Filter='primary'|'secondary': server already filtered to ['all', filter];
+  //   prefer the audience-specific override so a primary HBL row beats the
+  //   'all' school_day on the same date and the cell shows what that level
+  //   actually sees.
+  // Always prefer an audience-specific override over the 'all' baseline so
+  // the cell color reflects the actual day-type the affected level sees
+  // (e.g. a primary HBL override renders the cell as HBL even in the All
+  // view; the corner badges clarify who diverges from the baseline). When
+  // BOTH primary and secondary override the same date, prefer primary for
+  // the day-type color (stable order matching the badge stack); both still
+  // surface as side-by-side badges so the registrar can spot the divergence.
   const byDate = useMemo(() => {
     const map = new Map<string, SchoolCalendarRow>();
-    for (const r of calendar) map.set(r.date, r);
+    const rank = (a: Audience) => (a === "primary" ? 2 : a === "secondary" ? 1 : 0);
+    for (const r of calendar) {
+      const cur = map.get(r.date);
+      if (!cur || rank(r.audience) > rank(cur.audience)) {
+        map.set(r.date, r);
+      }
+    }
     return map;
   }, [calendar]);
+
+  // Visible events filtered by tentative-only toggle.
+  const visibleEvents = useMemo(
+    () => (tentativeOnly ? events.filter((e) => e.tentative) : events),
+    [events, tentativeOnly],
+  );
 
   // Classified dates grouped by day-type, plus an `event` array of event days.
   const daysByType = useMemo(() => {
@@ -173,13 +231,13 @@ export function CalendarAdminClient({
       hbl: [],
       no_class: [],
     };
-    for (const r of calendar) {
+    for (const r of byDate.values()) {
       out[r.dayType]?.push(parseIso(r.date));
     }
 
     // Expand each event's [start..end] into individual days for the dot overlay.
     const eventIsoSet = new Set<string>();
-    for (const e of events) {
+    for (const e of visibleEvents) {
       const d = parseIso(e.startDate);
       const end = parseIso(e.endDate);
       while (d.getTime() <= end.getTime()) {
@@ -188,12 +246,21 @@ export function CalendarAdminClient({
       }
     }
     return { ...out, event: Array.from(eventIsoSet).map(parseIso) };
-  }, [calendar, events]);
+  }, [byDate, visibleEvents]);
 
   // Events overlapping a given ISO date — used by the date-action dialog.
   const eventsOnDate = useMemo(() => {
-    return (iso: string): CalendarEventRow[] => events.filter((e) => iso >= e.startDate && iso <= e.endDate);
-  }, [events]);
+    return (iso: string): CalendarEventRow[] => visibleEvents.filter((e) => iso >= e.startDate && iso <= e.endDate);
+  }, [visibleEvents]);
+
+  // Build a URL with current filters preserved + an override.
+  function buildUrl(overrides: { term_id?: string; audience?: Audience }): string {
+    const params = new URLSearchParams();
+    params.set("term_id", overrides.term_id ?? termId);
+    const aud = overrides.audience ?? audience;
+    if (aud !== "all") params.set("audience", aud);
+    return `${pathname}?${params.toString()}`;
+  }
 
   function switchTerm(next: string) {
     // Clear multi-select selection when crossing terms — the picked dates
@@ -202,7 +269,15 @@ export function CalendarAdminClient({
     setSelectedDates([]);
     setMultiSelect(false);
     startTransition(() => {
-      router.push(`${pathname}?term_id=${encodeURIComponent(next)}`);
+      router.push(buildUrl({ term_id: next }));
+    });
+  }
+
+  function switchAudience(next: Audience) {
+    setSelectedDates([]);
+    setMultiSelect(false);
+    startTransition(() => {
+      router.push(buildUrl({ audience: next }));
     });
   }
 
@@ -225,6 +300,7 @@ export function CalendarAdminClient({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           termId: selectedTerm.id,
+          audience,
           entries: dates.map((d) => ({ date: formatIso(d), dayType, label })),
         }),
       });
@@ -251,6 +327,7 @@ export function CalendarAdminClient({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           termId: selectedTerm.id,
+          audience,
           entries: [{ date: iso, dayType, label }],
         }),
       });
@@ -265,7 +342,36 @@ export function CalendarAdminClient({
     }
   }
 
-  async function createEventOnDate(iso: string, label: string) {
+  async function resetDateToAll(iso: string) {
+    if (!selectedTerm || audience === "all") return;
+    setBusy(true);
+    try {
+      const params = new URLSearchParams({
+        termId: selectedTerm.id,
+        date: iso,
+        audience,
+      });
+      const res = await fetch(`/api/attendance/calendar?${params.toString()}`, {
+        method: "DELETE",
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error ?? "reset failed");
+      toast.success(`Override removed — ${formatHumanDate(iso)} now follows the All baseline.`);
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "reset failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createEventOnDate(
+    iso: string,
+    label: string,
+    category: EventCategory = "other",
+    eventAudience: Audience = audience,
+    tentative = false,
+  ) {
     if (!selectedTerm) return;
     setBusy(true);
     try {
@@ -277,6 +383,9 @@ export function CalendarAdminClient({
           startDate: iso,
           endDate: iso,
           label,
+          category,
+          audience: eventAudience,
+          tentative,
         }),
       });
       const body = await res.json();
@@ -285,6 +394,25 @@ export function CalendarAdminClient({
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "create failed");
       throw e;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmEventDates(eventId: string) {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/attendance/calendar/events", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: eventId, tentative: false }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error ?? "confirm failed");
+      toast.success("Dates confirmed.");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "confirm failed");
     } finally {
       setBusy(false);
     }
@@ -325,21 +453,22 @@ export function CalendarAdminClient({
           </div>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Tabs value={audience} onValueChange={(v) => switchAudience(v as Audience)}>
+            <TabsList variant="default" aria-label="Audience filter">
+              {AUDIENCE_VALUES.map((a) => (
+                <TabsTrigger key={a} value={a}>
+                  {AUDIENCE_LABELS[a]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
           <Tabs value={view} onValueChange={(v) => setView(v as "month" | "term")}>
             <TabsList variant="default">
               <TabsTrigger value="month">Month</TabsTrigger>
               <TabsTrigger value="term">Full term</TabsTrigger>
             </TabsList>
           </Tabs>
-          {copyHolidaysProps && (
-            <CopyHolidaysDialog
-              targetTermId={copyHolidaysProps.targetTermId}
-              targetTermLabel={copyHolidaysProps.targetTermLabel}
-              targetYear={copyHolidaysProps.targetYear}
-              sourceAyCode={copyHolidaysProps.sourceAyCode}
-              sourceHolidays={copyHolidaysProps.sourceHolidays}
-            />
-          )}
+          {copyFromPriorAyProps && <CopyFromPriorAyDialog {...copyFromPriorAyProps} />}
           <Button
             type="button"
             size="sm"
@@ -361,6 +490,38 @@ export function CalendarAdminClient({
           {busy && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
         </div>
       </div>
+
+      {/* Audience scope explainer + tentative-only toggle. Renders inline so
+          the registrar always knows which slice they're editing without
+          context-switching. */}
+      {selectedTerm && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-hairline bg-muted/15 px-4 py-2 text-[12px]">
+          <p className="text-muted-foreground">
+            {audience === "all" && (
+              <>
+                <span className="font-semibold text-foreground">All</span> · viewing every audience. Primary / Secondary
+                overrides show with a corner badge.
+              </>
+            )}
+            {audience === "primary" && (
+              <>
+                <span className="font-semibold text-foreground">Primary</span> · Primary-specific overrides are layered
+                on top of the All baseline; clicking a date here writes to the Primary scope.
+              </>
+            )}
+            {audience === "secondary" && (
+              <>
+                <span className="font-semibold text-foreground">Secondary</span> · Secondary-specific overrides are
+                layered on top of the All baseline; clicking a date here writes to the Secondary scope.
+              </>
+            )}
+          </p>
+          <label className="flex cursor-pointer items-center gap-2 text-muted-foreground">
+            <Checkbox checked={tentativeOnly} onCheckedChange={(v) => setTentativeOnly(Boolean(v))} />
+            <span className="font-mono text-[11px] uppercase tracking-[0.14em]">Tentative only</span>
+          </label>
+        </div>
+      )}
 
       {/* Multi-select selection strip. */}
       {multiSelect && (
@@ -412,8 +573,10 @@ export function CalendarAdminClient({
       {selectedTerm && view === "month" && (
         <MonthView
           term={selectedTerm}
+          audience={audience}
+          calendar={calendar}
           daysByType={daysByType}
-          events={events}
+          events={visibleEvents}
           multiSelect={multiSelect}
           selectedDates={selectedDates}
           onSelectDates={setSelectedDates}
@@ -423,8 +586,10 @@ export function CalendarAdminClient({
       {selectedTerm && view === "term" && (
         <TermStripView
           term={selectedTerm}
+          audience={audience}
+          calendar={calendar}
           daysByType={daysByType}
-          events={events}
+          events={visibleEvents}
           multiSelect={multiSelect}
           selectedDates={selectedDates}
           onSelectDates={setSelectedDates}
@@ -435,8 +600,9 @@ export function CalendarAdminClient({
       {/* Events panel */}
       {selectedTerm && (
         <EventsPanel
-          events={events}
+          events={visibleEvents}
           busy={busy}
+          onConfirmDates={confirmEventDates}
           onDelete={async (id) => {
             setBusy(true);
             try {
@@ -459,7 +625,9 @@ export function CalendarAdminClient({
       <DateActionDialog
         open={dateDialogIso !== null}
         iso={dateDialogIso}
+        audience={audience}
         currentDayType={dateDialogType}
+        currentRowAudience={dateDialogEntry?.audience ?? "all"}
         existingLabel={dateDialogEntry?.label ?? null}
         eventsOnDate={dateDialogIso ? eventsOnDate(dateDialogIso) : []}
         busy={busy}
@@ -468,8 +636,12 @@ export function CalendarAdminClient({
           await upsertDate(iso, dayType, label);
           setDateDialogIso(null);
         }}
-        onAddImportantDate={async (iso, label) => {
-          await createEventOnDate(iso, label);
+        onAddImportantDate={async (iso, label, category, eventAudience, tentative) => {
+          await createEventOnDate(iso, label, category, eventAudience, tentative);
+          setDateDialogIso(null);
+        }}
+        onResetToAll={async (iso) => {
+          await resetDateToAll(iso);
           setDateDialogIso(null);
         }}
       />
@@ -479,6 +651,7 @@ export function CalendarAdminClient({
         termId={selectedTerm?.id ?? ""}
         termStart={selectedTerm?.startDate ?? ""}
         termEnd={selectedTerm?.endDate ?? ""}
+        defaultAudience={audience}
         onClose={() => setAddEventOpen(false)}
         onCreated={() => {
           setAddEventOpen(false);
@@ -489,6 +662,7 @@ export function CalendarAdminClient({
       <BulkDayTypeDialog
         open={bulkDialogOpen}
         selectedDates={selectedDates}
+        audience={audience}
         busy={busy}
         onClose={() => setBulkDialogOpen(false)}
         onSave={bulkUpsert}
@@ -568,23 +742,27 @@ const DAY_TYPE_LEGEND_COLOR: Record<DayType, ChartLegendChipColor> = {
   no_class: "neutral",
 };
 
-// Gradient chip for informational events (calendar_events rows). Matches the
-// "Important date" ChartLegendChip in the legend strip pixel-for-pixel — same
-// font size / tracking / padding / gradient / shadow — so the in-cell event
-// chip and the legend's example chip read as the same affordance. Only
-// addition is w-full + inner truncate so long labels clip cleanly.
-function EventChip({ label }: { label: string }) {
+// Gradient chip for informational events (calendar_events rows). The chip
+// inherits its color from the event's `category` per EVENT_CATEGORY_LEGEND_COLOR
+// (matches the same gradient used by the ChartLegendChip in the Legend strip).
+// Tentative events render with a dashed border + reduced opacity so the
+// registrar can spot un-confirmed dates at a glance.
+function EventChip({ event }: { event: CalendarEventRow }) {
   return (
-    <span
-      className="inline-flex w-full min-w-0 items-center justify-center gap-1 rounded-md border border-transparent bg-gradient-to-b from-chart-4 to-chart-2 px-2 py-0.5 font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.14em] text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)]"
-      title={label}>
-      <span className="truncate">{label}</span>
-    </span>
+    <ChartLegendChip
+      color={EVENT_CATEGORY_LEGEND_COLOR[event.category]}
+      label={event.label}
+      className={["flex w-full justify-center", event.tentative && "opacity-70 [&]:border-dashed [&]:border-white/60"]
+        .filter(Boolean)
+        .join(" ")}
+    />
   );
 }
 
 function MonthView({
   term,
+  audience,
+  calendar,
   daysByType,
   events,
   multiSelect,
@@ -593,6 +771,8 @@ function MonthView({
   onDayClick,
 }: {
   term: TermOption;
+  audience: Audience;
+  calendar: SchoolCalendarRow[];
   daysByType: Record<DayType, Date[]> & { event: Date[] };
   events: CalendarEventRow[];
   multiSelect: boolean;
@@ -626,6 +806,31 @@ function MonthView({
     });
     return m;
   }, [daysByType]);
+
+  // Audience-specific row markers (corner badges on cells). Only meaningful
+  // when the filter is 'all' — otherwise the audience filter has already
+  // narrowed visible rows and the badge would be redundant noise.
+  // A single date can have BOTH a primary and a secondary override; both
+  // surface as separate badges so the registrar can see at a glance which
+  // levels diverge from the 'all' baseline.
+  const audienceBadgeByIso = useMemo(() => {
+    if (audience !== "all") return new Map<string, Audience[]>();
+    const m = new Map<string, Audience[]>();
+    for (const r of calendar) {
+      if (r.audience === "all") continue;
+      const cur = m.get(r.date);
+      if (!cur) {
+        m.set(r.date, [r.audience]);
+      } else if (!cur.includes(r.audience)) {
+        cur.push(r.audience);
+      }
+    }
+    // Stable ordering — primary always renders above secondary.
+    for (const arr of m.values()) {
+      arr.sort((a, b) => (a === "primary" ? -1 : b === "primary" ? 1 : 0));
+    }
+    return m;
+  }, [audience, calendar]);
 
   // Event rows grouped by ISO date. Multi-day events expand into one entry per
   // day they cover, so each cell can render its stack of event labels.
@@ -861,11 +1066,24 @@ function MonthView({
                     {cell.date.getDate()}
                   </span>
 
+                  {/* Audience corner badges — only when filter='all'. Both
+                      primary AND secondary can override the same date; both
+                      render side-by-side. */}
+                  {(audienceBadgeByIso.get(cell.iso)?.length ?? 0) > 0 && (
+                    <div className="absolute right-1.5 top-1.5 flex flex-wrap items-center gap-0.5">
+                      {audienceBadgeByIso.get(cell.iso)!.map((aud) => (
+                        <Badge key={aud} variant={"warning"} title={`${AUDIENCE_LABELS[aud]} override`}>
+                          {AUDIENCE_LABELS[aud]}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Stacked badges. Day-type uses the ChartLegendChip
                       component — the SAME component rendered in the Legend
                       strip above — so the colors match 1:1. Events use a
-                      subdued outline chip so informational entries don't
-                      compete with structural day-type classifications. */}
+                      category-colored gradient chip + dashed border on
+                      tentative entries. */}
                   <div className="flex w-full flex-col gap-0.5">
                     {shortLabel && cell.dayType && (
                       <ChartLegendChip
@@ -875,7 +1093,7 @@ function MonthView({
                       />
                     )}
                     {dayEvents.slice(0, 3).map((evt) => (
-                      <EventChip key={evt.id} label={evt.label} />
+                      <EventChip key={evt.id} event={evt} />
                     ))}
                     {dayEvents.length > 3 && (
                       <span className="px-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">
@@ -956,6 +1174,8 @@ function buildStripWeeks(
 
 function TermStripView({
   term,
+  audience,
+  calendar,
   daysByType,
   events,
   multiSelect,
@@ -964,6 +1184,8 @@ function TermStripView({
   onDayClick,
 }: {
   term: TermOption;
+  audience: Audience;
+  calendar: SchoolCalendarRow[];
   daysByType: Record<DayType, Date[]> & { event: Date[] };
   events: CalendarEventRow[];
   multiSelect: boolean;
@@ -986,6 +1208,24 @@ function TermStripView({
     daysByType.event.forEach((d) => s.add(formatIso(d)));
     return s;
   }, [daysByType]);
+
+  const audienceBadgeByIso = useMemo(() => {
+    if (audience !== "all") return new Map<string, Audience[]>();
+    const m = new Map<string, Audience[]>();
+    for (const r of calendar) {
+      if (r.audience === "all") continue;
+      const cur = m.get(r.date);
+      if (!cur) {
+        m.set(r.date, [r.audience]);
+      } else if (!cur.includes(r.audience)) {
+        cur.push(r.audience);
+      }
+    }
+    for (const arr of m.values()) {
+      arr.sort((a, b) => (a === "primary" ? -1 : b === "primary" ? 1 : 0));
+    }
+    return m;
+  }, [audience, calendar]);
 
   // Labelled events grouped by iso, matching MonthView's pattern.
   const eventsByIso = useMemo(() => {
@@ -1120,6 +1360,22 @@ function TermStripView({
                       {d.date.getDate()}
                     </span>
 
+                    {/* Audience corner badges — same rule as MonthView. Both
+                        primary AND secondary can render side-by-side when
+                        both override the same date. */}
+                    {(audienceBadgeByIso.get(d.iso)?.length ?? 0) > 0 && (
+                      <div className="absolute right-1.5 top-1.5 flex flex-wrap items-center gap-0.5">
+                        {audienceBadgeByIso.get(d.iso)!.map((aud) => (
+                          <span
+                            key={aud}
+                            className="inline-flex items-center rounded-sm bg-primary/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.14em] text-primary"
+                            title={`${AUDIENCE_LABELS[aud]} override`}>
+                            {AUDIENCE_LABELS[aud]}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Stacked badges — identical pattern to MonthView. */}
                     <div className="flex w-full flex-col gap-0.5">
                       {shortLabel && d.dayType && (
@@ -1130,7 +1386,7 @@ function TermStripView({
                         />
                       )}
                       {dayEvents.slice(0, 2).map((evt) => (
-                        <EventChip key={evt.id} label={evt.label} />
+                        <EventChip key={evt.id} event={evt} />
                       ))}
                       {dayEvents.length > 2 && (
                         <span className="px-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">
@@ -1154,28 +1410,42 @@ type InputMode = "view" | "event";
 function DateActionDialog({
   open,
   iso,
+  audience,
   currentDayType,
+  currentRowAudience,
   existingLabel,
   eventsOnDate,
   busy,
   onClose,
   onSaveDayType,
   onAddImportantDate,
+  onResetToAll,
 }: {
   open: boolean;
   iso: string | null;
+  audience: Audience;
   currentDayType: DayType;
+  currentRowAudience: Audience;
   existingLabel: string | null;
   eventsOnDate: CalendarEventRow[];
   busy: boolean;
   onClose: () => void;
   onSaveDayType: (iso: string, dayType: DayType, label: string | null) => Promise<void>;
-  onAddImportantDate: (iso: string, label: string) => Promise<void>;
+  onAddImportantDate: (
+    iso: string,
+    label: string,
+    category: EventCategory,
+    audience: Audience,
+    tentative: boolean,
+  ) => Promise<void>;
+  onResetToAll: (iso: string) => Promise<void>;
 }) {
   const [mode, setMode] = useState<InputMode>("view");
   const [pickedType, setPickedType] = useState<DayType>(currentDayType);
   const [labelInput, setLabelInput] = useState(existingLabel ?? "");
   const [eventLabelInput, setEventLabelInput] = useState("");
+  const [eventCategory, setEventCategory] = useState<EventCategory>("other");
+  const [eventTentative, setEventTentative] = useState(false);
 
   // Reset local state when the dialog opens for a new date.
   const key = `${iso}-${currentDayType}-${existingLabel ?? ""}`;
@@ -1186,12 +1456,18 @@ function DateActionDialog({
     setPickedType(currentDayType);
     setLabelInput(existingLabel ?? "");
     setEventLabelInput("");
+    setEventCategory("other");
+    setEventTentative(false);
   }
   if (!open && initKey !== null) setInitKey(null);
 
   if (!iso) return null;
 
   const dirty = pickedType !== currentDayType || labelInput.trim() !== (existingLabel ?? "").trim();
+  // Show "Reset to All" only when:
+  //  - filter is primary or secondary (we're editing an override-scope row), AND
+  //  - the visible row IS an override (currentRowAudience !== 'all').
+  const canResetToAll = audience !== "all" && currentRowAudience !== "all";
 
   async function saveDayType() {
     if (!iso) return;
@@ -1215,7 +1491,7 @@ function DateActionDialog({
       return;
     }
     try {
-      await onAddImportantDate(iso, label);
+      await onAddImportantDate(iso, label, eventCategory, audience, eventTentative);
     } catch {
       // toast raised by parent
     }
@@ -1238,8 +1514,9 @@ function DateActionDialog({
             {formatHumanDate(iso)}
           </DialogTitle>
           <DialogDescription>
-            Pick a day-type to classify this date. Encodable types (school day, HBL) accept attendance writes; the
-            others reject them and grey the column out on the attendance grid.
+            Pick a day-type to classify this date. School day and HBL let teachers mark attendance; the
+            others (Public holiday, School holiday, No class) block attendance and grey the column out
+            on the attendance sheet.
           </DialogDescription>
         </DialogHeader>
 
@@ -1292,7 +1569,7 @@ function DateActionDialog({
                             </span>
                             {isEncodableDayType(dt) && (
                               <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-primary">
-                                encodable
+                                attendance taken
                               </span>
                             )}
                           </div>
@@ -1331,24 +1608,53 @@ function DateActionDialog({
           )}
 
           {mode === "event" && (
-            <div className="space-y-2">
-              <Label htmlFor="dlgEventLabel">Important date label</Label>
-              <Input
-                id="dlgEventLabel"
-                autoFocus
-                value={eventLabelInput}
-                onChange={(e) => setEventLabelInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    saveImportantDate();
-                  }
-                  if (e.key === "Escape") setMode("view");
-                }}
-                placeholder="e.g. School Photos, Parent-Teacher Conference"
-              />
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="dlgEventLabel">Important date label</Label>
+                <Input
+                  id="dlgEventLabel"
+                  autoFocus
+                  value={eventLabelInput}
+                  onChange={(e) => setEventLabelInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      saveImportantDate();
+                    }
+                    if (e.key === "Escape") setMode("view");
+                  }}
+                  placeholder="e.g. P5 Mock Exam Week 1, School Photos"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="dlgEventCategory">Category</Label>
+                  <Select value={eventCategory} onValueChange={(v) => setEventCategory(v as EventCategory)}>
+                    <SelectTrigger id="dlgEventCategory" className="h-9">
+                      <SelectValue placeholder="Pick a category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EVENT_CATEGORY_VALUES.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {EVENT_CATEGORY_LABELS[c]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Audience</Label>
+                  <p className="flex h-9 items-center rounded-md border border-input bg-muted/30 px-3 font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                    {AUDIENCE_LABELS[audience]}
+                  </p>
+                </div>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 text-[12px] text-muted-foreground">
+                <Checkbox checked={eventTentative} onCheckedChange={(v) => setEventTentative(Boolean(v))} />
+                <span>Tentative — date is provisional, review before locking</span>
+              </label>
               <p className="text-[11px] text-muted-foreground">
-                Overlays a dot on the grid for this date. Does not affect attendance.
+                Overlays a category-colored chip on the grid for this date. Does not affect attendance.
               </p>
             </div>
           )}
@@ -1357,16 +1663,33 @@ function DateActionDialog({
         <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
           {mode === "view" ? (
             <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() => setMode("event")}
-                className="gap-1.5 text-muted-foreground">
-                <CalendarPlus className="size-3.5" />
-                Set as important date
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => setMode("event")}
+                  className="gap-1.5 text-muted-foreground">
+                  <CalendarPlus className="size-3.5" />
+                  Set as important date
+                </Button>
+                {canResetToAll && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={async () => {
+                      if (!iso) return;
+                      await onResetToAll(iso);
+                    }}
+                    className="gap-1.5 text-muted-foreground"
+                    title={`Remove the ${AUDIENCE_LABELS[audience]} override and follow the All baseline.`}>
+                    Reset to All
+                  </Button>
+                )}
+              </div>
               <Button type="button" size="sm" disabled={busy || !dirty} onClick={saveDayType} className="gap-1.5">
                 {busy ? <Loader2 className="size-3.5 animate-spin" /> : <CalendarOff className="size-3.5" />}
                 Save day type
@@ -1394,6 +1717,7 @@ function AddEventDialog({
   termId,
   termStart,
   termEnd,
+  defaultAudience,
   onClose,
   onCreated,
 }: {
@@ -1401,22 +1725,29 @@ function AddEventDialog({
   termId: string;
   termStart: string;
   termEnd: string;
+  defaultAudience: Audience;
   onClose: () => void;
   onCreated: () => void;
 }) {
   const [start, setStart] = useState(termStart);
   const [end, setEnd] = useState(termEnd);
   const [label, setLabel] = useState("");
+  const [category, setCategory] = useState<EventCategory>("school_event");
+  const [eventAudience, setEventAudience] = useState<Audience>(defaultAudience);
+  const [tentative, setTentative] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Reset when the dialog opens for a new term.
-  const key = `${termId}-${termStart}-${termEnd}`;
+  const key = `${termId}-${termStart}-${termEnd}-${defaultAudience}`;
   const [initKey, setInitKey] = useState<string | null>(null);
   if (open && initKey !== key) {
     setInitKey(key);
     setStart(termStart);
     setEnd(termEnd);
     setLabel("");
+    setCategory("school_event");
+    setEventAudience(defaultAudience);
+    setTentative(false);
   }
   if (!open && initKey !== null) setInitKey(null);
 
@@ -1434,11 +1765,19 @@ function AddEventDialog({
       const res = await fetch("/api/attendance/calendar/events", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ termId, startDate: start, endDate: end, label: label.trim() }),
+        body: JSON.stringify({
+          termId,
+          startDate: start,
+          endDate: end,
+          label: label.trim(),
+          category,
+          audience: eventAudience,
+          tentative,
+        }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error ?? "create failed");
-      toast.success("Important date added");
+      toast.success("Event added");
       onCreated();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "create failed");
@@ -1449,14 +1788,13 @@ function AddEventDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle className="font-serif text-[18px] font-semibold tracking-tight">
-            Add an important date
-          </DialogTitle>
+          <DialogTitle className="font-serif text-[18px] font-semibold tracking-tight">Add a date range</DialogTitle>
           <DialogDescription>
-            Overlays a label on matching dates in the month view and the attendance sheet. Does not block attendance —
-            the underlying school days remain encodable.
+            Adds a colored event chip across the matching dates. Doesn&apos;t block attendance — teachers
+            still mark students as usual. Pick a category to color-code (term exams, subject weeks,
+            parents dialogue, etc.).
           </DialogDescription>
         </DialogHeader>
 
@@ -1477,7 +1815,7 @@ function AddEventDialog({
               id="addEventLabel"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Mathematics Week, Assessment Week"
+              placeholder="e.g. P5 Mock Exam Week, Founders' Day, PFE Site Visit"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !saving) {
                   e.preventDefault();
@@ -1486,6 +1824,42 @@ function AddEventDialog({
               }}
             />
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="addEventCategory">Category</Label>
+              <Select value={category} onValueChange={(v) => setCategory(v as EventCategory)}>
+                <SelectTrigger id="addEventCategory" className="h-9">
+                  <SelectValue placeholder="Pick a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {EVENT_CATEGORY_VALUES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {EVENT_CATEGORY_LABELS[c]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="addEventAudience">Audience</Label>
+              <Select value={eventAudience} onValueChange={(v) => setEventAudience(v as Audience)}>
+                <SelectTrigger id="addEventAudience" className="h-9">
+                  <SelectValue placeholder="Pick an audience" />
+                </SelectTrigger>
+                <SelectContent>
+                  {AUDIENCE_VALUES.map((a) => (
+                    <SelectItem key={a} value={a}>
+                      {AUDIENCE_LABELS[a]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <label className="flex cursor-pointer items-center gap-2 text-[12px] text-muted-foreground">
+            <Checkbox checked={tentative} onCheckedChange={(v) => setTentative(Boolean(v))} />
+            <span>Tentative — provisional date pending review (renders dashed in the grid)</span>
+          </label>
         </div>
 
         <DialogFooter>
@@ -1506,49 +1880,80 @@ function EventsPanel({
   events,
   busy,
   onDelete,
+  onConfirmDates,
 }: {
   events: CalendarEventRow[];
   busy: boolean;
   onDelete: (id: string) => Promise<void>;
+  onConfirmDates: (id: string) => Promise<void>;
 }) {
   return (
     <div className="space-y-3">
       <div>
         <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Important dates
+          Events
         </div>
         <p className="text-[12px] text-muted-foreground">
-          Overlay labels on the grid. Does not affect whether a day is encodable.
+          Color-coded event chips (term exams, subject weeks, parents dialogue, etc.). Doesn&apos;t
+          affect whether teachers can mark attendance on the day.
         </p>
       </div>
 
       {events.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-center text-[12px] text-muted-foreground">
-          No important dates yet. Use <strong>Add important date</strong> to label a span like &ldquo;Math Week&rdquo;.
+          No events yet. Use <strong>Add date range</strong> to label a span like &ldquo;Subject Week 2&rdquo; or
+          &ldquo;P5 Mock Exam&rdquo;.
         </div>
       ) : (
         <div className="divide-y divide-border rounded-xl border border-border bg-card">
           {events.map((e) => (
             <div key={e.id} className="flex items-center justify-between gap-4 px-4 py-3">
-              <div className="min-w-0">
-                <div className="font-serif text-[14px] font-semibold text-foreground">
-                  <span className="mr-2 inline-block size-1.5 rounded-full bg-primary align-middle" />
-                  {e.label}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2 font-serif text-[14px] font-semibold text-foreground">
+                  <span>{e.label}</span>
+                  <Badge variant="outline" className="text-[10px]">
+                    {EVENT_CATEGORY_LABELS[e.category]}
+                  </Badge>
+                  {e.audience !== "all" && (
+                    <Badge variant="secondary" className="text-[10px]">
+                      {AUDIENCE_LABELS[e.audience]}
+                    </Badge>
+                  )}
+                  {e.tentative && (
+                    <Badge
+                      variant="outline"
+                      className="border-dashed border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-200">
+                      Tentative
+                    </Badge>
+                  )}
                 </div>
                 <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                  {e.startDate} → {e.endDate}
+                  {e.startDate}
+                  {e.endDate !== e.startDate && ` → ${e.endDate}`}
                 </div>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="destructive"
-                disabled={busy}
-                onClick={() => onDelete(e.id)}
-                className="gap-1">
-                <Trash2 className="size-3.5" />
-                Remove
-              </Button>
+              <div className="flex flex-wrap gap-1.5">
+                {e.tentative && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => onConfirmDates(e.id)}>
+                    Confirm dates
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  disabled={busy}
+                  onClick={() => onDelete(e.id)}
+                  className="gap-1">
+                  <Trash2 className="size-3.5" />
+                  Remove
+                </Button>
+              </div>
             </div>
           ))}
         </div>
@@ -1588,12 +1993,14 @@ function summariseDates(dates: Date[]): string {
 function BulkDayTypeDialog({
   open,
   selectedDates,
+  audience,
   busy,
   onClose,
   onSave,
 }: {
   open: boolean;
   selectedDates: Date[];
+  audience: Audience;
   busy: boolean;
   onClose: () => void;
   onSave: (dates: Date[], dayType: DayType, label: string | null) => Promise<void>;
@@ -1626,8 +2033,9 @@ function BulkDayTypeDialog({
             {selectedDates.length === 1 ? "" : "s"}
           </DialogTitle>
           <DialogDescription>
-            All selected dates get overwritten with the picked day-type. Existing labels on those dates are replaced by
-            the single label below (blank = use the type default).
+            All selected dates get overwritten with the picked day-type for the{" "}
+            <span className="font-medium text-foreground">{AUDIENCE_LABELS[audience]}</span> audience scope. Existing
+            labels on those dates are replaced by the single label below (blank = use the type default).
           </DialogDescription>
         </DialogHeader>
 

@@ -131,9 +131,8 @@ export default function SyncStudentsPage() {
           Sync students from admissions.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Preview changes from the admissions database, then commit. Index numbers are
-          append-only — existing students keep theirs, and new students get the next available
-          index per section.
+          Preview changes from admissions, then save. Existing students keep their index numbers;
+          new students get the next available number for their section.
         </p>
       </header>
 
@@ -302,7 +301,7 @@ export default function SyncStudentsPage() {
                   <TableHeader>
                     <TableRow className="bg-muted/40 hover:bg-muted/40">
                       <TableHead className="w-16">Row</TableHead>
-                      <TableHead>Student #</TableHead>
+                      <TableHead>Student ID</TableHead>
                       <TableHead>Reason</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -314,7 +313,7 @@ export default function SyncStudentsPage() {
                         </TableCell>
                         <TableCell className="font-mono">
                           {e.student_number ?? (
-                            <em className="text-muted-foreground">null</em>
+                            <em className="text-muted-foreground">— missing —</em>
                           )}
                         </TableCell>
                         <TableCell className="text-muted-foreground">{e.reason}</TableCell>

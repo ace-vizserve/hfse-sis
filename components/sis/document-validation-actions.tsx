@@ -149,7 +149,7 @@ export function DocumentValidationActions({ ayCode, enroleeNumber, slotKey, labe
               <div className="space-y-1.5 text-left">
                 <DialogTitle className="font-serif text-lg font-semibold">Reject {label}</DialogTitle>
                 <DialogDescription>
-                  Tell the parent what&apos;s wrong so they can re-upload. Minimum 20 characters. Audit-logged.
+                  Tell the parent what&apos;s wrong so they can re-upload. Minimum 20 characters.
                 </DialogDescription>
               </div>
             </div>

@@ -17,14 +17,19 @@ import {
   ensureTermSeeded,
   getCalendarEventsForTerm,
   getSchoolCalendarForTerm,
-  listHolidaysForPriorTerm,
+  listPriorAyEntriesForCopy,
 } from '@/lib/attendance/calendar';
 import { CalendarAdminClient } from '@/components/attendance/calendar-admin-client';
+import { AUDIENCE_VALUES, type Audience } from '@/lib/schemas/attendance';
+
+function parseAudience(raw: string | undefined): Audience {
+  return AUDIENCE_VALUES.includes(raw as Audience) ? (raw as Audience) : 'all';
+}
 
 export default async function SisCalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ term_id?: string }>;
+  searchParams: Promise<{ term_id?: string; audience?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -38,6 +43,7 @@ export default async function SisCalendarPage({
   }
 
   const sp = await searchParams;
+  const audience = parseAudience(sp.audience);
   const supabase = await createClient();
 
   const { data: ay } = await supabase
@@ -69,11 +75,12 @@ export default async function SisCalendarPage({
   const selectedTerm = terms.find((t) => t.id === defaultTermId) ?? null;
   const selectedTermHasDates =
     !!selectedTerm && !!selectedTerm.start_date && !!selectedTerm.end_date;
-  let calendar = selectedTerm ? await getSchoolCalendarForTerm(selectedTerm.id) : [];
+  let calendar = selectedTerm ? await getSchoolCalendarForTerm(selectedTerm.id, audience) : [];
 
   // Auto-seed: every weekday in the term is a school day by default. The
   // allowlist-model backend needs rows to exist, but the registrar never
-  // sees the seeding step — it happens silently on first visit.
+  // sees the seeding step — it happens silently on first visit. Seeded
+  // rows always land at audience='all'.
   if (selectedTerm && selectedTermHasDates && calendar.length === 0) {
     const inserted = await ensureTermSeeded(
       selectedTerm.id,
@@ -94,17 +101,18 @@ export default async function SisCalendarPage({
           inserted,
         },
       });
-      calendar = await getSchoolCalendarForTerm(selectedTerm.id);
+      calendar = await getSchoolCalendarForTerm(selectedTerm.id, audience);
     }
   }
 
-  const events = selectedTerm ? await getCalendarEventsForTerm(selectedTerm.id) : [];
+  const events = selectedTerm ? await getCalendarEventsForTerm(selectedTerm.id, audience) : [];
 
-  // Prior-AY holidays for the "Carry holidays forward" affordance. Uses the
-  // selected term's term_number to find the same term on the most recent AY.
-  const priorHolidays = ay && selectedTerm
-    ? await listHolidaysForPriorTerm(ay.id, selectedTerm.term_number)
-    : { sourceAy: null, holidays: [] };
+  // Prior-AY entries for the "Copy from prior AY" affordance. Returns both
+  // school_calendar overrides AND calendar_events from the same term on the
+  // most recent prior real AY.
+  const priorEntries = ay && selectedTerm
+    ? await listPriorAyEntriesForCopy(ay.id, selectedTerm.term_number)
+    : { sourceAy: null, holidays: [], events: [] };
   const targetYear = selectedTerm?.start_date
     ? Number(selectedTerm.start_date.slice(0, 4))
     : new Date().getUTCFullYear();
@@ -129,7 +137,8 @@ export default async function SisCalendarPage({
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
           Configure which dates are school days, which are holidays (greyed out, not encodable),
           and overlay informational events. The attendance grid uses this to render only the days
-          students can be marked.
+          students can be marked. Filter by Primary or Secondary to manage level-specific overrides
+          alongside the shared (All) baseline.
         </p>
       </header>
 
@@ -182,16 +191,18 @@ export default async function SisCalendarPage({
                   isCurrent: t.is_current,
                 }))}
               termId={selectedTermHasDates ? defaultTermId : ''}
+              audience={audience}
               calendar={selectedTermHasDates ? calendar : []}
               events={selectedTermHasDates ? events : []}
-              copyHolidaysProps={
-                selectedTerm && selectedTermHasDates && priorHolidays.sourceAy
+              copyFromPriorAyProps={
+                selectedTerm && selectedTermHasDates && priorEntries.sourceAy
                   ? {
                       targetTermId: selectedTerm.id,
                       targetTermLabel: selectedTerm.label,
                       targetYear,
-                      sourceAyCode: priorHolidays.sourceAy.ay_code,
-                      sourceHolidays: priorHolidays.holidays,
+                      sourceAyCode: priorEntries.sourceAy.ay_code,
+                      sourceHolidays: priorEntries.holidays,
+                      sourceEvents: priorEntries.events,
                     }
                   : null
               }

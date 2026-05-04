@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ArrowLeft, CalendarRange, FilePlus2, RefreshCw, Trash2, UserCheck } from 'lucide-react';
 
+import { AyAcceptingApplicationsToggle } from '@/components/sis/ay-accepting-applications-toggle';
 import { AyDeleteDialog } from '@/components/sis/ay-delete-dialog';
 import { NewAyButton } from '@/components/sis/ay-setup-wizard';
 import { AySwitchActiveDialog } from '@/components/sis/ay-switch-active-dialog';
@@ -74,9 +75,7 @@ export default async function AySetupPage() {
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             Create new academic years, switch the active AY, and retire empty ones.
-            Creating an AY inserts the reference rows (terms, sections, subject
-            configs) and provisions the four AY-prefixed admissions tables in a
-            single transaction.
+            Creating an AY sets up its terms, sections, subjects, and admissions data all at once.
           </p>
         </div>
         <NewAyButton preview={preview} />
@@ -139,8 +138,8 @@ export default async function AySetupPage() {
         </p>
         <ol className="ml-4 list-decimal space-y-1">
           <li>
-            <strong>Create the new AY</strong> here — inserts all reference rows + admissions tables
-            in one transaction. The switcher picks it up immediately across every AY-scoped page.
+            <strong>Create the new AY</strong> here — sets up terms, sections, subjects, and admissions
+            data all at once. The new AY shows up in the switcher right away across every page.
             (admin + superadmin)
           </li>
           <li>
@@ -192,11 +191,16 @@ function AyRow({
       </TableCell>
       <TableCell className="text-sm">{ay.label}</TableCell>
       <TableCell>
-        {ay.is_current ? (
-          <Badge>Active</Badge>
-        ) : (
-          <Badge variant="muted">Inactive</Badge>
-        )}
+        <div className="flex flex-col gap-1">
+          {ay.is_current ? (
+            <Badge>Active</Badge>
+          ) : (
+            <Badge variant="muted">Inactive</Badge>
+          )}
+          {ay.accepting_applications && !ay.is_current && (
+            <Badge variant="success" className="w-fit">Early-bird open</Badge>
+          )}
+        </div>
       </TableCell>
       <TableCell className="text-right font-mono text-xs tabular-nums">{ay.counts.terms}</TableCell>
       <TableCell className="text-right font-mono text-xs tabular-nums">{ay.counts.sections}</TableCell>
@@ -241,6 +245,11 @@ function AyRow({
               </Button>
             </GenerateSheetsDialog>
           )}
+          <AyAcceptingApplicationsToggle
+            ayCode={ay.ay_code}
+            current={ay.accepting_applications}
+            isCurrentAy={ay.is_current}
+          />
           {!ay.is_current && (
             <AySwitchActiveDialog targetAyCode={ay.ay_code} currentAyCode={activeAyCode}>
               <Button size="sm" variant="outline">

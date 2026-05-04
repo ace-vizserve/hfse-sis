@@ -45,7 +45,7 @@ export function DailyAttendanceDrillCard({
   rangeFrom,
   rangeTo,
   initialEntries,
-}: CommonProps & { current: DailyPoint[]; comparison: DailyPoint[] }) {
+}: CommonProps & { current: DailyPoint[]; comparison: DailyPoint[] | null }) {
   const [segment, setSegment] = React.useState<string | null>(null);
 
   // We expose a button-style prompt to drill into the latest day, since the

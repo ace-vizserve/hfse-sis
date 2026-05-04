@@ -131,16 +131,18 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
     getClassAssignmentReadiness(selectedAy),
   ]);
 
-  const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
+  const comparisonLabel = kpisResult.comparisonRange
+    ? `vs ${formatRangeLabel(kpisResult.comparisonRange)}`
+    : undefined;
 
   const insights = recordsInsights({
     newEnrollments: kpisResult.current.enrollmentsInRange,
     withdrawals: kpisResult.current.withdrawalsInRange,
-    newEnrollmentsPrior: kpisResult.comparison.enrollmentsInRange,
-    withdrawalsPrior: kpisResult.comparison.withdrawalsInRange,
+    newEnrollmentsPrior: kpisResult.comparison?.enrollmentsInRange,
+    withdrawalsPrior: kpisResult.comparison?.withdrawalsInRange,
     activeEnrolled: kpisResult.current.activeEnrolled,
     expiringSoon: kpisResult.current.expiringSoon,
-    enrollmentDelta: kpisResult.delta,
+    enrollmentDelta: kpisResult.delta ?? undefined,
   });
 
   // Expiring-doc action list: top N students whose docs expire soonest.
@@ -172,7 +174,11 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
         ayCode={selectedAy}
         ayCodes={ayCodes}
         range={{ from: rangeInput.from, to: rangeInput.to }}
-        comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+        comparison={
+          rangeInput.cmpFrom && rangeInput.cmpTo
+            ? { from: rangeInput.cmpFrom, to: rangeInput.cmpTo }
+            : null
+        }
         termWindows={windows.term}
         ayWindows={windows.ay}
       />
@@ -191,10 +197,17 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
           value={kpisResult.current.enrollmentsInRange}
           icon={UserPlus}
           intent="default"
-          delta={kpisResult.delta}
+          delta={kpisResult.delta ?? undefined}
           deltaGoodWhen="up"
           comparisonLabel={comparisonLabel}
           sparkline={enrolVelocity.current.slice(-14)}
+          subtext={
+            kpisResult.current.lateEnroleesInRange > 0
+              ? `${kpisResult.current.lateEnroleesInRange} late enrollee${
+                  kpisResult.current.lateEnroleesInRange === 1 ? "" : "s"
+                } (KD #68)`
+              : undefined
+          }
           drillSheet={
             <RecordsDrillSheet
               target="enrollments-range"
@@ -211,7 +224,11 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
           icon={UserMinus}
           intent={kpisResult.current.withdrawalsInRange > 0 ? "warning" : "good"}
           deltaGoodWhen="down"
-          subtext={`${kpisResult.comparison.withdrawalsInRange} prior`}
+          subtext={
+            kpisResult.comparison
+              ? `${kpisResult.comparison.withdrawalsInRange} prior`
+              : undefined
+          }
           drillSheet={
             <RecordsDrillSheet
               target="withdrawals-range"
@@ -337,7 +354,7 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
           href="/records/audit-log"
           icon={History}
           title="Audit Log"
-          description="Append-only record of every edit on enrolled students."
+          description="A history of every change to enrolled student records."
         />
       </section>
 
@@ -387,9 +404,7 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
         <span className="text-border">·</span>
         <span>Enrolled only</span>
         <span className="text-border">·</span>
-        <span>Cache 10m</span>
-        <span className="text-border">·</span>
-        <span>Audit-logged</span>
+        <span>Refreshes every 10 minutes</span>
       </div>
     </PageShell>
   );

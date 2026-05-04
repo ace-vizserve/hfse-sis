@@ -37,7 +37,7 @@ export async function listAyCodes(client: SupabaseClient): Promise<string[]> {
 export type CurrentAcademicYear = {
   id: string;
   ay_code: string; // e.g. "AY2026"
-  label: string; // e.g. "Academic Year 2025-2026"
+  label: string; // e.g. "Academic Year 2026" — single calendar year, Jan–Nov per HFSE rhythm
 };
 
 // Request-scoped cache wrapper. `academic_years` is a public reference table
@@ -80,4 +80,42 @@ export async function requireCurrentAyCode(_client?: SupabaseClient): Promise<st
     );
   }
   return ay.ay_code;
+}
+
+// Upcoming-AY lookup (KD #77). Returns the AY where
+// `accepting_applications=true AND is_current=false`. There should be at
+// most one such row in normal operation; if multiple exist the
+// lexicographically-largest ay_code wins (next-most-recent year), which
+// matches what the registrar would intuitively call "the upcoming AY."
+//
+// Returns null when there's no upcoming AY (the typical state — early-bird
+// happens for a few months a year). The Admissions sidebar's "Upcoming AY
+// applications" entry hides when this returns null.
+export type UpcomingAcademicYear = {
+  id: string;
+  ay_code: string;
+  label: string;
+};
+
+const upcomingAcademicYearCached = cache(async (): Promise<UpcomingAcademicYear | null> => {
+  const client = await createServerClient();
+  const { data, error } = await client
+    .from("academic_years")
+    .select("id, ay_code, label")
+    .eq("accepting_applications", true)
+    .eq("is_current", false)
+    .order("ay_code", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error("[academic-year] upcoming lookup failed:", error.message);
+    return null;
+  }
+  return (data as UpcomingAcademicYear | null) ?? null;
+});
+
+export async function getUpcomingAcademicYear(
+  _client?: SupabaseClient,
+): Promise<UpcomingAcademicYear | null> {
+  return upcomingAcademicYearCached();
 }

@@ -167,9 +167,9 @@ export function BulkPublishDialog({
         <DialogHeader>
           <DialogTitle>Bulk publish report cards</DialogTitle>
           <DialogDescription>
-            Applies one publish window to every selected section for the chosen term.
-            Existing windows on (section × term) are overwritten — upsert. Parent emails
-            fire on first publish per row.
+            Applies one publish window to every selected section for the chosen term. Existing
+            windows for the same section + term are replaced. Parents are emailed only the
+            first time their child&apos;s report card is published for the term.
           </DialogDescription>
         </DialogHeader>
 

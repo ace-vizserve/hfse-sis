@@ -33,7 +33,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageShell } from "@/components/ui/page-shell";
-import { getCurrentAcademicYear, listAyCodes as listAcademicAyCodes } from "@/lib/academic-year";
+import {
+  getCurrentAcademicYear,
+  getUpcomingAcademicYear,
+  listAyCodes as listAcademicAyCodes,
+} from "@/lib/academic-year";
+import { listStudents } from "@/lib/sis/queries";
+import { UpcomingAyCard } from "@/components/admissions/upcoming-ay-card";
 import {
   getAdmissionsCompletenessForChase,
   getAdmissionsKpisRange,
@@ -188,7 +194,11 @@ export default async function AdmissionsDashboard({
           ayCode={selectedAy}
           ayCodes={ayCodes}
           range={{ from: rangeInput.from, to: rangeInput.to }}
-          comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+          comparison={
+            rangeInput.cmpFrom && rangeInput.cmpTo
+              ? { from: rangeInput.cmpFrom, to: rangeInput.cmpTo }
+              : null
+          }
           termWindows={windows.term}
           ayWindows={windows.ay}
         />
@@ -219,8 +229,6 @@ export default async function AdmissionsDashboard({
           </span>
           <span className="text-border">·</span>
           <span>Filter: {focusedStatus}</span>
-          <span className="text-border">·</span>
-          <span>Audit-logged</span>
         </div>
       </PageShell>
     );
@@ -274,6 +282,35 @@ export default async function AdmissionsDashboard({
     getAdmissionsPriority({ ayCode: selectedAy }),
   ]);
 
+  // KD #77 — surface early-bird volume on the current-AY view so registrars
+  // notice activity without manually flipping the AY switcher. Only fetched
+  // when the user is on the current AY (no point showing it when they're
+  // already viewing a historical or upcoming AY).
+  const upcomingAy = isCurrentAy ? await getUpcomingAcademicYear() : null;
+  let upcomingAyCardData: {
+    ayCode: string;
+    ayLabel: string;
+    applicationCount: number;
+    byStage: { submitted: number; ongoingVerification: number; processing: number };
+  } | null = null;
+  if (upcomingAy) {
+    const ACTIVE_STAGES = new Set(["Submitted", "Ongoing Verification", "Processing"]);
+    const upcomingStudents = await listStudents(upcomingAy.ay_code, "created_at_desc");
+    const inFlight = upcomingStudents.filter((s) =>
+      ACTIVE_STAGES.has((s.applicationStatus ?? "").trim()),
+    );
+    upcomingAyCardData = {
+      ayCode: upcomingAy.ay_code,
+      ayLabel: upcomingAy.label,
+      applicationCount: inFlight.length,
+      byStage: {
+        submitted: inFlight.filter((s) => s.applicationStatus === "Submitted").length,
+        ongoingVerification: inFlight.filter((s) => s.applicationStatus === "Ongoing Verification").length,
+        processing: inFlight.filter((s) => s.applicationStatus === "Processing").length,
+      },
+    };
+  }
+
   const chaseInsights = admissionsChaseInsights({
     chaseToFollow: chaseSummary.withToFollow,
     chaseRejected: chaseSummary.withRejected,
@@ -282,7 +319,9 @@ export default async function AdmissionsDashboard({
     totalApplicants: chaseSummary.totalApplicants,
   });
 
-  const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
+  const comparisonLabel = kpisResult.comparisonRange
+    ? `vs ${formatRangeLabel(kpisResult.comparisonRange)}`
+    : undefined;
 
   // Build insights from already-fetched data — pure derivation, no extra DB calls.
   const topRef = referral[0];
@@ -295,10 +334,10 @@ export default async function AdmissionsDashboard({
     applications: kpisResult.current.applicationsInRange,
     enrolled: kpisResult.current.enrolledInRange,
     conversionPct: kpisResult.current.conversionPct,
-    conversionPctPrior: kpisResult.comparison.conversionPct,
+    conversionPctPrior: kpisResult.comparison?.conversionPct,
     avgDaysToEnroll: kpisResult.current.avgDaysToEnroll,
-    avgDaysToEnrollPrior: kpisResult.comparison.avgDaysToEnroll,
-    appsDelta: kpisResult.delta,
+    avgDaysToEnrollPrior: kpisResult.comparison?.avgDaysToEnroll,
+    appsDelta: kpisResult.delta ?? undefined,
     outdatedCount: outdated.length,
     topReferral: topRef ? { source: topRef.source, count: topRef.count, totalCount: totalRef } : undefined,
     funnelDropOff: biggestDrop ? { stage: biggestDrop.stage, dropOffPct: biggestDrop.dropOffPct } : undefined,
@@ -308,7 +347,7 @@ export default async function AdmissionsDashboard({
   const actionItems: ActionItem[] = outdated.slice(0, 6).map((row) => ({
     label: row.fullName,
     sublabel: `${row.status} · ${row.levelApplied ?? "—"}`,
-    meta: row.daysSinceUpdate === null ? "Never updated" : `${row.daysSinceUpdate}d stale`,
+    meta: row.daysSinceUpdate === null ? "Never updated" : `${row.daysSinceUpdate}d without update`,
     severity: row.daysSinceUpdate === null || row.daysSinceUpdate >= 30 ? "bad" : "warn",
     href: `/admissions/applications/${row.enroleeNumber}`,
   }));
@@ -333,10 +372,19 @@ export default async function AdmissionsDashboard({
         ayCode={selectedAy}
         ayCodes={ayCodes}
         range={{ from: rangeInput.from, to: rangeInput.to }}
-        comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+        comparison={
+          rangeInput.cmpFrom && rangeInput.cmpTo
+            ? { from: rangeInput.cmpFrom, to: rangeInput.cmpTo }
+            : null
+        }
         termWindows={windows.term}
         ayWindows={windows.ay}
       />
+
+      {/* KD #77 — early-bird signal. Renders only when an upcoming AY is
+          accepting applications AND the user is viewing the current AY
+          (the card is a forward-looking signal, not a historical lens). */}
+      {upcomingAyCardData && <UpcomingAyCard {...upcomingAyCardData} />}
 
       {/* Operational top-of-fold — new applications waiting on triage. Only
           rendered for admissions/registrar; oversight roles skip this
@@ -363,7 +411,7 @@ export default async function AdmissionsDashboard({
           value={kpisResult.current.applicationsInRange}
           icon={FileStack}
           intent="default"
-          delta={kpisResult.delta}
+          delta={kpisResult.delta ?? undefined}
           deltaGoodWhen="up"
           comparisonLabel={comparisonLabel}
           sparkline={velocity.current.slice(-14)}
@@ -383,7 +431,11 @@ export default async function AdmissionsDashboard({
           value={kpisResult.current.enrolledInRange}
           icon={UserPlus}
           intent="good"
-          subtext={`${kpisResult.comparison.enrolledInRange} prior`}
+          subtext={
+            kpisResult.comparison
+              ? `${kpisResult.comparison.enrolledInRange} prior`
+              : undefined
+          }
           drillSheet={
             <AdmissionsDrillSheet
               target="enrolled"
@@ -401,7 +453,11 @@ export default async function AdmissionsDashboard({
           format="percent"
           icon={TrendingUp}
           intent="default"
-          subtext={`${kpisResult.comparison.conversionPct.toFixed(1)}% prior`}
+          subtext={
+            kpisResult.comparison
+              ? `${kpisResult.comparison.conversionPct.toFixed(1)}% prior`
+              : undefined
+          }
           drillSheet={
             <AdmissionsDrillSheet
               target="conversion"
@@ -419,7 +475,11 @@ export default async function AdmissionsDashboard({
           format="days"
           icon={Hourglass}
           intent="default"
-          subtext={`n=${kpisResult.current.sampleSize} · ${kpisResult.comparison.avgDaysToEnroll}d prior`}
+          subtext={
+            kpisResult.comparison
+              ? `n=${kpisResult.current.sampleSize} · ${kpisResult.comparison.avgDaysToEnroll}d prior`
+              : `n=${kpisResult.current.sampleSize}`
+          }
           deltaGoodWhen="down"
           drillSheet={
             <AdmissionsDrillSheet
@@ -572,7 +632,7 @@ export default async function AdmissionsDashboard({
         <span className="text-border">·</span>
         <span>Pre-enrolment only</span>
         <span className="text-border">·</span>
-        <span>Cache 10m</span>
+        <span>Refreshes every 10 minutes</span>
       </div>
     </PageShell>
   );

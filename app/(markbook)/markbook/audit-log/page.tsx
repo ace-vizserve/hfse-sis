@@ -166,9 +166,9 @@ export default async function AuditLogPage({
             Audit log.
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Every mutating action — sheet creation, lock/unlock, score edits (pre- and post-lock),
-            totals, student sync, assignments, attendance, comments, report card publications.
-            Append-only.
+            A history of every change — sheet creation, lock and unlock, score edits (before and after
+            lock), totals, student sync, assignments, attendance, comments, and report card publications.
+            Past entries are kept on the record.
           </p>
         </div>
       </header>

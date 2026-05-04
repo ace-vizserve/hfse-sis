@@ -1,4 +1,4 @@
-import { ArrowUpRight, CheckCircle2, ClipboardCheck, Clock, NotebookPen, SquarePen, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CheckCircle2, ClipboardCheck, Clock, NotebookPen, SquarePen, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -14,6 +14,7 @@ import {
 } from "@/components/evaluation/drills/chart-drill-cards";
 import { EvaluationDrillSheet } from "@/components/evaluation/drills/evaluation-drill-sheet";
 import { TermOpenToggle } from "@/components/evaluation/term-open-toggle";
+import { Alert, AlertDescription, AlertIcon, AlertTitle } from "@/components/ui/alert";
 import {
   Card,
   CardAction,
@@ -100,9 +101,9 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
         buildAllRowSets({ ayCode, scope: "range", from: rangeInput.from, to: rangeInput.to }),
       ])
     : [null, null, null];
-  const comparisonLabel = rangeInput
-    ? `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`
-    : "";
+  const comparisonLabel = kpisResult?.comparisonRange
+    ? `vs ${formatRangeLabel(kpisResult.comparisonRange)}`
+    : undefined;
 
   // Role-aware PriorityPanel payload — teacher gets pending writeups across
   // their advisory sections; registrar gets pending writeups school-wide.
@@ -120,10 +121,16 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
         submitted: kpisResult.current.submitted,
         expected: kpisResult.current.expected,
         medianTimeToSubmitDays: kpisResult.current.medianTimeToSubmitDays,
-        medianTimeToSubmitDaysPrior: kpisResult.comparison.medianTimeToSubmitDays,
+        medianTimeToSubmitDaysPrior: kpisResult.comparison?.medianTimeToSubmitDays,
         lateSubmissions: kpisResult.current.lateSubmissions,
       })
     : [];
+
+  // Soft-warn when any T1–T3 term in the current AY lacks a virtue theme.
+  // Per KD #28, NULL virtue locks teacher textareas; registrars can still
+  // write but face the same content gap on the report card. Surface the gap
+  // on the hub so neither role discovers it on a closed dialog.
+  const termsMissingVirtue = terms.filter((t) => !t.virtue_theme);
 
   return (
     <PageShell>
@@ -134,6 +141,26 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
         badges={ayCode ? [{ label: ayCode }] : []}
       />
 
+      {termsMissingVirtue.length > 0 && (
+        <Alert variant="warning">
+          <AlertIcon>
+            <AlertTriangle className="size-4" />
+          </AlertIcon>
+          <AlertTitle>Virtue theme not set for {termsMissingVirtue.length} term{termsMissingVirtue.length === 1 ? "" : "s"}</AlertTitle>
+          <AlertDescription>
+            {termsMissingVirtue.map((t) => t.label).join(" · ")} — write-up textareas stay locked for teachers until a
+            virtue theme is configured.{" "}
+            {canToggle ? (
+              <Link href="/sis/ay-setup" className="font-medium underline underline-offset-2">
+                Set virtue themes in AY Setup →
+              </Link>
+            ) : (
+              <span>Ask the registrar to set the virtue theme in AY Setup.</span>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {teacherPriority && <PriorityPanel payload={teacherPriority} />}
       {registrarPriority && <PriorityPanel payload={registrarPriority} />}
 
@@ -143,7 +170,11 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
             ayCode={ayCode}
             ayCodes={[ayCode]}
             range={{ from: rangeInput.from, to: rangeInput.to }}
-            comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+            comparison={
+              rangeInput.cmpFrom && rangeInput.cmpTo
+                ? { from: rangeInput.cmpFrom, to: rangeInput.cmpTo }
+                : null
+            }
             termWindows={windows.term}
             ayWindows={windows.ay}
             showAySwitcher={false}
@@ -158,7 +189,7 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
               format="percent"
               icon={TrendingUp}
               intent={kpisResult.current.submissionPct >= 80 ? "good" : "warning"}
-              delta={kpisResult.delta}
+              delta={kpisResult.delta ?? undefined}
               deltaGoodWhen="up"
               comparisonLabel={comparisonLabel}
               sparkline={velocity.current.slice(-14)}
@@ -198,9 +229,11 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
               intent="default"
               deltaGoodWhen="down"
               subtext={
-                kpisResult.comparison.medianTimeToSubmitDays != null
+                kpisResult.comparison?.medianTimeToSubmitDays != null
                   ? `${kpisResult.comparison.medianTimeToSubmitDays}d prior`
-                  : "No prior data"
+                  : kpisResult.comparison
+                    ? "No prior data"
+                    : undefined
               }
               drillSheet={
                 <EvaluationDrillSheet
@@ -219,7 +252,11 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
               icon={Clock}
               intent={kpisResult.current.lateSubmissions > 0 ? "warning" : "good"}
               deltaGoodWhen="down"
-              subtext={`${kpisResult.comparison.lateSubmissions} prior`}
+              subtext={
+                kpisResult.comparison
+                  ? `${kpisResult.comparison.lateSubmissions} prior`
+                  : undefined
+              }
               drillSheet={
                 <EvaluationDrillSheet
                   target="late"

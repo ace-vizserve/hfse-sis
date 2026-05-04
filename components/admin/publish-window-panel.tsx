@@ -524,8 +524,8 @@ export function PublishWindowPanel({
               Publishing checklist
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Some items need attention before publishing to parents. You can still proceed — these
-              are warnings, not blockers. Use the quick-links to jump into each module and fix
+              Some items need attention before publishing to parents. You can still publish — these
+              are warnings, not hard stops. Use the quick-links to jump into each module and fix
               issues, then re-publish.
             </AlertDialogDescription>
           </AlertDialogHeader>

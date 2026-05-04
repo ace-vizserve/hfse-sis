@@ -40,8 +40,11 @@ export function ApplicationsByLevelCard({
 
   // Zip the comparison series into the current series by matching level so
   // the bar chart can render side-by-side current vs. prior bars per level.
+  // When the user hasn't opted into a comparison, `data.comparison` is null
+  // and the chart drops the secondary bar.
   const comparisonByLevel = React.useMemo(() => {
     const map = new Map<string, number>();
+    if (!data.comparison) return map;
     for (const r of data.comparison) map.set(r.level, r.count);
     return map;
   }, [data.comparison]);
@@ -51,9 +54,11 @@ export function ApplicationsByLevelCard({
       data.current.map((row: ApplicationsByLevelRow) => ({
         category: row.level,
         current: row.count,
-        comparison: comparisonByLevel.get(row.level) ?? 0,
+        ...(data.comparison
+          ? { comparison: comparisonByLevel.get(row.level) ?? 0 }
+          : {}),
       })),
-    [data.current, comparisonByLevel],
+    [data.current, data.comparison, comparisonByLevel],
   );
 
   const empty = data.current.length === 0;

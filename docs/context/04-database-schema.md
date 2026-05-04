@@ -30,8 +30,8 @@ CREATE TABLE students (
 ```sql
 CREATE TABLE academic_years (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  ay_code TEXT UNIQUE NOT NULL,              -- e.g., "AY2026" (covers 2025-2026)
-  label TEXT NOT NULL,                       -- e.g., "Academic Year 2025-2026"
+  ay_code TEXT UNIQUE NOT NULL,              -- e.g., "AY2026" — single calendar year (Jan–Nov)
+  label TEXT NOT NULL,                       -- e.g., "Academic Year 2026"
   is_current BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT now()
 );

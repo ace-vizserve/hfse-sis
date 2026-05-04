@@ -417,9 +417,7 @@ export default async function RecordsStudentCrossYearPage({
         <GraduationCap className="size-3" strokeWidth={2.25} />
         <span>Permanent record</span>
         <span className="text-border">·</span>
-        <span>studentNumber {student.studentNumber}</span>
-        <span className="text-border">·</span>
-        <span>Append-only</span>
+        <span>Student ID {student.studentNumber}</span>
       </div>
     </PageShell>
   );

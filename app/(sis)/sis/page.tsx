@@ -93,15 +93,16 @@ export default async function SisAdminHub({
           }),
         ])
       : [null, []];
-  const comparisonLabel = rangeInput
-    ? `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`
-    : "";
+  const comparisonLabel = auditResult?.comparisonRange
+    ? `vs ${formatRangeLabel(auditResult.comparisonRange)}`
+    : undefined;
 
   // Precompute derived values so JSX stays pure (no in-place .sort() mutating
   // the same array multiple times — that was misaligning the comparison chart
   // and triggering React 19's profiler "negative timestamp" warning).
   const currentTotal = auditResult?.current.reduce((s, p) => s + p.count, 0) ?? 0;
-  const comparisonTotal = auditResult?.comparison.reduce((s, p) => s + p.count, 0) ?? 0;
+  const comparisonTotal =
+    auditResult?.comparison?.reduce((s, p) => s + p.count, 0) ?? 0;
   const activeModules = auditResult?.current.filter((p) => p.count > 0).length ?? 0;
   const trackedModules = auditResult?.current.length ?? 0;
   const ranked = auditResult ? [...auditResult.current].sort((a, b) => b.count - a.count) : [];
@@ -111,15 +112,17 @@ export default async function SisAdminHub({
     ? auditResult.current.map((row, i) => ({
         category: row.module,
         current: row.count,
-        comparison: auditResult.comparison[i]?.count ?? 0,
+        ...(auditResult.comparison
+          ? { comparison: auditResult.comparison[i]?.count ?? 0 }
+          : {}),
       }))
     : [];
 
   const insights = auditResult
     ? sisInsights({
         auditEventsCurrent: currentTotal,
-        auditEventsComparison: comparisonTotal,
-        auditDelta: auditResult.delta,
+        auditEventsComparison: auditResult.comparison ? comparisonTotal : undefined,
+        auditDelta: auditResult.delta ?? undefined,
         topModule: ranked[0],
         activeModules,
         trackedModules,
@@ -188,7 +191,7 @@ export default async function SisAdminHub({
                 icon={CalendarCog}
                 eyebrow="Structural"
                 title="AY Setup"
-                description="Create a new academic year, switch the active AY, or retire an empty one. Creates the 4 AY-prefixed admissions tables + SIS reference rows in a single transaction."
+                description="Create a new academic year, switch the active AY, or retire an empty one. Sets up everything the new year needs (terms, sections, subjects, admissions data) all at once."
                 cta="Open AY Setup"
                 role={role}
                 allowedRoles={["school_admin", "admin", "superadmin"]}
@@ -335,7 +338,11 @@ export default async function SisAdminHub({
                 ayCode={ayCode}
                 ayCodes={ayCodes}
                 range={{ from: rangeInput.from, to: rangeInput.to }}
-                comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+                comparison={
+                  rangeInput.cmpFrom && rangeInput.cmpTo
+                    ? { from: rangeInput.cmpFrom, to: rangeInput.cmpTo }
+                    : null
+                }
                 termWindows={windows.term}
                 ayWindows={windows.ay}
                 showAySwitcher={false}
@@ -343,23 +350,27 @@ export default async function SisAdminHub({
 
               {insights.length > 0 && <InsightsPanel insights={insights} />}
 
-              <section className="grid gap-4 xl:grid-cols-4">
+              <section
+                className={`grid gap-4 ${auditResult.comparison ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}
+              >
                 <MetricCard
                   label="Audit events"
                   value={currentTotal}
                   icon={Activity}
                   intent="default"
-                  delta={auditResult.delta}
+                  delta={auditResult.delta ?? undefined}
                   deltaGoodWhen="up"
                   comparisonLabel={comparisonLabel}
                 />
-                <MetricCard
-                  label="Prior period total"
-                  value={comparisonTotal}
-                  icon={Activity}
-                  intent="default"
-                  subtext="For comparison"
-                />
+                {auditResult.comparison && (
+                  <MetricCard
+                    label="Prior period total"
+                    value={comparisonTotal}
+                    icon={Activity}
+                    intent="default"
+                    subtext="For comparison"
+                  />
+                )}
                 <MetricCard
                   label="Active modules"
                   value={activeModules}
@@ -405,11 +416,9 @@ export default async function SisAdminHub({
         <Activity className="size-3" strokeWidth={2.25} />
         <span>{ayCode || "—"}</span>
         <span className="text-border">·</span>
-        <span>{currentTotal.toLocaleString("en-SG")} audit events</span>
+        <span>{currentTotal.toLocaleString("en-SG")} activity events</span>
         <span className="text-border">·</span>
-        <span>Cache 2m</span>
-        <span className="text-border">·</span>
-        <span>Audit-logged</span>
+        <span>Refreshes every 2 minutes</span>
       </div>
     </PageShell>
   );

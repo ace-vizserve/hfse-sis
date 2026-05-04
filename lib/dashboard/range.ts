@@ -51,9 +51,13 @@ export type RangeInput = {
   /** yyyy-MM-dd */
   from: string;
   to: string;
-  /** Server always supplies — auto-computed if URL didn't. */
-  cmpFrom: string;
-  cmpTo: string;
+  /**
+   * Comparison range. Both null when the user hasn't opted into a
+   * comparison — dashboards default to "current state only" and the user
+   * adds a comparison explicitly via the date-range picker.
+   */
+  cmpFrom: string | null;
+  cmpTo: string | null;
 };
 
 export type Delta = {
@@ -65,10 +69,13 @@ export type Delta = {
 
 export type RangeResult<T> = {
   current: T;
-  comparison: T;
-  delta: Delta;
+  /** Null when the user hasn't opted into a comparison. */
+  comparison: T | null;
+  /** Null when there's no comparison to compare against. */
+  delta: Delta | null;
   range: DateRange;
-  comparisonRange: DateRange;
+  /** Null when no comparison is set. */
+  comparisonRange: DateRange | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -110,7 +117,12 @@ export function isValidRange(range: Partial<DateRange> | null | undefined): rang
 }
 
 // ---------------------------------------------------------------------------
-// Comparison period — back-to-back prior period of equal length.
+// Comparison period — back-to-back prior period of equal length. Pure
+// calendar math; suitable for rolling windows (last7d / last30d / last90d).
+// For AY-aware comparisons, prefer `autoComparisonAcademic` which year-shifts
+// so the comparison lands on the equivalent slice of the prior AY (HFSE AY
+// runs Jan–Nov per KD #13; sliding 91 days back from T1 lands on December
+// break — academically meaningless).
 
 export function autoComparison(range: DateRange): DateRange | null {
   const from = parseLocalDate(range.from);
@@ -120,6 +132,51 @@ export function autoComparison(range: DateRange): DateRange | null {
   const cmpTo = addDays(from, -1);
   const cmpFrom = addDays(cmpTo, -(length - 1));
   return { from: toISODate(cmpFrom), to: toISODate(cmpTo) };
+}
+
+/**
+ * Shift a range back by exactly N years, preserving month + day. Used as
+ * the academic-aware comparison default — same dates last AY = same point
+ * in the school cycle.
+ *
+ * Feb 29 in a leap year clamps to Feb 28 when the target year isn't a leap
+ * year (matches `lib/attendance/calendar.ts::shiftYearPreserveMonthDay`).
+ */
+export function shiftRangeByYears(range: DateRange, yearDelta: number): DateRange | null {
+  const from = parseLocalDate(range.from);
+  const to = parseLocalDate(range.to);
+  if (!from || !to) return null;
+  const shift = (d: Date): Date => {
+    const next = new Date(d.getFullYear() + yearDelta, d.getMonth(), d.getDate());
+    // If JS rolled Feb 29 forward to Mar 1 in a non-leap year, clamp back.
+    if (d.getMonth() === 1 && d.getDate() === 29 && next.getMonth() !== 1) {
+      return new Date(d.getFullYear() + yearDelta, 1, 28);
+    }
+    return next;
+  };
+  return { from: toISODate(shift(from)), to: toISODate(shift(to)) };
+}
+
+/**
+ * Academic-aware comparison auto-compute. Defaults to year-shift (same
+ * range, prior AY) so dashboards compare term-on-term and AY-on-AY across
+ * the HFSE Jan–Nov cycle. Falls back to back-to-back only for the rolling-
+ * window presets (last7d / last30d / last90d) where the user explicitly
+ * wants "the previous N days."
+ *
+ * Pass `windows` so the helper can detect which preset the range matches;
+ * use `autoComparison(range)` for the back-to-back math.
+ */
+export function autoComparisonAcademic(
+  range: DateRange,
+  windows: { term: TermWindows; ay: AYWindows },
+  today?: Date,
+): DateRange | null {
+  const preset = detectPreset(range, windows, today);
+  if (preset === 'last7d' || preset === 'last30d' || preset === 'last90d') {
+    return autoComparison(range);
+  }
+  return shiftRangeByYears(range, -1) ?? autoComparison(range);
 }
 
 // ---------------------------------------------------------------------------
@@ -228,10 +285,22 @@ function pickString(v: string | string[] | undefined): string | undefined {
   return v;
 }
 
+/** Two ranges overlap if neither ends before the other begins. */
+function rangesOverlap(a: DateRange, b: DateRange): boolean {
+  return a.from <= b.to && b.from <= a.to;
+}
+
 /**
  * Parse URL search params → `RangeInput`. The server auto-computes the
  * comparison period when the URL doesn't supply one. Malformed `from`/`to`
- * fall back to the default (this term → last 30d).
+ * fall back to the default (this term → this AY → last 30d).
+ *
+ * Stale-AY guard: if the URL's `from`/`to` parse cleanly but fall entirely
+ * outside the resolved AY's calendar window (e.g., user picked AY2027 from
+ * the AY-switcher while the URL still carried `?from=2025-04-01&to=2025-06-30`
+ * from the previous AY's view), the stale dates are discarded and the
+ * fallback cascade kicks in. The matching `cmpFrom`/`cmpTo` are also
+ * dropped so `autoComparisonAcademic` recomputes against the new range.
  */
 export function resolveRange(
   params: DashboardSearchParams,
@@ -243,24 +312,45 @@ export function resolveRange(
 
   const rawFrom = pickString(params.from);
   const rawTo = pickString(params.to);
-  const current: DateRange | null = isValidRange({ from: rawFrom ?? '', to: rawTo ?? '' })
+  const explicitRange: DateRange | null = isValidRange({
+    from: rawFrom ?? '',
+    to: rawTo ?? '',
+  })
     ? { from: rawFrom!, to: rawTo! }
-    : windows.term.thisTerm ?? lastNDays(30, today);
+    : null;
 
-  const rawCmpFrom = pickString(params.cmpFrom);
-  const rawCmpTo = pickString(params.cmpTo);
+  // Reject the explicit range when it sits entirely outside the AY's
+  // calendar window. `windows.ay.thisAY` is null only for malformed AY
+  // codes — when null, accept any well-formed URL range so non-standard
+  // AY codes don't break legitimate pages.
+  const ayWindow = windows.ay.thisAY;
+  const explicitInAy =
+    explicitRange && ayWindow ? rangesOverlap(explicitRange, ayWindow) : true;
+  const explicitRangeAccepted = explicitRange != null && explicitInAy;
+
+  const current: DateRange =
+    explicitRangeAccepted
+      ? explicitRange!
+      : windows.term.thisTerm ?? windows.ay.thisAY ?? lastNDays(30, today);
+
+  // Comparison is OPT-IN. The server only honors a comparison range when
+  // the URL explicitly carries `cmpFrom` + `cmpTo`. No auto-compute,
+  // no default — dashboards land on "current state only" until the user
+  // adds a comparison via the date-range picker.
+  //
+  // Also dropped when the explicit current range was rejected (e.g., a
+  // stale AY-mismatched range): the comparison is scoped to that view.
+  const rawCmpFrom = explicitRangeAccepted ? pickString(params.cmpFrom) : undefined;
+  const rawCmpTo = explicitRangeAccepted ? pickString(params.cmpTo) : undefined;
   const hasCmp =
     !!rawCmpFrom && !!rawCmpTo && isValidRange({ from: rawCmpFrom, to: rawCmpTo });
-  const comparison = hasCmp
-    ? { from: rawCmpFrom!, to: rawCmpTo! }
-    : autoComparison(current) ?? current;
 
   return {
     ayCode,
     from: current.from,
     to: current.to,
-    cmpFrom: comparison.from,
-    cmpTo: comparison.to,
+    cmpFrom: hasCmp ? rawCmpFrom! : null,
+    cmpTo: hasCmp ? rawCmpTo! : null,
   };
 }
 

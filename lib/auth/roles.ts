@@ -178,7 +178,14 @@ const ADMISSIONS_NAV: NavSection[] = [
   { items: [{ href: "/admissions", label: "Dashboard" }] },
   {
     label: "Pipeline",
-    items: [{ href: "/admissions/applications", label: "Applications" }],
+    items: [
+      { href: "/admissions/applications", label: "Applications" },
+      // KD #77: surfaces the parallel pipeline for the AY where
+      // accepting_applications=true AND is_current=false. The page itself
+      // renders an empty state when no such AY exists, so the entry can
+      // safely stay in nav even when early-bird is closed.
+      { href: "/admissions/upcoming/applications", label: "Upcoming AY applications" },
+    ],
   },
   // Cohort views — Admissions scope = funnel students (Submitted /
   // Ongoing Verification / Processing). STP + medical mirror the
