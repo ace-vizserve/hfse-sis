@@ -36,7 +36,6 @@ const ALLOWED_ROLES = [
   'admissions',
   'registrar',
   'school_admin',
-  'admin',
   'superadmin',
 ] as const;
 

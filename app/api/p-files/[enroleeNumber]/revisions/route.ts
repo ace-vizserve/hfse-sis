@@ -11,7 +11,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ enroleeNumber: string }> },
 ) {
-  const auth = await requireRole(['p-file', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['p-file', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const { enroleeNumber } = await params;

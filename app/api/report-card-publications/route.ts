@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+﻿import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -8,7 +8,7 @@ import { emailParentsPublication } from '@/lib/notifications/email-parents-publi
 // GET /api/report-card-publications?section_id=...
 // Registrar+ only. Returns all publications for a section.
 export async function GET(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const sectionId = request.nextUrl.searchParams.get('section_id');
@@ -26,11 +26,11 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/report-card-publications
-// Registrar+ only. Creates or updates (upserts on section_id × term_id) a
+// Registrar+ only. Creates or updates (upserts on section_id Ã— term_id) a
 // report card publication window. Parents whose children are enrolled in the
 // section can view their child's report card within [publish_from, publish_until].
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const body = (await request.json().catch(() => null)) as
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error?.message ?? 'upsert failed' }, { status: 500 });
   }
 
-  // Parent email notification — best-effort, idempotent via notified_at.
+  // Parent email notification â€” best-effort, idempotent via notified_at.
   // Only sends on first insert (or after a manual notified_at = NULL reset).
   let notification: { sent: number; failed: number; recipients: number } | null = null;
   if (data.notified_at == null) {

@@ -1,12 +1,12 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 
-// GET /api/users/teachers — list Supabase auth users whose app_metadata.role
+// GET /api/users/teachers â€” list Supabase auth users whose app_metadata.role
 // is 'teacher'. Used by the assignments UI to populate the teacher picker.
 // Registrar+ only.
 export async function GET() {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const service = createServiceClient();

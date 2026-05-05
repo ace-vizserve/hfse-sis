@@ -39,7 +39,6 @@ export default async function SectionsListPage() {
   const canManage =
     sessionUser?.role === 'registrar' ||
     sessionUser?.role === 'school_admin' ||
-    sessionUser?.role === 'admin' ||
     sessionUser?.role === 'superadmin';
 
   const { data: ay } = await supabase

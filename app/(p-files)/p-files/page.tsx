@@ -102,7 +102,6 @@ export default async function PFilesDashboard({
   if (
     sessionUser.role !== "p-file" &&
     sessionUser.role !== "school_admin" &&
-    sessionUser.role !== "admin" &&
     sessionUser.role !== "superadmin"
   ) {
     redirect("/");

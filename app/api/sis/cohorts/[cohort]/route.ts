@@ -21,7 +21,6 @@ import {
 const ALLOWED_ROLES = [
   'registrar',
   'school_admin',
-  'admin',
   'superadmin',
   'admissions',
 ] as const;

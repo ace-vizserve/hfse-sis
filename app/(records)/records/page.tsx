@@ -70,7 +70,6 @@ export default async function RecordsDashboard({ searchParams }: { searchParams:
   if (
     sessionUser.role !== "registrar" &&
     sessionUser.role !== "school_admin" &&
-    sessionUser.role !== "admin" &&
     sessionUser.role !== "superadmin"
   ) {
     redirect("/");

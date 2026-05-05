@@ -93,9 +93,10 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
     quickActionByRole: {
       teacher: { label: "Open my sheets", href: "/markbook/grading", icon: ClipboardList },
       registrar: MARKBOOK_QUICK_REGISTRAR,
-      admin: MARKBOOK_QUICK_REGISTRAR,
+      // school_admin is the consolidated approver pool (Sprint 33) and
+      // gets the same quick action as registrar.
+      school_admin: MARKBOOK_QUICK_REGISTRAR,
       superadmin: MARKBOOK_QUICK_REGISTRAR,
-      // school_admin: no urgent action — they don't approve grade changes.
     },
   },
 
@@ -159,7 +160,6 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
     quickActionByRole: {
       registrar: { label: "Browse students", href: "/records/students", icon: Users },
       school_admin: { label: "Browse students", href: "/records/students", icon: Users },
-      admin: { label: "Browse students", href: "/records/students", icon: Users },
       superadmin: { label: "Browse students", href: "/records/students", icon: Users },
     },
   },
@@ -192,7 +192,6 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       admissions: { label: "To follow", href: "/admissions?status=to-follow", icon: CalendarClock },
       registrar: { label: "Open applications", href: "/admissions/applications", icon: FileStack },
       school_admin: { label: "Open applications", href: "/admissions/applications", icon: FileStack },
-      admin: { label: "Open applications", href: "/admissions/applications", icon: FileStack },
       superadmin: { label: "Open applications", href: "/admissions/applications", icon: FileStack },
     },
   },
@@ -235,9 +234,8 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       "/sis/sync-students": Database,
     },
     quickActionByRole: {
-      // school_admin + admin: most-used config surface is the calendar.
+      // school_admin: most-used config surface is the calendar.
       school_admin: { label: "School Calendar", href: "/sis/calendar", icon: CalendarDays },
-      admin: { label: "School Calendar", href: "/sis/calendar", icon: CalendarDays },
       // Superadmin lives in AY Setup / structural config more often.
       superadmin: { label: "AY Setup", href: "/sis/ay-setup", icon: CalendarCog },
     },

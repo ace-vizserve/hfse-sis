@@ -49,7 +49,6 @@ export default async function EvaluationHub({ searchParams }: { searchParams: Pr
   const canToggle =
     sessionUser.role === "registrar" ||
     sessionUser.role === "school_admin" ||
-    sessionUser.role === "admin" ||
     sessionUser.role === "superadmin";
 
   // Current AY → its T1-T3 terms + window state. Cheap query + used only

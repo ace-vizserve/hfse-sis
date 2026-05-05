@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   const role = getUserRole(userData.user);
-  if (role !== 'school_admin' && role !== 'admin' && role !== 'superadmin') {
+  if (role !== 'school_admin' && role !== 'superadmin') {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 

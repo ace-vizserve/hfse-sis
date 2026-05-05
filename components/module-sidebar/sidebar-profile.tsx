@@ -13,7 +13,6 @@ const ROLE_LABEL: Record<Role | "parent", string> = {
   teacher: "Teacher",
   registrar: "Registrar",
   school_admin: "School Admin",
-  admin: "Admin",
   superadmin: "Superadmin",
   "p-file": "P-File Officer",
   admissions: "Admissions",

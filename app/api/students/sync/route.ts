@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAdmissionsRoster } from '@/lib/supabase/admissions';
@@ -7,14 +7,14 @@ import { buildSyncPlan } from '@/lib/sync/students';
 import { logAction } from '@/lib/audit/log-action';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 
-// Commit endpoint — applies the sync plan to the grading DB.
+// Commit endpoint â€” applies the sync plan to the grading DB.
 // Hard rules:
-//   * index_number is append-only (never reassigned) — enforced by the planner
+//   * index_number is append-only (never reassigned) â€” enforced by the planner
 //     always using max(index)+1 per section.
 //   * Withdrawn students keep their row; enrollment_status flips to 'withdrawn'.
 //   * Never delete; every mutation goes through update/insert only.
 export async function POST() {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const service = createServiceClient();
@@ -27,7 +27,7 @@ export async function POST() {
     ]);
     const plan = buildSyncPlan(rows, snapshot);
 
-    // 1) Student upserts — split by insert vs update for clarity.
+    // 1) Student upserts â€” split by insert vs update for clarity.
     const inserts = plan.student_upserts.filter(u => u.kind === 'insert');
     const updates = plan.student_upserts.filter(u => u.kind === 'update');
 
@@ -55,7 +55,7 @@ export async function POST() {
       if (error) throw new Error(`student update failed: ${error.message}`);
     }
 
-    // 2) Resolve student_number → student_id for enrollment inserts
+    // 2) Resolve student_number â†’ student_id for enrollment inserts
     //    (newly inserted students need their freshly generated UUIDs).
     const needed = new Set(plan.enrollment_inserts.map(e => e.student_number));
     let idByNumber = new Map<string, string>();

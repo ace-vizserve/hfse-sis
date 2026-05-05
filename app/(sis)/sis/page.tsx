@@ -55,7 +55,7 @@ export default async function SisAdminHub({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect("/login");
   const role = sessionUser.role;
-  if (role !== "school_admin" && role !== "admin" && role !== "superadmin") {
+  if (role !== "school_admin" && role !== "superadmin") {
     redirect("/");
   }
 
@@ -144,21 +144,21 @@ export default async function SisAdminHub({
         eyebrow={
           role === "superadmin"
             ? "SIS · Admin hub"
-            : role === "admin"
+            : role === "school_admin"
               ? "SIS · Academic admin"
               : "SIS · School administration"
         }
         title={
           role === "superadmin"
             ? "System administration"
-            : role === "admin"
+            : role === "school_admin"
               ? "Academic administration"
               : "School administration"
         }
         description={
           role === "superadmin"
             ? "Structural + system-level controls. Day-to-day operational work lives in Records; this page is for AY rollovers, approver management, and cross-module setup."
-            : role === "admin"
+            : role === "school_admin"
               ? "Day-to-day academic administration. AY setup + calendar + sections + discount codes; system-level controls are reserved for superadmin."
               : "Day-to-day school administration. AY setup + calendar + sections + discount codes; system-level controls are reserved for superadmin."
         }
@@ -194,7 +194,7 @@ export default async function SisAdminHub({
                 description="Create a new academic year, switch the active AY, or retire an empty one. Sets up everything the new year needs (terms, sections, subjects, admissions data) all at once."
                 cta="Open AY Setup"
                 role={role}
-                allowedRoles={["school_admin", "admin", "superadmin"]}
+                allowedRoles={["school_admin", "superadmin"]}
               />
               <AdminCard
                 href="/sis/calendar"
@@ -204,7 +204,7 @@ export default async function SisAdminHub({
                 description="Define school days, holidays, and important dates per term. Every weekday is a school day by default; registrars mark holidays and overlay event labels (Math Week, Staff Dev). The attendance grid and parent portal consume this."
                 cta="Open school calendar"
                 role={role}
-                allowedRoles={["school_admin", "admin", "superadmin"]}
+                allowedRoles={["school_admin", "superadmin"]}
               />
             </div>
           </section>
@@ -223,7 +223,7 @@ export default async function SisAdminHub({
                 description="Create and manage sections for the current academic year. Day-to-day operations (roster, grading sheets, attendance) stay in the Markbook module; setup lives here."
                 cta="Manage sections"
                 role={role}
-                allowedRoles={["school_admin", "admin", "superadmin"]}
+                allowedRoles={["school_admin", "superadmin"]}
               />
               <AdminCard
                 href="/sis/admin/discount-codes"
@@ -233,7 +233,7 @@ export default async function SisAdminHub({
                 description="Time-bound enrolment discount codes for the current academic year. Per-student grants are written by the enrolment portal directly; this is the catalogue that the portal reads."
                 cta="Manage codes"
                 role={role}
-                allowedRoles={["school_admin", "admin", "superadmin"]}
+                allowedRoles={["school_admin", "superadmin"]}
               />
               <AdminCard
                 href="/sis/sync-students"
@@ -243,7 +243,7 @@ export default async function SisAdminHub({
                 description="Preview then commit a bulk sync of students, enrolments, withdrawals, and reactivations from the admissions database. Individual students sync automatically on stage→Assigned; this tool handles the catch-up pass."
                 cta="Open sync tool"
                 role={role}
-                allowedRoles={["registrar", "school_admin", "admin", "superadmin"]}
+                allowedRoles={["registrar", "school_admin", "superadmin"]}
               />
             </div>
           </section>
@@ -325,7 +325,7 @@ export default async function SisAdminHub({
                 description="The consolidated Records dashboard — student profiles, family, stage pipeline, documents, and admissions analytics (conversion funnel, time-to-enroll, outdated applications, assessment outcomes, referral sources) in one surface."
                 cta="Open Records"
                 role={role}
-                allowedRoles={["school_admin", "admin", "superadmin"]}
+                allowedRoles={["school_admin", "superadmin"]}
               />
             </div>
           </section>

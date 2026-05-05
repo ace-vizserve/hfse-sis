@@ -36,7 +36,6 @@ export default async function SectionRosterPage({ params }: { params: Promise<{ 
   const canManage =
     sessionUser?.role === "registrar" ||
     sessionUser?.role === "school_admin" ||
-    sessionUser?.role === "admin" ||
     sessionUser?.role === "superadmin";
 
   const { data: section } = await supabase

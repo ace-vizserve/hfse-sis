@@ -66,7 +66,6 @@ export default async function UpcomingAdmissionsApplicationsPage() {
     sessionUser.role !== 'admissions' &&
     sessionUser.role !== 'registrar' &&
     sessionUser.role !== 'school_admin' &&
-    sessionUser.role !== 'admin' &&
     sessionUser.role !== 'superadmin'
   ) {
     redirect('/');

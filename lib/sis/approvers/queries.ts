@@ -81,10 +81,12 @@ export async function listAllApproverAssignments(): Promise<AllApproversByFlow> 
 }
 
 /**
- * Eligible candidates for a given flow = users with role `admin` only
- * (not superadmin — superadmins manage the approver list but don't act
- * on change requests themselves), minus whoever is already assigned.
- * Used to populate the superadmin "add approver" dropdown.
+ * Eligible candidates for a given flow = users with role `school_admin`
+ * (the consolidated cross-cutting role; the old `admin` twin was retired
+ * in Sprint 33). Superadmins are excluded because they manage the
+ * approver list but don't act on change requests themselves. Returns the
+ * pool minus whoever is already assigned. Used to populate the "add
+ * approver" dropdown on /sis/admin/approvers.
  */
 export async function listEligibleApproverCandidates(
   flow: ApproverFlow,
@@ -100,7 +102,7 @@ export async function listEligibleApproverCandidates(
           null);
       return { user_id: u.id, email: u.email ?? '', role };
     })
-    .filter((u) => u.role === 'admin')
+    .filter((u) => u.role === 'school_admin')
     .filter((u) => u.email !== '');
 
   const { data: existing } = await service

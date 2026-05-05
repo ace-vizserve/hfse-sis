@@ -1,14 +1,14 @@
-import { NextResponse, type NextRequest } from 'next/server';
+﻿import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
 
-// GET /api/teacher-assignments?section_id=... — list assignments.
+// GET /api/teacher-assignments?section_id=... â€” list assignments.
 // Managers (registrar+) see all; any other authenticated user can request
 // their own via ?mine=1 (used by teacher-facing screens later).
 export async function GET(request: NextRequest) {
-  const auth = await requireRole(['teacher', 'registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['teacher', 'registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const supabase = await createClient();
@@ -26,12 +26,12 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ assignments: data ?? [] });
 }
 
-// POST /api/teacher-assignments — registrar+ only.
+// POST /api/teacher-assignments â€” registrar+ only.
 // Body: { teacher_user_id, section_id, role, subject_id? }
-// role='form_adviser' — subject_id must be null; unique per section.
-// role='subject_teacher' — subject_id required; unique per (teacher, section, subject).
+// role='form_adviser' â€” subject_id must be null; unique per section.
+// role='subject_teacher' â€” subject_id required; unique per (teacher, section, subject).
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const body = (await request.json().catch(() => null)) as
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
 
   // If we just set a form_adviser, mirror the display name onto the section
   // so the report card header shows the same name without needing a second
-  // query. Best-effort — don't fail the insert if this lookup errors.
+  // query. Best-effort â€” don't fail the insert if this lookup errors.
   if (body.role === 'form_adviser') {
     try {
       const { data: u } = await service.auth.admin.getUserById(body.teacher_user_id);
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
           .eq('id', body.section_id);
       }
     } catch {
-      // swallow — the assignment is authoritative
+      // swallow â€” the assignment is authoritative
     }
   }
 

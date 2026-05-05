@@ -51,7 +51,7 @@ export default async function SectionAttendancePage({
   const session = await getSessionUser();
   const role = session?.role ?? null;
   const canWriteNc =
-    role === 'registrar' || role === 'school_admin' || role === 'admin' || role === 'superadmin';
+    role === 'registrar' || role === 'school_admin' || role === 'superadmin';
 
   const supabase = await createClient();
 

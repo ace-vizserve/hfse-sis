@@ -4,7 +4,6 @@ export type Role =
   | "teacher"
   | "registrar"
   | "school_admin"
-  | "admin"
   | "superadmin"
   | "p-file"
   | "admissions";
@@ -13,7 +12,6 @@ export const ROLES: Role[] = [
   "teacher",
   "registrar",
   "school_admin",
-  "admin",
   "superadmin",
   "p-file",
   "admissions",
@@ -36,8 +34,8 @@ const PFILES_NAV: NavSection[] = [
   { items: [{ href: "/p-files", label: "Dashboard" }] },
   {
     // Quick filters land on the dashboard with a `?status=` preset so the
-    // P-Files officer can jump straight to the work queue (oversight roles —
-    // school_admin/admin — see the same lists but in read-only mode).
+    // P-Files officer can jump straight to the work queue (oversight role —
+    // school_admin — sees the same lists but in read-only mode).
     label: "Quick filters",
     items: [
       { href: "/p-files?status=missing", label: "Missing documents" },
@@ -73,15 +71,15 @@ const PFILES_NAV: NavSection[] = [
     // Workflow shortcut — symmetric with Admissions's "Document validation"
     // quicklink. P-Files validates Expired + Rejected slots for ENROLLED
     // students (post-enrolment renewals); the Expired bucket is the most
-    // common trigger so the link routes there. school_admin/admin see this
-    // as a read-only watchlist; the actual validate/notify CTAs are gated
-    // by `canWrite` on the detail + completeness rows.
+    // common trigger so the link routes there. school_admin sees this as a
+    // read-only watchlist; the actual validate/notify CTAs are gated by
+    // `canWrite` on the detail + completeness rows.
     label: "Quicklinks",
     items: [
       {
         href: "/p-files?status=expired",
         label: "Document validation",
-        requiresRoles: ["p-file", "school_admin", "admin", "superadmin"],
+        requiresRoles: ["p-file", "school_admin", "superadmin"],
       },
     ],
   },
@@ -109,7 +107,7 @@ const RECORDS_NAV: NavSection[] = [
       {
         href: "/sis/admin/discount-codes",
         label: "Discount Codes",
-        requiresRoles: ["registrar", "school_admin", "admin", "superadmin"],
+        requiresRoles: ["registrar", "school_admin", "superadmin"],
       },
       // Bulk admissions→SIS sync lives in SIS Admin (2026-04-23). Cross-module
       // link kept here for registrar convenience — they own roster ingest and
@@ -117,7 +115,7 @@ const RECORDS_NAV: NavSection[] = [
       {
         href: "/sis/sync-students",
         label: "Sync from Admissions",
-        requiresRoles: ["registrar", "school_admin", "admin", "superadmin"],
+        requiresRoles: ["registrar", "school_admin", "superadmin"],
       },
     ],
   },
@@ -156,12 +154,12 @@ const ATTENDANCE_NAV: NavSection[] = [
         // registrars work out of Attendance and need a one-click path.
         href: "/sis/calendar",
         label: "School Calendar",
-        requiresRoles: ["registrar", "school_admin", "admin", "superadmin"],
+        requiresRoles: ["registrar", "school_admin", "superadmin"],
       },
       {
         href: "/attendance/import",
         label: "Import",
-        requiresRoles: ["registrar", "school_admin", "admin", "superadmin"],
+        requiresRoles: ["registrar", "school_admin", "superadmin"],
       },
     ],
   },
@@ -219,22 +217,22 @@ const ADMISSIONS_NAV: NavSection[] = [
       {
         href: "/records/students",
         label: "Enrolled students",
-        requiresRoles: ["registrar", "school_admin", "admin", "superadmin"],
+        requiresRoles: ["registrar", "school_admin", "superadmin"],
       },
       {
         href: "/admissions?status=uploaded",
         label: "Document validation",
-        requiresRoles: ["admissions", "registrar", "admin", "superadmin"],
+        requiresRoles: ["admissions", "registrar", "school_admin", "superadmin"],
       },
       {
         href: "/admissions?status=expired",
         label: "Expired documents",
-        requiresRoles: ["admissions", "registrar", "admin", "superadmin"],
+        requiresRoles: ["admissions", "registrar", "school_admin", "superadmin"],
       },
       {
         href: "/sis/ay-setup",
         label: "AY Setup",
-        requiresRoles: ["school_admin", "admin", "superadmin"],
+        requiresRoles: ["school_admin", "superadmin"],
       },
     ],
   },
@@ -269,18 +267,19 @@ const EVALUATION_NAV: NavSection[] = [
 
 // SIS admin hub — the system-level admin surface where structural ops live.
 // Distinct from Records. Route group: (sis)/sis/*. Access: school_admin +
-// admin + superadmin (AY Setup) and superadmin-only (Approvers).
+// superadmin own the full hub (Sprint 33 consolidation — the old `admin`
+// twin was retired and school_admin is now the cross-cutting generalist).
 // Groups mirror the landing-page sections on /sis (page.tsx).
 const SIS_NAV: NavSection[] = [
   { items: [{ href: "/sis", label: "Admin Hub" }] },
   {
     label: "Academic Year",
     items: [
-      { href: "/sis/ay-setup", label: "AY Setup", requiresRoles: ["school_admin", "admin", "superadmin"] },
+      { href: "/sis/ay-setup", label: "AY Setup", requiresRoles: ["school_admin", "superadmin"] },
       {
         href: "/sis/calendar",
         label: "School Calendar",
-        requiresRoles: ["registrar", "school_admin", "admin", "superadmin"],
+        requiresRoles: ["registrar", "school_admin", "superadmin"],
       },
     ],
   },
@@ -290,35 +289,35 @@ const SIS_NAV: NavSection[] = [
       {
         href: "/sis/sections",
         label: "Sections",
-        requiresRoles: ["registrar", "school_admin", "admin", "superadmin"],
+        requiresRoles: ["registrar", "school_admin", "superadmin"],
       },
       {
         href: "/sis/admin/discount-codes",
         label: "Discount Codes",
-        requiresRoles: ["registrar", "school_admin", "admin", "superadmin"],
+        requiresRoles: ["registrar", "school_admin", "superadmin"],
       },
-      { href: "/sis/admin/subjects", label: "Subject Weights", requiresRoles: ["superadmin"] },
-      { href: "/sis/admin/template", label: "Class Template", requiresRoles: ["superadmin"] },
-      { href: "/sis/admin/evaluation-checklists", label: "Eval Checklists", requiresRoles: ["superadmin"] },
+      { href: "/sis/admin/subjects", label: "Subject Weights", requiresRoles: ["school_admin", "superadmin"] },
+      { href: "/sis/admin/template", label: "Class Template", requiresRoles: ["school_admin", "superadmin"] },
+      { href: "/sis/admin/evaluation-checklists", label: "Eval Checklists", requiresRoles: ["school_admin", "superadmin"] },
       {
         href: "/sis/sync-students",
         label: "Sync from Admissions",
-        requiresRoles: ["registrar", "school_admin", "admin", "superadmin"],
+        requiresRoles: ["registrar", "school_admin", "superadmin"],
       },
     ],
   },
   {
     label: "Access",
     items: [
-      { href: "/sis/admin/approvers", label: "Approvers", requiresRoles: ["superadmin"] },
-      { href: "/sis/admin/users", label: "Users", requiresRoles: ["superadmin"] },
+      { href: "/sis/admin/approvers", label: "Approvers", requiresRoles: ["school_admin", "superadmin"] },
+      { href: "/sis/admin/users", label: "Users", requiresRoles: ["school_admin", "superadmin"] },
     ],
   },
   {
     label: "System",
     items: [
-      { href: "/sis/admin/school-config", label: "School Config", requiresRoles: ["superadmin"] },
-      { href: "/sis/admin/settings", label: "Settings", requiresRoles: ["superadmin"] },
+      { href: "/sis/admin/school-config", label: "School Config", requiresRoles: ["school_admin", "superadmin"] },
+      { href: "/sis/admin/settings", label: "Settings", requiresRoles: ["school_admin", "superadmin"] },
     ],
   },
 ];
@@ -372,23 +371,9 @@ export const NAV_BY_MODULE: {
         ],
       },
     ],
-    admin: [
-      { items: [{ href: "/markbook", label: "Dashboard" }] },
-      {
-        label: "Students",
-        items: [{ href: "/markbook/sections", label: "Sections" }],
-      },
-      { items: [{ href: "/markbook/report-cards", label: "Report Cards" }] },
-      {
-        label: "Admin",
-        items: [
-          { href: "/markbook/change-requests", label: "Change Requests", badgeKey: "changeRequests" },
-          { href: "/markbook/audit-log", label: "Audit Log" },
-        ],
-      },
-    ],
-    // school_admin mirrors admin MINUS the "Change Requests" approval inbox —
-    // school admins don't approve grade changes (that's academic admin work).
+    // school_admin is the consolidated cross-cutting role (Sprint 33 — the
+    // old `admin` twin was retired). Sees the Change Requests approval
+    // inbox + audit log alongside the section/report-card surfaces.
     school_admin: [
       { items: [{ href: "/markbook", label: "Dashboard" }] },
       {
@@ -399,6 +384,7 @@ export const NAV_BY_MODULE: {
       {
         label: "Admin",
         items: [
+          { href: "/markbook/change-requests", label: "Change Requests", badgeKey: "changeRequests" },
           { href: "/markbook/audit-log", label: "Audit Log" },
         ],
       },
@@ -440,28 +426,28 @@ export const NAV_BY_MODULE: {
 // evaluated first via the explicit `find` order below, so `/sis/ay-setup`
 // must appear before the broader `/sis` rule.
 export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
-  { prefix: "/sis/admin/approvers", allowed: ["superadmin"] },
-  { prefix: "/sis/admin/subjects", allowed: ["superadmin"] },
-  { prefix: "/sis/admin/template", allowed: ["superadmin"] },
-  { prefix: "/sis/admin/school-config", allowed: ["superadmin"] },
-  { prefix: "/sis/admin/evaluation-checklists", allowed: ["superadmin"] },
-  { prefix: "/sis/admin/users", allowed: ["superadmin"] },
-  { prefix: "/sis/admin/settings", allowed: ["superadmin"] },
-  { prefix: "/sis/admin/discount-codes", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/sis/ay-setup", allowed: ["school_admin", "admin", "superadmin"] },
-  { prefix: "/sis/calendar", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/sis/sections", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/sis/sync-students", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/admin/admissions", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/attendance/import", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/attendance/calendar", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/attendance", allowed: ["teacher", "registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/evaluation", allowed: ["teacher", "registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/markbook", allowed: ["teacher", "registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/p-files", allowed: ["p-file", "school_admin", "admin", "superadmin"] },
-  { prefix: "/admissions", allowed: ["admissions", "registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/records", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/sis", allowed: ["school_admin", "admin", "superadmin"] },
+  { prefix: "/sis/admin/approvers", allowed: ["school_admin", "superadmin"] },
+  { prefix: "/sis/admin/subjects", allowed: ["school_admin", "superadmin"] },
+  { prefix: "/sis/admin/template", allowed: ["school_admin", "superadmin"] },
+  { prefix: "/sis/admin/school-config", allowed: ["school_admin", "superadmin"] },
+  { prefix: "/sis/admin/evaluation-checklists", allowed: ["school_admin", "superadmin"] },
+  { prefix: "/sis/admin/users", allowed: ["school_admin", "superadmin"] },
+  { prefix: "/sis/admin/settings", allowed: ["school_admin", "superadmin"] },
+  { prefix: "/sis/admin/discount-codes", allowed: ["registrar", "school_admin", "superadmin"] },
+  { prefix: "/sis/ay-setup", allowed: ["school_admin", "superadmin"] },
+  { prefix: "/sis/calendar", allowed: ["registrar", "school_admin", "superadmin"] },
+  { prefix: "/sis/sections", allowed: ["registrar", "school_admin", "superadmin"] },
+  { prefix: "/sis/sync-students", allowed: ["registrar", "school_admin", "superadmin"] },
+  { prefix: "/admin/admissions", allowed: ["registrar", "school_admin", "superadmin"] },
+  { prefix: "/attendance/import", allowed: ["registrar", "school_admin", "superadmin"] },
+  { prefix: "/attendance/calendar", allowed: ["registrar", "school_admin", "superadmin"] },
+  { prefix: "/attendance", allowed: ["teacher", "registrar", "school_admin", "superadmin"] },
+  { prefix: "/evaluation", allowed: ["teacher", "registrar", "school_admin", "superadmin"] },
+  { prefix: "/markbook", allowed: ["teacher", "registrar", "school_admin", "superadmin"] },
+  { prefix: "/p-files", allowed: ["p-file", "school_admin", "superadmin"] },
+  { prefix: "/admissions", allowed: ["admissions", "registrar", "school_admin", "superadmin"] },
+  { prefix: "/records", allowed: ["registrar", "school_admin", "superadmin"] },
+  { prefix: "/sis", allowed: ["school_admin", "superadmin"] },
 ];
 
 export function getUserRole(user: User | null | undefined): Role | null {

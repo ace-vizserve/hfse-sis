@@ -38,7 +38,6 @@ export async function POST(request: NextRequest) {
     "admissions",
     "registrar",
     "school_admin",
-    "admin",
     "superadmin",
   ]);
   if ("error" in auth) return auth.error;

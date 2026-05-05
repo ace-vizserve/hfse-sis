@@ -107,10 +107,10 @@ export default async function MarkbookHome({ searchParams }: { searchParams: Pro
   const email = (claims?.email as string | undefined) ?? undefined;
   const role = getRoleFromClaims(claims);
 
-  const canSeeAdmin = role === "registrar" || role === "school_admin" || role === "admin" || role === "superadmin";
+  const canSeeAdmin = role === "registrar" || role === "school_admin" || role === "superadmin";
   const canSeeGrading = role === "teacher" || role === "registrar" || role === "superadmin";
   const canSeeReportCards =
-    role === "registrar" || role === "school_admin" || role === "admin" || role === "superadmin";
+    role === "registrar" || role === "school_admin" || role === "superadmin";
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);

@@ -1,4 +1,4 @@
-import { revalidateTag } from 'next/cache';
+﻿import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
@@ -20,7 +20,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 //
 // Role: admin + superadmin (KD #32).
 export async function POST(request: Request) {
-  const auth = await requireRole(['school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   // The RPC is fully idempotent (migration 030): if the AY row exists it
   // is reused, terms/sections/subject_configs only get filled in if
   // missing, admissions tables use CREATE IF NOT EXISTS. So we always
-  // call it — it correctly handles brand-new, partial, and fully-set-up
+  // call it â€” it correctly handles brand-new, partial, and fully-set-up
   // states, and on a re-run nothing is duplicated or destroyed.
   const { data: result, error: rpcErr } = await supabase.rpc('create_academic_year', {
     p_ay_code: ayCode,
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
 
   // KD #77: apply the early-bird gate after the RPC commits. The RPC itself
   // doesn't know about `accepting_applications` (added in migration 038)
-  // and we don't want to wedge that into the RPC contract — a focused
+  // and we don't want to wedge that into the RPC contract â€” a focused
   // UPDATE here is simpler and re-running is safe (idempotent overwrite).
   if (acceptingApplications) {
     const { error: gateErr } = await supabase
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
   const ayId = typeof summary.ay_id === 'string' ? summary.ay_id : null;
   // alreadyExisted = the AY row was already there AND nothing else was
   // missing. A "partial-state" run (row existed but terms/sections/configs
-  // were filled in) reports ok+summary but does NOT set alreadyExisted —
+  // were filled in) reports ok+summary but does NOT set alreadyExisted â€”
   // the UI surfaces it as a normal success and advances to the follow-up.
   const ayExisted = summary.ay_existed === true;
   const termsInserted = typeof summary.terms_inserted === 'number' ? summary.terms_inserted : 0;
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
 //
 // Role: admin + superadmin.
 export async function PATCH(request: Request) {
-  const auth = await requireRole(['school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -139,7 +139,7 @@ export async function PATCH(request: Request) {
   const prevAy = (prev as { ay_code: string } | null)?.ay_code ?? null;
 
   // Two-step atomic-ish flip: set all to false, then target to true.
-  // Not a single transaction, but idempotent — re-running converges.
+  // Not a single transaction, but idempotent â€” re-running converges.
   const { error: clearErr } = await supabase
     .from('academic_years')
     .update({ is_current: false })
@@ -178,7 +178,7 @@ export async function PATCH(request: Request) {
 
 // DELETE /api/sis/ay-setup
 //
-// Delete an AY. Only allowed if the AY has no child data anywhere — the
+// Delete an AY. Only allowed if the AY has no child data anywhere â€” the
 // `delete_academic_year` stored function enforces the emptiness check
 // server-side and raises on any blocker. Drops the 4 AY-prefixed admissions
 // tables and removes the SIS-side rows in one tx.

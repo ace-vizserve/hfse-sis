@@ -974,7 +974,7 @@ async function seedPublication(
 
 // Round-robin assigns existing staff users as form_advisers + subject_teachers
 // across the test AY's sections. Prefers `role='teacher'` users; falls back
-// to registrar/school_admin/admin/superadmin if no teachers exist. Skip guard
+// to registrar/school_admin/superadmin if no teachers exist. Skip guard
 // is a single "any row already" count to keep the check cheap.
 async function seedTeacherAssignments(
   service: SupabaseClient,
@@ -1004,7 +1004,7 @@ async function seedTeacherAssignments(
     console.error('[populated seeder] listUsers failed:', usersErr.message);
     return { form_adviser: 0, subject_teacher: 0 };
   }
-  const STAFF_ROLES = new Set(['teacher', 'registrar', 'school_admin', 'admin', 'superadmin']);
+  const STAFF_ROLES = new Set(['teacher', 'registrar', 'school_admin', 'superadmin']);
   const staff = (userList?.users ?? [])
     .map((u) => ({
       id: u.id,

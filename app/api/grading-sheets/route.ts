@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+﻿import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -10,7 +10,7 @@ import { logAction } from '@/lib/audit/log-action';
 // Teachers only see sheets matching their (section, subject) assignments.
 // Managers (registrar/admin/superadmin) see everything.
 export async function GET(request: NextRequest) {
-  const auth = await requireRole(['teacher', 'registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['teacher', 'registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const supabase = await createClient();
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 // Creates a sheet for (term, section, subject) and seeds one grade_entries row
 // per active / late_enrollee student in the section.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const body = (await request.json().catch(() => null)) as
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // Resolve section → level → academic_year, then look up subject_config.
+  // Resolve section â†’ level â†’ academic_year, then look up subject_config.
   const { data: section, error: secErr } = await service
     .from('sections')
     .select('id, level_id, academic_year_id')
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
   if (cfgErr) return NextResponse.json({ error: cfgErr.message }, { status: 500 });
   if (!config) {
     return NextResponse.json(
-      { error: 'no subject_config for this subject × level × academic year' },
+      { error: 'no subject_config for this subject Ã— level Ã— academic year' },
       { status: 400 },
     );
   }

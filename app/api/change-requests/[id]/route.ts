@@ -16,16 +16,16 @@ import {
 // Body: { action: 'approve' | 'reject' | 'cancel', decision_note?: string }
 //
 // Transitions:
-//   approve  — admin+ only. pending → approved. decision_note optional.
+//   approve  — school_admin+ only. pending → approved. decision_note optional.
 //              Fires notifyRequestApproved() to teacher + registrar.
-//   reject   — admin+ only. pending → rejected. decision_note required.
+//   reject   — school_admin+ only. pending → rejected. decision_note required.
 //              Fires notifyRequestRejected() to teacher.
 //   cancel   — original requester only. pending → cancelled. No notifications.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireRole(['teacher', 'registrar', 'admin', 'superadmin']);
+  const auth = await requireRole(['teacher', 'registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const { id } = await params;
@@ -59,18 +59,18 @@ export async function PATCH(
 
   // Authorization per action
   if (action === 'approve' || action === 'reject') {
-    // Approvers are admin role only. Superadmins manage who's designated
-    // as an approver (via /sis/admin/approvers) but don't approve change
-    // requests themselves.
-    if (auth.role !== 'admin') {
+    // Approvers are school_admin role only. Superadmins manage who's
+    // designated as an approver (via /sis/admin/approvers) but don't
+    // approve change requests themselves.
+    if (auth.role !== 'school_admin') {
       return NextResponse.json(
-        { error: 'only admin users can approve or reject change requests' },
+        { error: 'Only school administrators can approve or reject change requests.' },
         { status: 403 },
       );
     }
-    // Designated-approver scope: the acting admin must be the primary or
-    // secondary approver on this specific request. Legacy rows with both
-    // NULL (pre-feature) fall back to broadcast scope.
+    // Designated-approver scope: the acting school_admin must be the
+    // primary or secondary approver on this specific request. Legacy rows
+    // with both NULL (pre-feature) fall back to broadcast scope.
     const isLegacy =
       existing.primary_approver_id == null &&
       existing.secondary_approver_id == null;

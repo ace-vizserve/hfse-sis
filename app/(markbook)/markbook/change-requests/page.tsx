@@ -14,10 +14,10 @@ export default async function AdminChangeRequestsPage({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   const { role } = sessionUser;
-  if (!role || (role !== 'admin' && role !== 'superadmin' && role !== 'registrar')) {
+  if (!role || (role !== 'school_admin' && role !== 'superadmin' && role !== 'registrar')) {
     redirect('/');
   }
-  const canDecide = role === 'admin' || role === 'superadmin';
+  const canDecide = role === 'school_admin' || role === 'superadmin';
 
   const { sheet_id } = await searchParams;
 

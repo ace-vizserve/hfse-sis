@@ -16,7 +16,6 @@ const ALLOWED_ROLES: Role[] = [
   'admissions',
   'registrar',
   'school_admin',
-  'admin',
   'superadmin',
 ];
 

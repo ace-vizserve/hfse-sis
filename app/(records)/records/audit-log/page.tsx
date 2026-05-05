@@ -17,11 +17,11 @@ import { AuditLogDataTable, type MergedRow } from '@/app/(markbook)/markbook/aud
 export default async function SisAuditLogPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
-  if (sessionUser.role !== 'registrar' && sessionUser.role !== 'school_admin' && sessionUser.role !== 'admin' && sessionUser.role !== 'superadmin') {
+  if (sessionUser.role !== 'registrar' && sessionUser.role !== 'school_admin' && sessionUser.role !== 'superadmin') {
     redirect('/');
   }
 
-  const canExport = sessionUser.role === 'school_admin' || sessionUser.role === 'admin' || sessionUser.role === 'superadmin';
+  const canExport = sessionUser.role === 'school_admin' || sessionUser.role === 'superadmin';
   const supabase = await createClient();
 
   const { data, error } = await supabase

@@ -1,4 +1,4 @@
-import { revalidateTag } from 'next/cache';
+﻿import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
@@ -9,12 +9,12 @@ import { createServiceClient } from '@/lib/supabase/service';
 // PATCH /api/sis/ay-setup/accepting-applications
 //
 // Toggle the early-bird gate (KD #77) on a specific AY. Decoupled from
-// `is_current` — admin can open the upcoming AY for early-bird while the
+// `is_current` â€” admin can open the upcoming AY for early-bird while the
 // current AY is still operationally active.
 //
 // Role: school_admin + admin + superadmin (matches AY creation gate).
 export async function PATCH(request: Request) {
-  const auth = await requireRole(['school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

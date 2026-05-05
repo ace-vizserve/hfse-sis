@@ -36,11 +36,10 @@ const ALLOWED_ROLES = [
   'teacher',
   'registrar',
   'school_admin',
-  'admin',
   'superadmin',
 ] as const;
 
-const REGISTRAR_PLUS = new Set(['registrar', 'school_admin', 'admin', 'superadmin']);
+const REGISTRAR_PLUS = new Set(['registrar', 'school_admin', 'superadmin']);
 
 const TEACHER_VELOCITY_FORBIDDEN_FOR = new Set(['teacher']);
 

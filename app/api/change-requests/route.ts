@@ -20,9 +20,9 @@ import { listApproversForFlow } from '@/lib/sis/approvers/queries';
 //   ?sheet_id=<uuid>   (optional, scope to one sheet)
 //   ?mine=1            (teachers: their own requests only — enforced for teacher role)
 //
-// Teachers always get only their own rows. Admin/superadmin/registrar see all.
+// Teachers always get only their own rows. school_admin/superadmin/registrar see all.
 export async function GET(request: NextRequest) {
-  const auth = await requireRole(['teacher', 'registrar', 'admin', 'superadmin']);
+  const auth = await requireRole(['teacher', 'registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const url = new URL(request.url);
@@ -44,11 +44,11 @@ export async function GET(request: NextRequest) {
 
   if (auth.role === 'teacher') {
     query = query.eq('requested_by', auth.user.id);
-  } else if (auth.role === 'admin' || auth.role === 'superadmin') {
-    // Designated-approver scope: admin+ sees only requests where they're
-    // primary or secondary. Legacy rows (both NULL) fall back to the
-    // broadcast-style "anyone admin+ sees it" behavior so pre-feature
-    // pending requests don't strand.
+  } else if (auth.role === 'school_admin' || auth.role === 'superadmin') {
+    // Designated-approver scope: school_admin+ sees only requests where
+    // they're primary or secondary. Legacy rows (both NULL) fall back to
+    // the broadcast-style "anyone school_admin+ sees it" behavior so
+    // pre-feature pending requests don't strand.
     query = query.or(
       `primary_approver_id.eq.${auth.user.id},secondary_approver_id.eq.${auth.user.id},and(primary_approver_id.is.null,secondary_approver_id.is.null)`,
     );
@@ -69,9 +69,9 @@ export async function GET(request: NextRequest) {
 
 // POST /api/change-requests
 // Teachers file a new request against a locked sheet they are assigned to.
-// Admin+ can also file one (shouldn't need to, but not blocked).
+// school_admin+ can also file one (shouldn't need to, but not blocked).
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['teacher', 'registrar', 'admin', 'superadmin']);
+  const auth = await requireRole(['teacher', 'registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const raw = await request.json().catch(() => null);
@@ -230,8 +230,8 @@ export async function POST(request: NextRequest) {
   });
 
   // Fire-and-forget notification to designated approvers only. The email
-  // scope narrows from "all admin+" (old broadcast) to just the two the
-  // teacher picked.
+  // scope narrows from "all school_admin+" (old broadcast) to just the
+  // two the teacher picked.
   void (async () => {
     try {
       const designated = approvers.filter(
@@ -299,7 +299,7 @@ function snapshotCurrentValue(
 export async function fetchApproverEmails(
   service: ReturnType<typeof createServiceClient>,
 ): Promise<string[]> {
-  // Admin + superadmin users. Uses auth.admin API which needs service role.
+  // school_admin + superadmin users. Uses auth.admin API which needs service role.
   try {
     const { data, error } = await service.auth.admin.listUsers();
     if (error || !data) return [];
@@ -309,7 +309,7 @@ export async function fetchApproverEmails(
           (u.app_metadata as { role?: string } | null)?.role ??
           (u.user_metadata as { role?: string } | null)?.role ??
           null;
-        return role === 'admin' || role === 'superadmin';
+        return role === 'school_admin' || role === 'superadmin';
       })
       .map((u) => u.email ?? '')
       .filter(Boolean);

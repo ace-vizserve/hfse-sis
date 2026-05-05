@@ -1,15 +1,15 @@
-import { NextResponse, type NextRequest } from 'next/server';
+﻿import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { PtcFeedbackUpsertSchema } from '@/lib/schemas/evaluation-checklist';
 
-// PATCH /api/evaluation/ptc-feedback — registrar / school_admin records
+// PATCH /api/evaluation/ptc-feedback â€” registrar / school_admin records
 // parent-teacher-conference feedback per student per term. Never flows to
-// the report card (KD #49) — PTC use only.
+// the report card (KD #49) â€” PTC use only.
 export async function PATCH(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

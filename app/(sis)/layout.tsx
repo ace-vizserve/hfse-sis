@@ -14,7 +14,7 @@ export default async function SisLayout({ children }: { children: React.ReactNod
   if (!sessionUser) redirect('/login');
 
   const { id, email, role } = sessionUser;
-  if (role !== 'registrar' && role !== 'school_admin' && role !== 'admin' && role !== 'superadmin') {
+  if (role !== 'registrar' && role !== 'school_admin' && role !== 'superadmin') {
     if (role === 'p-file') redirect('/p-files');
     if (!role) redirect('/parent');
     redirect('/');

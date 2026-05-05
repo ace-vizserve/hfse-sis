@@ -44,7 +44,6 @@ export default async function EvaluationSectionsPickerPage({
     sessionUser.role !== 'teacher' &&
     sessionUser.role !== 'registrar' &&
     sessionUser.role !== 'school_admin' &&
-    sessionUser.role !== 'admin' &&
     sessionUser.role !== 'superadmin'
   ) {
     redirect('/');

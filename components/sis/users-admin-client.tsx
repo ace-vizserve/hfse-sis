@@ -27,7 +27,6 @@ const ROLE_LABEL: Record<Role, string> = {
   teacher: "Teacher",
   registrar: "Registrar",
   school_admin: "School Admin",
-  admin: "Admin",
   superadmin: "Superadmin",
   "p-file": "P-Files",
   admissions: "Admissions",

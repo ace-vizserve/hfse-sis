@@ -43,7 +43,6 @@ export default async function AdmissionsApplicationsClosedPage({
     sessionUser.role !== 'admissions' &&
     sessionUser.role !== 'registrar' &&
     sessionUser.role !== 'school_admin' &&
-    sessionUser.role !== 'admin' &&
     sessionUser.role !== 'superadmin'
   ) {
     redirect('/');

@@ -19,7 +19,7 @@ export default async function AuditLogPage({
 }) {
   const params = await searchParams;
   const sessionUser = await getSessionUser();
-  const canExport = sessionUser?.role === 'school_admin' || sessionUser?.role === 'admin' || sessionUser?.role === 'superadmin';
+  const canExport = sessionUser?.role === 'school_admin' || sessionUser?.role === 'superadmin';
   const supabase = await createClient();
 
   // Push filters to DB when present to avoid fetching 1000 rows for a targeted view

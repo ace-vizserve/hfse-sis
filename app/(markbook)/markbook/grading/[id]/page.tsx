@@ -100,7 +100,7 @@ export default async function GradingSheetPage({
   const { id } = await params;
   const sessionUser = await getSessionUser();
   const role: Role | null = sessionUser?.role ?? null;
-  const canManage = role === 'registrar' || role === 'admin' || role === 'superadmin';
+  const canManage = role === 'registrar' || role === 'school_admin' || role === 'superadmin';
   const supabase = await createClient();
 
   // Fetch sheet first (needed for notFound gate), then parallelize the rest

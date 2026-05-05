@@ -31,7 +31,6 @@ const VALID_SCOPES: DrillScope[] = ['range', 'ay', 'all'];
 const ALLOWED_ROLES = [
   'p-file',
   'school_admin',
-  'admin',
   'superadmin',
 ] as const;
 

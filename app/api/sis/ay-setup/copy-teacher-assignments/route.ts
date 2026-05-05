@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+﻿import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
@@ -11,7 +11,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 // Returns the per-bucket counts verbatim so the UI can show a "N copied,
 // M skipped (no section), K already existed" summary.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const body = (await request.json().catch(() => null)) as
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // Resolve AY codes → ids.
+  // Resolve AY codes â†’ ids.
   const { data: rows, error: lookupErr } = await service
     .from('academic_years')
     .select('id, ay_code')

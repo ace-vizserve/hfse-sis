@@ -40,7 +40,7 @@ function subscribeChannels(
       filter = `requested_by=eq.${userId}`;
     } else if (role === "registrar") {
       filter = `status=eq.approved`;
-    } else if (role === "admin" || role === "superadmin") {
+    } else if (role === "school_admin" || role === "superadmin") {
       filter = `status=eq.pending`;
     }
 
@@ -58,7 +58,7 @@ function subscribeChannels(
             query = query.eq("requested_by", userId).eq("status", "pending");
           } else if (role === "registrar") {
             query = query.eq("status", "approved");
-          } else if (role === "admin" || role === "superadmin") {
+          } else if (role === "school_admin" || role === "superadmin") {
             query = query.eq("status", "pending");
           } else {
             return null;

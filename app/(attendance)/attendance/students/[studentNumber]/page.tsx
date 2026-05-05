@@ -46,7 +46,6 @@ export default async function AttendanceStudentDetailPage({
   if (
     session.role !== 'registrar' &&
     session.role !== 'school_admin' &&
-    session.role !== 'admin' &&
     session.role !== 'superadmin'
   ) {
     redirect('/');

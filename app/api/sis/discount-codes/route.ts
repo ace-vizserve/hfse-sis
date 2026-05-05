@@ -1,4 +1,4 @@
-import { revalidateTag } from 'next/cache';
+﻿import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
@@ -10,9 +10,9 @@ import { createServiceClient } from '@/lib/supabase/service';
 //
 // Creates a row in ay{YY}_discount_codes. The row id is returned so the
 // client can invalidate its list query. Per-student grants are NOT written
-// here — grants are handled by the external enrolment portal.
+// here â€” grants are handled by the external enrolment portal.
 export async function POST(request: Request) {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const url = new URL(request.url);

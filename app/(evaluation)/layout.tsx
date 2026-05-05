@@ -18,7 +18,6 @@ export default async function EvaluationLayout({ children }: { children: React.R
     'teacher',
     'registrar',
     'school_admin',
-    'admin',
     'superadmin',
   ];
   if (!role || !allowed.includes(role)) {

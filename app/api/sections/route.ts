@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+﻿import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -7,7 +7,7 @@ import { SectionCreateSchema } from '@/lib/schemas/section';
 
 // List sections for the current academic year, annotated with enrolment counts.
 export async function GET() {
-  const auth = await requireRole(['teacher', 'registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['teacher', 'registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const supabase = await createClient();
@@ -55,9 +55,9 @@ export async function GET() {
   });
 }
 
-// POST /api/sections — mid-year section create under the current AY.
+// POST /api/sections â€” mid-year section create under the current AY.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Bulk-create the grading sheets that should exist for this new section
-  // (one per subject in the level × every term in the AY). Best-effort — if
+  // (one per subject in the level Ã— every term in the AY). Best-effort â€” if
   // the RPC fails we still keep the section and log the hiccup; registrar
   // can run "Create all sheets" on /markbook/grading as a fallback.
   let sheetsInserted = 0;

@@ -37,7 +37,6 @@ const DOC_TARGETS: ReadonlySet<RecordsDrillTarget> = new Set<RecordsDrillTarget>
 const ALLOWED_ROLES = [
   'registrar',
   'school_admin',
-  'admin',
   'superadmin',
 ] as const;
 

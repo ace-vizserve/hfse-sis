@@ -40,7 +40,6 @@ export default async function SisSectionsListPage() {
   if (
     sessionUser.role !== 'registrar' &&
     sessionUser.role !== 'school_admin' &&
-    sessionUser.role !== 'admin' &&
     sessionUser.role !== 'superadmin'
   ) {
     redirect('/');

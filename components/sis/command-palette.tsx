@@ -163,7 +163,7 @@ const NAV_ENTRIES: NavEntry[] = [
 ];
 
 // Roles that can search students via /api/sis/search.
-const STUDENT_SEARCH_ROLES: Role[] = ["registrar", "school_admin", "admin", "superadmin"];
+const STUDENT_SEARCH_ROLES: Role[] = ["registrar", "school_admin", "superadmin"];
 
 // API response shape (mirrors lib/sis/queries.ts::CrossAyMatch).
 type StudentMatch = {

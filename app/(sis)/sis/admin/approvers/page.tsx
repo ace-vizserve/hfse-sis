@@ -20,7 +20,7 @@ import { getSessionUser } from "@/lib/supabase/server";
 export default async function ApproversPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect("/login");
-  if (sessionUser.role !== "superadmin") redirect("/sis");
+  if (sessionUser.role !== "school_admin" && sessionUser.role !== "superadmin") redirect("/sis");
 
   const [byFlow, candidatesByFlow] = await Promise.all([
     listAllApproverAssignments(),
@@ -47,8 +47,9 @@ export default async function ApproversPage() {
           Approver assignments.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Designate which admin users are approvers for each approval flow. When a teacher files a locked-sheet change
-          request, they pick a primary + secondary from the flow&apos;s list; only those two see and act on it.
+          Designate which school administrators are approvers for each approval flow. When a teacher files a
+          locked-sheet change request, they pick a primary + secondary from the flow&apos;s list; only those two see and
+          act on it.
         </p>
       </header>
 
@@ -143,9 +144,9 @@ export default async function ApproversPage() {
             requests where they&apos;re already designated. They can still act on those until the request is resolved.
           </li>
           <li>
-            <strong>Only the admin role is eligible</strong> as an approver — superadmins manage this list but
+            <strong>Only school administrators are eligible</strong> as approvers — superadmins manage this list but
             don&apos;t approve change requests themselves. If you need someone as an approver, set their role to{" "}
-            <code className="rounded bg-muted px-1 py-0.5">admin</code>
+            <code className="rounded bg-muted px-1 py-0.5">school_admin</code>
             in Supabase Auth first.
           </li>
         </ul>

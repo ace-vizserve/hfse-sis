@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+﻿import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
@@ -12,7 +12,7 @@ import {
 } from '@/lib/schemas/attendance';
 
 // POST /api/attendance/calendar
-// Body — either:
+// Body â€” either:
 //   { termId, audience?, entries: [{ date, dayType|isHoliday, label? }, ...] }
 //   { termId, audience?, action: 'autofill_weekdays', start?, end? }
 //
@@ -22,7 +22,7 @@ import {
 //
 // Registrar+ only. Audit action: `attendance.calendar.upsert`.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
   const audience: Audience = parsed.data.audience;
 
   // Load previous day_types for these (term, date, audience) tuples so the
-  // audit diff captures what changed. Cheap — HFSE volumes are small and
+  // audit diff captures what changed. Cheap â€” HFSE volumes are small and
   // entries max 200.
   const dates = entries.map((e) => e.date);
   const { data: beforeRows } = await service
@@ -156,9 +156,9 @@ export async function POST(request: NextRequest) {
 
 // DELETE /api/attendance/calendar?termId=...&date=YYYY-MM-DD&audience=all|primary|secondary
 // Removes the calendar entry for a specific (term, date, audience).
-// Default audience='all' — matches the legacy single-row-per-date behavior.
+// Default audience='all' â€” matches the legacy single-row-per-date behavior.
 export async function DELETE(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const termId = request.nextUrl.searchParams.get('termId');

@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+﻿import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
@@ -7,13 +7,13 @@ import { createServiceClient } from '@/lib/supabase/service';
 // POST /api/grading-sheets/bulk-create
 // Body: either { ay_id: uuid } or { section_id: uuid } (exactly one).
 //
-// Delegates to the matching RPC from migration 016. Idempotent — safe to
+// Delegates to the matching RPC from migration 016. Idempotent â€” safe to
 // re-click after manual additions; existing sheets are untouched.
 //
-// Registrar+ only. No class_type gate / no subject allowlist — bulk create
+// Registrar+ only. No class_type gate / no subject allowlist â€” bulk create
 // creates every sheet the `subject_configs` matrix says should exist.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const body = (await request.json().catch(() => null)) as

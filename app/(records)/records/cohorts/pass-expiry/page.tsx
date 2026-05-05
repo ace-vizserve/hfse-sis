@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+﻿import { redirect } from 'next/navigation';
 
 import { CohortPageShell } from '@/components/sis/cohorts/cohort-page-shell';
 import { PassExpiryCohortTable } from '@/components/sis/cohorts/pass-expiry-cohort-table';
@@ -12,7 +12,7 @@ import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
-const ALLOWED_ROLES: Role[] = ['registrar', 'school_admin', 'admin', 'superadmin'];
+const ALLOWED_ROLES: Role[] = ['registrar', 'school_admin', 'superadmin'];
 
 export default async function RecordsCohortsPassExpiryPage({
   searchParams,

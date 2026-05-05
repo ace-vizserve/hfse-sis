@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+﻿import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 
 import { ModuleSidebar } from '@/components/module-sidebar';
@@ -15,7 +15,7 @@ export default async function AdmissionsLayout({ children }: { children: React.R
   if (!sessionUser) redirect('/login');
 
   const { id, email, role } = sessionUser;
-  const allowed = ['admissions', 'registrar', 'school_admin', 'admin', 'superadmin'] as const;
+  const allowed = ['admissions', 'registrar', 'school_admin', 'superadmin'] as const;
   if (!role || !(allowed as readonly string[]).includes(role)) {
     if (role === 'p-file') redirect('/p-files');
     if (role === 'teacher') redirect('/markbook');

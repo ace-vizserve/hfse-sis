@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+﻿import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
@@ -14,13 +14,13 @@ import { CopyFromPriorAyPayloadSchema } from '@/lib/schemas/attendance';
 //
 // Default `markTentative=true` flips every copied row to tentative=true so
 // the registrar reviews each before locking. Both target tables' upserts
-// are idempotent — re-running on the same term is safe.
+// are idempotent â€” re-running on the same term is safe.
 //
 // Replaces the legacy single-purpose copy that only handled holidays
 // (KD #50). New scope per migration 037: school_calendar overrides AND
 // calendar_events with category + audience + tentative.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'admin', 'superadmin']);
+  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
   let dayTypeRowsCopied = 0;
   let eventsCopied = 0;
 
-  // 1. school_calendar overrides — upsert with onConflict on the widened
+  // 1. school_calendar overrides â€” upsert with onConflict on the widened
   // unique key. Idempotent re-run.
   if (dayTypeRows.length > 0) {
     const rows = dayTypeRows.map((r) => ({
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     dayTypeRowsCopied = count ?? rows.length;
   }
 
-  // 2. calendar_events — INSERT (no natural key; multiple events on the
+  // 2. calendar_events â€” INSERT (no natural key; multiple events on the
   // same date are valid). The registrar can de-dupe via the admin UI if a
   // re-run is performed.
   if (events.length > 0) {

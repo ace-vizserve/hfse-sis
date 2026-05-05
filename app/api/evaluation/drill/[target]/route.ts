@@ -31,8 +31,8 @@ const VALID_TARGETS: EvaluationDrillTarget[] = [
 
 const VALID_SCOPES: DrillScope[] = ['range', 'ay', 'all'];
 
-const ALLOWED_ROLES = ['teacher', 'registrar', 'school_admin', 'admin', 'superadmin'] as const;
-const REGISTRAR_PLUS = new Set(['registrar', 'school_admin', 'admin', 'superadmin']);
+const ALLOWED_ROLES = ['teacher', 'registrar', 'school_admin', 'superadmin'] as const;
+const REGISTRAR_PLUS = new Set(['registrar', 'school_admin', 'superadmin']);
 
 export async function GET(
   req: Request,

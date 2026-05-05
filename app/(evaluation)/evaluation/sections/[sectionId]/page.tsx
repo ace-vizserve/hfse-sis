@@ -35,7 +35,6 @@ export default async function EvaluationSectionRosterPage({
     sessionUser.role !== 'teacher' &&
     sessionUser.role !== 'registrar' &&
     sessionUser.role !== 'school_admin' &&
-    sessionUser.role !== 'admin' &&
     sessionUser.role !== 'superadmin'
   ) {
     redirect('/');
@@ -170,7 +169,6 @@ export default async function EvaluationSectionRosterPage({
   const canAccessPtc =
     sessionUser.role === 'registrar' ||
     sessionUser.role === 'school_admin' ||
-    sessionUser.role === 'admin' ||
     sessionUser.role === 'superadmin';
   const ptcMap = canAccessPtc
     ? await getPtcFeedbackBySectionTerm(sectionId, selectedTerm.id)

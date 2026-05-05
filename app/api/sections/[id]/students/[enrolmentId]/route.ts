@@ -22,7 +22,6 @@ export async function PATCH(
   const auth = await requireRole([
     'registrar',
     'school_admin',
-    'admin',
     'superadmin',
   ]);
   if ('error' in auth) return auth.error;

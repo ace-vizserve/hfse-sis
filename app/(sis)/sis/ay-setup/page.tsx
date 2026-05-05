@@ -30,7 +30,7 @@ export default async function AySetupPage() {
   if (!sessionUser) redirect('/login');
 
   const role = sessionUser.role;
-  if (role !== 'school_admin' && role !== 'admin' && role !== 'superadmin') {
+  if (role !== 'school_admin' && role !== 'superadmin') {
     redirect('/sis');
   }
 
@@ -170,7 +170,7 @@ function AyRow({
 }: {
   ay: AcademicYearListItem;
   activeAyCode: string | null;
-  role: 'school_admin' | 'admin' | 'superadmin';
+  role: 'school_admin' | 'superadmin';
   blockers: string[];
   terms: TermRow[];
   otherAys: Array<{ ayCode: string; label: string }>;

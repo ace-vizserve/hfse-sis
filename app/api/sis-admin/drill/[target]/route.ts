@@ -22,7 +22,7 @@ const VALID_TARGETS: SisAdminDrillTarget[] = [
   'activity-by-actor',
 ];
 
-const ALLOWED_ROLES = ['school_admin', 'admin', 'superadmin'] as const;
+const ALLOWED_ROLES = ['school_admin', 'superadmin'] as const;
 
 type AnyRow =
   | AuditDrillRow

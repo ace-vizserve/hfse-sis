@@ -14,7 +14,7 @@ import {
   type LifecycleDrillTarget,
 } from '@/lib/sis/drill';
 
-const ALLOWED_ROLES = ['school_admin', 'admin', 'superadmin'] as const;
+const ALLOWED_ROLES = ['school_admin', 'superadmin'] as const;
 
 export async function GET(
   req: Request,

@@ -9,7 +9,6 @@ const RoleEnum = z.enum([
   'teacher',
   'registrar',
   'school_admin',
-  'admin',
   'superadmin',
   'p-file',
   'admissions',

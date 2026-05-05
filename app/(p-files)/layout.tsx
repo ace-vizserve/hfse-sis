@@ -14,7 +14,7 @@ export default async function PFilesLayout({ children }: { children: React.React
   if (!sessionUser) redirect('/login');
 
   const { id, email, role } = sessionUser;
-  if (role !== 'p-file' && role !== 'school_admin' && role !== 'admin' && role !== 'superadmin') redirect('/');
+  if (role !== 'p-file' && role !== 'school_admin' && role !== 'superadmin') redirect('/');
 
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';

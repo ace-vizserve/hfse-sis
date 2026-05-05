@@ -17,7 +17,7 @@ export async function getSidebarChangeRequestCount(
     query = query.eq('requested_by', userId).eq('status', 'pending');
   } else if (role === 'registrar') {
     query = query.eq('status', 'approved');
-  } else if (role === 'admin' || role === 'superadmin') {
+  } else if (role === 'school_admin' || role === 'superadmin') {
     query = query.eq('status', 'pending');
   } else {
     return 0;
