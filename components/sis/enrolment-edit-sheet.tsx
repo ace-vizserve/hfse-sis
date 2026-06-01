@@ -130,7 +130,7 @@ export function EnrolmentEditSheet({
         })
         .catch(() => setPosition(null));
     }
-  }, [status, initial.enrollment_status, position, ayCode, lateTermOverride]);
+  }, [status, initial.enrollment_status, position, ayCode]);
 
   function handleOpenChange(next: boolean) {
     setOpen(next);

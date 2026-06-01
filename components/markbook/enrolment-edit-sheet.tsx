@@ -116,7 +116,7 @@ export function EnrolmentEditSheet({
         })
         .catch(() => setPosition(null));
     }
-  }, [status, initial.enrollment_status, position, ayCode, lateTermOverride]);
+  }, [status, initial.enrollment_status, position, ayCode]);
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
@@ -304,10 +304,9 @@ export function EnrolmentEditSheet({
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground">
-                  Withdrawing sets{' '}
-                  <code className="font-mono">withdrawal_date</code> to today.
-                  Rejoining clears it. Pre-enrolment / post-withdrawal scores
-                  stay as N/A.
+                  Withdrawing sets the withdrawal date to today. Restoring to
+                  Active reverses the admissions withdrawal. Pre-enrolment /
+                  post-withdrawal scores stay as N/A.
                 </p>
               </div>
 

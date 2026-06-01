@@ -708,6 +708,7 @@ function PlacementSection({
                   const isEditable =
                     isCurrentAy &&
                     (r.enrollmentStatus === 'active' ||
+                      r.enrollmentStatus === 'late_enrollee' ||
                       r.enrollmentStatus === 'withdrawn');
                   const isTransferable =
                     isCurrentAy &&
