@@ -180,6 +180,7 @@ export function SectionRosterTable({
               <EnrolmentEditSheet
                 sectionId={sectionId}
                 enrolmentId={r.enrolmentId}
+                ayCode={ayCode}
                 studentName={r.studentName}
                 indexNumber={r.indexNumber}
                 initial={{

@@ -762,6 +762,7 @@ function PlacementSection({
                               <EnrolmentEditSheet
                                 sectionId={r.sectionId}
                                 enrolmentId={r.enrolmentId}
+                                ayCode={r.ayCode}
                                 studentName={r.sectionName}
                                 indexNumber={r.indexNumber}
                                 initial={{
