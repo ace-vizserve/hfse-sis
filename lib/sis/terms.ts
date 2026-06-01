@@ -102,22 +102,6 @@ export async function getEnrolmentPosition(
   );
 }
 
-// Returns the current term when today falls in T2/T3/T4, null otherwise.
-// T1 enrolments are on-time by definition — no prompt needed.
-// Out-of-term dates (breaks, before T1) also return null.
-// Used by enrolment routes to decide whether to surface the
-// "Mark as late enrollee?" prompt.
-export async function detectMidTermEnrolment(
-  ayCode: string,
-  _service?: SupabaseClient
-): Promise<TermInfo | null> {
-  const today = new Date().toISOString().slice(0, 10);
-  const term = await getTermForDate(today, ayCode);
-  if (!term) return null;
-  if (term.termNumber <= 1) return null;
-  return term;
-}
-
 // Synchronous lookup against a preloaded map.
 export function termForDateInPreloaded(
   date: string,

@@ -8,7 +8,6 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -56,10 +55,13 @@ const OTHER_SENTINEL = '__other__';
 
 type ExtraValues = Record<string, string | null>;
 type MidTermPayload = {
-  termNumber: number;
+  termNumber: number; // active term
   termLabel: string;
   sectionId: string;
   sectionStudentId: string;
+  nextTermNumber: number | null;
+  canDeferToNext: boolean;
+  daysLeftInActiveTerm: number | null;
 };
 
 export function EditStageDialog({
@@ -92,7 +94,9 @@ export function EditStageDialog({
   const [pendingMidTerm, setPendingMidTerm] = useState<MidTermPayload | null>(
     null
   );
-  const [markAsLate, setMarkAsLate] = useState(true);
+  // The registrar-chosen joining term (active term = "join current",
+  // next term = "start next"). Defaults to the active term when the prompt opens.
+  const [chosenTerm, setChosenTerm] = useState<number | null>(null);
   const [applyingLate, setApplyingLate] = useState(false);
 
   const cols = STAGE_COLUMN_MAP[stageKey];
@@ -308,7 +312,7 @@ export function EditStageDialog({
         | undefined;
       if (midTermPayload?.sectionId) {
         setPendingMidTerm(midTermPayload);
-        setMarkAsLate(true);
+        setChosenTerm(midTermPayload.termNumber); // default = active term
         return;
       }
       setOpen(false);
@@ -327,6 +331,7 @@ export function EditStageDialog({
         setOpen(next);
         if (!next) {
           setPendingMidTerm(null);
+          setChosenTerm(null);
           // Reset to initials on close.
           setStatusChoice(
             initialStatus === null
@@ -371,27 +376,46 @@ export function EditStageDialog({
                 Enrolling mid-year
               </DialogTitle>
               <DialogDescription>
-                Today falls in <strong>{pendingMidTerm.termLabel}</strong>. Most
-                students who join in {pendingMidTerm.termLabel} are marked as
-                late enrollees so the system knows to skip assessments that
-                happened before they joined.
+                Enrolled after {pendingMidTerm.termLabel} started — this is a
+                late enrollee. Choose how they join (this skips assessments from
+                before they joined).
               </DialogDescription>
             </DialogHeader>
-            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
-              <Checkbox
-                checked={markAsLate}
-                onCheckedChange={(v) => setMarkAsLate(v === true)}
-                className="mt-0.5"
-              />
-              <span>
-                The system detected this student is enrolling in{' '}
-                <strong>{pendingMidTerm.termLabel}</strong> — they will be
-                tagged as a late enrollee.{' '}
-                <span className="text-muted-foreground">
-                  Untick only if this is not a late enrolment.
-                </span>
-              </span>
-            </label>
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                onClick={() => setChosenTerm(pendingMidTerm.termNumber)}
+                className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${
+                  chosenTerm === pendingMidTerm.termNumber
+                    ? 'border-primary bg-accent text-foreground'
+                    : 'border-hairline text-foreground hover:bg-muted/50'
+                }`}
+              >
+                Join {pendingMidTerm.termLabel} now
+                {pendingMidTerm.daysLeftInActiveTerm !== null &&
+                  pendingMidTerm.daysLeftInActiveTerm < 14 && (
+                    <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-brand-amber">
+                      ends in {pendingMidTerm.daysLeftInActiveTerm}d
+                    </span>
+                  )}
+              </button>
+              {pendingMidTerm.canDeferToNext &&
+                pendingMidTerm.nextTermNumber !== null && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setChosenTerm(pendingMidTerm.nextTermNumber!)
+                    }
+                    className={`flex w-full items-center rounded-lg border px-3 py-2 text-left text-sm ${
+                      chosenTerm === pendingMidTerm.nextTermNumber
+                        ? 'border-primary bg-accent text-foreground'
+                        : 'border-hairline text-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    Start in T{pendingMidTerm.nextTermNumber} instead
+                  </button>
+                )}
+            </div>
             <DialogFooter className="gap-2">
               <Button
                 type="button"
@@ -400,23 +424,19 @@ export function EditStageDialog({
                 disabled={applyingLate}
                 onClick={() => {
                   setPendingMidTerm(null);
+                  setChosenTerm(null);
                   setOpen(false);
                   router.refresh();
                 }}
               >
-                Skip
+                Not a late enrollee
               </Button>
               <Button
                 type="button"
                 size="sm"
-                disabled={applyingLate}
+                disabled={applyingLate || chosenTerm === null}
                 onClick={async () => {
-                  if (!markAsLate) {
-                    setPendingMidTerm(null);
-                    setOpen(false);
-                    router.refresh();
-                    return;
-                  }
+                  if (chosenTerm === null) return;
                   setApplyingLate(true);
                   try {
                     const res = await fetch(
@@ -426,15 +446,13 @@ export function EditStageDialog({
                         headers: { 'content-type': 'application/json' },
                         body: JSON.stringify({
                           enrollment_status: 'late_enrollee',
-                          late_enrollee_term_number: pendingMidTerm.termNumber,
+                          late_enrollee_term_number: chosenTerm,
                         }),
                       }
                     );
                     if (!res.ok)
                       throw new Error('Failed to mark as late enrollee');
-                    toast.success(
-                      `Marked as late enrollee · ${pendingMidTerm.termLabel}`
-                    );
+                    toast.success(`Marked as late enrollee · T${chosenTerm}`);
                   } catch (e) {
                     toast.error(
                       e instanceof Error
@@ -444,6 +462,7 @@ export function EditStageDialog({
                   } finally {
                     setApplyingLate(false);
                     setPendingMidTerm(null);
+                    setChosenTerm(null);
                     setOpen(false);
                     router.refresh();
                   }

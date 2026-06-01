@@ -20,7 +20,7 @@ import {
   OPTIONAL_DOCUMENT_SLOT_KEYS,
   STP_CONDITIONAL_SLOT_KEYS,
 } from '@/lib/sis/queries';
-import { detectMidTermEnrolment } from '@/lib/sis/terms';
+import { getEnrolmentPosition } from '@/lib/sis/terms';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { syncOneStudent } from '@/lib/sync/students';
@@ -620,13 +620,16 @@ export async function PATCH(
   // badge, late-enrollee N/A logic) uses the actual Enrolled-flip date, not
   // the admissions row's earlier stamp. Boundary-only — only fires on the
   // three change values that indicate a real insertion or reactivation.
-  // Then detect whether today is T2/T3/T4; if so, return the term info so
-  // the dialog can surface the "Mark as late enrollee?" second-step prompt.
+  // Then resolve the enrolment position; if a term is in session the dialog
+  // surfaces the position-aware "join current / start next" late-enrollee prompt.
   type MidTermPayload = {
-    termNumber: number;
+    termNumber: number; // active term
     termLabel: string;
     sectionId: string;
     sectionStudentId: string;
+    nextTermNumber: number | null;
+    canDeferToNext: boolean;
+    daysLeftInActiveTerm: number | null;
   };
   let midTermEnrolment: MidTermPayload | null = null;
   if (
@@ -661,12 +664,16 @@ export async function PATCH(
           );
         }
       }
-      const term = await detectMidTermEnrolment(ayCode, supabase);
-      if (term) {
+      const pos = await getEnrolmentPosition(ayCode);
+      if (pos.isLateEnrollee && pos.activeTerm) {
         midTermEnrolment = {
-          ...term,
+          termNumber: pos.activeTerm.termNumber,
+          termLabel: `T${pos.activeTerm.termNumber}`,
           sectionId: ssRow.section_id,
           sectionStudentId: ssRow.id,
+          nextTermNumber: pos.nextTerm?.termNumber ?? null,
+          canDeferToNext: pos.canDeferToNext,
+          daysLeftInActiveTerm: pos.daysLeftInActiveTerm,
         };
       }
     }
