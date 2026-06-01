@@ -5,7 +5,11 @@ import { logAction } from '@/lib/audit/log-action';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import { EnrolmentMetadataSchema } from '@/lib/schemas/enrolment';
-import { detectMidTermEnrolment, getTermForDate } from '@/lib/sis/terms';
+import {
+  getEnrolmentPosition,
+  getTermForDate,
+  loadTermsForAY,
+} from '@/lib/sis/terms';
 import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
 
 // PATCH /api/sections/[id]/students/[enrolmentId]
@@ -446,17 +450,21 @@ export async function PATCH(
   // to mark as late_enrollee. Only fires when a previously-withdrawn student
   // was re-enrolled as 'active' (not 'late_enrollee' — the user already made
   // the tagging choice explicitly in that case, checked via lateEnrolleeTransition).
-  type MidTermPayload = {
+  let midTermEnrolment: {
     termNumber: number;
     termLabel: string;
     sectionId: string;
     sectionStudentId: string;
-  };
-  let midTermEnrolment: MidTermPayload | null = null;
+  } | null = null;
   if (isReEnrolment && !lateEnrolleeTransition && ayCodeForInvalidate) {
-    const term = await detectMidTermEnrolment(ayCodeForInvalidate, service);
-    if (term) {
-      midTermEnrolment = { ...term, sectionId, sectionStudentId: enrolmentId };
+    const pos = await getEnrolmentPosition(ayCodeForInvalidate);
+    if (pos.isLateEnrollee && pos.activeTerm) {
+      midTermEnrolment = {
+        termNumber: pos.activeTerm.termNumber,
+        termLabel: `T${pos.activeTerm.termNumber}`,
+        sectionId,
+        sectionStudentId: enrolmentId,
+      };
     }
   }
 

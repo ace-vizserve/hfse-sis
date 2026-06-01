@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
-import { detectMidTermEnrolment } from '@/lib/sis/terms';
+import { getEnrolmentPosition } from '@/lib/sis/terms';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +19,6 @@ export async function GET(req: NextRequest) {
   if (!ayCode)
     return NextResponse.json({ error: 'ay required' }, { status: 400 });
 
-  const midTerm = await detectMidTermEnrolment(ayCode);
-  return NextResponse.json({ midTerm });
+  const position = await getEnrolmentPosition(ayCode);
+  return NextResponse.json({ position });
 }

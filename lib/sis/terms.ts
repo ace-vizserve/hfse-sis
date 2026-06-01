@@ -4,6 +4,10 @@ import { unstable_cache } from 'next/cache';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { createServiceClient } from '@/lib/supabase/service';
+import {
+  resolveEnrolmentPosition,
+  type EnrolmentPosition,
+} from '@/lib/sis/enrolment-position';
 
 // Resolved term info for a given date in an AY.
 export type TermInfo = { termNumber: number; termLabel: string };
@@ -79,6 +83,23 @@ export async function preloadTermsForAYs(
   if (ayCodes.length === 0) return new Map();
   const results = await Promise.all(ayCodes.map((ay) => loadTermsForAY(ay)));
   return new Map(ayCodes.map((ay, i) => [ay, results[i]]));
+}
+
+// Loads the AY's term windows and resolves the enrolment position for today
+// (UTC date — matches the enrollment_date stamp in the section-students PATCH).
+export async function getEnrolmentPosition(
+  ayCode: string
+): Promise<EnrolmentPosition> {
+  const terms = await loadTermsForAY(ayCode);
+  const today = new Date().toISOString().slice(0, 10);
+  return resolveEnrolmentPosition(
+    terms.map((t) => ({
+      termNumber: t.termNumber,
+      startDate: t.startDate,
+      endDate: t.endDate,
+    })),
+    today
+  );
 }
 
 // Returns the current term when today falls in T2/T3/T4, null otherwise.
