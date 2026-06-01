@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Save } from 'lucide-react';
 import { toast } from 'sonner';
@@ -49,6 +49,7 @@ import {
 export function EnrolmentEditSheet({
   sectionId,
   enrolmentId,
+  ayCode,
   initial,
   studentName,
   indexNumber,
@@ -56,6 +57,7 @@ export function EnrolmentEditSheet({
 }: {
   sectionId: string;
   enrolmentId: string;
+  ayCode: string;
   initial: {
     bus_no: string | null;
     classroom_officer_role: string | null;
@@ -88,6 +90,34 @@ export function EnrolmentEditSheet({
   const [saving, setSaving] = useState(false);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
 
+  type Position = {
+    activeTerm: { termNumber: number } | null;
+    nextTerm: { termNumber: number } | null;
+    isLateEnrollee: boolean;
+    canDeferToNext: boolean;
+    daysLeftInActiveTerm: number | null;
+  };
+  const [position, setPosition] = useState<Position | null>(null);
+
+  useEffect(() => {
+    if (
+      status === 'late_enrollee' &&
+      initial.enrollment_status !== 'late_enrollee' &&
+      position === null
+    ) {
+      fetch(`/api/sis/today-term?ay=${encodeURIComponent(ayCode)}`)
+        .then((r) => r.json())
+        .then((d) => {
+          const pos = (d.position ?? null) as Position | null;
+          setPosition(pos);
+          if (pos?.activeTerm && lateTermOverride === null) {
+            setLateTermOverride(pos.activeTerm.termNumber);
+          }
+        })
+        .catch(() => setPosition(null));
+    }
+  }, [status, initial.enrollment_status, position, ayCode, lateTermOverride]);
+
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (next) {
@@ -103,6 +133,7 @@ export function EnrolmentEditSheet({
       setShowTermOverride(false);
       setSaving(false);
       setConfirmWithdraw(false);
+      setPosition(null);
     }
   }
 
@@ -124,23 +155,29 @@ export function EnrolmentEditSheet({
     setConfirmWithdraw(false);
     setSaving(true);
     try {
+      const requestBody: Record<string, unknown> = {
+        bus_no: busNo,
+        classroom_officer_role: officer,
+        enrollment_status: status,
+      };
+      if (status === 'withdrawn' && initial.enrollment_status !== 'withdrawn') {
+        requestBody.withdrawal_reason = withdrawalReason || null;
+        requestBody.withdrawal_notes = withdrawalNotes.trim() || null;
+      }
+      // New late-enrollee tag — send the registrar's chosen joining term.
+      if (
+        status === 'late_enrollee' &&
+        initial.enrollment_status !== 'late_enrollee' &&
+        lateTermOverride !== null
+      ) {
+        requestBody.late_enrollee_term_number = lateTermOverride;
+      }
       const res = await fetch(
         `/api/sections/${sectionId}/students/${enrolmentId}`,
         {
           method: 'PATCH',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            bus_no: busNo,
-            classroom_officer_role: officer,
-            enrollment_status: status,
-            ...(status === 'withdrawn' &&
-            initial.enrollment_status !== 'withdrawn'
-              ? {
-                  withdrawal_reason: withdrawalReason || null,
-                  withdrawal_notes: withdrawalNotes.trim() || null,
-                }
-              : {}),
-          }),
+          body: JSON.stringify(requestBody),
         }
       );
       const body = await res.json().catch(() => ({}));
@@ -273,6 +310,56 @@ export function EnrolmentEditSheet({
                   stay as N/A.
                 </p>
               </div>
+
+              {status === 'late_enrollee' &&
+                initial.enrollment_status !== 'late_enrollee' &&
+                position?.activeTerm && (
+                  <div className="space-y-2">
+                    <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Joining term
+                    </p>
+                    <p className="text-[13px] text-muted-foreground">
+                      Enrolled after T{position.activeTerm.termNumber} started —
+                      choose how this student joins.
+                    </p>
+                    <div className="space-y-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLateTermOverride(position.activeTerm!.termNumber)
+                        }
+                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${
+                          lateTermOverride === position.activeTerm.termNumber
+                            ? 'border-primary bg-accent text-foreground'
+                            : 'border-hairline text-foreground hover:bg-muted/50'
+                        }`}
+                      >
+                        Join T{position.activeTerm.termNumber} now
+                        {position.daysLeftInActiveTerm !== null &&
+                          position.daysLeftInActiveTerm < 14 && (
+                            <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-brand-amber">
+                              ends in {position.daysLeftInActiveTerm}d
+                            </span>
+                          )}
+                      </button>
+                      {position.canDeferToNext && position.nextTerm && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLateTermOverride(position.nextTerm!.termNumber)
+                          }
+                          className={`flex w-full items-center rounded-lg border px-3 py-2 text-left text-sm ${
+                            lateTermOverride === position.nextTerm.termNumber
+                              ? 'border-primary bg-accent text-foreground'
+                              : 'border-hairline text-foreground hover:bg-muted/50'
+                          }`}
+                        >
+                          Start in T{position.nextTerm.termNumber} instead
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
               {initial.enrollment_status === 'late_enrollee' && (
                 <div className="space-y-1.5">
