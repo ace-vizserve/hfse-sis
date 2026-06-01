@@ -169,27 +169,17 @@ export async function PATCH(
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 
-  // Resolve the joining term for late-enrollee transitions so the audit
-  // trail records "Tagged as late enrollee · T2" — and so the response can
-  // carry the term back for the EnrolmentEditSheet's success toast.
+  // Resolve the joining term for the audit trail + success toast. Prefer the
+  // registrar's explicit choice; only derive from today when none was given.
   let lateEnrolleeTerm: { termNumber: number; termLabel: string } | null = null;
   if (lateEnrolleeTransition) {
-    // Need the section's AY to look up terms.
-    const { data: secRow } = await service
-      .from('sections')
-      .select('academic_year:academic_years!inner(ay_code)')
-      .eq('id', sectionId)
-      .maybeSingle();
-    const ay = (
-      secRow as {
-        academic_year: { ay_code: string } | { ay_code: string }[];
-      } | null
-    )?.academic_year;
-    const ayCode = Array.isArray(ay) ? ay[0]?.ay_code : ay?.ay_code;
-    if (ayCode) {
+    const chosenN = parsed.data.late_enrollee_term_number ?? null;
+    if (chosenN != null) {
+      lateEnrolleeTerm = { termNumber: chosenN, termLabel: `T${chosenN}` };
+    } else if (sectionAyCode) {
       lateEnrolleeTerm = await getTermForDate(
         new Date().toISOString().slice(0, 10),
-        ayCode,
+        sectionAyCode,
         service
       );
     }
@@ -451,23 +441,10 @@ export async function PATCH(
     },
   });
 
-  // Resolve the section's AY so we invalidate the right operational drills.
-  // Reuse the join we already do on late-enrollee transitions; cheap when not.
-  const { data: ayLookup } = await service
-    .from('sections')
-    .select('academic_year:academic_years!inner(ay_code)')
-    .eq('id', sectionId)
-    .maybeSingle();
-  const ayLookupRow = (
-    ayLookup as {
-      academic_year: { ay_code: string } | { ay_code: string }[];
-    } | null
-  )?.academic_year;
-  const ayCodeForInvalidate = Array.isArray(ayLookupRow)
-    ? ayLookupRow[0]?.ay_code
-    : ayLookupRow?.ay_code;
-  if (ayCodeForInvalidate) {
-    invalidateAllOperationalDrills(ayCodeForInvalidate);
+  // Invalidate operational drills for this AY using the canonical sectionAyCode
+  // resolved near the top of the handler (no redundant AY query needed here).
+  if (sectionAyCode) {
+    invalidateAllOperationalDrills(sectionAyCode);
   }
 
   // Detect mid-term on re-enrolment so the client can prompt the registrar
@@ -480,8 +457,8 @@ export async function PATCH(
     sectionId: string;
     sectionStudentId: string;
   } | null = null;
-  if (isReEnrolment && !lateEnrolleeTransition && ayCodeForInvalidate) {
-    const pos = await getEnrolmentPosition(ayCodeForInvalidate);
+  if (isReEnrolment && !lateEnrolleeTransition && sectionAyCode) {
+    const pos = await getEnrolmentPosition(sectionAyCode);
     if (pos.isLateEnrollee && pos.activeTerm) {
       midTermEnrolment = {
         termNumber: pos.activeTerm.termNumber,
