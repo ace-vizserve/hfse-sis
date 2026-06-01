@@ -61,6 +61,20 @@ export async function PATCH(
     );
   }
 
+  // Section AY (used by the late-enrollee enrollment_date derivation + audit).
+  const { data: secAyRow } = await service
+    .from('sections')
+    .select('academic_year:academic_years!inner(ay_code)')
+    .eq('id', sectionId)
+    .maybeSingle();
+  const secAy = (
+    secAyRow as {
+      academic_year: { ay_code: string } | { ay_code: string }[];
+    } | null
+  )?.academic_year;
+  const sectionAyCode =
+    (Array.isArray(secAy) ? secAy[0]?.ay_code : secAy?.ay_code) ?? null;
+
   // Flag set inside the withdrawal cascade when the admissions row already
   // has a terminal reason — lets us skip overwriting it and record why.
   let terminalCascadeSkipped = false;
@@ -99,14 +113,24 @@ export async function PATCH(
     // Only fires on the boundary (active → late_enrollee), not on idempotent
     // re-saves, so the date stays stable once set.
     if (parsed.data.enrollment_status === 'late_enrollee') {
-      if (before.enrollment_status !== 'late_enrollee') {
-        patch.enrollment_date = new Date().toISOString().slice(0, 10);
-        lateEnrolleeTransition = true;
-      }
-      // Always persist an explicit term override if provided (null clears it).
       if (parsed.data.late_enrollee_term_number !== undefined) {
         patch.late_enrollee_term_number =
           parsed.data.late_enrollee_term_number ?? null;
+      }
+      if (before.enrollment_status !== 'late_enrollee') {
+        // Derive the joining date from the chosen term: today when the chosen
+        // term contains today ("join current"), else that term's start date
+        // ("start next term" — they begin fresh, attendance prorates from there).
+        const today = new Date().toISOString().slice(0, 10);
+        let stampDate = today;
+        const chosenTermN = parsed.data.late_enrollee_term_number ?? null;
+        if (chosenTermN != null && sectionAyCode) {
+          const terms = await loadTermsForAY(sectionAyCode);
+          const chosen = terms.find((t) => t.termNumber === chosenTermN);
+          if (chosen && chosen.startDate > today) stampDate = chosen.startDate;
+        }
+        patch.enrollment_date = stampDate;
+        lateEnrolleeTransition = true;
       }
     }
   }
