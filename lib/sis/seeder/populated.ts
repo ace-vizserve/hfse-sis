@@ -1,10 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { seedDemoExtras, type DemoExtrasResult } from './demo-extras';
-import { seedTestAy } from './students';
 import { seedMovements } from './movements';
 import { seedEdgeCases, type EdgeCaseResult } from './edge-cases';
 import { hashString, mulberry32, prefixFor } from './random';
+
+import {
+  buildSyncPlan,
+  type LevelRow,
+  type SectionRow,
+  type StudentRow,
+  type EnrollmentRow,
+} from '@/lib/sync/students';
+import type { AdmissionsRow } from '@/lib/supabase/admissions';
 
 import { computeQuarterly } from '@/lib/compute/quarterly';
 import {
@@ -50,6 +58,15 @@ export type PopulatedSeedResult = {
   movements_inserted: number;
   edge_cases_inserted: number;
   demo_extras: DemoExtrasResult | null;
+  // Reconciliation pass — guarantees every enrolled admissions row resolved to
+  // a public.students row via the sync. `orphans` MUST be 0; a non-zero value
+  // is the "enrolled but no matching student record" symptom this refactor
+  // exists to prevent.
+  reconciliation: {
+    enrolled: number;
+    synced: number;
+    orphans: number;
+  };
 };
 
 // ─── Test teacher personas ────────────────────────────────────────────────────
@@ -138,52 +155,47 @@ export async function seedPopulated(
     movements_inserted: 0,
     edge_cases_inserted: 0,
     demo_extras: null,
+    reconciliation: { enrolled: 0, synced: 0, orphans: 0 },
   };
 
-  // ---- 0. Seed enrolled roster (public.students + section_students) ----
-  // Find P6 Grit, P6 Loyalty, S4 Excellence sections and seed 13/12/25
-  // students respectively.  All downstream steps (grades, attendance,
-  // evaluation) depend on section_students existing.
-  {
-    const { data: sectionRows } = await service
-      .from('sections')
-      .select('id, name, levels(code)')
-      .eq('academic_year_id', testAy.id);
-    const sections = (sectionRows ?? []) as Array<{
-      id: string;
-      name: string;
-      levels: { code: string } | { code: string }[] | null;
-    }>;
-    const levelCodeOf = (s: (typeof sections)[number]) =>
-      Array.isArray(s.levels) ? s.levels[0]?.code : s.levels?.code;
-    const grit = sections.find(
-      (s) => s.name === 'Grit' && levelCodeOf(s) === 'P6'
-    );
-    const loyalty = sections.find(
-      (s) => s.name === 'Loyalty' && levelCodeOf(s) === 'P6'
-    );
-    const excellence = sections.find(
-      (s) => s.name === 'Excellence' && levelCodeOf(s) === 'S4'
-    );
-    const perSection: Array<{ sectionId: string; count: number }> = [];
-    if (grit) perSection.push({ sectionId: grit.id, count: 13 });
-    if (loyalty) perSection.push({ sectionId: loyalty.id, count: 12 });
-    if (excellence) perSection.push({ sectionId: excellence.id, count: 25 });
-    if (perSection.length > 0) {
-      const rosterResult = await seedTestAy(
-        service,
-        testAy.id,
-        testAy.ay_code,
-        {
-          perSection,
-        }
-      );
-      result.students_inserted = rosterResult.students_inserted;
-      result.enrolments_inserted = rosterResult.students_inserted; // 1:1 with students
-    }
-  }
+  // The enrolled roster is now seeded production-style: admissions rows first,
+  // then public.students + section_students materialised through the SAME pure
+  // sync planner (`buildSyncPlan`) the live admissions→grading sync uses. This
+  // guarantees every enrolled student has matching admissions rows — the exact
+  // invariant the old "students-first, admissions-backfilled" order could
+  // silently break.
 
-  // ---- 1. Grade entries ----
+  // ---- 0a. Resolve the per-section enrolled-roster config (P6 Grit 13,
+  //          P6 Loyalty 12, S4 Excellence 25) from the sections in this AY. ----
+  const enrolledConfig = await resolveEnrolledRosterConfig(service, testAy);
+
+  // ---- 0b. Enrolled-stage admissions rows FIRST. Personas are generated
+  //          deterministically from the per-section config (no dependency on
+  //          section_students existing yet) and inserted into
+  //          ay{YY}_enrolment_applications + _enrolment_status. ----
+  const personas = buildEnrolledPersonas(testAy, enrolledConfig);
+  result.enrolled_applications_inserted = await seedEnrolledAdmissionsRows(
+    service,
+    testAy,
+    personas
+  );
+
+  // ---- 0c. Admissions pre-enrolment funnel (non-enrolled stages). ----
+  result.admissions_apps_inserted = await seedAdmissionsFunnel(service, testAy);
+
+  // ---- 0d. Admissions documents — reads ALL apps rows (enrolled + funnel),
+  //          so it must run after both 0b and 0c. ----
+  result.documents_inserted = await seedAdmissionsDocuments(service, testAy);
+
+  // ---- 0e. Run the sync: buildSyncPlan(rows, snapshot) → commit students +
+  //          section_students + back-write enrolee_number. Withdrawn/Cancelled
+  //          personas are excluded from the roster rows so they never create an
+  //          active enrollment (matching the live roster filter). ----
+  const sync = await syncEnrolledPersonas(service, testAy, personas);
+  result.students_inserted = sync.students_inserted;
+  result.enrolments_inserted = sync.enrolments_inserted;
+
+  // ---- 1. Grade entries (now reads the section_students created in 0e) ----
   result.grade_entries_inserted = await seedGradeEntries(
     service,
     testAy,
@@ -244,16 +256,6 @@ export async function seedPopulated(
     allTermsFull
   );
 
-  // ---- 5. Enrolled-stage admissions rows (Records/Admissions detail pages
-  //        need these to resolve for the seeded H270-prefixed students) ----
-  result.enrolled_applications_inserted = await seedEnrolledAdmissionsRows(
-    service,
-    testAy
-  );
-
-  // ---- 6. Admissions pre-enrolment funnel (non-enrolled stages) ----
-  result.admissions_apps_inserted = await seedAdmissionsFunnel(service, testAy);
-
   // ---- 7. Discount codes ----
   result.discount_codes_inserted = await seedDiscountCodes(service, testAy);
 
@@ -264,36 +266,207 @@ export async function seedPopulated(
     allTermsFull
   );
 
-  // ---- 9. Admissions documents (P-Files dashboards + lifecycle widget) ----
-  result.documents_inserted = await seedAdmissionsDocuments(service, testAy);
-
   // ---- 10 + 11. Demo-extras and movements are independent of each other —
-  //          both depend only on enrolled apps (step 5) which is already
+  //          both depend only on enrolled apps (seeded in 0b) which is already
   //          complete. Run in parallel for a 2× speedup on these two passes.
-  const [demoExtras, movementsInserted] = await Promise.all([
-    seedDemoExtras(service, testAy),
-    seedMovements(service, testAy),
-  ]);
-  result.demo_extras = demoExtras;
-  result.movements_inserted = movementsInserted;
+  //          These are NON-CRITICAL embellishment passes: a failure here must
+  //          NOT abort the seed before the cache-invalidation step below (a
+  //          skipped invalidation leaves the long-TTL dashboard/list caches
+  //          stale → "0 metric / empty lists while the drill sheet has data").
+  try {
+    const [demoExtras, movementsInserted] = await Promise.all([
+      seedDemoExtras(service, testAy),
+      seedMovements(service, testAy),
+    ]);
+    result.demo_extras = demoExtras;
+    result.movements_inserted = movementsInserted;
+  } catch (err) {
+    console.error(
+      '[populated seeder] demo-extras/movements pass failed (non-fatal):',
+      err instanceof Error ? err.message : err
+    );
+  }
 
   // ---- 13. School-realistic edge cases (late enrollees, withdrawals,
   //          change requests, P-Files chase, compassionate quota, GA 88.4,
   //          mid-year section transfer) — only when all terms are full so
-  //          there are locked sheets to file change requests against.
+  //          there are locked sheets to file change requests against. Also
+  //          non-critical: guarded so a single edge case throwing can't skip
+  //          the invalidation + reconciliation below.
   if (allTermsFull) {
-    const ec = await seedEdgeCases(service, testAy);
-    result.edge_cases_inserted = ec.edge_cases_inserted;
+    try {
+      const ec = await seedEdgeCases(service, testAy);
+      result.edge_cases_inserted = ec.edge_cases_inserted;
+    } catch (err) {
+      console.error(
+        '[populated seeder] edge-cases pass failed (non-fatal):',
+        err instanceof Error ? err.message : err
+      );
+    }
   }
 
-  // ---- 14. Bust the per-AY drill caches so a freshly-seeded environment
-  //          renders without waiting for the 60s unstable_cache TTL.
-  //          Critical for the Top-absent dashboard tile, which reads from
-  //          buildAllRowSets — a stale snapshot would show 0 absences while
-  //          the lazy-fetched drill sheet shows the real rows.
+  // ---- 14. Bust the per-AY drill + dashboard + list caches so a freshly-
+  //          seeded environment renders without waiting for the (up to 10-min)
+  //          unstable_cache TTL. A stale snapshot shows 0 on dashboard metrics
+  //          and empty admissions/records lists while the lazy-fetched drill
+  //          sheet shows the real rows. MUST run even if a late pass above
+  //          failed — hence the try/catch guards on 10/11/13.
   invalidateAllOperationalDrills(testAy.ay_code);
 
+  // ---- 15. Reconciliation pass — assert the production invariant that every
+  //          enrolled admissions row resolved to a public.students record.
+  //          Loud console.error if any orphan exists (the symptom this
+  //          admissions-first refactor exists to eliminate).
+  result.reconciliation = await reconcileEnrolled(service, testAy);
+
   return result;
+}
+
+// ─── Enrolled-roster config + persona generation (admissions-first) ──────────
+
+// The deterministic per-section enrolled roster. Mirrors the counts the old
+// students-first path passed to seedTestAy (P6 Grit 13, P6 Loyalty 12,
+// S4 Excellence 25). Resolved against the sections actually present in this AY.
+type EnrolledSection = {
+  sectionId: string;
+  sectionName: string;
+  levelCode: string;
+  levelLabel: string;
+  count: number;
+};
+
+const ENROLLED_ROSTER_SPEC = [
+  { sectionName: 'Grit', levelCode: 'P6', count: 13 },
+  { sectionName: 'Loyalty', levelCode: 'P6', count: 12 },
+  { sectionName: 'Excellence', levelCode: 'S4', count: 25 },
+] as const;
+
+async function resolveEnrolledRosterConfig(
+  service: SupabaseClient,
+  testAy: { id: string; ay_code: string }
+): Promise<EnrolledSection[]> {
+  const { data: sectionRows } = await service
+    .from('sections')
+    .select('id, name, levels(code, label)')
+    .eq('academic_year_id', testAy.id);
+  type Row = {
+    id: string;
+    name: string;
+    levels:
+      | { code: string; label: string }
+      | { code: string; label: string }[]
+      | null;
+  };
+  const sections = (sectionRows ?? []) as Row[];
+  const levelOf = (s: Row) =>
+    Array.isArray(s.levels) ? s.levels[0] : s.levels;
+
+  const config: EnrolledSection[] = [];
+  for (const spec of ENROLLED_ROSTER_SPEC) {
+    const match = sections.find((s) => {
+      const lvl = levelOf(s);
+      return s.name === spec.sectionName && lvl?.code === spec.levelCode;
+    });
+    if (!match) continue;
+    const lvl = levelOf(match)!;
+    config.push({
+      sectionId: match.id,
+      sectionName: match.name,
+      levelCode: lvl.code,
+      levelLabel: lvl.label,
+      count: spec.count,
+    });
+  }
+  return config;
+}
+
+// One generated enrolled student. Carries everything the apps/status inserts
+// and the sync planner need WITHOUT requiring section_students to exist yet.
+type EnrolledPersona = {
+  studentNumber: string;
+  firstName: string;
+  lastName: string;
+  middleName: string | null;
+  sectionId: string;
+  sectionName: string;
+  levelCode: string;
+  levelLabel: string;
+  enroleeNumber: string;
+  applicationStatus: ApplicationStatus;
+};
+
+// Generates the enrolled personas deterministically from the per-section
+// config — the same global-sequence H270{ayDigits}{seq4} numbering + per-section
+// pickNames as the legacy seedTestAy, so student_numbers are byte-for-byte
+// identical and stable across re-runs. Personas are sorted by student_number so
+// the persona-quirk ranges (Conditional / Withdrawn / Verified-docs) and the
+// enroleeNumber sequence are deterministic regardless of section iteration order.
+function buildEnrolledPersonas(
+  testAy: { id: string; ay_code: string },
+  config: EnrolledSection[]
+): EnrolledPersona[] {
+  const ayDigits = testAy.ay_code.replace(/^AY/i, '');
+  const upperPrefix = prefixFor(testAy.ay_code).toUpperCase();
+
+  // First pass: mint student_number + names using the SAME global sequence and
+  // per-section pickNames key as seedTestAy in students.ts.
+  type Base = {
+    studentNumber: string;
+    firstName: string;
+    lastName: string;
+    middleName: string | null;
+    sectionId: string;
+    sectionName: string;
+    levelCode: string;
+    levelLabel: string;
+  };
+  const base: Base[] = [];
+  let globalSeq = 0;
+  for (const section of config) {
+    const names = pickNames(
+      `${testAy.ay_code}:${section.sectionId}`,
+      section.count
+    );
+    for (let i = 0; i < section.count; i++) {
+      globalSeq += 1;
+      const seq4 = String(globalSeq).padStart(4, '0');
+      base.push({
+        studentNumber: `H270${ayDigits}${seq4}`,
+        firstName: names[i].first_name,
+        lastName: names[i].last_name,
+        middleName: null, // pickNames yields first/last only — same as seedTestAy
+        sectionId: section.sectionId,
+        sectionName: section.sectionName,
+        levelCode: section.levelCode,
+        levelLabel: section.levelLabel,
+      });
+    }
+  }
+
+  // Sort by student_number for stable persona-range + enroleeNumber assignment.
+  base.sort((a, b) => a.studentNumber.localeCompare(b.studentNumber));
+
+  // Persona quirks layered on the "everything Enrolled" baseline (counted from
+  // the start of the sorted array so they're deterministic across re-seeds):
+  //   - 3 Enrolled (Conditional) — registrar carve-outs (waiver path).
+  //   - 2 Withdrawn post-enrollment — exercises the withdrawal timeline. These
+  //     are EXCLUDED from the sync roster so they never become active enrolments.
+  // (Verified-docs is a documentStatus quirk handled in seedEnrolledAdmissionsRows.)
+  const CONDITIONAL_RANGE = { start: 0, end: 3 };
+  const WITHDRAWN_RANGE = { start: 8, end: 10 };
+  const statusFor = (i: number): ApplicationStatus => {
+    if (i >= CONDITIONAL_RANGE.start && i < CONDITIONAL_RANGE.end)
+      return 'Enrolled (Conditional)';
+    if (i >= WITHDRAWN_RANGE.start && i < WITHDRAWN_RANGE.end)
+      return 'Withdrawn';
+    return 'Enrolled';
+  };
+
+  return base.map((b, i) => ({
+    ...b,
+    enroleeNumber: `${upperPrefix}-ENR-${String(i + 1).padStart(4, '0')}`,
+    applicationStatus: statusFor(i),
+  }));
 }
 
 // For every (grading_sheet × section_student) pair in T1, insert a
@@ -470,11 +643,85 @@ async function seedGradeEntries(
     return baseline;
   };
 
-  // Per-cell score — student's quality baseline plus small ±3% variance so
-  // the per-component PS values aren't suspiciously uniform but the per-
-  // student tier holds.
-  const scoreFor = (max: number, studentId: string): number => {
-    const baseline = qualityFor(studentId);
+  // Per-student term trajectory — assigned once per student and memoized.
+  // ~27% of students get a non-steady trajectory so that opening T2/T3/T4
+  // grading sheets shows multiple flagged students in the Alerts column
+  // (threshold = |diff| ≥ 5 quarterly points, per computeComparisons in
+  // score-entry-grid.tsx).
+  //
+  // ABSOLUTE per-term baselines (percent of max, term 1–4):
+  //   improving : [0.60, 0.75, 0.88, 0.98]  → consecutive diffs ≥10 pts ✓
+  //   declining : [0.98, 0.84, 0.70, 0.58]  → consecutive diffs ≥12 pts ✓
+  //   volatile  : [0.92, 0.66, 0.92, 0.66]  → consecutive diffs ≥24 pts ✓
+  //   steady    : uses qualityFor() — no table entry
+  //
+  // Using ABSOLUTE baselines (not quality+offset) guarantees that the
+  // transmutation compression and ±3% per-cell variance cannot collapse a
+  // consecutive-term swing below the 5-point alert threshold. High-quality
+  // "declining" students no longer clamp at 1.0 for T1 (0.98 never hits
+  // the ceiling), and the wide deltas absorb the full variance budget.
+  //
+  // Math sanity-check (approximate quarterly grades after transmutation;
+  // transmutation maps raw% → ~raw%×100 at this score range):
+  //   improving : ~60→~75→~88→~98  diffs: 15, 13, 10  (all ≥ 5)  ✓
+  //   declining : ~98→~84→~70→~58  diffs: 14, 14, 12  (all ≥ 5)  ✓
+  //   volatile  : ~92→~66→~92→~66  diffs: 26, 26, 26  (all ≥ 5)  ✓
+  //
+  // Alerts only surface when quarterly grades exist for ≥2 terms, which the
+  // seeded AYs satisfy because switchEnvironment('test') seeds both AY9999
+  // and the prior AY (AY9998) with allTermsFull: true — all 4 terms have
+  // computed quarterly grades.
+  type Trajectory = 'improving' | 'declining' | 'volatile' | 'steady';
+  const TRAJECTORY_BASELINES: Record<
+    Exclude<Trajectory, 'steady'>,
+    [number, number, number, number]
+  > = {
+    improving: [0.6, 0.75, 0.88, 0.98],
+    declining: [0.98, 0.84, 0.7, 0.58],
+    volatile: [0.92, 0.66, 0.92, 0.66],
+  };
+  const studentTrajectory = new Map<string, Trajectory>();
+  const trajectoryFor = (studentId: string): Trajectory => {
+    const cached = studentTrajectory.get(studentId);
+    if (cached != null) return cached;
+    const r = rand();
+    let t: Trajectory;
+    if (r < 0.09) t = 'improving';
+    else if (r < 0.18) t = 'declining';
+    else if (r < 0.27) t = 'volatile';
+    else t = 'steady';
+    studentTrajectory.set(studentId, t);
+    return t;
+  };
+
+  // Per-cell score.
+  //
+  // Steady students (~73%): use qualityFor(studentId) as the baseline so the
+  // award-tier spread (Gold/Silver/Bronze/NE) is preserved across the
+  // masterfile exactly as before.
+  //
+  // Trajectory students (~27%): use TRAJECTORY_BASELINES[traj][termIdx] as
+  // the ABSOLUTE baseline instead of qualityFor — this guarantees consecutive-
+  // term quarterly swings ≥5 regardless of the student's quality tier or the
+  // ±3% per-cell variance. qualityFor is NOT called for trajectory students so
+  // their RNG slot is consumed only by trajectoryFor; the PRNG sequence stays
+  // deterministic per AY.
+  //
+  // Both paths apply the same ±3% cell variance and the same [0.5, 1.0] clamp
+  // (the absolute baselines are chosen well inside that range — 0.58–0.98 —
+  // so the clamp is effectively dead code for trajectory students).
+  const scoreFor = (
+    max: number,
+    studentId: string,
+    termNumber: number
+  ): number => {
+    const traj = trajectoryFor(studentId);
+    // term_number is 1-indexed; array index is 0-indexed
+    const termIdx = Math.max(0, Math.min(3, termNumber - 1));
+    const baseline =
+      traj === 'steady'
+        ? qualityFor(studentId)
+        : TRAJECTORY_BASELINES[traj][termIdx];
     const variance = (rand() - 0.5) * 0.06; // ±3 percentage points
     const pct = Math.max(0.5, Math.min(1.0, baseline + variance));
     return Math.round(pct * max);
@@ -521,13 +768,22 @@ async function seedGradeEntries(
     );
     const isT4 = t4 != null && sheet.term_id === t4.id;
 
+    // Resolve term number (1–4) for this sheet so trajectory offsets can be
+    // applied correctly. Falls back to 1 if the term is not found (safe —
+    // offset[0] for steady is 0 and for trajectory students it's a valid value).
+    const sheetTermNumber = termById.get(sheet.term_id)?.term_number ?? 1;
+
     for (const e of enrolments) {
       if (isFullTerm) {
         // Full term (T1, or all 4 terms in closed-AY mode): full WW + PT
         // + QA, computed quarterly.
-        const ww_scores = ww_totals.map((max) => scoreFor(max, e.student_id));
-        const pt_scores = pt_totals.map((max) => scoreFor(max, e.student_id));
-        const qa_score = scoreFor(qa_total, e.student_id);
+        const ww_scores = ww_totals.map((max) =>
+          scoreFor(max, e.student_id, sheetTermNumber)
+        );
+        const pt_scores = pt_totals.map((max) =>
+          scoreFor(max, e.student_id, sheetTermNumber)
+        );
+        const qa_score = scoreFor(qa_total, e.student_id, sheetTermNumber);
 
         const computed = computeQuarterly({
           ww_scores,
@@ -566,7 +822,7 @@ async function seedGradeEntries(
         // until the rest of the slots are filled. Still call
         // computeQuarterly so ww_ps reflects the single slot recorded.
         const firstMax = ww_totals[0] ?? 10;
-        const ww_scores = [scoreFor(firstMax, e.student_id)];
+        const ww_scores = [scoreFor(firstMax, e.student_id, sheetTermNumber)];
         const pt_scores: number[] = [];
         const qa_score = null;
 
@@ -2256,104 +2512,35 @@ async function seedTeacherAssignments(
   };
 }
 
-// For every TEST-% student in public.students, upserts a matching row in
-// ay{YY}_enrolment_applications + ay{YY}_enrolment_status with stage marked
-// Enrolled. Fills the gap so /records/students (which filters the admissions
-// tables to Enrolled) shows rows, and Admissions applicant-detail pages for
-// those students resolve.
+// Inserts ay{YY}_enrolment_applications + ay{YY}_enrolment_status rows for the
+// pre-generated enrolled personas. Runs BEFORE public.students / section_students
+// exist (admissions-first order), so it depends only on the persona list — not
+// on any roster query. Fills the gap so /records/students (which filters the
+// admissions tables to Enrolled) shows rows, and Admissions applicant-detail
+// pages resolve. Idempotent: skips enroleeNumbers already present on either
+// table. The enrolee_number back-write onto section_students happens later, in
+// syncEnrolledPersonas, once those rows exist.
 async function seedEnrolledAdmissionsRows(
   service: SupabaseClient,
-  testAy: { id: string; ay_code: string }
+  testAy: { id: string; ay_code: string },
+  personas: EnrolledPersona[]
 ): Promise<number> {
   const prefix = prefixFor(testAy.ay_code);
   const appsTable = `${prefix}_enrolment_applications`;
   const statusTable = `${prefix}_enrolment_status`;
 
-  // Idempotent: enroleeNumbers here are deterministic (`<PREFIX>-ENR-<NNNN>`
-  // sequenced by row index). Pull existing enroleeNumbers up front so the
-  // chunked insert below skips rows that have already landed.
-
-  // Pull every TEST-% student + their section placement + level code.
-  const { data: enrolmentRows } = await service
-    .from('section_students')
-    .select(
-      `
-        id,
-        student:students!inner(id, student_number, first_name, last_name, middle_name),
-        section:sections!inner(
-          name,
-          academic_year_id,
-          level:levels(code, label)
-        )
-      `
-    )
-    .like('student.student_number', 'H270%');
-
-  type EnrolRow = {
-    id: string;
-    student:
-      | {
-          id: string;
-          student_number: string;
-          first_name: string | null;
-          last_name: string | null;
-          middle_name: string | null;
-        }
-      | {
-          id: string;
-          student_number: string;
-          first_name: string | null;
-          last_name: string | null;
-          middle_name: string | null;
-        }[]
-      | null;
-    section:
-      | {
-          name: string;
-          academic_year_id: string;
-          level:
-            | { code: string; label: string }
-            | { code: string; label: string }[]
-            | null;
-        }
-      | {
-          name: string;
-          academic_year_id: string;
-          level:
-            | { code: string; label: string }
-            | { code: string; label: string }[]
-            | null;
-        }[]
-      | null;
-  };
-
-  const rows = ((enrolmentRows ?? []) as unknown as EnrolRow[])
-    .map((r) => {
-      const student = Array.isArray(r.student) ? r.student[0] : r.student;
-      const section = Array.isArray(r.section) ? r.section[0] : r.section;
-      if (!student || !section) return null;
-      if (section.academic_year_id !== testAy.id) return null;
-      const level = Array.isArray(section.level)
-        ? section.level[0]
-        : section.level;
-      if (!level) return null;
-      return {
-        // Carried through so we can write the generated enroleeNumber back
-        // onto section_students.enrolee_number — migration 041 added the
-        // column but the seeder was never wired to populate it. Drill
-        // loaders that scope by enrolee_number + seedMovements's transfer
-        // eligibility filter both depend on this back-write.
-        sectionStudentId: r.id,
-        studentNumber: student.student_number,
-        firstName: student.first_name,
-        lastName: student.last_name,
-        middleName: student.middle_name,
-        sectionName: section.name,
-        levelCode: level.code,
-        levelLabel: level.label,
-      };
-    })
-    .filter((r): r is NonNullable<typeof r> => r !== null);
+  // Drive every downstream payload from the persona list. `rows` keeps the same
+  // shape the original section_students-derived mapping produced (minus the
+  // sectionStudentId, which no longer exists at this point).
+  const rows = personas.map((p) => ({
+    studentNumber: p.studentNumber,
+    firstName: p.firstName,
+    lastName: p.lastName,
+    middleName: p.middleName,
+    sectionName: p.sectionName,
+    levelCode: p.levelCode,
+    levelLabel: p.levelLabel,
+  }));
 
   if (rows.length === 0) return 0;
 
@@ -2361,28 +2548,22 @@ async function seedEnrolledAdmissionsRows(
   const upperPrefix = prefix.toUpperCase();
 
   // Persona quirks layered on top of the default "everything Finished, status
-  // Enrolled" baseline. Of ~200 rows:
+  // Enrolled" baseline:
   //   - 3 are Enrolled (Conditional) — registrar carve-outs (waiver path).
   //   - 5 are Enrolled with documentStatus='Verified' (not Finished) —
   //     "documents almost done" tail; exercises the lifecycle widget's
   //     near-complete bucket and the dashboard's docs-pending count.
   //   - 2 are Withdrawn post-enrollment (~30 days back) so the
   //     <StudentLifecycleTimeline> branches into the withdrawal path.
-  // Counted from the start of the rows array so they're deterministic across
-  // re-seeds.
-  const CONDITIONAL_RANGE = { start: 0, end: 3 };
+  // The Conditional/Withdrawn split is decided in buildEnrolledPersonas (carried
+  // on persona.applicationStatus); VERIFIED_DOCS stays an index range here
+  // since it's a documentStatus quirk, not a pipeline-status one. Indices align
+  // because both functions iterate the same student_number-sorted persona list.
   const VERIFIED_DOCS_RANGE = { start: 3, end: 8 };
   const WITHDRAWN_RANGE = { start: 8, end: 10 };
 
-  const personaApplicationStatus = (i: number): ApplicationStatus => {
-    if (i >= CONDITIONAL_RANGE.start && i < CONDITIONAL_RANGE.end) {
-      return 'Enrolled (Conditional)';
-    }
-    if (i >= WITHDRAWN_RANGE.start && i < WITHDRAWN_RANGE.end) {
-      return 'Withdrawn';
-    }
-    return 'Enrolled';
-  };
+  const personaApplicationStatus = (i: number): ApplicationStatus =>
+    personas[i].applicationStatus;
 
   // Document status fill: standard rows get all 5 prereqs Finished/Signed/Paid.
   // Verified-docs persona gets documentStatus='Verified' instead of 'Finished'.
@@ -2597,31 +2778,309 @@ async function seedEnrolledAdmissionsRows(
     inserted += appSlice.length;
   }
 
-  // Back-write the generated enroleeNumber onto section_students.enrolee_number
-  // so downstream consumers (seedMovements transfer eligibility, drill loaders
-  // per migration 041) can resolve a student's enrolee identity without
-  // joining back to the admissions table. Done as a per-row UPDATE because
-  // there's no FK-based bulk path; the row count is ≤200 so N round trips
-  // is fine. Skip rows whose enroleeNumber already landed before this run
-  // (idempotent — re-running the seeder on a partially-seeded AY won't
-  // duplicate work).
+  // NOTE: the enrolee_number back-write onto section_students used to live here,
+  // but section_students doesn't exist yet under the admissions-first order. It
+  // now happens in syncEnrolledPersonas after the sync materialises those rows.
+
+  return inserted;
+}
+
+// Runs the production-style sync for the enrolled personas: build AdmissionsRow[]
+// (excluding Withdrawn/Cancelled so they never create an active enrollment),
+// snapshot the current grading DB, plan via the pure buildSyncPlan, then commit
+// students + section_students. Deliberately does NOT use syncOneStudent — that
+// helper stamps enrollment_date=today (breaking KD #113 attendance proration,
+// which filters date >= enrollment_date) and never sets enrolee_number. Here we
+// stamp enrollment_date = the AY's T1 start_date and back-write enrolee_number.
+async function syncEnrolledPersonas(
+  service: SupabaseClient,
+  testAy: { id: string; ay_code: string },
+  personas: EnrolledPersona[]
+): Promise<{ students_inserted: number; enrolments_inserted: number }> {
+  // Only personas that should become active enrolments. Withdrawn/Cancelled
+  // personas keep their admissions rows but must not enrol (matches the live
+  // roster filter in fetchAdmissionsRoster).
+  const syncable = personas.filter(
+    (p) =>
+      p.applicationStatus !== 'Withdrawn' && p.applicationStatus !== 'Cancelled'
+  );
+  if (syncable.length === 0) {
+    return { students_inserted: 0, enrolments_inserted: 0 };
+  }
+
+  // Build the admissions roster rows the planner consumes. levelLabel +
+  // sectionName come straight from the section the persona belongs to, so they
+  // round-trip cleanly through normalizeLevelLabel / normalizeSectionName.
+  const rows: AdmissionsRow[] = syncable.map((p) => ({
+    student_number: p.studentNumber,
+    last_name: p.lastName,
+    first_name: p.firstName,
+    middle_name: p.middleName,
+    class_level: p.levelLabel,
+    class_section: p.sectionName,
+    class_ay: testAy.ay_code,
+  }));
+
+  // ---- Snapshot the grading DB for this AY ----
+  const [levelsRes, sectionsRes] = await Promise.all([
+    service.from('levels').select('id, label'),
+    service
+      .from('sections')
+      .select('id, level_id, name')
+      .eq('academic_year_id', testAy.id),
+  ]);
+  const levels = (levelsRes.data ?? []) as LevelRow[];
+  const sections = (sectionsRes.data ?? []) as SectionRow[];
+  const sectionIds = sections.map((s) => s.id);
+
+  // Existing students whose numbers appear in the roster (so re-runs treat
+  // already-seeded students as updates / no-ops rather than duplicate inserts).
+  const studentNumbers = rows
+    .map((r) => r.student_number)
+    .filter((n): n is string => !!n);
+  let students: StudentRow[] = [];
+  if (studentNumbers.length > 0) {
+    students = await fetchAllPages<StudentRow>((from, to) =>
+      service
+        .from('students')
+        .select('id, student_number, last_name, first_name, middle_name')
+        .in('student_number', studentNumbers)
+        .range(from, to)
+    );
+  }
+
+  // Existing enrolments for this AY's sections (so re-runs don't re-insert).
+  let enrollments: EnrollmentRow[] = [];
+  if (sectionIds.length > 0) {
+    enrollments = await fetchAllPages<EnrollmentRow>((from, to) =>
+      service
+        .from('section_students')
+        .select('id, section_id, student_id, index_number, enrollment_status')
+        .in('section_id', sectionIds)
+        .range(from, to)
+    );
+  }
+
+  const plan = buildSyncPlan(rows, { levels, sections, students, enrollments });
+  if (plan.errors.length > 0) {
+    console.error(
+      `[populated seeder] sync planner produced ${plan.errors.length} error(s); first:`,
+      plan.errors[0]
+    );
+  }
+
+  // ---- Commit students (inserts + safety-net updates) ----
+  const inserts = plan.student_upserts.filter((u) => u.kind === 'insert');
+  const updates = plan.student_upserts.filter((u) => u.kind === 'update');
+  let studentsInserted = 0;
+  if (inserts.length > 0) {
+    const { data, error } = await service
+      .from('students')
+      .insert(
+        inserts.map((u) => ({
+          student_number: u.student_number,
+          last_name: u.last_name,
+          first_name: u.first_name,
+          middle_name: u.middle_name,
+        }))
+      )
+      .select('id');
+    if (error) {
+      console.error('[populated seeder] student insert failed:', error.message);
+    } else {
+      studentsInserted = data?.length ?? 0;
+    }
+  }
+  for (const u of updates) {
+    const { error } = await service
+      .from('students')
+      .update({
+        last_name: u.last_name,
+        first_name: u.first_name,
+        middle_name: u.middle_name,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', u.existing_id!);
+    if (error) {
+      console.error(
+        `[populated seeder] student update failed for ${u.student_number}:`,
+        error.message
+      );
+    }
+  }
+
+  // ---- Resolve student_number → id for every roster student (existing +
+  //      freshly inserted) so we can build section_students rows. ----
+  const idByNumber = new Map<string, string>();
+  if (studentNumbers.length > 0) {
+    const resolved = await fetchAllPages<{
+      id: string;
+      student_number: string;
+    }>((from, to) =>
+      service
+        .from('students')
+        .select('id, student_number')
+        .in('student_number', studentNumbers)
+        .range(from, to)
+    );
+    for (const r of resolved) idByNumber.set(r.student_number, r.id);
+  }
+
+  // ---- enrollment_date = the AY's T1 start_date (NOT today — today would
+  //      break KD #113 attendance proration). ----
+  const { data: t1Row } = await service
+    .from('terms')
+    .select('start_date')
+    .eq('academic_year_id', testAy.id)
+    .eq('term_number', 1)
+    .maybeSingle();
+  const enrollDate =
+    (t1Row as { start_date: string } | null)?.start_date ??
+    new Date().toISOString().slice(0, 10);
+
+  // ---- Commit section_students from the plan's enrollment_inserts. ----
+  let enrolmentsInserted = 0;
+  const enrolRows: Array<{
+    section_id: string;
+    student_id: string;
+    index_number: number;
+    enrollment_status: 'active';
+    enrollment_date: string;
+  }> = [];
+  for (const e of plan.enrollment_inserts) {
+    const studentId = idByNumber.get(e.student_number);
+    if (!studentId) {
+      console.error(
+        `[populated seeder] could not resolve student_id for ${e.student_number} — enrolment skipped`
+      );
+      continue;
+    }
+    enrolRows.push({
+      section_id: e.section_id,
+      student_id: studentId,
+      index_number: e.index_number,
+      enrollment_status: 'active',
+      enrollment_date: enrollDate,
+    });
+  }
+  if (enrolRows.length > 0) {
+    const { data, error } = await service
+      .from('section_students')
+      .insert(enrolRows)
+      .select('id');
+    if (error) {
+      console.error(
+        '[populated seeder] section_students insert failed:',
+        error.message
+      );
+    } else {
+      enrolmentsInserted = data?.length ?? 0;
+    }
+  }
+
+  // ---- Back-write enrolee_number onto section_students. Map each synced
+  //      student_number → its persona enroleeNumber, then UPDATE the row
+  //      (guarded on enrolee_number IS NULL for idempotency). ----
+  const enroleeByNumber = new Map(
+    syncable.map((p) => [p.studentNumber, p.enroleeNumber])
+  );
   let backwritten = 0;
-  for (let i = 0; i < rows.length; i++) {
-    const enroleeNumber = `${upperPrefix}-ENR-${String(i + 1).padStart(4, '0')}`;
+  for (const [studentNumber, enroleeNumber] of enroleeByNumber) {
+    const studentId = idByNumber.get(studentNumber);
+    if (!studentId) continue;
     const { error } = await service
       .from('section_students')
       .update({ enrolee_number: enroleeNumber })
-      .eq('id', rows[i].sectionStudentId)
+      .eq('student_id', studentId)
+      .in('section_id', sectionIds)
       .is('enrolee_number', null);
     if (!error) backwritten += 1;
   }
   if (backwritten > 0) {
     console.info(
-      `[populated seeder] section_students.enrolee_number back-written for ${backwritten} row(s).`
+      `[populated seeder] section_students.enrolee_number back-written for ${backwritten} student(s).`
     );
   }
 
-  return inserted;
+  return {
+    students_inserted: studentsInserted,
+    enrolments_inserted: enrolmentsInserted,
+  };
+}
+
+// Reconciliation pass: count enrolled admissions rows (Enrolled / Enrolled
+// (Conditional) with a classSection) and how many resolved to a public.students
+// record by studentNumber. orphans = enrolled-but-unsynced — MUST be 0.
+async function reconcileEnrolled(
+  service: SupabaseClient,
+  testAy: { id: string; ay_code: string }
+): Promise<{ enrolled: number; synced: number; orphans: number }> {
+  const prefix = prefixFor(testAy.ay_code);
+  const appsTable = `${prefix}_enrolment_applications`;
+  const statusTable = `${prefix}_enrolment_status`;
+
+  // Enrolled status rows with a class section assigned (the live "enrolled"
+  // signal). Join to apps to read studentNumber.
+  const statusRows = await fetchAllPages<{
+    enroleeNumber: string | null;
+    applicationStatus: string | null;
+    classSection: string | null;
+  }>((from, to) =>
+    service
+      .from(statusTable)
+      .select('enroleeNumber, applicationStatus, classSection')
+      .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)'])
+      .not('classSection', 'is', null)
+      .range(from, to)
+  );
+  const enrolledEnrolees = statusRows
+    .map((r) => r.enroleeNumber)
+    .filter((n): n is string => !!n);
+
+  if (enrolledEnrolees.length === 0) {
+    return { enrolled: 0, synced: 0, orphans: 0 };
+  }
+
+  // Resolve enroleeNumber → studentNumber from apps.
+  const appRows = await fetchAllPages<{
+    enroleeNumber: string | null;
+    studentNumber: string | null;
+  }>((from, to) =>
+    service
+      .from(appsTable)
+      .select('enroleeNumber, studentNumber')
+      .in('enroleeNumber', enrolledEnrolees)
+      .range(from, to)
+  );
+  const studentNumbers = appRows
+    .map((r) => r.studentNumber)
+    .filter((n): n is string => !!n);
+
+  // Which of those studentNumbers exist in public.students?
+  let syncedNumbers = new Set<string>();
+  if (studentNumbers.length > 0) {
+    const existing = await fetchAllPages<{ student_number: string }>(
+      (from, to) =>
+        service
+          .from('students')
+          .select('student_number')
+          .in('student_number', studentNumbers)
+          .range(from, to)
+    );
+    syncedNumbers = new Set(existing.map((r) => r.student_number));
+  }
+
+  const enrolled = enrolledEnrolees.length;
+  const synced = studentNumbers.filter((n) => syncedNumbers.has(n)).length;
+  const orphans = enrolled - synced;
+
+  if (orphans > 0) {
+    console.error(
+      `[populated seeder] RECONCILIATION FAILED — ${orphans} enrolled admissions row(s) have no matching public.students record (enrolled=${enrolled}, synced=${synced}).`
+    );
+  }
+
+  return { enrolled, synced, orphans };
 }
 
 // Seeds ay{YY}_enrolment_documents for every row in ay{YY}_enrolment_applications
