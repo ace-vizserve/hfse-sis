@@ -6,13 +6,14 @@ import {
   FileStack,
   Hourglass,
   Mail,
+  Sparkles,
 } from 'lucide-react';
 
-import { EarlyBirdAyControl } from '@/components/admissions/early-bird-ay-control';
 import {
   StudentDataTable,
   type StatusBucketDef,
 } from '@/components/sis/student-data-table';
+import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardAction,
@@ -22,20 +23,16 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import {
-  getUpcomingAcademicYear,
-  listSelectableAcademicYears,
-} from '@/lib/academic-year';
+import { getUpcomingAcademicYear } from '@/lib/academic-year';
 import { listStudents } from '@/lib/sis/queries';
 import { getSessionUser } from '@/lib/supabase/server';
 
-// /admissions/upcoming/applications — early-bird pipeline + selection (KD #77).
+// /admissions/upcoming/applications — early-bird pipeline, READ-ONLY (KD #77).
 //
-// The open/switch/close control lives here (Admissions), not in SIS Admin.
-// SIS Admin only CREATES academic years; choosing which upcoming AY accepts
-// early-bird applications happens on this page. At most one upcoming AY is open
-// (enforced by the PATCH route). When one is open, its application pipeline is
-// listed below the control.
+// SIS Admin owns which AY is open for applications (KD #48); this page only
+// reflects that state. When an upcoming AY is open it shows that year's
+// pipeline; otherwise an empty state points to SIS Admin. No open/switch/close
+// control lives here.
 
 const ACTIVE_FUNNEL_STAGES = new Set([
   'Submitted',
@@ -87,16 +84,7 @@ export default async function UpcomingAdmissionsApplicationsPage() {
     redirect('/');
   }
 
-  const canManage =
-    sessionUser.role === 'school_admin' || sessionUser.role === 'superadmin';
-
-  const [upcomingAy, allAys] = await Promise.all([
-    getUpcomingAcademicYear(),
-    listSelectableAcademicYears(),
-  ]);
-  const candidates = allAys
-    .filter((a) => !a.is_current)
-    .map((a) => ({ ayCode: a.ay_code, label: a.label }));
+  const upcomingAy = await getUpcomingAcademicYear();
 
   const header = (
     <>
@@ -115,24 +103,34 @@ export default async function UpcomingAdmissionsApplicationsPage() {
           Early-bird applications.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Open one upcoming academic year for early applications. The parent
-          portal accepts submissions for the open year, and they appear here
-          until that year becomes the operational AY at rollover.
+          Applications for the upcoming academic year, when one is open for
+          early-bird. Which year is open is managed in SIS Admin.
         </p>
       </header>
     </>
   );
 
-  // No upcoming AY open → the control card carries the picker / empty state.
+  // No upcoming AY open → read-only empty state.
   if (!upcomingAy) {
     return (
       <PageShell>
         {header}
-        <EarlyBirdAyControl
-          candidates={candidates}
-          openAyCode={null}
-          canManage={canManage}
-        />
+        <Card className="items-center py-12 text-center">
+          <CardContent className="flex flex-col items-center gap-4">
+            <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <Sparkles className="size-5" />
+            </div>
+            <div className="space-y-1">
+              <div className="font-serif text-lg font-semibold text-foreground">
+                No early-bird year is open
+              </div>
+              <p className="text-[13px] text-muted-foreground">
+                An administrator can open one in SIS Admin → AY Setup. Once a
+                year is accepting early applications, they&apos;ll appear here.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </PageShell>
     );
   }
@@ -157,12 +155,19 @@ export default async function UpcomingAdmissionsApplicationsPage() {
     <PageShell>
       {header}
 
-      <EarlyBirdAyControl
-        key={upcomingAy.ay_code}
-        candidates={candidates}
-        openAyCode={upcomingAy.ay_code}
-        canManage={canManage}
-      />
+      {/* Read-only status indicator — control lives in SIS Admin */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge
+          variant="success"
+          className="h-7 gap-1 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]"
+        >
+          <Sparkles className="size-3" />
+          Early-bird open
+        </Badge>
+        <span className="text-[13px] text-muted-foreground">
+          {upcomingAy.label} ({upcomingAy.ay_code}) · managed in SIS Admin
+        </span>
+      </div>
 
       {/* Stage breakdown */}
       <section className="@container/main">
