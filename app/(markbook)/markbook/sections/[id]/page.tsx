@@ -24,7 +24,6 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ManualAddStudent } from './manual-add';
 import { RosterTable, type RosterRow } from './roster-table';
 
 type LevelLite = {
@@ -101,11 +100,6 @@ export default async function SectionRosterPage({
   const levelFromSection = (
     Array.isArray(section.level) ? section.level[0] : section.level
   ) as LevelLite | null;
-  const ayNode = Array.isArray(section.academic_year)
-    ? section.academic_year[0]
-    : section.academic_year;
-  const sectionAyCode = (ayNode as { ay_code: string } | null)?.ay_code ?? '';
-
   const enrolments = (rows ?? []) as unknown as EnrolmentRow[];
   const level = levelFromSection;
   const activeCount = enrolments.filter(
@@ -118,7 +112,6 @@ export default async function SectionRosterPage({
     (e) => e.enrollment_status === 'withdrawn'
   ).length;
   const onRosterCount = activeCount + lateCount;
-  const nextIndex = Math.max(0, ...enrolments.map((e) => e.index_number)) + 1;
 
   const rosterRows: RosterRow[] = enrolments.map((e) => {
     const s = e.student;
@@ -215,11 +208,8 @@ export default async function SectionRosterPage({
         {/* Cross-module deep links — every CTA below trails an
               ArrowUpRight to signal it leaves Markbook. Each module owns
               its own surface (KD #47 attendance, KD #48 sis sections,
-              KD #49 evaluation writeups). The markbook-internal action
-              is ManualAddStudent (last), which manipulates this section's
-              roster inline. The grading-sheets entry point lives below
-              as a clickable card in the stat strip — keeps the hero from
-              getting cramped. */}
+              KD #49 evaluation writeups). The grading-sheets entry point
+              also lives below as a clickable card in the stat strip. */}
         {canManage && (
           <Button asChild variant="outline" size="sm">
             <Link href={`/sis/sections/${section.id}?tab=teachers`}>
@@ -250,11 +240,6 @@ export default async function SectionRosterPage({
             <ArrowUpRight className="h-3 w-3" />
           </Link>
         </Button>
-        <ManualAddStudent
-          sectionId={section.id}
-          nextIndex={nextIndex}
-          ayCode={sectionAyCode}
-        />
       </div>
 
       {/* Attendance summary — reads the Attendance module's rollup. */}
