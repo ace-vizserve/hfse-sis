@@ -199,15 +199,14 @@ function AyRowActions({ row }: { row: AyTableRow }) {
         </Button>
       </TermDatesEditor>
 
-      {/* Inline: current-AY application toggle only. Early-bird selection for
-          upcoming AYs now lives in Admissions (/admissions/upcoming/applications). */}
-      {row.is_current && (
-        <AyAcceptingApplicationsToggle
-          ayCode={row.ay_code}
-          current={row.accepting_applications}
-          isCurrentAy={row.is_current}
-        />
-      )}
+      {/* Inline: accepting-applications Switch on every row. Current AY = its
+          live window; non-current AY = early-bird (single-select, enforced
+          server-side by the accepting-applications route). */}
+      <AyAcceptingApplicationsToggle
+        ayCode={row.ay_code}
+        current={row.accepting_applications}
+        isCurrentAy={row.is_current}
+      />
 
       {/* Dropdown: rare / scope-changing / destructive actions */}
       {hasMoreActions && (
