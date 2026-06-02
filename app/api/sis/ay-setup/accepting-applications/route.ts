@@ -1,18 +1,22 @@
-﻿import { revalidateTag } from 'next/cache';
+import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { ToggleAcceptingApplicationsSchema } from '@/lib/schemas/ay-setup';
+import { computeEarlyBirdClosures } from '@/lib/sis/early-bird';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // PATCH /api/sis/ay-setup/accepting-applications
 //
-// Toggle the early-bird gate (KD #77) on a specific AY. Decoupled from
-// `is_current` â€” admin can open the upcoming AY for early-bird while the
-// current AY is still operationally active.
+// Open / close the early-bird application gate (KD #77) on an AY.
 //
-// Role: school_admin + admin + superadmin (matches AY creation gate).
+// Opening a non-current AY enforces the single-select invariant: at most one
+// upcoming AY may accept applications at a time, so any other open upcoming AY
+// is closed first. Closing, or flipping the current AY, is a plain single-row
+// flip (the current AY is never part of the single-select pool).
+//
+// Role: school_admin + superadmin.
 export async function PATCH(request: Request) {
   const auth = await requireRole(['school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
@@ -29,11 +33,26 @@ export async function PATCH(request: Request) {
   const { ay_code: ayCode, accepting } = parsed.data;
   const supabase = createServiceClient();
 
-  const { data: target } = await supabase
+  // Load every AY's flags once — needed for the target lookup and the
+  // single-select closure computation.
+  const { data: allRows, error: listErr } = await supabase
     .from('academic_years')
-    .select('id, accepting_applications')
-    .eq('ay_code', ayCode)
-    .maybeSingle();
+    .select('id, ay_code, is_current, accepting_applications');
+  if (listErr) {
+    console.error(
+      '[ay-setup accepting-applications] list failed:',
+      listErr.message
+    );
+    return NextResponse.json({ error: listErr.message }, { status: 500 });
+  }
+  const all = (allRows ?? []) as Array<{
+    id: string;
+    ay_code: string;
+    is_current: boolean;
+    accepting_applications: boolean;
+  }>;
+
+  const target = all.find((a) => a.ay_code === ayCode);
   if (!target) {
     return NextResponse.json(
       { error: `AY ${ayCode} not found` },
@@ -41,36 +60,95 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const before = (target as { accepting_applications: boolean })
-    .accepting_applications;
-  if (before === accepting) {
-    return NextResponse.json({ ok: true, unchanged: true, accepting });
+  const actor = { id: auth.user.id, email: auth.user.email ?? null };
+
+  // ── Close: plain single-row flip ──────────────────────────────────────────
+  if (!accepting) {
+    if (!target.accepting_applications) {
+      return NextResponse.json({ ok: true, unchanged: true, accepting });
+    }
+    const { error } = await supabase
+      .from('academic_years')
+      .update({ accepting_applications: false })
+      .eq('ay_code', ayCode);
+    if (error) {
+      console.error(
+        '[ay-setup accepting-applications] close failed:',
+        error.message
+      );
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    await logAction({
+      service: supabase,
+      actor,
+      action: 'ay.accepting_applications.toggle',
+      entityType: 'academic_year',
+      entityId: target.id,
+      context: { ay_code: ayCode, before: true, after: false },
+    });
+    revalidateTag(`sis:${ayCode}`, 'max');
+    return NextResponse.json({ ok: true, accepting: false });
   }
 
-  const { error: updErr } = await supabase
-    .from('academic_years')
-    .update({ accepting_applications: accepting })
-    .eq('ay_code', ayCode);
-  if (updErr) {
-    console.error(
-      '[ay-setup accepting-applications] update failed:',
-      updErr.message
-    );
-    return NextResponse.json({ error: updErr.message }, { status: 500 });
+  // ── Open: enforce single-select among non-current AYs ─────────────────────
+  const toClose = computeEarlyBirdClosures(ayCode, all);
+  for (const closeCode of toClose) {
+    const closed = all.find((a) => a.ay_code === closeCode);
+    const { error } = await supabase
+      .from('academic_years')
+      .update({ accepting_applications: false })
+      .eq('ay_code', closeCode);
+    if (error) {
+      console.error(
+        '[ay-setup accepting-applications] auto-close failed:',
+        error.message
+      );
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    await logAction({
+      service: supabase,
+      actor,
+      action: 'ay.accepting_applications.toggle',
+      entityType: 'academic_year',
+      entityId: closed?.id ?? null,
+      context: {
+        ay_code: closeCode,
+        before: true,
+        after: false,
+        autoClosedBy: ayCode,
+      },
+    });
+    revalidateTag(`sis:${closeCode}`, 'max');
+  }
+
+  if (!target.accepting_applications) {
+    const { error } = await supabase
+      .from('academic_years')
+      .update({ accepting_applications: true })
+      .eq('ay_code', ayCode);
+    if (error) {
+      console.error(
+        '[ay-setup accepting-applications] open failed:',
+        error.message
+      );
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
   }
 
   await logAction({
     service: supabase,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor,
     action: 'ay.accepting_applications.toggle',
     entityType: 'academic_year',
-    entityId: (target as { id: string }).id,
-    context: { ay_code: ayCode, before, after: accepting },
+    entityId: target.id,
+    context: {
+      ay_code: ayCode,
+      before: target.accepting_applications,
+      after: true,
+      ...(toClose.length ? { autoClosedPrevious: toClose } : {}),
+    },
   });
-
-  // The Admissions sidebar's "Upcoming AY applications" entry derives from
-  // this flag, so invalidate the SIS cache surface that drives it.
   revalidateTag(`sis:${ayCode}`, 'max');
 
-  return NextResponse.json({ ok: true, accepting });
+  return NextResponse.json({ ok: true, accepting: true, autoClosed: toClose });
 }
