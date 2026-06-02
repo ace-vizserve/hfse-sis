@@ -2,19 +2,17 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
   ArrowLeft,
-  CalendarPlus,
   ClipboardList,
   FileStack,
   Hourglass,
   Mail,
-  Sparkles,
 } from 'lucide-react';
 
+import { EarlyBirdAyControl } from '@/components/admissions/early-bird-ay-control';
 import {
   StudentDataTable,
   type StatusBucketDef,
 } from '@/components/sis/student-data-table';
-import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardAction,
@@ -24,23 +22,20 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import { getUpcomingAcademicYear } from '@/lib/academic-year';
+import {
+  getUpcomingAcademicYear,
+  listSelectableAcademicYears,
+} from '@/lib/academic-year';
 import { listStudents } from '@/lib/sis/queries';
 import { getSessionUser } from '@/lib/supabase/server';
 
-// /admissions/upcoming/applications — early-bird pipeline (KD #77).
+// /admissions/upcoming/applications — early-bird pipeline + selection (KD #77).
 //
-// Surfaces applications for the AY where `accepting_applications=true AND
-// is_current=false`. When no such AY exists, renders an empty state with a
-// deep-link to /sis/ay-setup so the registrar knows how to open one.
-//
-// The page reuses the same stage-card + applications-table pattern as
-// /admissions/applications — same component, scope flipped to the upcoming
-// AY's `ay{YYYY}_*` tables. Cross-AY search is intentionally omitted (early
-// bird is a forward-only flow). Chase-status focused views are also omitted
-// here — those live on /admissions/applications for the current AY's
-// document chase, not the upcoming AY where the registrar is just opening
-// the funnel.
+// The open/switch/close control lives here (Admissions), not in SIS Admin.
+// SIS Admin only CREATES academic years; choosing which upcoming AY accepts
+// early-bird applications happens on this page. At most one upcoming AY is open
+// (enforced by the PATCH route). When one is open, its application pipeline is
+// listed below the control.
 
 const ACTIVE_FUNNEL_STAGES = new Set([
   'Submitted',
@@ -92,52 +87,52 @@ export default async function UpcomingAdmissionsApplicationsPage() {
     redirect('/');
   }
 
-  const upcomingAy = await getUpcomingAcademicYear();
+  const canManage =
+    sessionUser.role === 'school_admin' || sessionUser.role === 'superadmin';
 
-  // Empty state — no upcoming AY currently accepting early-bird applications.
+  const [upcomingAy, allAys] = await Promise.all([
+    getUpcomingAcademicYear(),
+    listSelectableAcademicYears(),
+  ]);
+  const candidates = allAys
+    .filter((a) => !a.is_current)
+    .map((a) => ({ ayCode: a.ay_code, label: a.label }));
+
+  const header = (
+    <>
+      <Link
+        href="/admissions"
+        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Admissions dashboard
+      </Link>
+      <header className="space-y-3">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Admissions · Upcoming AY
+        </p>
+        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+          Early-bird applications.
+        </h1>
+        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+          Open one upcoming academic year for early applications. The parent
+          portal accepts submissions for the open year, and they appear here
+          until that year becomes the operational AY at rollover.
+        </p>
+      </header>
+    </>
+  );
+
+  // No upcoming AY open → the control card carries the picker / empty state.
   if (!upcomingAy) {
     return (
       <PageShell>
-        <Link
-          href="/admissions"
-          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Admissions dashboard
-        </Link>
-        <header className="space-y-3">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Admissions · Early-bird
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            No upcoming AY open.
-          </h1>
-        </header>
-        <Card className="items-center py-12 text-center">
-          <CardContent className="flex flex-col items-center gap-4">
-            <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              <CalendarPlus className="size-5" />
-            </div>
-            <div className="space-y-1">
-              <div className="font-serif text-lg font-semibold text-foreground">
-                No early-bird AY currently accepting applications
-              </div>
-              <p className="text-[13px] text-muted-foreground">
-                When you&apos;re ready to open early-bird for the upcoming AY,
-                create it (or open the existing row) from{' '}
-                <Link
-                  href="/sis/ay-setup"
-                  className="font-medium underline underline-offset-2"
-                >
-                  AY Setup
-                </Link>{' '}
-                and toggle <strong>Open for apps</strong>. The parent portal
-                will then accept submissions for that AY and this page will list
-                them.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        {header}
+        <EarlyBirdAyControl
+          candidates={candidates}
+          openAyCode={null}
+          canManage={canManage}
+        />
       </PageShell>
     );
   }
@@ -160,50 +155,13 @@ export default async function UpcomingAdmissionsApplicationsPage() {
 
   return (
     <PageShell>
-      <Link
-        href="/admissions"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Admissions dashboard
-      </Link>
+      {header}
 
-      {/* Hero */}
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-3">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Admissions · Upcoming AY
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Early-bird applications.
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Pre-enrolment pipeline for <strong>{upcomingAy.label}</strong>. Same
-            workflow as the current AY — <strong>Submitted</strong>,{' '}
-            <strong>Ongoing Verification</strong>, or{' '}
-            <strong>Processing</strong> — running in parallel until{' '}
-            <strong>{upcomingAy.ay_code}</strong> becomes the operational AY at
-            rollover.
-          </p>
-        </div>
-        <div className="flex flex-col items-start gap-2 md:items-end">
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-            >
-              {upcomingAy.ay_code}
-            </Badge>
-            <Badge
-              variant="success"
-              className="h-7 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]"
-            >
-              <Sparkles className="mr-1 size-3" />
-              Early-bird open
-            </Badge>
-          </div>
-        </div>
-      </header>
+      <EarlyBirdAyControl
+        candidates={candidates}
+        openAyCode={upcomingAy.ay_code}
+        canManage={canManage}
+      />
 
       {/* Stage breakdown */}
       <section className="@container/main">
