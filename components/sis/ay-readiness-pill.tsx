@@ -69,7 +69,14 @@ export function AyReadinessPill({ readiness, role }: Props) {
         className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40"
         aria-label="Open year setup readiness"
       >
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+        <div
+          className={[
+            'flex size-10 shrink-0 items-center justify-center rounded-xl text-white',
+            done
+              ? 'bg-gradient-to-br from-brand-indigo to-brand-navy shadow-brand-tile'
+              : 'bg-gradient-to-br from-brand-amber to-brand-amber/80 shadow-brand-tile-amber',
+          ].join(' ')}
+        >
           <ClipboardCheck className="size-4" />
         </div>
         <div className="text-left">
@@ -81,12 +88,14 @@ export function AyReadinessPill({ readiness, role }: Props) {
               All steps complete
             </p>
           ) : (
-            <p className="mt-0.5 font-serif text-sm font-semibold leading-tight text-foreground">
-              {readiness.complete}{' '}
-              <span className="font-sans text-[13px] font-normal text-muted-foreground">
-                of {readiness.total} complete
-              </span>
-            </p>
+            <>
+              <p className="mt-0.5 font-serif text-sm font-semibold leading-tight text-brand-amber">
+                Setup needed
+              </p>
+              <p className="font-mono text-[10px] font-medium tabular-nums text-muted-foreground">
+                {readiness.complete} of {readiness.total} steps done
+              </p>
+            </>
           )}
           <div className="mt-1.5 h-1 w-28 overflow-hidden rounded-full bg-muted">
             <div
