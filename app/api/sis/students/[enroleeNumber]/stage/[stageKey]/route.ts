@@ -144,9 +144,15 @@ export async function PATCH(
 
   // 1.5) Terminal-status reversal guard (M7 / KD #59).
   // Cancelled and Withdrawn are terminal states in the SIS funnel. Flipping
-  // back to Enrolled without admin-level intervention bypasses the full intake
-  // workflow and leaves the audit trail inconsistent. Contact a system
-  // administrator to reset the status directly if genuine re-enrollment is needed.
+  // back to Enrolled directly bypasses the full intake workflow + the
+  // withdrawal/re-enrolment cascades and leaves the audit trail inconsistent.
+  // The right path depends on whether the student ever enrolled THIS AY:
+  //   - enrolled-then-withdrawn (has a section_students row this AY) → restore
+  //     their enrolment from Records, which re-activates the row AND flips this
+  //     status back to Enrolled via the re-enrolment cascade (self-service).
+  //   - never enrolled this AY (cancelled out of the pipeline) → a returning
+  //     applicant re-applies through the parent portal; only a genuine mistake
+  //     warrants an administrator reset.
   if (stageKey === 'application') {
     const preRow = before as unknown as Record<string, unknown>;
     const currentStatus = (preRow[cols.statusCol] as string | null) ?? null;
@@ -154,12 +160,54 @@ export async function PATCH(
       (currentStatus === 'Withdrawn' || currentStatus === 'Cancelled') &&
       (status === 'Enrolled' || status === 'Enrolled (Conditional)')
     ) {
-      return NextResponse.json(
-        {
-          error: `Cannot change from "${currentStatus}" to "${status}" — this application was marked as terminal. Contact the system administrator to reset the application status if re-enrollment is needed.`,
-        },
-        { status: 422 }
-      );
+      // Did this student ever enrol THIS AY? They have a section_students row
+      // (now withdrawn) only if so — that's the row Records would restore.
+      // enroleeNumber → studentNumber → student_id → section_students scoped to
+      // this AY (mirrors the withdrawal-cascade resolution further below). Only
+      // runs on a reversal attempt, never on the happy path.
+      let wasEnrolledHere = false;
+      const admissions = createAdmissionsClient();
+      const { data: appsRow } = await admissions
+        .from(`${prefix}_enrolment_applications`)
+        .select('studentNumber')
+        .eq('enroleeNumber', enroleeNumber)
+        .maybeSingle();
+      const studentNumber =
+        (appsRow as { studentNumber: string | null } | null)?.studentNumber ??
+        null;
+      if (studentNumber) {
+        const [{ data: studentRow }, { data: ayRow }] = await Promise.all([
+          supabase
+            .from('students')
+            .select('id')
+            .eq('student_number', studentNumber)
+            .maybeSingle(),
+          supabase
+            .from('academic_years')
+            .select('id')
+            .eq('ay_code', ayCode)
+            .maybeSingle(),
+        ]);
+        const studentId = (studentRow as { id: string } | null)?.id ?? null;
+        const ayId = (ayRow as { id: string } | null)?.id ?? null;
+        if (studentId && ayId) {
+          // Use the unaliased FK table name 'sections.academic_year_id' for the
+          // embedded filter — the 'section:' alias is silently ignored here.
+          const { data: ssRows } = await supabase
+            .from('section_students')
+            .select('id, section:sections!inner(academic_year_id)')
+            .eq('student_id', studentId)
+            .eq('sections.academic_year_id', ayId)
+            .limit(1);
+          wasEnrolledHere = ((ssRows ?? []) as unknown[]).length > 0;
+        }
+      }
+
+      const message = wasEnrolledHere
+        ? `This application is ${currentStatus}. This student was enrolled this year — to bring them back, restore their enrolment from Records (Students → open the student → Enrolment). That re-activates them and updates this status to Enrolled automatically, so no administrator reset is needed.`
+        : `This application is ${currentStatus} and the student never enrolled this year, so it can't be reopened here. A returning applicant should submit a new application through the parent portal. Contact a system administrator only if this status was set by mistake.`;
+
+      return NextResponse.json({ error: message }, { status: 422 });
     }
   }
 
