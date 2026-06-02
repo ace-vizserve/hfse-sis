@@ -5,8 +5,6 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Clock,
-  ListChecks,
-  MessageSquare,
   NotebookPen,
   SquarePen,
   TrendingUp,
@@ -51,8 +49,6 @@ import {
 import { getDashboardWindows } from '@/lib/dashboard/windows';
 import {
   getEvaluationKpisRange,
-  getEvaluationPtcFeedbackCompletenessRange,
-  getEvaluationRatingCompletenessRange,
   getEvaluationRegistrarPriority,
   getEvaluationTeacherPriority,
   getSubmissionVelocityRange,
@@ -127,21 +123,13 @@ export default async function EvaluationHub({
   const rangeInput = ayCode
     ? resolveRange(resolvedSearch, windows, ayCode)
     : null;
-  const [
-    kpisResult,
-    velocity,
-    drillRowSets,
-    ratingCompleteness,
-    ptcCompleteness,
-  ] = rangeInput
+  const [kpisResult, velocity, drillRowSets] = rangeInput
     ? await Promise.all([
         getEvaluationKpisRange(rangeInput),
         getSubmissionVelocityRange(rangeInput),
         buildAllRowSets({ ayCode, from: rangeInput.from, to: rangeInput.to }),
-        getEvaluationRatingCompletenessRange(rangeInput),
-        getEvaluationPtcFeedbackCompletenessRange(rangeInput),
       ])
-    : [null, null, null, null, null];
+    : [null, null, null];
   const comparisonLabel = kpisResult?.comparisonRange
     ? `vs ${formatRangeLabel(kpisResult.comparisonRange)}`
     : undefined;
@@ -332,35 +320,6 @@ export default async function EvaluationHub({
               )}
             />
           </section>
-
-          {ratingCompleteness && ptcCompleteness && (
-            <section className="grid gap-4 md:grid-cols-2">
-              <MetricCard
-                label="Topic ratings"
-                value={ratingCompleteness.current.pct}
-                format="percent"
-                icon={ListChecks}
-                intent={
-                  ratingCompleteness.current.pct >= 80 ? 'good' : 'warning'
-                }
-                delta={ratingCompleteness.delta ?? undefined}
-                deltaGoodWhen="up"
-                comparisonLabel={comparisonLabel}
-                subtext={`${ratingCompleteness.current.rated.toLocaleString('en-SG')} of ${ratingCompleteness.current.total.toLocaleString('en-SG')} cells rated · across all subjects`}
-              />
-              <MetricCard
-                label="PTC feedback recorded"
-                value={ptcCompleteness.current.pct}
-                format="percent"
-                icon={MessageSquare}
-                intent="default"
-                delta={ptcCompleteness.delta ?? undefined}
-                deltaGoodWhen="up"
-                comparisonLabel={comparisonLabel}
-                subtext={`${ptcCompleteness.current.recorded.toLocaleString('en-SG')} of ${ptcCompleteness.current.total.toLocaleString('en-SG')} students for the term scope`}
-              />
-            </section>
-          )}
 
           {velocity.current.length > 1 && (
             <SubmissionVelocityDrillCard
