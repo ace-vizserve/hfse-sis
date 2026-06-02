@@ -761,14 +761,19 @@ function AlertCell({
     );
   }
 
+  const label = `${flaggedCount} significant grade change${
+    flaggedCount === 1 ? '' : 's'
+  } (≥5 points) — click to view`;
+
   return (
     <button
       type="button"
       onClick={() => onOpen(comparisons)}
-      className="inline-flex items-center gap-1 rounded border border-brand-amber/40 bg-brand-amber/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-foreground transition-colors hover:bg-brand-amber/20"
-      title={`${flaggedCount} grade change${flaggedCount === 1 ? '' : 's'} ≥5 points`}
+      title={label}
+      aria-label={label}
+      className="inline-flex items-center gap-1 rounded-full border border-transparent bg-gradient-to-b from-brand-amber to-brand-amber/85 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-amber/40"
     >
-      <AlertTriangle className="h-3 w-3 text-brand-amber" />
+      <AlertTriangle className="h-3 w-3" />
       {flaggedCount}
     </button>
   );
