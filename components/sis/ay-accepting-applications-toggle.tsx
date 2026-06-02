@@ -1,18 +1,15 @@
 'use client';
 
-import { Loader2, MailCheck, MailX } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 
-// Tiny inline toggle for the AY list row — flips `accepting_applications`
-// post-creation per KD #77. Admin / superadmin only on the surface, but
-// the API enforces the role gate too.
-//
-// Idempotent: if the value already matches, the API returns ok+unchanged
-// and the button just re-renders without a refresh.
+// Per-row "Accepting applications" Switch on the SIS AY-setup table (KD #77).
+// Current AY → its live application window; non-current AY → early-bird, which
+// the PATCH route enforces as single-select (opening one closes any other open
+// upcoming AY). Same endpoint either way; the server decides the semantics.
 export function AyAcceptingApplicationsToggle({
   ayCode,
   current,
@@ -34,47 +31,37 @@ export function AyAcceptingApplicationsToggle({
         body: JSON.stringify({ ay_code: ayCode, accepting: next }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'toggle failed');
+      if (!res.ok) throw new Error(body?.error ?? 'Update failed');
       toast.success(
         next
-          ? `${ayCode} now accepting applications — appears in the Admissions sidebar.`
-          : `${ayCode} closed for new applications.`
+          ? `${ayCode} is now accepting applications.`
+          : `${ayCode} is no longer accepting applications.`
       );
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'toggle failed');
+      toast.error(e instanceof Error ? e.message : 'Update failed');
     } finally {
       setBusy(false);
     }
   }
 
-  // Closing applications on the *current* AY is unusual and would block
-  // mid-year transfers via the parent portal — guard with a clear hint.
-  const guardCloseCurrent = isCurrentAy && current;
+  const stateHint = current
+    ? isCurrentAy
+      ? 'Active year — parents can apply.'
+      : 'Open for early-bird applications.'
+    : 'Closed to new applications.';
 
   return (
-    <Button
-      type="button"
-      size="sm"
-      variant={current ? 'default' : 'outline'}
-      disabled={busy}
-      onClick={() => flip(!current)}
-      title={
-        guardCloseCurrent
-          ? 'Closing the current AY blocks the parent portal — do this only at AY rollover.'
-          : current
-            ? 'Click to close: parent portal will reject new applications for this AY.'
-            : 'Click to open: parent portal accepts applications + AY surfaces in Admissions sidebar.'
-      }
-    >
-      {busy ? (
-        <Loader2 className="size-3.5 animate-spin" />
-      ) : current ? (
-        <MailCheck className="size-3.5" />
-      ) : (
-        <MailX className="size-3.5" />
-      )}
-      {current ? 'Open for apps' : 'Closed'}
-    </Button>
+    <div className="flex items-center gap-2" title={stateHint}>
+      <Switch
+        checked={current}
+        disabled={busy}
+        onCheckedChange={(v) => flip(Boolean(v))}
+        aria-label={`Accepting applications for ${ayCode}`}
+      />
+      <span className="whitespace-nowrap text-[13px] font-medium text-foreground">
+        Accepting applications
+      </span>
+    </div>
   );
 }
