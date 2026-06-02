@@ -9,6 +9,7 @@ import {
   type StructureSeedResult,
 } from './seeder/structural';
 import { seedPopulated, type PopulatedSeedResult } from './seeder/populated';
+import { seedPriorYearTestAy } from './seeder/prior-year';
 
 // Environment abstraction over the AY switcher. UI-side, users pick
 // "Production" or "Test"; internally this maps to flipping is_current
@@ -114,6 +115,37 @@ async function ensureTestAy(service: SupabaseClient): Promise<AyRow> {
   return fresh as AyRow;
 }
 
+// Ensures the prior-year test AY row (AY9998) exists; mirrors ensureTestAy
+// but never flips is_current — AY9998 is purely a historical/closed AY used
+// for compare-mode, Masterfile prior-year, and cross-year Records history.
+// Created atomically via the same create_academic_year RPC. Idempotent.
+export async function ensurePriorTestAy(
+  service: SupabaseClient
+): Promise<AyRow> {
+  const { priorTestAy } = await listEnvironmentAys(service);
+  if (priorTestAy) return priorTestAy;
+
+  const { error: rpcErr } = await service.rpc('create_academic_year', {
+    p_ay_code: PRIOR_TEST_AY_CODE,
+    p_label: PRIOR_TEST_AY_LABEL,
+  });
+  if (rpcErr) {
+    throw new Error(`ensurePriorTestAy: RPC failed — ${rpcErr.message}`);
+  }
+
+  const { data: fresh, error: reErr } = await service
+    .from('academic_years')
+    .select('id, ay_code, label, is_current')
+    .eq('ay_code', PRIOR_TEST_AY_CODE)
+    .single();
+  if (reErr || !fresh) {
+    throw new Error(
+      `ensurePriorTestAy: post-RPC read failed — ${reErr?.message ?? 'no row'}`
+    );
+  }
+  return fresh as AyRow;
+}
+
 // Two-step flip mirroring the existing AY Setup PATCH handler: clear all
 // is_current=false, then set target=true. Idempotent; converges on re-run.
 async function flipIsCurrent(
@@ -149,6 +181,10 @@ export type SwitchResult = {
   structure: StructureSeedResult | null;
   admissions: AdmissionsMinimalResult | null;
   populated: PopulatedSeedResult | null;
+  /** Whether the AY9998 prior-year seed completed without throwing. null on a
+   *  production switch (not attempted); false when it threw (AY9999 setup still
+   *  succeeded — prior-year failure never aborts the primary switch). */
+  priorYearSeeded: boolean | null;
 };
 
 export async function switchEnvironment(
@@ -181,6 +217,23 @@ export async function switchEnvironment(
       allTermsFull: true,
     });
 
+    // 3) Prior-year test AY (AY9998) — a fully-closed historical year so
+    //    compare-mode (KD #78), Masterfile prior-year, and cross-year Records
+    //    history have real data. A failure here must NOT abort the (already-
+    //    successful) AY9999 setup — log + continue.
+    let priorYearSeeded: boolean | null = null;
+    try {
+      const priorAy = await ensurePriorTestAy(service);
+      await seedPriorYearTestAy(service, priorAy);
+      priorYearSeeded = true;
+    } catch (err) {
+      priorYearSeeded = false;
+      console.error(
+        '[environment] prior-year (AY9998) seed failed — AY9999 setup unaffected:',
+        err instanceof Error ? err.message : err
+      );
+    }
+
     return {
       fromAyCode: flip.fromAyCode,
       toAyCode: flip.toAyCode,
@@ -188,6 +241,7 @@ export async function switchEnvironment(
       structure,
       admissions,
       populated,
+      priorYearSeeded,
     };
   }
 
@@ -222,6 +276,7 @@ export async function switchEnvironment(
     structure: null,
     admissions: null,
     populated: null,
+    priorYearSeeded: null,
   };
 }
 
