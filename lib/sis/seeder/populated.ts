@@ -470,13 +470,59 @@ async function seedGradeEntries(
     return baseline;
   };
 
-  // Per-cell score — student's quality baseline plus small ±3% variance so
-  // the per-component PS values aren't suspiciously uniform but the per-
-  // student tier holds.
-  const scoreFor = (max: number, studentId: string): number => {
+  // Per-student term trajectory — assigned once per student and memoized.
+  // ~27% of students get a non-steady trajectory so that opening T2/T3/T4
+  // grading sheets shows multiple flagged students in the Alerts column
+  // (threshold = |diff| ≥ 5 quarterly points, per computeComparisons in
+  // score-entry-grid.tsx). Offsets are chosen so consecutive-term quarterly
+  // grades differ by ≥8 points for trajectory students.
+  //
+  //   improving : T1 −10%, T2 −2%, T3 +6%, T4 +12%  (rising arc)
+  //   declining : T1 +12%, T2 +4%, T3 −4%, T4 −12%  (falling arc)
+  //   volatile  : T1 +10%, T2 −8%, T3 +10%, T4 −10% (zig-zag)
+  //   steady    : 0 every term  (default ~73%)
+  //
+  // Consecutive swings for a student near the 80% quality tier (mid-Bronze):
+  //   improving : Q1≈78, Q2≈86, Q3≈91, Q4≈96  → diffs 8, 5, 5  ✓
+  //   declining : Q1≈96, Q2≈88, Q3≈81, Q4≈74  → diffs 8, 7, 7  ✓
+  //   volatile  : Q1≈93, Q2≈76, Q3≈93, Q4≈74  → diffs 17,17,19 ✓
+  type Trajectory = 'improving' | 'declining' | 'volatile' | 'steady';
+  const TRAJECTORY_OFFSETS: Record<Trajectory, number[]> = {
+    improving: [-0.1, -0.02, +0.06, +0.12],
+    declining: [+0.12, +0.04, -0.04, -0.12],
+    volatile: [+0.1, -0.08, +0.1, -0.1],
+    steady: [0, 0, 0, 0],
+  };
+  const studentTrajectory = new Map<string, Trajectory>();
+  const trajectoryFor = (studentId: string): Trajectory => {
+    const cached = studentTrajectory.get(studentId);
+    if (cached != null) return cached;
+    const r = rand();
+    let t: Trajectory;
+    if (r < 0.09) t = 'improving';
+    else if (r < 0.18) t = 'declining';
+    else if (r < 0.27) t = 'volatile';
+    else t = 'steady';
+    studentTrajectory.set(studentId, t);
+    return t;
+  };
+
+  // Per-cell score — student's quality baseline, shifted by their term
+  // trajectory offset, plus small ±3% cell variance. Trajectory students
+  // show ≥8-point quarterly swings; steady students are identical to
+  // the previous behaviour (offset 0).
+  const scoreFor = (
+    max: number,
+    studentId: string,
+    termNumber: number
+  ): number => {
     const baseline = qualityFor(studentId);
+    const traj = trajectoryFor(studentId);
+    // term_number is 1-indexed; array index is 0-indexed
+    const termIdx = Math.max(0, Math.min(3, termNumber - 1));
+    const offset = TRAJECTORY_OFFSETS[traj][termIdx];
     const variance = (rand() - 0.5) * 0.06; // ±3 percentage points
-    const pct = Math.max(0.5, Math.min(1.0, baseline + variance));
+    const pct = Math.max(0.5, Math.min(1.0, baseline + offset + variance));
     return Math.round(pct * max);
   };
 
@@ -521,13 +567,22 @@ async function seedGradeEntries(
     );
     const isT4 = t4 != null && sheet.term_id === t4.id;
 
+    // Resolve term number (1–4) for this sheet so trajectory offsets can be
+    // applied correctly. Falls back to 1 if the term is not found (safe —
+    // offset[0] for steady is 0 and for trajectory students it's a valid value).
+    const sheetTermNumber = termById.get(sheet.term_id)?.term_number ?? 1;
+
     for (const e of enrolments) {
       if (isFullTerm) {
         // Full term (T1, or all 4 terms in closed-AY mode): full WW + PT
         // + QA, computed quarterly.
-        const ww_scores = ww_totals.map((max) => scoreFor(max, e.student_id));
-        const pt_scores = pt_totals.map((max) => scoreFor(max, e.student_id));
-        const qa_score = scoreFor(qa_total, e.student_id);
+        const ww_scores = ww_totals.map((max) =>
+          scoreFor(max, e.student_id, sheetTermNumber)
+        );
+        const pt_scores = pt_totals.map((max) =>
+          scoreFor(max, e.student_id, sheetTermNumber)
+        );
+        const qa_score = scoreFor(qa_total, e.student_id, sheetTermNumber);
 
         const computed = computeQuarterly({
           ww_scores,
@@ -566,7 +621,7 @@ async function seedGradeEntries(
         // until the rest of the slots are filled. Still call
         // computeQuarterly so ww_ps reflects the single slot recorded.
         const firstMax = ww_totals[0] ?? 10;
-        const ww_scores = [scoreFor(firstMax, e.student_id)];
+        const ww_scores = [scoreFor(firstMax, e.student_id, sheetTermNumber)];
         const pt_scores: number[] = [];
         const qa_score = null;
 
