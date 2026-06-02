@@ -125,3 +125,33 @@ export async function getUpcomingAcademicYear(
 ): Promise<UpcomingAcademicYear | null> {
   return upcomingAcademicYearCached();
 }
+
+// All AYs with their flags, newest first — for the Admissions early-bird
+// picker, which filters to non-current candidates. Cheap single query; NOT
+// cached because the picker must reflect a just-flipped value after
+// router.refresh().
+export type SelectableAcademicYear = {
+  id: string;
+  ay_code: string;
+  label: string;
+  is_current: boolean;
+  accepting_applications: boolean;
+};
+
+export async function listSelectableAcademicYears(): Promise<
+  SelectableAcademicYear[]
+> {
+  const client = await createServerClient();
+  const { data, error } = await client
+    .from('academic_years')
+    .select('id, ay_code, label, is_current, accepting_applications')
+    .order('ay_code', { ascending: false });
+  if (error) {
+    console.error(
+      '[academic-year] listSelectableAcademicYears failed:',
+      error.message
+    );
+    return [];
+  }
+  return (data ?? []) as SelectableAcademicYear[];
+}
