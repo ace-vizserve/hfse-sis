@@ -269,27 +269,48 @@ export async function seedPopulated(
   // ---- 10 + 11. Demo-extras and movements are independent of each other —
   //          both depend only on enrolled apps (seeded in 0b) which is already
   //          complete. Run in parallel for a 2× speedup on these two passes.
-  const [demoExtras, movementsInserted] = await Promise.all([
-    seedDemoExtras(service, testAy),
-    seedMovements(service, testAy),
-  ]);
-  result.demo_extras = demoExtras;
-  result.movements_inserted = movementsInserted;
+  //          These are NON-CRITICAL embellishment passes: a failure here must
+  //          NOT abort the seed before the cache-invalidation step below (a
+  //          skipped invalidation leaves the long-TTL dashboard/list caches
+  //          stale → "0 metric / empty lists while the drill sheet has data").
+  try {
+    const [demoExtras, movementsInserted] = await Promise.all([
+      seedDemoExtras(service, testAy),
+      seedMovements(service, testAy),
+    ]);
+    result.demo_extras = demoExtras;
+    result.movements_inserted = movementsInserted;
+  } catch (err) {
+    console.error(
+      '[populated seeder] demo-extras/movements pass failed (non-fatal):',
+      err instanceof Error ? err.message : err
+    );
+  }
 
   // ---- 13. School-realistic edge cases (late enrollees, withdrawals,
   //          change requests, P-Files chase, compassionate quota, GA 88.4,
   //          mid-year section transfer) — only when all terms are full so
-  //          there are locked sheets to file change requests against.
+  //          there are locked sheets to file change requests against. Also
+  //          non-critical: guarded so a single edge case throwing can't skip
+  //          the invalidation + reconciliation below.
   if (allTermsFull) {
-    const ec = await seedEdgeCases(service, testAy);
-    result.edge_cases_inserted = ec.edge_cases_inserted;
+    try {
+      const ec = await seedEdgeCases(service, testAy);
+      result.edge_cases_inserted = ec.edge_cases_inserted;
+    } catch (err) {
+      console.error(
+        '[populated seeder] edge-cases pass failed (non-fatal):',
+        err instanceof Error ? err.message : err
+      );
+    }
   }
 
-  // ---- 14. Bust the per-AY drill caches so a freshly-seeded environment
-  //          renders without waiting for the 60s unstable_cache TTL.
-  //          Critical for the Top-absent dashboard tile, which reads from
-  //          buildAllRowSets — a stale snapshot would show 0 absences while
-  //          the lazy-fetched drill sheet shows the real rows.
+  // ---- 14. Bust the per-AY drill + dashboard + list caches so a freshly-
+  //          seeded environment renders without waiting for the (up to 10-min)
+  //          unstable_cache TTL. A stale snapshot shows 0 on dashboard metrics
+  //          and empty admissions/records lists while the lazy-fetched drill
+  //          sheet shows the real rows. MUST run even if a late pass above
+  //          failed — hence the try/catch guards on 10/11/13.
   invalidateAllOperationalDrills(testAy.ay_code);
 
   // ---- 15. Reconciliation pass — assert the production invariant that every
