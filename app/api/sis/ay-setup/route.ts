@@ -164,6 +164,35 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: setErr.message }, { status: 500 });
   }
 
+  // The application window follows the active flag: the new current AY accepts
+  // applications by default, and the outgoing AY's window closes. Closing the
+  // old one is a correctness requirement — otherwise it still satisfies
+  // accepting=true AND is_current=false and would be mistaken for the early-bird
+  // upcoming AY by getUpcomingAcademicYear(). Best-effort, non-transactional;
+  // re-running the switch converges.
+  const { error: openErr } = await supabase
+    .from('academic_years')
+    .update({ accepting_applications: true })
+    .eq('ay_code', targetAy);
+  if (openErr) {
+    console.error(
+      '[ay-setup PATCH] opening new-current window failed:',
+      openErr.message
+    );
+  }
+  if (prevAy && prevAy !== targetAy) {
+    const { error: closeErr } = await supabase
+      .from('academic_years')
+      .update({ accepting_applications: false })
+      .eq('ay_code', prevAy);
+    if (closeErr) {
+      console.error(
+        '[ay-setup PATCH] closing old window failed:',
+        closeErr.message
+      );
+    }
+  }
+
   await logAction({
     service: supabase,
     actor: { id: auth.user.id, email: auth.user.email ?? null },
@@ -173,6 +202,8 @@ export async function PATCH(request: Request) {
     context: {
       from_ay: prevAy,
       to_ay: targetAy,
+      accepting_opened: targetAy,
+      accepting_closed: prevAy && prevAy !== targetAy ? prevAy : null,
     },
   });
 
