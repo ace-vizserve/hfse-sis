@@ -15,7 +15,7 @@ const AyCode = z
 // POST /api/sis/ay-setup — create AY
 //
 // The RPC derives the slug and handles copy-forward server-side;
-// the client only supplies identity + label + the early-bird gate.
+// the client only supplies identity + label.
 export const CreateAySchema = z.object({
   ay_code: AyCode,
   label: z
@@ -23,11 +23,6 @@ export const CreateAySchema = z.object({
     .trim()
     .min(1, 'Label required')
     .max(120, 'Label too long (120 char max)'),
-  // KD #77: when true, the new AY immediately accepts applications via the
-  // parent portal AND surfaces in the admissions sidebar's "Upcoming AY
-  // applications" entry. The wizard's initial form state defaults this to
-  // false so the registrar can stage an AY weeks ahead of opening early-bird.
-  accepting_applications: z.boolean(),
 });
 
 export type CreateAyInput = z.infer<typeof CreateAySchema>;
