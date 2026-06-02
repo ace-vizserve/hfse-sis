@@ -91,7 +91,16 @@ export async function PATCH(request: Request) {
   }
 
   // ── Open: enforce single-select among non-current AYs ─────────────────────
+  // The close-others + open-target updates below are sequential, not a single
+  // transaction. If one fails mid-way the route returns 500; re-running is safe
+  // because computeEarlyBirdClosures re-reads live DB state and converges.
   const toClose = computeEarlyBirdClosures(ayCode, all);
+  // Idempotent no-op: already open and nothing else to close. Mirrors the
+  // close path's early return so we don't write a before:true/after:true
+  // audit row.
+  if (target.accepting_applications && toClose.length === 0) {
+    return NextResponse.json({ ok: true, unchanged: true, accepting: true });
+  }
   for (const closeCode of toClose) {
     const closed = all.find((a) => a.ay_code === closeCode);
     const { error } = await supabase
