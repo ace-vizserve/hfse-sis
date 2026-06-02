@@ -474,24 +474,38 @@ async function seedGradeEntries(
   // ~27% of students get a non-steady trajectory so that opening T2/T3/T4
   // grading sheets shows multiple flagged students in the Alerts column
   // (threshold = |diff| ≥ 5 quarterly points, per computeComparisons in
-  // score-entry-grid.tsx). Offsets are chosen so consecutive-term quarterly
-  // grades differ by ≥8 points for trajectory students.
+  // score-entry-grid.tsx).
   //
-  //   improving : T1 −10%, T2 −2%, T3 +6%, T4 +12%  (rising arc)
-  //   declining : T1 +12%, T2 +4%, T3 −4%, T4 −12%  (falling arc)
-  //   volatile  : T1 +10%, T2 −8%, T3 +10%, T4 −10% (zig-zag)
-  //   steady    : 0 every term  (default ~73%)
+  // ABSOLUTE per-term baselines (percent of max, term 1–4):
+  //   improving : [0.60, 0.75, 0.88, 0.98]  → consecutive diffs ≥10 pts ✓
+  //   declining : [0.98, 0.84, 0.70, 0.58]  → consecutive diffs ≥12 pts ✓
+  //   volatile  : [0.92, 0.66, 0.92, 0.66]  → consecutive diffs ≥24 pts ✓
+  //   steady    : uses qualityFor() — no table entry
   //
-  // Consecutive swings for a student near the 80% quality tier (mid-Bronze):
-  //   improving : Q1≈78, Q2≈86, Q3≈91, Q4≈96  → diffs 8, 5, 5  ✓
-  //   declining : Q1≈96, Q2≈88, Q3≈81, Q4≈74  → diffs 8, 7, 7  ✓
-  //   volatile  : Q1≈93, Q2≈76, Q3≈93, Q4≈74  → diffs 17,17,19 ✓
+  // Using ABSOLUTE baselines (not quality+offset) guarantees that the
+  // transmutation compression and ±3% per-cell variance cannot collapse a
+  // consecutive-term swing below the 5-point alert threshold. High-quality
+  // "declining" students no longer clamp at 1.0 for T1 (0.98 never hits
+  // the ceiling), and the wide deltas absorb the full variance budget.
+  //
+  // Math sanity-check (approximate quarterly grades after transmutation;
+  // transmutation maps raw% → ~raw%×100 at this score range):
+  //   improving : ~60→~75→~88→~98  diffs: 15, 13, 10  (all ≥ 5)  ✓
+  //   declining : ~98→~84→~70→~58  diffs: 14, 14, 12  (all ≥ 5)  ✓
+  //   volatile  : ~92→~66→~92→~66  diffs: 26, 26, 26  (all ≥ 5)  ✓
+  //
+  // Alerts only surface when quarterly grades exist for ≥2 terms, which the
+  // seeded AYs satisfy because switchEnvironment('test') seeds both AY9999
+  // and the prior AY (AY9998) with allTermsFull: true — all 4 terms have
+  // computed quarterly grades.
   type Trajectory = 'improving' | 'declining' | 'volatile' | 'steady';
-  const TRAJECTORY_OFFSETS: Record<Trajectory, number[]> = {
-    improving: [-0.1, -0.02, +0.06, +0.12],
-    declining: [+0.12, +0.04, -0.04, -0.12],
-    volatile: [+0.1, -0.08, +0.1, -0.1],
-    steady: [0, 0, 0, 0],
+  const TRAJECTORY_BASELINES: Record<
+    Exclude<Trajectory, 'steady'>,
+    [number, number, number, number]
+  > = {
+    improving: [0.6, 0.75, 0.88, 0.98],
+    declining: [0.98, 0.84, 0.7, 0.58],
+    volatile: [0.92, 0.66, 0.92, 0.66],
   };
   const studentTrajectory = new Map<string, Trajectory>();
   const trajectoryFor = (studentId: string): Trajectory => {
@@ -507,22 +521,36 @@ async function seedGradeEntries(
     return t;
   };
 
-  // Per-cell score — student's quality baseline, shifted by their term
-  // trajectory offset, plus small ±3% cell variance. Trajectory students
-  // show ≥8-point quarterly swings; steady students are identical to
-  // the previous behaviour (offset 0).
+  // Per-cell score.
+  //
+  // Steady students (~73%): use qualityFor(studentId) as the baseline so the
+  // award-tier spread (Gold/Silver/Bronze/NE) is preserved across the
+  // masterfile exactly as before.
+  //
+  // Trajectory students (~27%): use TRAJECTORY_BASELINES[traj][termIdx] as
+  // the ABSOLUTE baseline instead of qualityFor — this guarantees consecutive-
+  // term quarterly swings ≥5 regardless of the student's quality tier or the
+  // ±3% per-cell variance. qualityFor is NOT called for trajectory students so
+  // their RNG slot is consumed only by trajectoryFor; the PRNG sequence stays
+  // deterministic per AY.
+  //
+  // Both paths apply the same ±3% cell variance and the same [0.5, 1.0] clamp
+  // (the absolute baselines are chosen well inside that range — 0.58–0.98 —
+  // so the clamp is effectively dead code for trajectory students).
   const scoreFor = (
     max: number,
     studentId: string,
     termNumber: number
   ): number => {
-    const baseline = qualityFor(studentId);
     const traj = trajectoryFor(studentId);
     // term_number is 1-indexed; array index is 0-indexed
     const termIdx = Math.max(0, Math.min(3, termNumber - 1));
-    const offset = TRAJECTORY_OFFSETS[traj][termIdx];
+    const baseline =
+      traj === 'steady'
+        ? qualityFor(studentId)
+        : TRAJECTORY_BASELINES[traj][termIdx];
     const variance = (rand() - 0.5) * 0.06; // ±3 percentage points
-    const pct = Math.max(0.5, Math.min(1.0, baseline + offset + variance));
+    const pct = Math.max(0.5, Math.min(1.0, baseline + variance));
     return Math.round(pct * max);
   };
 
