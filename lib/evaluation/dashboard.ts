@@ -471,26 +471,36 @@ async function loadEvaluationTeacherPriorityUncached(
   //    (migration 018) — there is no `status` column.
   const perSection = await Promise.all(
     adviserSectionIds.map(async (sectionId) => {
-      const [enrolledRes, writeupsRes, sectionRes] = await Promise.all([
+      // Count by the section's CURRENT active roster (student_id), not by
+      // evaluation_writeups.section_id — a writeup's section_id is a seed-time
+      // tag that doesn't follow a mid-year transfer (KD #67), so a per-section_id
+      // count over-reports "pending" in the destination section.
+      const [rosterRes, sectionRes] = await Promise.all([
         service
           .from('section_students')
-          .select('id', { count: 'exact', head: true })
+          .select('student_id')
           .eq('section_id', sectionId)
           .neq('enrollment_status', 'withdrawn'),
-        service
-          .from('evaluation_writeups')
-          .select('id', { count: 'exact', head: true })
-          .eq('section_id', sectionId)
-          .eq('term_id', currentTerm.id)
-          .eq('submitted', true),
         service
           .from('sections')
           .select('name')
           .eq('id', sectionId)
           .maybeSingle(),
       ]);
-      const expected = enrolledRes.count ?? 0;
-      const submitted = writeupsRes.count ?? 0;
+      const studentIds = (rosterRes.data ?? []).map(
+        (r) => (r as { student_id: string }).student_id
+      );
+      const expected = studentIds.length;
+      let submitted = 0;
+      if (expected > 0) {
+        const { count } = await service
+          .from('evaluation_writeups')
+          .select('id', { count: 'exact', head: true })
+          .eq('term_id', currentTerm.id)
+          .eq('submitted', true)
+          .in('student_id', studentIds);
+        submitted = count ?? 0;
+      }
       const pending = Math.max(0, expected - submitted);
       const sectionName =
         (sectionRes.data as { name: string } | null)?.name ?? 'Section';
@@ -615,21 +625,31 @@ async function loadEvaluationRegistrarPriorityUncached(
 
   const perSection = await Promise.all(
     sections.map(async (s) => {
-      const [enrolledRes, submittedRes] = await Promise.all([
-        service
-          .from('section_students')
-          .select('id', { count: 'exact', head: true })
-          .eq('section_id', s.id)
-          .neq('enrollment_status', 'withdrawn'),
-        service
+      // Count by the section's CURRENT active roster (student_id), not by
+      // evaluation_writeups.section_id. A writeup is keyed (term_id, student_id);
+      // its section_id is a seed-time tag that does NOT follow a mid-year
+      // transfer (KD #67), so counting by section_id over-reports "pending" in
+      // the destination section. Per-roster counting stays correct after any
+      // transfer.
+      const { data: rosterRows } = await service
+        .from('section_students')
+        .select('student_id')
+        .eq('section_id', s.id)
+        .neq('enrollment_status', 'withdrawn');
+      const studentIds = (rosterRows ?? []).map(
+        (r) => (r as { student_id: string }).student_id
+      );
+      const expected = studentIds.length;
+      let submitted = 0;
+      if (expected > 0) {
+        const { count } = await service
           .from('evaluation_writeups')
           .select('id', { count: 'exact', head: true })
-          .eq('section_id', s.id)
           .eq('term_id', currentTerm.id)
-          .eq('submitted', true),
-      ]);
-      const expected = enrolledRes.count ?? 0;
-      const submitted = submittedRes.count ?? 0;
+          .eq('submitted', true)
+          .in('student_id', studentIds);
+        submitted = count ?? 0;
+      }
       return {
         sectionId: s.id,
         sectionName: s.name,

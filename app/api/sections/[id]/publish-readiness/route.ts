@@ -93,11 +93,14 @@ export async function GET(
   const [{ data: writeupRows }, { data: attendanceRows }, { data: scoreRows }] =
     await Promise.all([
       studentIds.length > 0
-        ? service
+        ? // Match by the section's current active roster (student_id), NOT the
+          // write-up's denormalized section_id — that tag doesn't follow a
+          // mid-year transfer (KD #67), so a transferred student's write-up would
+          // be wrongly reported "missing" for their new section.
+          service
             .from('evaluation_writeups')
             .select('student_id, writeup, submitted')
             .eq('term_id', termId)
-            .eq('section_id', sectionId)
             .in('student_id', studentIds)
         : Promise.resolve({ data: [] as unknown[] }),
       sectionStudentIds.length > 0

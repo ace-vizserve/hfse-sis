@@ -154,33 +154,41 @@ export async function getWriteupProgressByTerm(
 
   const { data: enrolments } = await service
     .from('section_students')
-    .select('section_id, enrollment_status')
+    .select('section_id, student_id, enrollment_status')
     .in('section_id', sectionIds)
     .neq('enrollment_status', 'withdrawn');
 
-  for (const row of (enrolments ?? []) as Array<{ section_id: string }>) {
+  // Map each active student to their CURRENT section so submitted write-ups are
+  // credited by the live roster, not by evaluation_writeups.section_id — that
+  // denormalized tag doesn't follow a mid-year transfer (KD #67), so counting by
+  // it mis-attributes a transferred student's write-up to their old section.
+  const sectionByStudent = new Map<string, string>();
+  for (const row of (enrolments ?? []) as Array<{
+    section_id: string;
+    student_id: string;
+  }>) {
     const b = (out[row.section_id] ??= {
       section_id: row.section_id,
       active_count: 0,
       submitted_count: 0,
     });
     b.active_count++;
+    sectionByStudent.set(row.student_id, row.section_id);
   }
 
-  const { data: writeups } = await service
-    .from('evaluation_writeups')
-    .select('section_id, submitted')
-    .eq('term_id', termId)
-    .eq('submitted', true)
-    .in('section_id', sectionIds);
+  const rosterStudentIds = [...sectionByStudent.keys()];
+  if (rosterStudentIds.length > 0) {
+    const { data: writeups } = await service
+      .from('evaluation_writeups')
+      .select('student_id, submitted')
+      .eq('term_id', termId)
+      .eq('submitted', true)
+      .in('student_id', rosterStudentIds);
 
-  for (const row of (writeups ?? []) as Array<{ section_id: string }>) {
-    const b = (out[row.section_id] ??= {
-      section_id: row.section_id,
-      active_count: 0,
-      submitted_count: 0,
-    });
-    b.submitted_count++;
+    for (const row of (writeups ?? []) as Array<{ student_id: string }>) {
+      const sectionId = sectionByStudent.get(row.student_id);
+      if (sectionId && out[sectionId]) out[sectionId].submitted_count++;
+    }
   }
 
   return out;
