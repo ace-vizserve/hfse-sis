@@ -158,6 +158,7 @@ export default async function UpcomingAdmissionsApplicationsPage() {
       {header}
 
       <EarlyBirdAyControl
+        key={upcomingAy.ay_code}
         candidates={candidates}
         openAyCode={upcomingAy.ay_code}
         canManage={canManage}

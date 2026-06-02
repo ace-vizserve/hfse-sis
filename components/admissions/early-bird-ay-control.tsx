@@ -120,41 +120,49 @@ export function EarlyBirdAyControl({
           {openAyCode ? `Open for ${openAyCode}` : 'No upcoming year is open'}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-wrap items-center gap-3">
-        <Select value={picked} onValueChange={setPicked} disabled={busy}>
-          <SelectTrigger className="w-[240px]">
-            <SelectValue placeholder="Pick a future year" />
-          </SelectTrigger>
-          <SelectContent>
-            {candidates.map((c) => (
-              <SelectItem key={c.ayCode} value={c.ayCode}>
-                {c.label} ({c.ayCode})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          type="button"
-          disabled={busy || !picked || picked === openAyCode}
-          onClick={() => flip(picked, true)}
-        >
-          {busy ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Mail className="size-4" />
-          )}
-          {openAyCode ? 'Switch to this year' : 'Open early-bird'}
-        </Button>
-        {openAyCode && (
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Select value={picked} onValueChange={setPicked} disabled={busy}>
+            <SelectTrigger className="w-[240px]">
+              <SelectValue placeholder="Pick a future year" />
+            </SelectTrigger>
+            <SelectContent>
+              {candidates.map((c) => (
+                <SelectItem key={c.ayCode} value={c.ayCode}>
+                  {c.label} ({c.ayCode})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             type="button"
-            variant="outline"
-            disabled={busy}
-            onClick={() => flip(openAyCode, false)}
+            disabled={busy || !picked || picked === openAyCode}
+            onClick={() => flip(picked, true)}
           >
-            <MailX className="size-4" />
-            Close early-bird
+            {busy ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Mail className="size-4" />
+            )}
+            {openAyCode ? 'Switch to this year' : 'Open early-bird'}
           </Button>
+          {openAyCode && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => flip(openAyCode, false)}
+            >
+              <MailX className="size-4" />
+              Close early-bird
+            </Button>
+          )}
+        </div>
+        {openAyCode && (
+          <p className="text-[13px] text-muted-foreground">
+            Only one year can be open at a time — switching to another year
+            automatically closes {openAyCode}.
+          </p>
         )}
       </CardContent>
     </Card>
