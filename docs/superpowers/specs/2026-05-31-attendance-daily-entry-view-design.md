@@ -13,14 +13,14 @@ term, but clunky for the **recurring daily task** a form class adviser actually 
 morning: "mark everyone present except the few who aren't." In the grid you must locate
 today's column (a tall thin strip) and tap down it cell by cell.
 
-This adds a focused **Daily entry view** as an additive, faster on-ramp to the *same*
+This adds a focused **Daily entry view** as an additive, faster on-ramp to the _same_
 `attendance_daily` table. Nothing about the term sheet, the grid, or the write semantics
 changes. It is opt-in behind a toggle.
 
 **Decisions locked during brainstorming:**
 
-1. **Problem** — taking *today's* attendance is clunky in the wide grid.
-2. **Interaction** — *mark-the-exceptions*: everyone assumed Present; teacher taps only the
+1. **Problem** — taking _today's_ attendance is clunky in the wide grid.
+2. **Interaction** — _mark-the-exceptions_: everyone assumed Present; teacher taps only the
    Late / Absent / Excused students; one **Submit** writes `P` for the rest.
 3. **Surfacing** — a **"Term sheet | Daily" toggle** on the existing page; **Term sheet stays
    the default** (non-disruptive; Daily is discovered/opt-in).
@@ -118,16 +118,16 @@ server-fetched `initialDaily` / `summary`).
 
 ## Reused infrastructure
 
-| Concern | Reuse |
-| --- | --- |
-| Encodable-day gate | `isEncodableDayType` (`lib/schemas/attendance.ts`), `getEncodableDatesForTerm` / calendar helpers (`lib/attendance/calendar.ts`) |
-| Per-mark write logic | **new** `lib/attendance/write-daily.ts` shared helper, extracted from `app/api/attendance/daily/route.ts` and consumed by both the per-cell PATCH and the new batch POST |
-| Rollup | `recompute_attendance_rollup` RPC |
-| Late-enrollee gate | `section_students.enrollment_date` (KD #113) |
-| EX reasons | `ExReason` union (`lib/schemas/attendance.ts`) |
-| VL quota soft-warning | optional parity with the grid's KD #94 toast (defer if not trivial) |
-| Drill cache | `lib/cache/invalidate-drill-tags.ts` (KD #80) |
-| Toggle state | URL param `?view=`, same `<Link>`-preserving pattern as the term switcher |
+| Concern               | Reuse                                                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Encodable-day gate    | `isEncodableDayType` (`lib/schemas/attendance.ts`), `getEncodableDatesForTerm` / calendar helpers (`lib/attendance/calendar.ts`)                                         |
+| Per-mark write logic  | **new** `lib/attendance/write-daily.ts` shared helper, extracted from `app/api/attendance/daily/route.ts` and consumed by both the per-cell PATCH and the new batch POST |
+| Rollup                | `recompute_attendance_rollup` RPC                                                                                                                                        |
+| Late-enrollee gate    | `section_students.enrollment_date` (KD #113)                                                                                                                             |
+| EX reasons            | `ExReason` union (`lib/schemas/attendance.ts`)                                                                                                                           |
+| VL quota soft-warning | optional parity with the grid's KD #94 toast (defer if not trivial)                                                                                                      |
+| Drill cache           | `lib/cache/invalidate-drill-tags.ts` (KD #80)                                                                                                                            |
+| Toggle state          | URL param `?view=`, same `<Link>`-preserving pattern as the term switcher                                                                                                |
 
 ## Components / files
 

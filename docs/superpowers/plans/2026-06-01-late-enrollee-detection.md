@@ -15,9 +15,9 @@
 ```ts
 // lib/sis/terms.ts (existing)
 type TermWindow = { termNumber: number; startDate: string; endDate: string };
-export function loadTermsForAY(ayCode: string): Promise<TermWindow[]>;     // cached, service-role
-export async function getTermForDate(date, ayCode): Promise<TermInfo|null>; // keep as-is
-export async function detectMidTermEnrolment(ayCode): Promise<TermInfo|null>; // REPLACED by this plan
+export function loadTermsForAY(ayCode: string): Promise<TermWindow[]>; // cached, service-role
+export async function getTermForDate(date, ayCode): Promise<TermInfo | null>; // keep as-is
+export async function detectMidTermEnrolment(ayCode): Promise<TermInfo | null>; // REPLACED by this plan
 
 // section_students columns (existing): enrollment_status ('active'|'late_enrollee'|'withdrawn'),
 //   late_enrollee_term_number (smallint 1-4 null), enrollment_date (date null)
@@ -33,6 +33,7 @@ export async function detectMidTermEnrolment(ayCode): Promise<TermInfo|null>; //
 ## Task 1: Pure position resolver + tests
 
 **Files:**
+
 - Create: `lib/sis/enrolment-position.ts`
 - Test: `__tests__/sis/enrolment-position.test.ts`
 
@@ -197,6 +198,7 @@ Expected: PASS (all cases).
 git add lib/sis/enrolment-position.ts __tests__/sis/enrolment-position.test.ts
 git commit -m "feat(sis): pure enrolment-position resolver (late-enrollee detection)"
 ```
+
 (End the commit body with `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`.)
 
 ---
@@ -204,6 +206,7 @@ git commit -m "feat(sis): pure enrolment-position resolver (late-enrollee detect
 ## Task 2: Server resolver + today-term API + re-enrolment path
 
 **Files:**
+
 - Modify: `lib/sis/terms.ts`
 - Modify: `app/api/sis/today-term/route.ts`
 - Modify: `app/api/sections/[id]/students/[enrolmentId]/route.ts`
@@ -275,29 +278,33 @@ In `app/api/sections/[id]/students/[enrolmentId]/route.ts`, change the import:
 
 ```ts
 // was: import { detectMidTermEnrolment, getTermForDate } from '@/lib/sis/terms';
-import { getEnrolmentPosition, getTermForDate, loadTermsForAY } from '@/lib/sis/terms';
+import {
+  getEnrolmentPosition,
+  getTermForDate,
+  loadTermsForAY,
+} from '@/lib/sis/terms';
 ```
 
 Find the re-enrolment detection block (the `if (isReEnrolment && !lateEnrolleeTransition && ayCodeForInvalidate)` block that calls `detectMidTermEnrolment`) and replace it with:
 
 ```ts
-  let midTermEnrolment: {
-    termNumber: number;
-    termLabel: string;
-    sectionId: string;
-    sectionStudentId: string;
-  } | null = null;
-  if (isReEnrolment && !lateEnrolleeTransition && ayCodeForInvalidate) {
-    const pos = await getEnrolmentPosition(ayCodeForInvalidate);
-    if (pos.isLateEnrollee && pos.activeTerm) {
-      midTermEnrolment = {
-        termNumber: pos.activeTerm.termNumber,
-        termLabel: `T${pos.activeTerm.termNumber}`,
-        sectionId,
-        sectionStudentId: enrolmentId,
-      };
-    }
+let midTermEnrolment: {
+  termNumber: number;
+  termLabel: string;
+  sectionId: string;
+  sectionStudentId: string;
+} | null = null;
+if (isReEnrolment && !lateEnrolleeTransition && ayCodeForInvalidate) {
+  const pos = await getEnrolmentPosition(ayCodeForInvalidate);
+  if (pos.isLateEnrollee && pos.activeTerm) {
+    midTermEnrolment = {
+      termNumber: pos.activeTerm.termNumber,
+      termLabel: `T${pos.activeTerm.termNumber}`,
+      sectionId,
+      sectionStudentId: enrolmentId,
+    };
   }
+}
 ```
 
 - [ ] **Step 4: Remove the now-unused `detectMidTermEnrolment`**
@@ -322,6 +329,7 @@ git commit -m "feat(sis): getEnrolmentPosition wraps the resolver; today-term + 
 ## Task 3: PATCH derives enrollment_date from the chosen term
 
 **Files:**
+
 - Modify: `app/api/sections/[id]/students/[enrolmentId]/route.ts`
 
 **Why:** "Join current" stamps `enrollment_date = today`; "Start next" stamps the chosen term's start date so attendance proration excludes the skipped active term.
@@ -331,19 +339,19 @@ git commit -m "feat(sis): getEnrolmentPosition wraps the resolver; today-term + 
 In the PATCH handler, immediately after the `before` row is loaded and validated (after the `if (before.section_id !== sectionId)` guard), add an AY lookup so the late branch can resolve term dates:
 
 ```ts
-  // Section AY (used by the late-enrollee enrollment_date derivation + audit).
-  const { data: secAyRow } = await service
-    .from('sections')
-    .select('academic_year:academic_years!inner(ay_code)')
-    .eq('id', sectionId)
-    .maybeSingle();
-  const secAy = (
-    secAyRow as {
-      academic_year: { ay_code: string } | { ay_code: string }[];
-    } | null
-  )?.academic_year;
-  const sectionAyCode =
-    (Array.isArray(secAy) ? secAy[0]?.ay_code : secAy?.ay_code) ?? null;
+// Section AY (used by the late-enrollee enrollment_date derivation + audit).
+const { data: secAyRow } = await service
+  .from('sections')
+  .select('academic_year:academic_years!inner(ay_code)')
+  .eq('id', sectionId)
+  .maybeSingle();
+const secAy = (
+  secAyRow as {
+    academic_year: { ay_code: string } | { ay_code: string }[];
+  } | null
+)?.academic_year;
+const sectionAyCode =
+  (Array.isArray(secAy) ? secAy[0]?.ay_code : secAy?.ay_code) ?? null;
 ```
 
 - [ ] **Step 2: Replace the late-boundary enrollment_date stamp**
@@ -351,43 +359,43 @@ In the PATCH handler, immediately after the `before` row is loaded and validated
 Find the late-enrollee boundary block:
 
 ```ts
-    if (parsed.data.enrollment_status === 'late_enrollee') {
-      if (before.enrollment_status !== 'late_enrollee') {
-        patch.enrollment_date = new Date().toISOString().slice(0, 10);
-        lateEnrolleeTransition = true;
-      }
-      // Always persist an explicit term override if provided (null clears it).
-      if (parsed.data.late_enrollee_term_number !== undefined) {
-        patch.late_enrollee_term_number =
-          parsed.data.late_enrollee_term_number ?? null;
-      }
-    }
+if (parsed.data.enrollment_status === 'late_enrollee') {
+  if (before.enrollment_status !== 'late_enrollee') {
+    patch.enrollment_date = new Date().toISOString().slice(0, 10);
+    lateEnrolleeTransition = true;
+  }
+  // Always persist an explicit term override if provided (null clears it).
+  if (parsed.data.late_enrollee_term_number !== undefined) {
+    patch.late_enrollee_term_number =
+      parsed.data.late_enrollee_term_number ?? null;
+  }
+}
 ```
 
 Replace with:
 
 ```ts
-    if (parsed.data.enrollment_status === 'late_enrollee') {
-      if (parsed.data.late_enrollee_term_number !== undefined) {
-        patch.late_enrollee_term_number =
-          parsed.data.late_enrollee_term_number ?? null;
-      }
-      if (before.enrollment_status !== 'late_enrollee') {
-        // Derive the joining date from the chosen term: today when the chosen
-        // term contains today ("join current"), else that term's start date
-        // ("start next term" — they begin fresh, attendance prorates from there).
-        const today = new Date().toISOString().slice(0, 10);
-        let stampDate = today;
-        const chosenTermN = parsed.data.late_enrollee_term_number ?? null;
-        if (chosenTermN != null && sectionAyCode) {
-          const terms = await loadTermsForAY(sectionAyCode);
-          const chosen = terms.find((t) => t.termNumber === chosenTermN);
-          if (chosen && chosen.startDate > today) stampDate = chosen.startDate;
-        }
-        patch.enrollment_date = stampDate;
-        lateEnrolleeTransition = true;
-      }
+if (parsed.data.enrollment_status === 'late_enrollee') {
+  if (parsed.data.late_enrollee_term_number !== undefined) {
+    patch.late_enrollee_term_number =
+      parsed.data.late_enrollee_term_number ?? null;
+  }
+  if (before.enrollment_status !== 'late_enrollee') {
+    // Derive the joining date from the chosen term: today when the chosen
+    // term contains today ("join current"), else that term's start date
+    // ("start next term" — they begin fresh, attendance prorates from there).
+    const today = new Date().toISOString().slice(0, 10);
+    let stampDate = today;
+    const chosenTermN = parsed.data.late_enrollee_term_number ?? null;
+    if (chosenTermN != null && sectionAyCode) {
+      const terms = await loadTermsForAY(sectionAyCode);
+      const chosen = terms.find((t) => t.termNumber === chosenTermN);
+      if (chosen && chosen.startDate > today) stampDate = chosen.startDate;
     }
+    patch.enrollment_date = stampDate;
+    lateEnrolleeTransition = true;
+  }
+}
 ```
 
 - [ ] **Step 3: Build**
@@ -407,96 +415,95 @@ git commit -m "feat(sis): derive late-enrollee enrollment_date from chosen joini
 ## Task 4: Position-aware decision in the SIS enrolment edit sheet
 
 **Files:**
+
 - Modify: `components/sis/enrolment-edit-sheet.tsx`
 
-**Context:** The sheet already lets the registrar change `enrollment_status` to `late_enrollee` and has a "Joining term" correction block (shown only when the student is *already* late). Extend it so that when the registrar selects `late_enrollee` in this edit, the sheet fetches the position and presents Join-current / Start-next with the near-end warning, writing the chosen term into the existing `lateTermOverride` state (sent as `late_enrollee_term_number` on save). Verification is manual (no React harness; logic is covered by Task 1).
+**Context:** The sheet already lets the registrar change `enrollment_status` to `late_enrollee` and has a "Joining term" correction block (shown only when the student is _already_ late). Extend it so that when the registrar selects `late_enrollee` in this edit, the sheet fetches the position and presents Join-current / Start-next with the near-end warning, writing the chosen term into the existing `lateTermOverride` state (sent as `late_enrollee_term_number` on save). Verification is manual (no React harness; logic is covered by Task 1).
 
 - [ ] **Step 1: Add state + a position fetch when `late_enrollee` is selected**
 
 Near the other `useState` hooks in `EnrolmentEditSheet`, add:
 
 ```tsx
-  type Position = {
-    activeTerm: { termNumber: number } | null;
-    nextTerm: { termNumber: number } | null;
-    isLateEnrollee: boolean;
-    canDeferToNext: boolean;
-    daysLeftInActiveTerm: number | null;
-  };
-  const [position, setPosition] = useState<Position | null>(null);
+type Position = {
+  activeTerm: { termNumber: number } | null;
+  nextTerm: { termNumber: number } | null;
+  isLateEnrollee: boolean;
+  canDeferToNext: boolean;
+  daysLeftInActiveTerm: number | null;
+};
+const [position, setPosition] = useState<Position | null>(null);
 ```
 
 Add an effect (import `useEffect`) that fetches the position the first time the registrar switches this edit to `late_enrollee` (and the student wasn't already one). `ayCode` is available on the component via the `initial`/props — if not already passed, add an `ayCode: string` prop and thread it from the caller (the section roster row already knows the AY):
 
 ```tsx
-  useEffect(() => {
-    if (
-      status === 'late_enrollee' &&
-      initial.enrollment_status !== 'late_enrollee' &&
-      position === null
-    ) {
-      fetch(`/api/sis/today-term?ay=${encodeURIComponent(ayCode)}`)
-        .then((r) => r.json())
-        .then((d) => setPosition(d.position ?? null))
-        .catch(() => setPosition(null));
-    }
-  }, [status, initial.enrollment_status, position, ayCode]);
+useEffect(() => {
+  if (
+    status === 'late_enrollee' &&
+    initial.enrollment_status !== 'late_enrollee' &&
+    position === null
+  ) {
+    fetch(`/api/sis/today-term?ay=${encodeURIComponent(ayCode)}`)
+      .then((r) => r.json())
+      .then((d) => setPosition(d.position ?? null))
+      .catch(() => setPosition(null));
+  }
+}, [status, initial.enrollment_status, position, ayCode]);
 ```
 
 - [ ] **Step 2: Render the decision when newly tagging late**
 
-Directly above the existing `{initial.enrollment_status === 'late_enrollee' && ( ... Joining term ... )}` block, add a sibling block for the *new-tag* case:
+Directly above the existing `{initial.enrollment_status === 'late_enrollee' && ( ... Joining term ... )}` block, add a sibling block for the _new-tag_ case:
 
 ```tsx
-              {status === 'late_enrollee' &&
-                initial.enrollment_status !== 'late_enrollee' &&
-                position?.activeTerm && (
-                  <div className="space-y-2">
-                    <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Joining term
-                    </p>
-                    <p className="text-[13px] text-muted-foreground">
-                      Enrolled after T{position.activeTerm.termNumber} started —
-                      choose how this student joins.
-                    </p>
-                    <div className="space-y-1.5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setLateTermOverride(position.activeTerm!.termNumber)
-                        }
-                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${
-                          lateTermOverride === position.activeTerm.termNumber
-                            ? 'border-primary bg-accent text-foreground'
-                            : 'border-hairline text-foreground hover:bg-muted/50'
-                        }`}
-                      >
-                        Join T{position.activeTerm.termNumber} now
-                        {position.daysLeftInActiveTerm !== null &&
-                          position.daysLeftInActiveTerm < 14 && (
-                            <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-brand-amber">
-                              ends in {position.daysLeftInActiveTerm}d
-                            </span>
-                          )}
-                      </button>
-                      {position.canDeferToNext && position.nextTerm && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setLateTermOverride(position.nextTerm!.termNumber)
-                          }
-                          className={`flex w-full items-center rounded-lg border px-3 py-2 text-left text-sm ${
-                            lateTermOverride === position.nextTerm.termNumber
-                              ? 'border-primary bg-accent text-foreground'
-                              : 'border-hairline text-foreground hover:bg-muted/50'
-                          }`}
-                        >
-                          Start in T{position.nextTerm.termNumber} instead
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
+{
+  status === 'late_enrollee' &&
+    initial.enrollment_status !== 'late_enrollee' &&
+    position?.activeTerm && (
+      <div className="space-y-2">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Joining term
+        </p>
+        <p className="text-[13px] text-muted-foreground">
+          Enrolled after T{position.activeTerm.termNumber} started — choose how
+          this student joins.
+        </p>
+        <div className="space-y-1.5">
+          <button
+            type="button"
+            onClick={() => setLateTermOverride(position.activeTerm!.termNumber)}
+            className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${
+              lateTermOverride === position.activeTerm.termNumber
+                ? 'border-primary bg-accent text-foreground'
+                : 'border-hairline text-foreground hover:bg-muted/50'
+            }`}
+          >
+            Join T{position.activeTerm.termNumber} now
+            {position.daysLeftInActiveTerm !== null &&
+              position.daysLeftInActiveTerm < 14 && (
+                <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-brand-amber">
+                  ends in {position.daysLeftInActiveTerm}d
+                </span>
+              )}
+          </button>
+          {position.canDeferToNext && position.nextTerm && (
+            <button
+              type="button"
+              onClick={() => setLateTermOverride(position.nextTerm!.termNumber)}
+              className={`flex w-full items-center rounded-lg border px-3 py-2 text-left text-sm ${
+                lateTermOverride === position.nextTerm.termNumber
+                  ? 'border-primary bg-accent text-foreground'
+                  : 'border-hairline text-foreground hover:bg-muted/50'
+              }`}
+            >
+              Start in T{position.nextTerm.termNumber} instead
+            </button>
+          )}
+        </div>
+      </div>
+    );
+}
 ```
 
 - [ ] **Step 3: Default the chosen term + send it on save**
@@ -516,13 +523,13 @@ When the position loads, default the selection to the active term if nothing cho
 In `doSave`, ensure the chosen term is included in the PATCH body for the new-tag case (the body already sends `enrollment_status`; add the term):
 
 ```tsx
-      if (
-        status === 'late_enrollee' &&
-        initial.enrollment_status !== 'late_enrollee' &&
-        lateTermOverride !== null
-      ) {
-        body.late_enrollee_term_number = lateTermOverride;
-      }
+if (
+  status === 'late_enrollee' &&
+  initial.enrollment_status !== 'late_enrollee' &&
+  lateTermOverride !== null
+) {
+  body.late_enrollee_term_number = lateTermOverride;
+}
 ```
 
 - [ ] **Step 4: Build**
@@ -542,6 +549,7 @@ git commit -m "feat(sis): position-aware late-enrollee Join/Start-next decision 
 ## Task 5: Mirror the decision in the Markbook enrolment edit sheet
 
 **Files:**
+
 - Modify: `components/markbook/enrolment-edit-sheet.tsx` (+ its caller if it needs `ayCode`)
 
 - [ ] **Step 1: Apply the same changes as Task 4 to the Markbook variant**
@@ -575,7 +583,6 @@ Run: `npx next build`
 Expected: clean compile, page count unchanged.
 
 - [ ] **Step 3: Manual happy paths** (AY9999; adjust a term's dates so "today" sits where needed)
-
   1. **Mid-term:** today inside T3 → edit a student to Late enrollee → sheet shows "Join T3 now" + "Start in T4 instead"; default selected = T3. Save with T3 → `enrollment_status='late_enrollee'`, `late_enrollee_term_number=3`, `enrollment_date=today`. Save with T4 → still `late_enrollee`, `late_enrollee_term_number=4`, `enrollment_date=T4 start`.
   2. **Mid-T4:** only "Join T4 now" shown (no defer). Near-end warning appears when <14 days remain.
   3. **Break:** today between T2 and T3 → no Join/Start decision appears (position.activeTerm is null); the student stays a normal active enrolment.

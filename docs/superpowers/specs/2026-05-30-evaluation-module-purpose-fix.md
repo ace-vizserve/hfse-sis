@@ -9,6 +9,7 @@
 ## Background
 
 The Evaluation module was built with three features:
+
 1. **FCA write-ups** — narrative comments per student per term (T1–T3), printed on the report card
 2. **Topics/Checklists + ratings** — teacher-owned rubrics with 1–5 proficiency ratings, labeled "PTC use only"
 3. **Conference Notes** — post-PTC parent feedback, registrar-gated
@@ -28,18 +29,21 @@ Everything else is out of scope for this module.
 ## What Gets Removed
 
 ### UI
+
 - **Topics/Checklists tab** on `/evaluation/sections/[sectionId]`
 - **Conference Notes tab** on the same page
 - **PTC deadline banners** (tentative / urgent / overdue states with deadline warnings)
 - **Topic count** from the sections picker cards (`/evaluation/sections`)
 
 ### Components (deleted)
+
 - `components/evaluation/checklist-roster-client.tsx`
 - `components/evaluation/ptc-roster-client.tsx`
 - `components/evaluation/rating-selector.tsx`
 - `components/evaluation/checklist-subject-picker.tsx`
 
 ### API Routes (→ 410 Gone)
+
 - `POST /api/evaluation/checklist-items`
 - `PATCH /api/evaluation/checklist-items/[id]`
 - `DELETE /api/evaluation/checklist-items/[id]`
@@ -49,7 +53,9 @@ Everything else is out of scope for this module.
 - `POST /api/sow/[id]/sync-to-eval` (SOW → checklist topic seed; no longer applicable)
 
 ### Lib functions removed
+
 From `lib/evaluation/checklist.ts`:
+
 - `listChecklistItems`
 - `listChecklistItemsWithCreator`
 - `getResponsesBySectionTerm`
@@ -58,34 +64,38 @@ From `lib/evaluation/checklist.ts`:
 - `listTeacherSubjectsForSection`
 
 From `lib/evaluation/queries.ts`:
+
 - `getChecklistTopicCountByTerm`
 
 ### Server-side loading removed from section roster page
+
 - PTC event queries (`getPtcEventForSection` / calendar_events lookup)
 - Checklist data (`commentsForClient`, `ratingsForClient`, `checklistItemsForClient`)
 - Subject list for teacher scoping
 - `canAccessPtc` gate and associated logic
 
 ### No DB migration
+
 `evaluation_checklist_items`, `evaluation_checklist_responses`, `evaluation_subject_comments`, `evaluation_ptc_feedback` — tables stay in Postgres, dormant. No data is deleted.
 
 ---
 
 ## What Stays
 
-| Item | Reason |
-|---|---|
-| Write-ups tab (sole tab on roster page) | FCA narrative → T1–T3 report card |
-| `writeup-roster-client.tsx` | Unchanged |
-| Virtue theme display + warning | Virtue theme IS in the report card parenthetical |
-| Sections picker — write-up progress | Simplified; topic count removed |
-| Audit log | Unchanged |
-| Compare view | Unchanged |
-| Role gates | FCA writes; registrar/school_admin/superadmin view |
-| `/api/evaluation/writeups` | Unchanged |
-| `/api/evaluation/terms/[termId]/config` | Unchanged (virtue theme) |
+| Item                                    | Reason                                             |
+| --------------------------------------- | -------------------------------------------------- |
+| Write-ups tab (sole tab on roster page) | FCA narrative → T1–T3 report card                  |
+| `writeup-roster-client.tsx`             | Unchanged                                          |
+| Virtue theme display + warning          | Virtue theme IS in the report card parenthetical   |
+| Sections picker — write-up progress     | Simplified; topic count removed                    |
+| Audit log                               | Unchanged                                          |
+| Compare view                            | Unchanged                                          |
+| Role gates                              | FCA writes; registrar/school_admin/superadmin view |
+| `/api/evaluation/writeups`              | Unchanged                                          |
+| `/api/evaluation/terms/[termId]/config` | Unchanged (virtue theme)                           |
 
 ### Role access after fix
+
 - **form_adviser** — sole writer of write-ups for their section; only tab is Write-ups
 - **subject_teacher** — loses access to the Checklists tab; no remaining role in this module
 - **registrar / school_admin / superadmin** — read-only view of write-ups; Conference Notes tab gone
@@ -112,6 +122,7 @@ Subject teachers currently land on `/evaluation/sections` and see sections they 
 ## Future PTC Surface (Plug-and-Play)
 
 When HFSE is ready to digitize PTC, it becomes a **completely separate surface**:
+
 - New route: `/evaluation/ptc/[sectionId]` (or a standalone module)
 - New sidebar entry
 - Reads from the existing dormant DB tables (already intact)

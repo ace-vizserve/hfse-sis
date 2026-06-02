@@ -26,6 +26,7 @@
 ## Task 1 — Data loader: `lib/sis/staff.ts`
 
 **Files:**
+
 - Create: `lib/sis/staff.ts`
 
 - [ ] **Step 1: Create the file with types and the uncached loader**
@@ -71,7 +72,9 @@ type RawAssignment = {
   subjects: { code: string; name: string } | null;
 };
 
-async function loadStaffAssignmentsUncached(ayCode: string): Promise<StaffRow[]> {
+async function loadStaffAssignmentsUncached(
+  ayCode: string
+): Promise<StaffRow[]> {
   const service = createServiceClient();
 
   const { data: ayRow } = await service
@@ -112,7 +115,9 @@ async function loadStaffAssignmentsUncached(ayCode: string): Promise<StaffRow[]>
 
   const { data: assignmentRows } = await service
     .from('teacher_assignments')
-    .select('id, teacher_user_id, section_id, subject_id, role, subjects(code, name)')
+    .select(
+      'id, teacher_user_id, section_id, subject_id, role, subjects(code, name)'
+    )
     .in('section_id', sectionIds);
 
   const assignments = (assignmentRows ?? []) as RawAssignment[];
@@ -145,7 +150,9 @@ async function loadStaffAssignmentsUncached(ayCode: string): Promise<StaffRow[]>
       email: teacher.email,
       name: teacher.name,
       disabled: teacher.disabled,
-      fcaSection: fcaSec ? { id: fcaSec.id, name: fcaSec.name, levelCode: fcaSec.levelCode } : null,
+      fcaSection: fcaSec
+        ? { id: fcaSec.id, name: fcaSec.name, levelCode: fcaSec.levelCode }
+        : null,
       subjectAssignments,
     };
   });
@@ -180,6 +187,7 @@ git commit -m "feat(sis): loadStaffAssignments loader for staff view"
 ## Task 2 — API route: `app/api/teacher-assignments/by-teacher/route.ts`
 
 **Files:**
+
 - Create: `app/api/teacher-assignments/by-teacher/route.ts`
 
 This route lazy-fetches a single teacher's FCA + subject assignments for the current AY, plus all sections and subjects needed to populate the slide-over pickers. It's called client-side when the sheet opens — not pre-fetched for every row.
@@ -267,9 +275,16 @@ export async function GET(request: NextRequest) {
   // This teacher's assignments in this AY
   const { data: assignmentRows } = await service
     .from('teacher_assignments')
-    .select('id, section_id, subject_id, role, subjects(code, name), sections(name)')
+    .select(
+      'id, section_id, subject_id, role, subjects(code, name), sections(name)'
+    )
     .eq('teacher_user_id', teacherId)
-    .in('section_id', sectionIds.length > 0 ? sectionIds : ['00000000-0000-0000-0000-000000000000']);
+    .in(
+      'section_id',
+      sectionIds.length > 0
+        ? sectionIds
+        : ['00000000-0000-0000-0000-000000000000']
+    );
 
   const assignments = (assignmentRows ?? []) as RawAssignment[];
 
@@ -322,6 +337,7 @@ git commit -m "feat(sis): GET /api/teacher-assignments/by-teacher for staff shee
 ## Task 3 — Slide-over: `components/sis/staff-assignment-sheet.tsx`
 
 **Files:**
+
 - Create: `components/sis/staff-assignment-sheet.tsx`
 
 This is a `'use client'` component. When opened it fetches assignments + pickers from the Task 2 route. FCA changes fire immediately on `<Select>` change. Subject rows can be individually removed; new ones added via an inline add form.
@@ -756,6 +772,7 @@ git commit -m "feat(sis): StaffAssignmentSheet slide-over editor"
 ## Task 4 — Table: `components/sis/staff-table.tsx`
 
 **Files:**
+
 - Create: `components/sis/staff-table.tsx`
 
 `'use client'` component. Wraps `<DataTable>` with a custom toolbar (name search + FCA filter chips + disabled toggle) and manages the sheet open state. Uses a `ChevronRight` action column to open the sheet since `DataTable` has no `onRowClick` prop.
@@ -1014,6 +1031,7 @@ git commit -m "feat(sis): StaffTable with search, FCA filter chips, and sheet tr
 ## Task 5 — RSC page, sidebar entry, and verification
 
 **Files:**
+
 - Create: `app/(sis)/sis/admin/staff/page.tsx`
 - Modify: `lib/sidebar/registry.ts`
 

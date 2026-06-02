@@ -8,14 +8,23 @@ Execute the following steps in order. Stop immediately if any step fails.
 - Run `git status` and `git diff` (staged + unstaged) to review all changes.
 - Summarize what was modified (files, features, fixes, etc.). Use this summary to generate the commit message later.
 
-### 2. Lint and Build Checks
+### 2. CI-Mirror Checks (format, types, tests, build)
 
-Run both commands. If **either** fails, STOP and output the errors. Do not proceed.
+These mirror the GitHub Actions pipeline in `.github/workflows/ci.yml` **exactly** — `prettier --check` → `tsc --noEmit` → `vitest run` → `next build` — so a green local run guarantees a green CI run and the push never fails on a check CI would have caught.
+
+Run in order. The first command auto-fixes formatting so it can never block the push (CI only runs `--check`); if **any** of the remaining three fails, STOP and output the errors. Do not proceed.
 
 ```
-npm run lint
-npm run build
+npm run format        # prettier --write .  (auto-fix; CI runs `prettier --check .`)
+npx tsc --noEmit      # type check
+npm run test          # vitest run
+npm run build         # next build
 ```
+
+Notes:
+
+- `npm run format` runs **before** staging (step 3) so reformatted files are included in the commit. `.prettierrc` sets `endOfLine: "auto"`, so on a Windows (CRLF) working tree this does not churn line endings.
+- **Do NOT add `npm run lint` (eslint) to this gate** — CI does not run it, and the repo currently carries pre-existing eslint errors that would falsely block every push. The CI contract is the four commands above. If CI's `ci.yml` changes, update this step to match.
 
 ### 3. Stage All Changes
 
@@ -74,7 +83,7 @@ Output a summary including:
 
 - Commit message used
 - Branch name
-- Status of: lint, build, rebase, push
+- Status of: format, tsc, test, build, rebase, push
 
 ### Rules
 

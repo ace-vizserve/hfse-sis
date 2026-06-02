@@ -12,24 +12,25 @@
 
 ## File Map
 
-| Action | File |
-|---|---|
-| Modify | `lib/dashboard/compare.ts` — add `termId` to `CompareCell` + populate in `buildCompareCells` |
-| Full rewrite | `components/dashboard/compare-grid.tsx` — remove heatmap, add sticky col, clean delta |
-| Modify | `app/(admissions)/admissions/compare/page.tsx` — update metric `direction` fields |
-| Modify | `app/(attendance)/attendance/compare/page.tsx` — update metric `direction` fields |
-| Modify | `app/(records)/records/compare/page.tsx` — update metric `direction` fields |
-| Modify | `app/(markbook)/markbook/compare/page.tsx` — update `direction` fields + add chart section |
-| Modify | `app/(evaluation)/evaluation/compare/page.tsx` — update metric `direction` fields |
-| Modify | `lib/markbook/compare.ts` — add `SubjectTrendPoint` type + `getSubjectPerformanceTrend` |
-| Create | `components/dashboard/charts/multi-series-trend-chart.client.tsx` |
-| Create | `components/dashboard/charts/multi-series-trend-chart.tsx` (next/dynamic wrapper) |
+| Action       | File                                                                                         |
+| ------------ | -------------------------------------------------------------------------------------------- |
+| Modify       | `lib/dashboard/compare.ts` — add `termId` to `CompareCell` + populate in `buildCompareCells` |
+| Full rewrite | `components/dashboard/compare-grid.tsx` — remove heatmap, add sticky col, clean delta        |
+| Modify       | `app/(admissions)/admissions/compare/page.tsx` — update metric `direction` fields            |
+| Modify       | `app/(attendance)/attendance/compare/page.tsx` — update metric `direction` fields            |
+| Modify       | `app/(records)/records/compare/page.tsx` — update metric `direction` fields                  |
+| Modify       | `app/(markbook)/markbook/compare/page.tsx` — update `direction` fields + add chart section   |
+| Modify       | `app/(evaluation)/evaluation/compare/page.tsx` — update metric `direction` fields            |
+| Modify       | `lib/markbook/compare.ts` — add `SubjectTrendPoint` type + `getSubjectPerformanceTrend`      |
+| Create       | `components/dashboard/charts/multi-series-trend-chart.client.tsx`                            |
+| Create       | `components/dashboard/charts/multi-series-trend-chart.tsx` (next/dynamic wrapper)            |
 
 ---
 
 ## Task 1: Add `termId` to `CompareCell`
 
 **Files:**
+
 - Modify: `lib/dashboard/compare.ts`
 
 `CompareCell` currently has no term UUID — only `termNumber: number`. The Markbook subject performance query needs the actual `term.id` UUID to filter `grading_sheets.term_id`. This change adds `termId?: string` to the type and populates it when building term-kind cells.
@@ -51,6 +52,7 @@ export type CompareCell = {
 - [ ] **Step 2: Update the terms query** — add `id` to the select:
 
 Change line 112:
+
 ```typescript
 // BEFORE
 .select('term_number, start_date, end_date, academic_years!inner(ay_code)')
@@ -73,6 +75,7 @@ type Row = {
 - [ ] **Step 4: Update `termsByAy` Map** — store both range and termId:
 
 Change the Map type and its population:
+
 ```typescript
 // BEFORE
 const termsByAy = new Map<string, Map<number, DateRange>>();
@@ -122,12 +125,15 @@ cells.push({
 ```
 
 - [ ] **Step 6: Verify TypeScript compiles**
+
 ```bash
 npx tsc --noEmit
 ```
+
 Expected: 0 errors.
 
 - [ ] **Step 7: Commit**
+
 ```bash
 git add lib/dashboard/compare.ts
 git commit -m "feat(compare): add termId to CompareCell for term-kind cells
@@ -140,6 +146,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ## Task 2: Redesign `CompareGrid`
 
 **Files:**
+
 - Full rewrite: `components/dashboard/compare-grid.tsx`
 
 Removes `bucketOf`, `Bucket`, `BUCKET_CLASS`, `lowerIsBetter`, `highlightExtremes`. Adds `direction`, sticky first column, AY group top-border, min/max dot on row label. All cell backgrounds become plain `bg-card`.
@@ -446,12 +453,15 @@ export function CompareGrid<T>({
 ```
 
 - [ ] **Step 2: Verify TypeScript compiles**
+
 ```bash
 npx tsc --noEmit
 ```
+
 Expected: 0 errors. (The 5 compare pages will have TypeScript errors until Task 3 — that's expected.)
 
 - [ ] **Step 3: Commit**
+
 ```bash
 git add components/dashboard/compare-grid.tsx
 git commit -m "feat(compare): redesign CompareGrid — remove heatmap, sticky col, AY borders, clean delta
@@ -464,6 +474,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ## Task 3: Update metric definitions in all 5 compare pages
 
 **Files:**
+
 - Modify: `app/(admissions)/admissions/compare/page.tsx`
 - Modify: `app/(attendance)/attendance/compare/page.tsx`
 - Modify: `app/(records)/records/compare/page.tsx`
@@ -475,6 +486,7 @@ Replace `lowerIsBetter: true/false` with `direction: 'lowerIsBetter'/'higherIsBe
 - [ ] **Step 1: Update `app/(admissions)/admissions/compare/page.tsx`**
 
 Replace the entire `metrics` array:
+
 ```typescript
 const metrics: CompareGridMetric<AdmissionsCompareKpis>[] = [
   {
@@ -517,6 +529,7 @@ const metrics: CompareGridMetric<AdmissionsCompareKpis>[] = [
 - [ ] **Step 2: Update `app/(attendance)/attendance/compare/page.tsx`**
 
 Replace the entire `metrics` array:
+
 ```typescript
 const metrics: CompareGridMetric<AttendanceCompareKpis>[] = [
   {
@@ -565,6 +578,7 @@ const metrics: CompareGridMetric<AttendanceCompareKpis>[] = [
 - [ ] **Step 3: Update `app/(records)/records/compare/page.tsx`**
 
 Replace the entire `metrics` array:
+
 ```typescript
 const metrics: CompareGridMetric<RecordsCompareKpis>[] = [
   {
@@ -606,6 +620,7 @@ const metrics: CompareGridMetric<RecordsCompareKpis>[] = [
 - [ ] **Step 4: Update `app/(markbook)/markbook/compare/page.tsx`**
 
 Replace the entire `metrics` array (the chart section comes in Task 6):
+
 ```typescript
 const metrics: CompareGridMetric<MarkbookCompareKpis>[] = [
   {
@@ -648,6 +663,7 @@ const metrics: CompareGridMetric<MarkbookCompareKpis>[] = [
 - [ ] **Step 5: Update `app/(evaluation)/evaluation/compare/page.tsx`**
 
 Replace the entire `metrics` array:
+
 ```typescript
 const metrics: CompareGridMetric<EvaluationCompareKpis>[] = [
   {
@@ -688,12 +704,15 @@ const metrics: CompareGridMetric<EvaluationCompareKpis>[] = [
 ```
 
 - [ ] **Step 6: Verify TypeScript compiles clean**
+
 ```bash
 npx tsc --noEmit
 ```
+
 Expected: 0 errors.
 
 - [ ] **Step 7: Commit**
+
 ```bash
 git add "app/(admissions)/admissions/compare/page.tsx" \
         "app/(attendance)/attendance/compare/page.tsx" \
@@ -710,6 +729,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ## Task 4: Create `MultiSeriesTrendChart`
 
 **Files:**
+
 - Create: `components/dashboard/charts/multi-series-trend-chart.client.tsx`
 - Create: `components/dashboard/charts/multi-series-trend-chart.tsx`
 
@@ -882,12 +902,15 @@ export type { MultiSeriesTrendChartProps, MultiSeriesTrendSeries };
 ```
 
 - [ ] **Step 3: Verify TypeScript compiles**
+
 ```bash
 npx tsc --noEmit
 ```
+
 Expected: 0 errors.
 
 - [ ] **Step 4: Commit**
+
 ```bash
 git add components/dashboard/charts/multi-series-trend-chart.client.tsx \
         components/dashboard/charts/multi-series-trend-chart.tsx
@@ -901,6 +924,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ## Task 5: Add `getSubjectPerformanceTrend` to `lib/markbook/compare.ts`
 
 **Files:**
+
 - Modify: `lib/markbook/compare.ts`
 
 Two-step server query: (1) fetch examinable grading sheets for the selected term IDs, (2) fetch all grade entries for those sheets via `fetchAllPages`, (3) compute averages in JS. Wrapped in `unstable_cache` keyed on sorted term IDs.
@@ -908,6 +932,7 @@ Two-step server query: (1) fetch examinable grading sheets for the selected term
 - [ ] **Step 1: Add imports at the top of `lib/markbook/compare.ts`**
 
 Add after the existing imports:
+
 ```typescript
 import { unstable_cache } from 'next/cache';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -918,6 +943,7 @@ import type { CompareCellResult } from '@/lib/dashboard/compare';
 - [ ] **Step 2: Add the `SubjectTrendPoint` type**
 
 Add after the `MarkbookCompareKpis` export:
+
 ```typescript
 export type SubjectTrendPoint = {
   /** e.g. "T1", "T2" */
@@ -1054,12 +1080,15 @@ export function getSubjectPerformanceTrend(
 ```
 
 - [ ] **Step 5: Verify TypeScript compiles**
+
 ```bash
 npx tsc --noEmit
 ```
+
 Expected: 0 errors.
 
 - [ ] **Step 6: Commit**
+
 ```bash
 git add lib/markbook/compare.ts
 git commit -m "feat(markbook): add getSubjectPerformanceTrend for compare page chart
@@ -1072,6 +1101,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ## Task 6: Add subject performance chart to Markbook compare page
 
 **Files:**
+
 - Modify: `app/(markbook)/markbook/compare/page.tsx`
 
 Call `getSubjectPerformanceTrend` in parallel with the existing KPI fetch. Group results by AY, build recharts data arrays, and render one `MultiSeriesTrendChart` per AY above the `CompareGrid`.
@@ -1307,12 +1337,15 @@ function SubjectPerformanceCharts({
 ```
 
 - [ ] **Step 2: Verify TypeScript compiles**
+
 ```bash
 npx tsc --noEmit
 ```
+
 Expected: 0 errors.
 
 - [ ] **Step 3: Commit**
+
 ```bash
 git add "app/(markbook)/markbook/compare/page.tsx"
 git commit -m "feat(markbook): add subject performance trend chart to compare page
@@ -1325,20 +1358,25 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ## Task 7: Build verification
 
 - [ ] **Step 1: Run full build**
+
 ```bash
 npx next build
 ```
+
 Expected: clean compile, 0 TypeScript errors, all routes generate successfully.
 
 - [ ] **Step 2: Run tests**
+
 ```bash
 npx vitest run
 ```
+
 Expected: all 77 tests passing.
 
 - [ ] **Step 3: Fix any build errors, commit if needed**
 
 If `npx next build` surfaces errors, the most likely causes:
+
 - Missing import in any compare page (check all 5 pages import `CompareGridMetric` without `lowerIsBetter`)
 - `getSubjectPerformanceTrend` type mismatch on `cells` argument (verify `CompareCellResult<MarkbookCompareKpis>[]` type matches)
 - `MultiSeriesTrendChart` missing `'use client'` boundary (the RSC wrapper handles this via `dynamic` — verify `ssr: false` is set)

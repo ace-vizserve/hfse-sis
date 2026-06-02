@@ -25,6 +25,7 @@
 ## Task 1 — Extend data layer: `lib/sis/records-history.ts`
 
 **Files:**
+
 - Modify: `lib/sis/records-history.ts`
 
 - [ ] **Step 1: Read the full file**
@@ -113,14 +114,20 @@ export async function getEvaluationWriteupsForStudent(
     .eq('student_id', studentId)
     .eq('terms.academic_years.ay_code', ayCode);
 
-  const byTerm = new Map<number, { writeup: string | null; virtueTheme: string | null }>();
+  const byTerm = new Map<
+    number,
+    { writeup: string | null; virtueTheme: string | null }
+  >();
   for (const row of (data ?? []) as Array<{
     writeup: string | null;
     terms: { term_number: number; virtue_theme: string | null };
   }>) {
     const n = row.terms.term_number;
     if (n >= 1 && n <= 3) {
-      byTerm.set(n, { writeup: row.writeup, virtueTheme: row.terms.virtue_theme });
+      byTerm.set(n, {
+        writeup: row.writeup,
+        virtueTheme: row.terms.virtue_theme,
+      });
     }
   }
 
@@ -153,11 +160,13 @@ git commit -m "feat(records): extend AcademicTermRow + add getEvaluationWriteups
 ## Task 2 — Placements tab: withdrawal sub-row, operational strip, late-term fix
 
 **Files:**
+
 - Modify: `app/(records)/records/students/[studentNumber]/page.tsx`
 
 - [ ] **Step 1: Read the `PlacementSection` component**
 
 Read `app/(records)/records/students/[studentNumber]/page.tsx` lines 549–722. Locate:
+
 - The `<tbody>` where each placement row `r` is rendered
 - The existing `lateTerm` derivation (uses `termForDateInPreloaded`)
 - The `<td>` cells for Status, Enrolled, Withdrawn
@@ -176,10 +185,18 @@ const lateTerm =
 Replace with:
 
 ```typescript
-const lateTermResult: { termNumber: number; termLabel: string; isOverride: boolean } | null =
+const lateTermResult: {
+  termNumber: number;
+  termLabel: string;
+  isOverride: boolean;
+} | null =
   r.enrollmentStatus === 'late_enrollee'
     ? r.lateEnrolleTermNumber !== null
-      ? { termNumber: r.lateEnrolleTermNumber, termLabel: `T${r.lateEnrolleTermNumber}`, isOverride: true }
+      ? {
+          termNumber: r.lateEnrolleTermNumber,
+          termLabel: `T${r.lateEnrolleTermNumber}`,
+          isOverride: true,
+        }
       : (() => {
           const derived = r.enrollmentDate
             ? termForDateInPreloaded(r.enrollmentDate, r.ayCode, termsByAy)
@@ -192,19 +209,25 @@ const lateTermResult: { termNumber: number; termLabel: string; isOverride: boole
 Then update the JSX that renders `lateTerm` to use `lateTermResult`:
 
 ```tsx
-{lateTermResult && (
-  <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-brand-amber">
-    · {lateTermResult.termLabel}
-    {lateTermResult.isOverride && (
-      <span className="ml-1 text-muted-foreground">(corrected)</span>
-    )}
-  </span>
-)}
-{r.enrollmentStatus === 'late_enrollee' && !lateTermResult && r.enrollmentDate && (
-  <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-    · between terms
-  </span>
-)}
+{
+  lateTermResult && (
+    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-brand-amber">
+      · {lateTermResult.termLabel}
+      {lateTermResult.isOverride && (
+        <span className="ml-1 text-muted-foreground">(corrected)</span>
+      )}
+    </span>
+  );
+}
+{
+  r.enrollmentStatus === 'late_enrollee' &&
+    !lateTermResult &&
+    r.enrollmentDate && (
+      <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+        · between terms
+      </span>
+    );
+}
 ```
 
 - [ ] **Step 3: Add withdrawal sub-row and operational strip**
@@ -212,46 +235,47 @@ Then update the JSX that renders `lateTerm` to use `lateTermResult`:
 After the closing `</tr>` of each placement row (inside the `{rows.map((r) => { ... })}` block), add two conditional sub-rows:
 
 ```tsx
-{/* Withdrawal reason sub-row */}
-{r.enrollmentStatus === 'withdrawn' && r.withdrawalReason && (
-  <tr className="border-b border-hairline last:border-0">
-    <td
-      colSpan={8}
-      className="py-1.5 pl-8 pr-3"
-    >
-      <span className="flex items-center gap-2 text-xs text-muted-foreground">
-        <LogOut className="size-3 shrink-0" />
-        <span className="font-medium text-foreground">
-          {WITHDRAWAL_REASON_LABELS[r.withdrawalReason as WithdrawalReason] ??
-            r.withdrawalReason}
+{
+  /* Withdrawal reason sub-row */
+}
+{
+  r.enrollmentStatus === 'withdrawn' && r.withdrawalReason && (
+    <tr className="border-b border-hairline last:border-0">
+      <td colSpan={8} className="py-1.5 pl-8 pr-3">
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <LogOut className="size-3 shrink-0" />
+          <span className="font-medium text-foreground">
+            {WITHDRAWAL_REASON_LABELS[r.withdrawalReason as WithdrawalReason] ??
+              r.withdrawalReason}
+          </span>
+          {r.withdrawalNotes && (
+            <>
+              <span className="text-border">·</span>
+              <span className="line-clamp-1">{r.withdrawalNotes}</span>
+            </>
+          )}
         </span>
-        {r.withdrawalNotes && (
-          <>
-            <span className="text-border">·</span>
-            <span className="line-clamp-1">{r.withdrawalNotes}</span>
-          </>
-        )}
-      </span>
-    </td>
-  </tr>
-)}
+      </td>
+    </tr>
+  );
+}
 
-{/* Operational details sub-row */}
-{r.enrollmentStatus !== 'withdrawn' &&
-  (r.busNo || r.classroomOfficerRole) && (
+{
+  /* Operational details sub-row */
+}
+{
+  r.enrollmentStatus !== 'withdrawn' && (r.busNo || r.classroomOfficerRole) && (
     <tr className="border-b border-hairline last:border-0">
       <td colSpan={8} className="py-1.5 pl-8 pr-3">
         <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-          {[
-            r.busNo ? `Bus ${r.busNo}` : null,
-            r.classroomOfficerRole ?? null,
-          ]
+          {[r.busNo ? `Bus ${r.busNo}` : null, r.classroomOfficerRole ?? null]
             .filter(Boolean)
             .join(' · ')}
         </span>
       </td>
     </tr>
-  )}
+  );
+}
 ```
 
 - [ ] **Step 4: Add missing imports**
@@ -286,6 +310,7 @@ git commit -m "feat(records): withdrawal sub-row + operational strip + late-term
 ## Task 3 — Academic tab: annual column, GA row, FCA comments card
 
 **Files:**
+
 - Modify: `app/(records)/records/students/[studentNumber]/page.tsx`
 
 This task adds three things to the Academic tab: (1) an Annual column with award badges, (2) a GA footer row, (3) a FCA comments card per AY. All computation happens in the RSC before rendering — components receive pre-computed values.
@@ -305,7 +330,7 @@ function AcademicSection({
 }: {
   rows: AcademicHistoryRow[];
   enroleeByAy: Map<string, string>;
-})
+});
 ```
 
 Extend it to:
@@ -324,7 +349,7 @@ function AcademicSection({
   enroleeByAy: Map<string, string>;
   awardThresholds: AwardThresholds;
   writeupsByAy: Map<string, EvaluationWriteupEntry[]>;
-})
+});
 ```
 
 - [ ] **Step 3: Add Annual column header**
@@ -332,11 +357,13 @@ function AcademicSection({
 Inside `AcademicSection`, find the `<thead>` row that renders term columns:
 
 ```tsx
-{ay.terms.map((t) => (
-  <th key={t.termNumber} className="py-2 pr-3 text-right">
-    T{t.termNumber}
-  </th>
-))}
+{
+  ay.terms.map((t) => (
+    <th key={t.termNumber} className="py-2 pr-3 text-right">
+      T{t.termNumber}
+    </th>
+  ));
+}
 ```
 
 Add an Annual column after it:
@@ -350,7 +377,10 @@ Add an Annual column after it:
 Inside `AcademicSection`, before the `return`, add imports and computation:
 
 ```typescript
-import { computeAnnualGrade, computeGeneralAverage } from '@/lib/compute/annual';
+import {
+  computeAnnualGrade,
+  computeGeneralAverage,
+} from '@/lib/compute/annual';
 import { subjectAward } from '@/lib/compute/awards';
 ```
 
@@ -359,7 +389,10 @@ Inside the per-AY render block, compute subject annuals before the table body:
 ```typescript
 // Build a map of subjectCode → quarterly grades across all terms
 const subjectQuarterlies = new Map<string, (number | null)[]>();
-const subjectMeta = new Map<string, { isExaminable: boolean; annualLetterGrade: string | null }>();
+const subjectMeta = new Map<
+  string,
+  { isExaminable: boolean; annualLetterGrade: string | null }
+>();
 
 for (const term of ay.terms) {
   for (const s of term.subjects) {
@@ -385,7 +418,9 @@ for (const [code, [t1, t2, t3, t4]] of subjectQuarterlies) {
 }
 
 // Compute GA from examinable annuals
-const examinableAnnuals = [...subjectAnnuals.values()].filter((v): v is number => v !== null);
+const examinableAnnuals = [...subjectAnnuals.values()].filter(
+  (v): v is number => v !== null
+);
 const ga = computeGeneralAverage(examinableAnnuals);
 ```
 
@@ -400,7 +435,11 @@ Inside the subject table's `<tbody>`, find each subject row. After the per-term 
     if (meta.isExaminable) {
       const annual = subjectAnnuals.get(code) ?? null;
       if (annual === null)
-        return <span className="font-mono tabular-nums text-muted-foreground">—</span>;
+        return (
+          <span className="font-mono tabular-nums text-muted-foreground">
+            —
+          </span>
+        );
       const award = subjectAward(annual, awardThresholds, {
         enrolled: true,
         hasCompleteData: true,
@@ -425,7 +464,12 @@ Inside the subject table's `<tbody>`, find each subject row. After the per-term 
     } else {
       // Non-examinable: show annual_letter_grade
       const letter = meta.annualLetterGrade;
-      if (!letter) return <span className="font-mono tabular-nums text-muted-foreground">—</span>;
+      if (!letter)
+        return (
+          <span className="font-mono tabular-nums text-muted-foreground">
+            —
+          </span>
+        );
       return (
         <span className="inline-flex">
           <Badge variant="secondary" className="font-mono text-[10px]">
@@ -443,21 +487,23 @@ Inside the subject table's `<tbody>`, find each subject row. After the per-term 
 After the `</tbody>` closing tag and before `</table>`, add a `<tfoot>`:
 
 ```tsx
-{ga !== null && (
-  <tfoot>
-    <tr className="border-t border-hairline">
-      <td className="py-2 pr-3 font-semibold text-foreground">
-        General Average
-      </td>
-      {ay.terms.map((t) => (
-        <td key={t.termNumber} className="py-2 pr-3" />
-      ))}
-      <td className="py-2 text-right font-semibold tabular-nums text-foreground">
-        {ga.toFixed(1)}
-      </td>
-    </tr>
-  </tfoot>
-)}
+{
+  ga !== null && (
+    <tfoot>
+      <tr className="border-t border-hairline">
+        <td className="py-2 pr-3 font-semibold text-foreground">
+          General Average
+        </td>
+        {ay.terms.map((t) => (
+          <td key={t.termNumber} className="py-2 pr-3" />
+        ))}
+        <td className="py-2 text-right font-semibold tabular-nums text-foreground">
+          {ga.toFixed(1)}
+        </td>
+      </tr>
+    </tfoot>
+  );
+}
 ```
 
 - [ ] **Step 7: Add `FcaCommentsCard` component**
@@ -494,11 +540,16 @@ function FcaCommentsCard({
             <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               {w.termLabel}
               {w.virtueTheme && (
-                <span className="font-normal"> · HFSE Virtues: {w.virtueTheme}</span>
+                <span className="font-normal">
+                  {' '}
+                  · HFSE Virtues: {w.virtueTheme}
+                </span>
               )}
             </p>
             {w.writeup ? (
-              <p className="text-sm leading-relaxed text-foreground">{w.writeup}</p>
+              <p className="text-sm leading-relaxed text-foreground">
+                {w.writeup}
+              </p>
             ) : (
               <p className="text-sm italic text-muted-foreground">
                 No comments recorded
@@ -543,6 +594,7 @@ git commit -m "feat(records): annual grades + GA + award tiers + FCA comments in
 ## Task 4 — Overview tab: document status strip
 
 **Files:**
+
 - Modify: `app/(records)/records/students/[studentNumber]/page.tsx`
 
 - [ ] **Step 1: Add `DocumentStatusStrip` component**
@@ -570,7 +622,8 @@ function DocumentStatusStrip({
 
   for (const slot of DOCUMENT_SLOTS) {
     const statusKey = `${slot.key}Status` as keyof typeof documents;
-    const status = (documents as Record<string, string | null>)[statusKey] ?? null;
+    const status =
+      (documents as Record<string, string | null>)[statusKey] ?? null;
     if (status === 'Valid') valid++;
     else if (status === 'Expired' || status === 'Rejected') needsRenewal++;
     else missing++; // null, 'Uploaded', 'To follow'
@@ -652,21 +705,25 @@ Add the strip between the KPI stats section and the `<QuickActionsStrip>` (outsi
 Change to:
 
 ```tsx
-{currentAyDetail && (
-  <div className="space-y-3">
-    <DocumentStatusStrip
-      documents={currentAyDetail.documents as Record<string, string | null> | null}
-      enroleeNumber={currentAyDetail.application.enroleeNumber}
-      ayCode={currentAyDetail.ayCode}
-    />
-    <QuickActionsStrip
-      enroleeNumber={currentAyDetail.application.enroleeNumber}
-      ayCode={currentAyDetail.ayCode}
-      studentId={student.studentId}
-      studentNumber={studentNumber}
-    />
-  </div>
-)}
+{
+  currentAyDetail && (
+    <div className="space-y-3">
+      <DocumentStatusStrip
+        documents={
+          currentAyDetail.documents as Record<string, string | null> | null
+        }
+        enroleeNumber={currentAyDetail.application.enroleeNumber}
+        ayCode={currentAyDetail.ayCode}
+      />
+      <QuickActionsStrip
+        enroleeNumber={currentAyDetail.application.enroleeNumber}
+        ayCode={currentAyDetail.ayCode}
+        studentId={student.studentId}
+        studentNumber={studentNumber}
+      />
+    </div>
+  );
+}
 ```
 
 - [ ] **Step 4: Add missing imports**
@@ -698,6 +755,7 @@ git commit -m "feat(records): document status strip in Overview tab"
 ## Task 5 — Wire page-level fetches + final verification
 
 **Files:**
+
 - Modify: `app/(records)/records/students/[studentNumber]/page.tsx`
 
 - [ ] **Step 1: Add imports at the top of the page file**
@@ -709,8 +767,15 @@ import {
   getEvaluationWriteupsForStudent,
   type EvaluationWriteupEntry,
 } from '@/lib/sis/records-history';
-import { computeAnnualGrade, computeGeneralAverage } from '@/lib/compute/annual';
-import { subjectAward, type AwardThresholds, DEFAULT_AWARD_THRESHOLDS } from '@/lib/compute/awards';
+import {
+  computeAnnualGrade,
+  computeGeneralAverage,
+} from '@/lib/compute/annual';
+import {
+  subjectAward,
+  type AwardThresholds,
+  DEFAULT_AWARD_THRESHOLDS,
+} from '@/lib/compute/awards';
 import { createServiceClient } from '@/lib/supabase/service';
 ```
 

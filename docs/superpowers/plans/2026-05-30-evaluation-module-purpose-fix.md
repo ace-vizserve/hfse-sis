@@ -12,29 +12,30 @@
 
 ## File Map
 
-| Action | File |
-|---|---|
-| Rewrite → 410 | `app/api/evaluation/checklist-items/route.ts` |
-| Rewrite → 410 | `app/api/evaluation/checklist-items/[id]/route.ts` |
-| Rewrite → 410 | `app/api/evaluation/checklist-responses/route.ts` |
-| Rewrite → 410 | `app/api/evaluation/subject-comments/route.ts` |
-| Rewrite → 410 | `app/api/evaluation/ptc-feedback/route.ts` |
-| Full rewrite | `app/(evaluation)/evaluation/sections/[sectionId]/page.tsx` |
-| Full rewrite | `app/(evaluation)/evaluation/sections/page.tsx` |
-| Modify | `components/evaluation/sections-list.tsx` |
-| Modify | `lib/evaluation/queries.ts` |
-| Delete | `lib/evaluation/checklist.ts` |
-| Delete | `lib/evaluation/ptc-resolver.ts` |
-| Delete | `components/evaluation/checklist-roster-client.tsx` |
-| Delete | `components/evaluation/ptc-roster-client.tsx` |
-| Delete | `components/evaluation/rating-selector.tsx` |
-| Delete | `components/evaluation/checklist-subject-picker.tsx` |
+| Action        | File                                                        |
+| ------------- | ----------------------------------------------------------- |
+| Rewrite → 410 | `app/api/evaluation/checklist-items/route.ts`               |
+| Rewrite → 410 | `app/api/evaluation/checklist-items/[id]/route.ts`          |
+| Rewrite → 410 | `app/api/evaluation/checklist-responses/route.ts`           |
+| Rewrite → 410 | `app/api/evaluation/subject-comments/route.ts`              |
+| Rewrite → 410 | `app/api/evaluation/ptc-feedback/route.ts`                  |
+| Full rewrite  | `app/(evaluation)/evaluation/sections/[sectionId]/page.tsx` |
+| Full rewrite  | `app/(evaluation)/evaluation/sections/page.tsx`             |
+| Modify        | `components/evaluation/sections-list.tsx`                   |
+| Modify        | `lib/evaluation/queries.ts`                                 |
+| Delete        | `lib/evaluation/checklist.ts`                               |
+| Delete        | `lib/evaluation/ptc-resolver.ts`                            |
+| Delete        | `components/evaluation/checklist-roster-client.tsx`         |
+| Delete        | `components/evaluation/ptc-roster-client.tsx`               |
+| Delete        | `components/evaluation/rating-selector.tsx`                 |
+| Delete        | `components/evaluation/checklist-subject-picker.tsx`        |
 
 ---
 
 ## Task 1: 410 the 5 API routes
 
 **Files:**
+
 - Rewrite: `app/api/evaluation/checklist-items/route.ts`
 - Rewrite: `app/api/evaluation/checklist-items/[id]/route.ts`
 - Rewrite: `app/api/evaluation/checklist-responses/route.ts`
@@ -111,6 +112,7 @@ git commit -m "feat(evaluation): 410 checklist + PTC API routes — module purpo
 ## Task 2: Rewrite the section roster page
 
 **Files:**
+
 - Full rewrite: `app/(evaluation)/evaluation/sections/[sectionId]/page.tsx`
 
 Removes: all checklist and PTC imports, the 3-tab system, PTC deadline banners, subject data loading, `formatPtcRangeForBanner` helper, `isSubjectTeacherOnly` logic. Teacher gate simplified to form_adviser only. `WriteupRosterClient` rendered directly.
@@ -339,6 +341,7 @@ git commit -m "feat(evaluation): simplify roster page — write-ups only, remove
 ## Task 3: Simplify sections picker + sections list
 
 **Files:**
+
 - Full rewrite: `app/(evaluation)/evaluation/sections/page.tsx`
 - Modify: `components/evaluation/sections-list.tsx`
 
@@ -971,6 +974,7 @@ git commit -m "feat(evaluation): simplify sections picker — adviser-only, remo
 ## Task 4: Trim `lib/evaluation/queries.ts`
 
 **Files:**
+
 - Modify: `lib/evaluation/queries.ts`
 
 Remove `getChecklistTopicCountByTerm` (lines 220–239) and `listSubjectTeacherSectionIds` (lines 205–215). The remaining 4 functions stay untouched.

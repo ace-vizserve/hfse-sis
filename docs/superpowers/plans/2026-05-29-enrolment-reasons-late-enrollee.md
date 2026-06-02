@@ -27,6 +27,7 @@
 ## Task 1 — Migration 067: add reason + late-term columns
 
 **Files:**
+
 - Create: `supabase/migrations/067_enrolment_reasons_and_late_term.sql`
 
 - [ ] **Step 1: Create the migration file**
@@ -117,6 +118,7 @@ Expected: 2 rows returned.
 ## Task 2 — Schema constants and Zod schemas
 
 **Files:**
+
 - Modify: `lib/schemas/enrolment.ts`
 - Modify: `lib/schemas/sis.ts`
 
@@ -172,10 +174,7 @@ export const EnrolmentMetadataSchema = z
     classroom_officer_role: optionalText(80),
     enrollment_status: z.enum(ENROLLMENT_STATUS_VALUES).optional(),
     // Structured withdrawal reason — required on the → withdrawn boundary.
-    withdrawal_reason: z
-      .enum(WITHDRAWAL_REASON_VALUES)
-      .nullable()
-      .optional(),
+    withdrawal_reason: z.enum(WITHDRAWAL_REASON_VALUES).nullable().optional(),
     // Freetext notes (replaces the old unstructured `reason` field).
     withdrawal_notes: optionalText(WITHDRAWAL_REASON_MAX).optional(),
     // Explicit late-enrollee term override (null = derive from enrollment_date).
@@ -188,20 +187,14 @@ export const EnrolmentMetadataSchema = z
       .optional(),
   })
   .superRefine((data, ctx) => {
-    if (
-      data.enrollment_status === 'withdrawn' &&
-      !data.withdrawal_reason
-    ) {
+    if (data.enrollment_status === 'withdrawn' && !data.withdrawal_reason) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['withdrawal_reason'],
         message: 'Reason is required when withdrawing a student.',
       });
     }
-    if (
-      data.withdrawal_reason === 'other' &&
-      !data.withdrawal_notes?.trim()
-    ) {
+    if (data.withdrawal_reason === 'other' && !data.withdrawal_notes?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['withdrawal_notes'],
@@ -250,7 +243,10 @@ export const APPLICATION_TERMINAL_REASON_LABELS: Record<
 };
 
 // Statuses on the application stage that require a terminal reason.
-export const APPLICATION_TERMINAL_STATUSES = ['Cancelled', 'Withdrawn'] as const;
+export const APPLICATION_TERMINAL_STATUSES = [
+  'Cancelled',
+  'Withdrawn',
+] as const;
 ```
 
 - [ ] **Step 3: Add terminal reason extras to `STAGE_COLUMN_MAP.application` in `lib/schemas/sis.ts`**
@@ -300,6 +296,7 @@ git commit -m "feat(schemas): withdrawal reason enum + admissions terminal reaso
 ## Task 3 — `resolveLateEnrolleeTerm` helper + unit tests
 
 **Files:**
+
 - Modify: `lib/sis/terms.ts`
 - Modify: `lib/sis/terms.test.ts` (create if absent)
 
@@ -322,7 +319,10 @@ export type ResolvedLateEnrolleeTerm = {
  * available or the date falls outside all term windows.
  */
 export async function resolveLateEnrolleeTerm(
-  row: { enrollment_date: string | null; late_enrollee_term_number: number | null },
+  row: {
+    enrollment_date: string | null;
+    late_enrollee_term_number: number | null;
+  },
   ayCode: string
 ): Promise<ResolvedLateEnrolleeTerm> {
   if (row.late_enrollee_term_number !== null) {
@@ -332,7 +332,11 @@ export async function resolveLateEnrolleeTerm(
   if (!row.enrollment_date) return null;
   const term = await getTermForDate(row.enrollment_date, ayCode);
   if (!term) return null;
-  return { termNumber: term.termNumber, termLabel: term.termLabel, source: 'derived' };
+  return {
+    termNumber: term.termNumber,
+    termLabel: term.termLabel,
+    source: 'derived',
+  };
 }
 ```
 
@@ -363,7 +367,11 @@ describe('resolveLateEnrolleeTerm', () => {
       { enrollment_date: '2026-04-01', late_enrollee_term_number: 3 },
       'AY2026'
     );
-    expect(result).toEqual({ termNumber: 3, termLabel: 'T3', source: 'override' });
+    expect(result).toEqual({
+      termNumber: 3,
+      termLabel: 'T3',
+      source: 'override',
+    });
   });
 
   it('falls back to derived when override is null', async () => {
@@ -371,7 +379,11 @@ describe('resolveLateEnrolleeTerm', () => {
       { enrollment_date: '2026-04-01', late_enrollee_term_number: null },
       'AY2026'
     );
-    expect(result).toEqual({ termNumber: 2, termLabel: 'T2', source: 'derived' });
+    expect(result).toEqual({
+      termNumber: 2,
+      termLabel: 'T2',
+      source: 'derived',
+    });
   });
 
   it('returns null when no enrollment_date and no override', async () => {
@@ -420,6 +432,7 @@ git commit -m "feat(sis): resolveLateEnrolleeTerm helper with override > derived
 ## Task 4 — Records PATCH route: withdrawal reason + late-term override
 
 **Files:**
+
 - Modify: `app/api/sections/[id]/students/[enrolmentId]/route.ts`
 
 - [ ] **Step 1: Update the schema parse and status-transition block**
@@ -429,7 +442,10 @@ The route already calls `EnrolmentMetadataSchema.safeParse(body)`. Because the s
 Find the `→ withdrawn` boundary block (where `withdrawal_date = today` is set). It will look like:
 
 ```typescript
-if (patch.enrollment_status === 'withdrawn' && before.enrollment_status !== 'withdrawn') {
+if (
+  patch.enrollment_status === 'withdrawn' &&
+  before.enrollment_status !== 'withdrawn'
+) {
   updates.withdrawal_date = today;
   // ... existing cascade code
 }
@@ -438,7 +454,10 @@ if (patch.enrollment_status === 'withdrawn' && before.enrollment_status !== 'wit
 Extend it to:
 
 ```typescript
-if (patch.enrollment_status === 'withdrawn' && before.enrollment_status !== 'withdrawn') {
+if (
+  patch.enrollment_status === 'withdrawn' &&
+  before.enrollment_status !== 'withdrawn'
+) {
   updates.withdrawal_date = today;
   updates.withdrawal_reason = patch.withdrawal_reason ?? null;
   updates.withdrawal_notes = patch.withdrawal_notes ?? null;
@@ -482,7 +501,9 @@ await logAction({
   // ... existing fields ...
   context: {
     section_id,
-    before: { enrollment_status: before.enrollment_status, /* other before fields */ },
+    before: {
+      enrollment_status: before.enrollment_status /* other before fields */,
+    },
     after: patch,
     // Mirror new DB columns exactly so audit-derived surfaces stay in sync:
     ...(patch.withdrawal_reason !== undefined && {
@@ -542,8 +563,12 @@ Note: The table name cast (`as 'ay9999_enrolment_status'`) follows the existing 
 Find the `withdrawn → other` boundary where `withdrawal_date = null` is cleared. Ensure `withdrawal_reason` and `withdrawal_notes` are **not** added to `updates` here. The route should leave them in place.
 
 The reactivation block should only contain:
+
 ```typescript
-if (before.enrollment_status === 'withdrawn' && patch.enrollment_status !== 'withdrawn') {
+if (
+  before.enrollment_status === 'withdrawn' &&
+  patch.enrollment_status !== 'withdrawn'
+) {
   updates.withdrawal_date = null;
   // Do NOT add: updates.withdrawal_reason = null
   // Do NOT add: updates.withdrawal_notes = null
@@ -571,6 +596,7 @@ git commit -m "feat(records): withdrawal_reason + withdrawal_notes + late_enroll
 ## Task 5 — Admissions stage PATCH route: terminal reason validation
 
 **Files:**
+
 - Modify: `app/api/sis/students/[enroleeNumber]/stage/[stageKey]/route.ts`
 
 - [ ] **Step 1: Import new constants**
@@ -600,11 +626,17 @@ if (
   const reason = patch.extras?.terminalReason as string | undefined;
   const notes = patch.extras?.terminalNotes as string | undefined;
 
-  if (!reason || !APPLICATION_TERMINAL_REASON_VALUES.includes(
-    reason as (typeof APPLICATION_TERMINAL_REASON_VALUES)[number]
-  )) {
+  if (
+    !reason ||
+    !APPLICATION_TERMINAL_REASON_VALUES.includes(
+      reason as (typeof APPLICATION_TERMINAL_REASON_VALUES)[number]
+    )
+  ) {
     return NextResponse.json(
-      { error: 'Reason is required when cancelling or withdrawing an application.' },
+      {
+        error:
+          'Reason is required when cancelling or withdrawing an application.',
+      },
       { status: 422 }
     );
   }
@@ -651,6 +683,7 @@ git commit -m "feat(admissions): require terminal reason when cancelling or with
 ## Task 6 — `<EnrolmentEditSheet>` UI updates
 
 **Files:**
+
 - Modify: `components/sis/enrolment-edit-sheet.tsx`
 
 This component has 448 lines. Two distinct changes: (A) upgrade withdrawal dialog with required reason `<Select>` and (B) add late-enrollee term display + override picker.
@@ -683,10 +716,10 @@ initial: {
   bus_no: string | null;
   classroom_officer_role: string | null;
   enrollment_status: EnrollmentStatus;
-  withdrawal_reason: string | null;  // add
-  withdrawal_notes: string | null;   // add (replaces the old freetext `reason`)
+  withdrawal_reason: string | null; // add
+  withdrawal_notes: string | null; // add (replaces the old freetext `reason`)
   late_enrollee_term_number: number | null; // add
-};
+}
 ```
 
 Extend the component's internal state (find where `reason` state is declared and rename/add):
@@ -696,7 +729,9 @@ Extend the component's internal state (find where `reason` state is declared and
 const [withdrawalReason, setWithdrawalReason] = useState<WithdrawalReason | ''>(
   (initial.withdrawal_reason as WithdrawalReason) ?? ''
 );
-const [withdrawalNotes, setWithdrawalNotes] = useState(initial.withdrawal_notes ?? '');
+const [withdrawalNotes, setWithdrawalNotes] = useState(
+  initial.withdrawal_notes ?? ''
+);
 const [lateTermOverride, setLateTermOverride] = useState<number | null>(
   initial.late_enrollee_term_number
 );
@@ -708,7 +743,9 @@ const [showTermOverride, setShowTermOverride] = useState(false);
 Find the withdrawal confirmation `<AlertDialog>` (the one that fires when `enrollment_status` changes to `'withdrawn'`). Its description/body currently has an optional notes textarea. Replace that section with:
 
 ```tsx
-{/* Required reason picker */}
+{
+  /* Required reason picker */
+}
 <div className="space-y-1.5">
   <label className="text-sm font-medium text-foreground">
     Reason <span className="text-destructive">*</span>
@@ -728,9 +765,11 @@ Find the withdrawal confirmation `<AlertDialog>` (the one that fires when `enrol
       ))}
     </SelectContent>
   </Select>
-</div>
+</div>;
 
-{/* Optional notes — required when reason is 'other' */}
+{
+  /* Optional notes — required when reason is 'other' */
+}
 <div className="space-y-1.5">
   <label className="text-sm font-medium text-foreground">
     Notes
@@ -745,7 +784,7 @@ Find the withdrawal confirmation `<AlertDialog>` (the one that fires when `enrol
     maxLength={200}
     rows={3}
   />
-</div>
+</div>;
 ```
 
 Update the Confirm button's `disabled` condition:
@@ -773,60 +812,62 @@ body: JSON.stringify({
 Find the section in the rendered JSX where `enrollment_status` label/select is shown. Immediately after the status field, add (conditionally when current status is `late_enrollee`):
 
 ```tsx
-{initial.enrollment_status === 'late_enrollee' && (
-  <div className="space-y-1.5">
-    <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-      Joining term
-    </p>
-    {!showTermOverride ? (
-      <div className="flex items-center justify-between rounded-lg border border-hairline px-3 py-2">
-        <span className="text-sm text-foreground">
-          {lateTermOverride !== null
-            ? `T${lateTermOverride} (corrected)`
-            : 'Derived from enrolment date'}
-        </span>
-        <button
-          type="button"
-          onClick={() => setShowTermOverride(true)}
-          className="text-xs text-muted-foreground underline-offset-4 hover:underline"
-        >
-          Wrong term?
-        </button>
-      </div>
-    ) : (
-      <div className="flex items-center gap-2">
-        <Select
-          value={String(lateTermOverride ?? '')}
-          onValueChange={(v) => {
-            const n = Number(v);
-            setLateTermOverride(n);
-            setShowTermOverride(false);
-            // Fire immediate PATCH — no confirm needed for a metadata correction.
-            void handleTermOverride(n);
-          }}
-        >
-          <SelectTrigger className="flex-1">
-            <SelectValue placeholder="Select term..." />
-          </SelectTrigger>
-          <SelectContent>
-            {[1, 2, 3, 4].map((n) => (
-              <SelectItem key={n} value={String(n)}>
-                T{n}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <button
-          type="button"
-          onClick={() => setShowTermOverride(false)}
-          className="text-xs text-muted-foreground hover:text-foreground"
-        >
-          Cancel
-        </button>
-      </div>
-    )}
-  </div>
-)}
+{
+  initial.enrollment_status === 'late_enrollee' && (
+    <div className="space-y-1.5">
+      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        Joining term
+      </p>
+      {!showTermOverride ? (
+        <div className="flex items-center justify-between rounded-lg border border-hairline px-3 py-2">
+          <span className="text-sm text-foreground">
+            {lateTermOverride !== null
+              ? `T${lateTermOverride} (corrected)`
+              : 'Derived from enrolment date'}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowTermOverride(true)}
+            className="text-xs text-muted-foreground underline-offset-4 hover:underline"
+          >
+            Wrong term?
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Select
+            value={String(lateTermOverride ?? '')}
+            onValueChange={(v) => {
+              const n = Number(v);
+              setLateTermOverride(n);
+              setShowTermOverride(false);
+              // Fire immediate PATCH — no confirm needed for a metadata correction.
+              void handleTermOverride(n);
+            }}
+          >
+            <SelectTrigger className="flex-1">
+              <SelectValue placeholder="Select term..." />
+            </SelectTrigger>
+            <SelectContent>
+              {[1, 2, 3, 4].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  T{n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <button
+            type="button"
+            onClick={() => setShowTermOverride(false)}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 ```
 
 Where `derivedTermLabel` is derived at the top of the component from `initial.enrollment_date` and the existing `lateEnrolleeTerm` response field (if the sheet receives it). For simplicity in v1, default to `initial.late_enrollee_term_number !== null ? 'T' + initial.late_enrollee_term_number : '(derive from enrollment date)'`.
@@ -837,11 +878,14 @@ Add the `handleTermOverride` function:
 async function handleTermOverride(termNumber: number) {
   setSaving(true);
   try {
-    const res = await fetch(`/api/sections/${sectionId}/students/${enrolmentId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ late_enrollee_term_number: termNumber }),
-    });
+    const res = await fetch(
+      `/api/sections/${sectionId}/students/${enrolmentId}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ late_enrollee_term_number: termNumber }),
+      }
+    );
     if (!res.ok) {
       const e = (await res.json()) as { error?: string };
       toast.error(e.error ?? 'Failed to update joining term');
@@ -874,8 +918,8 @@ For each call site, the query that fetches the `section_students` row must `sele
     bus_no: row.bus_no,
     classroom_officer_role: row.classroom_officer_role,
     enrollment_status: row.enrollment_status,
-    withdrawal_reason: row.withdrawal_reason ?? null,      // add
-    withdrawal_notes: row.withdrawal_notes ?? null,        // add
+    withdrawal_reason: row.withdrawal_reason ?? null, // add
+    withdrawal_notes: row.withdrawal_notes ?? null, // add
     late_enrollee_term_number: row.late_enrollee_term_number ?? null, // add
   }}
   studentName={row.studentName}
@@ -907,6 +951,7 @@ git commit -m "feat(records): withdrawal reason picker + late-enrollee term corr
 ## Task 7 — `<EditStageDialog>` updates: terminal reason section + mid-term default
 
 **Files:**
+
 - Modify: `components/sis/edit-stage-dialog.tsx`
 
 - [ ] **Step 1: Import new constants and components**
@@ -938,7 +983,9 @@ const isTerminalStatus = APPLICATION_TERMINAL_STATUSES.includes(
   status as (typeof APPLICATION_TERMINAL_STATUSES)[number]
 );
 
-const [terminalReason, setTerminalReason] = useState<ApplicationTerminalReason | ''>('');
+const [terminalReason, setTerminalReason] = useState<
+  ApplicationTerminalReason | ''
+>('');
 const [terminalNotes, setTerminalNotes] = useState('');
 ```
 
@@ -958,50 +1005,54 @@ useEffect(() => {
 Find the form body section that renders remarks / extras. After the existing fields for the `application` stage, add conditionally:
 
 ```tsx
-{stageKey === 'application' && isTerminalStatus && (
-  <div className="space-y-4 rounded-lg border border-hairline p-4">
-    <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-      Reason for ending the application
-    </p>
+{
+  stageKey === 'application' && isTerminalStatus && (
+    <div className="space-y-4 rounded-lg border border-hairline p-4">
+      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        Reason for ending the application
+      </p>
 
-    <div className="space-y-1.5">
-      <label className="text-sm font-medium text-foreground">
-        Category <span className="text-destructive">*</span>
-      </label>
-      <Select
-        value={terminalReason}
-        onValueChange={(v) => setTerminalReason(v as ApplicationTerminalReason)}
-      >
-        <SelectTrigger className="w-full">
-          <SelectValue placeholder="Select a reason..." />
-        </SelectTrigger>
-        <SelectContent>
-          {APPLICATION_TERMINAL_REASON_VALUES.map((v) => (
-            <SelectItem key={v} value={v}>
-              {APPLICATION_TERMINAL_REASON_LABELS[v]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-foreground">
+          Category <span className="text-destructive">*</span>
+        </label>
+        <Select
+          value={terminalReason}
+          onValueChange={(v) =>
+            setTerminalReason(v as ApplicationTerminalReason)
+          }
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select a reason..." />
+          </SelectTrigger>
+          <SelectContent>
+            {APPLICATION_TERMINAL_REASON_VALUES.map((v) => (
+              <SelectItem key={v} value={v}>
+                {APPLICATION_TERMINAL_REASON_LABELS[v]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-    <div className="space-y-1.5">
-      <label className="text-sm font-medium text-foreground">
-        Notes
-        {terminalReason === 'other' && (
-          <span className="text-destructive"> *</span>
-        )}
-      </label>
-      <Textarea
-        value={terminalNotes}
-        onChange={(e) => setTerminalNotes(e.target.value)}
-        placeholder="Optional additional context..."
-        maxLength={200}
-        rows={2}
-      />
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-foreground">
+          Notes
+          {terminalReason === 'other' && (
+            <span className="text-destructive"> *</span>
+          )}
+        </label>
+        <Textarea
+          value={terminalNotes}
+          onChange={(e) => setTerminalNotes(e.target.value)}
+          placeholder="Optional additional context..."
+          maxLength={200}
+          rows={2}
+        />
+      </div>
     </div>
-  </div>
-)}
+  );
+}
 ```
 
 - [ ] **Step 4: Include terminal reason in the PATCH body**
@@ -1072,8 +1123,11 @@ Update the copy to include a hint:
 - [ ] **Step 7: Pass the detected term number through the follow-up PATCH**
 
 When the "Confirm" button fires in the mid-term view, it currently sends:
+
 ```typescript
-{ enrollment_status: 'late_enrollee' }
+{
+  enrollment_status: 'late_enrollee';
+}
 ```
 
 Update to include the term number:
@@ -1105,6 +1159,7 @@ git commit -m "feat(admissions): terminal reason section + mid-term late-enrolle
 ## Task 8 — Enrich `WithdrawnEvent` with `reasonLabel` + update movements table
 
 **Files:**
+
 - Modify: `lib/sis/movements.ts`
 - Modify: `app/(records)/records/movements/page.tsx` (or its table component if extracted)
 
@@ -1144,8 +1199,12 @@ In the `MovementEvent` union, find the `withdrawn` variant and add `reasonLabel`
 Find where `withdrawn` events are built in `getMovementEvents` (the section that reads `context.reason` from audit rows). After resolving `reason`, add:
 
 ```typescript
-const reasonRaw = (row.context as Record<string, unknown>)?.withdrawalReason as string | null;
-const reasonFallback = (row.context as Record<string, unknown>)?.reason as string | null;
+const reasonRaw = (row.context as Record<string, unknown>)?.withdrawalReason as
+  | string
+  | null;
+const reasonFallback = (row.context as Record<string, unknown>)?.reason as
+  | string
+  | null;
 const resolvedReason = reasonRaw ?? reasonFallback ?? null;
 
 const reasonLabel =
@@ -1155,6 +1214,7 @@ const reasonLabel =
 ```
 
 Then include in the event object:
+
 ```typescript
 reason: resolvedReason,
 reasonLabel,
@@ -1197,6 +1257,7 @@ git commit -m "feat(records): reasonLabel on WithdrawnEvent + Reason column on m
 ## Task 9 — Admissions closed page: reason column + filter chips
 
 **Files:**
+
 - Modify: `app/(admissions)/admissions/applications/closed/page.tsx`
 
 The closed page has 187 lines and currently shows Cancelled/Withdrawn applicants. The AY status table now has `applicationTerminalReason` and `applicationTerminalNotes` after migration 067.
@@ -1226,7 +1287,9 @@ The page currently has status-bucket filter chips (All / Cancelled / Withdrawn).
 In the page's loader, extract:
 
 ```typescript
-const reasonFilter = (await searchParams).reason as ApplicationTerminalReason | undefined;
+const reasonFilter = (await searchParams).reason as
+  | ApplicationTerminalReason
+  | undefined;
 ```
 
 Apply to the query:
@@ -1242,28 +1305,32 @@ if (reasonFilter && APPLICATION_TERMINAL_REASON_VALUES.includes(reasonFilter)) {
 Below the existing status-bucket chips, add a second row of reason chips for the 3 most common pre-enrolment reasons:
 
 ```tsx
-{/* Reason quick-filter chips */}
+{
+  /* Reason quick-filter chips */
+}
 <div className="flex flex-wrap items-center gap-2">
   <span className="font-mono text-[11px] text-muted-foreground uppercase tracking-[0.14em]">
     Reason
   </span>
-  {(['chose_another_school', 'visa_denied', 'financial'] as const).map((key) => (
-    <Link
-      key={key}
-      href={`?${new URLSearchParams({
-        ...(statusFilter ? { status: statusFilter } : {}),
-        reason: currentReason === key ? '' : key,
-      })}`}
-      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-        currentReason === key
-          ? 'bg-foreground text-background'
-          : 'bg-muted text-muted-foreground hover:text-foreground'
-      }`}
-    >
-      {APPLICATION_TERMINAL_REASON_LABELS[key]}
-    </Link>
-  ))}
-</div>
+  {(['chose_another_school', 'visa_denied', 'financial'] as const).map(
+    (key) => (
+      <Link
+        key={key}
+        href={`?${new URLSearchParams({
+          ...(statusFilter ? { status: statusFilter } : {}),
+          reason: currentReason === key ? '' : key,
+        })}`}
+        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+          currentReason === key
+            ? 'bg-foreground text-background'
+            : 'bg-muted text-muted-foreground hover:text-foreground'
+        }`}
+      >
+        {APPLICATION_TERMINAL_REASON_LABELS[key]}
+      </Link>
+    )
+  )}
+</div>;
 ```
 
 - [ ] **Step 5: Add Reason column to the TanStack table**

@@ -31,7 +31,7 @@ system-determined truth.
 - **nextTerm** = the earliest term whose `start > today`, or none.
 - **joiningTerm** = `activeTerm ?? nextTerm`.
 
-### Late determination — *was a term in session on the enrollment day?*
+### Late determination — _was a term in session on the enrollment day?_
 
 - **activeTerm exists** → the student enrolled mid-term → **late enrollee**. The joining-term
   choice (below) does **not** change this; both choices are late.
@@ -52,31 +52,32 @@ Shown when `activeTerm` exists (and the student is being enrolled / re-enrolled 
   Only shown when `nextTerm` exists.
 - **[Not late]** → registrar override: leave `active` (no late flag). Registrar's call.
 - **Near-end warning:** when `activeTerm` has fewer than ~14 days remaining, the "Join now"
-  option shows *"{activeTerm} ends in N days — only a few attendance days will count."*
+  option shows _"{activeTerm} ends in N days — only a few attendance days will count."_
   UI-only; does not change classification. Threshold is a sensible default, configurable later.
 
 ### Edge cases by position
 
-| Today's position | Behavior |
-| --- | --- |
-| Inside active term, next term exists | Late. Choose Join-current or Start-next (or Not-late). |
-| Inside active term, **no** next term (**T4**) | Late. **Join-current only** (no defer) or Not-late. Near-end warning likely. |
-| Break / before a term starts | **No late prompt.** Normal enrolment; they start nextTerm on time (`active`). |
-| After T4 ends | **No prompt — out of scope.** Next-academic-year intake, handled in the next AY. |
+| Today's position                              | Behavior                                                                         |
+| --------------------------------------------- | -------------------------------------------------------------------------------- |
+| Inside active term, next term exists          | Late. Choose Join-current or Start-next (or Not-late).                           |
+| Inside active term, **no** next term (**T4**) | Late. **Join-current only** (no defer) or Not-late. Near-end warning likely.     |
+| Break / before a term starts                  | **No late prompt.** Normal enrolment; they start nextTerm on time (`active`).    |
+| After T4 ends                                 | **No prompt — out of scope.** Next-academic-year intake, handled in the next AY. |
 
 ## Storage — reuse existing columns (NO migration)
 
 The two facts already exist on `section_students`:
+
 - **Late-enrollee flag** = `enrollment_status = 'late_enrollee'` (enum: `active | late_enrollee
-  | withdrawn`). The registrar's confirm/decline toggles this.
+| withdrawn`). The registrar's confirm/decline toggles this.
 - **Joining term** = `late_enrollee_term_number` (smallint 1–4, migration 067 / KD #111).
 
-| Scenario | `enrollment_status` | `late_enrollee_term_number` | `enrollment_date` |
-| --- | --- | --- | --- |
-| Active → Join current | `late_enrollee` | activeTerm.n | today |
-| Active → Start next | `late_enrollee` | nextTerm.n | nextTerm.startDate |
-| Active → Not late (override) | `active` | null | unchanged |
-| Break / before term | `active` | null | null (empty earlier terms arise naturally — no attendance rows) |
+| Scenario                     | `enrollment_status` | `late_enrollee_term_number` | `enrollment_date`                                               |
+| ---------------------------- | ------------------- | --------------------------- | --------------------------------------------------------------- |
+| Active → Join current        | `late_enrollee`     | activeTerm.n                | today                                                           |
+| Active → Start next          | `late_enrollee`     | nextTerm.n                  | nextTerm.startDate                                              |
+| Active → Not late (override) | `active`            | null                        | unchanged                                                       |
+| Break / before term          | `active`            | null                        | null (empty earlier terms arise naturally — no attendance rows) |
 
 No new `joining_term_number` column — it's derivable, and the override column already records
 it for the late case. Keeping the existing name (`late_enrollee_term_number`) avoids churn
@@ -92,16 +93,23 @@ across migrations + surfaces; rename is out of scope.
 ### New pure helper — `lib/sis/enrolment-position.ts` (testable, no I/O)
 
 ```ts
-export type TermWindow = { termNumber: number; startDate: string; endDate: string };
+export type TermWindow = {
+  termNumber: number;
+  startDate: string;
+  endDate: string;
+};
 export type EnrolmentPosition = {
   activeTerm: TermWindow | null;
   nextTerm: TermWindow | null;
   joiningTerm: TermWindow | null;
-  isLateEnrollee: boolean;        // activeTerm != null
-  canDeferToNext: boolean;        // activeTerm != null && nextTerm != null
+  isLateEnrollee: boolean; // activeTerm != null
+  canDeferToNext: boolean; // activeTerm != null && nextTerm != null
   daysLeftInActiveTerm: number | null; // for the near-end warning
 };
-export function resolveEnrolmentPosition(terms: TermWindow[], today: string): EnrolmentPosition;
+export function resolveEnrolmentPosition(
+  terms: TermWindow[],
+  today: string
+): EnrolmentPosition;
 ```
 
 Tests: `__tests__/sis/enrolment-position.test.ts` — mid-T1; mid-T3 with next; mid-T4 (no

@@ -60,17 +60,18 @@ here — they live in `.claude/rules/*.md`. Sprint-by-sprint history lives in
 `docs/sprints/development-plan.md` + `git log`.
 -->
 
-**Current state (2026-05-30):** Sprint 48 — Compare feature redesign. CompareGrid table rebuilt across all 6 modules: heatmap removed, sticky metric column, AY-group top borders, clean delta (value over delta), min/max dots; `direction: 'higherIsBetter' | 'lowerIsBetter'` replaces `lowerIsBetter`+`highlightExtremes` (neutral metrics omit it). New `MultiSeriesTrendChart` component + Markbook subject-performance trend chart (avg quarterly grade per subject × term, one panel per AY) above the grid (KD #115). Other per-module trend charts deferred. Build clean 114 pages, 77 tests.
+**Current state (2026-06-02):** Sprint 50 — position-aware late-enrollee joining-term decision. New pure `resolveEnrolmentPosition(terms, today)` resolver (`lib/sis/enrolment-position.ts`) treats "late" as _a term was in session on the enrollment date_ (works mid-T1 + handles breaks). Registrar-facing non-blocking prompt — "Join {activeTerm} now / Start in {nextTerm} instead / Not late", near-end warning — wired into the SIS + Markbook enrolment-edit sheets and the SIS stage dialog; `enrollment_date` derived from the chosen joining term (KD #117). Preceded by Sprint 49 — Attendance Daily view (KD #116). Build clean, 107 tests.
 
 **Future work:** per-module compare trend charts (Admissions monthly, Attendance rate, Records movements, Markbook grade-distribution, Evaluation submission — deferred post-go-live); Sec 4 Economics card (no Sec 4 students yet); self-serve invite flow (KD #87 with `/auth/setup`); per-row overflow menus; attendance audit-log server-side pagination; cron auto-sync trigger (KD #90); VL bulk import parser (KD #94 follow-up); optional coordinator annotation on SOW; PTC digitization as a separate plug-in surface when HFSE is ready (DB tables intact, KD #114).
 
 **Recent sprints** (full history in `docs/sprints/development-plan.md`; per-pass detail in `git log`):
 
+- Sprint 50 (2026-06-01): Late-enrollee position-aware joining-term decision — `resolveEnrolmentPosition` + Join-now/Start-next prompt across SIS + Markbook + Admissions editors; `enrollment_date` derived from chosen term (KD #117). No migration.
+- Sprint 49 (2026-05-31): Attendance Daily view — Term sheet | Daily view toggle + "mark-the-exceptions" roster + today-centric day cards + student-lookup sheet + shared date-derived current-term resolver (`lib/sis/current-term.ts`) + global screen-size guard (KD #116). No migration.
 - Sprint 48 (2026-05-30): Compare redesign — CompareGrid table rebuild (no heatmap, sticky col, AY borders, directional delta) + MultiSeriesTrendChart + Markbook subject-performance trend (KD #115).
 - Sprint 47 (2026-05-30): Evaluation module purpose fix — FCA write-ups only; PTC/checklist UI + API + lib removed; KD #114. Go-live readiness confirmed.
 - Sprint 46 (2026-05-29): Edge case hardening + attendance proration — 11 fixes across 7 modules + migration 068 (KD #113) + SIS Admin staff redesign/sidebar.
-- Sprint 45 (2026-05-29): Records student detail — withdrawal sub-row, operational strip, late-term override, annual grades + GA + award tiers, FCA comments card, DocumentStatusStrip (KDs #111–112, migration 067).
-- Sprints 28–44 (2026-04-29 → 2026-05-28): see development-plan.md. Highlights: KDs #63–112 + migrations 030–067; Sprint 44 = Markbook polish + SOW teardown (062–066).
+- Sprints 28–45 (2026-04-29 → 2026-05-29): see development-plan.md. Highlights: KDs #63–112 + migrations 030–067; Sprint 44 = Markbook polish + SOW teardown (062–066); Sprint 45 = Records student detail (KDs #111–112, migration 067).
 
 ## Cross-reference note
 

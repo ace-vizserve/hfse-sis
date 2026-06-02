@@ -27,6 +27,7 @@ academic_years      → (id, ay_code, is_current)
 ```
 
 **Constraints preserved (server-enforced, no changes):**
+
 - At most one `form_adviser` row per section (unique partial index)
 - `form_adviser` rows have `subject_id IS NULL`
 - `subject_teacher` rows have `subject_id IS NOT NULL`
@@ -56,6 +57,7 @@ export type StaffRow = {
 ```
 
 `loadStaffAssignments(ayCode: string): Promise<StaffRow[]>`
+
 - Fetches current AY id from `ayCode`
 - Fetches all sections for that AY joined with `levels(code)`
 - Fetches all `teacher_assignments` for those sections joined with `sections(name)` and `subjects(code, name)`
@@ -72,6 +74,7 @@ RSC. Runs `requireRole(['registrar', 'school_admin', 'superadmin'])` then calls 
 **Header:** breadcrumb (← SIS Admin), title "Staff Assignments", current AY badge.
 
 **Summary strip (3 KPI chips):**
+
 - Total teachers
 - Teachers with FCA assigned
 - Sections missing an FCA (total sections − sections with adviser)
@@ -84,14 +87,15 @@ RSC. Runs `requireRole(['registrar', 'school_admin', 'superadmin'])` then calls 
 
 **Columns:**
 
-| Column | Content |
-|---|---|
-| Teacher | Display name (bold) + email (muted, text-sm) |
-| FCA Section | Section name badge or "—" muted |
+| Column          | Content                                                     |
+| --------------- | ----------------------------------------------------------- |
+| Teacher         | Display name (bold) + email (muted, text-sm)                |
+| FCA Section     | Section name badge or "—" muted                             |
 | Subjects Taught | Up to 3 chips `CODE · Section`, then `+N more`; "—" if none |
-| Load | `1 FCA + 3 subjects` mono muted; or `No assignments` |
+| Load            | `1 FCA + 3 subjects` mono muted; or `No assignments`        |
 
 **Toolbar:**
+
 - Name/email search input (`w-64`, `h-8`, Search icon, X clear)
 - Filter chips: `All | Has FCA | No FCA`
 - Toggle: "Show disabled accounts" (hidden by default; disabled rows rendered greyed, no slide-over)
@@ -145,6 +149,7 @@ Used by the slide-over to fetch the teacher's current assignment state on open (
 Role gate: `registrar | school_admin | superadmin`.
 
 Returns:
+
 ```typescript
 {
   fcaAssignment: { id: string; sectionId: string; sectionName: string } | null;
@@ -180,6 +185,7 @@ Position: after `/sis/admin/approvers`, before `/sis/admin/school-config`.
 ## Audit trail
 
 No new audit actions. All mutations go through existing routes:
+
 - `POST /api/teacher-assignments` → logs `assignment.create`
 - `DELETE /api/teacher-assignments/[id]` → logs `assignment.delete`
 
@@ -189,18 +195,18 @@ Both routes already call `logAction` with `actor_email`, `entity_id`, and contex
 
 ## Files to create
 
-| File | Purpose |
-|---|---|
-| `app/(sis)/sis/admin/staff/page.tsx` | RSC page — role gate, data load, header, KPI strip, table |
-| `components/sis/staff-table.tsx` | `<DataTable>` shell consumer — columns, search, filter chips |
-| `components/sis/staff-assignment-sheet.tsx` | Slide-over editor — FCA picker + subject list |
-| `lib/sis/staff.ts` | `loadStaffAssignments` loader + `StaffRow` type |
-| `app/api/teacher-assignments/by-teacher/route.ts` | GET — lazy-fetch assignments + pickers for slide-over |
+| File                                              | Purpose                                                      |
+| ------------------------------------------------- | ------------------------------------------------------------ |
+| `app/(sis)/sis/admin/staff/page.tsx`              | RSC page — role gate, data load, header, KPI strip, table    |
+| `components/sis/staff-table.tsx`                  | `<DataTable>` shell consumer — columns, search, filter chips |
+| `components/sis/staff-assignment-sheet.tsx`       | Slide-over editor — FCA picker + subject list                |
+| `lib/sis/staff.ts`                                | `loadStaffAssignments` loader + `StaffRow` type              |
+| `app/api/teacher-assignments/by-teacher/route.ts` | GET — lazy-fetch assignments + pickers for slide-over        |
 
 ## Files to modify
 
-| File | Change |
-|---|---|
+| File                      | Change                                             |
+| ------------------------- | -------------------------------------------------- |
 | `lib/sidebar/registry.ts` | Add `/sis/admin/staff` nav entry with `Users` icon |
 
 ## No migrations

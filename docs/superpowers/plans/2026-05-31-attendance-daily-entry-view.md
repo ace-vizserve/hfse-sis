@@ -60,6 +60,7 @@ EX_REASON_LABELS, ATTENDANCE_STATUS_LABELS
 ## Task 1: Pure logic module + tests
 
 **Files:**
+
 - Create: `lib/attendance/daily-entry.ts`
 - Test: `__tests__/attendance/daily-entry.test.ts`
 
@@ -81,14 +82,60 @@ import type { SchoolCalendarRow } from '@/lib/attendance/calendar';
 import type { DailyEntryRow } from '@/lib/attendance/queries';
 import type { WideGridEnrolment } from '@/components/attendance/wide-grid';
 
-function cal(date: string, dayType: SchoolCalendarRow['dayType'], hblOverlay = false): SchoolCalendarRow {
-  return { id: date, termId: 't1', date, dayType, isHoliday: dayType !== 'school_day' && dayType !== 'hbl', label: null, audience: 'all', hblOverlay };
+function cal(
+  date: string,
+  dayType: SchoolCalendarRow['dayType'],
+  hblOverlay = false
+): SchoolCalendarRow {
+  return {
+    id: date,
+    termId: 't1',
+    date,
+    dayType,
+    isHoliday: dayType !== 'school_day' && dayType !== 'hbl',
+    label: null,
+    audience: 'all',
+    hblOverlay,
+  };
 }
-function enr(id: string, idx: number, over: Partial<WideGridEnrolment> = {}): WideGridEnrolment {
-  return { enrolmentId: id, indexNumber: idx, studentNumber: 'S' + idx, studentName: 'Name ' + idx, busNo: null, classroomOfficerRole: null, withdrawn: false, compassionateUsed: 0, compassionateAllowance: 5, vlUsedThisTerm: 0, vlAllowance: 1, enrollmentDate: null, ...over };
+function enr(
+  id: string,
+  idx: number,
+  over: Partial<WideGridEnrolment> = {}
+): WideGridEnrolment {
+  return {
+    enrolmentId: id,
+    indexNumber: idx,
+    studentNumber: 'S' + idx,
+    studentName: 'Name ' + idx,
+    busNo: null,
+    classroomOfficerRole: null,
+    withdrawn: false,
+    compassionateUsed: 0,
+    compassionateAllowance: 5,
+    vlUsedThisTerm: 0,
+    vlAllowance: 1,
+    enrollmentDate: null,
+    ...over,
+  };
 }
-function daily(sectionStudentId: string, date: string, status: DailyEntryRow['status'], exReason: DailyEntryRow['exReason'] = null): DailyEntryRow {
-  return { id: `${sectionStudentId}-${date}`, sectionStudentId, termId: 't1', date, status, exReason, periodId: null, recordedBy: null, recordedAt: '2026-06-01T00:00:00Z' };
+function daily(
+  sectionStudentId: string,
+  date: string,
+  status: DailyEntryRow['status'],
+  exReason: DailyEntryRow['exReason'] = null
+): DailyEntryRow {
+  return {
+    id: `${sectionStudentId}-${date}`,
+    sectionStudentId,
+    termId: 't1',
+    date,
+    status,
+    exReason,
+    periodId: null,
+    recordedBy: null,
+    recordedAt: '2026-06-01T00:00:00Z',
+  };
 }
 
 describe('encodableDates', () => {
@@ -100,7 +147,11 @@ describe('encodableDates', () => {
       cal('2026-06-04', 'school_holiday', true),
       cal('2026-06-05', 'school_holiday', false),
     ];
-    expect(encodableDates(rows)).toEqual(['2026-06-02', '2026-06-03', '2026-06-04']);
+    expect(encodableDates(rows)).toEqual([
+      '2026-06-02',
+      '2026-06-03',
+      '2026-06-04',
+    ]);
   });
 });
 
@@ -125,7 +176,11 @@ describe('pickDefaultDate', () => {
 
 describe('loadedMarksForDate', () => {
   it('maps the latest mark per student for the given date', () => {
-    const rows = [daily('a', '2026-06-04', 'A'), daily('b', '2026-06-04', 'EX', 'mc'), daily('a', '2026-06-03', 'P')];
+    const rows = [
+      daily('a', '2026-06-04', 'A'),
+      daily('b', '2026-06-04', 'EX', 'mc'),
+      daily('a', '2026-06-03', 'P'),
+    ];
     const map = loadedMarksForDate(rows, '2026-06-04');
     expect(map.get('a')).toEqual({ status: 'A', exReason: null });
     expect(map.get('b')).toEqual({ status: 'EX', exReason: 'mc' });
@@ -138,9 +193,17 @@ describe('computeSubmitEntries', () => {
   const termId = 't1';
   const roster = [enr('a', 1), enr('b', 2), enr('c', 3)];
   it('writes P for unmarked students and the explicit exceptions', () => {
-    const marks: Map<string, DailyMark> = new Map([['b', { status: 'A', exReason: null }]]);
+    const marks: Map<string, DailyMark> = new Map([
+      ['b', { status: 'A', exReason: null }],
+    ]);
     const loaded = new Map<string, DailyMark>(); // nothing on file yet
-    const entries = computeSubmitEntries({ roster, marks, loaded, termId, date });
+    const entries = computeSubmitEntries({
+      roster,
+      marks,
+      loaded,
+      termId,
+      date,
+    });
     expect(entries).toEqual([
       { sectionStudentId: 'a', termId, date, status: 'P' },
       { sectionStudentId: 'b', termId, date, status: 'A' },
@@ -148,17 +211,35 @@ describe('computeSubmitEntries', () => {
     ]);
   });
   it('includes exReason only for EX marks', () => {
-    const marks: Map<string, DailyMark> = new Map([['a', { status: 'EX', exReason: 'mc' }]]);
-    const entries = computeSubmitEntries({ roster: [enr('a', 1)], marks, loaded: new Map(), termId, date });
-    expect(entries).toEqual([{ sectionStudentId: 'a', termId, date, status: 'EX', exReason: 'mc' }]);
+    const marks: Map<string, DailyMark> = new Map([
+      ['a', { status: 'EX', exReason: 'mc' }],
+    ]);
+    const entries = computeSubmitEntries({
+      roster: [enr('a', 1)],
+      marks,
+      loaded: new Map(),
+      termId,
+      date,
+    });
+    expect(entries).toEqual([
+      { sectionStudentId: 'a', termId, date, status: 'EX', exReason: 'mc' },
+    ]);
   });
   it('skips a student whose target equals what is already on file (idempotent re-submit)', () => {
-    const marks: Map<string, DailyMark> = new Map([['a', { status: 'A', exReason: null }]]);
+    const marks: Map<string, DailyMark> = new Map([
+      ['a', { status: 'A', exReason: null }],
+    ]);
     const loaded: Map<string, DailyMark> = new Map([
       ['a', { status: 'A', exReason: null }],
       ['b', { status: 'P', exReason: null }],
     ]);
-    const entries = computeSubmitEntries({ roster: [enr('a', 1), enr('b', 2)], marks, loaded, termId, date });
+    const entries = computeSubmitEntries({
+      roster: [enr('a', 1), enr('b', 2)],
+      marks,
+      loaded,
+      termId,
+      date,
+    });
     expect(entries).toEqual([]); // a unchanged, b already P
   });
   it('excludes withdrawn students and late-enrollees before their enrollment date', () => {
@@ -167,7 +248,13 @@ describe('computeSubmitEntries', () => {
       enr('b', 2, { enrollmentDate: '2026-06-10' }), // joins after `date`
       enr('c', 3, { enrollmentDate: '2026-06-01' }), // joined before `date`
     ];
-    const entries = computeSubmitEntries({ roster: roster2, marks: new Map(), loaded: new Map(), termId, date });
+    const entries = computeSubmitEntries({
+      roster: roster2,
+      marks: new Map(),
+      loaded: new Map(),
+      termId,
+      date,
+    });
     expect(entries.map((e) => e.sectionStudentId)).toEqual(['c']);
   });
 });
@@ -179,7 +266,13 @@ describe('tally', () => {
       ['a', { status: 'A', exReason: null }],
       ['b', { status: 'L', exReason: null }],
     ]);
-    expect(tally({ roster, marks, date: '2026-06-04' })).toEqual({ P: 0, L: 1, A: 1, EX: 0, unmarked: 2 });
+    expect(tally({ roster, marks, date: '2026-06-04' })).toEqual({
+      P: 0,
+      L: 1,
+      A: 1,
+      EX: 0,
+      unmarked: 2,
+    });
   });
 });
 ```
@@ -338,6 +431,7 @@ git commit -m "feat(attendance): pure logic for daily entry view (mark-the-excep
 ## Task 2: DailyEntry client component (roster + marks, no submit yet)
 
 **Files:**
+
 - Create: `components/attendance/daily-entry.tsx`
 
 This task renders the roster and lets the teacher set marks in local state. Submit is wired in Task 3. Verification is manual (the project has no React test harness; logic is covered by Task 1).
@@ -388,13 +482,33 @@ function formatLongDate(iso: string): string {
   });
 }
 
-const STATUS_BTN: Record<'P' | 'L' | 'A' | 'EX', { label: string; on: string }> = {
-  P: { label: 'P', on: 'bg-gradient-to-b from-chart-5 to-chart-3 text-white shadow-xs' },
-  L: { label: 'L', on: 'bg-gradient-to-b from-brand-amber to-brand-amber/80 text-white shadow-xs' },
-  A: { label: 'A', on: 'bg-gradient-to-b from-destructive to-destructive/80 text-white shadow-xs' },
-  EX: { label: 'EX', on: 'bg-gradient-to-b from-brand-indigo to-brand-navy text-white shadow-xs' },
+const STATUS_BTN: Record<
+  'P' | 'L' | 'A' | 'EX',
+  { label: string; on: string }
+> = {
+  P: {
+    label: 'P',
+    on: 'bg-gradient-to-b from-chart-5 to-chart-3 text-white shadow-xs',
+  },
+  L: {
+    label: 'L',
+    on: 'bg-gradient-to-b from-brand-amber to-brand-amber/80 text-white shadow-xs',
+  },
+  A: {
+    label: 'A',
+    on: 'bg-gradient-to-b from-destructive to-destructive/80 text-white shadow-xs',
+  },
+  EX: {
+    label: 'EX',
+    on: 'bg-gradient-to-b from-brand-indigo to-brand-navy text-white shadow-xs',
+  },
 };
-const EX_REASONS: ExReason[] = ['mc', 'compassionate', 'school_activity', 'vacation'];
+const EX_REASONS: ExReason[] = [
+  'mc',
+  'compassionate',
+  'school_activity',
+  'vacation',
+];
 
 export function DailyEntry({
   sectionId,
@@ -424,13 +538,18 @@ export function DailyEntry({
   );
 
   const loaded = useMemo(
-    () => (date ? loadedMarksForDate(initialDaily, date) : new Map<string, DailyMark>()),
+    () =>
+      date
+        ? loadedMarksForDate(initialDaily, date)
+        : new Map<string, DailyMark>(),
     [initialDaily, date]
   );
 
   // Local marks: seeded from what's on file for the date. Re-seeds on date change
   // via the `key` on the inner panel (see render) so we never carry marks across days.
-  const [marks, setMarks] = useState<Map<string, DailyMark>>(() => new Map(loaded));
+  const [marks, setMarks] = useState<Map<string, DailyMark>>(
+    () => new Map(loaded)
+  );
   const [saving, setSaving] = useState(false);
 
   function setMark(enrolmentId: string, m: DailyMark | null) {
@@ -458,7 +577,13 @@ export function DailyEntry({
 
   async function submit() {
     if (!date) return;
-    const entries = computeSubmitEntries({ roster, marks, loaded, termId, date });
+    const entries = computeSubmitEntries({
+      roster,
+      marks,
+      loaded,
+      termId,
+      date,
+    });
     if (entries.length === 0) {
       toast.info('No changes to submit.');
       return;
@@ -472,7 +597,9 @@ export function DailyEntry({
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error ?? 'Save failed');
-      toast.success(`Saved attendance for ${formatLongDate(date)} (${entries.length} updated).`);
+      toast.success(
+        `Saved attendance for ${formatLongDate(date)} (${entries.length} updated).`
+      );
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
@@ -486,7 +613,9 @@ export function DailyEntry({
     return (
       <Card className="items-center gap-2 py-12 text-center">
         <p className="font-serif text-xl font-semibold text-foreground">
-          {roster.length === 0 ? 'No students to mark' : 'No school day to mark'}
+          {roster.length === 0
+            ? 'No students to mark'
+            : 'No school day to mark'}
         </p>
         <p className="max-w-sm text-sm text-muted-foreground">
           {roster.length === 0
@@ -502,7 +631,13 @@ export function DailyEntry({
       {/* Date strip + tally */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" disabled={!canPrev} onClick={() => step(-1)} aria-label="Previous day">
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={!canPrev}
+            onClick={() => step(-1)}
+            aria-label="Previous day"
+          >
             <ChevronLeft className="size-4" />
           </Button>
           <div className="min-w-[200px] text-center">
@@ -513,16 +648,36 @@ export function DailyEntry({
               {date}
             </p>
           </div>
-          <Button variant="outline" size="icon" disabled={!canNext} onClick={() => step(1)} aria-label="Next day">
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={!canNext}
+            onClick={() => step(1)}
+            aria-label="Next day"
+          >
             <ChevronRight className="size-4" />
           </Button>
         </div>
         {counts && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
-            <span><span className="font-semibold text-brand-mint">{counts.P}</span> Present</span>
-            <span><span className="font-semibold text-brand-amber">{counts.L}</span> Late</span>
-            <span><span className="font-semibold text-destructive">{counts.A}</span> Absent</span>
-            <span><span className="font-semibold text-brand-indigo">{counts.EX}</span> Excused</span>
+            <span>
+              <span className="font-semibold text-brand-mint">{counts.P}</span>{' '}
+              Present
+            </span>
+            <span>
+              <span className="font-semibold text-brand-amber">{counts.L}</span>{' '}
+              Late
+            </span>
+            <span>
+              <span className="font-semibold text-destructive">{counts.A}</span>{' '}
+              Absent
+            </span>
+            <span>
+              <span className="font-semibold text-brand-indigo">
+                {counts.EX}
+              </span>{' '}
+              Excused
+            </span>
             <span>{counts.unmarked} unmarked → Present</span>
           </div>
         )}
@@ -535,7 +690,9 @@ export function DailyEntry({
             const beforeJoin = !!e.enrollmentDate && e.enrollmentDate > date;
             const m = marks.get(e.enrolmentId);
             const active: 'P' | 'L' | 'A' | 'EX' = m
-              ? (m.status === 'NC' ? 'P' : m.status)
+              ? m.status === 'NC'
+                ? 'P'
+                : m.status
               : 'P';
             return (
               <li
@@ -545,8 +702,12 @@ export function DailyEntry({
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">{e.indexNumber}</span>
-                  <span className="text-sm font-medium text-foreground">{e.studentName}</span>
+                  <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
+                    {e.indexNumber}
+                  </span>
+                  <span className="text-sm font-medium text-foreground">
+                    {e.studentName}
+                  </span>
                 </div>
 
                 {beforeJoin ? (
@@ -558,7 +719,9 @@ export function DailyEntry({
                     <div className="inline-flex overflow-hidden rounded-lg border border-border">
                       {(['P', 'L', 'A', 'EX'] as const).map((s) => {
                         const isOn = active === s && (m != null || s === 'P');
-                        const explicit = m != null && (m.status === s || (s === 'P' && m.status === 'P'));
+                        const explicit =
+                          m != null &&
+                          (m.status === s || (s === 'P' && m.status === 'P'));
                         return (
                           <button
                             key={s}
@@ -567,12 +730,17 @@ export function DailyEntry({
                               setMark(
                                 e.enrolmentId,
                                 s === 'EX'
-                                  ? { status: 'EX', exReason: m?.exReason ?? null }
+                                  ? {
+                                      status: 'EX',
+                                      exReason: m?.exReason ?? null,
+                                    }
                                   : { status: s, exReason: null }
                               )
                             }
                             className={`w-11 py-1.5 text-center font-mono text-xs font-semibold transition-colors ${
-                              isOn && explicit ? STATUS_BTN[s].on : 'text-muted-foreground hover:bg-muted/60'
+                              isOn && explicit
+                                ? STATUS_BTN[s].on
+                                : 'text-muted-foreground hover:bg-muted/60'
                             } ${active === s && !explicit ? 'text-foreground' : ''}`}
                           >
                             {STATUS_BTN[s].label}
@@ -586,7 +754,12 @@ export function DailyEntry({
                           <button
                             key={r}
                             type="button"
-                            onClick={() => setMark(e.enrolmentId, { status: 'EX', exReason: r })}
+                            onClick={() =>
+                              setMark(e.enrolmentId, {
+                                status: 'EX',
+                                exReason: r,
+                              })
+                            }
                             className={`rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors ${
                               m.exReason === r
                                 ? 'bg-brand-indigo text-white'
@@ -644,6 +817,7 @@ git commit -m "feat(attendance): DailyEntry roster component (mark-the-exception
 ## Task 3: Wire the view toggle into the page
 
 **Files:**
+
 - Modify: `app/(attendance)/attendance/[sectionId]/page.tsx`
 
 - [ ] **Step 1: Add `view` to the searchParams type + parse it**
@@ -708,30 +882,32 @@ Replace with:
 Find the header actions block:
 
 ```tsx
-          <StudentLookupSheet
-            enrolments={enrolments}
-            initialDaily={daily}
-            termLabel={selectedTerm?.label ?? ''}
-          />
+<StudentLookupSheet
+  enrolments={enrolments}
+  initialDaily={daily}
+  termLabel={selectedTerm?.label ?? ''}
+/>
 ```
 
 Insert this directly **above** the `<StudentLookupSheet ... />`:
 
 ```tsx
-          <Tabs value={view} aria-label="View">
-            <TabsList>
-              <TabsTrigger value="sheet" asChild>
-                <Link href={`/attendance/${sectionId}?term_id=${selectedTermId}`}>
-                  Term sheet
-                </Link>
-              </TabsTrigger>
-              <TabsTrigger value="daily" asChild>
-                <Link href={`/attendance/${sectionId}?term_id=${selectedTermId}&view=daily`}>
-                  Daily
-                </Link>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+<Tabs value={view} aria-label="View">
+  <TabsList>
+    <TabsTrigger value="sheet" asChild>
+      <Link href={`/attendance/${sectionId}?term_id=${selectedTermId}`}>
+        Term sheet
+      </Link>
+    </TabsTrigger>
+    <TabsTrigger value="daily" asChild>
+      <Link
+        href={`/attendance/${sectionId}?term_id=${selectedTermId}&view=daily`}
+      >
+        Daily
+      </Link>
+    </TabsTrigger>
+  </TabsList>
+</Tabs>
 ```
 
 (`Tabs`, `TabsList`, `TabsTrigger` are already imported on this page.)
@@ -741,42 +917,44 @@ Insert this directly **above** the `<StudentLookupSheet ... />`:
 Find the grid usage (added earlier this session, includes the `key`):
 
 ```tsx
-      <AttendanceWideGrid
-        key={`${sectionId}:${selectedTermId}`}
-        sectionId={sectionId}
-        termId={selectedTermId}
-        enrolments={enrolments}
-        calendar={calendar}
-        events={events}
-        initialDaily={daily}
-        canWriteNc={canWriteNc}
-      />
+<AttendanceWideGrid
+  key={`${sectionId}:${selectedTermId}`}
+  sectionId={sectionId}
+  termId={selectedTermId}
+  enrolments={enrolments}
+  calendar={calendar}
+  events={events}
+  initialDaily={daily}
+  canWriteNc={canWriteNc}
+/>
 ```
 
 Wrap it in a conditional and add the daily branch:
 
 ```tsx
-      {view === 'daily' ? (
-        <DailyEntry
-          key={`daily:${sectionId}:${selectedTermId}`}
-          sectionId={sectionId}
-          termId={selectedTermId}
-          enrolments={enrolments}
-          calendar={calendar}
-          initialDaily={daily}
-        />
-      ) : (
-        <AttendanceWideGrid
-          key={`${sectionId}:${selectedTermId}`}
-          sectionId={sectionId}
-          termId={selectedTermId}
-          enrolments={enrolments}
-          calendar={calendar}
-          events={events}
-          initialDaily={daily}
-          canWriteNc={canWriteNc}
-        />
-      )}
+{
+  view === 'daily' ? (
+    <DailyEntry
+      key={`daily:${sectionId}:${selectedTermId}`}
+      sectionId={sectionId}
+      termId={selectedTermId}
+      enrolments={enrolments}
+      calendar={calendar}
+      initialDaily={daily}
+    />
+  ) : (
+    <AttendanceWideGrid
+      key={`${sectionId}:${selectedTermId}`}
+      sectionId={sectionId}
+      termId={selectedTermId}
+      enrolments={enrolments}
+      calendar={calendar}
+      events={events}
+      initialDaily={daily}
+      canWriteNc={canWriteNc}
+    />
+  );
+}
 ```
 
 - [ ] **Step 6: Build**
@@ -806,7 +984,6 @@ Run: `npx next build`
 Expected: Clean compile, all pages generated.
 
 - [ ] **Step 3: Manual happy path** (on a seeded section with a current term, e.g. AY9999 P6 Grit)
-
   1. Open `/attendance/<sectionId>` — confirm it lands on **Term sheet** (default) with the grid.
   2. Click **Daily** — lands on today's roster; everyone shows on **P**; tally reads "N unmarked → Present".
   3. Mark 2 students Absent, 1 Late, 1 Excused → choosing EX shows the reason chips; pick **Medical certificate**. Tally updates live; Submit stays disabled until the EX reason is chosen.
@@ -814,12 +991,10 @@ Expected: Clean compile, all pages generated.
   5. Switch to **Term sheet** → confirm today's column shows those 4 marks and everyone else `P`. Confirm the four stat cards updated.
 
 - [ ] **Step 4: Idempotency + back-fill**
-
   1. Back on **Daily** for the same date, with no changes, click Submit → "No changes to submit." (no duplicate ledger rows).
   2. Step the date back (`‹`) to a prior school day, mark someone Absent, Submit → switch to Term sheet and confirm it landed on the correct earlier column.
 
 - [ ] **Step 5: Edge cases**
-
   1. A late-enrollee row (if present) before its enrolment date renders dimmed with "Before enrolment date" and is excluded from Submit.
   2. Withdrawn students do not appear in the Daily roster.
   3. Switch to a future/empty term → Daily shows the "No school day to mark" empty state.

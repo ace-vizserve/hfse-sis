@@ -38,7 +38,7 @@ Award thresholds for subject/overall awards are fetched from `school_config` (on
 
 When a placement row has `enrollment_status === 'withdrawn'` AND `withdrawal_reason !== null`, render a sub-row immediately beneath the main placement row. The sub-row spans all columns (using `colspan`) and is indented with `pl-8`. It shows:
 
-- A `LogOut` icon (size-3, `text-muted-foreground`) 
+- A `LogOut` icon (size-3, `text-muted-foreground`)
 - Reason label resolved from `WITHDRAWAL_REASON_LABELS[r.withdrawalReason]` (e.g. "Family relocating")
 - If `withdrawal_notes` is non-null: notes text truncated to one line with `line-clamp-1 text-muted-foreground` after a separator dot
 
@@ -66,9 +66,16 @@ The current logic derives the joining term from `enrollment_date` via `termForDa
 const lateTerm =
   r.enrollmentStatus === 'late_enrollee'
     ? r.lateEnrolleTermNumber !== null
-      ? { termNumber: r.lateEnrolleTermNumber, termLabel: `T${r.lateEnrolleTermNumber}`, isOverride: true }
+      ? {
+          termNumber: r.lateEnrolleTermNumber,
+          termLabel: `T${r.lateEnrolleTermNumber}`,
+          isOverride: true,
+        }
       : termForDateInPreloaded(r.enrollmentDate, r.ayCode, termsByAy)
-        ? { ...termForDateInPreloaded(r.enrollmentDate, r.ayCode, termsByAy)!, isOverride: false }
+        ? {
+            ...termForDateInPreloaded(r.enrollmentDate, r.ayCode, termsByAy)!,
+            isOverride: false,
+          }
         : null
     : null;
 ```
@@ -94,20 +101,23 @@ All three fields (`withdrawal_reason`, `withdrawal_notes`, `bus_no`, `classroom_
 Add an **Annual** column as the rightmost data column in each AY's subject grade table (after T4).
 
 **Examinable subjects** (where `is_examinable === true`):
+
 - Formula: `ROUND(T1×0.2 + T2×0.2 + T3×0.2 + T4×0.4, 2)` — matches `lib/compute/annual.ts::computeSubjectOverall`
 - Show `—` when any of T1–T4 is null (incomplete year)
 - Alongside the value, render a compact award badge: `Bronze` / `Silver` / `Gold` — styled as `font-mono text-[10px] uppercase` using the colour tokens below. Show `NE` (not eligible) when the annual is below the Bronze minimum or the year is incomplete
 - Award thresholds sourced from `school_config` props passed into the component
 
 Award badge colours (matching KD #95 / `lib/compute/awards.ts`):
+
 ```
 Gold:   brand-gold background, ink text
-Silver: bg-muted-foreground/20, foreground text  
+Silver: bg-muted-foreground/20, foreground text
 Bronze: brand-bronze background, ink text
 NE:     bg-muted/50, muted-foreground text
 ```
 
 **Non-examinable subjects** (where `is_examinable === false`):
+
 - Show `annual_letter_grade` from the T4 grade entry: `Passed` / `UG` / `E` / `NA`
 - Style as a plain `Badge variant="secondary"` — no award calculation
 - Show `—` when `annual_letter_grade` is null (T4 not yet entered by registrar)
@@ -129,9 +139,10 @@ Separate the footer row from the body with a `border-t border-hairline` on the r
 Below each AY's grade/attendance section (not inside the table), render a collapsible card showing the form-class-adviser's T1/T2/T3 writeups for that student in that AY.
 
 **Card anatomy:**
+
 - `CardHeader`: mono eyebrow `Form Class Adviser · {ayCode}` + serif title `Term comments`
 - `CardContent`: three sections, one per term (T1, T2, T3 only — T4 excluded per KD #49)
-- Each term section: 
+- Each term section:
   - Eyebrow: `font-mono text-[10px] uppercase tracking-[0.14em]` → `T{n} · HFSE Virtues: {virtue_theme}` (omit the Virtues part when `virtue_theme` is null)
   - Body: writeup text in `text-sm leading-relaxed text-foreground`
   - If no writeup for that term: `text-sm text-muted-foreground italic` → "No comments recorded"
@@ -143,10 +154,12 @@ Below each AY's grade/attendance section (not inside the table), render a collap
 **`lib/sis/records-history.ts` — extend `getAcademicHistory`:**
 
 The current query on `grade_entries` selects `quarterly_grade` (and implicitly joins subjects via `section_students → sections → subject_configs → subjects`). Extend to also select:
+
 - `subjects.is_examinable` — needed to classify examinable vs. non-examinable
 - `grade_entries.annual_letter_grade` — filtered to T4 rows only (or select all, filter in JS)
 
 Extend `AcademicSubjectRow` (the per-subject type within `AcademicHistoryRow`) to include:
+
 ```typescript
 isExaminable: boolean;
 annualLetterGrade: string | null; // T4 row only; null for examinable subjects
@@ -167,10 +180,11 @@ export type EvaluationWriteupEntry = {
 export async function getEvaluationWriteupsForStudent(
   studentId: string,
   ayCode: string
-): Promise<EvaluationWriteupEntry[]>
+): Promise<EvaluationWriteupEntry[]>;
 ```
 
 Query:
+
 - Join `evaluation_writeups` → `terms` (on `term_id`) → `academic_years` (on `ay_code`)
 - Filter: `student_id = studentId AND academic_years.ay_code = ayCode AND terms.term_number IN (1,2,3)`
 - Select: `terms.term_number`, `terms.virtue_theme`, `evaluation_writeups.writeup`
@@ -180,6 +194,7 @@ Query:
 **Page changes:**
 
 In `RecordsStudentCrossYearPage`:
+
 1. Add `school_config` query to fetch award thresholds (`subject_award_bronze_min`, `subject_award_silver_min`, `subject_award_gold_min`, `subject_award_max`) — `createServiceClient().from('school_config').select('subject_award_bronze_min, subject_award_silver_min, subject_award_gold_min, subject_award_max').eq('id', 1).single()`
 2. For each AY in `academics`, call `getEvaluationWriteupsForStudent(student.studentId, ay.ayCode)` in parallel — one call per AY in `Promise.all`. Returns a `Map<string, EvaluationWriteupEntry[]>` keyed by `ayCode`.
 
