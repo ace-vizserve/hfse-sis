@@ -50,9 +50,11 @@ Two independent booleans on `academic_years`:
    route.
 4. **Admissions is read-only** on AY window state — it shows which year is open
    and lists that year's applications, but cannot open/switch/close.
-5. **Switch-active readiness warning** (soft, non-blocking): if the target AY
-   has 0 sections, the confirm dialog warns that operational modules will be
-   empty until classes are added. Activation still proceeds.
+5. **Readiness signal is the existing AY Readiness pill** (KD #109), not a new
+   warning. After switching to an under-configured AY, the pill already reflects
+   the new current year's incomplete steps — we just make its **incomplete state
+   obvious** (amber "Setup needed" treatment). No switch-dialog warning is added;
+   activation is never blocked.
 6. **Toggle UI is a shadcn `Switch`** with a descriptive label, not an
    icon-button.
 
@@ -95,14 +97,19 @@ again (reverses today's current-AY-only restriction):
 The status-column "Early-bird open" badge (`accepting_applications && !is_current`)
 stays as-is.
 
-### 3. SIS Admin — switch-active readiness warning
+### 3. SIS Admin — make the AY Readiness pill obviously signal "setup needed"
 
-In the switch-active confirm dialog (in `ay-setup-data-table.tsx`), when the
-target row's `counts.sections === 0`, render an amber `Alert`/note:
-_"AY{code} has no classes set up yet — Markbook, Attendance and Records will be
-empty until you add sections in AY Setup. You can still activate."_ Non-blocking;
-the confirm-code field and Confirm button remain enabled. `counts.sections` is
-already on the row (`AcademicYearListItem`).
+Reuse the existing `<AyReadinessPill>` (KD #109) instead of a one-off warning.
+When an under-configured AY becomes current, the pill already recomputes and
+shows incomplete steps — but its floating trigger renders the incomplete state
+in calm/neutral tones. Give the **incomplete** state an attention treatment in
+`components/sis/ay-readiness-pill.tsx`: when `complete < total`, the trigger's
+icon tile uses the amber gradient (`from-brand-amber to-brand-amber/80
+shadow-brand-tile-amber`, already used on its in-progress rows) and the headline
+reads **"Setup needed"** (amber), with "X of Y steps" demoted to the subline. The
+**complete** state is unchanged (calm mint "All steps complete"). Pure component
+styling — no `readiness.ts` change, no switch-dialog change, no
+`targetSectionsCount` threading.
 
 ### 4. Admissions — make `/admissions/upcoming/applications` read-only
 
@@ -150,8 +157,8 @@ already on the row (`AcademicYearListItem`).
   4. SIS: switch active to AY2027 → AY2027 becomes current with Switch on;
      previously-current year's Switch goes off; Admissions early-bird page now
      shows "no early-bird open".
-  5. Switch-active to an AY with 0 sections → amber readiness warning shows;
-     activation still allowed.
+  5. Switch active to an under-configured AY → the AY Readiness pill turns
+     amber with a "Setup needed" headline; activation is never blocked.
 - **Gate:** prettier / tsc / vitest / next build all clean.
 
 ## Out of scope

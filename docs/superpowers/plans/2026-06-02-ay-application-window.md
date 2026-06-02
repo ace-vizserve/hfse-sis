@@ -250,19 +250,72 @@ Replace with:
 />;
 ```
 
-- [ ] **Step 2: Pass the section count to the switch dialog**
+(The switch-active dialog is left unchanged — the readiness signal is handled by Task 4's pill treatment, not a per-switch warning.)
 
-In the same file, find:
+- [ ] **Step 2: Typecheck**
+
+Run: `npx tsc --noEmit`
+Expected: exit 0 (self-contained — the toggle's props are unchanged).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add components/sis/ay-setup-data-table.tsx
+git commit -m "feat(sis): accepting Switch on every AY row (single-select for upcoming)"
+```
+
+---
+
+### Task 4: Make the AY Readiness pill obviously signal "setup needed"
+
+**Files:**
+
+- Modify: `components/sis/ay-readiness-pill.tsx`
+
+Reuse the existing readiness pill (KD #109) instead of a switch-dialog warning. When the current AY's setup is incomplete (`complete < total`), give the floating trigger an amber attention treatment + a "Setup needed" headline. The complete state stays calm/mint. Pure styling; no `lib/sis/readiness.ts` change. (`done` is already computed in the component as `readiness.complete === readiness.total`.)
+
+- [ ] **Step 1: Amber icon tile when incomplete**
+
+In `components/sis/ay-readiness-pill.tsx`, find the trigger's icon-tile div:
+
+```tsx
+<div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+  <ClipboardCheck className="size-4" />
+</div>
+```
+
+Replace with:
+
+```tsx
+<div
+  className={[
+    'flex size-10 shrink-0 items-center justify-center rounded-xl text-white',
+    done
+      ? 'bg-gradient-to-br from-brand-indigo to-brand-navy shadow-brand-tile'
+      : 'bg-gradient-to-br from-brand-amber to-brand-amber/80 shadow-brand-tile-amber',
+  ].join(' ')}
+>
+  <ClipboardCheck className="size-4" />
+</div>
+```
+
+- [ ] **Step 2: "Setup needed" headline when incomplete**
+
+In the same trigger, find the headline block:
 
 ```tsx
 {
-  canSwitch && (
-    <AySwitchActiveDialog
-      targetAyCode={row.ay_code}
-      currentAyCode={row.activeAyCode}
-      open={openDialog === 'switch'}
-      onOpenChange={(o) => setOpenDialog(o ? 'switch' : null)}
-    />
+  done ? (
+    <p className="mt-0.5 font-serif text-sm font-semibold leading-tight text-brand-mint">
+      All steps complete
+    </p>
+  ) : (
+    <p className="mt-0.5 font-serif text-sm font-semibold leading-tight text-foreground">
+      {readiness.complete}{' '}
+      <span className="font-sans text-[13px] font-normal text-muted-foreground">
+        of {readiness.total} complete
+      </span>
+    </p>
   );
 }
 ```
@@ -271,125 +324,33 @@ Replace with:
 
 ```tsx
 {
-  canSwitch && (
-    <AySwitchActiveDialog
-      targetAyCode={row.ay_code}
-      currentAyCode={row.activeAyCode}
-      targetSectionsCount={row.counts.sections}
-      open={openDialog === 'switch'}
-      onOpenChange={(o) => setOpenDialog(o ? 'switch' : null)}
-    />
+  done ? (
+    <p className="mt-0.5 font-serif text-sm font-semibold leading-tight text-brand-mint">
+      All steps complete
+    </p>
+  ) : (
+    <>
+      <p className="mt-0.5 font-serif text-sm font-semibold leading-tight text-brand-amber">
+        Setup needed
+      </p>
+      <p className="font-mono text-[10px] font-medium tabular-nums text-muted-foreground">
+        {readiness.complete} of {readiness.total} steps done
+      </p>
+    </>
   );
 }
 ```
 
-(`row.counts.sections` already exists on `AyTableRow` via `AcademicYearListItem`.)
+- [ ] **Step 3: Typecheck + build**
 
-- [ ] **Step 3: Typecheck**
-
-Run: `npx tsc --noEmit`
-Expected: FAIL — `AySwitchActiveDialog` does not yet accept `targetSectionsCount`. This is expected; Task 4 adds the prop. (If you are running tasks strictly in order and want a green checkpoint, do Task 4 before re-running tsc; otherwise proceed.)
+Run: `npx tsc --noEmit && npx next build`
+Expected: exit 0.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add components/sis/ay-setup-data-table.tsx
-git commit -m "feat(sis): accepting Switch on all AY rows + pass sections count to switch dialog"
-```
-
----
-
-### Task 4: Sections-readiness warning in the switch-active dialog
-
-**Files:**
-
-- Modify: `components/sis/ay-switch-active-dialog.tsx`
-
-Add a `targetSectionsCount` prop and a soft, non-blocking amber warning when it's 0. Confirm `components/ui/alert.tsx` exports `Alert` + `AlertDescription` with a `warning` variant (used elsewhere, e.g. P-Files per KD #91); if the variant name differs, match the existing one.
-
-- [ ] **Step 1: Add the prop**
-
-In `components/sis/ay-switch-active-dialog.tsx`, change the `Props` type from:
-
-```ts
-type Props = {
-  targetAyCode: string;
-  currentAyCode: string | null;
-  children?: ReactNode;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-};
-```
-
-to:
-
-```ts
-type Props = {
-  targetAyCode: string;
-  currentAyCode: string | null;
-  targetSectionsCount: number;
-  children?: ReactNode;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-};
-```
-
-And add it to the destructured params:
-
-```ts
-export function AySwitchActiveDialog({
-  targetAyCode,
-  currentAyCode,
-  targetSectionsCount,
-  children,
-  open: openProp,
-  onOpenChange,
-}: Props) {
-```
-
-- [ ] **Step 2: Add the Alert import**
-
-Add to the imports at the top of the file:
-
-```ts
-import { Alert, AlertDescription } from '@/components/ui/alert';
-```
-
-- [ ] **Step 3: Render the warning**
-
-In the JSX, find the confirm-code block:
-
-```tsx
-        <div className="space-y-2">
-          <Label htmlFor="confirm-switch" className="text-xs font-medium">
-```
-
-Insert this directly ABOVE that `<div className="space-y-2">`:
-
-```tsx
-{
-  targetSectionsCount === 0 && (
-    <Alert variant="warning">
-      <AlertDescription>
-        {targetAyCode} has no classes set up yet — Markbook, Attendance and
-        Records will be empty until you add sections in AY Setup. You can still
-        activate.
-      </AlertDescription>
-    </Alert>
-  );
-}
-```
-
-- [ ] **Step 4: Typecheck + build**
-
-Run: `npx tsc --noEmit && npx next build`
-Expected: exit 0 (Task 3's prop now resolves; route compiles).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add components/sis/ay-switch-active-dialog.tsx
-git commit -m "feat(sis): soft sections-readiness warning when activating an empty AY"
+git add components/sis/ay-readiness-pill.tsx
+git commit -m "feat(sis): readiness pill turns amber 'Setup needed' when incomplete"
 ```
 
 ---
@@ -702,7 +663,7 @@ Expected: prettier clean, tsc exit 0, vitest all pass (the existing 5 `early-bir
 2. Toggle AY2027's Switch on → it becomes the early-bird year. Toggle AY2028 on → AY2027's Switch flips off (single-select).
 3. Admissions → Early-bird applications: shows "Early-bird open · AY2028 · managed in SIS Admin" + the pipeline, with NO open/switch/close control. A plain `admissions`-role user sees the same read-only view.
 4. SIS Admin: switch active to AY2028 → its Switch is on (window opened), the previously-current AY's Switch is now off. Admissions early-bird page now shows the empty state (the open year became current, so there's no upcoming open year) unless another upcoming AY is open.
-5. Try switch-active on an AY with 0 sections → the confirm dialog shows the amber readiness warning; the confirm button still works after typing the AY code.
+5. Switch active to an under-configured AY → the AY Readiness pill (bottom-right, school_admin+) turns amber with a "Setup needed" headline. Activation is never blocked.
 
 - [ ] **Step 3: Final commit (any tidy-ups)**
 
@@ -715,7 +676,7 @@ git commit -m "test(sis): verify SIS-owned AY application window flow"
 
 ## Self-review notes
 
-- **Spec coverage:** §1 rollover → Task 1; §2 per-row Switch → Tasks 2+3; §3 sections warning → Task 4; §4 Admissions read-only + delete control + remove helper → Task 5; §5 reused engine → untouched (verified, no task needed); testing → Task 6.
-- **Type consistency:** `targetSectionsCount: number` added to `AySwitchActiveDialog` props (Task 4) matches the value passed in Task 3 (`row.counts.sections`). The toggle's props (`ayCode`, `current`, `isCurrentAy`) are unchanged, so Task 3's call site stays valid. The Admissions page (Task 5) drops imports of `EarlyBirdAyControl` and `listSelectableAcademicYears`, both removed in the same task.
-- **Ordering note:** Task 3's tsc goes green only once Task 4 lands (the new prop). Flagged inline; the Task 4 build step is the joint green checkpoint. Running Tasks 3→4 back-to-back keeps the tree green at the Task 4 boundary.
+- **Spec coverage:** §1 rollover → Task 1; §2 per-row Switch → Tasks 2+3; §3 readiness-pill "setup needed" treatment → Task 4; §4 Admissions read-only + delete control + remove helper → Task 5; §5 reused engine → untouched (verified, no task needed); testing → Task 6.
+- **Type consistency:** the toggle's props (`ayCode`, `current`, `isCurrentAy`) are unchanged, so Task 3's call site stays valid with no new props threaded. The Admissions page (Task 5) drops imports of `EarlyBirdAyControl` and `listSelectableAcademicYears`, both removed in the same task. Task 4 touches only `ay-readiness-pill.tsx` (uses the already-computed `done` flag) — no shared types with other tasks.
+- **Task independence:** each task is now self-contained and leaves the tree green on its own (the earlier Task 3↔4 prop coupling was removed when the switch-dialog warning was dropped in favor of the readiness pill).
 - **Placeholder scan:** none.
