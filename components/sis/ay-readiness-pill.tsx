@@ -25,6 +25,7 @@ import type {
   ReadinessStepId,
 } from '@/lib/sis/readiness';
 import {
+  AlertTriangle,
   ArrowUpRight,
   CalendarCog,
   CalendarDays,
@@ -185,7 +186,7 @@ function ReadinessRow({
     ? 'bg-gradient-to-br from-brand-mint to-brand-sky shadow-brand-tile-mint'
     : isPartial
       ? 'bg-gradient-to-br from-brand-amber to-brand-amber/80 shadow-brand-tile-amber'
-      : 'border border-hairline bg-muted/60';
+      : 'border border-brand-amber/40 bg-brand-amber-light';
 
   const pct =
     step.fraction && step.fraction.total > 0
@@ -215,9 +216,7 @@ function ReadinessRow({
           ) : isPartial ? (
             <Icon className="size-4 text-white" />
           ) : (
-            <span className="font-mono text-[11px] font-bold text-muted-foreground">
-              {String(step.step).padStart(2, '0')}
-            </span>
+            <AlertTriangle className="size-4 text-brand-amber" />
           )}
         </div>
 
