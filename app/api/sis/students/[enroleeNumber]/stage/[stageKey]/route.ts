@@ -671,10 +671,11 @@ export async function PATCH(
   // Then resolve the enrolment position; if a term is in session the dialog
   // surfaces the position-aware "join current / start next" late-enrollee prompt.
   type MidTermPayload = {
-    termNumber: number; // active term
+    termNumber: number; // joining term (active term mid-term, else next term)
     termLabel: string;
     sectionId: string;
     sectionStudentId: string;
+    activeTermNumber: number | null; // null when joining during a break
     nextTermNumber: number | null;
     canDeferToNext: boolean;
     daysLeftInActiveTerm: number | null;
@@ -713,12 +714,17 @@ export async function PATCH(
         }
       }
       const pos = await getEnrolmentPosition(ayCode);
-      if (pos.isLateEnrollee && pos.activeTerm) {
+      // Late once the year has started — mid-term (activeTerm) OR between terms
+      // (joining the next term). Use joiningTerm so the prompt also fires in a
+      // break; the active-term-only fields stay null so the dialog renders the
+      // single "join next term" option.
+      if (pos.isLateEnrollee && pos.joiningTerm) {
         midTermEnrolment = {
-          termNumber: pos.activeTerm.termNumber,
-          termLabel: `T${pos.activeTerm.termNumber}`,
+          termNumber: pos.joiningTerm.termNumber,
+          termLabel: `T${pos.joiningTerm.termNumber}`,
           sectionId: ssRow.section_id,
           sectionStudentId: ssRow.id,
+          activeTermNumber: pos.activeTerm?.termNumber ?? null,
           nextTermNumber: pos.nextTerm?.termNumber ?? null,
           canDeferToNext: pos.canDeferToNext,
           daysLeftInActiveTerm: pos.daysLeftInActiveTerm,

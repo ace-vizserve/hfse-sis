@@ -459,10 +459,13 @@ export async function PATCH(
   } | null = null;
   if (isReEnrolment && !lateEnrolleeTransition && sectionAyCode) {
     const pos = await getEnrolmentPosition(sectionAyCode);
-    if (pos.isLateEnrollee && pos.activeTerm) {
+    // Late once the year has started — joining the active term (mid-term) OR
+    // the next term (re-enrolled during a break). Use joiningTerm so the
+    // fallback prompt also fires between terms, not only mid-term.
+    if (pos.isLateEnrollee && pos.joiningTerm) {
       midTermEnrolment = {
-        termNumber: pos.activeTerm.termNumber,
-        termLabel: `T${pos.activeTerm.termNumber}`,
+        termNumber: pos.joiningTerm.termNumber,
+        termLabel: `T${pos.joiningTerm.termNumber}`,
         sectionId,
         sectionStudentId: enrolmentId,
       };

@@ -18,6 +18,7 @@ describe('resolveEnrolmentPosition', () => {
     expect(p.activeTerm?.termNumber).toBe(1);
     expect(p.nextTerm?.termNumber).toBe(2);
     expect(p.joiningTerm?.termNumber).toBe(1);
+    expect(p.yearStarted).toBe(true);
     expect(p.isLateEnrollee).toBe(true);
     expect(p.canDeferToNext).toBe(true);
   });
@@ -38,27 +39,33 @@ describe('resolveEnrolmentPosition', () => {
     expect(p.canDeferToNext).toBe(false);
   });
 
-  it('break before T3: not late, joining T3 on time', () => {
+  it('break after T1 (between T2 and T3): late, joining next term T3', () => {
+    // Year has started (T1 began 2026-01-08), so a join during the break is
+    // still LATE — they join T3, the next term, but late for the year.
     const p = resolveEnrolmentPosition(TERMS, '2026-06-01');
     expect(p.activeTerm).toBeNull();
     expect(p.nextTerm?.termNumber).toBe(3);
     expect(p.joiningTerm?.termNumber).toBe(3);
-    expect(p.isLateEnrollee).toBe(false);
+    expect(p.yearStarted).toBe(true);
+    expect(p.isLateEnrollee).toBe(true);
+    expect(p.canDeferToNext).toBe(false); // no active term → no current-vs-next choice
     expect(p.daysLeftInActiveTerm).toBeNull();
   });
 
-  it('before T1: not late, joining T1', () => {
+  it('before T1: not late, joining T1 on time', () => {
     const p = resolveEnrolmentPosition(TERMS, '2025-12-20');
     expect(p.activeTerm).toBeNull();
     expect(p.nextTerm?.termNumber).toBe(1);
+    expect(p.yearStarted).toBe(false);
     expect(p.isLateEnrollee).toBe(false);
   });
 
-  it('after T4: out of scope (no joining term)', () => {
+  it('after T4: year started but no joining term → not late (out of scope)', () => {
     const p = resolveEnrolmentPosition(TERMS, '2026-12-01');
     expect(p.activeTerm).toBeNull();
     expect(p.nextTerm).toBeNull();
     expect(p.joiningTerm).toBeNull();
+    expect(p.yearStarted).toBe(true);
     expect(p.isLateEnrollee).toBe(false);
   });
 
@@ -74,6 +81,7 @@ describe('resolveEnrolmentPosition', () => {
     const p = resolveEnrolmentPosition([], '2026-06-01');
     expect(p.activeTerm).toBeNull();
     expect(p.nextTerm).toBeNull();
+    expect(p.yearStarted).toBe(false);
     expect(p.isLateEnrollee).toBe(false);
   });
 });

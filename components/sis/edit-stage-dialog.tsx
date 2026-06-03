@@ -55,10 +55,11 @@ const OTHER_SENTINEL = '__other__';
 
 type ExtraValues = Record<string, string | null>;
 type MidTermPayload = {
-  termNumber: number; // active term
+  termNumber: number; // joining term (active term mid-term, else next term)
   termLabel: string;
   sectionId: string;
   sectionStudentId: string;
+  activeTermNumber: number | null; // null when joining during a break
   nextTermNumber: number | null;
   canDeferToNext: boolean;
   daysLeftInActiveTerm: number | null;
@@ -373,12 +374,12 @@ export function EditStageDialog({
           <>
             <DialogHeader>
               <DialogTitle className="font-serif text-lg font-semibold">
-                Enrolling mid-year
+                Enrolling after the year started
               </DialogTitle>
               <DialogDescription>
-                Enrolled after {pendingMidTerm.termLabel} started — this is a
-                late enrollee. Choose how they join (this skips assessments from
-                before they joined).
+                {pendingMidTerm.activeTermNumber !== null
+                  ? `Enrolled after T${pendingMidTerm.activeTermNumber} started — this is a late enrollee. Choose which term they join (this skips assessments from before they joined).`
+                  : `The school year has already started, so this is a late enrollee. They'll join the next term, ${pendingMidTerm.termLabel}.`}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-1.5">
@@ -391,7 +392,9 @@ export function EditStageDialog({
                     : 'border-hairline text-foreground hover:bg-muted/50'
                 }`}
               >
-                Join {pendingMidTerm.termLabel} now
+                {pendingMidTerm.activeTermNumber !== null
+                  ? `Join ${pendingMidTerm.termLabel} now`
+                  : `Join ${pendingMidTerm.termLabel}`}
                 {pendingMidTerm.daysLeftInActiveTerm !== null &&
                   pendingMidTerm.daysLeftInActiveTerm < 14 && (
                     <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-brand-amber">

@@ -107,6 +107,8 @@ export function EnrolmentEditSheet({
   type Position = {
     activeTerm: { termNumber: number } | null;
     nextTerm: { termNumber: number } | null;
+    joiningTerm: { termNumber: number } | null;
+    yearStarted: boolean;
     isLateEnrollee: boolean;
     canDeferToNext: boolean;
     daysLeftInActiveTerm: number | null;
@@ -114,18 +116,26 @@ export function EnrolmentEditSheet({
   const [position, setPosition] = useState<Position | null>(null);
 
   useEffect(() => {
-    if (
-      status === 'late_enrollee' &&
+    // Fetch the joining position whenever the registrar is (re-)enrolling this
+    // student — either bringing back a withdrawn row, or tagging a non-late row
+    // as late_enrollee. We need it to surface the joining-term suggestion the
+    // moment they engage, including during a between-terms break.
+    const offeringLate =
       initial.enrollment_status !== 'late_enrollee' &&
-      position === null
-    ) {
+      ((status !== 'withdrawn' && initial.enrollment_status === 'withdrawn') ||
+        status === 'late_enrollee');
+    if (offeringLate && position === null) {
       fetch(`/api/sis/today-term?ay=${encodeURIComponent(ayCode)}`)
         .then((r) => r.json())
         .then((d) => {
           const pos = (d.position ?? null) as Position | null;
           setPosition(pos);
-          if (pos?.activeTerm && lateTermOverride === null) {
-            setLateTermOverride(pos.activeTerm.termNumber);
+          if (
+            pos?.isLateEnrollee &&
+            pos.joiningTerm &&
+            lateTermOverride === null
+          ) {
+            setLateTermOverride(pos.joiningTerm.termNumber);
           }
         })
         .catch(() => setPosition(null));
@@ -392,50 +402,85 @@ export function EnrolmentEditSheet({
                 </div>
               )}
 
-              {status === 'late_enrollee' &&
+              {position?.isLateEnrollee &&
+                position.joiningTerm &&
+                status !== 'withdrawn' &&
                 initial.enrollment_status !== 'late_enrollee' &&
-                position?.activeTerm && (
+                (isReEnrolling || status === 'late_enrollee') && (
                   <div className="space-y-2">
                     <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Joining term
+                      Late enrollee · joining term
                     </p>
                     <p className="text-[13px] text-muted-foreground">
-                      Enrolled after T{position.activeTerm.termNumber} started —
-                      choose how this student joins.
+                      {position.activeTerm
+                        ? `The school year has started (T${position.activeTerm.termNumber} in session) — choose which term this student officially joins. They're tagged a late enrollee either way.`
+                        : `The school year has already started — this student joins the next term, T${position.joiningTerm.termNumber}, as a late enrollee.`}
                     </p>
                     <div className="space-y-1.5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setLateTermOverride(position.activeTerm!.termNumber)
-                        }
-                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${
-                          lateTermOverride === position.activeTerm.termNumber
-                            ? 'border-primary bg-accent text-foreground'
-                            : 'border-hairline text-foreground hover:bg-muted/50'
-                        }`}
-                      >
-                        Join T{position.activeTerm.termNumber} now
-                        {position.daysLeftInActiveTerm !== null &&
-                          position.daysLeftInActiveTerm < 14 && (
-                            <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-brand-amber">
-                              ends in {position.daysLeftInActiveTerm}d
-                            </span>
+                      {position.activeTerm ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStatus('late_enrollee');
+                              setLateTermOverride(
+                                position.activeTerm!.termNumber
+                              );
+                            }}
+                            className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${
+                              status === 'late_enrollee' &&
+                              lateTermOverride ===
+                                position.activeTerm.termNumber
+                                ? 'border-primary bg-accent text-foreground'
+                                : 'border-hairline text-foreground hover:bg-muted/50'
+                            }`}
+                          >
+                            Join T{position.activeTerm.termNumber} now
+                            {position.daysLeftInActiveTerm !== null &&
+                              position.daysLeftInActiveTerm < 14 && (
+                                <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-brand-amber">
+                                  ends in {position.daysLeftInActiveTerm}d
+                                </span>
+                              )}
+                          </button>
+                          {position.canDeferToNext && position.nextTerm && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStatus('late_enrollee');
+                                setLateTermOverride(
+                                  position.nextTerm!.termNumber
+                                );
+                              }}
+                              className={`flex w-full items-center rounded-lg border px-3 py-2 text-left text-sm ${
+                                status === 'late_enrollee' &&
+                                lateTermOverride ===
+                                  position.nextTerm.termNumber
+                                  ? 'border-primary bg-accent text-foreground'
+                                  : 'border-hairline text-foreground hover:bg-muted/50'
+                              }`}
+                            >
+                              Start in T{position.nextTerm.termNumber} instead
+                            </button>
                           )}
-                      </button>
-                      {position.canDeferToNext && position.nextTerm && (
+                        </>
+                      ) : (
                         <button
                           type="button"
-                          onClick={() =>
-                            setLateTermOverride(position.nextTerm!.termNumber)
-                          }
+                          onClick={() => {
+                            setStatus('late_enrollee');
+                            setLateTermOverride(
+                              position.joiningTerm!.termNumber
+                            );
+                          }}
                           className={`flex w-full items-center rounded-lg border px-3 py-2 text-left text-sm ${
-                            lateTermOverride === position.nextTerm.termNumber
+                            status === 'late_enrollee' &&
+                            lateTermOverride === position.joiningTerm.termNumber
                               ? 'border-primary bg-accent text-foreground'
                               : 'border-hairline text-foreground hover:bg-muted/50'
                           }`}
                         >
-                          Start in T{position.nextTerm.termNumber} instead
+                          Join T{position.joiningTerm.termNumber}
                         </button>
                       )}
                     </div>
