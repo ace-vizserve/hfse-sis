@@ -215,7 +215,10 @@ export function EvaluationSectionsList({
       ]}
       pageSize={25}
       csv={{ filename: 'evaluation-sections.csv' }}
-      url={{ enabled: true }}
+      // Namespace the URL state so the page's own `?term_id=` param isn't read
+      // as a phantom facet filter (which zeroes the status-tab counts) or
+      // clobbered when the table writes its own state.
+      url={{ enabled: true, namespace: 'sections' }}
       emptyState={{
         icon: ClipboardList,
         title: 'No sections to evaluate.',
