@@ -264,8 +264,16 @@ export function ScoreEntryGrid({
   );
 
   // # + Student | WW slots + (Total PS WS) | PT slots + (Total PS WS) | QA (Exam PS WS) | Initial | Quarterly | N/A | Alerts
+  // The trailing Alerts column only exists in T2+ (no prior term to compare in T1).
   const totalCols =
-    2 + (wwLen + 3) + (ptLen > 0 ? ptLen + 3 : 0) + 3 + 1 + 1 + 1 + 1;
+    2 +
+    (wwLen + 3) +
+    (ptLen > 0 ? ptLen + 3 : 0) +
+    3 +
+    1 +
+    1 +
+    1 +
+    (currentTermNumber > 1 ? 1 : 0);
 
   const wwPct = Math.round(wwWeight * 100);
   const ptPct = Math.round(ptWeight * 100);
@@ -360,12 +368,15 @@ export function ScoreEntryGrid({
               >
                 N/A
               </TableHead>
-              <TableHead
-                rowSpan={3}
-                className="align-bottom text-center text-xs text-muted-foreground"
-              >
-                Alerts
-              </TableHead>
+              {/* No prior term to compare against in T1 — drop the column. */}
+              {currentTermNumber > 1 && (
+                <TableHead
+                  rowSpan={3}
+                  className="align-bottom text-center text-xs text-muted-foreground"
+                >
+                  Alerts
+                </TableHead>
+              )}
             </TableRow>
 
             {/* Row 2 — column codes */}
@@ -670,23 +681,25 @@ export function ScoreEntryGrid({
                     />
                   </TableCell>
 
-                  {/* Alerts */}
-                  <TableCell className="text-center">
-                    <AlertCell
-                      row={r}
-                      priorTermGrades={
-                        priorGrades?.[r.section_student_id] ?? []
-                      }
-                      currentTermNumber={currentTermNumber}
-                      onOpen={(comparisons) =>
-                        setAlertDialogState({
-                          studentName: r.student_name,
-                          currentGrade: r.quarterly_grade!,
-                          comparisons,
-                        })
-                      }
-                    />
-                  </TableCell>
+                  {/* Alerts — column hidden entirely in T1 (no prior term). */}
+                  {currentTermNumber > 1 && (
+                    <TableCell className="text-center">
+                      <AlertCell
+                        row={r}
+                        priorTermGrades={
+                          priorGrades?.[r.section_student_id] ?? []
+                        }
+                        currentTermNumber={currentTermNumber}
+                        onOpen={(comparisons) =>
+                          setAlertDialogState({
+                            studentName: r.student_name,
+                            currentGrade: r.quarterly_grade!,
+                            comparisons,
+                          })
+                        }
+                      />
+                    </TableCell>
+                  )}
                 </TableRow>
               );
             })}
@@ -753,11 +766,37 @@ function AlertCell({
   }
 
   const comparisons = computeComparisons(row.quarterly_grade, priorTermGrades);
-  const flaggedCount = comparisons.filter((c) => c.flagged).length;
-
-  if (flaggedCount === 0) {
+  // No prior-term grades to compare against — nothing to show.
+  if (comparisons.length === 0) {
     return (
       <span className="font-mono text-[11px] text-muted-foreground/40">—</span>
+    );
+  }
+
+  const flaggedCount = comparisons.filter((c) => c.flagged).length;
+  // Largest term-over-term swing (by magnitude) — surfaced on the chip so the
+  // comparison stays glanceable even when nothing crosses the ±5 alert threshold.
+  const biggest = comparisons.reduce((a, b) =>
+    Math.abs(b.diff) > Math.abs(a.diff) ? b : a
+  );
+  const absBig = Math.abs(biggest.diff);
+  const signedBig =
+    biggest.diff > 0 ? `+${absBig}` : biggest.diff < 0 ? `−${absBig}` : '0';
+
+  if (flaggedCount === 0) {
+    // Comparison available but below the ±5 alert threshold — neutral chip
+    // showing the biggest delta; click to view the full term-over-term breakdown.
+    const neutralLabel = `Largest change ${signedBig} vs a prior term — click to compare`;
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(comparisons)}
+        title={neutralLabel}
+        aria-label={neutralLabel}
+        className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-muted-foreground transition hover:border-hairline-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/30"
+      >
+        {signedBig}
+      </button>
     );
   }
 
