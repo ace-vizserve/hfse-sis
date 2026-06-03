@@ -77,6 +77,7 @@ export type AuditAction =
   | 'ay.term_grading_lock.update'
   | 'evaluation.writeup.save'
   | 'evaluation.writeup.submit'
+  | 'evaluation.writeup.resubmit'
   | 'evaluation.term.open'
   | 'evaluation.term.close'
   | 'evaluation.checklist_item.create'

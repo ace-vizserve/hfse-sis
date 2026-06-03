@@ -9,18 +9,20 @@ import { requireCurrentAyCode } from '@/lib/academic-year';
 
 // PATCH /api/evaluation/writeups — upsert one writeup by (term, student).
 //
-// Used by the adviser roster page for both autosave and submit:
-//   · { writeup: "..." }                  → text edit (autosave)
-//   · { writeup: "...", submit: true }    → save + mark submitted
-//   · { submit: true }                    → just mark submitted
+// Used by the adviser roster page's manual Save as draft / Submit buttons:
+//   · { writeup, submit: false }  → Save as draft (demotes a finalised one
+//                                   back to draft + clears submitted_at)
+//   · { writeup, submit: true }   → Submit / Resubmit (stamps submitted_at)
+//   · { writeup }                 → text-only save, submitted state untouched
 //
 // Gate: teachers must have a form_adviser teacher_assignment on the target
 // section. Registrar / school_admin / admin / superadmin are unrestricted
 // (soft gate per KD #28; they can fix typos or fill gaps when the adviser
 // is late). Submit is NOT a hard lock — KD #28, see plan Risk #1.
 //
-// Audit: `evaluation.writeup.save` on text change; `evaluation.writeup.submit`
-// when `submitted` flips from false→true. Both can fire on one request.
+// Audit: one row per action — `evaluation.writeup.save` (draft save, incl. the
+// un-submit demote), `evaluation.writeup.submit` (first finalise), or
+// `evaluation.writeup.resubmit` (re-finalise an already-submitted write-up).
 export async function PATCH(request: NextRequest) {
   const auth = await requireRole([
     'teacher',
@@ -73,11 +75,17 @@ export async function PATCH(request: NextRequest) {
     ? (writeup ?? null)
     : (existing?.writeup ?? null);
   const wasSubmitted = existing?.submitted ?? false;
-  const nextSubmitted = submit === true ? true : wasSubmitted;
+  // submit:true → submitted (stamps now); submit:false → demoted back to draft
+  // (Save as draft on a finalised write-up clears submitted + its timestamp);
+  // undefined → leave the existing submitted state untouched.
+  const nextSubmitted =
+    submit === true ? true : submit === false ? false : wasSubmitted;
   const nextSubmittedAt =
-    submit === true && !wasSubmitted
+    submit === true
       ? new Date().toISOString()
-      : (existing?.submitted_at ?? null);
+      : submit === false
+        ? null
+        : (existing?.submitted_at ?? null);
 
   const row = {
     term_id: termId,
@@ -104,13 +112,28 @@ export async function PATCH(request: NextRequest) {
 
   const textChanged =
     writeupProvided && (existing?.writeup ?? null) !== nextWriteup;
-  const submitFlipped = submit === true && !wasSubmitted;
+  const submittedChanged = nextSubmitted !== wasSubmitted;
 
-  if (textChanged) {
+  // One audit row per user action — Submit / Resubmit / Save-as-draft (the
+  // last covers the demote when Save-as-draft un-submits a finalised write-up).
+  let action:
+    | 'evaluation.writeup.submit'
+    | 'evaluation.writeup.resubmit'
+    | 'evaluation.writeup.save'
+    | null = null;
+  if (submit === true) {
+    action = wasSubmitted
+      ? 'evaluation.writeup.resubmit'
+      : 'evaluation.writeup.submit';
+  } else if (textChanged || (submit === false && wasSubmitted)) {
+    action = 'evaluation.writeup.save';
+  }
+
+  if (action) {
     await logAction({
       service,
       actor: { id: auth.user.id, email: auth.user.email ?? null },
-      action: 'evaluation.writeup.save',
+      action,
       entityType: 'evaluation_writeup',
       entityId: saved.id,
       context: {
@@ -118,27 +141,14 @@ export async function PATCH(request: NextRequest) {
         section_id: sectionId,
         student_id: studentId,
         length: nextWriteup?.length ?? 0,
+        submitted: nextSubmitted,
+        ...(submit === false && wasSubmitted ? { un_submitted: true } : {}),
+        ...(submit === true ? { submitted_at: nextSubmittedAt } : {}),
       },
     });
   }
 
-  if (submitFlipped) {
-    await logAction({
-      service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
-      action: 'evaluation.writeup.submit',
-      entityType: 'evaluation_writeup',
-      entityId: saved.id,
-      context: {
-        term_id: termId,
-        section_id: sectionId,
-        student_id: studentId,
-        submitted_at: nextSubmittedAt,
-      },
-    });
-  }
-
-  if (textChanged || submitFlipped) {
+  if (textChanged || submittedChanged) {
     invalidateDrillTags('evaluation', await requireCurrentAyCode(service));
   }
 
