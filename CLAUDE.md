@@ -33,6 +33,7 @@ Not `@`-imported. Each file carries YAML frontmatter (`description`, `load: on-d
 | `docs/context/04-database-schema.md`        | DB tables / queries                                                                                                              |
 | `docs/context/05-report-card.md`            | Report card UI / PDF                                                                                                             |
 | `docs/context/06-admissions-integration.md` | Admissions sync                                                                                                                  |
+| `docs/context/admission-process.md`         | HFSE's 13-step intake process (Open House → Orientation); maps ~1:1 to the 9-stage SIS pipeline (`STAGE_KEYS`, KD #51/#59)        |
 | `docs/context/07-api-routes.md`             | API contracts                                                                                                                    |
 | `docs/context/08-admission-dashboard.md`    | Admissions analytics                                                                                                             |
 | `docs/context/09-design-system.md`          | UI tokens, hard rules, page→component matrix, pre-delivery checklist                                                             |
@@ -72,8 +73,7 @@ here — they live in `.claude/rules/*.md`. Sprint-by-sprint history lives in
 - Sprint 50 (2026-06-01): Late-enrollee position-aware joining-term decision — `resolveEnrolmentPosition` + Join-now/Start-next prompt across SIS + Markbook + Admissions editors; `enrollment_date` derived from chosen term (KD #117). No migration.
 - Sprint 49 (2026-05-31): Attendance Daily view — Term sheet | Daily view toggle + "mark-the-exceptions" roster + today-centric day cards + student-lookup sheet + shared date-derived current-term resolver (`lib/sis/current-term.ts`) + global screen-size guard (KD #116). No migration.
 - Sprint 48 (2026-05-30): Compare redesign — CompareGrid table rebuild (no heatmap, sticky col, AY borders, directional delta) + MultiSeriesTrendChart + Markbook subject-performance trend (KD #115).
-- Sprint 46 (2026-05-29): Edge case hardening + attendance proration — 11 fixes across 7 modules + migration 068 (KD #113) + SIS Admin staff redesign/sidebar.
-- Sprints 28–45 (2026-04-29 → 2026-05-29): see development-plan.md. Highlights: KDs #63–112 + migrations 030–067; Sprint 44 = Markbook polish + SOW teardown (062–066); Sprint 45 = Records student detail (KDs #111–112, migration 067).
+- Sprints 28–46 (2026-04-29 → 2026-05-29): see development-plan.md. Highlights: KDs #63–113 + migrations 030–068; Sprint 44 = Markbook polish + SOW teardown (062–066); Sprint 45 = Records student detail (KDs #111–112, migration 067); Sprint 46 = edge-case hardening + attendance proration (KD #113, migration 068).
 
 ## Cross-reference note
 
