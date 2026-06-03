@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getAllStudentsByParentEmail } from '@/lib/supabase/admissions';
 import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
+import { corsHeaders } from '@/lib/cors';
 
 // GET /api/parent/v2/students
 //
@@ -11,24 +12,8 @@ import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
 // admissions tables, then cross-references report_card_publications to return
 // only students that have at least one currently-active publication window.
 //
-// CORS: dev allows any localhost origin; production locks to ADMISSIONS_PORTAL_ORIGIN.
-
-function getAllowedOrigin() {
-  if (process.env.NODE_ENV !== 'production') {
-    return 'http://localhost:5173';
-  }
-  return process.env.ADMISSIONS_PORTAL_ORIGIN ?? '';
-}
-
-function corsHeaders(origin: string | null) {
-  const allowed = getAllowedOrigin();
-  const expose = origin === allowed ? allowed : allowed;
-  return {
-    'Access-Control-Allow-Origin': expose,
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-  };
-}
+// CORS: reflects the portal origin from the allowlist with credentials — see
+// lib/cors.ts (shared with the report-card route).
 
 export async function OPTIONS(request: Request) {
   return new Response(null, {

@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { getAllStudentsByParentEmail } from '@/lib/supabase/admissions';
 import { buildReportCard } from '@/lib/report-card/build-report-card';
 import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
+import { corsHeaders } from '@/lib/cors';
 
 // GET /api/parent/v2/report-card?studentId=<uuid>&termNumber=<1|2|3|4>
 //
@@ -13,22 +14,8 @@ import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
 // termNumber is optional — if omitted the payload still returns all terms
 // and the client picks which to display.
 
-function getAllowedOrigin() {
-  if (process.env.NODE_ENV !== 'production') {
-    return 'http://localhost:5173';
-  }
-  return process.env.ADMISSIONS_PORTAL_ORIGIN ?? '';
-}
-
-function corsHeaders(origin: string | null) {
-  const allowed = getAllowedOrigin();
-  const expose = origin === allowed ? allowed : allowed;
-  return {
-    'Access-Control-Allow-Origin': expose,
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-  };
-}
+// CORS: reflects the portal origin from the allowlist with credentials — see
+// lib/cors.ts (shared with the students route).
 
 export async function OPTIONS(request: Request) {
   return new Response(null, {
