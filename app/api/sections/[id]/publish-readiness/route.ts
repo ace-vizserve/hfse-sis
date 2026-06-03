@@ -158,7 +158,7 @@ export async function GET(
 
     // allSheets, grade entries, and school config are independent — fetch in parallel.
     type EntryRow = {
-      student_id: string;
+      section_student_id: string;
       quarterly_grade: number | null;
       letter_grade: string | null;
       is_na: boolean;
@@ -176,7 +176,12 @@ export async function GET(
           }[];
     };
 
-    const [{ data: allSheets }, { data: rawEntries }, schoolConfig] =
+    // Resolve every section_student_id these active students hold this AY —
+    // across ALL sections, so a mid-year transfer's pre-transfer grades (which
+    // live under the now-withdrawn old enrolment, KD #67) are counted, matching
+    // build-report-card.ts. `grade_entries` has NO student_id column (Hard Rule
+    // #6 — keyed by section_student_id), so query by enrolment id and map back.
+    const [{ data: allSheets }, { data: ayEnrolmentRows }, schoolConfig] =
       await Promise.all([
         service
           .from('grading_sheets')
@@ -185,15 +190,37 @@ export async function GET(
           )
           .eq('section_id', sectionId)
           .in('term_id', termIds),
-        service
-          .from('grade_entries')
-          .select(
-            'student_id, quarterly_grade, letter_grade, is_na, annual_letter_grade, grading_sheet:grading_sheets!inner(id, term_id, subject:subjects!inner(id, name, is_examinable))'
-          )
-          .eq('grading_sheet.section_id', sectionId)
-          .in('grading_sheet.term_id', termIds),
+        studentIds.length > 0
+          ? service
+              .from('section_students')
+              .select(
+                'id, student_id, section:sections!inner(academic_year_id)'
+              )
+              .in('student_id', studentIds)
+              .eq('section.academic_year_id', term.academic_year_id)
+          : Promise.resolve({ data: [] as unknown[] }),
         getSchoolConfig(),
       ]);
+
+    const studentBySectionStudent = new Map<string, string>();
+    for (const r of (ayEnrolmentRows ?? []) as Array<{
+      id: string;
+      student_id: string;
+    }>) {
+      studentBySectionStudent.set(r.id, r.student_id);
+    }
+    const allEnrolmentIds = Array.from(studentBySectionStudent.keys());
+
+    const { data: rawEntries } =
+      allEnrolmentIds.length > 0
+        ? await service
+            .from('grade_entries')
+            .select(
+              'section_student_id, quarterly_grade, letter_grade, is_na, annual_letter_grade, grading_sheet:grading_sheets!inner(id, term_id, subject:subjects!inner(id, name, is_examinable))'
+            )
+            .in('section_student_id', allEnrolmentIds)
+            .in('grading_sheet.term_id', termIds)
+        : { data: [] };
 
     const entries = (rawEntries ?? []) as unknown as EntryRow[];
 
@@ -247,15 +274,21 @@ export async function GET(
       const termObj = (allTerms ?? []).find((t) => t.id === gs.term_id);
       if (!termObj) continue;
 
-      const studentKey = e.student_id;
+      const studentKey = studentBySectionStudent.get(e.section_student_id);
+      if (!studentKey) continue;
       const subjKey = subj.name;
       if (!gradeMap.has(studentKey)) gradeMap.set(studentKey, new Map());
       const subjMap = gradeMap.get(studentKey)!;
       if (!subjMap.has(subjKey)) subjMap.set(subjKey, blankCells());
-      subjMap.get(subjKey)![termObj.term_number - 1] = {
-        q: e.quarterly_grade,
-        na: e.is_na,
-      };
+      const idx = termObj.term_number - 1;
+      const cell = subjMap.get(subjKey)![idx];
+      // A transferred student can hold an entry for the same (subject, term) in
+      // two sections — keep whichever has data (graded or NA) over a blank.
+      const newHasData = e.quarterly_grade != null || e.is_na;
+      const oldHasData = cell.q != null || cell.na;
+      if (newHasData || !oldHasData) {
+        subjMap.get(subjKey)![idx] = { q: e.quarterly_grade, na: e.is_na };
+      }
     }
 
     const missingAnnual: {
@@ -296,11 +329,17 @@ export async function GET(
       if (!gs || gs.term_id !== t4TermId) continue;
       const subj = Array.isArray(gs.subject) ? gs.subject[0] : gs.subject;
       if (!subj || subj.is_examinable) continue;
-      const key: NonExamKey = `${e.student_id}::${subj.name}`;
+      const studentKey = studentBySectionStudent.get(e.section_student_id);
+      if (!studentKey) continue;
+      const key: NonExamKey = `${studentKey}::${subj.name}`;
       const hasGrade =
         e.is_na === true ||
         (e.annual_letter_grade !== null && e.annual_letter_grade.trim() !== '');
-      nonExamHasAnnualGrade.set(key, hasGrade);
+      // OR across the student's enrolments — a confirmed grade anywhere counts.
+      nonExamHasAnnualGrade.set(
+        key,
+        (nonExamHasAnnualGrade.get(key) ?? false) || hasGrade
+      );
     }
 
     const missingNonExam: { student_name: string; subject_name: string }[] = [];
