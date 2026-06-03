@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import Link from 'next/link';
 import { CheckCircle2, SquarePen } from 'lucide-react';
+import Link from 'next/link';
+import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import {
@@ -210,9 +210,9 @@ function FilterChip({
     <button
       type="button"
       onClick={onClick}
-      className={`h-7 rounded-full px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors ${
+      className={`h-7 rounded-md px-3 font-mono text-xs font-semibold uppercase tracking-[0.14em] transition-colors ${
         active
-          ? 'bg-brand-indigo text-white shadow-sm'
+          ? 'bg-primary text-white shadow-sm'
           : 'border border-border bg-card text-muted-foreground hover:border-brand-indigo/40 hover:text-foreground'
       }`}
     >

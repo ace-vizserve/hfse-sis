@@ -1,16 +1,16 @@
-import Link from 'next/link';
-import { redirect } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowLeft,
   ClipboardCheck,
   GraduationCap,
-  LayoutGrid,
   Layers,
+  LayoutGrid,
   Users,
 } from 'lucide-react';
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { EvaluationSectionsList } from '@/components/evaluation/sections-list';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -23,11 +23,11 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { EvaluationSectionsList } from '@/components/evaluation/sections-list';
 import {
   getWriteupProgressByTerm,
   listFormAdviserSectionIds,
 } from '@/lib/evaluation/queries';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type LevelLite = {
   id: string;
@@ -238,7 +238,7 @@ export default async function EvaluationSectionsPickerPage({
               Virtue theme not set for {selectedTerm.label}.
             </p>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Joann sets the virtue theme in{' '}
+              Registrar sets the virtue theme in{' '}
               <Link
                 href="/sis/ay-setup"
                 className="font-medium text-brand-amber underline underline-offset-2"
