@@ -96,7 +96,11 @@ export default async function EvaluationSectionRosterPage({
   // Teachers are locked until Joann sets the virtue theme; registrar+ can
   // always edit (write-up fields gate per canEdit in WriteupRosterClient).
   const canEdit = sessionUser.role !== 'teacher' || !!config?.virtueTheme;
-  const submittedCount = roster.filter((r) => r.submitted).length;
+  // Submitted AND non-empty — an emptied write-up is "missing", not submitted
+  // (keeps the count consistent with the sections list + publish-readiness).
+  const submittedCount = roster.filter(
+    (r) => r.submitted && !!r.writeup && r.writeup.trim().length > 0
+  ).length;
   const totalCount = roster.length;
 
   return (

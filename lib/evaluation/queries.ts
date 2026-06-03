@@ -180,12 +180,18 @@ export async function getWriteupProgressByTerm(
   if (rosterStudentIds.length > 0) {
     const { data: writeups } = await service
       .from('evaluation_writeups')
-      .select('student_id, submitted')
+      .select('student_id, writeup')
       .eq('term_id', termId)
       .eq('submitted', true)
       .in('student_id', rosterStudentIds);
 
-    for (const row of (writeups ?? []) as Array<{ student_id: string }>) {
+    for (const row of (writeups ?? []) as Array<{
+      student_id: string;
+      writeup: string | null;
+    }>) {
+      // A `submitted` flag with empty content is not a real write-up — match the
+      // publish-readiness "missing" definition so these counts agree.
+      if (!row.writeup || row.writeup.trim().length === 0) continue;
       const sectionId = sectionByStudent.get(row.student_id);
       if (sectionId && out[sectionId]) out[sectionId].submitted_count++;
     }

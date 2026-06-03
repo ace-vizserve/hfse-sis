@@ -120,7 +120,10 @@ export async function GET(
   });
   const submittedCount = activeStudents.filter((s) => {
     if (!s.studentId) return false;
-    return writeupsByStudent.get(s.studentId)?.submitted === true;
+    const w = writeupsByStudent.get(s.studentId);
+    // Submitted AND non-empty — an emptied write-up is "missing", not submitted
+    // (without this it double-counts as both missing and submitted, skewing drafted).
+    return w?.submitted === true && !!w.writeup && w.writeup.trim().length > 0;
   }).length;
   const draftedCount =
     activeStudents.length - missingEvaluations.length - submittedCount;
