@@ -41,8 +41,12 @@ export const WITHDRAWAL_REASON_MAX = 200;
 
 export const EnrolmentMetadataSchema = z
   .object({
-    bus_no: optionalText(40),
-    classroom_officer_role: optionalText(80),
+    // `.optional()` so partial PATCHes (e.g. the late-enrollee term override or
+    // the mid-term prompt, which send only their own field) validate. The route
+    // only writes these when present (`'bus_no' in parsed.data`), so omitting
+    // them leaves the stored values untouched.
+    bus_no: optionalText(40).optional(),
+    classroom_officer_role: optionalText(80).optional(),
     enrollment_status: z.enum(ENROLLMENT_STATUS_VALUES).optional(),
     // Structured withdrawal reason — required on the → withdrawn boundary.
     withdrawal_reason: z.enum(WITHDRAWAL_REASON_VALUES).nullable().optional(),
