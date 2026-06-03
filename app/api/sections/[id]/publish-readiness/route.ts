@@ -50,7 +50,7 @@ export async function GET(
       .order('index_number'),
     service
       .from('grading_sheets')
-      .select('id, is_locked, slot_labels, subject:subjects(id, name)')
+      .select('id, is_locked, subject:subjects(id, name)')
       .eq('section_id', sectionId)
       .eq('term_id', termId),
   ]);
@@ -64,59 +64,43 @@ export async function GET(
       name: s ? `${s.last_name}, ${s.first_name}` : '(unknown)',
     };
   });
-  type SlotMeta = {
-    label?: string | null;
-    date?: string | null;
-    page?: string | null;
-  };
   const sheetList = (sheets ?? []).map((sh) => {
     const subj = Array.isArray(sh.subject) ? sh.subject[0] : sh.subject;
     return {
       id: sh.id,
       is_locked: sh.is_locked,
       subject_name: subj?.name ?? '(unknown)',
-      slot_labels: sh.slot_labels as {
-        ww?: (SlotMeta | null)[];
-        pt?: (SlotMeta | null)[];
-      } | null,
     };
   });
   const unlockedSheets = sheetList.filter((s) => !s.is_locked);
 
-  // 4+5) Write-ups, attendance, and slot-date check all depend on prior results — fetch in parallel.
+  // 4+5) Write-ups (T1–T3 only — T4 has no FCA comment block per KD #49, so
+  // skip the check there) and attendance — fetch in parallel.
   const studentIds = activeStudents
     .map((s) => s.studentId)
     .filter((id): id is string => !!id);
   const sectionStudentIds = activeStudents.map((s) => s.sectionStudentId);
-  const sheetIds = sheetList.map((s) => s.id);
 
-  const [{ data: writeupRows }, { data: attendanceRows }, { data: scoreRows }] =
-    await Promise.all([
-      studentIds.length > 0
-        ? // Match by the section's current active roster (student_id), NOT the
-          // write-up's denormalized section_id — that tag doesn't follow a
-          // mid-year transfer (KD #67), so a transferred student's write-up would
-          // be wrongly reported "missing" for their new section.
-          service
-            .from('evaluation_writeups')
-            .select('student_id, writeup, submitted')
-            .eq('term_id', termId)
-            .in('student_id', studentIds)
-        : Promise.resolve({ data: [] as unknown[] }),
-      sectionStudentIds.length > 0
-        ? service
-            .from('attendance_records')
-            .select('section_student_id, school_days, days_present, days_late')
-            .eq('term_id', termId)
-            .in('section_student_id', sectionStudentIds)
-        : Promise.resolve({ data: [] as unknown[] }),
-      sheetIds.length > 0
-        ? service
-            .from('grade_entries')
-            .select('grading_sheet_id, ww_scores, pt_scores')
-            .in('grading_sheet_id', sheetIds)
-        : Promise.resolve({ data: [] as unknown[] }),
-    ]);
+  const [{ data: writeupRows }, { data: attendanceRows }] = await Promise.all([
+    !isT4 && studentIds.length > 0
+      ? // Match by the section's current active roster (student_id), NOT the
+        // write-up's denormalized section_id — that tag doesn't follow a
+        // mid-year transfer (KD #67), so a transferred student's write-up would
+        // be wrongly reported "missing" for their new section.
+        service
+          .from('evaluation_writeups')
+          .select('student_id, writeup, submitted')
+          .eq('term_id', termId)
+          .in('student_id', studentIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+    sectionStudentIds.length > 0
+      ? service
+          .from('attendance_records')
+          .select('section_student_id, school_days, days_present, days_late')
+          .eq('term_id', termId)
+          .in('section_student_id', sectionStudentIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+  ]);
 
   type WriteupLite = {
     student_id: string;
@@ -162,44 +146,7 @@ export async function GET(
     );
   });
 
-  // 6) Slot activity-date check: sheets where a scored WW/PT slot has no administered date.
-  //    Soft warning only — does not block publishing (KD #28).
-  type ScoreRow = {
-    grading_sheet_id: string;
-    ww_scores: (number | null)[] | null;
-    pt_scores: (number | null)[] | null;
-  };
-  const entriesBySheet = new Map<string, ScoreRow[]>();
-  for (const e of (scoreRows ?? []) as ScoreRow[]) {
-    if (!entriesBySheet.has(e.grading_sheet_id))
-      entriesBySheet.set(e.grading_sheet_id, []);
-    entriesBySheet.get(e.grading_sheet_id)!.push(e);
-  }
-  const sheetsWithUndatedScores: { subject_name: string }[] = [];
-  for (const sh of sheetList) {
-    if (!sh.slot_labels) continue;
-    const entries = entriesBySheet.get(sh.id) ?? [];
-    let found = false;
-    for (let i = 0; i < (sh.slot_labels.ww?.length ?? 0) && !found; i++) {
-      const slot = sh.slot_labels.ww?.[i];
-      if (!slot?.label || slot.date) continue; // unused or already dated
-      if (entries.some((e) => e.ww_scores != null && e.ww_scores[i] != null))
-        found = true;
-    }
-    for (let i = 0; i < (sh.slot_labels.pt?.length ?? 0) && !found; i++) {
-      const slot = sh.slot_labels.pt?.[i];
-      if (!slot?.label || slot.date) continue;
-      if (entries.some((e) => e.pt_scores != null && e.pt_scores[i] != null))
-        found = true;
-    }
-    if (found) sheetsWithUndatedScores.push({ subject_name: sh.subject_name });
-  }
-  const slotDates = {
-    sheets_missing_count: sheetsWithUndatedScores.length,
-    sheets: sheetsWithUndatedScores,
-  };
-
-  // 7) T4-specific: all four terms locked + annual grades present
+  // 6) T4-specific: all four terms locked + annual grades present
   let t4Readiness = null;
   if (isT4) {
     const { data: allTerms } = await service
@@ -282,7 +229,14 @@ export async function GET(
     // Build map: student × subject → [t1, t2, t3, t4] quarterly grades.
     // Fix: iterate activeStudents × examinableSubjectNames (not gradeMap.keys()) so
     // students with zero entry rows at all are caught and not silently skipped.
-    const gradeMap = new Map<string, Map<string, (number | null)[]>>();
+    type GradeCell = { q: number | null; na: boolean };
+    const blankCells = (): GradeCell[] => [
+      { q: null, na: false },
+      { q: null, na: false },
+      { q: null, na: false },
+      { q: null, na: false },
+    ];
+    const gradeMap = new Map<string, Map<string, GradeCell[]>>();
     for (const e of entries) {
       const gs = Array.isArray(e.grading_sheet)
         ? e.grading_sheet[0]
@@ -297,8 +251,11 @@ export async function GET(
       const subjKey = subj.name;
       if (!gradeMap.has(studentKey)) gradeMap.set(studentKey, new Map());
       const subjMap = gradeMap.get(studentKey)!;
-      if (!subjMap.has(subjKey)) subjMap.set(subjKey, [null, null, null, null]);
-      subjMap.get(subjKey)![termObj.term_number - 1] = e.quarterly_grade;
+      if (!subjMap.has(subjKey)) subjMap.set(subjKey, blankCells());
+      subjMap.get(subjKey)![termObj.term_number - 1] = {
+        q: e.quarterly_grade,
+        na: e.is_na,
+      };
     }
 
     const missingAnnual: {
@@ -309,14 +266,11 @@ export async function GET(
     for (const s of activeStudents) {
       if (!s.studentId) continue;
       for (const subjName of examinableSubjectNames) {
-        const grades = gradeMap.get(s.studentId)?.get(subjName) ?? [
-          null,
-          null,
-          null,
-          null,
-        ];
+        const grades = gradeMap.get(s.studentId)?.get(subjName) ?? blankCells();
+        // An N/A term (late enrollee) has a null quarterly but is excluded
+        // from computeAnnualGrade — so it is NOT a missing grade.
         const missing = grades
-          .map((g, i) => (g == null ? i + 1 : null))
+          .map((c, i) => (c.q == null && !c.na ? i + 1 : null))
           .filter((t): t is number => t !== null);
         if (missing.length > 0) {
           missingAnnual.push({
@@ -400,17 +354,25 @@ export async function GET(
       locked: sheetList.length - unlockedSheets.length,
       unlocked: unlockedSheets.map((s) => ({ subject_name: s.subject_name })),
     },
-    // Adviser-comment readiness (KD #49). Sourced from `evaluation_writeups`
-    // since migration 024 retired `report_card_comments`.
-    evaluations: {
-      total_active: activeStudents.length,
-      submitted: submittedCount,
-      drafted: draftedCount,
-      missing: missingEvaluations.map((s) => ({
-        name: s.name,
-        index: s.indexNumber,
-      })),
-    },
+    // Adviser-comment readiness (KD #49) — sourced from `evaluation_writeups`
+    // since migration 024 retired `report_card_comments`. T1–T3 only: the T4
+    // final card has no FCA comment block, so report it as nothing-to-do.
+    evaluations: isT4
+      ? {
+          total_active: activeStudents.length,
+          submitted: 0,
+          drafted: 0,
+          missing: [] as { name: string; index: number | null }[],
+        }
+      : {
+          total_active: activeStudents.length,
+          submitted: submittedCount,
+          drafted: draftedCount,
+          missing: missingEvaluations.map((s) => ({
+            name: s.name,
+            index: s.indexNumber,
+          })),
+        },
     attendance: {
       total_active: activeStudents.length,
       complete: activeStudents.length - missingAttendance.length,
@@ -419,7 +381,6 @@ export async function GET(
         index: s.indexNumber,
       })),
     },
-    slot_dates: slotDates,
     t4_readiness: t4Readiness,
     virtue_readiness: virtueReadiness,
   });

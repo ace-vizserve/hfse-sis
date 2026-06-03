@@ -68,10 +68,6 @@ type ChecklistData = {
     complete: number;
     missing: { name: string; index: number | null }[];
   };
-  slot_dates: {
-    sheets_missing_count: number;
-    sheets: { subject_name: string }[];
-  };
   t4_readiness: {
     all_terms_locked: boolean;
     unlocked_terms: { term_number: number; subjects: string[] }[];
@@ -327,7 +323,6 @@ export function PublishWindowPanel({
         data.evaluations.missing.length > 0 ||
         data.evaluations.drafted > 0 ||
         data.attendance.missing.length > 0 ||
-        data.slot_dates.sheets_missing_count > 0 ||
         (data.virtue_readiness && !data.virtue_readiness.ok) ||
         (data.t4_readiness &&
           (!data.t4_readiness.all_terms_locked ||
@@ -365,9 +360,10 @@ export function PublishWindowPanel({
   const sheetsOk = checklist
     ? checklist.grading_sheets.unlocked.length === 0
     : true;
-  const slotDatesOk = checklist
-    ? checklist.slot_dates.sheets_missing_count === 0
-    : true;
+  // Adviser comments are a T1–T3 concern only (no FCA block on the T4 final
+  // card, KD #49). The route reports neutral on T4, but we also hide the row
+  // there — t4_readiness is non-null exactly on the T4 publish path.
+  const isT4Checklist = checklist?.t4_readiness != null;
   // commentsOk is true only when nothing is missing AND nothing is still drafted.
   // drafted > 0 renders as an amber warning so the registrar sees unfinished writeups.
   const commentsOk = checklist
@@ -602,32 +598,25 @@ export function PublishWindowPanel({
                 actionLabel={sheetsOk ? 'View' : 'Lock sheets'}
               />
 
-              <ChecklistRow
-                passed={slotDatesOk}
-                title="Administered dates"
-                summary={
-                  slotDatesOk
-                    ? 'All recorded'
-                    : `${checklist.slot_dates.sheets_missing_count} missing`
-                }
-                href={`/markbook/grading?q=${encodeURIComponent(sectionName)}`}
-                actionLabel={slotDatesOk ? 'View' : 'Add dates'}
-              />
-
-              <ChecklistRow
-                passed={commentsOk}
-                title="Adviser comments"
-                summary={(() => {
-                  const { submitted, drafted, missing } = checklist.evaluations;
-                  if (missing.length > 0 && drafted > 0)
-                    return `${missing.length} missing · ${drafted} drafted`;
-                  if (missing.length > 0) return `${missing.length} missing`;
-                  if (drafted > 0) return `${drafted} drafted`;
-                  return `${submitted} submitted`;
-                })()}
-                href={`/evaluation/sections/${sectionId}`}
-                actionLabel={commentsOk ? 'View' : 'Review comments'}
-              />
+              {/* Adviser comments — T1–T3 only (T4 final card has no FCA
+                  comment block, KD #49). */}
+              {!isT4Checklist && (
+                <ChecklistRow
+                  passed={commentsOk}
+                  title="Adviser comments"
+                  summary={(() => {
+                    const { submitted, drafted, missing } =
+                      checklist.evaluations;
+                    if (missing.length > 0 && drafted > 0)
+                      return `${missing.length} missing · ${drafted} drafted`;
+                    if (missing.length > 0) return `${missing.length} missing`;
+                    if (drafted > 0) return `${drafted} drafted`;
+                    return `${submitted} submitted`;
+                  })()}
+                  href={`/evaluation/sections/${sectionId}`}
+                  actionLabel={commentsOk ? 'View' : 'Review comments'}
+                />
+              )}
 
               <ChecklistRow
                 passed={attendanceOk}
