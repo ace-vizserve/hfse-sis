@@ -204,6 +204,7 @@ export default async function ReportCardsListPage({
 
   // Section-detail data (only when a section is selected)
   let selectedLabel: string | null = null;
+  let selectedLevelId: string | null = null;
   let rosterRows: ReportCardsRosterRow[] = [];
   let activeCount = 0;
   let publishedCount = 0;
@@ -212,14 +213,18 @@ export default async function ReportCardsListPage({
   if (q.section_id) {
     const { data: sec } = await supabase
       .from('sections')
-      .select('id, name, level:levels(label)')
+      .select('id, name, level:levels(id, label)')
       .eq('id', q.section_id)
       .single();
     if (sec) {
       const lvl = first(
-        sec.level as { label: string } | { label: string }[] | null
+        sec.level as
+          | { id: string; label: string }
+          | { id: string; label: string }[]
+          | null
       );
       selectedLabel = `${lvl?.label ?? ''} ${sec.name}`.trim();
+      selectedLevelId = lvl?.id ?? null;
     }
 
     const { data: enrolments } = await supabase
@@ -438,7 +443,7 @@ export default async function ReportCardsListPage({
           {selectedLabel && termList.length > 0 && (
             <PublishWindowPanel
               sectionId={q.section_id}
-              sectionName={selectedLabel}
+              levelId={selectedLevelId}
               terms={termList}
             />
           )}

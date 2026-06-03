@@ -223,11 +223,13 @@ function ChecklistRow({
 
 export function PublishWindowPanel({
   sectionId,
-  sectionName,
+  levelId,
   terms,
 }: {
   sectionId: string;
-  sectionName: string;
+  /** Level the section belongs to — needed for the precise Masterfile
+   *  deep-link (`?level=` is required there; `?class=` filters within it). */
+  levelId: string | null;
   terms: Term[];
 }) {
   const router = useRouter();
@@ -413,6 +415,13 @@ export function PublishWindowPanel({
     statusCounts[statusOf(publications.find((p) => p.term_id === term.id))] +=
       1;
   }
+
+  // Canonical deep-links (KD #81). Grading filters by the exact section id;
+  // Masterfile needs the level (it falls back to the first level otherwise).
+  const gradingHref = `/markbook/grading?section=${sectionId}`;
+  const masterfileHref = levelId
+    ? `/markbook/masterfile?level=${levelId}&class=${sectionId}`
+    : '/markbook/masterfile';
 
   return (
     <Card className="@container/card gap-0 py-0">
@@ -668,7 +677,7 @@ export function PublishWindowPanel({
                     ? `${checklist.grading_sheets.total} locked`
                     : `${checklist.grading_sheets.unlocked.length} unlocked`
                 }
-                href={`/markbook/grading?q=${encodeURIComponent(sectionName)}`}
+                href={gradingHref}
                 actionLabel={sheetsOk ? 'View' : 'Lock sheets'}
               />
 
@@ -730,7 +739,7 @@ export function PublishWindowPanel({
                         ? '4 of 4'
                         : `${checklist.t4_readiness.unlocked_terms.length} unlocked`
                     }
-                    href={`/markbook/grading?q=${encodeURIComponent(sectionName)}`}
+                    href={gradingHref}
                     actionLabel={t4LockedOk ? 'View' : 'Lock prior terms'}
                   />
 
@@ -742,7 +751,7 @@ export function PublishWindowPanel({
                         ? 'All present'
                         : `${checklist.t4_readiness.missing_annual_count} missing`
                     }
-                    href={`/markbook/grading?q=${encodeURIComponent(sectionName)}`}
+                    href={gradingHref}
                     actionLabel={t4GradesOk ? 'View' : 'Backfill grades'}
                   />
 
@@ -754,7 +763,7 @@ export function PublishWindowPanel({
                         ? 'All confirmed'
                         : `${checklist.t4_readiness.non_examinable_readiness.missing_count} not confirmed`
                     }
-                    href="/markbook/masterfile"
+                    href={masterfileHref}
                     actionLabel={nonExamOk ? 'View' : 'Confirm final grades'}
                   />
 

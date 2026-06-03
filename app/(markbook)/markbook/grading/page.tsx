@@ -281,7 +281,12 @@ export default async function GradingListPage({
       });
   }
 
-  const allRows = (sheets ?? []) as SheetRow[];
+  // `?section=<id>` deep-link (KD #81) — scope the whole page (rows + stat
+  // cards) to one section's sheets. Falls through to all sheets when absent.
+  const allRowsUnscoped = (sheets ?? []) as SheetRow[];
+  const allRows = sp?.section
+    ? allRowsUnscoped.filter((s) => first(s.section)?.id === sp.section)
+    : allRowsUnscoped;
 
   // Resolve teacher assignments for the visible sections via
   // `teacher_assignments` (KD #3 — canonical source for SIS-Admin's
