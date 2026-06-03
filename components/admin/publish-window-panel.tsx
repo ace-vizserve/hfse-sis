@@ -1,22 +1,14 @@
 'use client';
 
 import {
+  AlertTriangle,
   ArrowRight,
   ArrowUpRight,
-  BookOpen,
-  Building2,
-  CalendarCheck2,
-  CalendarDays,
   CheckCircle2,
-  ClipboardCheck,
   Clock,
-  FileCheck2,
-  GraduationCap,
   Loader2,
-  MessageSquare,
   Share2,
   X,
-  XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -45,7 +37,6 @@ import {
 } from '@/components/ui/card';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 type Term = { id: string; term_number: number; label: string };
 
@@ -168,97 +159,56 @@ function fmt(iso: string): string {
   });
 }
 
-// One row in the publishing checklist. Each row carries:
-//   - A status-tinted gradient icon tile (mint for passed, amber for
-//     warning) so the eye picks out failing rows at a glance.
-//   - The check title + summary line + optional detail (subjects /
-//     student names).
-//   - A quick-link button on the right that deep-links into the module
-//     where the registrar can fix the issue. Always rendered so the
-//     dialog doubles as a navigation hub — even passing rows let the
-//     registrar verify in one click.
+// One compact row in the publishing checklist — a triage line, not a card.
+// The detail (which subjects / which students) lives one click away in the
+// module the link points to, so each row only flags the check, its count,
+// and the deep-link. A mint check / amber warning icon carries the state
+// (shape, not colour alone). Passing rows keep a quiet "View" link so the
+// dialog still doubles as a navigation hub.
 function ChecklistRow({
   passed,
-  icon: Icon,
-  eyebrow,
   title,
   summary,
-  detail,
-  studentList,
   href,
   actionLabel,
 }: {
   passed: boolean;
-  icon: React.ComponentType<{ className?: string }>;
-  eyebrow: string;
   title: string;
   summary: string;
-  detail?: string;
-  studentList?: { name: string; index: number | null }[];
   href: string;
   actionLabel: string;
 }) {
-  const tileClass = passed
-    ? 'bg-gradient-to-br from-brand-mint to-brand-sky shadow-brand-tile-mint'
-    : 'bg-gradient-to-br from-brand-amber to-brand-amber/80 shadow-brand-tile-amber';
-
   return (
-    <div className="rounded-xl border border-hairline bg-card p-3.5 ring-1 ring-inset ring-border/40">
-      <div className="flex items-start gap-3">
-        {/* Status icon tile — mint→sky gradient when passed, amber when
-            warning. shadow-brand-tile-{mint,amber} per non-flat T1 tile
-            recipe (09a-design-patterns.md §8). */}
-        <div
-          className={`flex size-9 shrink-0 items-center justify-center rounded-xl text-white ${tileClass}`}
-        >
-          <Icon className="size-4" />
-        </div>
-        <div className="min-w-0 flex-1 space-y-1">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            {eyebrow}
-          </p>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="font-serif text-[15px] font-semibold leading-tight tracking-tight text-foreground">
-              {title}
-            </p>
-            <Badge variant={passed ? 'success' : 'warning'} className="h-5">
-              {passed ? <CheckCircle2 /> : <XCircle />}
-              {summary}
-            </Badge>
-          </div>
-          {detail && (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {detail}
-            </p>
-          )}
-          {studentList && studentList.length > 0 && (
-            <ScrollArea className="mt-1 h-20">
-              <ul className="space-y-0.5 pr-3 text-xs text-muted-foreground">
-                {studentList.map((s, i) => (
-                  <li key={i} className="tabular-nums">
-                    {s.index != null && (
-                      <span className="mr-1.5 font-mono text-[10px] text-hairline-strong">
-                        #{s.index}
-                      </span>
-                    )}
-                    {s.name}
-                  </li>
-                ))}
-              </ul>
-            </ScrollArea>
-          )}
-        </div>
-        {/* Quick-link button — deep-links into the relevant module surface
-            so the registrar can jump straight to the fix without losing
-            their place. Navigating away dismisses the dialog naturally;
-            re-publish trigger picks up the fixed state. */}
-        <Button asChild size="sm" variant="outline" className="shrink-0">
-          <Link href={href}>
-            {actionLabel}
-            <ArrowUpRight className="size-3" />
-          </Link>
-        </Button>
-      </div>
+    <div className="flex items-center gap-3 py-2.5">
+      {passed ? (
+        <CheckCircle2 className="size-4 shrink-0 text-brand-mint" aria-hidden />
+      ) : (
+        <AlertTriangle
+          className="size-4 shrink-0 text-brand-amber"
+          aria-hidden
+        />
+      )}
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+        {title}
+      </span>
+      <span
+        className={`shrink-0 text-xs tabular-nums ${
+          passed ? 'text-muted-foreground' : 'font-medium text-brand-amber'
+        }`}
+      >
+        {summary}
+      </span>
+      <Button
+        asChild
+        size="sm"
+        variant={passed ? 'ghost' : 'outline'}
+        className="shrink-0"
+      >
+        <Link href={href}>
+          {actionLabel}
+          <ArrowUpRight className="size-3" />
+        </Link>
+      </Button>
     </div>
   );
 }
@@ -624,8 +574,8 @@ export function PublishWindowPanel({
           }
         }}
       >
-        <AlertDialogContent className="max-w-2xl!">
-          <AlertDialogHeader>
+        <AlertDialogContent className="flex max-h-[85dvh] max-w-2xl! flex-col overflow-hidden">
+          <AlertDialogHeader className="shrink-0">
             <AlertDialogTitle className="font-serif text-[22px] font-semibold tracking-tight">
               Publishing checklist
             </AlertDialogTitle>
@@ -638,22 +588,15 @@ export function PublishWindowPanel({
           </AlertDialogHeader>
 
           {checklist && (
-            <div className="space-y-2.5">
-              {/* Core three checks — same scope across every term. */}
+            <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto">
+              {/* Core checks — same scope across every term. */}
               <ChecklistRow
                 passed={sheetsOk}
-                icon={FileCheck2}
-                eyebrow="Markbook"
                 title="Grading sheets"
                 summary={
                   sheetsOk
                     ? `${checklist.grading_sheets.total} locked`
                     : `${checklist.grading_sheets.unlocked.length} unlocked`
-                }
-                detail={
-                  sheetsOk
-                    ? `All ${checklist.grading_sheets.total} sheet${checklist.grading_sheets.total === 1 ? '' : 's'} locked and ready to publish.`
-                    : `Unlocked subject${checklist.grading_sheets.unlocked.length === 1 ? '' : 's'}: ${checklist.grading_sheets.unlocked.map((s) => s.subject_name).join(', ')}`
                 }
                 href={`/markbook/grading?q=${encodeURIComponent(sectionName)}`}
                 actionLabel={sheetsOk ? 'View' : 'Lock sheets'}
@@ -661,18 +604,11 @@ export function PublishWindowPanel({
 
               <ChecklistRow
                 passed={slotDatesOk}
-                icon={CalendarDays}
-                eyebrow="Markbook · Activity dates"
                 title="Administered dates"
                 summary={
                   slotDatesOk
                     ? 'All recorded'
-                    : `${checklist.slot_dates.sheets_missing_count} sheet${checklist.slot_dates.sheets_missing_count === 1 ? '' : 's'} with scores missing a date`
-                }
-                detail={
-                  slotDatesOk
-                    ? 'Every scored activity slot has an administered date on record.'
-                    : `Scored slots without a date won't show the correct activity date on the score record. Subject${checklist.slot_dates.sheets.length === 1 ? '' : 's'}: ${checklist.slot_dates.sheets.map((s) => s.subject_name).join(', ')}`
+                    : `${checklist.slot_dates.sheets_missing_count} missing`
                 }
                 href={`/markbook/grading?q=${encodeURIComponent(sectionName)}`}
                 actionLabel={slotDatesOk ? 'View' : 'Add dates'}
@@ -680,8 +616,6 @@ export function PublishWindowPanel({
 
               <ChecklistRow
                 passed={commentsOk}
-                icon={MessageSquare}
-                eyebrow="Evaluation"
                 title="Adviser comments"
                 summary={(() => {
                   const { submitted, drafted, missing } = checklist.evaluations;
@@ -691,40 +625,17 @@ export function PublishWindowPanel({
                   if (drafted > 0) return `${drafted} drafted`;
                   return `${submitted} submitted`;
                 })()}
-                detail={
-                  commentsOk
-                    ? `All ${checklist.evaluations.total_active} active student comment${checklist.evaluations.total_active === 1 ? '' : 's'} submitted.`
-                    : checklist.evaluations.drafted > 0 &&
-                        checklist.evaluations.missing.length === 0
-                      ? `${checklist.evaluations.drafted} comment${checklist.evaluations.drafted === 1 ? '' : 's'} saved as draft — teacher hasn't submitted yet.`
-                      : undefined
-                }
-                studentList={
-                  checklist.evaluations.missing.length > 0
-                    ? checklist.evaluations.missing
-                    : undefined
-                }
                 href={`/evaluation/sections/${sectionId}`}
                 actionLabel={commentsOk ? 'View' : 'Review comments'}
               />
 
               <ChecklistRow
                 passed={attendanceOk}
-                icon={CalendarCheck2}
-                eyebrow="Attendance"
                 title="Attendance records"
                 summary={
                   attendanceOk
                     ? `${checklist.attendance.total_active} complete`
                     : `${checklist.attendance.missing.length} missing`
-                }
-                detail={
-                  attendanceOk
-                    ? `All ${checklist.attendance.total_active} active student record${checklist.attendance.total_active === 1 ? '' : 's'} marked.`
-                    : undefined
-                }
-                studentList={
-                  !attendanceOk ? checklist.attendance.missing : undefined
                 }
                 href={`/attendance/${sectionId}`}
                 actionLabel={attendanceOk ? 'View' : 'Mark attendance'}
@@ -734,15 +645,8 @@ export function PublishWindowPanel({
               {checklist.virtue_readiness && (
                 <ChecklistRow
                   passed={virtueOk}
-                  icon={BookOpen}
-                  eyebrow="Evaluation · Virtue theme"
                   title="Virtue theme"
                   summary={virtueOk ? 'Set' : 'Not set'}
-                  detail={
-                    virtueOk
-                      ? `The virtue theme for ${checklist.virtue_readiness.term_label} is configured — the FCA comment heading will display correctly.`
-                      : `No virtue theme is set for ${checklist.virtue_readiness.term_label}. The "(HFSE Virtues: …)" parenthetical will be missing from the report card.`
-                  }
                   href="/sis/ay-setup"
                   actionLabel={virtueOk ? 'View' : 'Set theme'}
                 />
@@ -751,33 +655,17 @@ export function PublishWindowPanel({
               {/* T4 final-card sub-checks — only render on the T4 publish path. */}
               {checklist.t4_readiness && (
                 <>
-                  <div className="flex items-center gap-3 pt-2">
-                    <div className="h-px flex-1 bg-border" />
-                    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                      Term 4 final card
-                    </p>
-                    <div className="h-px flex-1 bg-border" />
-                  </div>
+                  <p className="px-1 pt-3 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    Term 4 final card
+                  </p>
 
                   <ChecklistRow
                     passed={t4LockedOk}
-                    icon={ClipboardCheck}
-                    eyebrow="Markbook · T1–T4"
                     title="All terms locked"
                     summary={
                       t4LockedOk
-                        ? '4 of 4 locked'
+                        ? '4 of 4'
                         : `${checklist.t4_readiness.unlocked_terms.length} unlocked`
-                    }
-                    detail={
-                      t4LockedOk
-                        ? "Every term's grading sheets are locked — Final Grade can be computed."
-                        : checklist.t4_readiness.unlocked_terms
-                            .map(
-                              (t) =>
-                                `T${t.term_number}: ${t.subjects.join(', ')}`
-                            )
-                            .join(' · ')
                     }
                     href={`/markbook/grading?q=${encodeURIComponent(sectionName)}`}
                     actionLabel={t4LockedOk ? 'View' : 'Lock prior terms'}
@@ -785,27 +673,11 @@ export function PublishWindowPanel({
 
                   <ChecklistRow
                     passed={t4GradesOk}
-                    icon={FileCheck2}
-                    eyebrow="Markbook · Final grade"
                     title="Quarterly grades"
                     summary={
                       t4GradesOk
                         ? 'All present'
                         : `${checklist.t4_readiness.missing_annual_count} missing`
-                    }
-                    detail={
-                      t4GradesOk
-                        ? 'Every (student × subject) has Q1–Q4 grades for Final Grade computation.'
-                        : checklist.t4_readiness.missing_annual_grades
-                            .slice(0, 5)
-                            .map(
-                              (g) =>
-                                `${g.student_name} — ${g.subject_name} (T${g.missing_terms.join(',')})`
-                            )
-                            .join('; ') +
-                          (checklist.t4_readiness.missing_annual_count > 5
-                            ? ` … and ${checklist.t4_readiness.missing_annual_count - 5} more`
-                            : '')
                     }
                     href={`/markbook/grading?q=${encodeURIComponent(sectionName)}`}
                     actionLabel={t4GradesOk ? 'View' : 'Backfill grades'}
@@ -813,26 +685,11 @@ export function PublishWindowPanel({
 
                   <ChecklistRow
                     passed={nonExamOk}
-                    icon={GraduationCap}
-                    eyebrow="Markbook · Non-examinable"
-                    title="Final grades confirmed"
+                    title="Final grades (non-exam)"
                     summary={
                       nonExamOk
                         ? 'All confirmed'
                         : `${checklist.t4_readiness.non_examinable_readiness.missing_count} not confirmed`
-                    }
-                    detail={
-                      nonExamOk
-                        ? 'All non-examinable subjects (PE, Music, Arts, etc.) have a Final Grade confirmed for the year-end report card.'
-                        : 'The Final Grade column in the Masterfile must be confirmed for each student before publishing. ' +
-                          checklist.t4_readiness.non_examinable_readiness.missing
-                            .slice(0, 5)
-                            .map((g) => `${g.student_name} — ${g.subject_name}`)
-                            .join('; ') +
-                          (checklist.t4_readiness.non_examinable_readiness
-                            .missing_count > 5
-                            ? ` … and ${checklist.t4_readiness.non_examinable_readiness.missing_count - 5} more`
-                            : '')
                     }
                     href="/markbook/masterfile"
                     actionLabel={nonExamOk ? 'View' : 'Confirm final grades'}
@@ -840,15 +697,8 @@ export function PublishWindowPanel({
 
                   <ChecklistRow
                     passed={letterheadOk}
-                    icon={Building2}
-                    eyebrow="School config · Letterhead"
                     title="Report card letterhead"
                     summary={letterheadOk ? 'Complete' : 'Incomplete'}
-                    detail={
-                      letterheadOk
-                        ? 'Principal name, CEO name, and PEI registration number are all set.'
-                        : `Missing: ${checklist.t4_readiness.letterhead_readiness.missing_fields.join(', ')}. Blank fields produce empty signature lines on the final card.`
-                    }
                     href="/sis/admin/school-config"
                     actionLabel={letterheadOk ? 'View' : 'Complete config'}
                   />
@@ -857,7 +707,7 @@ export function PublishWindowPanel({
             </div>
           )}
 
-          <AlertDialogFooter>
+          <AlertDialogFooter className="shrink-0">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
