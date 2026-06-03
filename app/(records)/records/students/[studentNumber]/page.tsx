@@ -1,6 +1,3 @@
-import React from 'react';
-import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -10,10 +7,7 @@ import {
   Bus,
   CalendarCheck,
   Check,
-  CheckCircle2,
-  Circle,
   ClipboardList,
-  Clock,
   CreditCard,
   ExternalLink,
   FolderOpen,
@@ -22,7 +16,6 @@ import {
   Layers,
   LogOut,
   Mail,
-  Pencil,
   Phone,
   Pill,
   ShieldCheck,
@@ -35,8 +28,20 @@ import {
   Utensils,
   X,
 } from 'lucide-react';
+import Link from 'next/link';
+import { notFound, redirect } from 'next/navigation';
+import React from 'react';
 
+import { CompassionateAllowanceInline } from '@/components/sis/compassionate-allowance-inline';
+import { PlacementEditButton } from '@/components/sis/placement-edit-button';
+import { RecordsLitePage } from '@/components/sis/records-lite-page';
+import {
+  SectionTransferDialog,
+  type SiblingSection,
+} from '@/components/sis/section-transfer-dialog';
 import { StageStatusBadge } from '@/components/sis/status-badge';
+import { StpApplicationCard } from '@/components/sis/stp-application-card';
+import { StudentLifecycleTimeline } from '@/components/sis/student-lifecycle-timeline';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -50,6 +55,29 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { getCurrentAcademicYear } from '@/lib/academic-year';
+import {
+  computeAnnualGrade,
+  computeGeneralAverage,
+} from '@/lib/compute/annual';
+import {
+  DEFAULT_AWARD_THRESHOLDS,
+  subjectAward,
+  type AwardThresholds,
+} from '@/lib/compute/awards';
+import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
+import {
+  WITHDRAWAL_REASON_LABELS,
+  type WithdrawalReason,
+} from '@/lib/schemas/enrolment';
+import { getStudentLifecycle } from '@/lib/sis/process';
+import {
+  getEnrollmentHistory,
+  getStudentDetail,
+  type ApplicationRow,
+  type DocumentSlot,
+  type StatusRow,
+} from '@/lib/sis/queries';
 import {
   findStudentByNumber,
   getAcademicHistory,
@@ -62,45 +90,12 @@ import {
   type PlacementRow,
 } from '@/lib/sis/records-history';
 import {
-  computeAnnualGrade,
-  computeGeneralAverage,
-} from '@/lib/compute/annual';
-import {
-  subjectAward,
-  type AwardThresholds,
-  DEFAULT_AWARD_THRESHOLDS,
-} from '@/lib/compute/awards';
-import {
-  getEnrollmentHistory,
-  getStudentDetail,
-  DOCUMENT_SLOTS,
-  type ApplicationRow,
-  type DocumentSlot,
-  type StatusRow,
-} from '@/lib/sis/queries';
-import {
-  WITHDRAWAL_REASON_LABELS,
-  type WithdrawalReason,
-} from '@/lib/schemas/enrolment';
-import { getStudentLifecycle } from '@/lib/sis/process';
-import {
   getSectionTransfersForStudent,
   type SectionTransferEntry,
 } from '@/lib/sis/section-history';
 import { preloadTermsForAYs, termForDateInPreloaded } from '@/lib/sis/terms';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
-import { CompassionateAllowanceInline } from '@/components/sis/compassionate-allowance-inline';
-import { EnrolmentEditSheet } from '@/components/sis/enrolment-edit-sheet';
-import { StpApplicationCard } from '@/components/sis/stp-application-card';
-import { StudentLifecycleTimeline } from '@/components/sis/student-lifecycle-timeline';
-import {
-  SectionTransferDialog,
-  type SiblingSection,
-} from '@/components/sis/section-transfer-dialog';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
-import { RecordsLitePage } from '@/components/sis/records-lite-page';
 
 // Canonical CardAction gradient tile — indigo→navy with brand-tile glow.
 // Used as the top-right icon affordance on every Card across the page so the
@@ -679,6 +674,7 @@ function PlacementSection({
                   // fall back to date-derived term from enrollment_date
                   // (which the PATCH route refreshes on the active →
                   // late_enrollee transition). Non-late rows skip the lookup.
+
                   const lateTermResult: {
                     termNumber: number;
                     termLabel: string;
@@ -714,6 +710,7 @@ function PlacementSection({
                     isCurrentAy &&
                     r.enrollmentStatus === 'active' &&
                     currentEnroleeNumber !== null;
+
                   return (
                     <React.Fragment
                       key={`${r.ayCode}-${r.sectionName}-${r.indexNumber}`}
@@ -760,7 +757,7 @@ function PlacementSection({
                         <td className="py-2">
                           <div className="flex items-center gap-1">
                             {isEditable && (
-                              <EnrolmentEditSheet
+                              <PlacementEditButton
                                 sectionId={r.sectionId}
                                 enrolmentId={r.enrolmentId}
                                 ayCode={r.ayCode}
@@ -776,19 +773,7 @@ function PlacementSection({
                                   late_enrollee_term_number:
                                     r.lateEnrolleTermNumber ?? null,
                                 }}
-                              >
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 px-2"
-                                  title="Edit enrolment details"
-                                >
-                                  <Pencil className="size-3" />
-                                  <span className="sr-only">
-                                    Edit enrolment
-                                  </span>
-                                </Button>
-                              </EnrolmentEditSheet>
+                              />
                             )}
                             {isTransferable && (
                               <SectionTransferDialog
