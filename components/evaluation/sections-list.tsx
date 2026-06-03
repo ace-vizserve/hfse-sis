@@ -1,19 +1,16 @@
 'use client';
 
-import { CheckCircle2, SquarePen } from 'lucide-react';
-import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
+import { ClipboardList } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
+import { DataTable } from '@/components/ui/data-table';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  type FacetConfig,
+  type StatusTabConfig,
+} from '@/components/ui/data-table/types';
+import { IdentifierLink } from '@/components/ui/identifier-link';
+import { StatusBadge } from '@/components/ui/status-badge';
 
 export type SectionCardData = {
   id: string;
@@ -26,6 +23,141 @@ export type SectionCardData = {
 
 export type LevelOption = { id: string; code: string; label: string };
 
+type WriteupStatus = 'not_started' | 'in_progress' | 'complete';
+
+// Flat, filterable row — replaces the old per-level card grid. The grouping is
+// now a Level facet, and "where do I still owe write-ups" is the status-tab
+// split (Not started / In progress / Complete) so the registrar can sort/filter
+// instead of scanning cards.
+type EvalSectionRow = {
+  id: string;
+  name: string;
+  levelLabel: string;
+  active: number;
+  submitted: number;
+  percent: number;
+  status: WriteupStatus;
+};
+
+const STATUS_LABEL: Record<WriteupStatus, string> = {
+  not_started: 'Not started',
+  in_progress: 'In progress',
+  complete: 'Complete',
+};
+
+function deriveRow(s: SectionCardData): EvalSectionRow {
+  const percent =
+    s.active === 0 ? 0 : Math.round((s.submitted / s.active) * 100);
+  const status: WriteupStatus =
+    s.active > 0 && s.submitted === s.active
+      ? 'complete'
+      : s.submitted > 0
+        ? 'in_progress'
+        : 'not_started';
+  return {
+    id: s.id,
+    name: s.name,
+    levelLabel: s.levelLabel ?? 'Unknown level',
+    active: s.active,
+    submitted: s.submitted,
+    percent,
+    status,
+  };
+}
+
+function facetFilterFn(
+  row: { getValue: (id: string) => unknown },
+  id: string,
+  value: unknown
+) {
+  if (!value || (Array.isArray(value) && value.length === 0)) return true;
+  return Array.isArray(value)
+    ? value.includes(row.getValue(id))
+    : row.getValue(id) === value;
+}
+
+function buildColumns(selectedTermId: string): ColumnDef<EvalSectionRow>[] {
+  return [
+    {
+      accessorKey: 'name',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Section</SortableHeader>
+      ),
+      cell: ({ row }) => (
+        <IdentifierLink
+          href={`/evaluation/sections/${row.original.id}?term_id=${selectedTermId}`}
+        >
+          {row.original.name}
+        </IdentifierLink>
+      ),
+    },
+    {
+      accessorKey: 'levelLabel',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Level</SortableHeader>
+      ),
+      cell: ({ row }) => (
+        <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+          {row.original.levelLabel}
+        </span>
+      ),
+      filterFn: facetFilterFn,
+    },
+    {
+      id: 'writeups',
+      accessorFn: (row) => row.percent,
+      header: ({ column }) => (
+        <SortableHeader column={column}>Write-ups</SortableHeader>
+      ),
+      cell: ({ row }) => {
+        const { submitted, active, percent } = row.original;
+        return (
+          <div className="flex items-center gap-2.5">
+            <span className="font-mono text-[13px] tabular-nums text-foreground">
+              {submitted}
+              <span className="text-muted-foreground">/{active}</span>
+            </span>
+            <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+              <div
+                className={`h-full transition-all ${
+                  percent === 100 ? 'bg-brand-mint' : 'bg-brand-indigo/70'
+                }`}
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+            <span className="w-9 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+              {percent}%
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'status',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Status</SortableHeader>
+      ),
+      cell: ({ row }) => {
+        const st = row.original.status;
+        return (
+          <StatusBadge
+            tone={
+              st === 'complete'
+                ? 'healthy'
+                : st === 'in_progress'
+                  ? 'info'
+                  : 'muted'
+            }
+          >
+            {STATUS_LABEL[st]}
+          </StatusBadge>
+        );
+      },
+      filterFn: facetFilterFn,
+    },
+  ];
+}
+
 export function EvaluationSectionsList({
   sections,
   levels,
@@ -35,188 +167,64 @@ export function EvaluationSectionsList({
   levels: LevelOption[];
   selectedTermId: string;
 }) {
-  const [activeLevelId, setActiveLevelId] = useState<string | null>(null);
+  const rows = sections.map(deriveRow);
+  const columns = buildColumns(selectedTermId);
 
-  // When a level is active, show a flat filtered list.
-  // When showing all, group by level so the structure is clear.
-  const groups = useMemo(() => {
-    const source = activeLevelId
-      ? sections.filter((s) => s.levelId === activeLevelId)
-      : sections;
+  const facets: FacetConfig[] =
+    levels.length > 1
+      ? [
+          {
+            columnId: 'levelLabel',
+            label: 'Level',
+            valueOptions: levels.map((l) => l.label),
+          },
+        ]
+      : [];
 
-    if (activeLevelId) {
-      return [
-        {
-          levelId: activeLevelId,
-          levelLabel: levels.find((l) => l.id === activeLevelId)?.label ?? null,
-          sections: source,
-        },
-      ];
-    }
-
-    const map = new Map<
-      string,
-      { levelLabel: string | null; sections: SectionCardData[] }
-    >();
-    for (const s of source) {
-      const key = s.levelId ?? '__none__';
-      if (!map.has(key))
-        map.set(key, { levelLabel: s.levelLabel, sections: [] });
-      map.get(key)!.sections.push(s);
-    }
-    return Array.from(map.entries()).map(([levelId, g]) => ({ levelId, ...g }));
-  }, [sections, levels, activeLevelId]);
-
-  return (
-    <div className="space-y-6">
-      {levels.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          <FilterChip
-            active={activeLevelId === null}
-            onClick={() => setActiveLevelId(null)}
-          >
-            All
-          </FilterChip>
-          {levels.map((l) => (
-            <FilterChip
-              key={l.id}
-              active={activeLevelId === l.id}
-              onClick={() =>
-                setActiveLevelId(activeLevelId === l.id ? null : l.id)
-              }
-            >
-              {l.code}
-            </FilterChip>
-          ))}
-        </div>
-      )}
-
-      {groups.length === 0 ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          No sections for this level.
-        </p>
-      ) : (
-        <div className="space-y-6">
-          {groups.map((group) => (
-            <div key={group.levelId ?? 'none'} className="space-y-3">
-              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                {group.levelLabel ?? 'Unknown level'}
-                <span className="ml-2 text-muted-foreground/50">
-                  {group.sections.length}{' '}
-                  {group.sections.length === 1 ? 'section' : 'sections'}
-                </span>
-              </h3>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {group.sections.map((s) => (
-                  <SectionCard
-                    key={s.id}
-                    section={s}
-                    selectedTermId={selectedTermId}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SectionCard({
-  section: s,
-  selectedTermId,
-}: {
-  section: SectionCardData;
-  selectedTermId: string;
-}) {
-  const complete = s.active > 0 && s.submitted === s.active;
-  const started = s.submitted > 0;
-  const percent =
-    s.active === 0 ? 0 : Math.round((s.submitted / s.active) * 100);
+  const statusTabs: StatusTabConfig<EvalSectionRow>[] = [
+    { value: 'all', label: 'All', predicate: () => true, isDefault: true },
+    {
+      value: 'not_started',
+      label: 'Not started',
+      predicate: (r) => r.status === 'not_started',
+    },
+    {
+      value: 'in_progress',
+      label: 'In progress',
+      predicate: (r) => r.status === 'in_progress',
+    },
+    {
+      value: 'complete',
+      label: 'Complete',
+      predicate: (r) => r.status === 'complete',
+    },
+  ];
 
   return (
-    <Link
-      href={`/evaluation/sections/${s.id}?term_id=${selectedTermId}`}
-      className="group"
-    >
-      <Card className="@container/card h-full gap-3 transition-all group-hover:-translate-y-0.5 group-hover:border-brand-indigo/40 group-hover:shadow-sm">
-        <CardHeader>
-          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-            {s.levelLabel ?? 'Unknown level'}
-          </CardDescription>
-          <CardTitle className="font-serif text-lg font-semibold tracking-tight text-foreground">
-            {s.name}
-          </CardTitle>
-          <CardAction>
-            <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              <SquarePen className="size-4" />
-            </div>
-          </CardAction>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-baseline gap-2">
-            <span className="font-serif text-2xl font-semibold tabular-nums text-foreground">
-              {s.submitted}
-            </span>
-            <span className="text-sm text-muted-foreground">
-              / {s.active} submitted
-            </span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className={`h-full transition-all ${complete ? 'bg-brand-mint' : 'bg-brand-indigo/70'}`}
-              style={{ width: `${percent}%` }}
-            />
-          </div>
-        </CardContent>
-        <CardFooter>
-          {complete ? (
-            <Badge className="border-transparent bg-brand-mint text-foreground">
-              <CheckCircle2 className="mr-1 size-3" />
-              Complete
-            </Badge>
-          ) : started ? (
-            <Badge
-              variant="outline"
-              className="border-brand-indigo/30 bg-brand-indigo/5 text-brand-indigo"
-            >
-              In progress · {percent}%
-            </Badge>
-          ) : (
-            <Badge
-              variant="outline"
-              className="border-border bg-muted/40 text-muted-foreground"
-            >
-              Not started
-            </Badge>
-          )}
-        </CardFooter>
-      </Card>
-    </Link>
-  );
-}
-
-function FilterChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`h-7 rounded-md px-3 font-mono text-xs font-semibold uppercase tracking-[0.14em] transition-colors ${
-        active
-          ? 'bg-primary text-white shadow-sm'
-          : 'border border-border bg-card text-muted-foreground hover:border-brand-indigo/40 hover:text-foreground'
-      }`}
-    >
-      {children}
-    </button>
+    <DataTable<EvalSectionRow>
+      data={rows}
+      columns={columns}
+      getRowId={(row) => row.id}
+      searchKeys={['name', 'levelLabel']}
+      searchPlaceholder="Search section or level…"
+      facets={facets}
+      statusTabs={statusTabs}
+      initialSort={[
+        { id: 'levelLabel', desc: false },
+        { id: 'name', desc: false },
+      ]}
+      pageSize={25}
+      csv={{ filename: 'evaluation-sections.csv' }}
+      url={{ enabled: true }}
+      emptyState={{
+        icon: ClipboardList,
+        title: 'No sections to evaluate.',
+        body: 'Sections you advise (or, for registrars, all sections) appear here once the roster is synced for this term.',
+      }}
+      emptyFilteredState={{
+        title: 'No sections match the current filters.',
+        body: 'Try a different level or status, or clear the search.',
+      }}
+    />
   );
 }
