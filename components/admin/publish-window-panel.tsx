@@ -5,6 +5,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   CheckCircle2,
+  ClipboardCheck,
   Clock,
   Loader2,
   Share2,
@@ -30,13 +31,13 @@ import { Button } from '@/components/ui/button';
 import {
   Card,
   CardAction,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Skeleton } from '@/components/ui/skeleton';
 
 type Term = { id: string; term_number: number; label: string };
 
@@ -102,6 +103,16 @@ function statusOf(p: Publication | undefined): Status {
   return 'active';
 }
 
+// Order + labels for the status summary strip. Kept next to statusOf so the
+// strip counts and the per-row badges can never describe different states.
+const STATUS_ORDER: Status[] = ['active', 'scheduled', 'expired', 'none'];
+const STATUS_LABEL: Record<Status, string> = {
+  active: 'Published',
+  scheduled: 'Scheduled',
+  expired: 'Expired',
+  none: 'Not published',
+};
+
 function StatusBadge({ status }: { status: Status }) {
   switch (status) {
     case 'active':
@@ -128,8 +139,9 @@ function StatusBadge({ status }: { status: Status }) {
       return (
         <Badge
           variant="outline"
-          className="h-6 border-destructive/40 bg-gradient-to-b from-destructive/15 to-destructive/5 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive"
+          className="h-6 border-destructive/40 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive"
         >
+          <AlertTriangle className="h-3 w-3" />
           Expired
         </Badge>
       );
@@ -389,6 +401,19 @@ export function PublishWindowPanel({
     ? checklist.virtue_readiness.ok
     : true;
 
+  // Status summary for the meta strip — one tally per state, keyed on the same
+  // statusOf() the per-row badges use so the counts can't drift from the rows.
+  const statusCounts: Record<Status, number> = {
+    active: 0,
+    scheduled: 0,
+    expired: 0,
+    none: 0,
+  };
+  for (const term of terms) {
+    statusCounts[statusOf(publications.find((p) => p.term_id === term.id))] +=
+      1;
+  }
+
   return (
     <Card className="@container/card gap-0 py-0">
       <CardHeader className="border-b border-border py-5">
@@ -404,125 +429,163 @@ export function PublishWindowPanel({
           </div>
         </CardAction>
       </CardHeader>
-      <CardContent className="space-y-3 px-0 pt-0">
-        <p className="px-6 pt-4 text-sm text-muted-foreground">
-          Publish each term to parents within a time window. Parents sign in to
-          the parent portal and can only view terms with an active window.
-        </p>
 
-        {loading && (
-          <div className="flex items-center gap-2 px-6 pb-4 text-sm text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Loading publications…
-          </div>
-        )}
+      <p className="px-6 pt-4 text-sm leading-relaxed text-muted-foreground">
+        Parents sign in to the parent portal and see a term&apos;s report card
+        only while its window is active.
+      </p>
 
-        {!loading && (
-          <ul className="divide-y divide-border border-t border-border">
-            {terms.map((term) => {
-              const existing = publications.find((p) => p.term_id === term.id);
-              const status = statusOf(existing);
-              const isEditing = editingTermId === term.id;
+      {/* Status summary strip (§8 group-container pattern) — at-a-glance tally
+          of where the four terms stand. */}
+      <div className="mt-4 flex flex-wrap items-center gap-x-7 gap-y-2 border-y border-border bg-muted/30 px-6 py-3">
+        {STATUS_ORDER.map((s) => (
+          <span key={s} className="inline-flex items-baseline gap-1.5">
+            {loading ? (
+              <Skeleton className="h-5 w-5" />
+            ) : (
+              <span className="font-serif text-base font-semibold tabular-nums text-foreground">
+                {statusCounts[s]}
+              </span>
+            )}
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              {STATUS_LABEL[s]}
+            </span>
+          </span>
+        ))}
+      </div>
 
-              return (
-                <li key={term.id} className="px-6 py-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-center gap-3">
-                        <span className="font-serif text-base font-semibold tracking-tight text-foreground">
-                          {term.label}
-                        </span>
-                        <StatusBadge status={status} />
-                      </div>
-                      {existing && (
-                        <div className="inline-flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
-                          {fmt(existing.publish_from)}
-                          <ArrowRight className="size-3 text-hairline-strong" />
-                          {fmt(existing.publish_until)}
-                        </div>
-                      )}
+      {loading ? (
+        <ul className="divide-y divide-border">
+          {terms.map((term) => (
+            <li
+              key={term.id}
+              className="flex items-center justify-between px-6 py-4"
+            >
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-28" />
+                <Skeleton className="h-3 w-44" />
+              </div>
+              <Skeleton className="h-8 w-24 rounded-md" />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <ul className="divide-y divide-border">
+          {terms.map((term) => {
+            const existing = publications.find((p) => p.term_id === term.id);
+            const status = statusOf(existing);
+            const isEditing = editingTermId === term.id;
+
+            return (
+              <li key={term.id} className="px-6 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex items-center gap-3">
+                      <span className="font-serif text-base font-semibold tracking-tight text-foreground">
+                        {term.label}
+                      </span>
+                      <StatusBadge status={status} />
                     </div>
-                    {!isEditing && (
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant={existing ? 'outline' : 'default'}
-                          onClick={() => startEdit(term.id, existing)}
-                          disabled={busy}
-                        >
-                          {existing ? 'Edit window' : 'Publish'}
-                        </Button>
-                        {existing && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setPendingRevokeId(existing.id)}
-                            disabled={busy}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                            Revoke
-                          </Button>
-                        )}
+                    {existing ? (
+                      <div className="inline-flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
+                        <Clock
+                          className="size-3 text-hairline-strong"
+                          aria-hidden
+                        />
+                        {fmt(existing.publish_from)}
+                        <ArrowRight className="size-3 text-hairline-strong" />
+                        {fmt(existing.publish_until)}
                       </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        No window set — not visible to parents yet.
+                      </p>
                     )}
                   </div>
-
-                  {isEditing && (
-                    <div className="mt-4 rounded-lg border border-border bg-muted/30 p-4">
-                      <FieldGroup>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <Field>
-                            <FieldLabel htmlFor={`from-${term.id}`}>
-                              Publish from
-                            </FieldLabel>
-                            <DateTimePicker
-                              id={`from-${term.id}`}
-                              value={from}
-                              onChange={setFrom}
-                              placeholder="Start date & time"
-                            />
-                          </Field>
-                          <Field>
-                            <FieldLabel htmlFor={`until-${term.id}`}>
-                              Publish until
-                            </FieldLabel>
-                            <DateTimePicker
-                              id={`until-${term.id}`}
-                              value={until}
-                              onChange={setUntil}
-                              placeholder="End date & time"
-                            />
-                          </Field>
-                        </div>
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setEditingTermId(null)}
-                            disabled={busy}
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => handlePublish(term.id)}
-                            disabled={busy || !from || !until}
-                          >
-                            {busy && (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            )}
-                            {existing ? 'Update window' : 'Publish'}
-                          </Button>
-                        </div>
-                      </FieldGroup>
+                  {!isEditing && (
+                    <div className="flex shrink-0 gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => startEdit(term.id, existing)}
+                        disabled={busy}
+                      >
+                        {existing ? 'Edit window' : 'Publish'}
+                      </Button>
+                      {existing && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => setPendingRevokeId(existing.id)}
+                          disabled={busy}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Revoke
+                        </Button>
+                      )}
                     </div>
                   )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </CardContent>
+                </div>
+
+                {isEditing && (
+                  <div className="mt-4 rounded-lg border border-border bg-muted/40 p-4">
+                    <FieldGroup>
+                      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        {existing ? 'Edit window' : 'Set window'}
+                      </p>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <Field>
+                          <FieldLabel htmlFor={`from-${term.id}`}>
+                            Publish from
+                          </FieldLabel>
+                          <DateTimePicker
+                            id={`from-${term.id}`}
+                            value={from}
+                            onChange={setFrom}
+                            placeholder="Start date & time"
+                          />
+                        </Field>
+                        <Field>
+                          <FieldLabel htmlFor={`until-${term.id}`}>
+                            Publish until
+                          </FieldLabel>
+                          <DateTimePicker
+                            id={`until-${term.id}`}
+                            value={until}
+                            onChange={setUntil}
+                            placeholder="End date & time"
+                          />
+                        </Field>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setEditingTermId(null)}
+                          disabled={busy}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => handlePublish(term.id)}
+                          disabled={busy || !from || !until}
+                        >
+                          {busy && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          )}
+                          {existing ? 'Update window' : 'Publish'}
+                        </Button>
+                      </div>
+                    </FieldGroup>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       {/* Revoke confirmation */}
       <AlertDialog
@@ -542,7 +605,7 @@ export function PublishWindowPanel({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               onClick={async () => {
                 const id = pendingRevokeId;
                 setPendingRevokeId(null);
@@ -570,21 +633,32 @@ export function PublishWindowPanel({
           }
         }}
       >
-        <AlertDialogContent className="flex max-h-[85dvh] max-w-2xl! flex-col overflow-hidden">
-          <AlertDialogHeader className="shrink-0">
-            <AlertDialogTitle className="font-serif text-[22px] font-semibold tracking-tight">
-              Publishing checklist
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Some items need attention before publishing to parents. You can
-              still publish — these are warnings, not hard stops. Use the
-              quick-links to jump into each module and fix issues, then
-              re-publish.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+        <AlertDialogContent className="flex max-h-[85dvh] max-w-2xl! flex-col gap-0 overflow-hidden">
+          {/* Custom header — gradient tile + four type voices (mono eyebrow /
+              serif title / sans body). AlertDialogTitle + Description stay for
+              a11y; the AlertDialogHeader wrapper is skipped so the layout is
+              left-aligned with the icon tile. */}
+          <div className="flex shrink-0 items-start gap-3 pb-4">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <ClipboardCheck className="size-5" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Pre-publish check
+              </p>
+              <AlertDialogTitle className="font-serif text-[20px] font-semibold leading-tight tracking-tight">
+                Publishing checklist
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                A few items need attention before publishing to parents. These
+                are warnings, not hard stops — fix each via the quick-links, or
+                publish anyway.
+              </AlertDialogDescription>
+            </div>
+          </div>
 
           {checklist && (
-            <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto">
+            <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto border-t border-border">
               {/* Core checks — same scope across every term. */}
               <ChecklistRow
                 passed={sheetsOk}
@@ -696,7 +770,7 @@ export function PublishWindowPanel({
             </div>
           )}
 
-          <AlertDialogFooter className="shrink-0">
+          <AlertDialogFooter className="shrink-0 border-t border-border pt-4">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
