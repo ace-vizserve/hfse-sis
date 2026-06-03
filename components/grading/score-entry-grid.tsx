@@ -9,6 +9,13 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -89,6 +96,31 @@ function displayCell(v: number | null): string {
   return v == null ? '' : String(v);
 }
 
+// Non-examinable per-term override (KD #104). The single dropdown maps to two
+// columns: N/A → is_na, UG/E → letter_grade. '—' (NONE) clears both so the
+// derived A/B/C/IP shows. is_na wins over letter_grade (see resolveNonExaminableLetter).
+type OverrideChoice = 'NONE' | 'NA' | 'UG' | 'E';
+
+const OVERRIDE_CHOICE_TO_COLUMNS: Record<
+  OverrideChoice,
+  { is_na: boolean; letter_grade: string | null }
+> = {
+  NONE: { is_na: false, letter_grade: null },
+  NA: { is_na: true, letter_grade: null },
+  UG: { is_na: false, letter_grade: 'UG' },
+  E: { is_na: false, letter_grade: 'E' },
+};
+
+function rowToOverrideChoice(row: {
+  is_na: boolean;
+  letter_grade: string | null;
+}): OverrideChoice {
+  if (row.is_na) return 'NA';
+  if (row.letter_grade === 'UG') return 'UG';
+  if (row.letter_grade === 'E') return 'E';
+  return 'NONE';
+}
+
 export function ScoreEntryGrid({
   sheetId,
   wwTotals,
@@ -164,12 +196,18 @@ export function ScoreEntryGrid({
       entryId: string,
       target: Omit<ChangeReferenceTarget, 'sheetId' | 'entryId'>,
       body: Partial<
-        Pick<GradeRow, 'ww_scores' | 'pt_scores' | 'qa_score' | 'is_na'>
+        Pick<
+          GradeRow,
+          'ww_scores' | 'pt_scores' | 'qa_score' | 'letter_grade' | 'is_na'
+        >
       >
     ) => {
       let extraPayload: Record<string, unknown> = {};
       let bodyOverride: Partial<
-        Pick<GradeRow, 'ww_scores' | 'pt_scores' | 'qa_score' | 'is_na'>
+        Pick<
+          GradeRow,
+          'ww_scores' | 'pt_scores' | 'qa_score' | 'letter_grade' | 'is_na'
+        >
       > | null = null;
       if (requireApproval) {
         const ref = await requireChangeReference({
@@ -370,7 +408,7 @@ export function ScoreEntryGrid({
                 rowSpan={3}
                 className="align-bottom text-center text-xs text-muted-foreground"
               >
-                N/A
+                {letterDisplay ? 'Override' : 'N/A'}
               </TableHead>
               {/* No prior term to compare against in T1 — drop the column. */}
               {currentTermNumber > 1 && (
@@ -673,25 +711,74 @@ export function ScoreEntryGrid({
                     />
                   </TableCell>
 
-                  {/* N/A */}
+                  {/* N/A (examinable) — or override code —/N/A/UG/E for
+                      non-examinable subjects (KD #104). */}
                   <TableCell className="text-center">
-                    <Checkbox
-                      checked={r.is_na}
-                      disabled={r.withdrawn || readOnly}
-                      aria-label="Mark late enrollee N/A"
-                      onCheckedChange={(v) => {
-                        const next = v === true;
-                        updateLocal(r.entry_id, (row) => ({
-                          ...row,
-                          is_na: next,
-                        }));
-                        patchEntry(
-                          r.entry_id,
-                          { field: 'is_na', slotIndex: null },
-                          { is_na: next }
-                        );
-                      }}
-                    />
+                    {letterDisplay ? (
+                      <Select
+                        value={rowToOverrideChoice(r)}
+                        disabled={r.withdrawn || readOnly}
+                        onValueChange={(v) => {
+                          const next =
+                            OVERRIDE_CHOICE_TO_COLUMNS[v as OverrideChoice];
+                          const isNaChanged = next.is_na !== r.is_na;
+                          const letterChanged =
+                            next.letter_grade !== (r.letter_grade ?? null);
+                          if (!isNaChanged && !letterChanged) return;
+                          // A locked-sheet change request carries a single
+                          // field; the N/A↔UG/E jump touches both columns, so
+                          // make the registrar clear to '—' first.
+                          if (requireApproval && isNaChanged && letterChanged) {
+                            toast.error(
+                              'On a locked sheet, set this to “—” first, then choose UG or E.'
+                            );
+                            return;
+                          }
+                          patchEntry(
+                            r.entry_id,
+                            {
+                              field: letterChanged ? 'letter_grade' : 'is_na',
+                              slotIndex: null,
+                            },
+                            {
+                              is_na: next.is_na,
+                              letter_grade: next.letter_grade,
+                            }
+                          );
+                        }}
+                      >
+                        <SelectTrigger
+                          className="mx-auto h-7 w-[4.75rem] justify-center px-2 font-mono text-xs"
+                          aria-label="Grade override"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="NONE">—</SelectItem>
+                          <SelectItem value="NA">N/A</SelectItem>
+                          <SelectItem value="UG">UG</SelectItem>
+                          <SelectItem value="E">E</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Checkbox
+                        checked={r.is_na}
+                        disabled={r.withdrawn || readOnly}
+                        aria-label="Mark late enrollee N/A"
+                        onCheckedChange={(v) => {
+                          const next = v === true;
+                          updateLocal(r.entry_id, (row) => ({
+                            ...row,
+                            is_na: next,
+                          }));
+                          patchEntry(
+                            r.entry_id,
+                            { field: 'is_na', slotIndex: null },
+                            { is_na: next }
+                          );
+                        }}
+                      />
+                    )}
                   </TableCell>
 
                   {/* Alerts — column hidden entirely in T1 (no prior term). */}
@@ -1104,7 +1191,10 @@ function approvedValueToPatchBody(
   wwLength: number,
   ptLength: number
 ): Partial<
-  Pick<GradeRow, 'ww_scores' | 'pt_scores' | 'qa_score' | 'is_na'>
+  Pick<
+    GradeRow,
+    'ww_scores' | 'pt_scores' | 'qa_score' | 'letter_grade' | 'is_na'
+  >
 > | null {
   switch (field) {
     case 'ww_scores': {
@@ -1131,6 +1221,10 @@ function approvedValueToPatchBody(
     }
     case 'qa_score':
       return { qa_score: parseCell(proposed) };
+    case 'letter_grade': {
+      const v = proposed.trim();
+      return { letter_grade: v === '' ? null : v };
+    }
     case 'is_na':
       return { is_na: proposed.trim().toLowerCase() === 'true' };
     default:

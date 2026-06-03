@@ -362,16 +362,29 @@ export function RequestEditButton({
                     <FormItem>
                       <FormLabel>Proposed value</FormLabel>
                       <FormControl>
-                        <Input
-                          {...field}
-                          placeholder={
-                            selectedField === 'letter_grade'
-                              ? 'e.g. A'
-                              : selectedField === 'is_na'
+                        {selectedField === 'letter_grade' ? (
+                          <Select
+                            value={field.value || undefined}
+                            onValueChange={field.onChange}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Choose UG or E" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="UG">UG — Ungraded</SelectItem>
+                              <SelectItem value="E">E — Exempted</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            {...field}
+                            placeholder={
+                              selectedField === 'is_na'
                                 ? 'true or false'
                                 : 'e.g. 92'
-                          }
-                        />
+                            }
+                          />
+                        )}
                       </FormControl>
                       <FormDescription>
                         The registrar will type this exact value into the locked

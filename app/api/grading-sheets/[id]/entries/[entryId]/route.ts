@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { computeQuarterly } from '@/lib/compute/quarterly';
+import { OVERRIDE_LETTERS, isOverrideLetter } from '@/lib/compute/letter-grade';
 import { buildAuditRows, writeAuditRows } from '@/lib/audit/log-grade-change';
 import { logAction, type AuditAction } from '@/lib/audit/log-action';
 import {
@@ -356,6 +357,34 @@ export async function PATCH(
 
   const is_na = 'is_na' in body ? Boolean(body.is_na) : Boolean(entry.is_na);
 
+  // Per-term letter override for non-examinable subjects (KD #104). Only UG/E
+  // are valid stored values (A/B/C/IP are always derived); null clears it.
+  const isExaminable = subject?.is_examinable !== false;
+  let letter_grade: string | null;
+  if ('letter_grade' in body) {
+    const lg = body.letter_grade ?? null;
+    if (lg !== null && !isOverrideLetter(lg)) {
+      return NextResponse.json(
+        {
+          error: `letter_grade must be one of ${OVERRIDE_LETTERS.join(', ')} (or empty to clear)`,
+        },
+        { status: 400 }
+      );
+    }
+    if (lg !== null && isExaminable) {
+      return NextResponse.json(
+        {
+          error:
+            'letter_grade override only applies to non-examinable subjects',
+        },
+        { status: 400 }
+      );
+    }
+    letter_grade = lg;
+  } else {
+    letter_grade = (entry.letter_grade as string | null) ?? null;
+  }
+
   const computed = computeQuarterly({
     ww_scores,
     ww_totals: sheet.ww_totals,
@@ -436,6 +465,7 @@ export async function PATCH(
         pt_scores,
         qa_score,
         is_na,
+        letter_grade,
         ww_ps: computed.ww_ps,
         pt_ps: computed.pt_ps,
         qa_ps: computed.qa_ps,
@@ -459,9 +489,10 @@ export async function PATCH(
       ww_scores: entry.ww_scores as (number | null)[] | null,
       pt_scores: entry.pt_scores as (number | null)[] | null,
       qa_score: entry.qa_score as number | null,
+      letter_grade: entry.letter_grade as string | null,
       is_na: entry.is_na as boolean,
     },
-    { ww_scores, pt_scores, qa_score, is_na },
+    { ww_scores, pt_scores, qa_score, letter_grade, is_na },
     {
       grading_sheet_id: sheetId,
       grade_entry_id: entryId,

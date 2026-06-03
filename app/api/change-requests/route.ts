@@ -10,6 +10,7 @@ import {
   ChangeRequestFormSchema,
   type ChangeRequestField,
 } from '@/lib/schemas/change-request';
+import { OVERRIDE_LETTERS, isOverrideLetter } from '@/lib/compute/letter-grade';
 import {
   loadAssignmentsForUser,
   isSubjectTeacher,
@@ -172,6 +173,20 @@ export async function POST(request: NextRequest) {
     );
   }
   const body = parsed.data;
+
+  // Non-examinable override codes are the only valid letter_grade proposals —
+  // A/B/C/IP are always derived, never filed (KD #104).
+  if (
+    body.field_changed === 'letter_grade' &&
+    !isOverrideLetter(body.proposed_value.trim())
+  ) {
+    return NextResponse.json(
+      {
+        error: `Proposed value for a letter grade must be one of ${OVERRIDE_LETTERS.join(', ')}.`,
+      },
+      { status: 400 }
+    );
+  }
 
   const service = createServiceClient();
 

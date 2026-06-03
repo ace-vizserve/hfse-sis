@@ -9,6 +9,12 @@ export type NonExaminableLetter = DerivedLetter | OverrideLetter | 'NA';
 
 export const OVERRIDE_LETTERS: readonly OverrideLetter[] = ['UG', 'E'] as const;
 
+// Allowlist guard for the per-term override codes. A/B/C/IP are never stored
+// (always derived), so the only valid stored letter_grade values are UG and E.
+export function isOverrideLetter(value: string): value is OverrideLetter {
+  return (OVERRIDE_LETTERS as readonly string[]).includes(value);
+}
+
 // Annual Final Grade values for non-examinable subjects (KD #100).
 // 'Passed' is the standard year-end value; UG/E/NA are override codes.
 export const ANNUAL_LETTER_VALUES = ['Passed', 'UG', 'E', 'NA'] as const;
