@@ -26,6 +26,10 @@ import {
   type ChangeReferenceTarget,
 } from './use-approval-reference';
 import { GradeDiffDialog, type AlertComparison } from './grade-diff-dialog';
+import {
+  resolveNonExaminableLetter,
+  type NonExaminableLetter,
+} from '@/lib/compute/letter-grade';
 
 export type GradeRow = {
   entry_id: string;
@@ -652,11 +656,20 @@ export function ScoreEntryGrid({
                     {r.initial_grade != null ? r.initial_grade.toFixed(2) : '—'}
                   </TableCell>
 
-                  {/* Quarterly grade */}
+                  {/* Quarterly grade — derived letter for non-examinable subjects (KD #104) */}
                   <TableCell className="text-right tabular-nums">
                     <QuarterlyPill
                       value={r.quarterly_grade}
                       muted={r.withdrawn || r.is_na || readOnly}
+                      letter={
+                        letterDisplay
+                          ? resolveNonExaminableLetter({
+                              isNa: r.is_na,
+                              letterOverride: r.letter_grade,
+                              quarterly: r.quarterly_grade,
+                            })
+                          : undefined
+                      }
                     />
                   </TableCell>
 
@@ -982,10 +995,41 @@ function ActivityRow({
 function QuarterlyPill({
   value,
   muted,
+  letter,
 }: {
   value: number | null;
   muted: boolean;
+  /** When provided (non-examinable subjects, KD #104), renders the derived
+   *  letter instead of the numeric quarterly. `null` = no grade yet. */
+  letter?: NonExaminableLetter | null;
 }) {
+  // Non-examinable subjects show A/B/C/IP (derived) or NA/UG/E (override).
+  if (letter !== undefined) {
+    if (letter == null) {
+      return (
+        <span className="font-mono text-base font-semibold text-muted-foreground/50">
+          —
+        </span>
+      );
+    }
+    // NA / UG / E and muted rows (withdrawn, locked) read as neutral.
+    const letterTone =
+      muted || letter === 'NA' || letter === 'UG' || letter === 'E'
+        ? 'border-hairline bg-muted text-muted-foreground'
+        : letter === 'A' || letter === 'B'
+          ? 'border-brand-mint/60 bg-brand-mint/20 text-ink'
+          : letter === 'C'
+            ? 'border-hairline bg-muted text-ink'
+            : 'border-brand-amber/50 bg-brand-amber/20 text-ink'; // IP — in progress
+    return (
+      <Badge
+        variant="outline"
+        className={`h-7 min-w-9 justify-center px-2 font-mono text-sm font-semibold ${letterTone}`}
+      >
+        {letter}
+      </Badge>
+    );
+  }
   if (value == null) {
     return (
       <span className="font-mono text-base font-semibold text-muted-foreground/50">
