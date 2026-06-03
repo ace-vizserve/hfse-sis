@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
+import { sgToday } from '@/lib/dates';
 import { EnrolmentMetadataSchema } from '@/lib/schemas/enrolment';
 import {
   getEnrolmentPosition,
@@ -95,7 +96,7 @@ export async function PATCH(
       parsed.data.enrollment_status === 'withdrawn' &&
       !before.withdrawal_date
     ) {
-      patch.withdrawal_date = new Date().toISOString().slice(0, 10);
+      patch.withdrawal_date = sgToday();
       // Persist structured withdrawal reason + notes on the → withdrawn boundary.
       patch.withdrawal_reason = parsed.data.withdrawal_reason ?? null;
       patch.withdrawal_notes = parsed.data.withdrawal_notes ?? null;
@@ -121,7 +122,7 @@ export async function PATCH(
         // Derive the joining date from the chosen term: today when the chosen
         // term contains today ("join current"), else that term's start date
         // ("start next term" — they begin fresh, attendance prorates from there).
-        const today = new Date().toISOString().slice(0, 10);
+        const today = sgToday();
         let stampDate = today;
         const chosenTermN = parsed.data.late_enrollee_term_number ?? null;
         if (chosenTermN != null && sectionAyCode) {
@@ -178,7 +179,7 @@ export async function PATCH(
       lateEnrolleeTerm = { termNumber: chosenN, termLabel: `T${chosenN}` };
     } else if (sectionAyCode) {
       lateEnrolleeTerm = await getTermForDate(
-        new Date().toISOString().slice(0, 10),
+        sgToday(),
         sectionAyCode,
         service
       );

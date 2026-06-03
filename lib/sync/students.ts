@@ -6,6 +6,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { AdmissionsRow } from '@/lib/supabase/admissions';
+import { sgToday } from '@/lib/dates';
 import { normalizeSectionName } from '@/lib/sync/section-normalizer';
 import { normalizeLevelLabel } from '@/lib/sync/level-normalizer';
 
@@ -544,7 +545,7 @@ export async function syncOneStudent(
         student_id: studentId,
         index_number: e.index_number,
         enrollment_status: 'active',
-        enrollment_date: new Date().toISOString().slice(0, 10),
+        enrollment_date: sgToday(),
       });
       if (error)
         return {
@@ -557,7 +558,7 @@ export async function syncOneStudent(
     for (const change of plan.enrollment_status_changes) {
       const patch: Record<string, unknown> = { enrollment_status: change.to };
       if (change.to === 'withdrawn') {
-        patch.withdrawal_date = new Date().toISOString().slice(0, 10);
+        patch.withdrawal_date = sgToday();
       } else {
         patch.withdrawal_date = null;
       }

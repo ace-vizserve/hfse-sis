@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
+import { sgToday } from '@/lib/dates';
 import { getTermForDate } from '@/lib/sis/terms';
 
 // Max active students per section (Hard Rule #5). Mirrored from
@@ -57,7 +58,7 @@ export async function transferStudentSection(
   params: TransferParams
 ): Promise<TransferResult> {
   const { ayCode, enroleeNumber, targetSectionId, actorEmail } = params;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = sgToday();
 
   // ── 1. Resolve AY ──────────────────────────────────────────────────────
   const { data: ayRow, error: ayErr } = await service

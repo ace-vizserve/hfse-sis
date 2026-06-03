@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
+import { sgToday } from '@/lib/dates';
 import { writeDailyEntry } from '@/lib/attendance/mutations';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import {
@@ -137,7 +138,7 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = sgToday();
   const results: Array<{
     sectionStudentId: string;
     termId: string;

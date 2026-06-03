@@ -1,5 +1,6 @@
 import 'server-only';
 import { createServiceClient } from '@/lib/supabase/service';
+import { sgToday } from '@/lib/dates';
 
 // PTC ↔ writeup-term resolver.
 //
@@ -176,11 +177,9 @@ export function daysUntilPtc(
   return Math.round((b - a) / 86_400_000);
 }
 
-export function sgToday(): string {
-  // en-CA happens to format as yyyy-mm-dd; Asia/Singapore aligns to the
-  // school's operating timezone (KD #32: ISO storage, locale rendering).
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
-}
+// Canonical SGT-today helper now lives in lib/dates.ts; re-exported here for
+// back-compat with existing `import { sgToday } from '.../ptc-resolver'` sites.
+export { sgToday };
 
 export function resolveDiscussedTermId(
   ptcStartDate: string,

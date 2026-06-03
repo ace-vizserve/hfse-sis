@@ -23,6 +23,7 @@ import {
 import { getEnrolmentPosition } from '@/lib/sis/terms';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
+import { sgToday } from '@/lib/dates';
 import { syncOneStudent } from '@/lib/sync/students';
 import {
   invalidateAllOperationalDrills,
@@ -700,7 +701,7 @@ export async function PATCH(
       enrollment_date: string | null;
     } | null;
     if (ssRow?.id && ssRow?.section_id) {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = sgToday();
       if (ssRow.enrollment_date !== today) {
         const { error: dateErr } = await supabase
           .from('section_students')
@@ -818,7 +819,7 @@ export async function PATCH(
           }));
 
           if (rows.length > 0) {
-            const todayDate = new Date().toISOString().slice(0, 10);
+            const todayDate = sgToday();
             const ids = rows.map((r) => r.id);
             const { error: cascadeErr } = await supabase
               .from('section_students')

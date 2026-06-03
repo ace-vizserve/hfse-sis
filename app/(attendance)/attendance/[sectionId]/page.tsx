@@ -33,6 +33,7 @@ import {
   getVacationLeaveUsageForSection,
 } from '@/lib/attendance/queries';
 import { getSchoolConfig } from '@/lib/sis/school-config';
+import { sgToday } from '@/lib/dates';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
 import {
   AttendanceWideGrid,
@@ -92,11 +93,9 @@ export default async function SectionAttendancePage({
   };
   const terms = (termsRaw ?? []) as TermRow[];
 
-  // "Today" in Singapore time (UTC+8) — the daily view marks the real calendar
-  // day, so resolve it server-side for SSR / timezone consistency.
-  const todayIso = new Date(Date.now() + 8 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
+  // "Today" in Singapore time — the daily view marks the real calendar day,
+  // so resolve it server-side for SSR / timezone consistency (canonical helper).
+  const todayIso = sgToday();
 
   // Daily view targets the current term (term containing today → most-recent
   // during a break) via the shared resolver; the term switcher is hidden. When

@@ -4,6 +4,7 @@ import { unstable_cache } from 'next/cache';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { createServiceClient } from '@/lib/supabase/service';
+import { sgToday } from '@/lib/dates';
 import {
   resolveEnrolmentPosition,
   type EnrolmentPosition,
@@ -91,7 +92,7 @@ export async function getEnrolmentPosition(
   ayCode: string
 ): Promise<EnrolmentPosition> {
   const terms = await loadTermsForAY(ayCode);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = sgToday();
   return resolveEnrolmentPosition(
     terms.map((t) => ({
       termNumber: t.termNumber,

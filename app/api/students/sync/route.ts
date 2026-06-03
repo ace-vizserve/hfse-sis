@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
+import { sgToday } from '@/lib/dates';
 import { fetchAdmissionsRoster } from '@/lib/supabase/admissions';
 import { loadGradingSnapshot } from '@/lib/sync/snapshot';
 import { buildSyncPlan } from '@/lib/sync/students';
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
           student_id,
           index_number: e.index_number,
           enrollment_status: 'active' as const,
-          enrollment_date: new Date().toISOString().slice(0, 10),
+          enrollment_date: sgToday(),
         };
       });
       const { error } = await service.from('section_students').insert(payload);
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
     const reactivations = plan.enrollment_status_changes.filter(
       (c) => c.to !== 'withdrawn'
     );
-    const today = now.slice(0, 10);
+    const today = sgToday();
 
     const statusBatches: Promise<void>[] = [];
     if (withdrawals.length > 0) {

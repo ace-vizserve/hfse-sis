@@ -3,6 +3,7 @@ import { GraduationCap, School, Users } from 'lucide-react';
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { sgToday } from '@/lib/dates';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -48,7 +49,7 @@ export default async function AttendanceSectionsListPage() {
   // with their is_current flag, so an unscoped query returns the wrong
   // AY's term). Pair with today's-date fallback so the badge stays
   // honest even if no term has is_current set.
-  const today = new Date().toISOString().slice(0, 10);
+  const today = sgToday();
   const { data: currentTerm } = ay
     ? await supabase
         .from('terms')

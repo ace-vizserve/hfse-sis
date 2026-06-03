@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages } from '@/lib/supabase/paginate';
+import { sgDate } from '@/lib/dates';
 import { preloadTermsForAYs, termForDateInPreloaded } from '@/lib/sis/terms';
 import {
   WITHDRAWAL_REASON_LABELS,
@@ -146,19 +147,6 @@ type EnrichedPartial = {
   reason?: string | null;
   reasonLabel?: string | null;
 };
-
-// Movement dates are the Singapore local calendar date the action was recorded.
-// audit_log.created_at is stored in UTC, so an action performed in the early-
-// morning or late-evening SGT hours would otherwise slice() to the adjacent UTC
-// day — showing the registrar a date one off from when they actually did it
-// (e.g. a re-enrolment at 07:10 SGT = 23:10 UTC the prior day). Format in
-// Asia/Singapore; en-CA yields a yyyy-mm-dd string the rest of the pipeline
-// (term resolution, sort, render) already expects.
-function sgtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', {
-    timeZone: 'Asia/Singapore',
-  });
-}
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -306,7 +294,7 @@ async function fetchTransferEvents(
     if (!enroleeNumber) continue;
     const date =
       (ctx.transferDate as string | undefined)?.trim() ||
-      sgtDate(row.created_at);
+      sgDate(row.created_at);
     out.push({
       id: row.id,
       kind: 'section-transfer',
@@ -434,7 +422,7 @@ async function fetchMetadataEvents(
       id: row.id,
       kind: 'withdrawn',
       sectionStudentId: row.entity_id,
-      date: sgtDate(row.created_at),
+      date: sgDate(row.created_at),
       actorEmail: row.actor_email,
       ctxTermNumber: null,
       ctxTermLabel: null,
@@ -449,7 +437,7 @@ async function fetchMetadataEvents(
       id: row.id,
       kind: 'late-enrolled',
       sectionStudentId: row.entity_id,
-      date: sgtDate(row.created_at),
+      date: sgDate(row.created_at),
       actorEmail: row.actor_email,
       ctxTermNumber:
         (ctx.lateEnrolleeTermNumber as number | null | undefined) ?? null,
@@ -463,7 +451,7 @@ async function fetchMetadataEvents(
       id: row.id,
       kind: 're-enrolled',
       sectionStudentId: row.entity_id,
-      date: sgtDate(row.created_at),
+      date: sgDate(row.created_at),
       actorEmail: row.actor_email,
       ctxTermNumber: null,
       ctxTermLabel: null,
