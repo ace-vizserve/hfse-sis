@@ -180,7 +180,21 @@ export async function getAcademicHistory(
   studentId: string
 ): Promise<AcademicHistoryRow[]> {
   const service = createServiceClient();
-  const { data } = await service
+
+  // grade_entries are keyed by section_student_id (Hard Rule #6), NOT student_id
+  // — so resolve the student's section rows first. We include ALL of them: a
+  // mid-year transfer (KD #67) leaves a withdrawn row holding the pre-transfer
+  // grades, and we want the full academic history across sections.
+  const { data: enrolments } = await service
+    .from('section_students')
+    .select('id')
+    .eq('student_id', studentId);
+  const sectionStudentIds = (enrolments ?? []).map(
+    (r) => (r as { id: string }).id
+  );
+  if (sectionStudentIds.length === 0) return [];
+
+  const { data, error } = await service
     .from('grade_entries')
     .select(
       `
@@ -194,7 +208,11 @@ export async function getAcademicHistory(
         )
       `
     )
-    .eq('student_id', studentId);
+    .in('section_student_id', sectionStudentIds);
+  if (error) {
+    console.warn('[records-history] academic fetch failed:', error.message);
+    return [];
+  }
 
   type Row = {
     initial_grade: number | null;
@@ -225,10 +243,19 @@ export async function getAcademicHistory(
   };
   const rows = (data ?? []) as unknown as Row[];
 
-  // Group by AY → term → subject.
+  // Group by AY → term → subjectCode, deduping across the student's section
+  // rows. A transferred student has the same subject×term in two sections (the
+  // one they actually attended that term holds the grade; the other is blank),
+  // so keep the "richer" entry — the one with more non-null grade fields.
+  type SubjectEntry = AcademicTermRow['subjects'][number];
+  const richness = (e: SubjectEntry) =>
+    [e.initialGrade, e.quarterlyGrade, e.annualLetterGrade].filter(
+      (v) => v !== null
+    ).length;
+
   const byAy = new Map<
     string,
-    { ayLabel: string; terms: Map<number, AcademicTermRow['subjects']> }
+    { ayLabel: string; terms: Map<number, Map<string, SubjectEntry>> }
   >();
 
   for (const r of rows) {
@@ -249,25 +276,30 @@ export async function getAcademicHistory(
     }
     const ayEntry = byAy.get(ay.ay_code)!;
     if (!ayEntry.terms.has(term.term_number)) {
-      ayEntry.terms.set(term.term_number, []);
+      ayEntry.terms.set(term.term_number, new Map());
     }
-    ayEntry.terms.get(term.term_number)!.push({
+    const subjMap = ayEntry.terms.get(term.term_number)!;
+    const entry: SubjectEntry = {
       subjectCode: subject.code,
       subjectName: subject.name,
       isExaminable: subject.is_examinable ?? true,
       initialGrade: r.initial_grade,
       quarterlyGrade: r.quarterly_grade,
       annualLetterGrade: r.annual_letter_grade ?? null,
-    });
+    };
+    const existing = subjMap.get(subject.code);
+    if (!existing || richness(entry) > richness(existing)) {
+      subjMap.set(subject.code, entry);
+    }
   }
 
   const out: AcademicHistoryRow[] = [];
   for (const [ayCode, ayEntry] of byAy) {
     const terms: AcademicTermRow[] = [];
-    for (const [termNumber, subjects] of ayEntry.terms) {
+    for (const [termNumber, subjMap] of ayEntry.terms) {
       terms.push({
         termNumber,
-        subjects: subjects.sort((a, b) =>
+        subjects: Array.from(subjMap.values()).sort((a, b) =>
           a.subjectName.localeCompare(b.subjectName)
         ),
       });
@@ -294,7 +326,7 @@ export async function getAttendanceHistory(
   );
   if (sectionStudentIds.length === 0) return [];
 
-  const { data } = await service
+  const { data, error } = await service
     .from('attendance_records')
     .select(
       `
@@ -303,6 +335,10 @@ export async function getAttendanceHistory(
       `
     )
     .in('section_student_id', sectionStudentIds);
+  if (error) {
+    console.warn('[records-history] attendance fetch failed:', error.message);
+    return [];
+  }
 
   type Row = {
     school_days: number | null;
@@ -327,9 +363,19 @@ export async function getAttendanceHistory(
   };
   const rows = (data ?? []) as unknown as Row[];
 
+  // Group by AY → term, summing across the student's section rows. A mid-year
+  // transfer (KD #67) splits a term's attendance across the old + new section
+  // row, so the per-term total is their sum; non-overlapping terms each have a
+  // single record, so the sum is a no-op there.
   const byAy = new Map<
     string,
-    { ayLabel: string; terms: AttendanceHistoryRow['terms'] }
+    {
+      ayLabel: string;
+      terms: Map<
+        number,
+        { schoolDays: number; daysPresent: number; daysLate: number }
+      >;
+    }
   >();
 
   for (const r of rows) {
@@ -341,14 +387,18 @@ export async function getAttendanceHistory(
     if (!ay) continue;
 
     if (!byAy.has(ay.ay_code)) {
-      byAy.set(ay.ay_code, { ayLabel: ay.label, terms: [] });
+      byAy.set(ay.ay_code, { ayLabel: ay.label, terms: new Map() });
     }
-    byAy.get(ay.ay_code)!.terms.push({
-      termNumber: term.term_number,
-      schoolDays: r.school_days,
-      daysPresent: r.days_present,
-      daysLate: r.days_late,
-    });
+    const termMap = byAy.get(ay.ay_code)!.terms;
+    const agg = termMap.get(term.term_number) ?? {
+      schoolDays: 0,
+      daysPresent: 0,
+      daysLate: 0,
+    };
+    agg.schoolDays += r.school_days ?? 0;
+    agg.daysPresent += r.days_present ?? 0;
+    agg.daysLate += r.days_late ?? 0;
+    termMap.set(term.term_number, agg);
   }
 
   const out: AttendanceHistoryRow[] = [];
@@ -356,7 +406,14 @@ export async function getAttendanceHistory(
     out.push({
       ayCode,
       ayLabel: v.ayLabel,
-      terms: v.terms.sort((a, b) => a.termNumber - b.termNumber),
+      terms: Array.from(v.terms.entries())
+        .map(([termNumber, agg]) => ({
+          termNumber,
+          schoolDays: agg.schoolDays,
+          daysPresent: agg.daysPresent,
+          daysLate: agg.daysLate,
+        }))
+        .sort((a, b) => a.termNumber - b.termNumber),
     });
   }
   out.sort((a, b) => b.ayCode.localeCompare(a.ayCode));
