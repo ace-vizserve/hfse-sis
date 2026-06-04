@@ -13,24 +13,14 @@
 //
 // Data contract: receives the pre-built CalendarIndex as a prop. No fetching.
 
-import {
-  ChevronLeft,
-  ChevronRight,
-  CalendarCheck,
-  CalendarX,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
 
-import { EventChip } from '@/components/attendance/calendar/calendar-cell';
+import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 import type { CalendarIndex } from '@/components/attendance/calendar/hooks/use-calendar-index';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import {
-  CLOSED_REASON_LABELS,
-  storageToDayStatus,
-} from '@/lib/attendance/calendar-operational';
 import { sgToday } from '@/lib/dates';
 
 // ─── Helpers (local-date safe, no tz shift) ───────────────────────────────────
@@ -138,41 +128,9 @@ export function DayView({
     onCursor(parseIso(clamped));
   }
 
-  // ── Resolve data for the focused day ─────────────────────────────────────────
-  const dayRow = index.byDate.get(iso) ?? null;
+  // ── Readable chips for the focused day (overrides + events) ───────────────────
+  const chips = index.entriesByIso.get(iso) ?? [];
   const events = index.eventsByIso.get(iso) ?? [];
-
-  // ── Derive the day status (§9.3 semantic colours) ────────────────────────────
-  // Derive from the stored row; fall back to "Open (default)" when no row.
-  type ResolvedStatus =
-    | { kind: 'open'; label: string; hbl: boolean }
-    | { kind: 'closed'; label: string };
-
-  const resolvedStatus = useMemo<ResolvedStatus | null>(() => {
-    if (!dayRow) return null;
-    const status = storageToDayStatus({
-      dayType: dayRow.dayType,
-      hblOverlay: dayRow.hblOverlay,
-    });
-    if (status.kind === 'open') {
-      const hbl = status.hbl;
-      const hblOverlay =
-        dayRow.hblOverlay === true && dayRow.dayType === 'school_holiday';
-      return {
-        kind: 'open',
-        label: hblOverlay
-          ? 'Open · School holiday (HBL)'
-          : hbl
-            ? 'Open · HBL'
-            : 'Open',
-        hbl: hbl || hblOverlay,
-      };
-    }
-    return {
-      kind: 'closed',
-      label: `Closed · ${CLOSED_REASON_LABELS[status.reason]}`,
-    };
-  }, [dayRow]);
 
   // ── Long-form heading ─────────────────────────────────────────────────────────
   const heading = formatLongDate(iso);
@@ -245,102 +203,28 @@ export function DayView({
         </div>
       </div>
 
-      {/* Day body — status + events */}
+      {/* Day body — what's on this day */}
       <div className="space-y-5 p-6">
-        {/* ── Day status card ──────────────────────────────────────────────────── */}
         <Card className="gap-0 py-0">
           <CardHeader className="border-b border-border px-5 py-4">
             <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Day status
+              On this day
             </p>
           </CardHeader>
-          <CardContent className="flex items-start gap-4 px-5 py-5">
-            {/* Status icon tile — §9.3 / §8 gradient icon tile */}
-            <div
-              className={[
-                'flex size-10 shrink-0 items-center justify-center rounded-xl text-white shadow-brand-tile',
-                resolvedStatus?.kind === 'closed'
-                  ? 'bg-gradient-to-br from-destructive to-destructive/70'
-                  : 'bg-gradient-to-br from-brand-indigo to-brand-navy',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              aria-hidden
-            >
-              {resolvedStatus?.kind === 'closed' ? (
-                <CalendarX className="size-4" />
-              ) : (
-                <CalendarCheck className="size-4" />
-              )}
-            </div>
-
-            <div className="flex-1 space-y-2">
-              {/* Status label + badge */}
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-serif text-base font-semibold text-foreground">
-                  {resolvedStatus ? resolvedStatus.label : 'Open (default)'}
-                </p>
-                {/* §9.3 status badge */}
-                {resolvedStatus?.kind === 'closed' ? (
-                  <Badge className="h-5 border-destructive/40 bg-destructive/10 text-[10px] text-destructive">
-                    Closed
-                  </Badge>
-                ) : (
-                  <Badge className="h-5 border-brand-mint bg-brand-mint/30 text-[10px] text-ink">
-                    Open
-                  </Badge>
-                )}
-              </div>
-
-              {/* Optional label from the row */}
-              {dayRow?.label && (
-                <p className="text-[13px] text-muted-foreground">
-                  {dayRow.label}
-                </p>
-              )}
-
-              {/* No row = unclassified day */}
-              {!dayRow && (
-                <p className="text-[13px] text-muted-foreground">
-                  No classification set — treated as an open school day.
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* ── Events card ──────────────────────────────────────────────────────── */}
-        <Card className="gap-0 py-0">
-          <CardHeader className="border-b border-border px-5 py-4">
-            <CardTitle className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Events
-            </CardTitle>
-          </CardHeader>
           <CardContent className="px-5 py-4">
-            {events.length > 0 ? (
-              <div className="flex flex-col gap-2">
-                {events.map((evt) => (
-                  <div key={evt.id} className="flex items-start gap-3">
-                    {/* Gradient chip — pixel-identical to cell chip (§10.2). */}
-                    <div className="w-36 shrink-0">
-                      <EventChip event={evt} />
-                    </div>
-                    <div className="flex-1 space-y-0.5">
-                      <p className="text-[13px] font-medium text-foreground">
-                        {evt.label}
-                      </p>
-                      {evt.startDate !== evt.endDate && (
-                        <p className="font-mono text-[11px] text-muted-foreground">
-                          {evt.startDate} → {evt.endDate}
-                        </p>
-                      )}
-                    </div>
-                  </div>
+            {chips.length > 0 ? (
+              <div className="flex flex-col items-start gap-2">
+                {chips.map((c) => (
+                  <ChartLegendChip
+                    key={c.key}
+                    color={c.color}
+                    label={c.label}
+                  />
                 ))}
               </div>
             ) : (
               <p className="text-[13px] text-muted-foreground">
-                No events on this day.
+                School day — nothing scheduled.
               </p>
             )}
           </CardContent>

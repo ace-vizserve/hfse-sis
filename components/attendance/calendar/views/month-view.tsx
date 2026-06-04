@@ -19,6 +19,7 @@ import { useMemo } from 'react';
 import {
   CalendarCell,
   type CalendarCellProps,
+  type CalendarChip,
 } from '@/components/attendance/calendar/calendar-cell';
 import type { CalendarIndex } from '@/components/attendance/calendar/hooks/use-calendar-index';
 import { Button } from '@/components/ui/button';
@@ -48,6 +49,8 @@ function firstOfMonth(d: Date): Date {
 function firstOfMonthFromIso(iso: string): Date {
   return firstOfMonth(parseIso(iso));
 }
+
+const EMPTY_CHIPS: CalendarChip[] = [];
 
 // ─── MonthCell shape ──────────────────────────────────────────────────────────
 
@@ -174,18 +177,17 @@ export function MonthView({
   }
 
   // ── Meta strip stats ──────────────────────────────────────────────────────────
-  // Count rows in the index that fall within the visible month to give the
-  // registrar a quick "N days classified" figure.
+  // Count days in the visible month that carry any entry (override or event).
   const classifiedThisMonth = useMemo(() => {
     const year = cursor.getFullYear();
     const month = cursor.getMonth();
     let count = 0;
-    for (const [iso] of index.byDate) {
+    for (const [iso] of index.entriesByIso) {
       const d = parseIso(iso);
       if (d.getFullYear() === year && d.getMonth() === month) count++;
     }
     return count;
-  }, [cursor, index.byDate]);
+  }, [cursor, index.entriesByIso]);
 
   // ── Month caption ─────────────────────────────────────────────────────────────
   const monthLabel = cursor.toLocaleString('en-SG', {
@@ -223,8 +225,8 @@ export function MonthView({
           )}
         </div>
         <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          <span className="tabular-nums">{classifiedThisMonth}</span> days
-          classified this month
+          <span className="tabular-nums">{classifiedThisMonth}</span> days with
+          events this month
         </p>
       </div>
 
@@ -301,11 +303,8 @@ export function MonthView({
               {row.map((cell, colIdx) => {
                 const isLastCol = colIdx === 4;
 
-                // Resolve data from the index
-                const dayRow = index.byDate.get(cell.iso) ?? null;
-                const events = index.eventsByIso.get(cell.iso) ?? [];
-                const audienceBadges =
-                  index.audienceBadgeByIso.get(cell.iso) ?? [];
+                // Readable chips for this date (overrides + events).
+                const chips = index.entriesByIso.get(cell.iso) ?? EMPTY_CHIPS;
 
                 const cellInTerm = inTerm(cell.iso);
 
@@ -318,16 +317,14 @@ export function MonthView({
                 const cellProps: CalendarCellProps = {
                   iso: cell.iso,
                   dayNumber: cell.dayNumber,
-                  row: dayRow,
-                  events,
-                  audienceBadges,
+                  chips,
                   isToday: cell.iso === todayIso,
                   // Muted when spilling over from an adjacent month OR when the
                   // date belongs to no term (non-editable gap day).
                   outOfMonth: cell.outOfMonth || !cellInTerm,
                   selected: selectedIsos.has(cell.iso),
                   clickable,
-                  maxVisibleEvents: 3,
+                  maxVisibleChips: 3,
                   onClick: () => onDayClick(cell.iso),
                 };
 

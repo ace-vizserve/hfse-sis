@@ -58,3 +58,18 @@ export const CLOSED_REASON_LABELS: Record<ClosedReason, string> = {
   school_holiday: 'School holiday',
   no_class: 'No class',
 };
+
+/** Plain-English label a human reads at a glance: "School day", "HBL",
+ *  "Public holiday", etc. Used in cells, the day sheet, and the list. */
+export function dayStatusLabel(s: DayStatus): string {
+  if (s.kind === 'open') return s.hbl ? 'HBL' : 'School day';
+  if (s.reason === 'school_holiday') {
+    return s.hblOverlay ? 'School holiday (HBL)' : 'School holiday';
+  }
+  return CLOSED_REASON_LABELS[s.reason];
+}
+
+/** "School day" — the unremarkable default; cells skip rendering a chip for it. */
+export function isPlainSchoolDay(s: DayStatus): boolean {
+  return s.kind === 'open' && !s.hbl;
+}

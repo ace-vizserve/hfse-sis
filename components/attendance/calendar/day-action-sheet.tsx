@@ -1,19 +1,20 @@
 'use client';
 
-import { Calendar, Pencil, Trash2 } from 'lucide-react';
+// DayActionSheet — "what's on this day" + Add. Lists the day's school-status
+// overrides (HBL / closures) and events as readable, color-coded rows; every
+// addition is an event (the editor's type decides whether it's a school-status
+// override or an informational event). A plain school day shows the empty state.
+
+import { CalendarPlus, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+  DAY_TYPE_LEGEND_COLOR,
+  EVENT_CATEGORY_LEGEND_COLOR,
+} from '@/components/attendance/calendar/calendar-cell';
+import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
+import { Button } from '@/components/ui/button';
 import {
   Sheet,
   SheetContent,
@@ -25,71 +26,18 @@ import type {
   SchoolCalendarRow,
 } from '@/lib/attendance/calendar';
 import {
-  dayStatusToStorage,
+  dayStatusLabel,
+  isPlainSchoolDay,
   storageToDayStatus,
-  type DayStatus,
 } from '@/lib/attendance/calendar-operational';
-import {
-  AUDIENCE_LABELS,
-  AUDIENCE_VALUES,
-  type Audience,
-} from '@/lib/schemas/attendance';
-
-// The two editable audiences shown in the sheet. 'All' is the implicit
-// school-wide default both levels start from; it isn't edited directly.
-const SHEET_LEVELS = AUDIENCE_VALUES.filter(
-  (a): a is Exclude<Audience, 'all'> => a !== 'all'
-);
-
-// ─── Status options (one flat list per level — no override/inherit jargon) ──────
-
-type StatusOption = { value: string; label: string; status: DayStatus };
-
-const STATUS_OPTIONS: StatusOption[] = [
-  { value: 'open', label: 'Open', status: { kind: 'open', hbl: false } },
-  {
-    value: 'open-hbl',
-    label: 'Open · HBL (taught remotely)',
-    status: { kind: 'open', hbl: true },
-  },
-  {
-    value: 'closed-public',
-    label: 'Closed · Public holiday',
-    status: { kind: 'closed', reason: 'public_holiday' },
-  },
-  {
-    value: 'closed-school',
-    label: 'Closed · School holiday',
-    status: { kind: 'closed', reason: 'school_holiday', hblOverlay: false },
-  },
-  {
-    value: 'closed-school-hbl',
-    label: 'Closed · School holiday (attendance still taken)',
-    status: { kind: 'closed', reason: 'school_holiday', hblOverlay: true },
-  },
-  {
-    value: 'closed-noclass',
-    label: 'Closed · No class',
-    status: { kind: 'closed', reason: 'no_class' },
-  },
-];
-
-/** Map a DayStatus to its STATUS_OPTIONS value. */
-function statusToValue(s: DayStatus): string {
-  if (s.kind === 'open') return s.hbl ? 'open-hbl' : 'open';
-  if (s.reason === 'school_holiday') {
-    return s.hblOverlay ? 'closed-school-hbl' : 'closed-school';
-  }
-  if (s.reason === 'public_holiday') return 'closed-public';
-  return 'closed-noclass';
-}
+import { AUDIENCE_LABELS, type Audience } from '@/lib/schemas/attendance';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface DayActionSheetProps {
   iso: string | null;
   termId: string;
-  /** The clicked date's school_calendar row per audience (null = none yet). */
+  /** The clicked date's school_calendar row per audience (null = none). */
   rowsByAudience: Record<Audience, SchoolCalendarRow | null>;
   events: CalendarEventRow[];
   editable: boolean;
@@ -102,10 +50,8 @@ interface DayActionSheetProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Format a yyyy-MM-dd string as a readable date, e.g. "Wednesday, 4 June 2026". */
 function formatIso(iso: string): string {
   const [year, month, day] = iso.split('-').map(Number);
-  // Construct date as local calendar date (no UTC shift)
   const d = new Date(year, month - 1, day);
   return d.toLocaleDateString('en-SG', {
     weekday: 'long',
@@ -115,53 +61,10 @@ function formatIso(iso: string): string {
   });
 }
 
-function initialStatus(row: SchoolCalendarRow | null): DayStatus {
-  if (!row) return { kind: 'open', hbl: false };
-  return storageToDayStatus({
-    dayType: row.dayType,
-    hblOverlay: row.hblOverlay,
-  });
-}
+const AUDS: Audience[] = ['all', 'primary', 'secondary'];
 
-// ─── Per-level status editor (one compact dropdown) ─────────────────────────────
-
-function LevelStatusEditor({
-  level,
-  status,
-  onChange,
-}: {
-  level: Exclude<Audience, 'all'>;
-  status: DayStatus;
-  onChange: (s: DayStatus) => void;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label
-        htmlFor={`status-${level}`}
-        className="text-[13px] font-medium text-foreground"
-      >
-        {AUDIENCE_LABELS[level]}
-      </Label>
-      <Select
-        value={statusToValue(status)}
-        onValueChange={(v) => {
-          const opt = STATUS_OPTIONS.find((o) => o.value === v);
-          if (opt) onChange(opt.status);
-        }}
-      >
-        <SelectTrigger id={`status-${level}`} className="h-9 text-sm">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {STATUS_OPTIONS.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
+function levelSuffix(a: Audience): string {
+  return a === 'all' ? '' : ` · ${AUDIENCE_LABELS[a]}`;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -178,78 +81,45 @@ export function DayActionSheet({
   onEditEvent,
   onDeleteEvent,
 }: DayActionSheetProps) {
-  // Each level starts from its own row, or the school-wide default it follows.
-  const effectiveRow = (level: Audience): SchoolCalendarRow | null =>
-    rowsByAudience[level] ?? rowsByAudience.all;
+  const [busyKey, setBusyKey] = useState<string | null>(null);
 
-  const [statusByLevel, setStatusByLevel] = useState<
-    Record<'primary' | 'secondary', DayStatus>
-  >(() => ({
-    primary: initialStatus(effectiveRow('primary')),
-    secondary: initialStatus(effectiveRow('secondary')),
-  }));
-  const [busy, setBusy] = useState(false);
+  // School-status overrides on this day (non-plain-school-day rows only).
+  const overrides = AUDS.map((a) => rowsByAudience[a])
+    .filter((r): r is SchoolCalendarRow => r != null)
+    .map((r) => ({
+      row: r,
+      status: storageToDayStatus({
+        dayType: r.dayType,
+        hblOverlay: r.hblOverlay,
+      }),
+    }))
+    .filter((o) => !isPlainSchoolDay(o.status));
 
-  // Re-initialise when the sheet opens for a new day. rowsByAudience already
-  // reflects the new iso (resolved by the parent).
-  const [lastIso, setLastIso] = useState<string | null>(iso);
-  if (iso !== lastIso) {
-    setLastIso(iso);
-    setStatusByLevel({
-      primary: initialStatus(effectiveRow('primary')),
-      secondary: initialStatus(effectiveRow('secondary')),
-    });
-    setBusy(false);
-  }
+  const isEmpty = overrides.length === 0 && events.length === 0;
 
-  // Save writes BOTH levels — one request per audience (the upsert route takes
-  // a single audience per call).
-  async function handleSave() {
+  // Delete a school-status override → the level reverts to a plain school day.
+  async function removeOverride(audience: Audience) {
     if (!iso) return;
-    setBusy(true);
+    setBusyKey(`day:${audience}`);
     try {
-      await Promise.all(
-        SHEET_LEVELS.map(async (lvl) => {
-          const { dayType, hblOverlay } = dayStatusToStorage(
-            statusByLevel[lvl]
-          );
-          const res = await fetch('/api/attendance/calendar', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              termId,
-              audience: lvl,
-              // Preserve this level's own label, if any.
-              entries: [
-                {
-                  date: iso,
-                  dayType,
-                  label: rowsByAudience[lvl]?.label ?? null,
-                  hblOverlay,
-                },
-              ],
-            }),
-          });
-          if (!res.ok) {
-            const body = await res.json().catch(() => ({}));
-            throw new Error(
-              (body as { error?: string; message?: string }).error ??
-                (body as { message?: string }).message ??
-                `Server error ${res.status}`
-            );
-          }
-        })
-      );
-      toast.success('Day saved');
+      const params = new URLSearchParams({ termId, date: iso, audience });
+      const res = await fetch(`/api/attendance/calendar?${params.toString()}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          (body as { error?: string }).error ?? `Server error ${res.status}`
+        );
+      }
+      toast.success('Reverted to a school day');
       onSaved();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save day');
+      toast.error(err instanceof Error ? err.message : 'Failed to remove');
     } finally {
-      setBusy(false);
+      setBusyKey(null);
     }
   }
-
-  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <Sheet open={iso !== null} onOpenChange={(open) => !open && onClose()}>
@@ -259,139 +129,110 @@ export function DayActionSheet({
       >
         {/* Header */}
         <SheetHeader className="border-b border-border px-6 pb-5 pt-6">
-          <div className="flex items-start gap-3">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              <Calendar className="size-4" />
-            </div>
-            <div className="min-w-0 flex-1 space-y-1 pt-0.5">
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                School calendar
-              </p>
-              <SheetTitle className="leading-snug">
-                {iso ? formatIso(iso) : '—'}
-              </SheetTitle>
-            </div>
-          </div>
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            School calendar
+          </p>
+          <SheetTitle className="leading-snug">
+            {iso ? formatIso(iso) : '—'}
+          </SheetTitle>
         </SheetHeader>
 
         {/* Body — scrollable */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+        <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
           {!editable ? (
-            /* Between-term break — read-only note */
             <div className="rounded-xl border border-border bg-muted/40 p-5">
               <p className="text-[14px] leading-relaxed text-muted-foreground">
                 This date falls in a term break — it has no school day to
-                configure. Add a labelled break via an event on the adjacent
-                term days.
+                configure.
               </p>
             </div>
           ) : (
             <>
-              {/* Day status — Primary and Secondary, both shown, set each. */}
-              <section className="space-y-4">
-                <div className="space-y-1">
-                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Day status
-                  </p>
-                  <p className="text-[12px] leading-relaxed text-muted-foreground">
-                    Set the schedule for each level — they can differ (e.g. HBL
-                    for Primary, open for Secondary).
-                  </p>
-                </div>
-
-                <LevelStatusEditor
-                  level="primary"
-                  status={statusByLevel.primary}
-                  onChange={(s) =>
-                    setStatusByLevel((prev) => ({ ...prev, primary: s }))
-                  }
-                />
-                <LevelStatusEditor
-                  level="secondary"
-                  status={statusByLevel.secondary}
-                  onChange={(s) =>
-                    setStatusByLevel((prev) => ({ ...prev, secondary: s }))
-                  }
-                />
-              </section>
-
-              <Separator />
-            </>
-          )}
-
-          {/* Events section — always visible */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
               <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Events on this day
+                On this day
               </p>
-              {iso && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 gap-1.5 px-2.5 text-[12px]"
-                  onClick={() => onAddEvent(iso)}
-                >
-                  <span aria-hidden>+</span>
-                  Add event
-                </Button>
-              )}
-            </div>
 
-            {events.length === 0 ? (
-              <p className="text-[13px] text-muted-foreground">
-                No events on this day.
-              </p>
-            ) : (
-              <ul className="divide-y divide-border rounded-lg border border-border bg-card">
-                {events.map((e) => (
-                  <li
-                    key={e.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
-                  >
-                    <span className="text-[13px] font-medium text-foreground leading-snug min-w-0 truncate">
-                      {e.label}
-                    </span>
-                    <div className="flex shrink-0 items-center gap-1">
+              {isEmpty ? (
+                <p className="text-[13px] text-muted-foreground">
+                  It&apos;s a school day. Add an event below — a holiday, an HBL
+                  day, an exam, and so on.
+                </p>
+              ) : (
+                <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+                  {/* School-status overrides */}
+                  {overrides.map(({ row, status }) => (
+                    <li
+                      key={`day:${row.audience}`}
+                      className="flex items-center justify-between gap-3 px-4 py-3"
+                    >
+                      <ChartLegendChip
+                        color={DAY_TYPE_LEGEND_COLOR[row.dayType]}
+                        label={`${dayStatusLabel(status)}${levelSuffix(row.audience)}`}
+                      />
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="size-7"
-                        aria-label={`Edit event: ${e.label}`}
-                        onClick={() => onEditEvent(e)}
-                      >
-                        <Pencil className="size-3.5" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        aria-label={`Delete event: ${e.label}`}
-                        onClick={() => onDeleteEvent(e.id)}
+                        className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        aria-label="Remove — revert to school day"
+                        disabled={busyKey === `day:${row.audience}`}
+                        onClick={() => removeOverride(row.audience)}
                       >
                         <Trash2 className="size-3.5" />
                       </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+                    </li>
+                  ))}
+
+                  {/* Events */}
+                  {events.map((e) => (
+                    <li
+                      key={`ev:${e.id}`}
+                      className="flex items-center justify-between gap-3 px-4 py-3"
+                    >
+                      <ChartLegendChip
+                        color={EVENT_CATEGORY_LEGEND_COLOR[e.category]}
+                        label={`${e.label}${levelSuffix(e.audience)}`}
+                      />
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          aria-label={`Edit ${e.label}`}
+                          onClick={() => onEditEvent(e)}
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          aria-label={`Delete ${e.label}`}
+                          onClick={() => onDeleteEvent(e.id)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
         </div>
 
-        {/* Footer — pinned, only when editable */}
-        {editable && (
+        {/* Footer — Add event */}
+        {editable && iso && (
           <div className="border-t border-border bg-card px-6 py-4">
             <Button
               type="button"
-              className="w-full"
-              disabled={busy}
-              onClick={handleSave}
+              className="w-full gap-1.5"
+              onClick={() => onAddEvent(iso)}
             >
-              {busy ? 'Saving…' : 'Save'}
+              <CalendarPlus className="size-4" />
+              Add event
             </Button>
           </div>
         )}

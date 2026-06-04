@@ -390,8 +390,10 @@ export function CalendarAdminClient({
       <EventEditorDialog
         open={editorOpen}
         termId={editorTerm?.id ?? ''}
-        termStart={editorStart}
-        termEnd={editorEnd}
+        termStart={editorTerm?.startDate ?? ''}
+        termEnd={editorTerm?.endDate ?? ''}
+        defaultStart={editorStart}
+        defaultEnd={editorEnd}
         defaultAudience={level}
         editing={editorEditing}
         onClose={closeEventEditor}

@@ -18,10 +18,13 @@ import { useMemo } from 'react';
 import {
   CalendarCell,
   type CalendarCellProps,
+  type CalendarChip,
 } from '@/components/attendance/calendar/calendar-cell';
 import type { CalendarIndex } from '@/components/attendance/calendar/hooks/use-calendar-index';
 import { Button } from '@/components/ui/button';
 import { sgToday } from '@/lib/dates';
+
+const EMPTY_CHIPS: CalendarChip[] = [];
 
 // ─── Helpers (copied from month-view.tsx — local-date safe, no tz shift) ──────
 
@@ -161,10 +164,10 @@ export function WeekView({
     onCursor(parseIso(clamped));
   }
 
-  // ── Meta strip: classified days count in the visible week ───────────────────
+  // ── Meta strip: days in the visible week with any entry (override or event) ──
   const classifiedThisWeek = useMemo(
-    () => weekDays.filter((d) => index.byDate.has(d.iso)).length,
-    [weekDays, index.byDate]
+    () => weekDays.filter((d) => index.entriesByIso.has(d.iso)).length,
+    [weekDays, index.entriesByIso]
   );
 
   // ── Does any day in the visible week fall inside the selected term? ──────────
@@ -188,8 +191,8 @@ export function WeekView({
           )}
         </div>
         <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          <span className="tabular-nums">{classifiedThisWeek}</span> days
-          classified this week
+          <span className="tabular-nums">{classifiedThisWeek}</span> days with
+          events this week
         </p>
       </div>
 
@@ -262,24 +265,20 @@ export function WeekView({
         <div className="grid grid-cols-5">
           {weekDays.map((d, colIdx) => {
             const isLastCol = colIdx === 4;
-            const dayRow = index.byDate.get(d.iso) ?? null;
-            const events = index.eventsByIso.get(d.iso) ?? [];
-            const audienceBadges = index.audienceBadgeByIso.get(d.iso) ?? [];
+            const chips = index.entriesByIso.get(d.iso) ?? EMPTY_CHIPS;
             const cellInTerm = inTerm(d.iso);
 
             const cellProps: CalendarCellProps = {
               iso: d.iso,
               dayNumber: d.dayNumber,
-              row: dayRow,
-              events,
-              audienceBadges,
+              chips,
               isToday: d.iso === todayIso,
               // Out-of-term days get the faded treatment — consistent with
               // MonthView's outOfMonth rendering (same §10.2 semantics).
               outOfMonth: !cellInTerm,
               clickable: cellInTerm,
-              // Taller cells: show up to 6 events before collapsing.
-              maxVisibleEvents: 6,
+              // Taller cells: show up to 6 chips before collapsing.
+              maxVisibleChips: 6,
               onClick: () => onDayClick(d.iso),
             };
 
