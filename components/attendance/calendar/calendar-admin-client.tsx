@@ -90,6 +90,18 @@ function firstOfMonthFromIso(iso: string): Date {
   return new Date(Number(m[1]), Number(m[2]) - 1, 1);
 }
 
+/** yyyy-MM-dd → exact local Date (not normalized to the 1st). */
+function parseIsoDate(iso: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return new Date();
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+/** Clamp an ISO date into [lo, hi] (string compare is fine for yyyy-MM-dd). */
+function clampIso(iso: string, lo: string, hi: string): string {
+  return iso < lo ? lo : iso > hi ? hi : iso;
+}
+
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
 
 export function CalendarAdminClient({
@@ -126,14 +138,17 @@ export function CalendarAdminClient({
     [terms, selectedTermId]
   );
 
-  // Cursor seeds to the selected term's start month.
-  const initialCursor = useMemo(
-    () =>
-      selectedTerm
-        ? firstOfMonthFromIso(selectedTerm.startDate)
-        : firstOfMonthFromIso(sgToday()),
-    [selectedTerm]
-  );
+  // Cursor seeds to TODAY (clamped into the selected/current term) — so the
+  // calendar opens on the current date, not the term's first month.
+  const initialCursor = useMemo(() => {
+    const today = sgToday();
+    if (selectedTerm) {
+      return parseIsoDate(
+        clampIso(today, selectedTerm.startDate, selectedTerm.endDate)
+      );
+    }
+    return parseIsoDate(today);
+  }, [selectedTerm]);
 
   const { view, setView, cursor, setCursor, filterState, setFilterState } =
     useCalendarViewState(initialCursor);

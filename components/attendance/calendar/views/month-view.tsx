@@ -148,9 +148,11 @@ export function MonthView({
   }
 
   // ── Nav ───────────────────────────────────────────────────────────────────────
-  // Clamp to the selected term's first → last month.
-  const canPrev = cursor.getTime() > termStartMonth.getTime();
-  const canNext = cursor.getTime() < termEndMonth.getTime();
+  // Clamp to the selected term's first → last month. Compare by month (the
+  // cursor may be an exact date, e.g. today on first load).
+  const cursorMonth = firstOfMonth(cursor);
+  const canPrev = cursorMonth.getTime() > termStartMonth.getTime();
+  const canNext = cursorMonth.getTime() < termEndMonth.getTime();
 
   // "Today" button: always enabled — even when today is outside the term. The
   // grid will then show an all-faded month; that's an honest representation.
