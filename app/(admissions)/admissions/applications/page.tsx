@@ -288,9 +288,9 @@ export default async function AdmissionsApplicationsPage({
           <CrossAySearch />
         </CardContent>
         <CardFooter className="text-xs text-muted-foreground">
-          Matches on studentNumber, name, or enroleeNumber across every AY.
-          Useful when an applicant has applied before under a different AY or
-          enrolee number.
+          Matches on student ID, name, or application number across every
+          academic year. Useful when an applicant has applied before under a
+          different year or application number.
         </CardFooter>
       </Card>
 

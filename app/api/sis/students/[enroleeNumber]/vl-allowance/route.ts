@@ -57,7 +57,7 @@ export async function PATCH(
     return NextResponse.json(
       {
         error:
-          'enrolee has no studentNumber yet — assign one before setting allowance',
+          'This student has no student ID yet — assign one before setting an allowance.',
       },
       { status: 409 }
     );
@@ -74,7 +74,7 @@ export async function PATCH(
     return NextResponse.json(
       {
         error:
-          'student not synced to grading schema — run /markbook/sync-students first',
+          "This student hasn't been synced to the grading roster yet. Run a student sync from the Markbook module first.",
       },
       { status: 404 }
     );

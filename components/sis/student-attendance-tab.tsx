@@ -46,7 +46,7 @@ export async function StudentAttendanceTab({
     return (
       <EmptyState
         title="No student number on file"
-        body="This admissions record does not have a studentNumber yet, so there's no way to link it to daily attendance. Assign a studentNumber in the Profile tab once one is issued."
+        body="This admissions record doesn't have a student ID yet, so it can't be linked to daily attendance. A student ID is assigned from the Profile tab once one is issued."
       />
     );
   }
@@ -77,7 +77,7 @@ export async function StudentAttendanceTab({
     return (
       <EmptyState
         title="Student not synced"
-        body={`No grading-side student record exists for ${studentNumber} yet. Run the admissions sync from the Markbook module before daily attendance can surface here.`}
+        body={`This student hasn't been synced to the markbook yet. Run the admissions sync from the Markbook module before daily attendance can appear here.`}
       />
     );
   }

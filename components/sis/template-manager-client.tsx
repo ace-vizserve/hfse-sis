@@ -800,8 +800,9 @@ function PropagateDialog({
         <DialogHeader>
           <DialogTitle>Propagate template</DialogTitle>
           <DialogDescription>
-            UPSERT only — adds missing rows + updates changed values. Never
-            deletes. Per-AY data (form-class-adviser, etc.) is preserved.
+            Adds any missing entries and updates changed values. Nothing is ever
+            deleted, and year-specific data (such as the form-class adviser) is
+            preserved.
           </DialogDescription>
         </DialogHeader>
 

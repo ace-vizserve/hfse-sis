@@ -13,6 +13,29 @@ import {
 } from '@/lib/sis/terms';
 import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
 
+// Shape of the joined student node when name columns are selected, used by both
+// the withdrawal + re-enrolment cascade context queries.
+type StudentNameShape = {
+  student_number: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  middle_name?: string | null;
+};
+
+// Build a display name ("First Middle Last") from a joined student node
+// (handles PostgREST returning the relation as an object or a single-element
+// array). Returns '' when no name parts are available.
+function studentNameFromNode(
+  node: StudentNameShape | StudentNameShape[] | null
+): string {
+  const s = Array.isArray(node) ? node[0] : node;
+  if (!s) return '';
+  return [s.first_name, s.middle_name, s.last_name]
+    .map((p) => (p ?? '').trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
 // PATCH /api/sections/[id]/students/[enrolmentId]
 //
 // Edits per-enrolment metadata:
@@ -207,16 +230,13 @@ export async function PATCH(
     const { data: ctxRow } = await service
       .from('section_students')
       .select(
-        'enrolee_number, student:students!inner(student_number), section:sections!inner(academic_year:academic_years!inner(ay_code))'
+        'enrolee_number, student:students!inner(student_number, first_name, last_name, middle_name), section:sections!inner(academic_year:academic_years!inner(ay_code))'
       )
       .eq('id', enrolmentId)
       .maybeSingle();
     type CtxShape = {
       enrolee_number: string | null;
-      student:
-        | { student_number: string | null }
-        | { student_number: string | null }[]
-        | null;
+      student: StudentNameShape | StudentNameShape[] | null;
       section:
         | { academic_year: { ay_code: string } | { ay_code: string }[] | null }
         | {
@@ -226,6 +246,7 @@ export async function PATCH(
     };
     const ctx = ctxRow as CtxShape | null;
     const enroleeNumber = ctx?.enrolee_number ?? null;
+    const studentName = studentNameFromNode(ctx?.student ?? null);
     const sectionNode = ctx
       ? Array.isArray(ctx.section)
         ? ctx.section[0]
@@ -302,6 +323,7 @@ export async function PATCH(
             ay_code: ayCode,
             trigger: 'section_student.withdrawn',
             enroleeNumber,
+            ...(studentName ? { studentName } : {}),
             section_student_id: enrolmentId,
             section_id: sectionId,
             applicationStatus_after: 'Withdrawn',
@@ -323,16 +345,13 @@ export async function PATCH(
     const { data: reCtxRow } = await service
       .from('section_students')
       .select(
-        'enrolee_number, student:students!inner(student_number), section:sections!inner(academic_year:academic_years!inner(ay_code))'
+        'enrolee_number, student:students!inner(student_number, first_name, last_name, middle_name), section:sections!inner(academic_year:academic_years!inner(ay_code))'
       )
       .eq('id', enrolmentId)
       .maybeSingle();
     type ReCtxShape = {
       enrolee_number: string | null;
-      student:
-        | { student_number: string | null }
-        | { student_number: string | null }[]
-        | null;
+      student: StudentNameShape | StudentNameShape[] | null;
       section:
         | { academic_year: { ay_code: string } | { ay_code: string }[] | null }
         | {
@@ -342,6 +361,7 @@ export async function PATCH(
     };
     const reCtx = reCtxRow as ReCtxShape | null;
     const reEnroleeNumber = reCtx?.enrolee_number ?? null;
+    const reStudentName = studentNameFromNode(reCtx?.student ?? null);
     const reSectionNode = reCtx
       ? Array.isArray(reCtx.section)
         ? reCtx.section[0]
@@ -386,6 +406,7 @@ export async function PATCH(
             ay_code: reAyCode,
             trigger: 'section_student.re-enrolled',
             enroleeNumber: reEnroleeNumber,
+            ...(reStudentName ? { studentName: reStudentName } : {}),
             section_student_id: enrolmentId,
             section_id: sectionId,
             applicationStatus_after: 'Enrolled',

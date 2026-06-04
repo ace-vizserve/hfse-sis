@@ -452,9 +452,14 @@ function templateSummary(
       const from = str(ctx.fromSection ?? ctx.from_section ?? ctx.from);
       const to = str(ctx.toSection ?? ctx.to_section ?? ctx.to);
       const term = str(
-        ctx.term_label ?? ctx.term ?? termLabel(ctx.term_number)
+        ctx.term_label ??
+          ctx.termLabel ??
+          ctx.term ??
+          termLabel(ctx.termNumber ?? ctx.term_number)
       );
       const parts: string[] = [];
+      const lead = studentLead(ctx);
+      if (lead) parts.push(lead);
       if (from && to) parts.push(`${from}${ARROW}${to}`);
       else if (to) parts.push(to);
       if (term) parts.push(term);
@@ -462,11 +467,52 @@ function templateSummary(
     }
 
     case 'sis.student.assign_section': {
-      const section = str(ctx.section_name ?? ctx.classSection ?? ctx.section);
-      const level = str(ctx.class_level ?? ctx.classLevel ?? ctx.level);
+      const section = str(
+        ctx.section_name ?? ctx.sectionName ?? ctx.classSection ?? ctx.section
+      );
+      const level = str(
+        ctx.level_label ??
+          ctx.levelLabel ??
+          ctx.class_level ??
+          ctx.classLevel ??
+          ctx.level
+      );
       const parts: string[] = [];
-      if (section) parts.push(section);
-      if (level) parts.push(level);
+      const lead = studentLead(ctx);
+      if (lead) parts.push(lead);
+      // "Grit (Primary 1)" when both section + level present.
+      if (section && level) parts.push(`${section} (${level})`);
+      else if (section) parts.push(section);
+      else if (level) parts.push(level);
+      return joinParts(parts);
+    }
+
+    // Withdrawal / re-enrolment cascade --------------------------------------
+    case 'student.withdrawal.cascade':
+    case 'student.reenrolment.cascade': {
+      const parts: string[] = [];
+      const lead = studentLead(ctx);
+      if (lead) parts.push(lead);
+      const status = str(ctx.applicationStatus_after ?? ctx.status);
+      if (status) parts.push(status);
+      const date = fmtMaybeDate(ctx.withdrawal_date ?? ctx.date);
+      if (date) parts.push(date);
+      return joinParts(parts);
+    }
+
+    // Leave allowance updates ------------------------------------------------
+    case 'sis.allowance.update':
+    case 'sis.vl_allowance.update': {
+      const parts: string[] = [];
+      const lead = studentLead(ctx);
+      if (lead) parts.push(lead);
+      const before = numish(ctx.before);
+      const after = numish(ctx.after);
+      if (before !== null && after !== null && before !== after) {
+        parts.push(`${before}${ARROW}${after}`);
+      } else if (after !== null) {
+        parts.push(String(after));
+      }
       return joinParts(parts);
     }
 
@@ -629,10 +675,14 @@ function genericSummary(
   }
 
   // (d) prettify remaining scalar entries
+  const hasName = nameFromContext(ctx) !== '';
   const rendered: string[] = [];
   let total = 0;
   for (const [k, v] of Object.entries(ctx)) {
     if (shouldSkipKey(k, v)) continue;
+    // When a human name is present, drop the paired raw number key so we don't
+    // show "Student: Juan · Student no.: 12345" — the number is internal.
+    if (hasName && NUMBER_KEYS_SUPPRESSED_WITH_NAME.includes(k)) continue;
     if (!isScalar(v)) continue;
     if (v === null || v === '') continue;
     const rv = renderValue(k, v);
@@ -707,8 +757,58 @@ function valuesEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
-// Convert snake_case / camelCase identifier → Title Case.
+// Friendly overrides for identifier keys that would otherwise read as raw
+// camelCase (or be meaningless to a school admin). Number keys become a short
+// "no." label; name keys collapse to a plain "Student".
+const FRIENDLY_KEY_LABELS: Record<string, string> = {
+  studentNumber: 'Student no.',
+  enroleeNumber: 'Application no.',
+  studentName: 'Student',
+  enroleeFullName: 'Student',
+  fullName: 'Student',
+  name: 'Student',
+};
+
+// Keys that carry a human student/applicant name. When any of these is present
+// in a context, we surface the NAME and suppress the paired raw number key.
+const NAME_KEYS = [
+  'studentName',
+  'enroleeFullName',
+  'fullName',
+  'name',
+] as const;
+
+// Raw-number identifier keys that should be suppressed once a name is shown
+// (the number is internal — the name reads better for staff).
+const NUMBER_KEYS_SUPPRESSED_WITH_NAME = ['studentNumber', 'enroleeNumber'];
+
+// Returns the first non-empty human name in a context, or '' when none.
+function nameFromContext(ctx: Record<string, unknown>): string {
+  for (const k of NAME_KEYS) {
+    const v = str(ctx[k]);
+    if (v) return v;
+  }
+  return '';
+}
+
+// Student-centric lead segment for templates: prefer the human name; otherwise
+// fall back to a relabeled "Student no. {n}" / "Application no. {n}". Returns ''
+// when neither is available (template then leads with its own first part).
+function studentLead(ctx: Record<string, unknown>): string {
+  const name = nameFromContext(ctx);
+  if (name) return name;
+  const sn = str(ctx.studentNumber);
+  if (sn) return `Student no. ${sn}`;
+  const en = str(ctx.enroleeNumber);
+  if (en) return `Application no. ${en}`;
+  return '';
+}
+
+// Convert snake_case / camelCase identifier → Title Case, honouring the
+// friendly-label overrides above.
 function humanizeKey(key: string): string {
+  const friendly = FRIENDLY_KEY_LABELS[key];
+  if (friendly) return friendly;
   const spaced = key
     .replace(/[_-]+/g, ' ')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')

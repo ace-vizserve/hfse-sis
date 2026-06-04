@@ -395,8 +395,7 @@ export default async function RecordsStudentCrossYearPage({
           </Badge>
         </div>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Cross-year view keyed on{' '}
-          <code className="font-mono">studentNumber</code> (Hard Rule #4).{' '}
+          Cross-year view, linked by the student&rsquo;s permanent student ID.{' '}
           {ayCount > 0 ? (
             <>
               Enrolled across <strong>{ayCount}</strong> academic year

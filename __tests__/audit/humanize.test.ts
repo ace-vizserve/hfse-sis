@@ -219,6 +219,91 @@ describe('auditContextSummary — per-action templates', () => {
   });
 });
 
+describe('auditContextSummary — friendly identifiers + name preference', () => {
+  it('prefers the name and suppresses the raw number (generic path)', () => {
+    const out = auditContextSummary('some.action', {
+      studentName: 'Juan dela Cruz',
+      studentNumber: '12345',
+      bus_number: 'B12',
+    });
+    expect(out).toContain('Juan dela Cruz');
+    expect(out).not.toContain('12345');
+    expect(out).not.toContain('studentNumber');
+    expect(out).not.toContain('Student no.');
+    expect(out).toContain('Bus Number: B12');
+  });
+
+  it('relabels a number-only context to "Student no." (never the raw key)', () => {
+    const out = auditContextSummary('some.action', {
+      studentNumber: '67890',
+    });
+    expect(out).toContain('Student no.');
+    expect(out).toContain('67890');
+    expect(out).not.toContain('studentNumber');
+  });
+
+  it('relabels enroleeNumber to "Application no."', () => {
+    const out = auditContextSummary('some.action', {
+      enroleeNumber: 'APP-2026-001',
+    });
+    expect(out).toContain('Application no.');
+    expect(out).toContain('APP-2026-001');
+    expect(out).not.toContain('enroleeNumber');
+  });
+
+  it('transfer template leads with the name when present', () => {
+    const out = auditContextSummary('student.section.transfer', {
+      studentName: 'Maria Santos',
+      studentNumber: '11111',
+      fromSection: 'Grit',
+      toSection: 'Valor',
+      termNumber: 2,
+    });
+    expect(out).toContain('Maria Santos');
+    expect(out).toContain('Grit → Valor');
+    expect(out).toContain('Term 2');
+    expect(out).not.toContain('11111');
+    expect(out).not.toContain('studentNumber');
+  });
+
+  it('transfer template falls back to "Student no." when no name', () => {
+    const out = auditContextSummary('student.section.transfer', {
+      studentNumber: '22222',
+      fromSection: 'Grit',
+      toSection: 'Valor',
+      termNumber: 1,
+    });
+    expect(out).toContain('Student no. 22222');
+    expect(out).toContain('Grit → Valor');
+    expect(out).not.toContain('studentNumber');
+  });
+
+  it('assign_section template shows name · section (level)', () => {
+    const out = auditContextSummary('sis.student.assign_section', {
+      enroleeFullName: 'Juan dela Cruz',
+      studentNumber: '33333',
+      sectionName: 'Grit',
+      levelLabel: 'Primary 1',
+    });
+    expect(out).toContain('Juan dela Cruz');
+    expect(out).toContain('Grit (Primary 1)');
+    expect(out).not.toContain('33333');
+    expect(out).not.toContain('enroleeFullName');
+  });
+
+  it('vacation allowance update prefixes name then before → after', () => {
+    const out = auditContextSummary('sis.vl_allowance.update', {
+      studentName: 'Ana Reyes',
+      studentNumber: '44444',
+      before: 1,
+      after: 2,
+    });
+    expect(out).toContain('Ana Reyes');
+    expect(out).toContain('1 → 2');
+    expect(out).not.toContain('44444');
+  });
+});
+
 describe('auditContextSummary — never emits JSON', () => {
   const inputs: Array<[string, Record<string, unknown>]> = [
     ['entry.update', { field: 'x', old: 1, new: 2, nested: { a: 1 } }],

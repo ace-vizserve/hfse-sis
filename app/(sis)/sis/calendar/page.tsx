@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarDays, History } from 'lucide-react';
+import { ArrowLeft, CalendarDays } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -128,21 +128,14 @@ export default async function SisCalendarPage({
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             Configure which dates are school days, which are closed (greyed out,
-            not encodable), and overlay informational events. The attendance
-            grid uses this to render only the days students can be marked. Pick
-            a term, then view it by month or switch to List for a chronological
-            view of every closure and event in that term. Filter by Primary or
-            Secondary to manage level-specific overrides alongside the shared
-            (All) baseline.
+            so attendance can&rsquo;t be marked), and overlay informational
+            events. The attendance grid uses this to render only the days
+            students can be marked. Pick a term, then view it by month or switch
+            to List for a chronological view of every closure and event in that
+            term. Filter by Primary or Secondary to manage level-specific
+            overrides alongside the shared (All) baseline.
           </p>
         </div>
-        <Link
-          href="/sis/audit-log"
-          className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-        >
-          <History className="h-3.5 w-3.5" />
-          View change history
-        </Link>
       </header>
 
       {terms.length === 0 ? (
