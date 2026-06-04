@@ -73,3 +73,19 @@ export function dayStatusLabel(s: DayStatus): string {
 export function isPlainSchoolDay(s: DayStatus): boolean {
   return s.kind === 'open' && !s.hbl;
 }
+
+/** True when two statuses are identical — used to collapse Primary == Secondary
+ *  into a single chip instead of showing both levels. */
+export function sameStatus(a: DayStatus, b: DayStatus): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'open') return a.hbl === (b as { hbl: boolean }).hbl;
+  const bc = b as Extract<DayStatus, { kind: 'closed' }>;
+  if (a.reason !== bc.reason) return false;
+  if (a.reason === 'school_holiday') {
+    return (
+      a.hblOverlay ===
+      (bc as Extract<DayStatus, { reason: 'school_holiday' }>).hblOverlay
+    );
+  }
+  return true;
+}

@@ -12,6 +12,7 @@ import type {
 } from '@/lib/attendance/calendar';
 import {
   dayStatusLabel,
+  sameStatus,
   storageToDayStatus,
 } from '@/lib/attendance/calendar-operational';
 import { AUDIENCE_LABELS, type Audience } from '@/lib/schemas/attendance';
@@ -68,16 +69,25 @@ export function useCalendarIndex(
         const sStatus = sEff
           ? statusOf(sEff)
           : ({ kind: 'open', hbl: false } as const);
-        chips.push({
-          key: `${iso}:primary`,
-          label: `${AUDIENCE_LABELS.primary}: ${dayStatusLabel(pStatus)}`,
-          color: DAY_TYPE_LEGEND_COLOR[pEff?.dayType ?? 'school_day'],
-        });
-        chips.push({
-          key: `${iso}:secondary`,
-          label: `${AUDIENCE_LABELS.secondary}: ${dayStatusLabel(sStatus)}`,
-          color: DAY_TYPE_LEGEND_COLOR[sEff?.dayType ?? 'school_day'],
-        });
+        if (sameStatus(pStatus, sStatus)) {
+          // Both levels agree — show one chip, no level prefix.
+          chips.push({
+            key: `${iso}:both`,
+            label: dayStatusLabel(pStatus),
+            color: DAY_TYPE_LEGEND_COLOR[pEff?.dayType ?? 'school_day'],
+          });
+        } else {
+          chips.push({
+            key: `${iso}:primary`,
+            label: `${AUDIENCE_LABELS.primary}: ${dayStatusLabel(pStatus)}`,
+            color: DAY_TYPE_LEGEND_COLOR[pEff?.dayType ?? 'school_day'],
+          });
+          chips.push({
+            key: `${iso}:secondary`,
+            label: `${AUDIENCE_LABELS.secondary}: ${dayStatusLabel(sStatus)}`,
+            color: DAY_TYPE_LEGEND_COLOR[sEff?.dayType ?? 'school_day'],
+          });
+        }
       } else if (allRow) {
         // Show every in-term day — a plain school day reads "School day".
         const st = statusOf(allRow);
