@@ -1,17 +1,15 @@
 'use client';
 
 // CalendarAdminClient (operational orchestrator) — composes the already-built
-// calendar pieces into a working surface: a Term selector + view switcher +
-// filters + add action (CalendarToolbar), a legend, the active view (Month /
-// List functional; Week / Day are placeholders until a later task), a day-action
-// sheet, and the event editor dialog.
+// calendar pieces into a working surface: a jump-to-term selector + view
+// switcher + filters + add action (CalendarToolbar), a legend, the active view
+// (Month / Week / Day / List), a day-action sheet, and the event editor dialog.
 //
-// Term-scoped: receives the whole AY's dated terms + calendar rows + events, but
-// scopes everything to the selected term before filtering / indexing. The Term
-// selector chooses the term (defaults to the current active term); the view tabs
-// (Month / Week / Day / List) are all scoped to it. Between-term break days are
-// simply outside every term window, so they never appear. Every visible in-term
-// day is editable (it has a term to write to).
+// Calendar-first: all four views run on the WHOLE-AY dataset (calendar rows +
+// events). The term selector is a navigation convenience — it jumps the cursor
+// to a term, it does NOT scope data or editability. A date is editable iff it
+// belongs to a term (resolved per-click via termForIso); between-term gap days
+// have no term to write to, so they render faded + open a read-only note.
 //
 // Design system §5/§6: this is a composition page. It owns no bespoke grid
 // markup — the views/toolbar/legend/sheet carry their own design-compliant
