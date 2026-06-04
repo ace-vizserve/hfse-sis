@@ -88,23 +88,28 @@ Mon, 15 Sep 2026
 
 ## 5. Views & filters
 
-### 5.1 Scope of data
+### 5.1 Scope of data — term-scoped with a Term selector [REVISED 2026-06-04, supersedes D2]
 
-The calendar loads the **whole current AY** (all terms aggregated), so Month/Week/Day/List navigate **continuously across the year** rather than being trapped in one term. Each date resolves to its containing term for editing. **Between-term break dates** (outside every term window) render as a read-only "Term break" band derived from the term boundaries — not editable as `school_calendar` rows (they have no `term_id`); the registrar labels a break via an event on the adjacent in-term dates or via D1. The **Term view** focuses a single term (today's full-term strip).
+A standalone **Term selector** (a dropdown in the toolbar) chooses which term is in view; it defaults to the **current active term** (`resolveCurrentTerm(terms, sgToday())`). All four views (Month/Week/Day/List) are **scoped to the selected term** — they render and navigate only within that term's `[start_date, end_date]` window. Switching terms re-scopes every view + resets the Month cursor to the term's start month.
 
-> This is the key scope decision (D2). Alternative: keep strictly term-scoped (simpler, reuses current per-term fetch) and let only List span terms. Recommended: AY-wide, phased (see §8).
+This **supersedes the original AY-wide-continuous D2**: the registrar thinks in terms ("configure T2"), so a term picker + term-bounded views is clearer than scrolling continuously across the year. Consequence: **between-term break dates are not shown in any view** (they fall outside every term window), so the read-only "break band" concept is dropped. A break that needs to be visible inside a term is added as a `term_break` **event** (D1). Days in a visible month that fall outside the selected term's window render faded + non-interactive (same treatment as out-of-month days).
 
-### 5.2 Views (one segmented switcher)
+Data may still be fetched AY-wide (`getSchoolCalendarForAy`/`getCalendarEventsForAy`) and scoped to the selected term in the client, or fetched per-term — either is fine; the views only ever show the selected term.
+
+### 5.2 Views + Term selector
+
+**Term selector** (separate control, NOT a tab): a `Select` of the AY's terms, default = current active term.
+
+**View tabs (one segmented switcher), all scoped to the selected term:**
 
 | View | Purpose |
 | --- | --- |
-| **Month** (default) | Mon–Fri grid, current month; the everyday editing surface. |
-| **Week** | Single Mon–Fri week, larger cells, more event detail. |
-| **Day** | One day, full event list + status — good for dense days. |
-| **Term** | Full-term Mon–Fri strip (existing `TermStripView`), one term. |
-| **List** | Chronological table of closures + events; pairs with date-from/to; CSV-friendly later. |
+| **Month** (default) | Mon–Fri grid for a month within the selected term; the everyday editing surface. |
+| **Week** | Single Mon–Fri week within the term, larger cells, more event detail. |
+| **Day** | One day in the term, full event list + status. |
+| **List** | Chronological table of the selected term's closures + events; pairs with date-from/to. |
 
-Weekends remain non-rendered (not school days) across all grid views, consistent with today.
+(The previously-planned standalone **Term strip** view is dropped — the Term selector replaces it.) Weekends remain non-rendered across all grid views.
 
 ### 5.3 Filter bar (one popover, extensible)
 

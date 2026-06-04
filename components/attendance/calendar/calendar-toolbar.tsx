@@ -109,7 +109,7 @@ export function CalendarToolbar({
       {/* Left — Term selector THEN view-switcher tabs (Month/Week/Day/List) */}
       <div className="flex flex-wrap items-center gap-2">
         <Select value={selectedTermId} onValueChange={onSelectTerm}>
-          <SelectTrigger className="h-8 w-[160px]" aria-label="Selected term">
+          <SelectTrigger className="h-8 w-max" aria-label="Selected term">
             <SelectValue placeholder="Select term" />
           </SelectTrigger>
           <SelectContent>
