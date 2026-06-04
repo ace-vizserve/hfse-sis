@@ -106,6 +106,24 @@ export function TermDatesEditor({
       }
     }
 
+    // Cross-term guard against the WOULD-BE state (all drafts, not just dirty):
+    // in term-number order, each term must start strictly after the previous
+    // term ends — no overlapping or shared-boundary windows. Validating the
+    // full set catches the case where two terms are edited in the same save.
+    const datedInOrder = drafts
+      .filter((d) => d.start_date && d.end_date)
+      .sort((a, b) => a.term_number - b.term_number);
+    for (let i = 1; i < datedInOrder.length; i++) {
+      const prev = datedInOrder[i - 1];
+      const cur = datedInOrder[i];
+      if (prev.end_date >= cur.start_date) {
+        toast.error(
+          `${cur.label} must start after ${prev.label} ends (${prev.label} ends ${prev.end_date}). Terms can't overlap.`
+        );
+        return;
+      }
+    }
+
     setSavingAll(true);
     const results = await Promise.allSettled(
       dirtyDrafts.map(async (d) => {

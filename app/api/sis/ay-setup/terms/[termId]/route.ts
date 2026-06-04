@@ -59,6 +59,14 @@ export async function PATCH(
     return NextResponse.json({ error: 'term not found' }, { status: 404 });
   }
 
+  // Cross-term overlap/order is validated client-side in <TermDatesEditor>
+  // against the full would-be set of windows before saving. It is NOT
+  // re-checked per-term here on purpose: the editor saves dirty terms in
+  // parallel, so validating one term against its *persisted* siblings would
+  // race and falsely reject legitimate batch reorders (e.g. shifting T1's end
+  // and T2's start together). A correct server guard would need an atomic
+  // whole-AY batch endpoint — out of scope for the sole, validated caller.
+
   const updates: Record<string, unknown> = {
     start_date: startDate,
     end_date: endDate,
