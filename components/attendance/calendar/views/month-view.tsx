@@ -326,6 +326,21 @@ export function MonthView({
                   .filter(Boolean)
                   .join(' ');
 
+                // Leading/trailing days from an adjacent month are rendered as
+                // a blank placeholder (keeps the 5-col grid aligned) rather than
+                // a faded, dead-looking date cell.
+                if (cell.outOfMonth) {
+                  return (
+                    <div
+                      key={cell.iso}
+                      aria-hidden="true"
+                      className={['min-h-[120px] bg-muted/20', borderClasses]
+                        .filter(Boolean)
+                        .join(' ')}
+                    />
+                  );
+                }
+
                 return (
                   <div key={cell.iso} className={borderClasses}>
                     <CalendarCell {...cellProps} />
