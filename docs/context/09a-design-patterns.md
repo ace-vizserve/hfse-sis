@@ -283,7 +283,7 @@ Never mix the two for one visualization. A wash-tinted column header documented 
 
 Reference implementations:
 
-- **Calendar pattern** (gradient pill IN the cell + IN the legend): `components/attendance/calendar-admin-client.tsx` — cell chips use `ChartLegendChip` directly, legend strip uses the same `ChartLegendChip`, both keyed on the same `DAY_TYPE_LEGEND_COLOR` map
+- **Calendar pattern** (gradient pill IN the cell + IN the legend): `components/attendance/calendar/calendar-cell.tsx` + `components/attendance/calendar/legend.tsx` — cell chips use `ChartLegendChip` directly, the legend strip uses the same `ChartLegendChip`, both keyed on the same `DAY_TYPE_LEGEND_COLOR` map
 - **Wide-grid pattern** (gradient classes inline in the cell + `ChartLegendChip` in the legend): `components/attendance/wide-grid.tsx` — cells apply `STATUS_CHIP_GRADIENT[status]` directly to the wrapping div (so the native `<select>` stays interactive), column headers render a small `ChartLegendChip`, legend uses `ChartLegendChip` keyed on the same `STATUS_CHIP_COLOR` and `DAY_TYPE_CHIP_COLOR` maps
 
 ### 10.2 Single source of truth for the tint

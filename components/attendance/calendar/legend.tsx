@@ -31,10 +31,6 @@ export function Legend() {
 
       <ChartLegendChip color="neutral" label="No class" />
       <ChartLegendChip color="chart-4" label="Important date" />
-
-      {/* Term break — 'neutral' matches the ChartLegendChip rendered in
-          CalendarCell when isBreak=true, satisfying §10.2 single-source rule. */}
-      <ChartLegendChip color="neutral" label="Term break" />
     </div>
   );
 }
