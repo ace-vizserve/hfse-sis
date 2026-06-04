@@ -164,12 +164,6 @@ export function WeekView({
     onCursor(parseIso(clamped));
   }
 
-  // ── Meta strip: days in the visible week with any entry (override or event) ──
-  const classifiedThisWeek = useMemo(
-    () => weekDays.filter((d) => index.entriesByIso.has(d.iso)).length,
-    [weekDays, index.entriesByIso]
-  );
-
   // ── Does any day in the visible week fall inside the selected term? ──────────
   const weekInTerm = weekDays.some((d) => inTerm(d.iso));
 
@@ -190,10 +184,6 @@ export function WeekView({
             </span>
           )}
         </div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          <span className="tabular-nums">{classifiedThisWeek}</span> days with
-          events this week
-        </p>
       </div>
 
       {/* Week caption + prev / next / Today nav */}

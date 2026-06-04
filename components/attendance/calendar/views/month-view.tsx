@@ -176,19 +176,6 @@ export function MonthView({
     onCursor(todayMonth);
   }
 
-  // ── Meta strip stats ──────────────────────────────────────────────────────────
-  // Count days in the visible month that carry any entry (override or event).
-  const classifiedThisMonth = useMemo(() => {
-    const year = cursor.getFullYear();
-    const month = cursor.getMonth();
-    let count = 0;
-    for (const [iso] of index.entriesByIso) {
-      const d = parseIso(iso);
-      if (d.getFullYear() === year && d.getMonth() === month) count++;
-    }
-    return count;
-  }, [cursor, index.entriesByIso]);
-
   // ── Month caption ─────────────────────────────────────────────────────────────
   const monthLabel = cursor.toLocaleString('en-SG', {
     month: 'long',
@@ -224,10 +211,6 @@ export function MonthView({
             </span>
           )}
         </div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          <span className="tabular-nums">{classifiedThisMonth}</span> days with
-          events this month
-        </p>
       </div>
 
       {/* Month caption + prev / next / Today nav */}

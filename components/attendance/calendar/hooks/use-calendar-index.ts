@@ -12,7 +12,6 @@ import type {
 } from '@/lib/attendance/calendar';
 import {
   dayStatusLabel,
-  isPlainSchoolDay,
   storageToDayStatus,
 } from '@/lib/attendance/calendar-operational';
 import { AUDIENCE_LABELS, type Audience } from '@/lib/schemas/attendance';
@@ -80,14 +79,13 @@ export function useCalendarIndex(
           color: DAY_TYPE_LEGEND_COLOR[sEff?.dayType ?? 'school_day'],
         });
       } else if (allRow) {
+        // Show every in-term day — a plain school day reads "School day".
         const st = statusOf(allRow);
-        if (!isPlainSchoolDay(st)) {
-          chips.push({
-            key: `${iso}:all`,
-            label: dayStatusLabel(st),
-            color: DAY_TYPE_LEGEND_COLOR[allRow.dayType],
-          });
-        }
+        chips.push({
+          key: `${iso}:all`,
+          label: dayStatusLabel(st),
+          color: DAY_TYPE_LEGEND_COLOR[allRow.dayType],
+        });
       }
       if (chips.length) entriesByIso.set(iso, chips);
     }
