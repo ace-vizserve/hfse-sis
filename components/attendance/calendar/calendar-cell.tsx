@@ -89,21 +89,14 @@ function formatHumanDate(iso: string): string {
 
 // ─── EventChip ───────────────────────────────────────────────────────────────
 //
-// Gradient chip for informational events (calendar_events rows). Tentative
-// events render with dashed border + reduced opacity so the registrar can spot
-// unconfirmed dates at a glance.
+// Gradient chip for informational events (calendar_events rows).
 
 export function EventChip({ event }: { event: CalendarEventRow }) {
   return (
     <ChartLegendChip
       color={EVENT_CATEGORY_LEGEND_COLOR[event.category]}
       label={event.label}
-      className={[
-        'flex w-full justify-center',
-        event.tentative && 'opacity-70 [&]:border-dashed [&]:border-white/60',
-      ]
-        .filter(Boolean)
-        .join(' ')}
+      className="flex w-full justify-center"
     />
   );
 }

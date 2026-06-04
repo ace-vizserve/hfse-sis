@@ -326,11 +326,6 @@ export function DayView({
                           {evt.startDate} → {evt.endDate}
                         </p>
                       )}
-                      {evt.tentative && (
-                        <Badge className="h-4 border-brand-amber/40 bg-brand-amber/15 font-mono text-[9px] uppercase tracking-wider text-foreground">
-                          Tentative
-                        </Badge>
-                      )}
                     </div>
                   </div>
                 ))}

@@ -16,7 +16,6 @@ export type CalendarFilterState = {
   categories: EventCategory[]; // empty = all
   level: Audience; // 'all' | 'primary' | 'secondary'
   status: StatusFilter;
-  tentativeOnly: boolean;
   // Reserved for the registrar's #2 filters (spec D3). Add keys here + a
   // CALENDAR_FILTERS entry + a control in calendar-filter-bar.
 };
@@ -28,7 +27,6 @@ export function defaultFilterState(): CalendarFilterState {
     categories: [],
     level: 'all',
     status: 'all',
-    tentativeOnly: false,
   };
 }
 
@@ -48,7 +46,6 @@ export function filterEvents(
     if (s.categories.length > 0 && !s.categories.includes(e.category))
       return false;
     if (!inLevel(e.audience, s.level)) return false;
-    if (s.tentativeOnly && !e.tentative) return false;
     return true;
   });
 }
@@ -78,7 +75,7 @@ export function filterDays(
 export type CalendarFilterDef = {
   id: keyof CalendarFilterState;
   label: string;
-  control: 'date-range' | 'category-multi' | 'level' | 'status' | 'toggle';
+  control: 'date-range' | 'category-multi' | 'level' | 'status';
 };
 
 export const CALENDAR_FILTERS: CalendarFilterDef[] = [
@@ -86,5 +83,4 @@ export const CALENDAR_FILTERS: CalendarFilterDef[] = [
   { id: 'categories', label: 'Category', control: 'category-multi' },
   { id: 'level', label: 'Level', control: 'level' },
   { id: 'status', label: 'Status', control: 'status' },
-  { id: 'tentativeOnly', label: 'Tentative only', control: 'toggle' },
 ];

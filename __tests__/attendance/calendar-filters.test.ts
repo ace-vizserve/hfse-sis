@@ -92,14 +92,4 @@ describe('calendar filters', () => {
       filterDays([open, closed], { ...defaultFilterState(), status: 'closed' })
     ).toEqual([closed]);
   });
-
-  it('tentative filter keeps only un-confirmed events', () => {
-    const s: CalendarFilterState = {
-      ...defaultFilterState(),
-      tentativeOnly: true,
-    };
-    expect(
-      filterEvents([ev({ tentative: true }), ev({ tentative: false })], s)
-    ).toHaveLength(1);
-  });
 });

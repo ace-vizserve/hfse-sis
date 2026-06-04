@@ -187,24 +187,6 @@ export function CalendarFilterBar({ value, onChange }: CalendarFilterBarProps) {
           );
         }
 
-        if (def.control === 'toggle') {
-          // tentativeOnly — single boolean toggle
-          const fieldKey = def.id as 'tentativeOnly';
-          return (
-            <div key={def.id} className="flex flex-col gap-2">
-              <label className="flex cursor-pointer items-center gap-2.5">
-                <Checkbox
-                  checked={value[fieldKey] as boolean}
-                  onCheckedChange={(v) => emit({ [fieldKey]: Boolean(v) })}
-                />
-                <span className="text-[13px] font-medium text-foreground">
-                  {def.label}
-                </span>
-              </label>
-            </div>
-          );
-        }
-
         return null;
       })}
 

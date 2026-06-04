@@ -1,8 +1,8 @@
 'use client';
 
 // EventEditorDialog — create / edit a single calendar_events row (label,
-// category incl. term_break, audience/level, tentative, date range bounded to
-// a term). Lifted verbatim from the legacy calendar-admin-client.tsx
+// category incl. term_break, audience/level, date range bounded to a term).
+// Lifted from the legacy calendar-admin-client.tsx
 // AddEventDialog (Task 11) — only import paths changed. POST creates, PATCH
 // edits via /api/attendance/calendar/events.
 //
@@ -14,7 +14,6 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
   Dialog,
@@ -69,7 +68,6 @@ export function EventEditorDialog({
   const [label, setLabel] = useState('');
   const [category, setCategory] = useState<EventCategory>('school_event');
   const [eventAudience, setEventAudience] = useState<Audience>(defaultAudience);
-  const [tentative, setTentative] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Reset when the dialog opens — values come from `editing` in edit mode,
@@ -86,14 +84,12 @@ export function EventEditorDialog({
       setLabel(editing.label);
       setCategory(editing.category);
       setEventAudience(editing.audience);
-      setTentative(editing.tentative);
     } else {
       setStart(termStart);
       setEnd(termEnd);
       setLabel('');
       setCategory('school_event');
       setEventAudience(defaultAudience);
-      setTentative(false);
     }
   }
   if (!open && initKey !== null) setInitKey(null);
@@ -129,7 +125,6 @@ export function EventEditorDialog({
                 label: label.trim(),
                 category,
                 audience: eventAudience,
-                tentative,
               }
             : {
                 termId,
@@ -138,7 +133,6 @@ export function EventEditorDialog({
                 label: label.trim(),
                 category,
                 audience: eventAudience,
-                tentative,
               }
         ),
       });
@@ -171,7 +165,7 @@ export function EventEditorDialog({
           </DialogTitle>
           <DialogDescription>
             {isEdit
-              ? "Update the event's dates, label, category, audience, or tentative flag. Changes apply immediately."
+              ? "Update the event's dates, label, category, or audience. Changes apply immediately."
               : "Adds a colored event chip across the matching dates. Doesn't block attendance — teachers still mark students as usual. Pick a category to color-code (term exams, subject weeks, parents dialogue, etc.)."}
           </DialogDescription>
         </DialogHeader>
@@ -240,16 +234,6 @@ export function EventEditorDialog({
               </Select>
             </div>
           </div>
-          <label className="flex cursor-pointer items-center gap-2 text-[12px] text-muted-foreground">
-            <Checkbox
-              checked={tentative}
-              onCheckedChange={(v) => setTentative(Boolean(v))}
-            />
-            <span>
-              Tentative — provisional date pending review (renders dashed in the
-              grid)
-            </span>
-          </label>
         </div>
 
         <DialogFooter>

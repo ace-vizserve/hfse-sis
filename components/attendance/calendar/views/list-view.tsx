@@ -28,7 +28,6 @@ import {
   ChartLegendChip,
   type ChartLegendChipColor,
 } from '@/components/dashboard/chart-legend-chip';
-import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import type {
@@ -61,8 +60,6 @@ type ListRow = {
   label: string;
   /** Audience value for the Level column. */
   level: Audience;
-  /** Events only; closures are always false. */
-  tentative: boolean;
 };
 
 // ─── Row key helpers ──────────────────────────────────────────────────────────
@@ -131,7 +128,6 @@ function buildClosureRows(days: SchoolCalendarRow[]): ListRow[] {
         typeColor: DAY_TYPE_LEGEND_COLOR[d.dayType],
         label: d.label ?? '—',
         level: d.audience,
-        tentative: false,
       };
     });
 }
@@ -146,7 +142,6 @@ function buildEventRows(events: CalendarEventRow[]): ListRow[] {
       typeColor: EVENT_CATEGORY_LEGEND_COLOR[e.category],
       label: e.label,
       level: e.audience,
-      tentative: e.tentative,
     })
   );
 }
@@ -200,18 +195,6 @@ const DATA_COLUMNS: ColumnDef<ListRow>[] = [
         {AUDIENCE_LABELS[row.original.level]}
       </span>
     ),
-  },
-  {
-    id: 'tentative',
-    accessorFn: (row) => row.tentative,
-    header: 'Tentative',
-    cell: ({ row }) =>
-      row.original.tentative ? (
-        // §9.3 informational/unconfirmed tone: amber wash.
-        <Badge className="h-5 border-brand-amber/40 bg-brand-amber/15 font-mono text-[10px] uppercase tracking-wider text-foreground">
-          Tentative
-        </Badge>
-      ) : null,
   },
 ];
 

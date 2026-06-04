@@ -77,7 +77,6 @@ export type CalendarToolbarProps = {
 //   • categories.length > 0
 //   • level !== 'all'
 //   • status !== 'all'
-//   • tentativeOnly
 
 function countActiveFilters(s: CalendarFilterState): number {
   let n = 0;
@@ -85,7 +84,6 @@ function countActiveFilters(s: CalendarFilterState): number {
   if (s.categories.length > 0) n += 1;
   if (s.level !== 'all') n += 1;
   if (s.status !== 'all') n += 1;
-  if (s.tentativeOnly) n += 1;
   return n;
 }
 
