@@ -159,17 +159,17 @@ export default async function SisCalendarPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-100">
+            <div className="rounded-xl border border-brand-amber/40 bg-brand-amber-light/40 p-4 text-sm text-foreground">
               <p className="font-medium">
                 The terms for {ay?.label ?? 'this academic year'} don&apos;t
                 have start &amp; end dates yet.
               </p>
-              <p className="mt-1 text-amber-800/80 dark:text-amber-200/80">
+              <p className="mt-1 text-muted-foreground">
                 The calendar can&apos;t render a month view without them. Set
                 the dates in{' '}
                 <Link
                   href="/sis/ay-setup"
-                  className="font-medium text-amber-900 underline underline-offset-2 dark:text-amber-100"
+                  className="font-medium text-primary underline underline-offset-2"
                 >
                   AY Setup
                 </Link>{' '}

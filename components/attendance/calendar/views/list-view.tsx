@@ -189,7 +189,11 @@ const DATA_COLUMNS: ColumnDef<ListRow>[] = [
     ),
   },
   {
-    accessorKey: 'level',
+    // accessor returns the LABEL so the Level facet (whose valueOptions are
+    // AUDIENCE_LABELS) compares like-for-like — a raw 'primary' accessor would
+    // never match the 'Primary' facet option.
+    id: 'level',
+    accessorFn: (row) => AUDIENCE_LABELS[row.level],
     header: 'Level',
     cell: ({ row }) => (
       <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">

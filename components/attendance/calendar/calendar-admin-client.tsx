@@ -135,7 +135,13 @@ export function CalendarAdminClient({
   const [lastTermId, setLastTermId] = useState<string>(selectedTermId);
   if (lastTermId !== selectedTermId) {
     setLastTermId(selectedTermId);
-    setCursor(initialCursor);
+    // Compute inline (not via the initialCursor memo) so this never depends on
+    // transitive memo evaluation order during the same render.
+    setCursor(
+      selectedTerm
+        ? firstOfMonthFromIso(selectedTerm.startDate)
+        : firstOfMonthFromIso(sgToday())
+    );
   }
 
   // ── Term-scope the data BEFORE filtering / indexing ───────────────────────────

@@ -143,7 +143,12 @@ export function WeekView({
     onCursor(addDays(cursor, 7));
   }
   function goToday() {
-    onCursor(new Date());
+    // SGT-correct "today" (KD #32), clamped into the term window so the week
+    // view never lands fully outside the selected term (mirrors DayView).
+    const t = sgToday();
+    const clamped =
+      t < term.startDate ? term.startDate : t > term.endDate ? term.endDate : t;
+    onCursor(parseIso(clamped));
   }
 
   // ── Meta strip: classified days count in the visible week ───────────────────
