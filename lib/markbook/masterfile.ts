@@ -101,6 +101,12 @@ export type MasterfileStudentRow = {
   // Attendance per term + AY total.
   attendanceByTerm: MasterfileAttendanceTermCell[];
   attendanceTotal: { present: number; late: number; schoolDays: number };
+  // Form Class Adviser write-up comments, T1–T3 only (KD #49 — T4 has no FCA
+  // comment). Only terms with non-empty content appear. Sourced from
+  // `evaluation_writeups`, resolved per the student's `student_id` (not the
+  // denormalized `evaluation_writeups.section_id`) so a mid-year transfer
+  // doesn't drop the comment (KD #120).
+  commentsByTerm: { termNumber: number; text: string }[];
 };
 
 export type MasterfilePayload = {
@@ -431,6 +437,42 @@ async function loadMasterfileUncached(
   };
   const attendanceRows = (attendanceRaw ?? []) as AttRow[];
 
+  // 7b. FCA write-up comments (KD #49) — T1–T3 only (T4 has no FCA comment).
+  // `evaluation_writeups` is uniquely keyed (term_id, student_id); we resolve
+  // by the student's `student_id` rather than the denormalized
+  // `evaluation_writeups.section_id`, so a mid-year transfer keeps the comment
+  // (KD #120). Reuses the `writeup` content field that build-report-card reads.
+  const commentTermIds = terms
+    .filter((t) => t.term_number >= 1 && t.term_number <= 3)
+    .map((t) => t.id);
+  const studentIds = [...groupedByStudent.keys()];
+  const termNumberById = new Map<string, number>();
+  for (const t of terms) termNumberById.set(t.id, t.term_number);
+
+  // commentsByStudent: studentId -> termId -> non-empty writeup text.
+  const commentsByStudent = new Map<string, Map<string, string>>();
+  if (commentTermIds.length > 0 && studentIds.length > 0) {
+    const { data: writeupsRaw } = await service
+      .from('evaluation_writeups')
+      .select('student_id, term_id, writeup')
+      .in('student_id', studentIds)
+      .in('term_id', commentTermIds);
+    for (const w of (writeupsRaw ?? []) as Array<{
+      student_id: string;
+      term_id: string;
+      writeup: string | null;
+    }>) {
+      const text = (w.writeup ?? '').trim();
+      if (!text) continue;
+      let byTerm = commentsByStudent.get(w.student_id);
+      if (!byTerm) {
+        byTerm = new Map<string, string>();
+        commentsByStudent.set(w.student_id, byTerm);
+      }
+      byTerm.set(w.term_id, text);
+    }
+  }
+
   // 8. Build student rows.
   const STATUS_RANK: Record<string, number> = {
     active: 0,
@@ -586,6 +628,18 @@ async function loadMasterfileUncached(
       { schoolDays: 0, present: 0, late: 0 }
     );
 
+    // FCA comments (T1–T3), ordered by term number, non-empty only.
+    const byTermMap = commentsByStudent.get(group.studentId);
+    const commentsByTerm: { termNumber: number; text: string }[] = [];
+    if (byTermMap) {
+      for (const [termId, text] of byTermMap) {
+        const termNumber = termNumberById.get(termId);
+        if (termNumber == null) continue;
+        commentsByTerm.push({ termNumber, text });
+      }
+      commentsByTerm.sort((a, b) => a.termNumber - b.termNumber);
+    }
+
     rows.push({
       studentId: group.studentId,
       studentNumber: group.studentNumber,
@@ -599,6 +653,7 @@ async function loadMasterfileUncached(
       overallAward,
       attendanceByTerm,
       attendanceTotal,
+      commentsByTerm,
     });
   }
 

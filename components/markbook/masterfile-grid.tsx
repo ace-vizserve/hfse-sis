@@ -1,6 +1,6 @@
 'use client';
 
-import { Search, X } from 'lucide-react';
+import { FileSpreadsheet, Search, X } from 'lucide-react';
 import Link from 'next/link';
 import { memo, useMemo, useState } from 'react';
 
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 
 import { AnnualLetterInput } from '@/components/grading/annual-letter-input';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
@@ -45,6 +46,20 @@ export function MasterfileGrid({ payload }: { payload: MasterfilePayload }) {
   const [awardFilter, setAwardFilter] = useState<AwardFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [nameSearch, setNameSearch] = useState('');
+
+  // Export-to-Excel link mirrors the current ?ay / ?level / ?class filter.
+  // Forward EVERY selected section (repeated ?class= params) so the workbook
+  // contains exactly the classes on screen — not all classes (over-delivery)
+  // when more than one is selected. Omitting ?class= entirely means "all".
+  const exportHref = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set('ay', payload.ayCode);
+    params.set('level', payload.level.id);
+    for (const id of payload.selectedSectionIds) {
+      params.append('class', id);
+    }
+    return `/api/markbook/masterfile/export?${params.toString()}`;
+  }, [payload.ayCode, payload.level.id, payload.selectedSectionIds]);
 
   const examinableSubjects = useMemo(
     () => payload.subjects.filter((s) => s.isExaminable),
@@ -171,23 +186,32 @@ export function MasterfileGrid({ payload }: { payload: MasterfilePayload }) {
     <TooltipProvider>
       {/* Filter bar */}
       <div className="flex flex-col gap-3">
-        {/* Name search */}
-        <div className="relative w-64">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={nameSearch}
-            onChange={(e) => setNameSearch(e.target.value)}
-            placeholder="Search by name or student no."
-            className="h-8 pl-8 pr-7 text-xs"
-          />
-          {nameSearch && (
-            <button
-              onClick={() => setNameSearch('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+        {/* Name search + export */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="relative w-64">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={nameSearch}
+              onChange={(e) => setNameSearch(e.target.value)}
+              placeholder="Search by name or student no."
+              className="h-8 pl-8 pr-7 text-xs"
+            />
+            {nameSearch && (
+              <button
+                onClick={() => setNameSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          <Button asChild variant="outline" size="sm" className="h-8">
+            <a href={exportHref}>
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Export to Excel
+            </a>
+          </Button>
         </div>
 
         {/* Award chips */}
@@ -341,9 +365,16 @@ export function MasterfileGrid({ payload }: { payload: MasterfilePayload }) {
               </th>
               <th
                 colSpan={3}
-                className="border-b border-border bg-muted/30 px-2 py-2 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                className="border-b border-r border-border bg-muted/30 px-2 py-2 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
               >
                 Attendance total
+              </th>
+
+              <th
+                rowSpan={2}
+                className="border-b border-border bg-card px-3 py-2 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+              >
+                Teacher&rsquo;s Comments
               </th>
             </tr>
 
@@ -409,7 +440,7 @@ export function MasterfileGrid({ payload }: { payload: MasterfilePayload }) {
               <th className="border-b border-r border-border bg-muted/30 px-2 py-1 text-center font-mono text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                 Present
               </th>
-              <th className="border-b border-border bg-muted/30 px-2 py-1 text-center font-mono text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              <th className="border-b border-r border-border bg-muted/30 px-2 py-1 text-center font-mono text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                 Late
               </th>
             </tr>
@@ -642,9 +673,41 @@ const StudentRowView = memo(function StudentRowView({
       <td className={cn(baseCellClass, 'text-muted-foreground')}>
         {row.attendanceTotal.late || '—'}
       </td>
+
+      {/* Teacher's Comments — FCA write-ups T1–T3 (KD #49) */}
+      <td
+        className={cn(
+          'border-b border-border px-3 py-1.5 align-top text-left text-xs',
+          isWithdrawn && 'text-muted-foreground/70'
+        )}
+      >
+        <TeacherComments comments={row.commentsByTerm} />
+      </td>
     </tr>
   );
 });
+
+function TeacherComments({
+  comments,
+}: {
+  comments: MasterfileStudentRow['commentsByTerm'];
+}) {
+  if (!comments || comments.length === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="flex max-w-[20rem] flex-col gap-1.5">
+      {comments.map((c) => (
+        <div key={c.termNumber} className="leading-snug">
+          <span className="mr-1 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            T{c.termNumber}
+          </span>
+          <span className="text-foreground line-clamp-3">{c.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function ExaminableSubjectCells({
   subjectRow,
