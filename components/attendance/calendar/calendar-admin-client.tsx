@@ -182,13 +182,23 @@ export function CalendarAdminClient({
   }, []);
 
   // Day-sheet data is resolved by the clicked DATE from the full AY arrays
-  // (unfiltered) so the sheet shows the real row + every event on that day,
-  // regardless of the active filters or which term is "jumped" to.
-  const daySheetRow: SchoolCalendarRow | null = daySheetIso
-    ? (calendar.find((c) => c.date === daySheetIso && c.audience === level) ??
-      index.byDate.get(daySheetIso) ??
-      null)
-    : null;
+  // (unfiltered) so the sheet shows the real rows + every event on that day,
+  // regardless of the active filters or which term is "jumped" to. Per-audience
+  // rows let the sheet show/edit each level (All / Primary / Secondary).
+  const daySheetRowsByAudience: Record<Audience, SchoolCalendarRow | null> =
+    useMemo(() => {
+      const find = (aud: Audience) =>
+        daySheetIso
+          ? (calendar.find(
+              (c) => c.date === daySheetIso && c.audience === aud
+            ) ?? null)
+          : null;
+      return {
+        all: find('all'),
+        primary: find('primary'),
+        secondary: find('secondary'),
+      };
+    }, [calendar, daySheetIso]);
   const daySheetEvents = daySheetIso
     ? events.filter(
         (e) => daySheetIso >= e.startDate && daySheetIso <= e.endDate
@@ -347,8 +357,8 @@ export function CalendarAdminClient({
       <DayActionSheet
         iso={daySheetIso}
         termId={daySheetIso ? (termForIso(daySheetIso)?.id ?? '') : ''}
-        audience={level}
-        row={daySheetRow}
+        rowsByAudience={daySheetRowsByAudience}
+        defaultLevel={level}
         events={daySheetEvents}
         editable={daySheetIso ? termForIso(daySheetIso) !== null : false}
         onClose={() => setDaySheetIso(null)}

@@ -33,15 +33,21 @@ import {
   type ClosedReason,
   type DayStatus,
 } from '@/lib/attendance/calendar-operational';
-import type { Audience } from '@/lib/schemas/attendance';
+import {
+  AUDIENCE_LABELS,
+  AUDIENCE_VALUES,
+  type Audience,
+} from '@/lib/schemas/attendance';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface DayActionSheetProps {
   iso: string | null;
   termId: string;
-  audience: Audience;
-  row: SchoolCalendarRow | null;
+  /** The clicked date's school_calendar row per audience (null = no override). */
+  rowsByAudience: Record<Audience, SchoolCalendarRow | null>;
+  /** Level pre-selected when the sheet opens (the page audience filter). */
+  defaultLevel: Audience;
   events: CalendarEventRow[];
   editable: boolean;
   onClose: () => void;
@@ -74,13 +80,24 @@ function initialStatus(row: SchoolCalendarRow | null): DayStatus {
   });
 }
 
+/** Short human label for a day status, used in the per-level summary. */
+function statusLabel(s: DayStatus): string {
+  if (s.kind === 'open') return s.hbl ? 'Open · HBL' : 'Open';
+  if (s.reason === 'school_holiday') {
+    return s.hblOverlay
+      ? 'Closed · School holiday (HBL)'
+      : 'Closed · School holiday';
+  }
+  return `Closed · ${CLOSED_REASON_LABELS[s.reason]}`;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function DayActionSheet({
   iso,
   termId,
-  audience,
-  row,
+  rowsByAudience,
+  defaultLevel,
   events,
   editable,
   onClose,
@@ -89,19 +106,35 @@ export function DayActionSheet({
   onEditEvent,
   onDeleteEvent,
 }: DayActionSheetProps) {
-  const [status, setStatus] = useState<DayStatus>(() => initialStatus(row));
+  // Effective row for a level: its own override, else (for non-'all') the All
+  // baseline it inherits. 'all' has no fallback.
+  const effectiveRow = (level: Audience): SchoolCalendarRow | null =>
+    rowsByAudience[level] ?? (level !== 'all' ? rowsByAudience.all : null);
+  /** Does this level carry its OWN override (vs inheriting All)? */
+  const hasOwnOverride = (level: Audience): boolean =>
+    level !== 'all' && rowsByAudience[level] != null;
+
+  const [selectedLevel, setSelectedLevel] = useState<Audience>(defaultLevel);
+  const [status, setStatus] = useState<DayStatus>(() =>
+    initialStatus(effectiveRow(defaultLevel))
+  );
   const [busy, setBusy] = useState(false);
 
-  // Re-initialise local state whenever the sheet opens for a new day.
-  // Using a key on the content would remount the whole tree — instead we
-  // derive on every render but only "write" when iso changes.
-  const derivedStatus = initialStatus(row);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Re-initialise when the sheet opens for a new day: reset the level to the
+  // page default and the status to that level's effective row. rowsByAudience
+  // already reflects the new iso (resolved by the parent).
   const [lastIso, setLastIso] = useState<string | null>(iso);
   if (iso !== lastIso) {
     setLastIso(iso);
-    setStatus(derivedStatus);
+    setSelectedLevel(defaultLevel);
+    setStatus(initialStatus(effectiveRow(defaultLevel)));
     setBusy(false);
+  }
+
+  // Switching level shows that level's effective status (own or inherited).
+  function handleLevelChange(level: Audience) {
+    setSelectedLevel(level);
+    setStatus(initialStatus(effectiveRow(level)));
   }
 
   // ── Handlers ────────────────────────────────────────────────────────────────
@@ -153,12 +186,18 @@ export function DayActionSheet({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           termId,
-          audience,
-          // Preserve any existing label — the upsert writes the full row, so
-          // omitting label would clobber it to null. Day status is edited here;
-          // labelling a day is done via events, not this sheet.
+          // Writes to the selected level — creating a per-level override when
+          // it's Primary/Secondary, or the baseline when it's All.
+          audience: selectedLevel,
+          // Preserve any existing label on THIS level's own row — the upsert
+          // writes the full row, so omitting label would clobber it to null.
           entries: [
-            { date: iso, dayType, label: row?.label ?? null, hblOverlay },
+            {
+              date: iso,
+              dayType,
+              label: rowsByAudience[selectedLevel]?.label ?? null,
+              hblOverlay,
+            },
           ],
         }),
       });
@@ -168,10 +207,45 @@ export function DayActionSheet({
           (body as { message?: string }).message ?? `Server error ${res.status}`
         );
       }
-      toast.success('Day saved');
+      toast.success(
+        selectedLevel === 'all'
+          ? 'Day saved'
+          : `${AUDIENCE_LABELS[selectedLevel]} override saved`
+      );
       onSaved();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save day');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Remove a Primary/Secondary override so the level falls back to the All
+  // baseline (DELETE the level-specific row).
+  async function handleResetToAll() {
+    if (!iso || selectedLevel === 'all') return;
+    setBusy(true);
+    try {
+      const params = new URLSearchParams({
+        termId,
+        date: iso,
+        audience: selectedLevel,
+      });
+      const res = await fetch(`/api/attendance/calendar?${params.toString()}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          (body as { error?: string }).error ?? `Server error ${res.status}`
+        );
+      }
+      toast.success(
+        `${AUDIENCE_LABELS[selectedLevel]} now follows the All baseline`
+      );
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reset');
     } finally {
       setBusy(false);
     }
@@ -232,10 +306,69 @@ export function DayActionSheet({
             </div>
           ) : (
             <>
-              {/* Day status section */}
+              {/* Level switcher + per-level summary — a date can differ by
+                  level (e.g. HBL for Primary, open for Secondary). */}
+              <section className="space-y-3">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Level
+                </p>
+                <div className="inline-flex w-full rounded-lg border border-border bg-muted/40 p-0.5">
+                  {AUDIENCE_VALUES.map((lvl) => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => handleLevelChange(lvl)}
+                      className={[
+                        'flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors',
+                        selectedLevel === lvl
+                          ? 'bg-card text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground',
+                      ].join(' ')}
+                    >
+                      {AUDIENCE_LABELS[lvl]}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Effective status for each level (own override, else All). */}
+                <div className="space-y-1 rounded-lg border border-border bg-muted/20 px-3 py-2">
+                  {AUDIENCE_VALUES.map((lvl) => (
+                    <div
+                      key={lvl}
+                      className="flex items-center justify-between gap-3 text-[12px]"
+                    >
+                      <span className="text-muted-foreground">
+                        {AUDIENCE_LABELS[lvl]}
+                      </span>
+                      <span className="font-medium text-foreground">
+                        {statusLabel(initialStatus(effectiveRow(lvl)))}
+                        {lvl !== 'all' && !hasOwnOverride(lvl) && (
+                          <span className="ml-1 font-normal text-muted-foreground">
+                            (inherits All)
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {selectedLevel !== 'all' && !hasOwnOverride(selectedLevel) && (
+                  <p className="text-[12px] leading-relaxed text-muted-foreground">
+                    {AUDIENCE_LABELS[selectedLevel]} inherits the All baseline.
+                    Saving below creates a {AUDIENCE_LABELS[selectedLevel]}
+                    -specific override.
+                  </p>
+                )}
+              </section>
+
+              <Separator />
+
+              {/* Day status section — edits the SELECTED level */}
               <section className="space-y-4">
                 <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Day status
+                  {selectedLevel === 'all'
+                    ? 'Day status'
+                    : `Day status · ${AUDIENCE_LABELS[selectedLevel]}`}
                 </p>
 
                 <RadioGroup
@@ -420,15 +553,30 @@ export function DayActionSheet({
 
         {/* Footer — pinned, only when editable */}
         {editable && (
-          <div className="border-t border-border bg-card px-6 py-4">
+          <div className="flex flex-col gap-2 border-t border-border bg-card px-6 py-4">
             <Button
               type="button"
               className="w-full"
               disabled={busy}
               onClick={handleSave}
             >
-              {busy ? 'Saving…' : 'Save'}
+              {busy
+                ? 'Saving…'
+                : selectedLevel === 'all'
+                  ? 'Save'
+                  : `Save ${AUDIENCE_LABELS[selectedLevel]} override`}
             </Button>
+            {hasOwnOverride(selectedLevel) && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full text-muted-foreground"
+                disabled={busy}
+                onClick={handleResetToAll}
+              >
+                Reset {AUDIENCE_LABELS[selectedLevel]} to the All baseline
+              </Button>
+            )}
           </div>
         )}
       </SheetContent>

@@ -12,7 +12,6 @@ import {
   ChartLegendChip,
   type ChartLegendChipColor,
 } from '@/components/dashboard/chart-legend-chip';
-import { Badge } from '@/components/ui/badge';
 import type {
   CalendarEventRow,
   SchoolCalendarRow,
@@ -215,17 +214,20 @@ export function CalendarCell({
         {dayNumber}
       </span>
 
-      {/* Audience corner badges — top-right, only when there are overrides. */}
+      {/* Audience override markers — top-right. Compact single-letter pills
+          (P / S) so they fit the narrow cell without overflowing or colliding
+          with the date number; full label is in the title/aria-label. */}
       {audienceBadges.length > 0 && (
-        <div className="absolute right-1.5 top-1.5 flex flex-wrap items-center gap-0.5">
+        <div className="absolute right-1 top-1 flex items-center gap-0.5">
           {audienceBadges.map((aud) => (
-            <Badge
+            <span
               key={aud}
-              variant="warning"
               title={`${AUDIENCE_LABELS[aud]} override`}
+              aria-label={`${AUDIENCE_LABELS[aud]} override`}
+              className="inline-flex size-4 items-center justify-center rounded-[4px] bg-brand-amber text-[9px] font-bold uppercase leading-none text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.25)]"
             >
-              {AUDIENCE_LABELS[aud]}
-            </Badge>
+              {aud === 'primary' ? 'P' : 'S'}
+            </span>
           ))}
         </div>
       )}
