@@ -1,9 +1,10 @@
 'use client';
 
-// CalendarToolbar — Term selector + view-switcher + filter trigger + Add action.
+// CalendarToolbar — Jump-to-term selector + view-switcher + filter + Add action.
 //
-// Layout: left  = Term <Select> (chooses the term) THEN Tabs view switcher
-//                 (Month / Week / Day / List), each scoped to the selected term.
+// Layout: left  = "Jump to term" <Select> (moves the cursor to a term) THEN Tabs
+//                 view switcher (Month / Week / Day / List). Views are NOT scoped
+//                 by the term — they run on the whole AY (calendar-first).
 //         right = Filters Popover (outline Button + active-count Badge)
 //                 + "+ Add" DropdownMenu (primary CTA, one per view).
 //
@@ -53,11 +54,11 @@ const VIEWS: CalendarView[] = ['month', 'week', 'day', 'list'];
 export type CalendarToolbarProps = {
   view: CalendarView;
   onView: (v: CalendarView) => void;
-  /** Terms available to scope the calendar to (by id + human label). */
+  /** Terms to offer as jump targets (by id + human label). */
   terms: Array<{ id: string; label: string }>;
-  /** Currently-selected term id (drives the whole surface's scope). */
+  /** The term to jump to / currently shown in the picker. */
   selectedTermId: string;
-  /** Fired when the registrar picks a different term. */
+  /** Fired when the registrar picks a term — moves the cursor there. */
   onSelectTerm: (id: string) => void;
   filterState: CalendarFilterState;
   onFilter: (next: CalendarFilterState) => void;
@@ -107,8 +108,8 @@ export function CalendarToolbar({
       {/* Left — Term selector THEN view-switcher tabs (Month/Week/Day/List) */}
       <div className="flex flex-wrap items-center gap-2">
         <Select value={selectedTermId} onValueChange={onSelectTerm}>
-          <SelectTrigger className="h-8 w-max" aria-label="Selected term">
-            <SelectValue placeholder="Select term" />
+          <SelectTrigger className="h-8 w-max" aria-label="Jump to term">
+            <SelectValue placeholder="Jump to term…" />
           </SelectTrigger>
           <SelectContent>
             {terms.map((t) => (

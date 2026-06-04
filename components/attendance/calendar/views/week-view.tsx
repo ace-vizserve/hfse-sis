@@ -1,7 +1,8 @@
 'use client';
 
-// WeekView — Mon–Fri week grid scoped to the selected term. Navigation moves
-// cursor ±7 days, clamped so the visible week still intersects the term window.
+// WeekView — Mon–Fri week grid over the whole-AY calendar. Navigation moves
+// cursor ±7 days, clamped to the AY span. A day is editable iff it belongs to
+// a term; days in between-term gaps render faded + inert.
 // Renders taller CalendarCell columns (maxVisibleEvents=6) since each column
 // has more vertical space than a month grid cell.
 //
@@ -56,8 +57,8 @@ function addDays(d: Date, n: number): Date {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export type WeekViewProps = {
-  /** The selected term's window — used to decide which days are in-term. */
-  term: { startDate: string; endDate: string };
+  /** All terms in the AY — a day is editable iff it falls inside one of them. */
+  terms: Array<{ startDate: string; endDate: string }>;
   /** Pre-built calendar index. */
   index: CalendarIndex;
   /**
@@ -73,12 +74,23 @@ export type WeekViewProps = {
 // ─── WeekView ─────────────────────────────────────────────────────────────────
 
 export function WeekView({
-  term,
+  terms,
   index,
   cursor,
   onCursor,
   onDayClick,
 }: WeekViewProps) {
+  // AY span (first term start → last term end) for nav clamping.
+  const { ayStart, ayEnd } = useMemo(() => {
+    if (terms.length === 0) {
+      const t = sgToday();
+      return { ayStart: t, ayEnd: t };
+    }
+    return {
+      ayStart: terms.map((t) => t.startDate).reduce((a, b) => (a < b ? a : b)),
+      ayEnd: terms.map((t) => t.endDate).reduce((a, b) => (a > b ? a : b)),
+    };
+  }, [terms]);
   // ── Compute the Mon–Fri span of the cursor's week ─────────────────────────────
   const weekDays = useMemo<
     Array<{ iso: string; dayNumber: number; longLabel: string }>
@@ -101,9 +113,9 @@ export function WeekView({
   // ── "Today" in SGT (KD #32) ──────────────────────────────────────────────────
   const todayIso = useMemo(() => sgToday(), []);
 
-  // ── In-term predicate ─────────────────────────────────────────────────────────
+  // ── In-term predicate (editable iff the date belongs to ANY term) ─────────────
   function inTerm(iso: string): boolean {
-    return term.startDate <= iso && iso <= term.endDate;
+    return terms.some((t) => t.startDate <= iso && iso <= t.endDate);
   }
 
   // ── Week caption, e.g. "Week of 12 May 2025" ────────────────────────────────
@@ -124,17 +136,17 @@ export function WeekView({
 
   const canPrev = useMemo(() => {
     // Going back 7 days from the week's Monday: the previous week's Friday must
-    // still be >= the term's start date.
+    // still be within the AY span.
     const prevFri = formatIso(addDays(parseIso(weekMonIso), -3));
-    return prevFri >= term.startDate;
-  }, [weekMonIso, term.startDate]);
+    return prevFri >= ayStart;
+  }, [weekMonIso, ayStart]);
 
   const canNext = useMemo(() => {
     // Going forward 7 days from the week's Friday: the next week's Monday must
-    // still be <= the term's end date.
+    // still be within the AY span.
     const nextMon = formatIso(addDays(parseIso(weekFriIso), 3));
-    return nextMon <= term.endDate;
-  }, [weekFriIso, term.endDate]);
+    return nextMon <= ayEnd;
+  }, [weekFriIso, ayEnd]);
 
   function goPrev() {
     onCursor(addDays(cursor, -7));
@@ -143,11 +155,9 @@ export function WeekView({
     onCursor(addDays(cursor, 7));
   }
   function goToday() {
-    // SGT-correct "today" (KD #32), clamped into the term window so the week
-    // view never lands fully outside the selected term (mirrors DayView).
+    // SGT-correct "today" (KD #32), clamped into the AY span.
     const t = sgToday();
-    const clamped =
-      t < term.startDate ? term.startDate : t > term.endDate ? term.endDate : t;
+    const clamped = t < ayStart ? ayStart : t > ayEnd ? ayEnd : t;
     onCursor(parseIso(clamped));
   }
 
@@ -169,11 +179,11 @@ export function WeekView({
         <div className="flex flex-wrap items-center gap-2">
           {weekInTerm ? (
             <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
-              In term
+              In session
             </span>
           ) : (
             <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Outside term
+              Break
             </span>
           )}
         </div>

@@ -1,16 +1,17 @@
 'use client';
 
-// MonthView — the everyday Mon–Fri month grid for the operational school
-// calendar, scoped to a single selected term. Navigation is clamped to the
-// term's month span; days outside the term window (or out-of-month) render
-// faded + non-interactive via the shared CalendarCell.
+// MonthView — the everyday Mon–Fri month grid over the whole-AY calendar.
+// Navigation is clamped to the AY's month span. A day is editable iff it
+// belongs to a term; days in between-term gaps render faded + non-interactive
+// via the shared CalendarCell. Adjacent-month days that are in a term stay
+// interactive (muted as spillover).
 //
 // Design system: §5 step 5 custom markup — the 5-column event-calendar grid
 // has no shadcn primitive analogue. Tokens only (§3 / Hard Rule #7). Borders
 // owned by the parent grid container, not by CalendarCell (per its contract).
 //
 // Data contract: receives the pre-built CalendarIndex as a prop (caller runs
-// useCalendarIndex on the term-scoped slices). No data fetching here.
+// useCalendarIndex on the AY-wide filtered slices). No data fetching here.
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
@@ -96,8 +97,8 @@ function buildMonthWeekdayRows(cursor: Date): MonthCell[][] {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export type MonthViewProps = {
-  /** The selected term's window — used to decide which days are in-term. */
-  term: { startDate: string; endDate: string };
+  /** All terms in the AY — a day is editable iff it falls inside one of them. */
+  terms: Array<{ startDate: string; endDate: string }>;
   /** Pre-built calendar index — do NOT call useCalendarIndex here. */
   index: CalendarIndex;
   /** first-of-visible-month Date controlled by the parent */
@@ -105,29 +106,39 @@ export type MonthViewProps = {
   onCursor: (d: Date) => void;
   /** ISO dates currently selected (multi-select mode) */
   selectedIsos: Set<string>;
-  /** Fired when a clickable (in-term, in-month) day cell is clicked */
+  /** Fired when a clickable (in-term) day cell is clicked */
   onDayClick: (iso: string) => void;
 };
 
 // ─── MonthView ────────────────────────────────────────────────────────────────
 
 export function MonthView({
-  term,
+  terms,
   index,
   cursor,
   onCursor,
   selectedIsos,
   onDayClick,
 }: MonthViewProps) {
-  // ── Term month span ──────────────────────────────────────────────────────────
-  // Nav is clamped to the months containing the term's start / end dates.
-  const { termStartMonth, termEndMonth } = useMemo(
-    () => ({
-      termStartMonth: firstOfMonthFromIso(term.startDate),
-      termEndMonth: firstOfMonthFromIso(term.endDate),
-    }),
-    [term.startDate, term.endDate]
-  );
+  // ── AY month span ────────────────────────────────────────────────────────────
+  // Nav is clamped to the months spanning the whole AY (first term start → last
+  // term end), so the calendar navigates continuously across the year.
+  const { ayStartMonth, ayEndMonth } = useMemo(() => {
+    if (terms.length === 0) {
+      const t = firstOfMonth(parseIso(sgToday()));
+      return { ayStartMonth: t, ayEndMonth: t };
+    }
+    const minStart = terms
+      .map((t) => t.startDate)
+      .reduce((a, b) => (a < b ? a : b));
+    const maxEnd = terms
+      .map((t) => t.endDate)
+      .reduce((a, b) => (a > b ? a : b));
+    return {
+      ayStartMonth: firstOfMonthFromIso(minStart),
+      ayEndMonth: firstOfMonthFromIso(maxEnd),
+    };
+  }, [terms]);
 
   // ── "Today" in SGT — school-calendar dates must be Singapore-local (KD #32) ──
   const todayIso = useMemo(() => sgToday(), []);
@@ -138,15 +149,15 @@ export function MonthView({
 
   // ── Per-cell helper ──────────────────────────────────────────────────────────
 
-  /** Returns true iff `iso` falls within the selected term window. */
+  /** Returns true iff `iso` falls within ANY term — i.e. it's editable. */
   function inTerm(iso: string): boolean {
-    return term.startDate <= iso && iso <= term.endDate;
+    return terms.some((t) => t.startDate <= iso && iso <= t.endDate);
   }
 
   // ── Nav ───────────────────────────────────────────────────────────────────────
-  // Clamp to the term's start month → end month.
-  const canPrev = cursor.getTime() > termStartMonth.getTime();
-  const canNext = cursor.getTime() < termEndMonth.getTime();
+  // Clamp to the AY's first → last month.
+  const canPrev = cursor.getTime() > ayStartMonth.getTime();
+  const canNext = cursor.getTime() < ayEndMonth.getTime();
 
   // "Today" button: always enabled — even when today is outside the term. The
   // grid will then show an all-faded month; that's an honest representation.
@@ -182,15 +193,17 @@ export function MonthView({
     year: 'numeric',
   });
 
-  // ── Does the visible month overlap the selected term? ─────────────────────────
+  // ── Does the visible month overlap any term (i.e. school in session)? ─────────
   const monthInTerm = useMemo(() => {
     const year = cursor.getFullYear();
     const month = cursor.getMonth();
     const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
     const lastDay = new Date(year, month + 1, 0).getDate();
     const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    return term.startDate <= monthEnd && term.endDate >= monthStart;
-  }, [cursor, term.startDate, term.endDate]);
+    return terms.some(
+      (t) => t.startDate <= monthEnd && t.endDate >= monthStart
+    );
+  }, [cursor, terms]);
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
@@ -201,11 +214,11 @@ export function MonthView({
         <div className="flex flex-wrap items-center gap-2">
           {monthInTerm ? (
             <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
-              In term
+              In session
             </span>
           ) : (
             <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Outside term
+              Break
             </span>
           )}
         </div>
@@ -250,7 +263,7 @@ export function MonthView({
             title={
               todayInTerm
                 ? 'Jump to today'
-                : 'Today is outside the selected term — the grid will show faded cells; switch terms or navigate to a term month to manage days'
+                : "Today falls outside the school year — jump there anyway; days that aren't in a term show faded"
             }
             className="h-8 font-mono text-[10px] uppercase tracking-[0.14em]"
           >
@@ -296,13 +309,12 @@ export function MonthView({
 
                 const cellInTerm = inTerm(cell.iso);
 
-                // A cell is clickable iff it is in-term AND in-month. Days
-                // outside the selected term render faded (same as out-of-month)
-                // and are non-interactive.
-                const clickable = cellInTerm && !cell.outOfMonth;
+                // Calendar-first: a day is clickable/editable iff it belongs to
+                // a term — regardless of which month is displayed. Adjacent-month
+                // days that are in a term stay interactive (just visually muted
+                // as spillover). Days in no term (gaps) render faded + inert.
+                const clickable = cellInTerm;
 
-                // Props compatible with CalendarCellProps. Out-of-term days get
-                // the same faded treatment as out-of-month days.
                 const cellProps: CalendarCellProps = {
                   iso: cell.iso,
                   dayNumber: cell.dayNumber,
@@ -310,6 +322,8 @@ export function MonthView({
                   events,
                   audienceBadges,
                   isToday: cell.iso === todayIso,
+                  // Muted when spilling over from an adjacent month OR when the
+                  // date belongs to no term (non-editable gap day).
                   outOfMonth: cell.outOfMonth || !cellInTerm,
                   selected: selectedIsos.has(cell.iso),
                   clickable,
@@ -325,21 +339,6 @@ export function MonthView({
                 ]
                   .filter(Boolean)
                   .join(' ');
-
-                // Leading/trailing days from an adjacent month are rendered as
-                // a blank placeholder (keeps the 5-col grid aligned) rather than
-                // a faded, dead-looking date cell.
-                if (cell.outOfMonth) {
-                  return (
-                    <div
-                      key={cell.iso}
-                      aria-hidden="true"
-                      className={['min-h-[120px] bg-muted/20', borderClasses]
-                        .filter(Boolean)
-                        .join(' ')}
-                    />
-                  );
-                }
 
                 return (
                   <div key={cell.iso} className={borderClasses}>

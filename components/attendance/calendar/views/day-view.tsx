@@ -1,9 +1,10 @@
 'use client';
 
-// DayView — focused single-day view scoped to the selected term. Shows the
+// DayView — focused single-day view over the whole-AY calendar. Shows the
 // day's status (derived via storageToDayStatus from the calendar row) and all
 // events on that day. "Edit this day" opens the day-action sheet via onDayClick.
-// Prev/next day navigation is clamped to the term window.
+// A day is editable iff it belongs to a term; break days show a note instead.
+// Prev/next day navigation is clamped to the AY span.
 //
 // Design system: §5 step 4 — composed from Card primitives (no equivalent
 // shadcn day-focused view exists, but the layout is Card + status panel, not
@@ -73,8 +74,8 @@ function formatLongDate(iso: string): string {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export type DayViewProps = {
-  /** The selected term's window — used to determine in-term bounds. */
-  term: { startDate: string; endDate: string };
+  /** All terms in the AY — the focused day is editable iff it's inside one. */
+  terms: Array<{ startDate: string; endDate: string }>;
   /** Pre-built calendar index. */
   index: CalendarIndex;
   /** The focused day — DayView renders exactly this date. */
@@ -87,7 +88,7 @@ export type DayViewProps = {
 // ─── DayView ──────────────────────────────────────────────────────────────────
 
 export function DayView({
-  term,
+  terms,
   index,
   cursor,
   onCursor,
@@ -99,17 +100,29 @@ export function DayView({
   // ── "Today" in SGT (KD #32) ──────────────────────────────────────────────────
   const todayIso = useMemo(() => sgToday(), []);
 
-  // ── In-term predicate ─────────────────────────────────────────────────────────
-  const inTerm = iso >= term.startDate && iso <= term.endDate;
+  // AY span (first term start → last term end) for nav clamping.
+  const { ayStart, ayEnd } = useMemo(() => {
+    if (terms.length === 0) {
+      const t = sgToday();
+      return { ayStart: t, ayEnd: t };
+    }
+    return {
+      ayStart: terms.map((t) => t.startDate).reduce((a, b) => (a < b ? a : b)),
+      ayEnd: terms.map((t) => t.endDate).reduce((a, b) => (a > b ? a : b)),
+    };
+  }, [terms]);
 
-  // ── Nav clamp: stay within the term window ───────────────────────────────────
+  // ── In-term predicate (editable iff the date belongs to ANY term) ─────────────
+  const inTerm = terms.some((t) => iso >= t.startDate && iso <= t.endDate);
+
+  // ── Nav clamp: stay within the AY span ───────────────────────────────────────
   const canPrev = useMemo(
-    () => formatIso(addDays(cursor, -1)) >= term.startDate,
-    [cursor, term.startDate]
+    () => formatIso(addDays(cursor, -1)) >= ayStart,
+    [cursor, ayStart]
   );
   const canNext = useMemo(
-    () => formatIso(addDays(cursor, 1)) <= term.endDate,
-    [cursor, term.endDate]
+    () => formatIso(addDays(cursor, 1)) <= ayEnd,
+    [cursor, ayEnd]
   );
 
   function goPrev() {
@@ -119,15 +132,10 @@ export function DayView({
     onCursor(addDays(cursor, 1));
   }
   function goToday() {
-    // Clamp today to term bounds so the cursor always stays within the term.
+    // Clamp today to the AY span so the cursor always stays within the year.
     const today = sgToday();
-    if (today < term.startDate) {
-      onCursor(parseIso(term.startDate));
-    } else if (today > term.endDate) {
-      onCursor(parseIso(term.endDate));
-    } else {
-      onCursor(parseIso(today));
-    }
+    const clamped = today < ayStart ? ayStart : today > ayEnd ? ayEnd : today;
+    onCursor(parseIso(clamped));
   }
 
   // ── Resolve data for the focused day ─────────────────────────────────────────
@@ -178,11 +186,11 @@ export function DayView({
         <div className="flex flex-wrap items-center gap-2">
           {inTerm ? (
             <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
-              In term
+              In session
             </span>
           ) : (
             <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Outside term
+              Break
             </span>
           )}
           {iso === todayIso && (
@@ -229,7 +237,7 @@ export function DayView({
             type="button"
             size="sm"
             onClick={goToday}
-            title="Jump to today (clamped to term bounds)"
+            title="Jump to today (clamped to the academic year)"
             className="h-8 font-mono text-[10px] uppercase tracking-[0.14em]"
           >
             Today
@@ -355,10 +363,11 @@ export function DayView({
             </p>
           </div>
         ) : (
-          // Out-of-term: informational note instead of a disabled CTA.
+          // Between-term break: no term to attach a day/event to, so it can't
+          // be configured here.
           <p className="text-[13px] text-muted-foreground">
-            This day is outside the selected term — use the term picker to
-            navigate to the correct term, then edit from there.
+            This day falls in a break between terms, so there&apos;s no school
+            day to configure.
           </p>
         )}
       </div>

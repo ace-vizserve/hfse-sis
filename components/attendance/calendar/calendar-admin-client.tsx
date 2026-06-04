@@ -50,11 +50,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  filterDays,
-  filterEvents,
-  defaultFilterState,
-} from '@/lib/attendance/calendar-filters';
+import { filterDays, filterEvents } from '@/lib/attendance/calendar-filters';
 import type {
   CalendarEventRow,
   SchoolCalendarRow,
@@ -145,11 +141,10 @@ export function CalendarAdminClient({
   const { view, setView, cursor, setCursor, filterState, setFilterState } =
     useCalendarViewState(initialCursor);
 
-  // ── Term-change cursor reset (render-time sync, no useEffect) ──────────────────
-  // When the selected term changes, reset the Month cursor to that term's start
-  // month. Mirrors the day-sheet lastIso render-time-sync pattern: track the
-  // last-applied term id in state and reconcile during render. Setting state in
-  // render is safe (React bails out and re-renders synchronously before paint).
+  // ── Jump-to-term (render-time sync, no useEffect) ─────────────────────────────
+  // The term selector is a navigation convenience: picking a term moves the
+  // cursor to that term's start month. It does NOT scope data or editability.
+  // Filters are AY-wide and persist across a jump.
   const [lastTermId, setLastTermId] = useState<string>(selectedTermId);
   if (lastTermId !== selectedTermId) {
     setLastTermId(selectedTermId);
@@ -160,31 +155,17 @@ export function CalendarAdminClient({
         ? firstOfMonthFromIso(selectedTerm.startDate)
         : firstOfMonthFromIso(sgToday())
     );
-    // Filters are scoped to the term in view — a stale date-range (or other)
-    // filter from the prior term would silently empty the new term's views.
-    setFilterState(defaultFilterState());
   }
 
-  // ── Term-scope the data BEFORE filtering / indexing ───────────────────────────
-  const scopedCalendar = useMemo(
-    () => calendar.filter((c) => c.termId === selectedTermId),
-    [calendar, selectedTermId]
-  );
-  const scopedEvents = useMemo(
-    () => events.filter((e) => e.termId === selectedTermId),
-    [events, selectedTermId]
-  );
-
-  // Filtered slices feed the views + the index. The day sheet deliberately
-  // reads the term-scoped UNFILTERED events so it always shows every event on
-  // the clicked day regardless of the active filters.
+  // Calendar-first: every view runs on the WHOLE-AY dataset. Filters apply
+  // AY-wide; the term selector is a jump-to (moves the cursor), not a scope.
   const filteredCalendar = useMemo(
-    () => filterDays(scopedCalendar, filterState),
-    [scopedCalendar, filterState]
+    () => filterDays(calendar, filterState),
+    [calendar, filterState]
   );
   const filteredEvents = useMemo(
-    () => filterEvents(scopedEvents, filterState),
-    [scopedEvents, filterState]
+    () => filterEvents(events, filterState),
+    [events, filterState]
   );
   const index = useCalendarIndex(filteredCalendar, filteredEvents, level);
 
@@ -202,18 +183,16 @@ export function CalendarAdminClient({
     setDaySheetIso(iso);
   }, []);
 
-  // Views only show in-term days, so the clicked day always belongs to the
-  // selected term and is editable.
+  // Day-sheet data is resolved by the clicked DATE from the full AY arrays
+  // (unfiltered) so the sheet shows the real row + every event on that day,
+  // regardless of the active filters or which term is "jumped" to.
   const daySheetRow: SchoolCalendarRow | null = daySheetIso
-    ? (scopedCalendar.find(
-        (c) => c.date === daySheetIso && c.audience === level
-      ) ??
+    ? (calendar.find((c) => c.date === daySheetIso && c.audience === level) ??
       index.byDate.get(daySheetIso) ??
       null)
     : null;
-  // Term-scoped, unfiltered events on the day, so the sheet lists everything.
   const daySheetEvents = daySheetIso
-    ? scopedEvents.filter(
+    ? events.filter(
         (e) => daySheetIso >= e.startDate && daySheetIso <= e.endDate
       )
     : [];
@@ -242,8 +221,8 @@ export function CalendarAdminClient({
         setFrozenTerm(termForIso(editing.startDate) ?? selectedTerm ?? null);
         setFrozenIso(null);
       } else if (iso) {
-        // Add-from-day path: the clicked day is always in the selected term.
-        setFrozenTerm(selectedTerm ?? null);
+        // Add-from-day path: freeze to the term that owns the clicked date.
+        setFrozenTerm(termForIso(iso) ?? selectedTerm ?? null);
         setFrozenIso(iso);
       } else {
         // Toolbar add (no iso): freeze to the selected term — the surface is
@@ -328,12 +307,9 @@ export function CalendarAdminClient({
 
       <Legend />
 
-      {view === 'month' && selectedTerm && (
+      {view === 'month' && (
         <MonthView
-          term={{
-            startDate: selectedTerm.startDate,
-            endDate: selectedTerm.endDate,
-          }}
+          terms={terms}
           index={index}
           cursor={cursor}
           onCursor={setCursor}
@@ -350,12 +326,9 @@ export function CalendarAdminClient({
         />
       )}
 
-      {view === 'week' && selectedTerm && (
+      {view === 'week' && (
         <WeekView
-          term={{
-            startDate: selectedTerm.startDate,
-            endDate: selectedTerm.endDate,
-          }}
+          terms={terms}
           index={index}
           cursor={cursor}
           onCursor={setCursor}
@@ -363,12 +336,9 @@ export function CalendarAdminClient({
         />
       )}
 
-      {view === 'day' && selectedTerm && (
+      {view === 'day' && (
         <DayView
-          term={{
-            startDate: selectedTerm.startDate,
-            endDate: selectedTerm.endDate,
-          }}
+          terms={terms}
           index={index}
           cursor={cursor}
           onCursor={setCursor}
@@ -378,11 +348,11 @@ export function CalendarAdminClient({
 
       <DayActionSheet
         iso={daySheetIso}
-        termId={selectedTermId}
+        termId={daySheetIso ? (termForIso(daySheetIso)?.id ?? '') : ''}
         audience={level}
         row={daySheetRow}
         events={daySheetEvents}
-        editable={true}
+        editable={daySheetIso ? termForIso(daySheetIso) !== null : false}
         onClose={() => setDaySheetIso(null)}
         onSaved={() => router.refresh()}
         onAddEvent={(iso) => openEventEditor(null, iso)}
