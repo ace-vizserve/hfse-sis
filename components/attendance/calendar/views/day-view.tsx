@@ -126,7 +126,7 @@ export function DayView({
     } else if (today > term.endDate) {
       onCursor(parseIso(term.endDate));
     } else {
-      onCursor(new Date());
+      onCursor(parseIso(today));
     }
   }
 

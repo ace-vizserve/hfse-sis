@@ -27,15 +27,20 @@ export function useCalendarIndex(
     }
 
     const eventsByIso = new Map<string, CalendarEventRow[]>();
+    const pad = (n: number) => String(n).padStart(2, '0');
     for (const e of events) {
-      const d = new Date(e.startDate);
-      const end = new Date(e.endDate);
+      // Local-date iteration (matches the views' parseIso/formatIso idiom) so
+      // chip placement can't drift from cell keys across timezones.
+      const [sy, sm, sd] = e.startDate.split('-').map(Number);
+      const [ey, em, ed] = e.endDate.split('-').map(Number);
+      const d = new Date(sy, sm - 1, sd);
+      const end = new Date(ey, em - 1, ed);
       while (d.getTime() <= end.getTime()) {
-        const iso = d.toISOString().slice(0, 10);
+        const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
         const arr = eventsByIso.get(iso);
         if (arr) arr.push(e);
         else eventsByIso.set(iso, [e]);
-        d.setUTCDate(d.getUTCDate() + 1);
+        d.setDate(d.getDate() + 1);
       }
     }
 

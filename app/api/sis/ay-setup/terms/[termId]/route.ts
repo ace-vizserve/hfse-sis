@@ -91,12 +91,26 @@ export async function PATCH(
   // inside it (in-range overrides preserved). Only runs with a complete window.
   let calendarSync: { deleted: number; inserted: number } | null = null;
   if (datesChanged && startDate && endDate) {
-    calendarSync = await resyncTermCalendarWindow(
-      termId,
-      startDate,
-      endDate,
-      auth.user.id
-    );
+    try {
+      calendarSync = await resyncTermCalendarWindow(
+        termId,
+        startDate,
+        endDate,
+        auth.user.id
+      );
+    } catch (e) {
+      // Term dates are saved, but the school-day resync failed — report it so
+      // the registrar retries rather than believing the calendar is in sync.
+      return NextResponse.json(
+        {
+          error:
+            e instanceof Error
+              ? e.message
+              : 'Term dates saved, but updating school days failed. Please retry.',
+        },
+        { status: 500 }
+      );
+    }
   }
 
   const virtueChanged =

@@ -107,6 +107,14 @@ export function EventEditorDialog({
       toast.error('End date must be on or after start date');
       return;
     }
+    // Keep the event inside its term — an out-of-window event saves but never
+    // renders (the term-scoped views filter it out), so block it up front.
+    if (termStart && termEnd && (start < termStart || end > termEnd)) {
+      toast.error(
+        `Event dates must fall within the term (${termStart} to ${termEnd}).`
+      );
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch('/api/attendance/calendar/events', {

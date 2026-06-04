@@ -40,7 +40,21 @@ import {
   type CopyFromPriorAyProps,
 } from '@/components/attendance/copy-from-prior-ay-dialog';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { filterDays, filterEvents } from '@/lib/attendance/calendar-filters';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  filterDays,
+  filterEvents,
+  defaultFilterState,
+} from '@/lib/attendance/calendar-filters';
 import type {
   CalendarEventRow,
   SchoolCalendarRow,
@@ -107,7 +121,11 @@ export function CalendarAdminClient({
       })),
       sgToday()
     );
-    return resolved ?? terms[0]?.id ?? '';
+    // Guard: resolveCurrentTermId can return an *undated* term flagged
+    // is_current that the page filtered out of `terms` (only dated terms are
+    // passed). Only honor it if it's actually selectable, else fall back.
+    if (resolved && terms.some((t) => t.id === resolved)) return resolved;
+    return terms[0]?.id ?? '';
   });
 
   const selectedTerm = useMemo(
@@ -142,6 +160,9 @@ export function CalendarAdminClient({
         ? firstOfMonthFromIso(selectedTerm.startDate)
         : firstOfMonthFromIso(sgToday())
     );
+    // Filters are scoped to the term in view — a stale date-range (or other)
+    // filter from the prior term would silently empty the new term's views.
+    setFilterState(defaultFilterState());
   }
 
   // ── Term-scope the data BEFORE filtering / indexing ───────────────────────────
@@ -252,7 +273,10 @@ export function CalendarAdminClient({
   const editorEnd =
     !editorEditing && frozenIso ? frozenIso : (editorTerm?.endDate ?? '');
 
-  // ── Delete an event ─────────────────────────────────────────────────────────
+  // ── Delete an event (confirm-gated) ───────────────────────────────────────────
+  // The trash control sets a pending id; the AlertDialog confirms before the
+  // actual DELETE fires (destructive action — no accidental one-click deletes).
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const deleteEvent = useCallback(
     async (id: string) => {
       try {
@@ -363,7 +387,7 @@ export function CalendarAdminClient({
         onSaved={() => router.refresh()}
         onAddEvent={(iso) => openEventEditor(null, iso)}
         onEditEvent={(e) => openEventEditor(e)}
-        onDeleteEvent={deleteEvent}
+        onDeleteEvent={(id) => setPendingDeleteId(id)}
       />
 
       <EventEditorDialog
@@ -379,6 +403,33 @@ export function CalendarAdminClient({
           router.refresh();
         }}
       />
+
+      <AlertDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(open) => !open && setPendingDeleteId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this event?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the event from the calendar. This can&apos;t be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep event</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => {
+                if (pendingDeleteId) deleteEvent(pendingDeleteId);
+                setPendingDeleteId(null);
+              }}
+            >
+              Delete event
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

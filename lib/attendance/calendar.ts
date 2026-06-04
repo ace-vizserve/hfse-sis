@@ -414,10 +414,14 @@ export async function resyncTermCalendarWindow(
     .or(`date.lt.${startIso},date.gt.${endIso}`)
     .select('id');
   if (delErr) {
+    // Surface the failure — a swallowed prune would leave stale out-of-window
+    // school days while the caller reports success. Let the route turn this
+    // into a 500 so editing term dates can't silently desync the calendar.
     console.error(
       '[attendance] resyncTermCalendarWindow prune failed:',
       delErr.message
     );
+    throw new Error(`Calendar resync failed: ${delErr.message}`);
   }
 
   // 2. Backfill missing in-range weekday school_days (idempotent).
