@@ -1,12 +1,12 @@
 'use client';
 
-// MonthView — the everyday Mon–Fri month grid over the whole-AY calendar.
-// Navigation is clamped to the AY's month span. A day is editable iff it
-// belongs to a term; days in between-term gaps render faded + non-interactive
-// via the shared CalendarCell. Adjacent-month days that are in a term stay
-// interactive (muted as spillover).
+// MonthView — the everyday Mon–Sun month grid, scoped to the selected term.
+// Navigation is clamped to the term's month span. A day is editable iff it
+// belongs to the term; out-of-term days render faded + non-interactive via the
+// shared CalendarCell. Weekends are shown (HFSE schedules weekend events) but
+// carry no "School day" badge.
 //
-// Design system: §5 step 5 custom markup — the 5-column event-calendar grid
+// Design system: §5 step 5 custom markup — the 7-column event-calendar grid
 // has no shadcn primitive analogue. Tokens only (§3 / Hard Rule #7). Borders
 // owned by the parent grid container, not by CalendarCell (per its contract).
 //
