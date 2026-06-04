@@ -40,9 +40,10 @@ import {
 import type { MasterfilePayload } from '@/lib/markbook/masterfile';
 import { cn } from '@/lib/utils';
 
-// Masterfile narrative dashboard (KD #95). Three acts — Readiness → Outcomes →
-// Watchlists — computed client-side from the full payload so the Term / Subject
-// / Status filters refine every section without a server round-trip. The Excel
+// Masterfile narrative dashboard (KD #95). A tracking view, not a readiness
+// gate: At a glance (current snapshot) → How they're doing (outcomes) → Worth a
+// look. Computed client-side from the full payload so the Term / Subject /
+// Status filters refine every section without a server round-trip. The Excel
 // export stays the exact masterfile sheet (handled on the toolbar).
 
 const DONUT_COLORS = [
@@ -74,16 +75,16 @@ export function MasterfileDashboard({
 
   return (
     <div className="flex flex-col gap-10">
-      {/* ── Act 1 — Readiness ─────────────────────────────────────────── */}
+      {/* ── At a glance — current snapshot ────────────────────────────── */}
       <section className="space-y-4">
         <ActHeader
-          eyebrow="Act 1 · Compilation status"
-          title="How ready is this masterfile?"
-          subtitle="Filled grades, locked sheets, adviser comments and attendance for the selected scope. Incomplete work shows honestly — never a fake total."
+          eyebrow="At a glance"
+          title="Where things stand"
+          subtitle="A live snapshot of the masterfile for the selected scope — grades, comments, attendance and results logged so far."
         />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <ReadinessCard
-            label="Grades entered"
+            label="Grades recorded"
             icon={BookOpenCheck}
             metric={d.readiness.gradesEntered}
           />
@@ -93,12 +94,12 @@ export function MasterfileDashboard({
             metric={d.readiness.sheetsLocked}
           />
           <ReadinessCard
-            label="Comments written"
+            label="Comments in"
             icon={MessageSquareText}
             metric={d.readiness.commentsWritten}
           />
           <ReadinessCard
-            label="Attendance recorded"
+            label="Attendance logged"
             icon={CalendarCheck2}
             metric={d.readiness.attendanceRecorded}
           />
@@ -109,9 +110,9 @@ export function MasterfileDashboard({
       {/* ── Act 2 — Outcomes ──────────────────────────────────────────── */}
       <section className="space-y-4">
         <ActHeader
-          eyebrow="Act 2 · What the data says"
-          title="Outcomes for the cohort"
-          subtitle="Award distribution, General Average spread, subject performance and attendance health. Students without complete data are counted as pending, not awarded."
+          eyebrow="How they're doing"
+          title="The cohort so far"
+          subtitle="Award distribution, General Average spread, subject performance and attendance. Students without complete data show as pending, not awarded."
         />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <AwardDistributionCard dashboard={d} />
@@ -121,12 +122,12 @@ export function MasterfileDashboard({
         </div>
       </section>
 
-      {/* ── Act 3 — Watchlists ────────────────────────────────────────── */}
+      {/* ── Worth a look ──────────────────────────────────────────────── */}
       <section className="space-y-4">
         <ActHeader
-          eyebrow="Act 3 · Follow-up"
-          title="What needs a hand"
-          subtitle="Two lists: data still to be entered or locked (chase), and students whose results warrant a closer look."
+          eyebrow="Worth a look"
+          title="Where to point your eyes"
+          subtitle="Two quick lists — what's still coming in, and students whose results stand out — so you know where to look next."
         />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <NeedsDataCard dashboard={d} />
@@ -165,11 +166,11 @@ function ActHeader({
 
 // ---------- Act 1 cards ----------
 
+// Snapshot, not a verdict: a full count reads as a quiet positive, everything
+// else stays neutral (no amber/red "you're behind" signal — this is tracking).
 function readinessIntent(metric: ReadinessMetric): MetricIntent {
-  if (metric.pct == null) return 'default';
-  if (metric.pct >= 100) return 'good';
-  if (metric.pct >= 60) return 'warning';
-  return 'bad';
+  if (metric.pct != null && metric.pct >= 100) return 'good';
+  return 'default';
 }
 
 function ReadinessCard({
@@ -185,8 +186,8 @@ function ReadinessCard({
     metric.expected === 0 ? 'Pending' : `${metric.done}/${metric.expected}`;
   const subtext =
     metric.pct == null
-      ? 'Nothing expected in this scope yet'
-      : `${metric.pct.toFixed(0)}% complete`;
+      ? 'Nothing in this scope yet'
+      : `${metric.pct.toFixed(0)}% so far`;
   return (
     <MetricCard
       label={label}
@@ -208,18 +209,17 @@ function GradableCard({ readiness }: { readiness: MasterfileReadiness }) {
   const value = notApplicable
     ? 'Pending'
     : `${readiness.gradableCount}/${readiness.rosterCount}`;
-  const intent: MetricIntent = notApplicable
-    ? 'default'
-    : readiness.gradableCount === readiness.rosterCount
+  const intent: MetricIntent =
+    !notApplicable && readiness.gradableCount === readiness.rosterCount
       ? 'good'
-      : 'warning';
+      : 'default';
   const subtext =
     readiness.gradableApplicable === false
       ? 'No examinable subjects in scope'
-      : 'Complete examinable data for an award / General Average';
+      : 'Have complete results so far';
   return (
     <MetricCard
-      label="Gradable students"
+      label="Full results"
       value={value}
       format="raw"
       icon={GraduationCap}
@@ -483,10 +483,10 @@ function NeedsDataCard({
   }));
   return (
     <ActionList
-      title="Needs data"
-      description="Grades to enter, sheets to lock, and adviser comments still blank — grouped so the chase is per class / subject."
+      title="Still coming in"
+      description="Grades, locks and adviser comments not in yet — grouped by class / subject so you can see what's outstanding."
       items={items}
-      emptyLabel="Everything in this scope is entered and locked."
+      emptyLabel="Everything in this scope is in."
     />
   );
 }
@@ -504,10 +504,10 @@ function NeedsAttentionCard({
   }));
   return (
     <ActionList
-      title="Needs attention"
-      description="Students with a low General Average, an at-risk subject grade, or low attendance — open their permanent record to follow up."
+      title="Standing out"
+      description="Students with a low General Average, an at-risk subject grade, or low attendance — open their record for the full picture."
       items={items}
-      emptyLabel="No students are flagged for follow-up in this scope."
+      emptyLabel="Nobody stands out in this scope right now."
     />
   );
 }

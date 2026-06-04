@@ -182,11 +182,12 @@ export default async function MasterfilePage({
           </Badge>
         </div>
         <p className="max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
-          A narrative view of where the masterfile stands for this level —
-          readiness, outcomes, and who needs follow-up. Award and General
-          Average figures compute server-side; incomplete work shows as pending,
-          never a fabricated grade. Switch to Table for the full grid, or Export
-          to Excel for the complete masterfile sheet.
+          A live view of what&rsquo;s going on with the masterfile for this
+          level — a current snapshot, how the cohort is doing, and where to look
+          next. Award and General Average figures compute server-side; data
+          still coming in shows as pending, never a fabricated grade. Switch to
+          Table for the full grid, or Export to Excel for the complete
+          masterfile sheet.
         </p>
       </header>
 
