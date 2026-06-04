@@ -14,32 +14,32 @@
   --card-foreground: #0f172a;
   --popover: #ffffff;
   --popover-foreground: #0f172a;
-  --primary: #4f46e5; /* was mid blue; now brand indigo */
+  --primary: #213098; /* HFSE brand blue */
   --primary-foreground: #ffffff;
   --secondary: #f1f5f9;
   --secondary-foreground: #334155;
   --muted: #f8fafc; /* page canvas — very subtle slate */
   --muted-foreground: #64748b; /* was gray; now ink-4 */
-  --accent: #eef2ff; /* subtle indigo wash for hovers */
-  --accent-foreground: #4338ca;
+  --accent: #e9ecf8; /* subtle indigo wash for hovers */
+  --accent-foreground: #1a2570;
   --destructive: oklch(0.6368 0.2078 25.3313);
   --destructive-foreground: #ffffff;
   --border: #e2e8f0; /* was gray; now hairline */
   --input: #e2e8f0;
-  --ring: #4f46e5; /* was mid blue; now brand indigo */
-  --chart-1: #4f46e5; /* brand indigo */
-  --chart-2: #6366f1;
-  --chart-3: #818cf8;
+  --ring: #213098; /* was mid blue; now brand indigo */
+  --chart-1: #213098; /* HFSE brand blue */
+  --chart-2: #2d3eb8;
+  --chart-3: #5b6bd0;
   --chart-4: #38bdf8; /* sky */
-  --chart-5: #a5f3b7; /* mint */
+  --chart-5: #34d399; /* mint (darkened) */
   --sidebar: #f8fafc;
   --sidebar-foreground: #334155;
-  --sidebar-primary: #4f46e5;
+  --sidebar-primary: #213098;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #eef2ff;
-  --sidebar-accent-foreground: #4338ca;
+  --sidebar-accent: #e9ecf8;
+  --sidebar-accent-foreground: #1a2570;
   --sidebar-border: #e2e8f0;
-  --sidebar-ring: #4f46e5;
+  --sidebar-ring: #213098;
   --font-sans: Inter, sans-serif;
   --font-serif: Source Serif 4, serif;
   --font-mono: JetBrains Mono, monospace;
@@ -68,14 +68,14 @@
   /* Aurora Vault — auth / high-trust surfaces.
      Raw values use the --av-* prefix to avoid self-reference with @theme inline. */
   --av-navy: #0b1120;
-  --av-indigo: #4f46e5;
-  --av-indigo-deep: #4338ca;
-  --av-indigo-light: #5b52ed;
-  --av-indigo-soft: #818cf8;
+  --av-indigo: #213098;
+  --av-indigo-deep: #18215c;
+  --av-indigo-light: #2d3eb8;
+  --av-indigo-soft: #5b6bd0;
   --av-sky: #38bdf8;
-  --av-mint: #a5f3b7;
-  --av-amber: #f59e0b;
-  --av-amber-light: #fef3c7;
+  --av-mint: #34d399;
+  --av-amber: #ed7622;
+  --av-amber-light: #fde8d5;
   --av-bronze: #cd7f32;
   --av-ink: #0f172a;
   --av-ink-2: #334155;
@@ -88,22 +88,22 @@
   --av-shadow-input: inset 0 1px 2px 0 rgba(15, 23, 42, 0.06);
   --av-shadow-brand-tile:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
-    0 4px 12px -4px rgba(79, 70, 229, 0.5);
+    0 4px 12px -4px rgba(33, 48, 152, 0.5);
   --av-shadow-brand-tile-mint:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
-    0 4px 12px -4px rgba(165, 243, 183, 0.5);
+    0 4px 12px -4px rgba(52, 211, 153, 0.5);
   --av-shadow-brand-tile-destructive:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
     0 4px 12px -4px rgba(239, 68, 68, 0.45);
   --av-shadow-brand-tile-amber:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.25),
-    0 4px 12px -4px rgba(245, 158, 11, 0.45);
+    0 4px 12px -4px rgba(237, 118, 34, 0.45);
   --av-shadow-button:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(15, 23, 42, 0.08),
-    0 8px 24px -8px rgba(79, 70, 229, 0.55);
+    0 8px 24px -8px rgba(33, 48, 152, 0.55);
   --av-shadow-button-hover:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.22), 0 2px 4px rgba(15, 23, 42, 0.1),
-    0 12px 28px -10px rgba(79, 70, 229, 0.65);
+    0 12px 28px -10px rgba(33, 48, 152, 0.65);
   --av-shadow-button-active:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(15, 23, 42, 0.1);
   --av-shadow-glass-card:
