@@ -56,6 +56,12 @@ type EntryType =
 const ENTRY_TYPES: EntryType[] = [
   // Day-affecting — change whether attendance is taken.
   {
+    key: 'school_day',
+    label: 'Regular school day (clear any closure)',
+    target: 'day',
+    dayType: 'school_day',
+  },
+  {
     key: 'hbl',
     label: 'HBL — taught remotely (attendance taken)',
     target: 'day',

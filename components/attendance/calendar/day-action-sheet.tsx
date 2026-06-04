@@ -97,25 +97,51 @@ export function DayActionSheet({
 
   const isEmpty = overrides.length === 0 && events.length === 0;
 
-  // Delete a school-status override → the level reverts to a plain school day.
+  // Revert a school-status override back to a regular school day. Whole-school
+  // ('all') is set explicitly to school_day; a level override is dropped so it
+  // follows the school-wide day again.
   async function removeOverride(audience: Audience) {
     if (!iso) return;
     setBusyKey(`day:${audience}`);
     try {
-      const params = new URLSearchParams({ termId, date: iso, audience });
-      const res = await fetch(`/api/attendance/calendar?${params.toString()}`, {
-        method: 'DELETE',
-      });
+      const res =
+        audience === 'all'
+          ? await fetch('/api/attendance/calendar', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                termId,
+                audience: 'all',
+                entries: [
+                  {
+                    date: iso,
+                    dayType: 'school_day',
+                    label: null,
+                    hblOverlay: false,
+                  },
+                ],
+              }),
+            })
+          : await fetch(
+              `/api/attendance/calendar?${new URLSearchParams({
+                termId,
+                date: iso,
+                audience,
+              }).toString()}`,
+              { method: 'DELETE' }
+            );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(
-          (body as { error?: string }).error ?? `Server error ${res.status}`
+          (body as { error?: string; message?: string }).error ??
+            (body as { message?: string }).message ??
+            `Server error ${res.status}`
         );
       }
       toast.success('Reverted to a school day');
       onSaved();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove');
+      toast.error(err instanceof Error ? err.message : 'Failed to revert');
     } finally {
       setBusyKey(null);
     }
@@ -174,7 +200,8 @@ export function DayActionSheet({
                         variant="ghost"
                         size="icon"
                         className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        aria-label="Remove — revert to school day"
+                        aria-label="Revert to a regular school day"
+                        title="Revert to a regular school day"
                         disabled={busyKey === `day:${row.audience}`}
                         onClick={() => removeOverride(row.audience)}
                       >
