@@ -20,6 +20,7 @@ import {
 } from '@/components/attendance/calendar/calendar-cell';
 import type { CalendarIndex } from '@/components/attendance/calendar/hooks/use-calendar-index';
 import { Button } from '@/components/ui/button';
+import { sgToday } from '@/lib/dates';
 
 // ─── Helpers (local-date safe, no tz shift) ───────────────────────────────────
 
@@ -143,9 +144,11 @@ export function MonthView({
     };
   }, [terms]);
 
-  // ── "Today" month (local calendar date) ─────────────────────────────────────
-  const todayIso = useMemo(() => formatIso(new Date()), []);
-  const todayMonth = useMemo(() => firstOfMonth(new Date()), []);
+  // ── "Today" in SGT — school-calendar dates must be Singapore-local (KD #32) ──
+  const todayIso = useMemo(() => sgToday(), []);
+  // Parse the SGT iso back through the local-date-safe parseIso so we get a
+  // local Date (not shifted by UTC offset) and derive the first-of-month from it.
+  const todayMonth = useMemo(() => firstOfMonth(parseIso(sgToday())), []);
 
   // ── Grid rows ────────────────────────────────────────────────────────────────
   const rows = useMemo(() => buildMonthWeekdayRows(cursor), [cursor]);

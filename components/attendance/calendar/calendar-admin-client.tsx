@@ -155,57 +155,91 @@ export function CalendarAdminClient({
 
   // ── Event editor state ──────────────────────────────────────────────────────
   // `editorOpen` drives create; `editorEditing` drives edit. The dialog needs
-  // term bounds — resolved from the editing event's term, the clicked day's
-  // term, or (toolbar add) the term containing the cursor month → first term.
+  // term bounds — resolved ONCE at open time and frozen in state so that
+  // navigating the month while the dialog is open does NOT reset the form.
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorEditing, setEditorEditing] = useState<CalendarEventRow | null>(
     null
   );
-  const [editorIso, setEditorIso] = useState<string | null>(null);
+  // Frozen snapshot of the term resolved at dialog-open time. Lives in state so
+  // month navigation (cursor changes) never mutates it while the dialog is open.
+  const [frozenTerm, setFrozenTerm] = useState<DatedTerm | null>(null);
+  // When adding from a specific day, we also freeze the seed iso so the date
+  // fields default to that day (not the whole term span).
+  const [frozenIso, setFrozenIso] = useState<string | null>(null);
+
+  // Nearest-term resolver for toolbar-add on a break month: prefers a term
+  // overlapping the cursor month; otherwise the last term ending before the
+  // cursor, else the first term starting after.
+  const nearestTermForCursor = useCallback(
+    (cur: Date): DatedTerm | null => {
+      if (terms.length === 0) return null;
+      const year = cur.getFullYear();
+      const month = cur.getMonth();
+      const monthStartIso = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      const monthEndIso = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+      // 1. Any term overlapping this month?
+      const overlapping = terms.find(
+        (t) => t.startDate <= monthEndIso && t.endDate >= monthStartIso
+      );
+      if (overlapping) return overlapping;
+
+      // 2. Last term whose end is before this month (i.e. the preceding term).
+      const before = [...terms]
+        .filter((t) => t.endDate < monthStartIso)
+        .sort((a, b) => b.endDate.localeCompare(a.endDate));
+      if (before.length > 0) return before[0];
+
+      // 3. First term starting after this month.
+      const after = [...terms]
+        .filter((t) => t.startDate > monthEndIso)
+        .sort((a, b) => a.startDate.localeCompare(b.startDate));
+      return after[0] ?? null;
+    },
+    [terms]
+  );
 
   const openEventEditor = useCallback(
     (editing: CalendarEventRow | null, iso?: string) => {
       setEditorEditing(editing);
-      setEditorIso(iso ?? null);
+      if (editing) {
+        // Edit path: freeze to the term containing the event's own start date.
+        setFrozenTerm(termForIso(editing.startDate));
+        setFrozenIso(null);
+      } else if (iso) {
+        // Add-from-day path: freeze to the term containing the specific iso.
+        setFrozenTerm(termForIso(iso));
+        setFrozenIso(iso);
+      } else {
+        // Toolbar add (no iso): freeze to nearest/overlapping term for the
+        // current cursor. Uses nearestTermForCursor so break months get the
+        // correct neighbouring term instead of always falling back to T1.
+        setFrozenTerm(nearestTermForCursor(cursor));
+        setFrozenIso(null);
+      }
       setEditorOpen(true);
     },
-    []
+    [cursor, termForIso, nearestTermForCursor]
   );
 
   const closeEventEditor = useCallback(() => {
     setEditorOpen(false);
     setEditorEditing(null);
-    setEditorIso(null);
+    setFrozenTerm(null);
+    setFrozenIso(null);
   }, []);
 
-  // Which term bounds the editor uses.
-  const editorTerm: DatedTerm | null = useMemo(() => {
-    if (editorEditing) return termForIso(editorEditing.startDate);
-    if (editorIso) return termForIso(editorIso);
-    // Toolbar add: prefer the term overlapping the visible month, else first.
-    const monthStartIso = `${cursor.getFullYear()}-${String(
-      cursor.getMonth() + 1
-    ).padStart(2, '0')}-01`;
-    const lastDay = new Date(
-      cursor.getFullYear(),
-      cursor.getMonth() + 1,
-      0
-    ).getDate();
-    const monthEndIso = `${cursor.getFullYear()}-${String(
-      cursor.getMonth() + 1
-    ).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    const overlapping = terms.find(
-      (t) => t.startDate <= monthEndIso && t.endDate >= monthStartIso
-    );
-    return overlapping ?? terms[0] ?? null;
-  }, [editorEditing, editorIso, cursor, terms, termForIso]);
+  // Use the frozen snapshot exclusively — never recompute from live cursor.
+  const editorTerm = frozenTerm;
 
   // For a single-day add (from the sheet), seed both bounds to that day so the
   // event defaults to that date rather than the whole term span.
   const editorStart =
-    !editorEditing && editorIso ? editorIso : (editorTerm?.startDate ?? '');
+    !editorEditing && frozenIso ? frozenIso : (editorTerm?.startDate ?? '');
   const editorEnd =
-    !editorEditing && editorIso ? editorIso : (editorTerm?.endDate ?? '');
+    !editorEditing && frozenIso ? frozenIso : (editorTerm?.endDate ?? '');
 
   // ── Delete an event ─────────────────────────────────────────────────────────
   const deleteEvent = useCallback(
