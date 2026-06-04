@@ -1,15 +1,17 @@
 'use client';
 
 // CalendarAdminClient (operational orchestrator) — composes the already-built
-// calendar pieces into a working surface: a view switcher + filters + add
-// action (CalendarToolbar), a legend, the active view (Month / List functional;
-// Term / Week / Day are placeholders until Tasks 12–13), a day-action sheet,
-// and the event editor dialog.
+// calendar pieces into a working surface: a Term selector + view switcher +
+// filters + add action (CalendarToolbar), a legend, the active view (Month /
+// List functional; Week / Day are placeholders until a later task), a day-action
+// sheet, and the event editor dialog.
 //
-// AY-wide: receives the whole AY's dated terms + calendar rows + events, so the
-// Month view can navigate continuously across terms and the List view shows the
-// full year's exceptions. Day editability is per-day — a day in a between-terms
-// break has no term to write to, so its sheet is read-only.
+// Term-scoped: receives the whole AY's dated terms + calendar rows + events, but
+// scopes everything to the selected term before filtering / indexing. The Term
+// selector chooses the term (defaults to the current active term); the view tabs
+// (Month / Week / Day / List) are all scoped to it. Between-term break days are
+// simply outside every term window, so they never appear. Every visible in-term
+// day is editable (it has a term to write to).
 //
 // Design system §5/§6: this is a composition page. It owns no bespoke grid
 // markup — the views/toolbar/legend/sheet carry their own design-compliant
@@ -43,12 +45,15 @@ import type {
   SchoolCalendarRow,
 } from '@/lib/attendance/calendar';
 import type { Audience } from '@/lib/schemas/attendance';
+import { sgToday } from '@/lib/dates';
+import { resolveCurrentTermId } from '@/lib/sis/current-term';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type DatedTerm = {
   id: string;
   label: string;
+  termNumber: number;
   startDate: string;
   endDate: string;
 };
@@ -69,32 +74,12 @@ export type CalendarAdminClientProps = {
 
 const EMPTY_SET: Set<string> = new Set();
 
-// ─── Cursor seed ──────────────────────────────────────────────────────────────
-// first-of-month of the term containing today, else the AY's first term's start
-// month. Local-date safe (no UTC shift).
-
-function sgTodayIso(): string {
-  // SGT (UTC+8) calendar date — matches the page's term-resolution convention.
-  return new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function firstOfMonthFromIso(iso: string): Date {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (!m) return new Date();
   return new Date(Number(m[1]), Number(m[2]) - 1, 1);
-}
-
-function computeInitialCursor(terms: DatedTerm[]): Date {
-  if (terms.length === 0) {
-    return firstOfMonthFromIso(sgTodayIso());
-  }
-  const today = sgTodayIso();
-  const containing = terms.find(
-    (t) => today >= t.startDate && today <= t.endDate
-  );
-  const anchor = containing ?? terms[0];
-  // For the containing term, open on today's month; otherwise on the term start.
-  return firstOfMonthFromIso(containing ? today : anchor.startDate);
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
@@ -108,23 +93,74 @@ export function CalendarAdminClient({
 }: CalendarAdminClientProps) {
   const router = useRouter();
 
-  const initialCursor = useMemo(() => computeInitialCursor(terms), [terms]);
+  // ── Selected term ─────────────────────────────────────────────────────────────
+  // Default to the current active term (date-resolved, with the layered fallback
+  // in resolveCurrentTermId), else the first term.
+  const [selectedTermId, setSelectedTermId] = useState<string>(() => {
+    const resolved = resolveCurrentTermId(
+      terms.map((t) => ({
+        id: t.id,
+        term_number: t.termNumber,
+        start_date: t.startDate,
+        end_date: t.endDate,
+      })),
+      sgToday()
+    );
+    return resolved ?? terms[0]?.id ?? '';
+  });
+
+  const selectedTerm = useMemo(
+    () => terms.find((t) => t.id === selectedTermId) ?? terms[0],
+    [terms, selectedTermId]
+  );
+
+  // Cursor seeds to the selected term's start month.
+  const initialCursor = useMemo(
+    () =>
+      selectedTerm
+        ? firstOfMonthFromIso(selectedTerm.startDate)
+        : firstOfMonthFromIso(sgToday()),
+    [selectedTerm]
+  );
+
   const { view, setView, cursor, setCursor, filterState, setFilterState } =
     useCalendarViewState(initialCursor);
 
+  // ── Term-change cursor reset (render-time sync, no useEffect) ──────────────────
+  // When the selected term changes, reset the Month cursor to that term's start
+  // month. Mirrors the day-sheet lastIso render-time-sync pattern: track the
+  // last-applied term id in state and reconcile during render. Setting state in
+  // render is safe (React bails out and re-renders synchronously before paint).
+  const [lastTermId, setLastTermId] = useState<string>(selectedTermId);
+  if (lastTermId !== selectedTermId) {
+    setLastTermId(selectedTermId);
+    setCursor(initialCursor);
+  }
+
+  // ── Term-scope the data BEFORE filtering / indexing ───────────────────────────
+  const scopedCalendar = useMemo(
+    () => calendar.filter((c) => c.termId === selectedTermId),
+    [calendar, selectedTermId]
+  );
+  const scopedEvents = useMemo(
+    () => events.filter((e) => e.termId === selectedTermId),
+    [events, selectedTermId]
+  );
+
   // Filtered slices feed the views + the index. The day sheet deliberately
-  // reads UNFILTERED events so it always shows every event on the clicked day.
+  // reads the term-scoped UNFILTERED events so it always shows every event on
+  // the clicked day regardless of the active filters.
   const filteredCalendar = useMemo(
-    () => filterDays(calendar, filterState),
-    [calendar, filterState]
+    () => filterDays(scopedCalendar, filterState),
+    [scopedCalendar, filterState]
   );
   const filteredEvents = useMemo(
-    () => filterEvents(events, filterState),
-    [events, filterState]
+    () => filterEvents(scopedEvents, filterState),
+    [scopedEvents, filterState]
   );
   const index = useCalendarIndex(filteredCalendar, filteredEvents, level);
 
-  // Resolve the term that owns a given iso date (null when in a break).
+  // Resolve the term that owns a given iso date (null when in a break / outside).
   const termForIso = useCallback(
     (iso: string): DatedTerm | null =>
       terms.find((t) => iso >= t.startDate && iso <= t.endDate) ?? null,
@@ -138,17 +174,18 @@ export function CalendarAdminClient({
     setDaySheetIso(iso);
   }, []);
 
-  const daySheetTerm = daySheetIso ? termForIso(daySheetIso) : null;
-  // Edit the row for the audience currently being managed; fall back to the
-  // precedence-resolved row so the sheet still reflects the day's state.
+  // Views only show in-term days, so the clicked day always belongs to the
+  // selected term and is editable.
   const daySheetRow: SchoolCalendarRow | null = daySheetIso
-    ? (calendar.find((c) => c.date === daySheetIso && c.audience === level) ??
+    ? (scopedCalendar.find(
+        (c) => c.date === daySheetIso && c.audience === level
+      ) ??
       index.byDate.get(daySheetIso) ??
       null)
     : null;
-  // Unfiltered events on the day, so the sheet lists everything.
+  // Term-scoped, unfiltered events on the day, so the sheet lists everything.
   const daySheetEvents = daySheetIso
-    ? events.filter(
+    ? scopedEvents.filter(
         (e) => daySheetIso >= e.startDate && daySheetIso <= e.endDate
       )
     : [];
@@ -168,60 +205,27 @@ export function CalendarAdminClient({
   // fields default to that day (not the whole term span).
   const [frozenIso, setFrozenIso] = useState<string | null>(null);
 
-  // Nearest-term resolver for toolbar-add on a break month: prefers a term
-  // overlapping the cursor month; otherwise the last term ending before the
-  // cursor, else the first term starting after.
-  const nearestTermForCursor = useCallback(
-    (cur: Date): DatedTerm | null => {
-      if (terms.length === 0) return null;
-      const year = cur.getFullYear();
-      const month = cur.getMonth();
-      const monthStartIso = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-      const lastDay = new Date(year, month + 1, 0).getDate();
-      const monthEndIso = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-
-      // 1. Any term overlapping this month?
-      const overlapping = terms.find(
-        (t) => t.startDate <= monthEndIso && t.endDate >= monthStartIso
-      );
-      if (overlapping) return overlapping;
-
-      // 2. Last term whose end is before this month (i.e. the preceding term).
-      const before = [...terms]
-        .filter((t) => t.endDate < monthStartIso)
-        .sort((a, b) => b.endDate.localeCompare(a.endDate));
-      if (before.length > 0) return before[0];
-
-      // 3. First term starting after this month.
-      const after = [...terms]
-        .filter((t) => t.startDate > monthEndIso)
-        .sort((a, b) => a.startDate.localeCompare(b.startDate));
-      return after[0] ?? null;
-    },
-    [terms]
-  );
-
   const openEventEditor = useCallback(
     (editing: CalendarEventRow | null, iso?: string) => {
       setEditorEditing(editing);
       if (editing) {
-        // Edit path: freeze to the term containing the event's own start date.
-        setFrozenTerm(termForIso(editing.startDate));
+        // Edit path: freeze to the term containing the event's own start date,
+        // falling back to the selected term.
+        setFrozenTerm(termForIso(editing.startDate) ?? selectedTerm ?? null);
         setFrozenIso(null);
       } else if (iso) {
-        // Add-from-day path: freeze to the term containing the specific iso.
-        setFrozenTerm(termForIso(iso));
+        // Add-from-day path: the clicked day is always in the selected term.
+        setFrozenTerm(selectedTerm ?? null);
         setFrozenIso(iso);
       } else {
-        // Toolbar add (no iso): freeze to nearest/overlapping term for the
-        // current cursor. Uses nearestTermForCursor so break months get the
-        // correct neighbouring term instead of always falling back to T1.
-        setFrozenTerm(nearestTermForCursor(cursor));
+        // Toolbar add (no iso): freeze to the selected term — the surface is
+        // term-scoped, so the selected term is the unambiguous target.
+        setFrozenTerm(selectedTerm ?? null);
         setFrozenIso(null);
       }
       setEditorOpen(true);
     },
-    [cursor, termForIso, nearestTermForCursor]
+    [termForIso, selectedTerm]
   );
 
   const closeEventEditor = useCallback(() => {
@@ -270,6 +274,9 @@ export function CalendarAdminClient({
       <CalendarToolbar
         view={view}
         onView={setView}
+        terms={terms.map((t) => ({ id: t.id, label: t.label }))}
+        selectedTermId={selectedTermId}
+        onSelectTerm={setSelectedTermId}
         filterState={filterState}
         onFilter={setFilterState}
         onAddEvent={() => openEventEditor(null)}
@@ -290,9 +297,12 @@ export function CalendarAdminClient({
 
       <Legend />
 
-      {view === 'month' && (
+      {view === 'month' && selectedTerm && (
         <MonthView
-          terms={terms}
+          term={{
+            startDate: selectedTerm.startDate,
+            endDate: selectedTerm.endDate,
+          }}
           index={index}
           cursor={cursor}
           onCursor={setCursor}
@@ -309,17 +319,15 @@ export function CalendarAdminClient({
         />
       )}
 
-      {(view === 'term' || view === 'week' || view === 'day') && (
-        <ComingSoonView />
-      )}
+      {(view === 'week' || view === 'day') && <ComingSoonView />}
 
       <DayActionSheet
         iso={daySheetIso}
-        termId={daySheetTerm?.id ?? ''}
+        termId={selectedTermId}
         audience={level}
         row={daySheetRow}
         events={daySheetEvents}
-        editable={!!daySheetTerm}
+        editable={true}
         onClose={() => setDaySheetIso(null)}
         onSaved={() => router.refresh()}
         onAddEvent={(iso) => openEventEditor(null, iso)}
@@ -344,7 +352,7 @@ export function CalendarAdminClient({
   );
 }
 
-// ─── Placeholder for not-yet-built views (Term / Week / Day) ────────────────────
+// ─── Placeholder for not-yet-built views (Week / Day) ───────────────────────────
 
 function ComingSoonView() {
   return (

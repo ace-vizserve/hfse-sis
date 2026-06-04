@@ -1,13 +1,14 @@
 'use client';
 
-// CalendarToolbar — unified view-switcher + filter trigger + Add action.
+// CalendarToolbar — Term selector + view-switcher + filter trigger + Add action.
 //
-// Layout: left = Tabs view switcher (Term / Month / Week / Day / List).
+// Layout: left  = Term <Select> (chooses the term) THEN Tabs view switcher
+//                 (Month / Week / Day / List), each scoped to the selected term.
 //         right = Filters Popover (outline Button + active-count Badge)
 //                 + "+ Add" DropdownMenu (primary CTA, one per view).
 //
-// Design system: §4.1 shadcn primitives; §9.2 one default Button per view
-// (the "+ Add" button); Filters = outline; Tabs = default variant;
+// Design system: §4.1 shadcn primitives (Select + Tabs); §9.2 one default Button
+// per view (the "+ Add" button); Filters = outline; Tabs = default variant;
 // Badge §9.3 secondary count pill. Tokens only; no raw hex.
 
 import { CalendarPlus, ChevronDown, ListFilter } from 'lucide-react';
@@ -26,26 +27,38 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { CalendarFilterState } from '@/lib/attendance/calendar-filters';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type CalendarView = 'term' | 'month' | 'week' | 'day' | 'list';
+export type CalendarView = 'month' | 'week' | 'day' | 'list';
 
 const VIEW_LABELS: Record<CalendarView, string> = {
-  term: 'Term',
   month: 'Month',
   week: 'Week',
   day: 'Day',
   list: 'List',
 };
 
-const VIEWS: CalendarView[] = ['term', 'month', 'week', 'day', 'list'];
+const VIEWS: CalendarView[] = ['month', 'week', 'day', 'list'];
 
 export type CalendarToolbarProps = {
   view: CalendarView;
   onView: (v: CalendarView) => void;
+  /** Terms available to scope the calendar to (by id + human label). */
+  terms: Array<{ id: string; label: string }>;
+  /** Currently-selected term id (drives the whole surface's scope). */
+  selectedTermId: string;
+  /** Fired when the registrar picks a different term. */
+  onSelectTerm: (id: string) => void;
   filterState: CalendarFilterState;
   onFilter: (next: CalendarFilterState) => void;
   onAddEvent: () => void;
@@ -81,6 +94,9 @@ function countActiveFilters(s: CalendarFilterState): number {
 export function CalendarToolbar({
   view,
   onView,
+  terms,
+  selectedTermId,
+  onSelectTerm,
   filterState,
   onFilter,
   onAddEvent,
@@ -90,16 +106,31 @@ export function CalendarToolbar({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      {/* Left — view-switcher tabs (Term / Month / Week / Day / List) */}
-      <Tabs value={view} onValueChange={(v) => onView(v as CalendarView)}>
-        <TabsList variant="default" aria-label="Calendar view">
-          {VIEWS.map((v) => (
-            <TabsTrigger key={v} value={v}>
-              {VIEW_LABELS[v]}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      {/* Left — Term selector THEN view-switcher tabs (Month/Week/Day/List) */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={selectedTermId} onValueChange={onSelectTerm}>
+          <SelectTrigger className="h-8 w-[160px]" aria-label="Selected term">
+            <SelectValue placeholder="Select term" />
+          </SelectTrigger>
+          <SelectContent>
+            {terms.map((t) => (
+              <SelectItem key={t.id} value={t.id}>
+                {t.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Tabs value={view} onValueChange={(v) => onView(v as CalendarView)}>
+          <TabsList variant="default" aria-label="Calendar view">
+            {VIEWS.map((v) => (
+              <TabsTrigger key={v} value={v}>
+                {VIEW_LABELS[v]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
 
       {/* Right — Filters popover + Add dropdown */}
       <div className="flex items-center gap-2">

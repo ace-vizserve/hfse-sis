@@ -128,10 +128,11 @@ export default async function SisCalendarPage({
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
           Configure which dates are school days, which are closed (greyed out,
           not encodable), and overlay informational events. The attendance grid
-          uses this to render only the days students can be marked. Navigate the
-          whole academic year by month, or switch to List for a chronological
-          view of every closure and event. Filter by Primary or Secondary to
-          manage level-specific overrides alongside the shared (All) baseline.
+          uses this to render only the days students can be marked. Pick a term,
+          then view it by month or switch to List for a chronological view of
+          every closure and event in that term. Filter by Primary or Secondary
+          to manage level-specific overrides alongside the shared (All)
+          baseline.
         </p>
       </header>
 
@@ -183,6 +184,7 @@ export default async function SisCalendarPage({
           terms={dated.map((t) => ({
             id: t.id,
             label: t.label,
+            termNumber: t.term_number,
             startDate: t.start_date as string,
             endDate: t.end_date as string,
           }))}
