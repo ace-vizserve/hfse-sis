@@ -4,7 +4,7 @@ import {
   filterEvents,
   filterDays,
   type CalendarFilterState,
-} from '@/lib/attendance/calendar/filters';
+} from '@/lib/attendance/calendar-filters';
 import type {
   CalendarEventRow,
   SchoolCalendarRow,

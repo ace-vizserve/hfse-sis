@@ -4,7 +4,7 @@ import {
   storageToDayStatus,
   isEncodableStatus,
   type DayStatus,
-} from '@/lib/attendance/calendar/operational';
+} from '@/lib/attendance/calendar-operational';
 import { isEncodableDayType } from '@/lib/schemas/attendance';
 
 const ALL_STATUSES: DayStatus[] = [

@@ -71,7 +71,10 @@ export function filterDays(
 }
 
 // Registry — drives calendar-filter-bar rendering + makes adding the #2
-// filters (spec D3) a one-entry change.
+// filters (spec D3) a one-entry change. `id` is the anchor state key for the
+// control; the `date-range` control is the one exception — it owns BOTH `from`
+// and `to` (anchored on `from`), so its renderer writes the pair from a single
+// widget. Every other control maps 1:1 to its `id`.
 export type CalendarFilterDef = {
   id: keyof CalendarFilterState;
   label: string;
@@ -79,7 +82,7 @@ export type CalendarFilterDef = {
 };
 
 export const CALENDAR_FILTERS: CalendarFilterDef[] = [
-  { id: 'from', label: 'Date range', control: 'date-range' },
+  { id: 'from', label: 'Date range', control: 'date-range' }, // drives from + to
   { id: 'categories', label: 'Category', control: 'category-multi' },
   { id: 'level', label: 'Level', control: 'level' },
   { id: 'status', label: 'Status', control: 'status' },
