@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
   const dates = entries.map((e) => e.date);
   const { data: beforeRows } = await service
     .from('school_calendar')
-    .select('date, day_type, audience')
+    .select('date, day_type, audience, hbl_overlay')
     .eq('term_id', termId)
     .eq('audience', audience)
     .in('date', dates);
@@ -121,6 +121,13 @@ export async function POST(request: NextRequest) {
     ((beforeRows ?? []) as Array<{ date: string; day_type: string }>).map(
       (r) => [r.date, r.day_type]
     )
+  );
+  // Track hbl_overlay too so toggling the school-holiday HBL overlay (day_type
+  // unchanged) still shows a recorded change in the audit trail.
+  const beforeOverlayByDate = new Map<string, boolean>(
+    (
+      (beforeRows ?? []) as Array<{ date: string; hbl_overlay: boolean | null }>
+    ).map((r) => [r.date, r.hbl_overlay ?? false])
   );
 
   const rows = entries.map((e) => {
@@ -153,6 +160,8 @@ export async function POST(request: NextRequest) {
     audience: r.audience,
     before_day_type: beforeByDate.get(r.date) ?? null,
     after_day_type: r.day_type,
+    before_hbl_overlay: beforeOverlayByDate.get(r.date) ?? false,
+    after_hbl_overlay: r.hbl_overlay,
     label: r.label,
   }));
 

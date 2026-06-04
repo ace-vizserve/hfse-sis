@@ -49,10 +49,18 @@ const SIS_AUDIT_ALLOWLIST = [
   'section.realphabetize',
   'assignment.create',
   'assignment.delete',
-  // School calendar (/sis/calendar)
+  // School calendar (/sis/calendar) — full trail incl. events + auto-seed
   'attendance.calendar.upsert',
   'attendance.calendar.delete',
+  'attendance.calendar.autoseed',
   'attendance.calendar.copy_from_prior_ay',
+  'attendance.event.create',
+  'attendance.event.update',
+  'attendance.event.delete',
+  // Term dates / virtue / grading lock (/sis/ay-setup)
+  'ay.term_dates.update',
+  'ay.term_virtue.update',
+  'ay.term_grading_lock.update',
   // School config
   'school_config.update',
   // User provisioning (KD #87)
