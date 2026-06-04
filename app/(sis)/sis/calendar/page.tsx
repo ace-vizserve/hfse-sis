@@ -15,13 +15,11 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import {
   ensureTermSeeded,
-  getCalendarEventsForTerm,
-  getSchoolCalendarForTerm,
-  listPriorAyEntriesForCopy,
+  getCalendarEventsForAy,
+  getSchoolCalendarForAy,
 } from '@/lib/attendance/calendar';
-import { CalendarAdminClient } from '@/components/attendance/calendar-admin-client';
+import { CalendarAdminClient } from '@/components/attendance/calendar/calendar-admin-client';
 import { AUDIENCE_VALUES, type Audience } from '@/lib/schemas/attendance';
-import { resolveCurrentTermId } from '@/lib/sis/current-term';
 
 function parseAudience(raw: string | undefined): Audience {
   return AUDIENCE_VALUES.includes(raw as Audience) ? (raw as Audience) : 'all';
@@ -30,7 +28,7 @@ function parseAudience(raw: string | undefined): Audience {
 export default async function SisCalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ term_id?: string; audience?: string }>;
+  searchParams: Promise<{ audience?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -55,7 +53,7 @@ export default async function SisCalendarPage({
   const { data: termsRaw } = ay
     ? await supabase
         .from('terms')
-        .select('id, label, term_number, start_date, end_date, is_current')
+        .select('id, label, term_number, start_date, end_date')
         .eq('academic_year_id', ay.id)
         .order('term_number', { ascending: true })
     : { data: [] };
@@ -66,68 +64,49 @@ export default async function SisCalendarPage({
     term_number: number;
     start_date: string | null;
     end_date: string | null;
-    is_current: boolean;
   };
   const terms = (termsRaw ?? []) as TermRow[];
-  // Default term via the shared resolver: term containing today → is_current
-  // flag → most-recently-ended term → earliest. Opens the calendar on the term
-  // the registrar is actually working in, even when the is_current flag is
-  // unset (and on the most-recent term during a between-terms break). `today`
-  // in Singapore time (UTC+8) for consistency with the other date surfaces.
-  const today = new Date(Date.now() + 8 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
-  const defaultTermId = sp.term_id ?? resolveCurrentTermId(terms, today) ?? '';
+  const dated = terms.filter((t) => !!t.start_date && !!t.end_date);
 
-  const selectedTerm = terms.find((t) => t.id === defaultTermId) ?? null;
-  const selectedTermHasDates =
-    !!selectedTerm && !!selectedTerm.start_date && !!selectedTerm.end_date;
-  // Auto-seed every visit: every weekday in the term is a school day by
-  // default. ensureTermSeeded is idempotent — it inserts only the dates
-  // missing from school_calendar, so existing overrides (public_holiday,
-  // hbl, etc.) are preserved and partially-seeded terms get backfilled.
-  if (selectedTerm && selectedTermHasDates) {
-    const inserted = await ensureTermSeeded(
-      selectedTerm.id,
-      selectedTerm.start_date as string,
-      selectedTerm.end_date as string,
-      sessionUser.id
+  // Auto-seed EVERY dated term: every weekday in a term is a school day by
+  // default. ensureTermSeeded is idempotent — it inserts only the dates missing
+  // from school_calendar, so existing overrides (public_holiday, hbl, etc.) are
+  // preserved and partially-seeded terms get backfilled. Run before reading the
+  // calendar so a freshly-set-up AY renders fully on first visit.
+  let totalInserted = 0;
+  if (dated.length > 0) {
+    const insertedCounts = await Promise.all(
+      dated.map((t) =>
+        ensureTermSeeded(
+          t.id,
+          t.start_date as string,
+          t.end_date as string,
+          sessionUser.id
+        )
+      )
     );
-    if (inserted > 0) {
+    totalInserted = insertedCounts.reduce((a, b) => a + b, 0);
+    if (totalInserted > 0) {
       await logAction({
         service: createServiceClient(),
         actor: { id: sessionUser.id, email: sessionUser.email ?? null },
         action: 'attendance.calendar.autoseed',
         entityType: 'school_calendar',
-        entityId: selectedTerm.id,
-        context: {
-          start: selectedTerm.start_date,
-          end: selectedTerm.end_date,
-          inserted,
-        },
+        entityId: ay?.id ?? null,
+        context: { ayCode: ay?.ay_code ?? null, inserted: totalInserted },
       });
     }
   }
-  // Calendar rows, overlay events, and prior-AY copy entries are all
-  // independent after ensureTermSeeded completes — fetch in parallel.
-  const [calendar, events, priorEntries] = await Promise.all([
-    selectedTerm
-      ? getSchoolCalendarForTerm(selectedTerm.id, audience)
-      : Promise.resolve([]),
-    selectedTerm
-      ? getCalendarEventsForTerm(selectedTerm.id, audience)
-      : Promise.resolve([]),
-    ay && selectedTerm
-      ? listPriorAyEntriesForCopy(ay.id, selectedTerm.term_number)
-      : Promise.resolve({
-          sourceAy: null,
-          holidays: [] as never[],
-          events: [] as never[],
-        }),
-  ]);
-  const targetYear = selectedTerm?.start_date
-    ? Number(selectedTerm.start_date.slice(0, 4))
-    : new Date().getUTCFullYear();
+
+  // AY-wide calendar rows + overlay events — independent after seeding, fetch
+  // in parallel.
+  const [calendar, events] =
+    ay && dated.length > 0
+      ? await Promise.all([
+          getSchoolCalendarForAy(ay.id, audience),
+          getCalendarEventsForAy(ay.id, audience),
+        ])
+      : [[], []];
 
   return (
     <PageShell className="max-w-[1400px]">
@@ -147,11 +126,12 @@ export default async function SisCalendarPage({
           School days &amp; holidays.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Configure which dates are school days, which are holidays (greyed out,
+          Configure which dates are school days, which are closed (greyed out,
           not encodable), and overlay informational events. The attendance grid
-          uses this to render only the days students can be marked. Filter by
-          Primary or Secondary to manage level-specific overrides alongside the
-          shared (All) baseline.
+          uses this to render only the days students can be marked. Navigate the
+          whole academic year by month, or switch to List for a chronological
+          view of every closure and event. Filter by Primary or Secondary to
+          manage level-specific overrides alongside the shared (All) baseline.
         </p>
       </header>
 
@@ -167,65 +147,53 @@ export default async function SisCalendarPage({
             </p>
           </CardContent>
         </Card>
-      ) : (
+      ) : dated.length === 0 ? (
         <Card>
           <CardHeader>
             <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-              {ay?.ay_code ?? ''} · Configure a term
+              {ay?.ay_code ?? ''} · Term dates needed
             </CardDescription>
             <CardTitle className="font-serif text-[20px] font-semibold tracking-tight text-foreground">
-              {selectedTerm?.label ?? 'Select a term'}
+              No term dates set yet
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {selectedTerm && !selectedTermHasDates && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-100">
-                <p className="font-medium">
-                  {selectedTerm.label} doesn&apos;t have start &amp; end dates
-                  set yet.
-                </p>
-                <p className="mt-1 text-amber-800/80 dark:text-amber-200/80">
-                  The calendar grid can&apos;t render a month view without them.
-                  Set the dates in{' '}
-                  <Link
-                    href="/sis/ay-setup"
-                    className="font-medium text-amber-900 underline underline-offset-2 dark:text-amber-100"
-                  >
-                    AY Setup
-                  </Link>{' '}
-                  (superadmin), then come back here.
-                </p>
-              </div>
-            )}
-            <CalendarAdminClient
-              terms={terms
-                .filter((t) => !!t.start_date && !!t.end_date)
-                .map((t) => ({
-                  id: t.id,
-                  label: t.label,
-                  startDate: t.start_date as string,
-                  endDate: t.end_date as string,
-                  isCurrent: t.is_current,
-                }))}
-              termId={selectedTermHasDates ? defaultTermId : ''}
-              audience={audience}
-              calendar={selectedTermHasDates ? calendar : []}
-              events={selectedTermHasDates ? events : []}
-              copyFromPriorAyProps={
-                selectedTerm && selectedTermHasDates && priorEntries.sourceAy
-                  ? {
-                      targetTermId: selectedTerm.id,
-                      targetTermLabel: selectedTerm.label,
-                      targetYear,
-                      sourceAyCode: priorEntries.sourceAy.ay_code,
-                      sourceHolidays: priorEntries.holidays,
-                      sourceEvents: priorEntries.events,
-                    }
-                  : null
-              }
-            />
+          <CardContent>
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-100">
+              <p className="font-medium">
+                The terms for {ay?.label ?? 'this academic year'} don&apos;t
+                have start &amp; end dates yet.
+              </p>
+              <p className="mt-1 text-amber-800/80 dark:text-amber-200/80">
+                The calendar can&apos;t render a month view without them. Set
+                the dates in{' '}
+                <Link
+                  href="/sis/ay-setup"
+                  className="font-medium text-amber-900 underline underline-offset-2 dark:text-amber-100"
+                >
+                  AY Setup
+                </Link>{' '}
+                (superadmin), then come back here.
+              </p>
+            </div>
           </CardContent>
         </Card>
+      ) : (
+        <CalendarAdminClient
+          ayId={ay!.id}
+          terms={dated.map((t) => ({
+            id: t.id,
+            label: t.label,
+            startDate: t.start_date as string,
+            endDate: t.end_date as string,
+          }))}
+          level={audience}
+          calendar={calendar}
+          events={events}
+          // Copy-from-prior-AY is per-term (single target term + year); it
+          // doesn't map cleanly onto the AY-wide surface. Passed null for now —
+          // to be re-wired as a follow-up once the target-term picker lands.
+          copyFromPriorAyProps={null}
+        />
       )}
     </PageShell>
   );
