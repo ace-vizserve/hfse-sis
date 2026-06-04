@@ -1,12 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { sgToday } from '@/lib/dates';
+import { resolveCurrentTermId } from '@/lib/sis/current-term';
 import { hashString, mulberry32, prefixFor } from './random';
 
 // Demo-extras seeder. Layered on top of seedPopulated() to seed the
-// school calendar: typed events + audience overrides + tentative flags.
+// school calendar: typed events + per-level audience overrides + tentative
+// flags + weekend events (Sat/Sun).
 //
-// One pass, idempotent (skip-guarded by an existence count):
-//   1. seedCalendarEnhancements — typed events + audience overrides + tentative
+// One pass, idempotent (skip-guarded by an existence count / per-row checks):
+//   1. seedCalendarEnhancements — typed events + audience overrides + weekend events
 //
 // All passes use service-role + skip-guards so re-running on a partially
 // seeded AY9999 is safe (no duplicate inserts, no failed unique-key errors).
@@ -406,11 +409,31 @@ async function seedCalendarEnhancements(
   }>;
   const t1 = terms.find((t) => t.term_number === 1);
   const t2 = terms.find((t) => t.term_number === 2);
+  const t3 = terms.find((t) => t.term_number === 3);
   if (!t1) return { events: 0, audienceOverrides: 0 };
 
   const dateOffset = (base: string, days: number): string => {
     const d = new Date(`${base}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+
+  // Next date on/after `base` whose weekday is `dow` (0=Sun … 6=Sat). Used to
+  // place weekend events on a real Saturday regardless of the seeded year.
+  const nextDow = (base: string, dow: number): string => {
+    const d = new Date(`${base}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + ((dow - d.getUTCDay() + 7) % 7));
+    return d.toISOString().slice(0, 10);
+  };
+
+  // Snap a date off a weekend onto the following Monday (HBL/closures imply a
+  // school day, and weekends now render in the grid).
+  const snapToWeekday = (iso: string): string => {
+    const d = new Date(`${iso}T00:00:00Z`);
+    const dow = d.getUTCDay();
+    if (dow === 6)
+      d.setUTCDate(d.getUTCDate() + 2); // Sat → Mon
+    else if (dow === 0) d.setUTCDate(d.getUTCDate() + 1); // Sun → Mon
     return d.toISOString().slice(0, 10);
   };
 
@@ -534,8 +557,8 @@ async function seedCalendarEnhancements(
   // the audience precedence rule (KD #50/#76) makes them the effective
   // attendance row for matching sections.
   let audienceOverrides = 0;
-  const primaryHblDate = dateOffset(t1.start_date, 18);
-  const secondaryHblDate = dateOffset(t1.start_date, 22);
+  const primaryHblDate = snapToWeekday(dateOffset(t1.start_date, 18));
+  const secondaryHblDate = snapToWeekday(dateOffset(t1.start_date, 22));
   const overrideRows = [
     {
       term_id: t1.id,
@@ -574,7 +597,76 @@ async function seedCalendarEnhancements(
     audienceOverrides += 1;
   }
 
-  return { events: eventsInserted, audienceOverrides };
+  // ---- 5c. Weekend events ----
+  // HFSE schedules events on Saturdays/Sundays (Family Sportsfest, Day Out,
+  // health checks). Placed on computed Saturdays inside a term so they're real
+  // weekends for any seeded year. Own per-row guard so they also appear on a
+  // top-up of an already-seeded AY (the 5a guard skips when events exist).
+  const weekendRows: Array<Record<string, unknown>> = [];
+  if (t2) {
+    const sportsfest = nextDow(dateOffset(t2.start_date, 14), 6); // Saturday ~2wk in
+    if (sportsfest <= t2.end_date) {
+      weekendRows.push({
+        term_id: t2.id,
+        start_date: sportsfest,
+        end_date: sportsfest,
+        label: 'Family Sportsfest',
+        category: 'school_event',
+        audience: 'all',
+        tentative: false,
+      });
+    }
+    const healthStart = nextDow(dateOffset(t2.start_date, 35), 6); // Saturday
+    const healthEnd = dateOffset(healthStart, 1); // through Sunday
+    if (healthEnd <= t2.end_date) {
+      weekendRows.push({
+        term_id: t2.id,
+        start_date: healthStart,
+        end_date: healthEnd,
+        label: 'Health & dental check-up',
+        category: 'pfe',
+        audience: 'all',
+        tentative: false,
+      });
+    }
+  }
+  if (t3) {
+    const dayOut = nextDow(dateOffset(t3.start_date, 14), 6); // Saturday
+    if (dayOut <= t3.end_date) {
+      weekendRows.push({
+        term_id: t3.id,
+        start_date: dayOut,
+        end_date: dayOut,
+        label: 'Mommies & Daddies Day Out',
+        category: 'school_event',
+        audience: 'all',
+        tentative: false,
+      });
+    }
+  }
+
+  let weekendEvents = 0;
+  for (const r of weekendRows) {
+    const { count } = await service
+      .from('calendar_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('term_id', r.term_id as string)
+      .eq('start_date', r.start_date as string)
+      .eq('label', r.label as string);
+    if ((count ?? 0) > 0) continue;
+
+    const { error } = await service.from('calendar_events').insert(r);
+    if (error) {
+      console.warn(
+        `[demo-extras] weekend event insert failed (${r.label as string} ${r.start_date as string}):`,
+        error.message
+      );
+      continue;
+    }
+    weekendEvents += 1;
+  }
+
+  return { events: eventsInserted + weekendEvents, audienceOverrides };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -988,25 +1080,24 @@ async function seedVacationLeaveEntries(
   service: SupabaseClient,
   testAy: { id: string; ay_code: string }
 ): Promise<number> {
-  // Target the term that the attendance dashboard's VacationLeaveQuotaCard
-  // actually reads — `is_current` term, falling back to T1. Earlier this
-  // pass hardcoded T1, which meant the card showed zero entries whenever
-  // T2 was the current term (which is the default state right after env
-  // switch, since the temporal split logic puts AY9999 mid-T2).
+  // Target the term the attendance dashboard's VacationLeaveQuotaCard actually
+  // reads — the current term resolved BY DATE (`terms.is_current` is deprecated
+  // and never written, so the old `find(is_current) ?? T1` always picked T1 and
+  // the card showed zero entries whenever today wasn't in T1).
   const { data: termRows } = await service
     .from('terms')
-    .select('id, term_number, is_current')
+    .select('id, term_number, start_date, end_date')
     .eq('academic_year_id', testAy.id)
     .order('term_number');
   const terms = (termRows ?? []) as Array<{
     id: string;
     term_number: number;
-    is_current: boolean;
+    start_date: string | null;
+    end_date: string | null;
   }>;
   if (terms.length === 0) return 0;
-  const currentTerm = terms.find((t) => t.is_current) ?? terms[0];
-  if (!currentTerm) return 0;
-  const targetTermId = currentTerm.id;
+  const targetTermId = resolveCurrentTermId(terms, sgToday()) ?? terms[0]?.id;
+  if (!targetTermId) return 0;
 
   // Skip-guard: any vacation entries already in the target term?
   const { count: existing } = await service

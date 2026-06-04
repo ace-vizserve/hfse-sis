@@ -187,7 +187,7 @@ export async function ensureTestStructure(
   const { data: termsRows } = await service
     .from('terms')
     .select(
-      'id, term_number, start_date, end_date, virtue_theme, grading_lock_date, is_current'
+      'id, term_number, start_date, end_date, virtue_theme, grading_lock_date'
     )
     .eq('academic_year_id', testAy.id);
   const terms = (termsRows ?? []) as Array<{
@@ -197,7 +197,6 @@ export async function ensureTestStructure(
     end_date: string | null;
     virtue_theme: string | null;
     grading_lock_date: string | null;
-    is_current: boolean;
   }>;
   const termByNumber = new Map(terms.map((t) => [t.term_number, t]));
 
