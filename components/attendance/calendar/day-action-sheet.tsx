@@ -5,9 +5,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -27,10 +25,8 @@ import type {
   SchoolCalendarRow,
 } from '@/lib/attendance/calendar';
 import {
-  CLOSED_REASON_LABELS,
   dayStatusToStorage,
   storageToDayStatus,
-  type ClosedReason,
   type DayStatus,
 } from '@/lib/attendance/calendar-operational';
 import {
@@ -39,15 +35,62 @@ import {
   type Audience,
 } from '@/lib/schemas/attendance';
 
+// The two editable audiences shown in the sheet. 'All' is the implicit
+// school-wide default both levels start from; it isn't edited directly.
+const SHEET_LEVELS = AUDIENCE_VALUES.filter(
+  (a): a is Exclude<Audience, 'all'> => a !== 'all'
+);
+
+// ─── Status options (one flat list per level — no override/inherit jargon) ──────
+
+type StatusOption = { value: string; label: string; status: DayStatus };
+
+const STATUS_OPTIONS: StatusOption[] = [
+  { value: 'open', label: 'Open', status: { kind: 'open', hbl: false } },
+  {
+    value: 'open-hbl',
+    label: 'Open · HBL (taught remotely)',
+    status: { kind: 'open', hbl: true },
+  },
+  {
+    value: 'closed-public',
+    label: 'Closed · Public holiday',
+    status: { kind: 'closed', reason: 'public_holiday' },
+  },
+  {
+    value: 'closed-school',
+    label: 'Closed · School holiday',
+    status: { kind: 'closed', reason: 'school_holiday', hblOverlay: false },
+  },
+  {
+    value: 'closed-school-hbl',
+    label: 'Closed · School holiday (attendance still taken)',
+    status: { kind: 'closed', reason: 'school_holiday', hblOverlay: true },
+  },
+  {
+    value: 'closed-noclass',
+    label: 'Closed · No class',
+    status: { kind: 'closed', reason: 'no_class' },
+  },
+];
+
+/** Map a DayStatus to its STATUS_OPTIONS value. */
+function statusToValue(s: DayStatus): string {
+  if (s.kind === 'open') return s.hbl ? 'open-hbl' : 'open';
+  if (s.reason === 'school_holiday') {
+    return s.hblOverlay ? 'closed-school-hbl' : 'closed-school';
+  }
+  if (s.reason === 'public_holiday') return 'closed-public';
+  return 'closed-noclass';
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface DayActionSheetProps {
   iso: string | null;
   termId: string;
-  /** The clicked date's school_calendar row per audience (null = no override). */
+  /** The clicked date's school_calendar row per audience (null = none yet). */
   rowsByAudience: Record<Audience, SchoolCalendarRow | null>;
-  /** Level pre-selected when the sheet opens (the page audience filter). */
-  defaultLevel: Audience;
   events: CalendarEventRow[];
   editable: boolean;
   onClose: () => void;
@@ -80,15 +123,45 @@ function initialStatus(row: SchoolCalendarRow | null): DayStatus {
   });
 }
 
-/** Short human label for a day status, used in the per-level summary. */
-function statusLabel(s: DayStatus): string {
-  if (s.kind === 'open') return s.hbl ? 'Open · HBL' : 'Open';
-  if (s.reason === 'school_holiday') {
-    return s.hblOverlay
-      ? 'Closed · School holiday (HBL)'
-      : 'Closed · School holiday';
-  }
-  return `Closed · ${CLOSED_REASON_LABELS[s.reason]}`;
+// ─── Per-level status editor (one compact dropdown) ─────────────────────────────
+
+function LevelStatusEditor({
+  level,
+  status,
+  onChange,
+}: {
+  level: Exclude<Audience, 'all'>;
+  status: DayStatus;
+  onChange: (s: DayStatus) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label
+        htmlFor={`status-${level}`}
+        className="text-[13px] font-medium text-foreground"
+      >
+        {AUDIENCE_LABELS[level]}
+      </Label>
+      <Select
+        value={statusToValue(status)}
+        onValueChange={(v) => {
+          const opt = STATUS_OPTIONS.find((o) => o.value === v);
+          if (opt) onChange(opt.status);
+        }}
+      >
+        <SelectTrigger id={`status-${level}`} className="h-9 text-sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {STATUS_OPTIONS.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -97,7 +170,6 @@ export function DayActionSheet({
   iso,
   termId,
   rowsByAudience,
-  defaultLevel,
   events,
   editable,
   onClose,
@@ -106,112 +178,69 @@ export function DayActionSheet({
   onEditEvent,
   onDeleteEvent,
 }: DayActionSheetProps) {
-  // Effective row for a level: its own override, else (for non-'all') the All
-  // baseline it inherits. 'all' has no fallback.
+  // Each level starts from its own row, or the school-wide default it follows.
   const effectiveRow = (level: Audience): SchoolCalendarRow | null =>
-    rowsByAudience[level] ?? (level !== 'all' ? rowsByAudience.all : null);
-  /** Does this level carry its OWN override (vs inheriting All)? */
-  const hasOwnOverride = (level: Audience): boolean =>
-    level !== 'all' && rowsByAudience[level] != null;
+    rowsByAudience[level] ?? rowsByAudience.all;
 
-  const [selectedLevel, setSelectedLevel] = useState<Audience>(defaultLevel);
-  const [status, setStatus] = useState<DayStatus>(() =>
-    initialStatus(effectiveRow(defaultLevel))
-  );
+  const [statusByLevel, setStatusByLevel] = useState<
+    Record<'primary' | 'secondary', DayStatus>
+  >(() => ({
+    primary: initialStatus(effectiveRow('primary')),
+    secondary: initialStatus(effectiveRow('secondary')),
+  }));
   const [busy, setBusy] = useState(false);
 
-  // Re-initialise when the sheet opens for a new day: reset the level to the
-  // page default and the status to that level's effective row. rowsByAudience
-  // already reflects the new iso (resolved by the parent).
+  // Re-initialise when the sheet opens for a new day. rowsByAudience already
+  // reflects the new iso (resolved by the parent).
   const [lastIso, setLastIso] = useState<string | null>(iso);
   if (iso !== lastIso) {
     setLastIso(iso);
-    setSelectedLevel(defaultLevel);
-    setStatus(initialStatus(effectiveRow(defaultLevel)));
+    setStatusByLevel({
+      primary: initialStatus(effectiveRow('primary')),
+      secondary: initialStatus(effectiveRow('secondary')),
+    });
     setBusy(false);
   }
 
-  // Switching level shows that level's effective status (own or inherited).
-  function handleLevelChange(level: Audience) {
-    setSelectedLevel(level);
-    setStatus(initialStatus(effectiveRow(level)));
-  }
-
-  // ── Handlers ────────────────────────────────────────────────────────────────
-
-  function handleKindChange(value: string) {
-    if (value === 'open') {
-      setStatus({ kind: 'open', hbl: false });
-    } else {
-      // Default to public_holiday when switching to closed
-      setStatus({ kind: 'closed', reason: 'public_holiday' });
-    }
-  }
-
-  function handleOpenHblChange(checked: boolean | 'indeterminate') {
-    setStatus({ kind: 'open', hbl: checked === true });
-  }
-
-  function handleReasonChange(value: string) {
-    const r = value as ClosedReason;
-    if (r === 'school_holiday') {
-      setStatus({
-        kind: 'closed',
-        reason: 'school_holiday',
-        hblOverlay: false,
-      });
-    } else {
-      setStatus({ kind: 'closed', reason: r });
-    }
-  }
-
-  function handleSchoolHolidayHblChange(checked: boolean | 'indeterminate') {
-    // Guard: only call when current status is school_holiday closed
-    if (status.kind === 'closed' && status.reason === 'school_holiday') {
-      setStatus({
-        kind: 'closed',
-        reason: 'school_holiday',
-        hblOverlay: checked === true,
-      });
-    }
-  }
-
+  // Save writes BOTH levels — one request per audience (the upsert route takes
+  // a single audience per call).
   async function handleSave() {
     if (!iso) return;
     setBusy(true);
     try {
-      const { dayType, hblOverlay } = dayStatusToStorage(status);
-      const res = await fetch('/api/attendance/calendar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          termId,
-          // Writes to the selected level — creating a per-level override when
-          // it's Primary/Secondary, or the baseline when it's All.
-          audience: selectedLevel,
-          // Preserve any existing label on THIS level's own row — the upsert
-          // writes the full row, so omitting label would clobber it to null.
-          entries: [
-            {
-              date: iso,
-              dayType,
-              label: rowsByAudience[selectedLevel]?.label ?? null,
-              hblOverlay,
-            },
-          ],
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(
-          (body as { message?: string }).message ?? `Server error ${res.status}`
-        );
-      }
-      toast.success(
-        selectedLevel === 'all'
-          ? 'Day saved'
-          : `${AUDIENCE_LABELS[selectedLevel]} override saved`
+      await Promise.all(
+        SHEET_LEVELS.map(async (lvl) => {
+          const { dayType, hblOverlay } = dayStatusToStorage(
+            statusByLevel[lvl]
+          );
+          const res = await fetch('/api/attendance/calendar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              termId,
+              audience: lvl,
+              // Preserve this level's own label, if any.
+              entries: [
+                {
+                  date: iso,
+                  dayType,
+                  label: rowsByAudience[lvl]?.label ?? null,
+                  hblOverlay,
+                },
+              ],
+            }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(
+              (body as { error?: string; message?: string }).error ??
+                (body as { message?: string }).message ??
+                `Server error ${res.status}`
+            );
+          }
+        })
       );
+      toast.success('Day saved');
       onSaved();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save day');
@@ -219,54 +248,6 @@ export function DayActionSheet({
       setBusy(false);
     }
   }
-
-  // Remove a Primary/Secondary override so the level falls back to the All
-  // baseline (DELETE the level-specific row).
-  async function handleResetToAll() {
-    if (!iso || selectedLevel === 'all') return;
-    setBusy(true);
-    try {
-      const params = new URLSearchParams({
-        termId,
-        date: iso,
-        audience: selectedLevel,
-      });
-      const res = await fetch(`/api/attendance/calendar?${params.toString()}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(
-          (body as { error?: string }).error ?? `Server error ${res.status}`
-        );
-      }
-      toast.success(
-        `${AUDIENCE_LABELS[selectedLevel]} now follows the All baseline`
-      );
-      onSaved();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to reset');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // ── Derived values ───────────────────────────────────────────────────────────
-
-  const isClosed = status.kind === 'closed';
-  const currentReason: ClosedReason | undefined = isClosed
-    ? (status as Extract<DayStatus, { kind: 'closed' }>).reason
-    : undefined;
-  const isSchoolHolidayClosed =
-    status.kind === 'closed' && status.reason === 'school_holiday';
-  const schoolHolidayHblOverlay = isSchoolHolidayClosed
-    ? (
-        status as Extract<
-          DayStatus,
-          { kind: 'closed'; reason: 'school_holiday' }
-        >
-      ).hblOverlay
-    : false;
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -306,182 +287,32 @@ export function DayActionSheet({
             </div>
           ) : (
             <>
-              {/* Level switcher + per-level summary — a date can differ by
-                  level (e.g. HBL for Primary, open for Secondary). */}
-              <section className="space-y-3">
-                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Level
-                </p>
-                <div className="inline-flex w-full rounded-lg border border-border bg-muted/40 p-0.5">
-                  {AUDIENCE_VALUES.map((lvl) => (
-                    <button
-                      key={lvl}
-                      type="button"
-                      onClick={() => handleLevelChange(lvl)}
-                      className={[
-                        'flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors',
-                        selectedLevel === lvl
-                          ? 'bg-card text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground',
-                      ].join(' ')}
-                    >
-                      {AUDIENCE_LABELS[lvl]}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Effective status for each level (own override, else All). */}
-                <div className="space-y-1 rounded-lg border border-border bg-muted/20 px-3 py-2">
-                  {AUDIENCE_VALUES.map((lvl) => (
-                    <div
-                      key={lvl}
-                      className="flex items-center justify-between gap-3 text-[12px]"
-                    >
-                      <span className="text-muted-foreground">
-                        {AUDIENCE_LABELS[lvl]}
-                      </span>
-                      <span className="font-medium text-foreground">
-                        {statusLabel(initialStatus(effectiveRow(lvl)))}
-                        {lvl !== 'all' && !hasOwnOverride(lvl) && (
-                          <span className="ml-1 font-normal text-muted-foreground">
-                            (inherits All)
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                {selectedLevel !== 'all' && !hasOwnOverride(selectedLevel) && (
-                  <p className="text-[12px] leading-relaxed text-muted-foreground">
-                    {AUDIENCE_LABELS[selectedLevel]} inherits the All baseline.
-                    Saving below creates a {AUDIENCE_LABELS[selectedLevel]}
-                    -specific override.
-                  </p>
-                )}
-              </section>
-
-              <Separator />
-
-              {/* Day status section — edits the SELECTED level */}
+              {/* Day status — Primary and Secondary, both shown, set each. */}
               <section className="space-y-4">
-                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  {selectedLevel === 'all'
-                    ? 'Day status'
-                    : `Day status · ${AUDIENCE_LABELS[selectedLevel]}`}
-                </p>
+                <div className="space-y-1">
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Day status
+                  </p>
+                  <p className="text-[12px] leading-relaxed text-muted-foreground">
+                    Set the schedule for each level — they can differ (e.g. HBL
+                    for Primary, open for Secondary).
+                  </p>
+                </div>
 
-                <RadioGroup
-                  value={isClosed ? 'closed' : 'open'}
-                  onValueChange={handleKindChange}
-                  className="gap-3"
-                >
-                  {/* Open */}
-                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/40 has-[[data-state=checked]]:border-brand-indigo/40 has-[[data-state=checked]]:bg-accent/60">
-                    <RadioGroupItem
-                      value="open"
-                      id="kind-open"
-                      className="mt-0.5 shrink-0"
-                    />
-                    <div className="space-y-1">
-                      <span className="text-[13px] font-medium text-foreground">
-                        Open
-                      </span>
-                      <p className="text-[12px] leading-relaxed text-muted-foreground">
-                        School in session — attendance is taken.
-                      </p>
-                      {/* HBL sub-option — only when Open is selected */}
-                      {!isClosed && (
-                        <div className="mt-3 flex items-center gap-2.5">
-                          <Checkbox
-                            id="open-hbl"
-                            checked={
-                              status.kind === 'open' ? status.hbl : false
-                            }
-                            onCheckedChange={handleOpenHblChange}
-                          />
-                          <Label
-                            htmlFor="open-hbl"
-                            className="text-[13px] font-normal text-foreground cursor-pointer"
-                          >
-                            HBL (taught remotely)
-                          </Label>
-                        </div>
-                      )}
-                    </div>
-                  </label>
-
-                  {/* Closed */}
-                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/40 has-[[data-state=checked]]:border-brand-indigo/40 has-[[data-state=checked]]:bg-accent/60">
-                    <RadioGroupItem
-                      value="closed"
-                      id="kind-closed"
-                      className="mt-0.5 shrink-0"
-                    />
-                    <div className="w-full space-y-1">
-                      <span className="text-[13px] font-medium text-foreground">
-                        Closed
-                      </span>
-                      <p className="text-[12px] leading-relaxed text-muted-foreground">
-                        No school — no attendance taken.
-                      </p>
-
-                      {/* Reason + HBL overlay — only when Closed is selected */}
-                      {isClosed && (
-                        <div className="mt-3 space-y-3">
-                          <div className="space-y-1.5">
-                            <Label
-                              htmlFor="closed-reason"
-                              className="text-[12px] text-muted-foreground"
-                            >
-                              Reason
-                            </Label>
-                            <Select
-                              value={currentReason}
-                              onValueChange={handleReasonChange}
-                            >
-                              <SelectTrigger
-                                id="closed-reason"
-                                className="h-9 text-sm"
-                              >
-                                <SelectValue placeholder="Select reason…" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {(
-                                  Object.entries(CLOSED_REASON_LABELS) as [
-                                    ClosedReason,
-                                    string,
-                                  ][]
-                                ).map(([value, label]) => (
-                                  <SelectItem key={value} value={value}>
-                                    {label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {/* School holiday HBL overlay */}
-                          {isSchoolHolidayClosed && (
-                            <div className="flex items-center gap-2.5">
-                              <Checkbox
-                                id="school-holiday-hbl"
-                                checked={schoolHolidayHblOverlay}
-                                onCheckedChange={handleSchoolHolidayHblChange}
-                              />
-                              <Label
-                                htmlFor="school-holiday-hbl"
-                                className="text-[13px] font-normal text-foreground cursor-pointer"
-                              >
-                                Attendance still taken (HBL overlay)
-                              </Label>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </label>
-                </RadioGroup>
+                <LevelStatusEditor
+                  level="primary"
+                  status={statusByLevel.primary}
+                  onChange={(s) =>
+                    setStatusByLevel((prev) => ({ ...prev, primary: s }))
+                  }
+                />
+                <LevelStatusEditor
+                  level="secondary"
+                  status={statusByLevel.secondary}
+                  onChange={(s) =>
+                    setStatusByLevel((prev) => ({ ...prev, secondary: s }))
+                  }
+                />
               </section>
 
               <Separator />
@@ -553,30 +384,15 @@ export function DayActionSheet({
 
         {/* Footer — pinned, only when editable */}
         {editable && (
-          <div className="flex flex-col gap-2 border-t border-border bg-card px-6 py-4">
+          <div className="border-t border-border bg-card px-6 py-4">
             <Button
               type="button"
               className="w-full"
               disabled={busy}
               onClick={handleSave}
             >
-              {busy
-                ? 'Saving…'
-                : selectedLevel === 'all'
-                  ? 'Save'
-                  : `Save ${AUDIENCE_LABELS[selectedLevel]} override`}
+              {busy ? 'Saving…' : 'Save'}
             </Button>
-            {hasOwnOverride(selectedLevel) && (
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full text-muted-foreground"
-                disabled={busy}
-                onClick={handleResetToAll}
-              >
-                Reset {AUDIENCE_LABELS[selectedLevel]} to the All baseline
-              </Button>
-            )}
           </div>
         )}
       </SheetContent>

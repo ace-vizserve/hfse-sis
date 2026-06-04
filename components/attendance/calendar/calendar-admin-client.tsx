@@ -358,7 +358,6 @@ export function CalendarAdminClient({
         iso={daySheetIso}
         termId={daySheetIso ? (termForIso(daySheetIso)?.id ?? '') : ''}
         rowsByAudience={daySheetRowsByAudience}
-        defaultLevel={level}
         events={daySheetEvents}
         editable={daySheetIso ? termForIso(daySheetIso) !== null : false}
         onClose={() => setDaySheetIso(null)}
