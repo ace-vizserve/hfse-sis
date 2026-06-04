@@ -20,7 +20,6 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarClock } from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
@@ -31,6 +30,8 @@ import { DayActionSheet } from '@/components/attendance/calendar/day-action-shee
 import { EventEditorDialog } from '@/components/attendance/calendar/event-editor-dialog';
 import { Legend } from '@/components/attendance/calendar/legend';
 import { MonthView } from '@/components/attendance/calendar/views/month-view';
+import { WeekView } from '@/components/attendance/calendar/views/week-view';
+import { DayView } from '@/components/attendance/calendar/views/day-view';
 import { ListView } from '@/components/attendance/calendar/views/list-view';
 import { useCalendarIndex } from '@/components/attendance/calendar/hooks/use-calendar-index';
 import { useCalendarViewState } from '@/components/attendance/calendar/hooks/use-calendar-view-state';
@@ -319,7 +320,31 @@ export function CalendarAdminClient({
         />
       )}
 
-      {(view === 'week' || view === 'day') && <ComingSoonView />}
+      {view === 'week' && selectedTerm && (
+        <WeekView
+          term={{
+            startDate: selectedTerm.startDate,
+            endDate: selectedTerm.endDate,
+          }}
+          index={index}
+          cursor={cursor}
+          onCursor={setCursor}
+          onDayClick={openDay}
+        />
+      )}
+
+      {view === 'day' && selectedTerm && (
+        <DayView
+          term={{
+            startDate: selectedTerm.startDate,
+            endDate: selectedTerm.endDate,
+          }}
+          index={index}
+          cursor={cursor}
+          onCursor={setCursor}
+          onDayClick={openDay}
+        />
+      )}
 
       <DayActionSheet
         iso={daySheetIso}
@@ -348,25 +373,6 @@ export function CalendarAdminClient({
           router.refresh();
         }}
       />
-    </div>
-  );
-}
-
-// ─── Placeholder for not-yet-built views (Week / Day) ───────────────────────────
-
-function ComingSoonView() {
-  return (
-    <div className="flex flex-col items-center gap-3 rounded-xl border border-hairline bg-muted/25 px-6 py-16 text-center shadow-[inset_0_1px_0_0_rgba(255,255,255,0.5)]">
-      <div className="flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-        <CalendarClock className="size-5" />
-      </div>
-      <p className="font-serif text-lg font-semibold tracking-tight text-foreground">
-        This view is coming in this release
-      </p>
-      <p className="max-w-sm text-[14px] leading-relaxed text-muted-foreground">
-        Use <span className="font-medium text-foreground">Month</span> or{' '}
-        <span className="font-medium text-foreground">List</span> for now.
-      </p>
     </div>
   );
 }
