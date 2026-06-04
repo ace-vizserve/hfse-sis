@@ -1,8 +1,8 @@
 'use client';
 
-import { Loader2, Save } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Loader2, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
@@ -41,8 +41,8 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   ENROLLMENT_STATUS_LABELS,
   ENROLLMENT_STATUS_VALUES,
-  WITHDRAWAL_REASON_LABELS,
   WITHDRAWAL_REASON_VALUES,
+  WITHDRAWAL_REASON_LABELS,
   type EnrollmentStatus,
   type WithdrawalReason,
 } from '@/lib/schemas/enrolment';
