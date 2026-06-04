@@ -389,6 +389,41 @@ export async function ensureTermSeeded(
   return count ?? rows.length;
 }
 
+// AY-wide aggregation — composes the per-term readers across all terms in an
+// AY so the operational calendar can navigate continuously (spec D2). Returns
+// rows tagged with their term_id (already present on each row).
+export async function getSchoolCalendarForAy(
+  ayId: string,
+  audience: Audience = 'all'
+): Promise<SchoolCalendarRow[]> {
+  const service = createServiceClient();
+  const { data: terms } = await service
+    .from('terms')
+    .select('id')
+    .eq('academic_year_id', ayId);
+  const termIds = ((terms ?? []) as Array<{ id: string }>).map((t) => t.id);
+  const all = await Promise.all(
+    termIds.map((id) => getSchoolCalendarForTerm(id, audience))
+  );
+  return all.flat();
+}
+
+export async function getCalendarEventsForAy(
+  ayId: string,
+  audience: Audience = 'all'
+): Promise<CalendarEventRow[]> {
+  const service = createServiceClient();
+  const { data: terms } = await service
+    .from('terms')
+    .select('id')
+    .eq('academic_year_id', ayId);
+  const termIds = ((terms ?? []) as Array<{ id: string }>).map((t) => t.id);
+  const all = await Promise.all(
+    termIds.map((id) => getCalendarEventsForTerm(id, audience))
+  );
+  return all.flat();
+}
+
 // Generate candidate dates for a term (Mon–Fri between start and end).
 // Used by the admin wizard to seed school days in bulk.
 export function weekdaysBetween(startIso: string, endIso: string): string[] {
