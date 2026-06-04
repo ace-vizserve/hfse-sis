@@ -281,7 +281,6 @@ export default async function SectionAttendancePage({
           </Tabs>
           <StudentLookupSheet
             enrolments={enrolments}
-            initialDaily={daily}
             termLabel={selectedTerm?.label ?? ''}
           />
           {canWriteNc && (

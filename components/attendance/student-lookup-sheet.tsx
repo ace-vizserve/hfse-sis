@@ -28,40 +28,15 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import type { DailyEntryRow } from '@/lib/attendance/queries';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type Props = {
   enrolments: WideGridEnrolment[];
-  initialDaily: DailyEntryRow[];
   termLabel: string;
 };
 
-type CurrentStats = {
-  P: number;
-  L: number;
-  A: number;
-  EX: number;
-  rate: number | null;
-};
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function computeCurrentStats(
-  sectionStudentId: string,
-  daily: DailyEntryRow[]
-): CurrentStats {
-  const rows = daily.filter((d) => d.sectionStudentId === sectionStudentId);
-  const P = rows.filter((d) => d.status === 'P').length;
-  const L = rows.filter((d) => d.status === 'L').length;
-  const A = rows.filter((d) => d.status === 'A').length;
-  const EX = rows.filter((d) => d.status === 'EX').length;
-  const denominator = P + L + A;
-  const rate =
-    denominator > 0 ? Math.round(((P + L) / denominator) * 1000) / 10 : null;
-  return { P, L, A, EX, rate };
-}
 
 function formatDate(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
@@ -208,11 +183,7 @@ function BreakdownCell({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function StudentLookupSheet({
-  enrolments,
-  initialDaily,
-  termLabel,
-}: Props) {
+export function StudentLookupSheet({ enrolments, termLabel }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -221,17 +192,18 @@ export function StudentLookupSheet({
 
   const selected = enrolments.find((e) => e.enrolmentId === selectedId);
 
-  const currentStats = useMemo(
-    () => (selectedId ? computeCurrentStats(selectedId, initialDaily) : null),
-    [selectedId, initialDaily]
-  );
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return enrolments;
     return enrolments.filter((e) => e.studentName.toLowerCase().includes(q));
   }, [enrolments, query]);
 
+  // Current-term stat + previous terms both come from the canonical rollup via
+  // the summary API (proration-aware, EX-as-present, school-day based).
+  const currentStat: TermStat | null = useMemo(
+    () => (summary?.termStats ?? []).find((t) => t.isCurrent) ?? null,
+    [summary]
+  );
   const previousTerms: TermStat[] = useMemo(
     () =>
       (summary?.termStats ?? []).filter(
@@ -335,7 +307,7 @@ export function StudentLookupSheet({
         )}
 
         {/* ── Detail view ───────────────────────────────────────────── */}
-        {selectedId && selected && currentStats && (
+        {selectedId && selected && (
           <div className="flex-1 space-y-6 overflow-y-auto p-6">
             {/* Back */}
             <button
@@ -366,36 +338,51 @@ export function StudentLookupSheet({
                     )}
                   </div>
                 </div>
-                <RateRing rate={currentStats.rate} />
+                <RateRing rate={loading ? null : (currentStat?.rate ?? null)} />
               </div>
 
               {/* Breakdown strip */}
-              <div className="grid grid-cols-4 divide-x divide-border border-t border-border bg-card/60">
-                <BreakdownCell
-                  value={currentStats.P}
-                  label="Present"
-                  icon={CircleCheck}
-                  tile={TILE.present}
-                />
-                <BreakdownCell
-                  value={currentStats.L}
-                  label="Late"
-                  icon={Clock}
-                  tile={TILE.late}
-                />
-                <BreakdownCell
-                  value={currentStats.A}
-                  label="Absent"
-                  icon={CircleX}
-                  tile={TILE.absent}
-                />
-                <BreakdownCell
-                  value={currentStats.EX}
-                  label="Excused"
-                  icon={FileText}
-                  tile={TILE.excused}
-                />
-              </div>
+              {loading ? (
+                <div className="grid grid-cols-4 divide-x divide-border border-t border-border bg-card/60">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="flex flex-col items-center gap-2 px-2 py-4"
+                    >
+                      <div className="size-8 animate-pulse rounded-xl bg-muted" />
+                      <div className="h-6 w-6 animate-pulse rounded bg-muted" />
+                      <div className="h-2 w-10 animate-pulse rounded bg-muted" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 divide-x divide-border border-t border-border bg-card/60">
+                  <BreakdownCell
+                    value={currentStat?.P ?? 0}
+                    label="Present"
+                    icon={CircleCheck}
+                    tile={TILE.present}
+                  />
+                  <BreakdownCell
+                    value={currentStat?.L ?? 0}
+                    label="Late"
+                    icon={Clock}
+                    tile={TILE.late}
+                  />
+                  <BreakdownCell
+                    value={currentStat?.A ?? 0}
+                    label="Absent"
+                    icon={CircleX}
+                    tile={TILE.absent}
+                  />
+                  <BreakdownCell
+                    value={currentStat?.EX ?? 0}
+                    label="Excused"
+                    icon={FileText}
+                    tile={TILE.excused}
+                  />
+                </div>
+              )}
             </div>
 
             {/* ── Previous Terms ───────────────────────────────────── */}
