@@ -167,6 +167,30 @@ export function CalendarAdminClient({
   );
   const index = useCalendarIndex(filteredCalendar, filteredEvents, level);
 
+  // List view is a flat chronological table with no cursor, so the term
+  // selector scopes it: show only the selected term's closures + events.
+  const listDays = useMemo(
+    () =>
+      selectedTerm
+        ? filteredCalendar.filter(
+            (c) =>
+              c.date >= selectedTerm.startDate && c.date <= selectedTerm.endDate
+          )
+        : filteredCalendar,
+    [filteredCalendar, selectedTerm]
+  );
+  const listEvents = useMemo(
+    () =>
+      selectedTerm
+        ? filteredEvents.filter(
+            (e) =>
+              e.startDate <= selectedTerm.endDate &&
+              e.endDate >= selectedTerm.startDate
+          )
+        : filteredEvents,
+    [filteredEvents, selectedTerm]
+  );
+
   // Resolve the term that owns a given iso date (null when in a break / outside).
   const termForIso = useCallback(
     (iso: string): DatedTerm | null =>
@@ -327,11 +351,7 @@ export function CalendarAdminClient({
       )}
 
       {view === 'list' && (
-        <ListView
-          days={filteredCalendar}
-          events={filteredEvents}
-          onRowClick={openDay}
-        />
+        <ListView days={listDays} events={listEvents} onRowClick={openDay} />
       )}
 
       {view === 'week' && (
