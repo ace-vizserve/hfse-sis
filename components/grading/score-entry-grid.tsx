@@ -369,7 +369,7 @@ export function ScoreEntryGrid({
               {wwLen > 0 && (
                 <TableHead
                   colSpan={wwLen + 3}
-                  className="border-r-2 border-border/60 bg-brand-indigo/15 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+                  className="border-r-2 border-border/60 bg-brand-indigo text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
                 >
                   Written Works ({wwPct}%)
                 </TableHead>
@@ -377,14 +377,14 @@ export function ScoreEntryGrid({
               {ptLen > 0 && (
                 <TableHead
                   colSpan={ptLen + 3}
-                  className="border-r-2 border-border/60 bg-brand-sky/20 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+                  className="border-r-2 border-border/60 bg-brand-indigo-deep text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
                 >
                   Performance Tasks ({ptPct}%)
                 </TableHead>
               )}
               <TableHead
                 colSpan={3}
-                className="border-r-2 border-border/60 bg-brand-amber/15 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+                className="border-r-2 border-border/60 bg-brand-amber text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
               >
                 Quarterly Assessment ({qaPct}%)
               </TableHead>
