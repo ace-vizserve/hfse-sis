@@ -123,6 +123,7 @@ export function DayView({
   // ── Readable chips for the focused day (overrides + events) ───────────────────
   const chips = index.entriesByIso.get(iso) ?? [];
   const events = index.eventsByIso.get(iso) ?? [];
+  const weekend = [0, 6].includes(parseIso(iso).getDay());
 
   // ── Long-form heading ─────────────────────────────────────────────────────────
   const heading = formatLongDate(iso);
@@ -216,7 +217,9 @@ export function DayView({
               </div>
             ) : (
               <p className="text-[13px] text-muted-foreground">
-                School day — nothing scheduled.
+                {weekend
+                  ? 'Weekend — no school.'
+                  : 'School day — nothing scheduled.'}
               </p>
             )}
           </CardContent>

@@ -63,6 +63,12 @@ function formatIso(iso: string): string {
 
 const AUDS: Audience[] = ['all', 'primary', 'secondary'];
 
+function isWeekend(iso: string): boolean {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dow = new Date(y, m - 1, d).getDay();
+  return dow === 0 || dow === 6;
+}
+
 function levelSuffix(a: Audience): string {
   return a === 'all' ? '' : ` · ${AUDIENCE_LABELS[a]}`;
 }
@@ -180,8 +186,9 @@ export function DayActionSheet({
 
               {isEmpty ? (
                 <p className="text-[13px] text-muted-foreground">
-                  It&apos;s a school day. Add an event below — a holiday, an HBL
-                  day, an exam, and so on.
+                  {iso && isWeekend(iso)
+                    ? 'Weekend — no school. Add an event below if there’s something on this day.'
+                    : 'It’s a school day. Add an event below — a holiday, an HBL day, an exam, and so on.'}
                 </p>
               ) : (
                 <ul className="divide-y divide-border rounded-lg border border-border bg-card">

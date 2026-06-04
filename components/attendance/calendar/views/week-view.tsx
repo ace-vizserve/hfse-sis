@@ -86,12 +86,13 @@ export function WeekView({
   // Selected term window for nav clamping.
   const ayStart = term.startDate;
   const ayEnd = term.endDate;
-  // ── Compute the Mon–Fri span of the cursor's week ─────────────────────────────
+  // ── Compute the Mon–Sun span of the cursor's week (weekends included — HFSE
+  //    schedules weekend events) ──────────────────────────────────────────────
   const weekDays = useMemo<
     Array<{ iso: string; dayNumber: number; longLabel: string }>
   >(() => {
     const mon = mondayOf(cursor);
-    return Array.from({ length: 5 }, (_, i) => {
+    return Array.from({ length: 7 }, (_, i) => {
       const d = addDays(mon, i);
       return {
         iso: formatIso(d),
@@ -123,25 +124,20 @@ export function WeekView({
     year: 'numeric',
   })}`;
 
-  // ── At least one day in the visible week must be in the term for nav clamp ──
-  // "The week still intersects the term" → the week's Friday >= termStart AND
-  // the week's Monday <= termEnd.
+  // ── Nav clamp: the adjacent week must still intersect the selected term ──────
   const weekMonIso = weekDays[0]?.iso ?? '';
-  const weekFriIso = weekDays[4]?.iso ?? '';
 
   const canPrev = useMemo(() => {
-    // Going back 7 days from the week's Monday: the previous week's Friday must
-    // still be within the AY span.
-    const prevFri = formatIso(addDays(parseIso(weekMonIso), -3));
-    return prevFri >= ayStart;
+    // Previous week's last day (Sunday) = the day before this Monday.
+    const prevSun = formatIso(addDays(parseIso(weekMonIso), -1));
+    return prevSun >= ayStart;
   }, [weekMonIso, ayStart]);
 
   const canNext = useMemo(() => {
-    // Going forward 7 days from the week's Friday: the next week's Monday must
-    // still be within the AY span.
-    const nextMon = formatIso(addDays(parseIso(weekFriIso), 3));
+    // Next week's first day (Monday) = this Monday + 7.
+    const nextMon = formatIso(addDays(parseIso(weekMonIso), 7));
     return nextMon <= ayEnd;
-  }, [weekFriIso, ayEnd]);
+  }, [weekMonIso, ayEnd]);
 
   function goPrev() {
     onCursor(addDays(cursor, -7));
@@ -218,12 +214,12 @@ export function WeekView({
         </div>
       </div>
 
-      {/* 5-col Mon–Fri grid — same container / hairline pattern as MonthView. */}
+      {/* 7-col Mon–Sun grid — same container / hairline pattern as MonthView. */}
       <div className="border-t border-hairline">
         {/* Weekday header row — shows short weekday + date, e.g. "Mon 12 May" */}
-        <div className="grid grid-cols-5 bg-muted/30">
+        <div className="grid grid-cols-7 bg-muted/30">
           {weekDays.map((d, idx) => {
-            const isLastCol = idx === 4;
+            const isLastCol = idx === 6;
             const isToday = d.iso === todayIso;
             return (
               <div
@@ -244,9 +240,9 @@ export function WeekView({
         </div>
 
         {/* Single row of taller cells */}
-        <div className="grid grid-cols-5">
+        <div className="grid grid-cols-7">
           {weekDays.map((d, colIdx) => {
-            const isLastCol = colIdx === 4;
+            const isLastCol = colIdx === 6;
             const chips = index.entriesByIso.get(d.iso) ?? EMPTY_CHIPS;
             const cellInTerm = inTerm(d.iso);
 

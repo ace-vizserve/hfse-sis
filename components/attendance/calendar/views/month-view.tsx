@@ -61,10 +61,9 @@ type MonthCell = {
   outOfMonth: boolean;
 };
 
-// Build Mon–Fri weekday rows for the month containing `cursor`.
-// Out-of-month leading / trailing weekdays are included so the grid is a full
-// rectangle (Google-Calendar-style); they render faded via CalendarCell's
-// outOfMonth prop.
+// Build Mon–Sun rows for the month containing `cursor`. Weekends are included
+// because HFSE schedules events on Saturdays/Sundays (e.g. Family Sportsfest).
+// Out-of-month leading / trailing days fill the grid rectangle and render faded.
 function buildMonthWeekdayRows(cursor: Date): MonthCell[][] {
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -81,7 +80,7 @@ function buildMonthWeekdayRows(cursor: Date): MonthCell[][] {
 
   while (weekStart.getTime() <= lastOfCurMonth.getTime()) {
     const week: MonthCell[] = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 7; i++) {
       const d = new Date(weekStart);
       d.setDate(weekStart.getDate() + i);
       week.push({
@@ -247,34 +246,36 @@ export function MonthView({
         </div>
       </div>
 
-      {/* 5-col Mon–Fri grid — flush table-style, hairlines between cells.
+      {/* 7-col Mon–Sun grid — flush table-style, hairlines between cells.
           Parent grid owns the borders; CalendarCell renders none of its own. */}
       <div className="border-t border-hairline">
         {/* Weekday header row */}
-        <div className="grid grid-cols-5 bg-muted/30">
-          {(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const).map((day, idx) => (
-            <div
-              key={day}
-              className={[
-                'px-3 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-4',
-                'border-b border-hairline',
-                idx < 4 && 'border-r border-hairline',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-            >
-              {day}
-            </div>
-          ))}
+        <div className="grid grid-cols-7 bg-muted/30">
+          {(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const).map(
+            (day, idx) => (
+              <div
+                key={day}
+                className={[
+                  'px-3 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-4',
+                  'border-b border-hairline',
+                  idx < 6 && 'border-r border-hairline',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              >
+                {day}
+              </div>
+            )
+          )}
         </div>
 
         {/* Day rows */}
         {rows.map((row, rowIdx) => {
           const isLastRow = rowIdx === rows.length - 1;
           return (
-            <div key={rowIdx} className="grid grid-cols-5">
+            <div key={rowIdx} className="grid grid-cols-7">
               {row.map((cell, colIdx) => {
-                const isLastCol = colIdx === 4;
+                const isLastCol = colIdx === 6;
 
                 // Readable chips for this date (overrides + events).
                 const chips = index.entriesByIso.get(cell.iso) ?? EMPTY_CHIPS;
