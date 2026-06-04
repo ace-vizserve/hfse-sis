@@ -1,10 +1,8 @@
+import { ArrowLeft, CalendarDays } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, CalendarDays } from 'lucide-react';
 
-import { createClient, getSessionUser } from '@/lib/supabase/server';
-import { logAction } from '@/lib/audit/log-action';
-import { createServiceClient } from '@/lib/supabase/service';
+import { CalendarAdminClient } from '@/components/attendance/calendar/calendar-admin-client';
 import {
   Card,
   CardContent,
@@ -18,8 +16,10 @@ import {
   getCalendarEventsForAy,
   getSchoolCalendarForAy,
 } from '@/lib/attendance/calendar';
-import { CalendarAdminClient } from '@/components/attendance/calendar/calendar-admin-client';
+import { logAction } from '@/lib/audit/log-action';
 import { AUDIENCE_VALUES, type Audience } from '@/lib/schemas/attendance';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 
 function parseAudience(raw: string | undefined): Audience {
   return AUDIENCE_VALUES.includes(raw as Audience) ? (raw as Audience) : 'all';
@@ -123,7 +123,7 @@ export default async function SisCalendarPage({
           SIS Admin · School calendar
         </p>
         <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          School days &amp; holidays.
+          School days &amp; events.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
           Configure which dates are school days, which are closed (greyed out,

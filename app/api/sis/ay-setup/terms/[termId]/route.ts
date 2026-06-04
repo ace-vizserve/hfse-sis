@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { TermDatesSchema } from '@/lib/schemas/ay-setup';
+import { resyncTermCalendarWindow } from '@/lib/attendance/calendar';
 
 // PATCH /api/sis/ay-setup/terms/[termId]
 //
@@ -76,6 +77,20 @@ export async function PATCH(
   const datesChanged =
     (before.start_date ?? null) !== startDate ||
     (before.end_date ?? null) !== endDate;
+
+  // When the term window moves, bring its school_calendar into line: prune
+  // school days that fell outside the new window and backfill weekdays now
+  // inside it (in-range overrides preserved). Only runs with a complete window.
+  let calendarSync: { deleted: number; inserted: number } | null = null;
+  if (datesChanged && startDate && endDate) {
+    calendarSync = await resyncTermCalendarWindow(
+      termId,
+      startDate,
+      endDate,
+      auth.user.id
+    );
+  }
+
   const virtueChanged =
     virtueThemeUpdated && (before.virtue_theme ?? null) !== virtueTheme;
   const gradingLockChanged =
@@ -98,6 +113,7 @@ export async function PATCH(
           end_date: before.end_date ?? null,
         },
         after: { start_date: startDate, end_date: endDate },
+        calendar_sync: calendarSync,
       },
     });
   }

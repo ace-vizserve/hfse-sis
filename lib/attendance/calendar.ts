@@ -389,6 +389,43 @@ export async function ensureTermSeeded(
   return count ?? rows.length;
 }
 
+// Bring a term's school_calendar into line with a new [start,end] window after
+// its dates are edited: prune rows that fell outside the new window (any
+// audience / day_type) and backfill missing weekday school_days inside it.
+// In-range overrides (public_holiday, hbl, …) are preserved untouched. Returns
+// the prune + insert counts for the audit trail.
+//
+// Note: attendance_daily entries previously recorded on now-out-of-range dates
+// are NOT removed here (append-only, Hard Rule #6) — they're just no longer
+// encodable; the recompute rollup (KD #113) already filters by the window.
+export async function resyncTermCalendarWindow(
+  termId: string,
+  startIso: string,
+  endIso: string,
+  userId: string
+): Promise<{ deleted: number; inserted: number }> {
+  const service = createServiceClient();
+
+  // 1. Prune rows now outside [start,end] (every audience, every day_type).
+  const { data: deletedRows, error: delErr } = await service
+    .from('school_calendar')
+    .delete()
+    .eq('term_id', termId)
+    .or(`date.lt.${startIso},date.gt.${endIso}`)
+    .select('id');
+  if (delErr) {
+    console.error(
+      '[attendance] resyncTermCalendarWindow prune failed:',
+      delErr.message
+    );
+  }
+
+  // 2. Backfill missing in-range weekday school_days (idempotent).
+  const inserted = await ensureTermSeeded(termId, startIso, endIso, userId);
+
+  return { deleted: deletedRows?.length ?? 0, inserted };
+}
+
 // AY-wide aggregation — composes the per-term readers across all terms in an
 // AY so the operational calendar can navigate continuously (spec D2). Returns
 // rows tagged with their term_id (already present on each row).
