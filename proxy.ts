@@ -2,7 +2,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
 import { getRoleFromClaims, isRouteAllowed } from '@/lib/auth/roles';
 
-const PUBLIC_PATHS = ['/login', '/api/auth/callback'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/api/auth/callback',
+  // Email one-click approve/reject confirm page — reached by an approver who
+  // is not logged in; trust comes from the signed action token, not a session.
+  '/change-requests/act',
+];
 
 export async function proxy(request: NextRequest) {
   const { response, claims } = await updateSession(request);

@@ -3,6 +3,7 @@ import 'server-only';
 import { Resend } from 'resend';
 
 import { env } from '@/lib/env';
+import { signActionToken } from '@/lib/change-requests/action-token';
 import { escapeHtml, renderEmailFrame } from '@/lib/notifications/email-frame';
 
 // Server-only. Four email notifications for the change-request workflow.
@@ -41,6 +42,26 @@ function changeRequestUrl(
   const path = `/markbook/change-requests?req=${encodeURIComponent(requestId)}`;
   const suffix = action ? `&action=${action}` : '';
   return `${origin}${path}${suffix}`;
+}
+
+// One-click approve/reject URL for a specific approver. Mints a signed
+// action token so the linked confirm page can act without the approver
+// logging in. Falls back to the in-app deep-link when signing throws
+// (CHANGE_REQUEST_ACTION_SECRET unset) — the email still goes out, the
+// button just lands on the normal logged-in flow instead.
+function actionTokenUrl(
+  requestId: string,
+  action: 'approve' | 'reject',
+  approverId: string
+): string {
+  try {
+    const token = signActionToken({ requestId, action, approverId });
+    const origin = env.NEXT_PUBLIC_SIS_URL || '';
+    return `${origin}/change-requests/act?token=${encodeURIComponent(token)}`;
+  } catch {
+    // Secret unset (or any signing error): degrade to the in-app deep-link.
+    return changeRequestUrl(requestId, action);
+  }
 }
 
 function getTransport(): { resend: Resend; from: string } | null {
@@ -116,13 +137,18 @@ function summaryTable(req: RequestSummary): string {
 
 // Fired on: POST /api/change-requests (teacher files a request)
 // Recipients: the request's primary + secondary approvers (per KD #41).
-// Has 2 primary buttons (Approve navy, Reject red) + 1 secondary text link.
+// Each approver gets their OWN email — the Approve/Reject buttons carry a
+// signed action token unique to that approver, so the one-click confirm
+// page can act on their behalf without a login. The buttons fall back to
+// the in-app deep-link when token signing is unavailable (secret unset).
+// A secondary "review in the app" text link is unchanged.
 export async function notifyRequestFiled(
   req: RequestSummary,
-  approverEmails: string[]
+  approvers: { id: string; email: string }[]
 ): Promise<{ sent: number; failed: number }> {
   const t = getTransport();
-  if (!t || approverEmails.length === 0) return { sent: 0, failed: 0 };
+  const recipients = approvers.filter((a) => Boolean(a.email));
+  if (!t || recipients.length === 0) return { sent: 0, failed: 0 };
 
   const subject = `New grade change request — ${req.student_label ?? 'student'}`;
   const bodyHtml = `
@@ -135,29 +161,44 @@ export async function notifyRequestFiled(
       <span style="color:#475569;">${escapeHtml(req.justification)}</span>
     </p>
   `;
-  const html = renderEmailFrame({
-    headline: 'New grade change request',
-    bodyHtml,
-    ctas: [
-      {
-        label: 'Approve',
-        href: changeRequestUrl(req.id, 'approve'),
-        variant: 'primary',
-      },
-      {
-        label: 'Reject',
-        href: changeRequestUrl(req.id, 'reject'),
-        variant: 'destructive',
-      },
-      {
-        label: 'To review the request, click here',
-        href: changeRequestUrl(req.id),
-        variant: 'secondary-text',
-      },
-    ],
-  });
 
-  return sendAll(t.resend, t.from, approverEmails, subject, html);
+  // Render + send per approver — the token differs per approverId, so each
+  // recipient must get their own html (don't reuse one across recipients).
+  let sent = 0;
+  let failed = 0;
+  for (const approver of recipients) {
+    const html = renderEmailFrame({
+      headline: 'New grade change request',
+      bodyHtml,
+      ctas: [
+        {
+          label: 'Approve',
+          href: actionTokenUrl(req.id, 'approve', approver.id),
+          variant: 'primary',
+        },
+        {
+          label: 'Reject',
+          href: actionTokenUrl(req.id, 'reject', approver.id),
+          variant: 'destructive',
+        },
+        {
+          label: 'To review the request, click here',
+          href: changeRequestUrl(req.id),
+          variant: 'secondary-text',
+        },
+      ],
+    });
+    const res = await sendAll(
+      t.resend,
+      t.from,
+      [approver.email],
+      subject,
+      html
+    );
+    sent += res.sent;
+    failed += res.failed;
+  }
+  return { sent, failed };
 }
 
 // Fired on: PATCH approve

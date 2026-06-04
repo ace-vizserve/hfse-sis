@@ -11,10 +11,7 @@ import {
   type CorrectionReason,
 } from '@/lib/schemas/change-request';
 import { notifyRequestApplied } from '@/lib/notifications/email-change-request';
-import {
-  fetchApproverEmails,
-  fetchLabels,
-} from '@/app/api/change-requests/route';
+import { fetchApproverEmails, fetchLabels } from '@/lib/change-requests/labels';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 

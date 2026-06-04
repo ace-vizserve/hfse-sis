@@ -21,6 +21,20 @@ if (!process.env.NEXT_PUBLIC_SIS_URL) {
   );
 }
 
+// Server-only. Secret that signs the one-click approve/reject action tokens
+// in change-request emails. When unset, signing throws and the email buttons
+// fall back to the in-app deep-link (the quick-action page can't verify a
+// token without it). Warned, not failed — a missing secret degrades the
+// quick-action convenience but never blocks email or grading.
+if (!process.env.CHANGE_REQUEST_ACTION_SECRET) {
+  console.warn(
+    '[hfse-sis] CHANGE_REQUEST_ACTION_SECRET is not set. ' +
+      'Email one-click approve/reject buttons will fall back to the ' +
+      'in-app deep-link (approvers must log in to act). Set this to a ' +
+      'random server-only string (>=32 chars) before the next deployment.'
+  );
+}
+
 export const env = {
   NEXT_PUBLIC_SIS_URL: process.env.NEXT_PUBLIC_SIS_URL ?? '',
 } as const;
