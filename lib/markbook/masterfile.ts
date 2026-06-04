@@ -109,6 +109,17 @@ export type MasterfileStudentRow = {
   commentsByTerm: { termNumber: number; text: string }[];
 };
 
+// One grading sheet in the selected scope, with just the fields the dashboard
+// readiness aggregate needs (lock count + per (subject × term) identity so a
+// Term filter can scope the count). No grade data — that's on the rows.
+export type MasterfileSheetSummary = {
+  id: string;
+  subjectId: string;
+  termId: string;
+  sectionId: string;
+  isLocked: boolean;
+};
+
 export type MasterfilePayload = {
   ayCode: string;
   level: { id: string; code: string; label: string };
@@ -122,6 +133,8 @@ export type MasterfilePayload = {
   selectedSectionIds: string[];
   // One row per active or withdrawn student in the selected sections.
   rows: MasterfileStudentRow[];
+  // Grading sheets in scope — drives the "sheets locked" readiness metric.
+  sheets: MasterfileSheetSummary[];
   // Award thresholds in effect (so the UI can label boundaries).
   thresholds: AwardThresholds;
 };
@@ -272,6 +285,7 @@ async function loadMasterfileUncached(
       sections: sections.map((s) => ({ id: s.id, name: s.name })),
       selectedSectionIds: [],
       rows: [],
+      sheets: [],
       thresholds,
     };
   }
@@ -373,13 +387,14 @@ async function loadMasterfileUncached(
       sections: sections.map((s) => ({ id: s.id, name: s.name })),
       selectedSectionIds: filterIds,
       rows: [],
+      sheets: [],
       thresholds,
     };
   }
 
   const { data: sheetsRaw } = await service
     .from('grading_sheets')
-    .select('id, term_id, subject_id, section_id')
+    .select('id, term_id, subject_id, section_id, is_locked')
     .in('section_id', filterIds)
     .in('term_id', termIds)
     .in('subject_id', subjectIds);
@@ -389,8 +404,16 @@ async function loadMasterfileUncached(
     term_id: string;
     subject_id: string;
     section_id: string;
+    is_locked: boolean | null;
   };
   const sheets = (sheetsRaw ?? []) as SheetRow[];
+  const sheetSummaries: MasterfileSheetSummary[] = sheets.map((s) => ({
+    id: s.id,
+    subjectId: s.subject_id,
+    termId: s.term_id,
+    sectionId: s.section_id,
+    isLocked: s.is_locked === true,
+  }));
 
   const { data: entriesRaw } =
     sheets.length > 0
@@ -676,6 +699,7 @@ async function loadMasterfileUncached(
     sections: sections.map((s) => ({ id: s.id, name: s.name })),
     selectedSectionIds: filterIds,
     rows,
+    sheets: sheetSummaries,
     thresholds,
   };
 }

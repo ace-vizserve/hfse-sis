@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
-import { MasterfileGrid } from '@/components/markbook/masterfile-grid';
 import { MasterfileToolbar } from '@/components/markbook/masterfile-toolbar';
+import { MasterfileView } from '@/components/markbook/masterfile-view';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
 import { requireCurrentAyCode } from '@/lib/academic-year';
@@ -22,7 +22,12 @@ import { createServiceClient } from '@/lib/supabase/service';
 export default async function MasterfilePage({
   searchParams,
 }: {
-  searchParams: Promise<{ ay?: string; level?: string; class?: string }>;
+  searchParams: Promise<{
+    ay?: string;
+    level?: string;
+    class?: string;
+    view?: string;
+  }>;
 }) {
   const session = await getSessionUser();
   if (!session) redirect('/login');
@@ -177,11 +182,11 @@ export default async function MasterfilePage({
           </Badge>
         </div>
         <p className="max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
-          Cross-subject grid for the whole level. Subject Award and Overall
-          Academic Award badges compute server-side from the locked grading
-          sheets. Letter-graded subject columns (Music, Arts, PE, Health, etc.)
-          show the derived letter from quarterly scores; registrars can set the
-          year-end Final grade directly on the T4 cell.
+          A narrative view of where the masterfile stands for this level —
+          readiness, outcomes, and who needs follow-up. Award and General
+          Average figures compute server-side; incomplete work shows as pending,
+          never a fabricated grade. Switch to Table for the full grid, or Export
+          to Excel for the complete masterfile sheet.
         </p>
       </header>
 
@@ -194,7 +199,10 @@ export default async function MasterfilePage({
         selectedSectionId={selectedSectionId}
       />
 
-      <MasterfileGrid payload={payload} />
+      <MasterfileView
+        payload={payload}
+        initialView={sp.view === 'table' ? 'table' : 'dashboard'}
+      />
 
       <p className="border-t border-border pt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         Award thresholds · Bronze ≥ {payload.thresholds.bronzeMin} · Silver ≥{' '}

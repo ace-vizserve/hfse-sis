@@ -147,6 +147,7 @@ function makePayload(): MasterfilePayload {
     sections: [{ id: 'sec-1', name: 'P5 Diamond' }],
     selectedSectionIds: ['sec-1'],
     rows: [active, withdrawn],
+    sheets: [],
     thresholds: {
       bronzeMin: 88.5,
       silverMin: 91.5,

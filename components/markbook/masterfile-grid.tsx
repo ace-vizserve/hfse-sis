@@ -1,6 +1,6 @@
 'use client';
 
-import { FileSpreadsheet, Search, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import Link from 'next/link';
 import { memo, useMemo, useState } from 'react';
 
@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 
 import { AnnualLetterInput } from '@/components/grading/annual-letter-input';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
@@ -46,20 +45,6 @@ export function MasterfileGrid({ payload }: { payload: MasterfilePayload }) {
   const [awardFilter, setAwardFilter] = useState<AwardFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [nameSearch, setNameSearch] = useState('');
-
-  // Export-to-Excel link mirrors the current ?ay / ?level / ?class filter.
-  // Forward EVERY selected section (repeated ?class= params) so the workbook
-  // contains exactly the classes on screen — not all classes (over-delivery)
-  // when more than one is selected. Omitting ?class= entirely means "all".
-  const exportHref = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set('ay', payload.ayCode);
-    params.set('level', payload.level.id);
-    for (const id of payload.selectedSectionIds) {
-      params.append('class', id);
-    }
-    return `/api/markbook/masterfile/export?${params.toString()}`;
-  }, [payload.ayCode, payload.level.id, payload.selectedSectionIds]);
 
   const examinableSubjects = useMemo(
     () => payload.subjects.filter((s) => s.isExaminable),
@@ -186,8 +171,8 @@ export function MasterfileGrid({ payload }: { payload: MasterfilePayload }) {
     <TooltipProvider>
       {/* Filter bar */}
       <div className="flex flex-col gap-3">
-        {/* Name search + export */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Name search — export lives on the shared toolbar (MasterfileView) */}
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative w-64">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -205,13 +190,6 @@ export function MasterfileGrid({ payload }: { payload: MasterfilePayload }) {
               </button>
             )}
           </div>
-
-          <Button asChild variant="outline" size="sm" className="h-8">
-            <a href={exportHref}>
-              <FileSpreadsheet className="h-3.5 w-3.5" />
-              Export to Excel
-            </a>
-          </Button>
         </div>
 
         {/* Award chips */}
