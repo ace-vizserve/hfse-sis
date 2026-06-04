@@ -1,13 +1,6 @@
 'use client';
 
-import {
-  ArrowRight,
-  CalendarIcon,
-  Download,
-  ExternalLink,
-  History,
-  X,
-} from 'lucide-react';
+import { CalendarIcon, Download, ExternalLink, History, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
@@ -34,7 +27,28 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import {
+  auditActionLabel,
+  auditActionTone,
+  auditContextSummary,
+} from '@/lib/audit/humanize';
 import { cn } from '@/lib/utils';
+
+// Map the humanizer's tone bucket → an existing Badge variant.
+function actionBadgeVariant(
+  action: string
+): 'default' | 'secondary' | 'destructive' | 'warning' {
+  switch (auditActionTone(action)) {
+    case 'destructive':
+      return 'destructive';
+    case 'warning':
+      return 'warning';
+    case 'info':
+      return 'default';
+    default:
+      return 'secondary';
+  }
+}
 
 export type MergedRow = {
   id: string;
@@ -120,8 +134,8 @@ const COLUMNS: ColumnDef<MergedRow>[] = [
       <SortableHeader column={column}>Action</SortableHeader>
     ),
     cell: ({ row }) => (
-      <Badge variant="secondary" className="font-mono text-[10px]">
-        {row.original.action}
+      <Badge variant={actionBadgeVariant(row.original.action)}>
+        {auditActionLabel(row.original.action)}
       </Badge>
     ),
     filterFn: (row, id, value) => {
@@ -135,9 +149,9 @@ const COLUMNS: ColumnDef<MergedRow>[] = [
     id: 'details',
     header: 'Details',
     cell: ({ row }) => (
-      <div className="text-xs">
-        <ActionDetails row={row.original} />
-      </div>
+      <span className="text-muted-foreground text-xs">
+        {auditContextSummary(row.original.action, row.original.context)}
+      </span>
     ),
     enableSorting: false,
   },
@@ -462,7 +476,9 @@ function _AuditLogTable({
         toolbarTrailing={toolbarTrailing}
         initialSort={[{ id: 'at', desc: true }]}
         pageSize={pagination ? Math.max(filteredRows.length, 1) : 25}
-        url={{ enabled: true }}
+        // Namespaced so the page's own ?sheet_id / ?action params aren't
+        // treated as phantom facet filters (KD #84 footgun).
+        url={{ enabled: true, namespace: 'al' }}
         emptyState={{
           title: 'No audit entries yet.',
           body: 'Activity — sheet creation, score edits, locks, and more — will appear here.',
@@ -512,229 +528,4 @@ function _AuditLogTable({
       )}
     </>
   );
-}
-
-function ActionDetails({ row }: { row: MergedRow }) {
-  const ctx = row.context;
-  const str = (k: string): string | null => {
-    const v = ctx[k];
-    return v == null ? null : String(v);
-  };
-
-  switch (row.action) {
-    case 'entry.update':
-    case 'totals.update': {
-      const field = str('field') ?? '—';
-      const oldV = str('old') ?? '∅';
-      const newV = str('new') ?? '∅';
-      const locked = ctx['was_locked'] === true;
-      const approval = str('approval_reference');
-      return (
-        <div className="space-y-0.5">
-          <div className="inline-flex flex-wrap items-center gap-1.5 font-mono">
-            <span className="text-muted-foreground">{field}:</span>
-            <span className="text-muted-foreground line-through">{oldV}</span>
-            <ArrowRight className="size-3 text-muted-foreground" />
-            <span className="font-semibold">{newV}</span>
-          </div>
-          <div className="text-[10px] text-muted-foreground">
-            {locked ? 'post-lock' : 'pre-lock'}
-            {approval ? ` · approval: ${approval}` : ''}
-          </div>
-        </div>
-      );
-    }
-    case 'sheet.create':
-      return (
-        <span>
-          Created grading sheet{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            subject {str('subject_id')?.slice(0, 8)}…
-          </code>{' '}
-          for section{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('section_id')?.slice(0, 8)}…
-          </code>
-          {' · seeded '}
-          <span className="tabular-nums">
-            {String(ctx['entries_seeded'] ?? 0)}
-          </span>
-          {' entries'}
-        </span>
-      );
-    case 'sheet.lock':
-      return <span>Locked grading sheet {row.sheet_id?.slice(0, 8)}…</span>;
-    case 'sheet.unlock':
-      return <span>Unlocked grading sheet {row.sheet_id?.slice(0, 8)}…</span>;
-    case 'sheet.unlock_force_with_pending_crs': {
-      const pendingCount = Number(ctx['pendingCount'] ?? 0);
-      return (
-        <span>
-          Unlocked grading sheet {row.sheet_id?.slice(0, 8)}…{' '}
-          <span className="text-destructive">
-            (forced — {pendingCount} pending{' '}
-            {pendingCount === 1 ? 'request' : 'requests'} bypassed)
-          </span>
-        </span>
-      );
-    }
-    case 'student.sync': {
-      const added = ctx['added'] ?? 0;
-      const updated = ctx['updated'] ?? 0;
-      const withdrawn = ctx['withdrawn'] ?? 0;
-      const reactivated = ctx['reactivated'] ?? 0;
-      const errs = ctx['errors'] ?? 0;
-      return (
-        <span className="tabular-nums">
-          Synced admissions — added <b>{String(added)}</b>, updated{' '}
-          <b>{String(updated)}</b>, withdrew <b>{String(withdrawn)}</b>,
-          reactivated <b>{String(reactivated)}</b>
-          {Number(errs) > 0 && (
-            <span className="text-destructive"> · {String(errs)} errors</span>
-          )}
-        </span>
-      );
-    }
-    case 'student.add':
-      return (
-        <span>
-          Manually added student{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('student_number')}
-          </code>
-          {' ('}
-          {str('first_name')} {str('last_name')}
-          {') as #'}
-          <span className="tabular-nums">
-            {String(ctx['index_number'] ?? '')}
-          </span>
-        </span>
-      );
-    case 'assignment.create':
-      return (
-        <span>
-          Created <b>{str('role')}</b> assignment for teacher{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('teacher_user_id')?.slice(0, 8)}…
-          </code>{' '}
-          on section{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('section_id')?.slice(0, 8)}…
-          </code>
-          {ctx['subject_id'] ? (
-            <>
-              {' / subject '}
-              <code className="rounded bg-muted px-1 text-[10px]">
-                {String(ctx['subject_id']).slice(0, 8)}…
-              </code>
-            </>
-          ) : null}
-        </span>
-      );
-    case 'assignment.delete':
-      return (
-        <span>
-          Removed <b>{str('role')}</b> assignment (teacher{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('teacher_user_id')?.slice(0, 8)}…
-          </code>
-          )
-        </span>
-      );
-    case 'attendance.update': {
-      const after = ctx['after'] as Record<string, unknown> | undefined;
-      return (
-        <span className="tabular-nums">
-          Attendance updated for enrolment{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('section_student_id')?.slice(0, 8)}…
-          </code>
-          {after && (
-            <>
-              {' · school '}
-              <b>{String(after['school_days'] ?? '—')}</b>
-              {' · present '}
-              <b>{String(after['days_present'] ?? '—')}</b>
-              {' · late '}
-              <b>{String(after['days_late'] ?? '—')}</b>
-            </>
-          )}
-        </span>
-      );
-    }
-    case 'comment.update':
-      return (
-        <span>
-          Updated adviser comment for student{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('student_id')?.slice(0, 8)}…
-          </code>
-        </span>
-      );
-    case 'publication.create':
-      return (
-        <span>
-          Published report cards for section{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('section_id')?.slice(0, 8)}…
-          </code>
-          {' · term '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('term_id')?.slice(0, 8)}…
-          </code>
-          {' · window '}
-          <span className="inline-flex items-center gap-1.5 tabular-nums">
-            {str('publish_from')?.slice(0, 10)}
-            <ArrowRight className="size-3 text-muted-foreground" />
-            {str('publish_until')?.slice(0, 10)}
-          </span>
-        </span>
-      );
-    case 'publication.delete':
-      return (
-        <span>
-          Revoked report card publication for section{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('section_id')?.slice(0, 8)}…
-          </code>
-        </span>
-      );
-    case 'pfile.upload': {
-      const label = str('label') ?? str('slotKey') ?? 'document';
-      const merged = ctx['merged'] === true;
-      const replaced = ctx['replaced'] === true;
-      const count = ctx['fileCount'] ? String(ctx['fileCount']) : '1';
-      return (
-        <span>
-          {replaced ? 'Replaced ' : 'Uploaded '}
-          <b>{label}</b> for student{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {row.entity_id}
-          </code>
-          {merged && (
-            <span className="text-muted-foreground">
-              {' '}
-              · merged {count} PDFs
-            </span>
-          )}
-          {str('expiryDate') && (
-            <span className="text-muted-foreground">
-              {' '}
-              · expires {str('expiryDate')}
-            </span>
-          )}
-          {str('note') && (
-            <span className="text-muted-foreground">
-              {' '}
-              · note: {str('note')}
-            </span>
-          )}
-        </span>
-      );
-    }
-    default:
-      return (
-        <span className="text-muted-foreground">{JSON.stringify(ctx)}</span>
-      );
-  }
 }

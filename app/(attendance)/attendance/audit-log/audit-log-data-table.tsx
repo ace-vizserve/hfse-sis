@@ -20,11 +20,26 @@ import {
 } from '@/components/ui/select';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { TABLE_COPY } from '@/lib/copy/data-table';
+  auditActionLabel,
+  auditActionTone,
+  auditContextSummary,
+} from '@/lib/audit/humanize';
+
+// Map the humanizer's tone bucket → an existing Badge variant.
+function actionBadgeVariant(
+  action: string
+): 'default' | 'secondary' | 'destructive' | 'warning' {
+  switch (auditActionTone(action)) {
+    case 'destructive':
+      return 'destructive';
+    case 'warning':
+      return 'warning';
+    case 'info':
+      return 'default';
+    default:
+      return 'secondary';
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,64 +75,6 @@ type Props = {
 };
 
 // ---------------------------------------------------------------------------
-// Action label config
-// ---------------------------------------------------------------------------
-
-type AttendanceActionTone = 'default' | 'warn' | 'info';
-
-type AttendanceActionLabel = {
-  label: string;
-  tone: AttendanceActionTone;
-  tooltip?: string;
-};
-
-const ACTION_LABELS: Record<string, AttendanceActionLabel> = {
-  'attendance.daily.update': { label: 'Daily · mark', tone: 'default' },
-  'attendance.daily.correct': { label: 'Daily · correction', tone: 'warn' },
-  'attendance.import.bulk': { label: 'Bulk import', tone: 'info' },
-  'attendance.update': {
-    label: TABLE_COPY.termSummary,
-    tone: 'info',
-    tooltip: TABLE_COPY.termSummaryTooltip,
-  },
-  'attendance.calendar.upsert': { label: 'Calendar · update', tone: 'info' },
-  'attendance.calendar.delete': { label: 'Calendar · delete', tone: 'warn' },
-  'attendance.calendar.autoseed': {
-    label: 'Calendar · auto-seed',
-    tone: 'info',
-  },
-  'attendance.calendar.copy_from_prior_ay': {
-    label: 'Calendar · copy from prior AY',
-    tone: 'info',
-  },
-  'attendance.event.create': { label: 'Event · create', tone: 'info' },
-  'attendance.event.update': { label: 'Event · update', tone: 'info' },
-  'attendance.event.delete': { label: 'Event · delete', tone: 'warn' },
-};
-
-// Human-readable labels for the action filter dropdown
-const ACTION_DISPLAY_LABELS: Record<string, string> = {
-  'attendance.update': 'Term summary update',
-  'attendance.daily.update': 'Daily mark',
-  'attendance.daily.correct': 'Daily correction',
-  'attendance.import.bulk': 'Bulk import',
-  'attendance.calendar.upsert': 'Calendar update',
-  'attendance.calendar.delete': 'Calendar delete',
-  'attendance.calendar.autoseed': 'Calendar auto-seed',
-  'attendance.calendar.copy_from_prior_ay': 'Calendar copy from prior year',
-  'attendance.event.create': 'Event create',
-  'attendance.event.update': 'Event update',
-  'attendance.event.delete': 'Event delete',
-};
-
-// §9.3 wash recipes — brand tokens only.
-const TONE_CLASS: Record<AttendanceActionTone, string> = {
-  default: '',
-  warn: 'border-brand-amber/40 bg-brand-amber/15 text-brand-amber',
-  info: 'border-brand-indigo-soft/40 bg-accent text-brand-indigo-deep',
-};
-
-// ---------------------------------------------------------------------------
 // Helper: derive a section link from a row
 // ---------------------------------------------------------------------------
 
@@ -148,73 +105,6 @@ function getSectionLink(row: AttendanceAuditRow): string | null {
   }
 
   return null;
-}
-
-// ---------------------------------------------------------------------------
-// Context summary (plain-English inline detail)
-// ---------------------------------------------------------------------------
-
-function ContextSummary({ row }: { row: AttendanceAuditRow }) {
-  const ctx = row.context;
-  if (!ctx || Object.keys(ctx).length === 0) {
-    return <span className="text-xs text-muted-foreground">—</span>;
-  }
-
-  const parts: string[] = [];
-  if (typeof ctx.date === 'string') parts.push(`date: ${ctx.date}`);
-  if (typeof ctx.status === 'string') parts.push(`status: ${ctx.status}`);
-  if (typeof ctx.section_name === 'string')
-    parts.push(`section: ${ctx.section_name}`);
-  if (typeof ctx.rows_written === 'number')
-    parts.push(`rows: ${ctx.rows_written}`);
-  if (typeof ctx.students_matched === 'number')
-    parts.push(`matched: ${ctx.students_matched}`);
-  if (typeof ctx.students_unmatched === 'number' && ctx.students_unmatched > 0)
-    parts.push(`unmatched: ${ctx.students_unmatched}`);
-
-  if (parts.length === 0) {
-    return (
-      <code className="font-mono text-[11px] text-muted-foreground">
-        {JSON.stringify(ctx)}
-      </code>
-    );
-  }
-  return (
-    <span className="font-mono text-[11px] text-foreground">
-      {parts.join(' · ')}
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Action badge cell
-// ---------------------------------------------------------------------------
-
-function ActionBadge({ action }: { action: string }) {
-  const labelCfg = ACTION_LABELS[action] ?? {
-    label: action,
-    tone: 'default' as const,
-  };
-
-  const badge =
-    labelCfg.tone === 'default' ? (
-      <Badge variant="secondary">{labelCfg.label}</Badge>
-    ) : (
-      <Badge variant="outline" className={TONE_CLASS[labelCfg.tone]}>
-        {labelCfg.label}
-      </Badge>
-    );
-
-  if (!labelCfg.tooltip) return badge;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{badge}</TooltipTrigger>
-      <TooltipContent side="top" className="max-w-[220px] text-xs">
-        {labelCfg.tooltip}
-      </TooltipContent>
-    </Tooltip>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -262,12 +152,20 @@ const COLUMNS: ColumnDef<AttendanceAuditRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Action</SortableHeader>
     ),
-    cell: ({ row }) => <ActionBadge action={row.original.action} />,
+    cell: ({ row }) => (
+      <Badge variant={actionBadgeVariant(row.original.action)}>
+        {auditActionLabel(row.original.action)}
+      </Badge>
+    ),
   },
   {
     id: 'details',
     header: 'Details',
-    cell: ({ row }) => <ContextSummary row={row.original} />,
+    cell: ({ row }) => (
+      <span className="text-muted-foreground text-xs">
+        {auditContextSummary(row.original.action, row.original.context)}
+      </span>
+    ),
     enableSorting: false,
   },
   {
@@ -353,8 +251,8 @@ function AuditFilterToolbar({
         <SelectContent>
           <SelectItem value="__all__">All actions</SelectItem>
           {actionOptions.map((a) => (
-            <SelectItem key={a} value={a} className="font-mono text-[11px]">
-              {ACTION_DISPLAY_LABELS[a] ?? a}
+            <SelectItem key={a} value={a} className="text-xs">
+              {auditActionLabel(a)}
             </SelectItem>
           ))}
         </SelectContent>
