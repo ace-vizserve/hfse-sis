@@ -11,14 +11,11 @@
 // grid chips, so List and Grid cells are pixel-identical.
 // Tokens only — no raw hex / slate / zinc (Hard Rule #7).
 //
-// Row click: the DataTable shell has no onRowClick prop. We implement it with a
-// delegated-click div. Each <tr> body row contains an invisible sentinel <span
-// data-row-key="…" /> stamped via a leading hidden column. The wrapper's click
-// handler walks up/down the DOM to find that span and parses the iso date.
+// Opening a day: an explicit "Open" action button per row (last column) calls
+// onRowClick(iso) — clearer than a whole-row click in a table.
 
-import { useCallback } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { CalendarX } from 'lucide-react';
+import { CalendarX, PanelRightOpen } from 'lucide-react';
 
 import {
   DAY_TYPE_LEGEND_COLOR,
@@ -28,6 +25,7 @@ import {
   ChartLegendChip,
   type ChartLegendChipColor,
 } from '@/components/dashboard/chart-legend-chip';
+import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import type {
@@ -62,18 +60,12 @@ type ListRow = {
   level: Audience;
 };
 
-// ─── Row key helpers ──────────────────────────────────────────────────────────
-// Format: "kind|iso|typeLabel". "|" is safe — type labels are plain English.
+// ─── Row key helper ───────────────────────────────────────────────────────────
 
 const KEY_SEP = '|';
 
 function rowKey(row: ListRow): string {
   return `${row.kind}${KEY_SEP}${row.iso}${KEY_SEP}${row.typeLabel}`;
-}
-
-function isoFromKey(key: string): string | null {
-  const parts = key.split(KEY_SEP);
-  return parts.length >= 2 ? (parts[1] ?? null) : null;
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -206,85 +198,61 @@ export function ListView({ days, events, onRowClick }: ListViewProps) {
     ...buildEventRows(events),
   ].sort((a, b) => a.iso.localeCompare(b.iso));
 
-  // Leading hidden column — stamps data-row-key on every body row via the
-  // sentinel span so the delegated click handler can read the iso.
+  // Explicit action column — an "Open" button per row opens that day's sheet
+  // (clearer than a whole-row click in a table).
   const columns: ColumnDef<ListRow>[] = [
+    ...DATA_COLUMNS,
     {
-      id: '_key',
+      id: 'actions',
       header: () => null,
       cell: ({ row }) => (
-        <span
-          data-row-key={rowKey(row.original)}
-          className="sr-only"
-          aria-hidden="true"
-        />
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2.5 text-[12px]"
+            onClick={() => onRowClick(row.original.iso)}
+          >
+            <PanelRightOpen className="size-3.5" />
+            Open
+          </Button>
+        </div>
       ),
       enableSorting: false,
       enableHiding: false,
     },
-    ...DATA_COLUMNS,
   ];
 
-  // Delegated click: find the nearest sentinel span and parse the iso date.
-  const handleClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      // Fast path: clicked directly on or inside the sentinel span.
-      const directHit = (e.target as HTMLElement).closest<HTMLElement>(
-        '[data-row-key]'
-      );
-      if (directHit) {
-        const iso = isoFromKey(directHit.getAttribute('data-row-key') ?? '');
-        if (iso) {
-          onRowClick(iso);
-          return;
-        }
-      }
-      // Fallback: walk up to the <tr>, then query its sentinel span.
-      const tr = (e.target as HTMLElement).closest('tr');
-      if (!tr) return;
-      const sentinel = tr.querySelector<HTMLElement>('[data-row-key]');
-      if (!sentinel) return;
-      const iso = isoFromKey(sentinel.getAttribute('data-row-key') ?? '');
-      if (iso) onRowClick(iso);
-    },
-    [onRowClick]
-  );
-
   return (
-    // cursor-pointer + hover tint on body rows only (thead rows have no sentinel).
-    <div
-      onClick={handleClick}
-      className="[&_tbody_tr]:cursor-pointer [&_tbody_tr:hover]:bg-accent/40"
-    >
-      <DataTable<ListRow>
-        data={rows}
-        columns={columns}
-        getRowId={rowKey}
-        searchKeys={['label', 'typeLabel']}
-        searchPlaceholder="Search label or type…"
-        facets={[
-          { columnId: 'typeLabel', label: 'Type' },
-          {
-            columnId: 'level',
-            label: 'Level',
-            valueOptions: Object.values(AUDIENCE_LABELS),
-          },
-        ]}
-        initialSort={[{ id: 'iso', desc: false }]}
-        pageSize={25}
-        // KD #84: namespace prevents the table's own URL params from colliding
-        // with the page-level query params (date range, term, audience filter).
-        url={{ enabled: true, namespace: 'cal' }}
-        emptyState={{
-          icon: CalendarX,
-          title: 'No closures or events in this range.',
-          body: 'Only non-school days and calendar events appear here. Open school days are not listed.',
-        }}
-        emptyFilteredState={{
-          title: 'No entries match the current filters.',
-          body: 'Try clearing the type or level filter.',
-        }}
-      />
-    </div>
+    <DataTable<ListRow>
+      data={rows}
+      columns={columns}
+      getRowId={rowKey}
+      searchKeys={['label', 'typeLabel']}
+      searchPlaceholder="Search label or type…"
+      facets={[
+        { columnId: 'typeLabel', label: 'Type' },
+        {
+          columnId: 'level',
+          label: 'Level',
+          valueOptions: Object.values(AUDIENCE_LABELS),
+        },
+      ]}
+      initialSort={[{ id: 'iso', desc: false }]}
+      pageSize={25}
+      // KD #84: namespace prevents the table's own URL params from colliding
+      // with the page-level query params (date range, term, audience filter).
+      url={{ enabled: true, namespace: 'cal' }}
+      emptyState={{
+        icon: CalendarX,
+        title: 'No closures or events in this range.',
+        body: 'Only non-school days and calendar events appear here. Open school days are not listed.',
+      }}
+      emptyFilteredState={{
+        title: 'No entries match the current filters.',
+        body: 'Try clearing the type or level filter.',
+      }}
+    />
   );
 }

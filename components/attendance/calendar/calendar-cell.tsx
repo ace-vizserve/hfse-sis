@@ -134,8 +134,9 @@ export function CalendarCell({
         {dayNumber}
       </span>
 
-      {/* Chip column */}
-      <div className="flex w-full flex-col gap-0.5">
+      {/* Chip column — non-interactive so a click anywhere selects the CELL
+          (the badges aren't separate click targets). */}
+      <div className="pointer-events-none flex w-full flex-col gap-0.5">
         {isBreak ? (
           <ChartLegendChip
             color="neutral"
