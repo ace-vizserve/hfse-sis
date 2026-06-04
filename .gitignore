@@ -54,8 +54,6 @@ next-env.d.ts
 *.xls
 *.xlsm
 
-AY 2026 Calendar.png
-
 # Claude Code — local-only + agent tooling artifacts (dev-only, never used in
 # prod). Project config under .claude/rules/ and .claude/commands/ stays tracked.
 .claude/settings.local.json
