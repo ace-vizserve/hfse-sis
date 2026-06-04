@@ -5,11 +5,10 @@
 // switcher + filters + add action (CalendarToolbar), a legend, the active view
 // (Month / Week / Day / List), a day-action sheet, and the event editor dialog.
 //
-// Calendar-first: all four views run on the WHOLE-AY dataset (calendar rows +
-// events). The term selector is a navigation convenience — it jumps the cursor
-// to a term, it does NOT scope data or editability. A date is editable iff it
-// belongs to a term (resolved per-click via termForIso); between-term gap days
-// have no term to write to, so they render faded + open a read-only note.
+// Term-scoped views: the term selector scopes every view (Month / Week / Day /
+// List) to the selected term — nav is bounded to the term and only its days are
+// editable. The whole-AY calendar data is loaded (so chips paint consistently),
+// but each view is windowed to the selected term.
 //
 // Design system §5/§6: this is a composition page. It owns no bespoke grid
 // markup — the views/toolbar/legend/sheet carry their own design-compliant
@@ -139,10 +138,9 @@ export function CalendarAdminClient({
   const { view, setView, cursor, setCursor, filterState, setFilterState } =
     useCalendarViewState(initialCursor);
 
-  // ── Jump-to-term (render-time sync, no useEffect) ─────────────────────────────
-  // The term selector is a navigation convenience: picking a term moves the
-  // cursor to that term's start month. It does NOT scope data or editability.
-  // Filters are AY-wide and persist across a jump.
+  // ── Term change (render-time sync, no useEffect) ──────────────────────────────
+  // Selecting a term scopes every view to it and moves the cursor to its start
+  // month. Filters persist across a term change.
   const [lastTermId, setLastTermId] = useState<string>(selectedTermId);
   if (lastTermId !== selectedTermId) {
     setLastTermId(selectedTermId);
@@ -339,9 +337,12 @@ export function CalendarAdminClient({
 
       <Legend />
 
-      {view === 'month' && (
+      {view === 'month' && selectedTerm && (
         <MonthView
-          terms={terms}
+          term={{
+            startDate: selectedTerm.startDate,
+            endDate: selectedTerm.endDate,
+          }}
           index={index}
           cursor={cursor}
           onCursor={setCursor}
@@ -354,9 +355,12 @@ export function CalendarAdminClient({
         <ListView days={listDays} events={listEvents} onRowClick={openDay} />
       )}
 
-      {view === 'week' && (
+      {view === 'week' && selectedTerm && (
         <WeekView
-          terms={terms}
+          term={{
+            startDate: selectedTerm.startDate,
+            endDate: selectedTerm.endDate,
+          }}
           index={index}
           cursor={cursor}
           onCursor={setCursor}
@@ -364,9 +368,12 @@ export function CalendarAdminClient({
         />
       )}
 
-      {view === 'day' && (
+      {view === 'day' && selectedTerm && (
         <DayView
-          terms={terms}
+          term={{
+            startDate: selectedTerm.startDate,
+            endDate: selectedTerm.endDate,
+          }}
           index={index}
           cursor={cursor}
           onCursor={setCursor}

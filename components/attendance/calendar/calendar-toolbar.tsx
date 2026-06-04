@@ -2,9 +2,8 @@
 
 // CalendarToolbar — Jump-to-term selector + view-switcher + filter + Add action.
 //
-// Layout: left  = "Jump to term" <Select> (moves the cursor to a term) THEN Tabs
-//                 view switcher (Month / Week / Day / List). Views are NOT scoped
-//                 by the term — they run on the whole AY (calendar-first).
+// Layout: left  = Term <Select> THEN Tabs view switcher (Month / Week / Day /
+//                 List). Every view is scoped to the selected term.
 //         right = Filters Popover (outline Button + active-count Badge)
 //                 + "+ Add" DropdownMenu (primary CTA, one per view).
 //
@@ -108,8 +107,8 @@ export function CalendarToolbar({
       {/* Left — Term selector THEN view-switcher tabs (Month/Week/Day/List) */}
       <div className="flex flex-wrap items-center gap-2">
         <Select value={selectedTermId} onValueChange={onSelectTerm}>
-          <SelectTrigger className="h-8 w-max" aria-label="Jump to term">
-            <SelectValue placeholder="Jump to term…" />
+          <SelectTrigger className="h-8 w-max" aria-label="Term">
+            <SelectValue placeholder="Select term" />
           </SelectTrigger>
           <SelectContent>
             {terms.map((t) => (

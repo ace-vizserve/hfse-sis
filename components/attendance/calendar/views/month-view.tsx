@@ -100,8 +100,8 @@ function buildMonthWeekdayRows(cursor: Date): MonthCell[][] {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export type MonthViewProps = {
-  /** All terms in the AY — a day is editable iff it falls inside one of them. */
-  terms: Array<{ startDate: string; endDate: string }>;
+  /** The selected term — the view is scoped to it (nav + editability). */
+  term: { startDate: string; endDate: string };
   /** Pre-built calendar index — do NOT call useCalendarIndex here. */
   index: CalendarIndex;
   /** first-of-visible-month Date controlled by the parent */
@@ -116,32 +116,22 @@ export type MonthViewProps = {
 // ─── MonthView ────────────────────────────────────────────────────────────────
 
 export function MonthView({
-  terms,
+  term,
   index,
   cursor,
   onCursor,
   selectedIsos,
   onDayClick,
 }: MonthViewProps) {
-  // ── AY month span ────────────────────────────────────────────────────────────
-  // Nav is clamped to the months spanning the whole AY (first term start → last
-  // term end), so the calendar navigates continuously across the year.
-  const { ayStartMonth, ayEndMonth } = useMemo(() => {
-    if (terms.length === 0) {
-      const t = firstOfMonth(parseIso(sgToday()));
-      return { ayStartMonth: t, ayEndMonth: t };
-    }
-    const minStart = terms
-      .map((t) => t.startDate)
-      .reduce((a, b) => (a < b ? a : b));
-    const maxEnd = terms
-      .map((t) => t.endDate)
-      .reduce((a, b) => (a > b ? a : b));
-    return {
-      ayStartMonth: firstOfMonthFromIso(minStart),
-      ayEndMonth: firstOfMonthFromIso(maxEnd),
-    };
-  }, [terms]);
+  // ── Term month span ──────────────────────────────────────────────────────────
+  // Nav is clamped to the months containing the selected term's start / end.
+  const { termStartMonth, termEndMonth } = useMemo(
+    () => ({
+      termStartMonth: firstOfMonthFromIso(term.startDate),
+      termEndMonth: firstOfMonthFromIso(term.endDate),
+    }),
+    [term.startDate, term.endDate]
+  );
 
   // ── "Today" in SGT — school-calendar dates must be Singapore-local (KD #32) ──
   const todayIso = useMemo(() => sgToday(), []);
@@ -152,15 +142,15 @@ export function MonthView({
 
   // ── Per-cell helper ──────────────────────────────────────────────────────────
 
-  /** Returns true iff `iso` falls within ANY term — i.e. it's editable. */
+  /** Returns true iff `iso` falls within the selected term — i.e. editable. */
   function inTerm(iso: string): boolean {
-    return terms.some((t) => t.startDate <= iso && iso <= t.endDate);
+    return term.startDate <= iso && iso <= term.endDate;
   }
 
   // ── Nav ───────────────────────────────────────────────────────────────────────
-  // Clamp to the AY's first → last month.
-  const canPrev = cursor.getTime() > ayStartMonth.getTime();
-  const canNext = cursor.getTime() < ayEndMonth.getTime();
+  // Clamp to the selected term's first → last month.
+  const canPrev = cursor.getTime() > termStartMonth.getTime();
+  const canNext = cursor.getTime() < termEndMonth.getTime();
 
   // "Today" button: always enabled — even when today is outside the term. The
   // grid will then show an all-faded month; that's an honest representation.
@@ -189,10 +179,8 @@ export function MonthView({
     const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
     const lastDay = new Date(year, month + 1, 0).getDate();
     const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    return terms.some(
-      (t) => t.startDate <= monthEnd && t.endDate >= monthStart
-    );
-  }, [cursor, terms]);
+    return term.startDate <= monthEnd && term.endDate >= monthStart;
+  }, [cursor, term.startDate, term.endDate]);
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 

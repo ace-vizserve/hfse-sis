@@ -64,8 +64,8 @@ function formatLongDate(iso: string): string {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export type DayViewProps = {
-  /** All terms in the AY — the focused day is editable iff it's inside one. */
-  terms: Array<{ startDate: string; endDate: string }>;
+  /** The selected term — the view is scoped to it (nav + editability). */
+  term: { startDate: string; endDate: string };
   /** Pre-built calendar index. */
   index: CalendarIndex;
   /** The focused day — DayView renders exactly this date. */
@@ -78,7 +78,7 @@ export type DayViewProps = {
 // ─── DayView ──────────────────────────────────────────────────────────────────
 
 export function DayView({
-  terms,
+  term,
   index,
   cursor,
   onCursor,
@@ -90,22 +90,14 @@ export function DayView({
   // ── "Today" in SGT (KD #32) ──────────────────────────────────────────────────
   const todayIso = useMemo(() => sgToday(), []);
 
-  // AY span (first term start → last term end) for nav clamping.
-  const { ayStart, ayEnd } = useMemo(() => {
-    if (terms.length === 0) {
-      const t = sgToday();
-      return { ayStart: t, ayEnd: t };
-    }
-    return {
-      ayStart: terms.map((t) => t.startDate).reduce((a, b) => (a < b ? a : b)),
-      ayEnd: terms.map((t) => t.endDate).reduce((a, b) => (a > b ? a : b)),
-    };
-  }, [terms]);
+  // Selected term window for nav clamping.
+  const ayStart = term.startDate;
+  const ayEnd = term.endDate;
 
-  // ── In-term predicate (editable iff the date belongs to ANY term) ─────────────
-  const inTerm = terms.some((t) => iso >= t.startDate && iso <= t.endDate);
+  // ── In-term predicate (editable iff the date is in the selected term) ──────────
+  const inTerm = iso >= term.startDate && iso <= term.endDate;
 
-  // ── Nav clamp: stay within the AY span ───────────────────────────────────────
+  // ── Nav clamp: stay within the selected term ──────────────────────────────────
   const canPrev = useMemo(
     () => formatIso(addDays(cursor, -1)) >= ayStart,
     [cursor, ayStart]

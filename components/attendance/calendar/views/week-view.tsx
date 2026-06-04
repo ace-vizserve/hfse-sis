@@ -60,8 +60,8 @@ function addDays(d: Date, n: number): Date {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export type WeekViewProps = {
-  /** All terms in the AY — a day is editable iff it falls inside one of them. */
-  terms: Array<{ startDate: string; endDate: string }>;
+  /** The selected term — the view is scoped to it (nav + editability). */
+  term: { startDate: string; endDate: string };
   /** Pre-built calendar index. */
   index: CalendarIndex;
   /**
@@ -77,23 +77,15 @@ export type WeekViewProps = {
 // ─── WeekView ─────────────────────────────────────────────────────────────────
 
 export function WeekView({
-  terms,
+  term,
   index,
   cursor,
   onCursor,
   onDayClick,
 }: WeekViewProps) {
-  // AY span (first term start → last term end) for nav clamping.
-  const { ayStart, ayEnd } = useMemo(() => {
-    if (terms.length === 0) {
-      const t = sgToday();
-      return { ayStart: t, ayEnd: t };
-    }
-    return {
-      ayStart: terms.map((t) => t.startDate).reduce((a, b) => (a < b ? a : b)),
-      ayEnd: terms.map((t) => t.endDate).reduce((a, b) => (a > b ? a : b)),
-    };
-  }, [terms]);
+  // Selected term window for nav clamping.
+  const ayStart = term.startDate;
+  const ayEnd = term.endDate;
   // ── Compute the Mon–Fri span of the cursor's week ─────────────────────────────
   const weekDays = useMemo<
     Array<{ iso: string; dayNumber: number; longLabel: string }>
@@ -118,7 +110,7 @@ export function WeekView({
 
   // ── In-term predicate (editable iff the date belongs to ANY term) ─────────────
   function inTerm(iso: string): boolean {
-    return terms.some((t) => t.startDate <= iso && iso <= t.endDate);
+    return term.startDate <= iso && iso <= term.endDate;
   }
 
   // ── Week caption, e.g. "Week of 12 May 2025" ────────────────────────────────
