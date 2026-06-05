@@ -4,10 +4,11 @@ import {
   CalendarDays,
   CheckCircle2,
   ClipboardCheck,
-  Clock,
   NotebookPen,
   SquarePen,
   TrendingUp,
+  UserX,
+  Users,
 } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -19,7 +20,6 @@ import { MetricCard } from '@/components/dashboard/metric-card';
 import { PriorityPanel } from '@/components/dashboard/priority-panel';
 import {
   SubmissionVelocityDrillCard,
-  TimeToSubmitHistogramCard,
   WriteupsBySectionCard,
 } from '@/components/evaluation/drills/chart-drill-cards';
 import { EvaluationDrillSheet } from '@/components/evaluation/drills/evaluation-drill-sheet';
@@ -48,6 +48,7 @@ import {
 } from '@/lib/dashboard/range';
 import { getDashboardWindows } from '@/lib/dashboard/windows';
 import {
+  getEvaluationChaseKpis,
   getEvaluationKpisRange,
   getEvaluationRegistrarPriority,
   getEvaluationTeacherPriority,
@@ -123,13 +124,16 @@ export default async function EvaluationHub({
   const rangeInput = ayCode
     ? resolveRange(resolvedSearch, windows, ayCode)
     : null;
-  const [kpisResult, velocity, drillRowSets] = rangeInput
+  // Chase metrics are live-state + current-term-scoped + oversight-only — no
+  // date window, so they don't depend on rangeInput. T4 → not available → "—".
+  const [kpisResult, velocity, drillRowSets, chaseKpis] = rangeInput
     ? await Promise.all([
         getEvaluationKpisRange(rangeInput),
         getSubmissionVelocityRange(rangeInput),
         buildAllRowSets({ ayCode, from: rangeInput.from, to: rangeInput.to }),
+        canToggle ? getEvaluationChaseKpis(ayCode) : Promise.resolve(null),
       ])
-    : [null, null, null];
+    : [null, null, null, null];
   const comparisonLabel = kpisResult?.comparisonRange
     ? `vs ${formatRangeLabel(kpisResult.comparisonRange)}`
     : undefined;
@@ -152,10 +156,12 @@ export default async function EvaluationHub({
         submissionPct: kpisResult.current.submissionPct,
         submitted: kpisResult.current.submitted,
         expected: kpisResult.current.expected,
-        medianTimeToSubmitDays: kpisResult.current.medianTimeToSubmitDays,
-        medianTimeToSubmitDaysPrior:
-          kpisResult.comparison?.medianTimeToSubmitDays,
-        lateSubmissions: kpisResult.current.lateSubmissions,
+        outstandingWriteups: chaseKpis?.available
+          ? chaseKpis.outstandingWriteups
+          : undefined,
+        advisersBehind: chaseKpis?.available
+          ? chaseKpis.advisersBehind
+          : undefined,
       })
     : [];
 
@@ -273,51 +279,64 @@ export default async function EvaluationHub({
               )}
             />
             <MetricCard
-              label="Median time-to-submit"
-              value={kpisResult.current.medianTimeToSubmitDays ?? '—'}
-              format="days"
-              icon={Clock}
-              intent="default"
-              deltaGoodWhen="down"
-              subtext={
-                kpisResult.comparison?.medianTimeToSubmitDays != null
-                  ? `${kpisResult.comparison.medianTimeToSubmitDays}d prior`
-                  : kpisResult.comparison
-                    ? 'No prior data'
-                    : undefined
+              label="Outstanding write-ups"
+              value={chaseKpis?.available ? chaseKpis.outstandingWriteups : '—'}
+              icon={UserX}
+              intent={
+                !chaseKpis?.available
+                  ? 'default'
+                  : chaseKpis.outstandingWriteups > 0
+                    ? 'warning'
+                    : 'good'
               }
-              drillSheet={() => (
-                <EvaluationDrillSheet
-                  target="time-to-submit"
-                  ayCode={ayCode}
-                  initialFrom={rangeInput.from}
-                  initialTo={rangeInput.to}
-                  initialWriteups={drillRowSets?.writeups}
-                />
-              )}
+              subtext={
+                !chaseKpis?.available
+                  ? 'No write-up term right now (T4 has no FCA comment)'
+                  : chaseKpis.outstandingWriteups > 0
+                    ? 'Students still missing a submitted write-up this term'
+                    : 'All caught up this term'
+              }
+              drillSheet={
+                chaseKpis?.available
+                  ? () => (
+                      <EvaluationDrillSheet
+                        target="outstanding-writeups"
+                        ayCode={ayCode}
+                      />
+                    )
+                  : undefined
+              }
             />
             <MetricCard
-              label="Late submissions"
-              value={kpisResult.current.lateSubmissions}
-              icon={Clock}
+              label="Advisers behind"
+              value={chaseKpis?.available ? chaseKpis.advisersBehind : '—'}
+              icon={Users}
               intent={
-                kpisResult.current.lateSubmissions > 0 ? 'warning' : 'good'
+                !chaseKpis?.available
+                  ? 'default'
+                  : chaseKpis.advisersBehind > 0
+                    ? 'warning'
+                    : 'good'
               }
-              deltaGoodWhen="down"
               subtext={
-                kpisResult.comparison
-                  ? `${kpisResult.comparison.lateSubmissions} prior · submitted >14d after creation`
-                  : 'Submitted >14d after writeup was created'
+                !chaseKpis?.available
+                  ? 'No write-up term right now (T4 has no FCA comment)'
+                  : chaseKpis.advisersBehind > 0
+                    ? chaseKpis.hasUnassignedSection
+                      ? 'Form advisers with ≥1 outstanding · includes unassigned sections'
+                      : 'Form advisers with ≥1 outstanding write-up this term'
+                    : 'Every adviser is caught up this term'
               }
-              drillSheet={() => (
-                <EvaluationDrillSheet
-                  target="late"
-                  ayCode={ayCode}
-                  initialFrom={rangeInput.from}
-                  initialTo={rangeInput.to}
-                  initialWriteups={drillRowSets?.writeups}
-                />
-              )}
+              drillSheet={
+                chaseKpis?.available
+                  ? () => (
+                      <EvaluationDrillSheet
+                        target="advisers-behind"
+                        ayCode={ayCode}
+                      />
+                    )
+                  : undefined
+              }
             />
           </section>
 
@@ -332,28 +351,16 @@ export default async function EvaluationHub({
             />
           )}
 
-          {drillRowSets &&
-            (drillRowSets.bySection.length > 0 ||
-              drillRowSets.buckets.some((b) => b.count > 0)) && (
-              <section className="grid gap-4 lg:grid-cols-2">
-                <WriteupsBySectionCard
-                  data={drillRowSets.bySection}
-                  ayCode={ayCode}
-                  rangeFrom={rangeInput.from}
-                  rangeTo={rangeInput.to}
-                  initialBySection={drillRowSets.bySection}
-                  initialWriteups={drillRowSets.writeups}
-                />
-                <TimeToSubmitHistogramCard
-                  data={drillRowSets.buckets}
-                  ayCode={ayCode}
-                  rangeFrom={rangeInput.from}
-                  rangeTo={rangeInput.to}
-                  initialBuckets={drillRowSets.buckets}
-                  initialWriteups={drillRowSets.writeups}
-                />
-              </section>
-            )}
+          {drillRowSets && drillRowSets.bySection.length > 0 && (
+            <WriteupsBySectionCard
+              data={drillRowSets.bySection}
+              ayCode={ayCode}
+              rangeFrom={rangeInput.from}
+              rangeTo={rangeInput.to}
+              initialBySection={drillRowSets.bySection}
+              initialWriteups={drillRowSets.writeups}
+            />
+          )}
         </>
       )}
 

@@ -1,7 +1,10 @@
 import { unstable_cache } from 'next/cache';
 
+import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { applyDateRangeFilter } from '@/lib/dashboard/drill-range';
+import { sgToday } from '@/lib/dates';
+import { resolveCurrentTerm } from '@/lib/sis/current-term';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Evaluation drill primitives — single row shape (WriteupRow). Simpler than
@@ -18,11 +21,10 @@ function tags(ayCode: string): string[] {
 export type EvaluationDrillTarget =
   | 'submission-status' // sections × submission %
   | 'submitted' // submitted writeups
-  | 'time-to-submit' // submitted with daysToSubmit
-  | 'late' // submissions >14d
   | 'submission-velocity-day' // writeups submitted on a specific day
   | 'writeups-by-section' // section × counts
-  | 'time-to-submit-bucket'; // bucket bars (0-3d/4-7d/8-14d/>14d)
+  | 'outstanding-writeups' // chase: students missing a submitted, non-empty write-up (current term, live-state)
+  | 'advisers-behind'; // chase: form advisers with ≥1 outstanding write-up (current term, live-state)
 
 // ─── Row shapes ─────────────────────────────────────────────────────────────
 
@@ -56,19 +58,35 @@ export type SectionWriteupRow = {
   submissionPct: number;
 };
 
-export type TimeToSubmitBucket = {
-  label: string;
-  loDays: number;
-  hiDays: number | null;
-  count: number;
+// Chase row: one outstanding student (current term, live-state). Used by the
+// `outstanding-writeups` drill — the registrar's worklist.
+export type OutstandingWriteupRow = {
+  studentNumber: string;
+  studentName: string;
+  sectionName: string;
+  adviserName: string | null; // null = no form adviser assigned to the section
+};
+
+// Chase row: one form adviser who is behind this term (current term,
+// live-state). Used by the `advisers-behind` drill. `adviserName === null`
+// is the "Unassigned section" bucket — surfaced, never dropped.
+export type AdviserBehindRow = {
+  adviserName: string | null; // null = sections with no form adviser
+  outstanding: number;
+  sections: string;
 };
 
 export type EvaluationDrillRow =
   | WriteupRow
   | SectionWriteupRow
-  | TimeToSubmitBucket;
+  | OutstandingWriteupRow
+  | AdviserBehindRow;
 
-export type EvaluationDrillRowKind = 'writeup' | 'section-rollup' | 'bucket';
+export type EvaluationDrillRowKind =
+  | 'writeup'
+  | 'section-rollup'
+  | 'outstanding'
+  | 'adviser-behind';
 
 export function rowKindForTarget(
   t: EvaluationDrillTarget
@@ -76,14 +94,14 @@ export function rowKindForTarget(
   switch (t) {
     case 'submission-status':
     case 'submitted':
-    case 'time-to-submit':
-    case 'late':
     case 'submission-velocity-day':
       return 'writeup';
     case 'writeups-by-section':
       return 'section-rollup';
-    case 'time-to-submit-bucket':
-      return 'bucket';
+    case 'outstanding-writeups':
+      return 'outstanding';
+    case 'advisers-behind':
+      return 'adviser-behind';
     default: {
       const _exhaustive: never = t;
       throw new Error(`unreachable target: ${String(_exhaustive)}`);
@@ -199,12 +217,15 @@ async function loadWriteupRowsUncached(ayCode: string): Promise<WriteupRow[]> {
 
   if (sectionIds.length === 0 || termIds.length === 0) return [];
 
-  // Section students (active only)
+  // Section students — active roster (active + late_enrollee, i.e. not
+  // withdrawn) per KD #120, matching the KPI loaders + the chase loader so the
+  // submission/submitted drills agree with their card counts (a late enrollee
+  // still owes a write-up).
   const { data: ssRows } = await service
     .from('section_students')
     .select('id, section_id, student_id, enrollment_status')
     .in('section_id', sectionIds)
-    .eq('enrollment_status', 'active');
+    .neq('enrollment_status', 'withdrawn');
   const ss = (ssRows ?? []) as StudentSectionLite[];
   const ssById = new Map<string, StudentSectionLite>();
   for (const s of ss) ssById.set(s.id, s);
@@ -318,33 +339,243 @@ function loadWriteupRows(ayCode: string): Promise<WriteupRow[]> {
   )();
 }
 
-// ─── Aggregators ────────────────────────────────────────────────────────────
+// ─── Chase state (live, current-term only) ───────────────────────────────────
+//
+// The chase metrics are LIVE STATE — the current gap right now — scoped to the
+// picker's resolved current term (KD #124 `resolveCurrentTerm`), NOT
+// date-windowed. So the count and the drill share the exact same row set
+// (count == drill). T4 has no FCA write-up (KD #49) → returns `null` so the
+// dashboard can render "—" without ever running the queries.
+//
+// "Has a write-up" = a row with `submitted = true` AND non-empty content
+// (matches the KD #120 submitted-count rule). Roster is resolved by the live
+// `section_students` (`enrollment_status != 'withdrawn'`) tallied by
+// `student_id` — never the denormalized `evaluation_writeups.section_id`, which
+// doesn't follow a mid-year transfer (KD #67/#120).
 
-const TIME_BUCKETS = [
-  { label: '0–3d', lo: 0, hi: 3 },
-  { label: '4–7d', lo: 4, hi: 7 },
-  { label: '8–14d', lo: 8, hi: 14 },
-  { label: '>14d', lo: 15, hi: null as number | null },
-] as const;
+export type EvaluationChaseState = {
+  termId: string;
+  termNumber: number;
+  outstanding: OutstandingWriteupRow[];
+  advisersBehind: AdviserBehindRow[];
+  /** True when ≥1 section with outstanding write-ups has no form adviser. */
+  hasUnassignedSection: boolean;
+};
 
-function rollupBuckets(rows: WriteupRow[]): TimeToSubmitBucket[] {
-  const out: TimeToSubmitBucket[] = TIME_BUCKETS.map((b) => ({
-    label: b.label,
-    loDays: b.lo,
-    hiDays: b.hi,
-    count: 0,
-  }));
-  for (const r of rows) {
-    if (r.daysToSubmit == null) continue;
-    const idx = out.findIndex(
-      (b) =>
-        r.daysToSubmit! >= b.loDays &&
-        (b.hiDays == null || r.daysToSubmit! <= b.hiDays)
-    );
-    if (idx >= 0) out[idx].count += 1;
+type SgTodayFn = () => string;
+
+async function loadChaseStateUncached(
+  ayCode: string,
+  getToday: SgTodayFn
+): Promise<EvaluationChaseState | null> {
+  const service = createServiceClient();
+
+  const { data: ayRow } = await service
+    .from('academic_years')
+    .select('id')
+    .eq('ay_code', ayCode)
+    .maybeSingle();
+  const ayId = (ayRow?.id as string | undefined) ?? null;
+  if (!ayId) return null;
+
+  // Resolve the current term from the date (KD #124). T4 carries no FCA
+  // write-up (KD #49) so it's never a chase target — return null → "—".
+  const { data: termRows } = await service
+    .from('terms')
+    .select('id, term_number, start_date, end_date, is_current')
+    .eq('academic_year_id', ayId);
+  const terms = (termRows ?? []) as Array<{
+    id: string;
+    term_number: number;
+    start_date: string | null;
+    end_date: string | null;
+    is_current: boolean | null;
+  }>;
+  if (terms.length === 0) return null;
+
+  const currentTerm = resolveCurrentTerm(terms, getToday());
+  if (!currentTerm || currentTerm.term_number === 4) return null;
+  const termId = currentTerm.id;
+  const termNumber = currentTerm.term_number;
+
+  // Sections + their form adviser (first wins, mirrors loadWriteupRows).
+  const [sectionsRes, advisersRes] = await Promise.all([
+    service.from('sections').select('id, name').eq('academic_year_id', ayId),
+    service
+      .from('teacher_assignments')
+      .select('teacher_user_id, section_id, role')
+      .eq('role', 'form_adviser'),
+  ]);
+  const sections = (sectionsRes.data ?? []) as Array<{
+    id: string;
+    name: string;
+  }>;
+  const sectionById = new Map(sections.map((s) => [s.id, s.name]));
+  const sectionIds = sections.map((s) => s.id);
+  if (sectionIds.length === 0) {
+    return {
+      termId,
+      termNumber,
+      outstanding: [],
+      advisersBehind: [],
+      hasUnassignedSection: false,
+    };
   }
-  return out;
+
+  const adviserBySection = new Map<string, string>();
+  for (const a of (advisersRes.data ?? []) as AdviserAssignment[]) {
+    if (!adviserBySection.has(a.section_id))
+      adviserBySection.set(a.section_id, a.teacher_user_id);
+  }
+
+  // Live roster — active + late_enrollee (everything not withdrawn), tallied by
+  // the student's CURRENT section (KD #120 transfer-safe).
+  const { data: ssRows } = await service
+    .from('section_students')
+    .select('section_id, student_id, enrollment_status')
+    .in('section_id', sectionIds)
+    .neq('enrollment_status', 'withdrawn');
+  const roster = (ssRows ?? []) as Array<{
+    section_id: string;
+    student_id: string;
+  }>;
+  const studentIds = Array.from(new Set(roster.map((r) => r.student_id)));
+
+  // Students with a SUBMITTED, NON-EMPTY write-up this term.
+  const submittedStudentIds = new Set<string>();
+  if (studentIds.length > 0) {
+    const chunks: string[][] = [];
+    for (let i = 0; i < studentIds.length; i += 500)
+      chunks.push(studentIds.slice(i, i + 500));
+    for (const chunk of chunks) {
+      const { data: wRows } = await service
+        .from('evaluation_writeups')
+        .select('student_id, writeup')
+        .eq('term_id', termId)
+        .eq('submitted', true)
+        .in('student_id', chunk);
+      for (const w of (wRows ?? []) as Array<{
+        student_id: string;
+        writeup: string | null;
+      }>) {
+        if (w.writeup && w.writeup.trim().length > 0)
+          submittedStudentIds.add(w.student_id);
+      }
+    }
+  }
+
+  // Student names for the outstanding worklist.
+  const outstandingStudentIds = Array.from(
+    new Set(
+      roster
+        .filter((r) => !submittedStudentIds.has(r.student_id))
+        .map((r) => r.student_id)
+    )
+  );
+  const studentMap = new Map<string, StudentLite>();
+  if (outstandingStudentIds.length > 0) {
+    const chunks: string[][] = [];
+    for (let i = 0; i < outstandingStudentIds.length; i += 500)
+      chunks.push(outstandingStudentIds.slice(i, i + 500));
+    for (const chunk of chunks) {
+      const { data: studs } = await service
+        .from('students')
+        .select('id, first_name, middle_name, last_name, student_number')
+        .in('id', chunk);
+      for (const s of (studs ?? []) as StudentLite[]) studentMap.set(s.id, s);
+    }
+  }
+
+  // Adviser display names (userId → name) via email → name join.
+  const adviserUserIds = Array.from(new Set(adviserBySection.values()));
+  const emailByUserId = new Map(await getTeacherEmailMap());
+  const nameByEmail = new Map(await getStaffDisplayEntries());
+  const adviserNameById = new Map<string, string>();
+  for (const id of adviserUserIds) {
+    const email = emailByUserId.get(id);
+    const name = email ? nameByEmail.get(email) : undefined;
+    adviserNameById.set(id, name ?? email ?? 'Unknown adviser');
+  }
+
+  // Build the outstanding rows + per-adviser rollup in one pass.
+  const outstanding: OutstandingWriteupRow[] = [];
+  // adviserKey: userId for assigned advisers, '__unassigned__' for the bucket.
+  const UNASSIGNED = '__unassigned__';
+  type AdviserAcc = {
+    adviserName: string | null;
+    outstanding: number;
+    sectionNames: Set<string>;
+  };
+  const adviserAcc = new Map<string, AdviserAcc>();
+
+  for (const r of roster) {
+    if (submittedStudentIds.has(r.student_id)) continue;
+    const sectionName = sectionById.get(r.section_id) ?? 'Section';
+    const adviserId = adviserBySection.get(r.section_id) ?? null;
+    const adviserName = adviserId
+      ? (adviserNameById.get(adviserId) ?? null)
+      : null;
+    const student = studentMap.get(r.student_id);
+
+    outstanding.push({
+      studentNumber: student?.student_number ?? '',
+      studentName: student ? studentName(student) : r.student_id,
+      sectionName,
+      adviserName,
+    });
+
+    const key = adviserId ?? UNASSIGNED;
+    let acc = adviserAcc.get(key);
+    if (!acc) {
+      acc = { adviserName, outstanding: 0, sectionNames: new Set() };
+      adviserAcc.set(key, acc);
+    }
+    acc.outstanding += 1;
+    acc.sectionNames.add(sectionName);
+  }
+
+  outstanding.sort(
+    (a, b) =>
+      a.sectionName.localeCompare(b.sectionName) ||
+      a.studentName.localeCompare(b.studentName)
+  );
+
+  const advisersBehind: AdviserBehindRow[] = Array.from(adviserAcc.values())
+    .map((a) => ({
+      adviserName: a.adviserName,
+      outstanding: a.outstanding,
+      sections: Array.from(a.sectionNames).sort().join(', '),
+    }))
+    // Biggest gap first; the Unassigned bucket (null name) sorts last on ties.
+    .sort(
+      (a, b) =>
+        b.outstanding - a.outstanding ||
+        (a.adviserName ?? '￿').localeCompare(b.adviserName ?? '￿')
+    );
+
+  return {
+    termId,
+    termNumber,
+    outstanding,
+    advisersBehind,
+    hasUnassignedSection: adviserAcc.has(UNASSIGNED),
+  };
 }
+
+// Cached live-state chase loader. 60s TTL like the rest of the drill layer;
+// the eval-drill tag means a write-up submit invalidates it.
+export function loadEvaluationChaseState(
+  ayCode: string,
+  getToday: SgTodayFn = sgToday
+): Promise<EvaluationChaseState | null> {
+  return unstable_cache(
+    () => loadChaseStateUncached(ayCode, getToday),
+    ['evaluation-drill', 'chase-state', ayCode],
+    { revalidate: CACHE_TTL_SECONDS, tags: tags(ayCode) }
+  )();
+}
+
+// ─── Aggregators ────────────────────────────────────────────────────────────
 
 function rollupBySection(rows: WriteupRow[]): SectionWriteupRow[] {
   type Acc = {
@@ -426,13 +657,26 @@ function applyAllowedSections(
 export async function buildEvaluationDrillRows(
   input: BuildDrillRowsInput
 ): Promise<EvaluationDrillRow[]> {
+  const kind = rowKindForTarget(input.target);
+
+  // Chase targets are LIVE STATE — current-term only, no date scoping (count ==
+  // drill). They never go through the date-windowed write-up row set.
+  if (kind === 'outstanding' || kind === 'adviser-behind') {
+    // Chase is registrar/oversight-only and live-state — no date scoping, no
+    // section narrowing (allowedSectionIds is always null here).
+    const chase = await loadEvaluationChaseState(input.ayCode);
+    if (!chase) return []; // T4 / no term → "—"
+    return (
+      kind === 'outstanding' ? chase.outstanding : chase.advisersBehind
+    ) as EvaluationDrillRow[];
+  }
+
   const all = await loadWriteupRows(input.ayCode);
   const scoped = applyAllowedSections(
     applyScope(all, input),
     input.allowedSectionIds ?? null
   );
 
-  const kind = rowKindForTarget(input.target);
   if (kind === 'writeup') {
     return applyTargetFilter(
       scoped,
@@ -440,11 +684,8 @@ export async function buildEvaluationDrillRows(
       input.segment ?? null
     ) as EvaluationDrillRow[];
   }
-  if (kind === 'section-rollup') {
-    return rollupBySection(scoped) as EvaluationDrillRow[];
-  }
-  // bucket
-  return rollupBuckets(scoped) as EvaluationDrillRow[];
+  // section-rollup
+  return rollupBySection(scoped) as EvaluationDrillRow[];
 }
 
 export async function buildAllRowSets(input: {
@@ -455,7 +696,6 @@ export async function buildAllRowSets(input: {
 }): Promise<{
   writeups: WriteupRow[];
   bySection: SectionWriteupRow[];
-  buckets: TimeToSubmitBucket[];
 }> {
   const all = await loadWriteupRows(input.ayCode);
   const scoped = applyAllowedSections(
@@ -465,7 +705,6 @@ export async function buildAllRowSets(input: {
   return {
     writeups: scoped,
     bySection: rollupBySection(scoped),
-    buckets: rollupBuckets(scoped),
   };
 }
 
@@ -481,23 +720,9 @@ function applyTargetFilter(
       return rows;
     case 'submitted':
       return rows.filter((r) => r.status === 'submitted');
-    case 'time-to-submit':
-      return rows.filter((r) => r.daysToSubmit != null);
-    case 'late':
-      return rows.filter((r) => r.daysToSubmit != null && r.daysToSubmit > 14);
     case 'submission-velocity-day':
       if (!segment) return rows;
       return rows.filter((r) => r.submittedAt?.slice(0, 10) === segment);
-    case 'time-to-submit-bucket': {
-      if (!segment) return rows.filter((r) => r.daysToSubmit != null);
-      const bucket = TIME_BUCKETS.find((b) => b.label === segment);
-      if (!bucket) return rows;
-      return rows.filter((r) => {
-        if (r.daysToSubmit == null) return false;
-        if (bucket.hi == null) return r.daysToSubmit >= bucket.lo;
-        return r.daysToSubmit >= bucket.lo && r.daysToSubmit <= bucket.hi;
-      });
-    }
     case 'writeups-by-section':
       return rows; // not used directly; handled at kind level
     default:
@@ -523,8 +748,9 @@ export type DrillColumnKey =
   | 'draft'
   | 'missing'
   | 'total'
-  | 'bucketLabel'
-  | 'bucketCount';
+  | 'adviserName'
+  | 'outstandingCount'
+  | 'sections';
 
 export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
   studentName: 'Student',
@@ -542,8 +768,9 @@ export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
   draft: 'Draft',
   missing: 'Missing',
   total: 'Total',
-  bucketLabel: 'Bucket',
-  bucketCount: 'Count',
+  adviserName: 'Form adviser',
+  outstandingCount: 'Outstanding',
+  sections: 'Section(s)',
 };
 
 const WRITEUP_COLUMNS: DrillColumnKey[] = [
@@ -565,7 +792,16 @@ const SECTION_COLUMNS: DrillColumnKey[] = [
   'missing',
   'total',
 ];
-const BUCKET_COLUMNS: DrillColumnKey[] = ['bucketLabel', 'bucketCount'];
+const OUTSTANDING_COLUMNS: DrillColumnKey[] = [
+  'studentName',
+  'sectionName',
+  'adviserName',
+];
+const ADVISER_BEHIND_COLUMNS: DrillColumnKey[] = [
+  'adviserName',
+  'outstandingCount',
+  'sections',
+];
 
 export function allColumnsForKind(
   kind: EvaluationDrillRowKind
@@ -575,8 +811,10 @@ export function allColumnsForKind(
       return WRITEUP_COLUMNS;
     case 'section-rollup':
       return SECTION_COLUMNS;
-    case 'bucket':
-      return BUCKET_COLUMNS;
+    case 'outstanding':
+      return OUTSTANDING_COLUMNS;
+    case 'adviser-behind':
+      return ADVISER_BEHIND_COLUMNS;
   }
 }
 
@@ -598,13 +836,6 @@ export function drillHeaderForTarget(
       };
     case 'submitted':
       return { eyebrow: 'Drill · Submitted', title: 'Submitted writeups' };
-    case 'time-to-submit':
-      return {
-        eyebrow: 'Drill · Days to submit',
-        title: 'Time-to-submit cohort',
-      };
-    case 'late':
-      return { eyebrow: 'Drill · Late', title: 'Submissions over 14 days' };
     case 'submission-velocity-day':
       return {
         eyebrow: 'Drill · Daily',
@@ -612,10 +843,15 @@ export function drillHeaderForTarget(
       };
     case 'writeups-by-section':
       return { eyebrow: 'Drill · By section', title: 'Writeups by section' };
-    case 'time-to-submit-bucket':
+    case 'outstanding-writeups':
       return {
-        eyebrow: 'Drill · Bucket',
-        title: segment ? `Bucket: ${segment}` : 'Time-to-submit buckets',
+        eyebrow: 'Drill · Outstanding',
+        title: 'Outstanding write-ups (this term)',
+      };
+    case 'advisers-behind':
+      return {
+        eyebrow: 'Drill · Advisers behind',
+        title: 'Form advisers behind (this term)',
       };
     default:
       return { eyebrow: 'Drill', title: 'Evaluation' };

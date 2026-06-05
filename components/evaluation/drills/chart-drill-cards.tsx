@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { BarChart3, Clock as ClockIcon } from 'lucide-react';
+import { BarChart3 } from 'lucide-react';
 
 import { ComparisonBarChart } from '@/components/dashboard/charts/comparison-bar-chart';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
@@ -15,11 +15,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
-import type {
-  SectionWriteupRow,
-  TimeToSubmitBucket,
-  WriteupRow,
-} from '@/lib/evaluation/drill';
+import type { SectionWriteupRow, WriteupRow } from '@/lib/evaluation/drill';
 
 type CommonProps = {
   ayCode: string;
@@ -27,7 +23,6 @@ type CommonProps = {
   rangeTo?: string;
   initialWriteups?: WriteupRow[];
   initialBySection?: SectionWriteupRow[];
-  initialBuckets?: TimeToSubmitBucket[];
 };
 
 type DailyPoint = { x: string; y: number };
@@ -172,66 +167,6 @@ export function WriteupsBySectionCard({
           initialFrom={rangeFrom}
           initialTo={rangeTo}
           initialBySection={initialBySection}
-          initialWriteups={initialWriteups}
-        />
-      )}
-    </Sheet>
-  );
-}
-
-// ─── Time-to-submit histogram → time-to-submit-bucket ───────────────────────
-
-export function TimeToSubmitHistogramCard({
-  data,
-  ayCode,
-  rangeFrom,
-  rangeTo,
-  initialBuckets,
-  initialWriteups,
-}: CommonProps & { data: TimeToSubmitBucket[] }) {
-  const [segment, setSegment] = React.useState<string | null>(null);
-  const empty = data.every((b) => b.count === 0);
-  return (
-    <Sheet open={!!segment} onOpenChange={(o) => !o && setSegment(null)}>
-      <Card>
-        <CardHeader>
-          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-            Time to submit
-          </CardDescription>
-          <CardTitle className="font-serif text-xl">
-            Days from open to submission
-          </CardTitle>
-          <CardAction>
-            <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              <ClockIcon className="size-4" />
-            </div>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          {empty ? (
-            <div className="flex h-[220px] flex-col items-center justify-center gap-2 text-center">
-              <ClockIcon className="size-6 text-muted-foreground/60" />
-              <p className="text-sm font-medium text-foreground">
-                No submitted writeups yet
-              </p>
-            </div>
-          ) : (
-            <ComparisonBarChart
-              data={data.map((b) => ({ category: b.label, current: b.count }))}
-              height={220}
-              onSegmentClick={setSegment}
-            />
-          )}
-        </CardContent>
-      </Card>
-      {segment && (
-        <EvaluationDrillSheet
-          target="time-to-submit-bucket"
-          segment={segment}
-          ayCode={ayCode}
-          initialFrom={rangeFrom}
-          initialTo={rangeTo}
-          initialBuckets={initialBuckets}
           initialWriteups={initialWriteups}
         />
       )}

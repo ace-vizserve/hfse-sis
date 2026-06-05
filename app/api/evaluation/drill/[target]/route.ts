@@ -8,12 +8,13 @@ import {
   drillHeaderForTarget,
   DRILL_COLUMN_LABELS,
   rowKindForTarget,
+  type AdviserBehindRow,
   type DrillColumnKey,
   type EvaluationDrillRow,
   type EvaluationDrillRowKind,
   type EvaluationDrillTarget,
+  type OutstandingWriteupRow,
   type SectionWriteupRow,
-  type TimeToSubmitBucket,
   type WriteupRow,
 } from '@/lib/evaluation/drill';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -21,12 +22,16 @@ import { createServiceClient } from '@/lib/supabase/service';
 const VALID_TARGETS: EvaluationDrillTarget[] = [
   'submission-status',
   'submitted',
-  'time-to-submit',
-  'late',
   'submission-velocity-day',
   'writeups-by-section',
-  'time-to-submit-bucket',
+  'outstanding-writeups',
+  'advisers-behind',
 ];
+
+const REGISTRAR_ONLY_TARGETS = new Set<EvaluationDrillTarget>([
+  'outstanding-writeups',
+  'advisers-behind',
+]);
 
 const ALLOWED_ROLES = [
   'teacher',
@@ -48,6 +53,12 @@ export async function GET(
     return NextResponse.json({ error: 'invalid_target' }, { status: 400 });
   }
   const target = rawTarget as EvaluationDrillTarget;
+
+  // Chase drills are registrar/oversight-only (KD #57) — never exposed to a
+  // form-adviser teacher.
+  if (REGISTRAR_ONLY_TARGETS.has(target) && !REGISTRAR_PLUS.has(guard.role)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
 
   const url = new URL(req.url);
   const ayCode = url.searchParams.get('ay');
@@ -200,13 +211,30 @@ function csvCell(
         return '';
     }
   }
-  // bucket
-  const r = row as TimeToSubmitBucket;
+  if (kind === 'outstanding') {
+    const r = row as OutstandingWriteupRow;
+    switch (key) {
+      case 'studentName':
+        return r.studentName;
+      case 'studentNumber':
+        return r.studentNumber;
+      case 'sectionName':
+        return r.sectionName;
+      case 'adviserName':
+        return r.adviserName ?? 'Unassigned section';
+      default:
+        return '';
+    }
+  }
+  // adviser-behind
+  const r = row as AdviserBehindRow;
   switch (key) {
-    case 'bucketLabel':
-      return r.label;
-    case 'bucketCount':
-      return r.count;
+    case 'adviserName':
+      return r.adviserName ?? 'Unassigned section';
+    case 'outstandingCount':
+      return r.outstanding;
+    case 'sections':
+      return r.sections;
     default:
       return '';
   }

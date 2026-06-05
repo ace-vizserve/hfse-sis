@@ -17,12 +17,13 @@ import {
   drillHeaderForTarget,
   DRILL_COLUMN_LABELS,
   rowKindForTarget,
+  type AdviserBehindRow,
   type DrillColumnKey,
   type EvaluationDrillRow,
   type EvaluationDrillRowKind,
   type EvaluationDrillTarget,
+  type OutstandingWriteupRow,
   type SectionWriteupRow,
-  type TimeToSubmitBucket,
   type WriteupRow,
 } from '@/lib/evaluation/drill';
 
@@ -34,7 +35,8 @@ export type EvaluationDrillSheetProps = {
   initialTo?: string;
   initialWriteups?: WriteupRow[];
   initialBySection?: SectionWriteupRow[];
-  initialBuckets?: TimeToSubmitBucket[];
+  initialOutstanding?: OutstandingWriteupRow[];
+  initialAdvisersBehind?: AdviserBehindRow[];
 };
 
 const CANONICAL_LEVEL_ORDER = [
@@ -332,29 +334,111 @@ function buildSectionColumns(
   return cols;
 }
 
-function buildBucketColumns(
+function AdviserNameCell({ name }: { name: string | null }) {
+  if (name) return <span className="font-medium">{name}</span>;
+  return (
+    <Badge variant="blocked" className={BADGE_BASE}>
+      Unassigned section
+    </Badge>
+  );
+}
+
+function buildOutstandingColumns(
   visible: DrillColumnKey[]
-): ColumnDef<TimeToSubmitBucket, unknown>[] {
-  const cols: ColumnDef<TimeToSubmitBucket, unknown>[] = [];
+): ColumnDef<OutstandingWriteupRow, unknown>[] {
+  const cols: ColumnDef<OutstandingWriteupRow, unknown>[] = [];
   for (const key of visible) {
     switch (key) {
-      case 'bucketLabel':
+      case 'studentName':
         cols.push({
-          id: 'bucketLabel',
-          accessorKey: 'label',
-          header: DRILL_COLUMN_LABELS.bucketLabel,
+          id: 'studentName',
+          accessorKey: 'studentName',
+          header: DRILL_COLUMN_LABELS.studentName,
           cell: ({ row }) => (
-            <span className="font-mono text-sm">{row.original.label}</span>
+            <div className="space-y-0.5">
+              {row.original.studentNumber ? (
+                <Link
+                  href={`/records/students/${encodeURIComponent(row.original.studentNumber)}`}
+                  className="font-medium text-foreground transition-colors hover:text-primary hover:underline underline-offset-4"
+                >
+                  {row.original.studentName}
+                </Link>
+              ) : (
+                <span className="font-medium text-foreground">
+                  {row.original.studentName}
+                </span>
+              )}
+              {row.original.studentNumber && (
+                <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  {row.original.studentNumber}
+                </div>
+              )}
+            </div>
           ),
         });
         break;
-      case 'bucketCount':
+      case 'sectionName':
         cols.push({
-          id: 'bucketCount',
-          accessorKey: 'count',
-          header: DRILL_COLUMN_LABELS.bucketCount,
+          id: 'sectionName',
+          accessorKey: 'sectionName',
+          header: DRILL_COLUMN_LABELS.sectionName,
           cell: ({ row }) => (
-            <span className="font-mono tabular-nums">{row.original.count}</span>
+            <span className="text-sm">{row.original.sectionName}</span>
+          ),
+        });
+        break;
+      case 'adviserName':
+        cols.push({
+          id: 'adviserName',
+          accessorKey: 'adviserName',
+          header: DRILL_COLUMN_LABELS.adviserName,
+          cell: ({ row }) => (
+            <AdviserNameCell name={row.original.adviserName} />
+          ),
+        });
+        break;
+    }
+  }
+  return cols;
+}
+
+function buildAdviserBehindColumns(
+  visible: DrillColumnKey[]
+): ColumnDef<AdviserBehindRow, unknown>[] {
+  const cols: ColumnDef<AdviserBehindRow, unknown>[] = [];
+  for (const key of visible) {
+    switch (key) {
+      case 'adviserName':
+        cols.push({
+          id: 'adviserName',
+          accessorKey: 'adviserName',
+          header: DRILL_COLUMN_LABELS.adviserName,
+          cell: ({ row }) => (
+            <AdviserNameCell name={row.original.adviserName} />
+          ),
+        });
+        break;
+      case 'outstandingCount':
+        cols.push({
+          id: 'outstandingCount',
+          accessorKey: 'outstanding',
+          header: DRILL_COLUMN_LABELS.outstandingCount,
+          cell: ({ row }) => (
+            <span className="font-mono tabular-nums text-destructive">
+              {row.original.outstanding}
+            </span>
+          ),
+        });
+        break;
+      case 'sections':
+        cols.push({
+          id: 'sections',
+          accessorKey: 'sections',
+          header: DRILL_COLUMN_LABELS.sections,
+          cell: ({ row }) => (
+            <span className="text-sm text-muted-foreground">
+              {row.original.sections || '—'}
+            </span>
           ),
         });
         break;
@@ -372,15 +456,23 @@ export function EvaluationDrillSheet(props: EvaluationDrillSheetProps) {
     initialTo,
     initialWriteups,
     initialBySection,
-    initialBuckets,
+    initialOutstanding,
+    initialAdvisersBehind,
   } = props;
 
   const kind = rowKindForTarget(target);
   const seedRows: EvaluationDrillRow[] = React.useMemo(() => {
     if (kind === 'writeup') return initialWriteups ?? [];
     if (kind === 'section-rollup') return initialBySection ?? [];
-    return initialBuckets ?? [];
-  }, [kind, initialWriteups, initialBySection, initialBuckets]);
+    if (kind === 'outstanding') return initialOutstanding ?? [];
+    return initialAdvisersBehind ?? [];
+  }, [
+    kind,
+    initialWriteups,
+    initialBySection,
+    initialOutstanding,
+    initialAdvisersBehind,
+  ]);
 
   const [rows, setRows] = React.useState<EvaluationDrillRow[]>(seedRows);
   const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>([]);
@@ -428,15 +520,17 @@ export function EvaluationDrillSheet(props: EvaluationDrillSheetProps) {
     return Array.from(s).sort();
   }, [rows, kind]);
 
+  // Level facet only applies where rows carry a `level` field.
+  const hasLevel = kind === 'writeup' || kind === 'section-rollup';
   const levelOptions = React.useMemo(() => {
-    if (kind === 'bucket') return undefined;
+    if (!hasLevel) return undefined;
     const s = new Set<string>();
     for (const r of rows)
       s.add((r as { level?: string | null }).level ?? 'Unknown');
     const arr = Array.from(s);
     arr.sort(compareLevels);
     return arr;
-  }, [rows, kind]);
+  }, [rows, hasLevel]);
 
   const preFiltered = React.useMemo(() => {
     let out = rows;
@@ -444,14 +538,14 @@ export function EvaluationDrillSheet(props: EvaluationDrillSheetProps) {
       const set = new Set(selectedStatuses);
       out = (out as WriteupRow[]).filter((r) => set.has(r.status));
     }
-    if (selectedLevels.length > 0 && kind !== 'bucket') {
+    if (selectedLevels.length > 0 && hasLevel) {
       const set = new Set(selectedLevels);
       out = out.filter((r) =>
         set.has((r as { level?: string | null }).level ?? 'Unknown')
       );
     }
     return out;
-  }, [rows, selectedStatuses, selectedLevels, kind]);
+  }, [rows, selectedStatuses, selectedLevels, kind, hasLevel]);
 
   const columns = React.useMemo(() => {
     if (kind === 'writeup')
@@ -464,7 +558,12 @@ export function EvaluationDrillSheet(props: EvaluationDrillSheetProps) {
         EvaluationDrillRow,
         unknown
       >[];
-    return buildBucketColumns(visibleColumnKeys) as ColumnDef<
+    if (kind === 'outstanding')
+      return buildOutstandingColumns(visibleColumnKeys) as ColumnDef<
+        EvaluationDrillRow,
+        unknown
+      >[];
+    return buildAdviserBehindColumns(visibleColumnKeys) as ColumnDef<
       EvaluationDrillRow,
       unknown
     >[];

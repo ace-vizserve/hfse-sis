@@ -12,6 +12,7 @@ import {
   type RangeResult,
 } from '@/lib/dashboard/range';
 import type { VelocityPoint } from '@/lib/dashboard/velocity';
+import { loadEvaluationChaseState } from '@/lib/evaluation/drill';
 import {
   daysUntilPtc,
   findPtcForWriteupTerm,
@@ -113,24 +114,14 @@ function loadWriteups(ayCode: string) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// KPIs: submission %, advisers complete (inferred as submissions within term),
-// avg time-to-submit, late submissions.
+// KPIs: submission %, submitted count, expected count (roster-based).
 // ──────────────────────────────────────────────────────────────────────────
 
 export type EvaluationKpis = {
   submissionPct: number;
   submitted: number;
   expected: number; // total students × T1-T3 terms
-  medianTimeToSubmitDays: number | null;
-  lateSubmissions: number;
 };
-
-function medianDays(samples: number[]): number | null {
-  if (!samples.length) return null;
-  const s = samples.slice().sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 === 0 ? Math.round((s[mid - 1] + s[mid]) / 2) : s[mid];
-}
 
 function kpisFrom(
   writeups: WriteupRow[],
@@ -149,24 +140,10 @@ function kpisFrom(
   const expected = totalStudents * termCount;
   const submissionPct = expected > 0 ? (submitted / expected) * 100 : 0;
 
-  const samples: number[] = [];
-  let late = 0;
-  for (const w of inRange) {
-    if (!w.submitted || !w.submitted_at) continue;
-    const start = Date.parse(w.created_at);
-    const end = Date.parse(w.submitted_at);
-    if (Number.isNaN(start) || Number.isNaN(end) || end < start) continue;
-    const days = Math.round((end - start) / 86_400_000);
-    samples.push(days);
-    if (days > 14) late += 1;
-  }
-
   return {
     submissionPct,
     submitted,
     expected,
-    medianTimeToSubmitDays: medianDays(samples),
-    lateSubmissions: late,
   };
 }
 
@@ -301,6 +278,43 @@ export function getSubmissionVelocityRange(
     ],
     { revalidate: CACHE_TTL_SECONDS, tags: tag(input.ayCode) }
   )(input);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Chase KPIs — live-state, current-term-scoped (KD #124). NOT date-windowed,
+// so the count matches its drill exactly (count == drill). Registrar/oversight
+// only. T4 → null (no FCA write-up, KD #49) → the dashboard renders "—".
+//
+// Delegates to `loadEvaluationChaseState` (lib/evaluation/drill.ts) so the
+// card count and the drill row set come from one source of truth.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type EvaluationChaseKpis = {
+  /** True when there is a current T1–T3 term (false on T4 / no term). */
+  available: boolean;
+  outstandingWriteups: number;
+  advisersBehind: number;
+  hasUnassignedSection: boolean;
+};
+
+export async function getEvaluationChaseKpis(
+  ayCode: string
+): Promise<EvaluationChaseKpis> {
+  const chase = await loadEvaluationChaseState(ayCode);
+  if (!chase) {
+    return {
+      available: false,
+      outstandingWriteups: 0,
+      advisersBehind: 0,
+      hasUnassignedSection: false,
+    };
+  }
+  return {
+    available: true,
+    outstandingWriteups: chase.outstanding.length,
+    advisersBehind: chase.advisersBehind.length,
+    hasUnassignedSection: chase.hasUnassignedSection,
+  };
 }
 
 // ──────────────────────────────────────────────────────────────────────────

@@ -57,20 +57,6 @@ export default async function EvaluationComparePage({
       format: 'number',
       getValue: (d) => d.expected,
     },
-    {
-      key: 'medianTimeToSubmitDays',
-      label: 'Median time to submit',
-      format: 'days',
-      getValue: (d) => d.medianTimeToSubmitDays,
-      direction: 'lowerIsBetter',
-    },
-    {
-      key: 'lateSubmissions',
-      label: 'Late submissions',
-      format: 'number',
-      getValue: (d) => d.lateSubmissions,
-      direction: 'lowerIsBetter',
-    },
   ];
 
   return (

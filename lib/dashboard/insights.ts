@@ -507,10 +507,9 @@ export type EvaluationInsightInput = {
   submissionPct: number;
   submitted: number;
   expected: number;
-  medianTimeToSubmitDays: number | null;
-  /** Null when the user hasn't opted into a comparison. */
-  medianTimeToSubmitDaysPrior?: number | null;
-  lateSubmissions: number;
+  /** Live-state chase signals (current term). Undefined on T4 / no term. */
+  outstandingWriteups?: number;
+  advisersBehind?: number;
 };
 
 export function evaluationInsights(input: EvaluationInsightInput): Insight[] {
@@ -538,28 +537,16 @@ export function evaluationInsights(input: EvaluationInsightInput): Insight[] {
     }
   }
 
-  if (input.lateSubmissions >= 1) {
+  if (input.outstandingWriteups != null && input.outstandingWriteups >= 1) {
+    const advisers = input.advisersBehind ?? 0;
     out.push({
-      severity: input.lateSubmissions >= 5 ? 'warn' : 'info',
-      title: `${pluralize(input.lateSubmissions, 'late submission', 'late submissions')}`,
-      detail: 'Submitted >14 days after term opened',
+      severity: input.outstandingWriteups >= 5 ? 'warn' : 'info',
+      title: `${pluralize(input.outstandingWriteups, 'write-up outstanding', 'write-ups outstanding')}`,
+      detail:
+        advisers > 0
+          ? `Across ${pluralize(advisers, 'form adviser', 'form advisers')} this term`
+          : 'No submitted, non-empty write-up yet this term',
     });
-  }
-
-  if (
-    input.medianTimeToSubmitDays != null &&
-    input.medianTimeToSubmitDaysPrior != null
-  ) {
-    const diff =
-      input.medianTimeToSubmitDays - input.medianTimeToSubmitDaysPrior;
-    if (Math.abs(diff) >= 2) {
-      const slower = diff > 0;
-      out.push({
-        severity: slower ? 'warn' : 'good',
-        title: slower ? 'Slower turnaround' : 'Faster turnaround',
-        detail: `${input.medianTimeToSubmitDays}d median vs ${input.medianTimeToSubmitDaysPrior}d prior`,
-      });
-    }
   }
 
   return sortInsights(out).slice(0, 4);
