@@ -4,6 +4,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { hashString, mulberry32 } from './random';
+import {
+  WITHDRAWAL_REASON_VALUES,
+  type WithdrawalReason,
+} from '@/lib/schemas/enrolment';
 
 // Movements seeder — writes synthetic audit_log rows so /records/movements
 // renders populated demo data on a freshly-seeded environment.
@@ -48,7 +52,10 @@ export async function seedMovements(
 
   // Term windows — used to anchor each event's date to a plausible point in
   // the AY. Transfers land in T1 (already-finished). Withdrawals spread
-  // across T1+T2. Late-enrols cluster in early T2.
+  // across T1→T2. Late-enrols cluster in early T2. All term windows are kept
+  // so each event's termNumber/termLabel can be DERIVED from its synthetic
+  // date — matching the real routes, which resolve the term from the
+  // transfer/enrolment date rather than hardcoding it.
   const { data: termRows } = await service
     .from('terms')
     .select('id, term_number, start_date, end_date')
@@ -65,17 +72,40 @@ export async function seedMovements(
     return 0;
   }
 
-  // Roster + section + level for the test AY.
+  // Resolve which term a yyyy-MM-dd date falls in (window-contains match),
+  // mirroring lib/sis/terms.ts::getTermForDate. Returns null for dates that
+  // sit in a between-terms break. Used to derive the audit context's
+  // termNumber/termLabel from the event date instead of hardcoding it.
+  const termForDate = (
+    date: string
+  ): { termNumber: number; termLabel: string } | null => {
+    for (const t of terms) {
+      if (!t.start_date || !t.end_date) continue;
+      if (date >= t.start_date && date <= t.end_date) {
+        return { termNumber: t.term_number, termLabel: `T${t.term_number}` };
+      }
+    }
+    return null;
+  };
+
+  // Roster + section + level + student name for the test AY. The student name
+  // join lets transfer rows carry `context.studentName` like the real route
+  // does (transfer-section/route.ts writes result.studentName) — the movements
+  // loader reads ctx.studentName first and only falls back to an AY-apps lookup
+  // when it's absent (lib/sis/movements.ts:302/671).
   const { data: ssRows } = await service
     .from('section_students')
     .select(
-      'id, enrolee_number, sections!inner(id, name, academic_year_id, levels!inner(code, label))'
+      'id, enrolee_number, students!inner(first_name, last_name), sections!inner(id, name, academic_year_id, levels!inner(code, label))'
     )
     .eq('sections.academic_year_id', testAy.id);
 
   type SsRow = {
     id: string;
     enrolee_number: string | null;
+    students:
+      | { first_name: string | null; last_name: string | null }
+      | { first_name: string | null; last_name: string | null }[];
     sections:
       | {
           id: string;
@@ -95,9 +125,13 @@ export async function seedMovements(
   const roster = ((ssRows ?? []) as SsRow[]).map((r) => {
     const sec = Array.isArray(r.sections) ? r.sections[0] : r.sections;
     const lvl = Array.isArray(sec.levels) ? sec.levels[0] : sec.levels;
+    const stu = Array.isArray(r.students) ? r.students[0] : r.students;
+    const studentName =
+      `${stu?.first_name ?? ''} ${stu?.last_name ?? ''}`.trim() || '(unnamed)';
     return {
       id: r.id,
       enroleeNumber: r.enrolee_number,
+      studentName,
       sectionId: sec.id,
       sectionName: sec.name,
       // levelCode for internal grouping (same-level transfer pairing per
@@ -176,7 +210,12 @@ export async function seedMovements(
     );
     if (siblings.length === 0) continue;
     const target = pick(siblings);
-    const { date, iso } = dateInWindow(t1.start_date, t1.end_date);
+    // Spread transfers across the T1→T2 span so the derived term varies
+    // (the real route resolves termNumber from the transfer date, and the
+    // movements loader re-derives it via termForDateInPreloaded — a single
+    // hardcoded T1 would be both unfaithful and immediately overwritten).
+    const { date, iso } = dateInWindow(t1.start_date, t2.end_date);
+    const term = termForDate(date);
     inserts.push({
       actor_id: null,
       actor_email: SEED_ACTOR_EMAIL,
@@ -186,14 +225,17 @@ export async function seedMovements(
       context: {
         ay_code: testAy.ay_code,
         enroleeNumber: s.enroleeNumber,
+        // studentName mirrors the real transfer route's context so the
+        // movements feed renders the name without an AY-apps fallback.
+        studentName: s.studentName,
         fromSection: s.sectionName,
         fromLevel: s.levelLabel,
         toSection: target.name,
         toLevel: s.levelLabel,
         targetSectionId: target.id,
         transferDate: date,
-        termNumber: 1,
-        termLabel: 'T1',
+        termNumber: term?.termNumber ?? null,
+        termLabel: term?.termLabel ?? null,
       },
       created_at: iso,
     });

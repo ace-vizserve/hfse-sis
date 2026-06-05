@@ -187,6 +187,10 @@ export async function seedPopulated(
   //          so it must run after both 0b and 0c. ----
   result.documents_inserted = await seedAdmissionsDocuments(service, testAy);
 
+  // ---- 0d-ii. P-Files revision history — a few sample prior versions so the
+  //          revision dialog isn't empty in test (enrolled only, KD #71). ----
+  await seedPFileRevisions(service, testAy);
+
   // ---- 0e. Run the sync: buildSyncPlan(rows, snapshot) → commit students +
   //          section_students + back-write enrolee_number. Withdrawn/Cancelled
   //          personas are excluded from the roster rows so they never create an
@@ -605,6 +609,12 @@ async function seedGradeEntries(
     letter_grade: string | null;
     annual_letter_grade: string | null;
     created_at: string;
+    // Real entry saves stamp updated_at = now() on every PATCH (the entries
+    // route). The DB default is now() (seed-time, clustered), which makes
+    // updated_at-keyed grade features look like every grade was last touched
+    // at the instant the env was seeded. Set it to the SAME per-entry
+    // term-spread value as created_at so the seeded picture is faithful.
+    updated_at: string;
   };
   const inserts: InsertRow[] = [];
 
@@ -774,6 +784,9 @@ async function seedGradeEntries(
     const sheetTermNumber = termById.get(sheet.term_id)?.term_number ?? 1;
 
     for (const e of enrolments) {
+      // One per-entry timestamp shared by created_at AND updated_at — mirrors
+      // a real save (the entries route stamps updated_at = now() each PATCH).
+      const entryTimestamp = createdAtForTerm(sheet.term_id);
       if (isFullTerm) {
         // Full term (T1, or all 4 terms in closed-AY mode): full WW + PT
         // + QA, computed quarterly.
@@ -814,7 +827,8 @@ async function seedGradeEntries(
           // T4 non-examinable: always seed 'Passed' (standard year-end final
           // grade per KD #100). N/A rows stay null — they have no final grade.
           annual_letter_grade: isNonExam && isT4 && !naRoll ? 'Passed' : null,
-          created_at: createdAtForTerm(sheet.term_id),
+          created_at: entryTimestamp,
+          updated_at: entryTimestamp,
         });
       } else {
         // T2 (active): seed a PARTIAL entry — one WW slot only, empty
@@ -852,7 +866,8 @@ async function seedGradeEntries(
           is_na: false,
           letter_grade: null,
           annual_letter_grade: null,
-          created_at: createdAtForTerm(sheet.term_id),
+          created_at: entryTimestamp,
+          updated_at: entryTimestamp,
         });
       }
     }
@@ -1087,11 +1102,20 @@ async function seedAttendanceSummary(
   return { daily: insertedDaily, rollups: rollupCount };
 }
 
-// Seeds evaluation writeups. Active-AY mode (default): T1 5 submitted +
-// T2 3 partial (2 submitted ~7 days ago + 1 draft); T3+T4 untouched.
-// Closed-AY mode (allTermsFull=true): T1, T2, T3 each get 5 submitted
-// writeups (submitted_at = each term's end_date); T4 stays empty per
-// KD #49 (no FCA comment on T4 by design).
+// Seeds evaluation writeups, faithful to the real adviser write path
+// (PATCH /api/evaluation/writeups): every row carries `created_by` (the
+// section's form adviser), and `submitted_at` is stamped at the moment of
+// submission — which real advisers do spread across the term, NOT all at the
+// term-end instant.
+//
+// Closed-AY mode (allTermsFull=true): T1, T2, T3 each get all enrolled
+// students' submitted writeups, submitted_at spread across the term window;
+// T4 stays empty per KD #49 (no FCA comment on T4 by design).
+//
+// Active-AY mode (default): T1 fully submitted (closed term, spread across
+// the window). T2 is the live term — a realistic mid-term mix across the WHOLE
+// roster (~65% submitted, the rest still drafts), each submission spread
+// between the term start and today — not just 3 token rows.
 async function seedEvaluationWriteups(
   service: SupabaseClient,
   testAy: { id: string; ay_code: string },
@@ -1100,13 +1124,14 @@ async function seedEvaluationWriteups(
   const targetTermNumbers = allTermsFull ? [1, 2, 3] : [1, 2];
   const { data: termRows } = await service
     .from('terms')
-    .select('id, term_number, end_date')
+    .select('id, term_number, start_date, end_date')
     .eq('academic_year_id', testAy.id)
     .in('term_number', targetTermNumbers)
     .order('term_number');
   const terms = (termRows ?? []) as Array<{
     id: string;
     term_number: number;
+    start_date: string | null;
     end_date: string | null;
   }>;
   if (terms.length === 0) return 0;
@@ -1124,6 +1149,24 @@ async function seedEvaluationWriteups(
   const sectionIds = (sections ?? []).map((r) => (r as { id: string }).id);
   if (sectionIds.length === 0) return 0;
 
+  // created_by fidelity — the real upsert stamps the acting adviser's user id.
+  // Resolve the form adviser per section from teacher_assignments (seeded in
+  // step 3b, before this pass). Null when a section has no adviser (the column
+  // is nullable; the real route would also write null if somehow unset).
+  const { data: faRows } = await service
+    .from('teacher_assignments')
+    .select('section_id, teacher_user_id')
+    .eq('role', 'form_adviser')
+    .in('section_id', sectionIds);
+  const adviserBySection = new Map<string, string>();
+  for (const r of (faRows ?? []) as Array<{
+    section_id: string;
+    teacher_user_id: string;
+  }>) {
+    if (!adviserBySection.has(r.section_id))
+      adviserBySection.set(r.section_id, r.teacher_user_id);
+  }
+
   const rand = mulberry32(hashString(`${testAy.ay_code}:writeups`));
   const TEMPLATES = [
     'Shows steady improvement this term. Participates well in group activities and demonstrates a strong sense of responsibility during classroom duties.',
@@ -1140,90 +1183,94 @@ async function seedEvaluationWriteups(
     writeup: string;
     submitted: boolean;
     submitted_at: string | null;
+    created_by: string | null;
   }> = [];
 
-  // T1 timestamp: prefer the term's end_date (closed-term semantics);
-  // fall back to now() if the AY hasn't filled term dates yet.
-  const t1SubmittedAt =
-    t1 && t1.end_date
-      ? `${t1.end_date}T17:00:00+08:00`
-      : new Date().toISOString();
-  // T2 "submitted recently" timestamp: today − 7 days.
-  const t2SubmittedAt = new Date(
-    Date.now() - 7 * 24 * 60 * 60 * 1000
-  ).toISOString();
+  // Deterministic submitted_at spread within a term window, matching how a real
+  // adviser files write-ups across the term rather than all at one instant.
+  // Closed term: anywhere in [start, end]. Active term (start <= today <= end):
+  // anywhere in [start, today]. Falls back to a fixed end-of-term stamp / now()
+  // when the term lacks dates.
+  const todayMs = Date.now();
+  const submittedAtFor = (term: {
+    start_date: string | null;
+    end_date: string | null;
+  }): string => {
+    if (!term.start_date) {
+      return term.end_date
+        ? `${term.end_date}T17:00:00+08:00`
+        : new Date().toISOString();
+    }
+    const startMs = new Date(`${term.start_date}T08:00:00+08:00`).getTime();
+    const endMs = term.end_date
+      ? new Date(`${term.end_date}T17:00:00+08:00`).getTime()
+      : todayMs;
+    // Active term currently in progress → cap the upper bound at today so we
+    // never stamp a future submission.
+    const upperMs = Math.min(endMs, Math.max(startMs, todayMs));
+    if (upperMs <= startMs) return new Date(startMs).toISOString();
+    return new Date(
+      startMs + Math.floor(rand() * (upperMs - startMs))
+    ).toISOString();
+  };
+
+  // Helper — push one student's writeup for a term, with created_at-spread
+  // submitted_at when submitted (null when draft).
+  const pushWriteup = (
+    term: { id: string; start_date: string | null; end_date: string | null },
+    sectionId: string,
+    studentId: string,
+    submitted: boolean
+  ) => {
+    const tmpl = TEMPLATES[Math.floor(rand() * TEMPLATES.length)];
+    writeupRows.push({
+      term_id: term.id,
+      student_id: studentId,
+      section_id: sectionId,
+      writeup: tmpl,
+      submitted,
+      submitted_at: submitted ? submittedAtFor(term) : null,
+      created_by: adviserBySection.get(sectionId) ?? null,
+    });
+  };
 
   for (const sectionId of sectionIds) {
-    // T1 — all enrolled students' submitted writeups per section (end-of-term snapshot).
+    // T1 — all enrolled students' submitted writeups (closed term; submitted_at
+    // spread across the T1 window).
     if (t1) {
       const { data: enrolments } = await service
         .from('section_students')
         .select('student_id')
         .eq('section_id', sectionId);
       const students = (enrolments ?? []) as Array<{ student_id: string }>;
-      for (const s of students) {
-        const tmpl = TEMPLATES[Math.floor(rand() * TEMPLATES.length)];
-        writeupRows.push({
-          term_id: t1.id,
-          student_id: s.student_id,
-          section_id: sectionId,
-          writeup: tmpl,
-          submitted: true,
-          submitted_at: t1SubmittedAt,
-        });
-      }
+      for (const s of students) pushWriteup(t1, sectionId, s.student_id, true);
     }
 
-    // T2 — closed-AY: all enrolled students' submitted writeups (term-end snapshot, mirrors T1).
-    //      active-AY: 3 writeups, 2 submitted ~7 days ago + 1 still draft.
+    // T2 — closed-AY: all enrolled students' submitted writeups (mirrors T1).
+    //      active-AY: live mid-term mix across the WHOLE roster — ~65%
+    //      submitted, the rest still drafts (submitted_at null), submissions
+    //      spread between term start and today.
     if (t2) {
-      const enrolQuery = service
+      const { data: enrolments } = await service
         .from('section_students')
         .select('student_id')
         .eq('section_id', sectionId);
-      const { data: enrolments } = allTermsFull
-        ? await enrolQuery
-        : await enrolQuery.limit(3);
       const students = (enrolments ?? []) as Array<{ student_id: string }>;
-      const t2EndStamp =
-        allTermsFull && t2.end_date
-          ? `${t2.end_date}T17:00:00+08:00`
-          : t2SubmittedAt;
-      students.forEach((s, idx) => {
-        const tmpl = TEMPLATES[Math.floor(rand() * TEMPLATES.length)];
-        const isDraft = !allTermsFull && idx === 2;
-        writeupRows.push({
-          term_id: t2.id,
-          student_id: s.student_id,
-          section_id: sectionId,
-          writeup: tmpl,
-          submitted: !isDraft,
-          submitted_at: isDraft ? null : t2EndStamp,
-        });
+      students.forEach((s) => {
+        // Closed-AY: every T2 write-up submitted. Active-AY: ~65% submitted.
+        const submitted = allTermsFull || rand() < 0.65;
+        pushWriteup(t2, sectionId, s.student_id, submitted);
       });
     }
 
-    // T3 (closed-AY only) — all enrolled students' submitted writeups, mirrors T1.
+    // T3 (closed-AY only) — all enrolled students' submitted writeups (mirrors T1).
     if (allTermsFull && t3) {
       const { data: enrolments } = await service
         .from('section_students')
         .select('student_id')
         .eq('section_id', sectionId);
       const students = (enrolments ?? []) as Array<{ student_id: string }>;
-      const t3EndStamp = t3.end_date
-        ? `${t3.end_date}T17:00:00+08:00`
-        : new Date().toISOString();
-      for (const s of students) {
-        const tmpl = TEMPLATES[Math.floor(rand() * TEMPLATES.length)];
-        writeupRows.push({
-          term_id: t3.id,
-          student_id: s.student_id,
-          section_id: sectionId,
-          writeup: tmpl,
-          submitted: true,
-          submitted_at: t3EndStamp,
-        });
-      }
+      for (const s of students) pushWriteup(t3, sectionId, s.student_id, true);
     }
   }
 
@@ -2303,23 +2350,61 @@ async function seedPublication(
     published_by: string;
   }> = [];
 
-  for (const sectionId of seededSectionIds) {
-    for (const term of terms) {
-      const baseDate = term.end_date
-        ? new Date(`${term.end_date}T08:00:00+08:00`)
-        : new Date();
-      const publishUntil = new Date(
-        baseDate.getTime() + 90 * 24 * 60 * 60 * 1000
-      );
-      publications.push({
-        section_id: sectionId,
-        term_id: term.id,
-        publish_from: baseDate.toISOString(),
-        publish_until: publishUntil.toISOString(),
-        published_by: 'test-seeder@hfse.edu.sg',
-      });
-    }
+  // Real registrars publish SELECTIVELY with VARIED windows — not every
+  // (section × term) at a fixed 90-day window. Faithful seeding:
+  //   · leave a few (section × term) windows unpublished so the parent
+  //     "not currently published" path is exercised;
+  //   · vary publish_until across a short (~7d), normal (~30d / ~90d) and
+  //     open/long (~365d) window so window-edge cases are covered.
+  // Deterministic + idempotent: the skip + window choices are POSITION-based
+  // (not RNG-based), keyed on a stable iteration order, so a re-run makes the
+  // identical choices and the upsert's ignoreDuplicates leaves rows intact.
+  //
+  // Position-based (rather than probabilistic) skip is deliberate: with as few
+  // as 3 candidate windows (active-AY = 3 sections × T1), a probabilistic skip
+  // could leave ALL or NONE unpublished and lose path coverage. The rule below
+  // guarantees BOTH paths are exercised whenever there are ≥2 windows: skip
+  // every Nth window, leaving the rest published.
+  const WINDOW_DAYS = [7, 30, 90, 365] as const;
+  // Sort section ids for stable iteration order regardless of query ordering,
+  // so the skip pattern + window cycle are byte-for-byte reproducible.
+  const orderedSectionIds = [...seededSectionIds].sort();
+  // Flatten (section × term) candidates in stable order so the skip stride +
+  // window cycle apply across the whole grid, not per-section.
+  const candidates: Array<{
+    sectionId: string;
+    term: (typeof terms)[number];
+  }> = [];
+  for (const sectionId of orderedSectionIds) {
+    for (const term of terms) candidates.push({ sectionId, term });
   }
+  // Skip every 4th window (positions 3, 7, 11, …) — leaves ~75% published and
+  // guarantees at least one unpublished once there are ≥4 windows; with 2–3
+  // windows none is skipped (publishing all keeps the common path covered, and
+  // the unsynced/withdrawn personas already exercise other empty states).
+  const SKIP_STRIDE = 4;
+  let windowCursor = 0;
+  candidates.forEach((c, idx) => {
+    const skip =
+      candidates.length >= SKIP_STRIDE && (idx + 1) % SKIP_STRIDE === 0;
+    if (skip) return;
+    const windowDays = WINDOW_DAYS[windowCursor % WINDOW_DAYS.length];
+    windowCursor += 1;
+    const baseDate = c.term.end_date
+      ? new Date(`${c.term.end_date}T08:00:00+08:00`)
+      : new Date();
+    const publishUntil = new Date(
+      baseDate.getTime() + windowDays * 24 * 60 * 60 * 1000
+    );
+    publications.push({
+      section_id: c.sectionId,
+      term_id: c.term.id,
+      publish_from: baseDate.toISOString(),
+      publish_until: publishUntil.toISOString(),
+      published_by: 'test-seeder@hfse.edu.sg',
+    });
+  });
+  if (publications.length === 0) return 0;
 
   const { error } = await service
     .from('report_card_publications')
@@ -3102,6 +3187,81 @@ async function reconcileEnrolled(
 //
 // Idempotent — fills in document rows only for enroleeNumbers that
 // don't have one yet, so re-runs after a partial seed complete the set.
+// Seed a handful of p_file_revisions rows so the P-Files revision-history
+// dialog shows sample prior versions in test. Real revisions are written by
+// the upload route + the parent-portal re-upload trigger (KD #36/#63); this
+// mirrors that row shape (migrations 011 + 033). Enrolled students only
+// (KD #71). Deterministic (seeded RNG) + idempotent (skips if this AY already
+// has rows).
+async function seedPFileRevisions(
+  service: SupabaseClient,
+  testAy: { id: string; ay_code: string }
+): Promise<number> {
+  const prefix = prefixFor(testAy.ay_code);
+  const statusTable = `${prefix}_enrolment_status`;
+
+  const { count: existing } = await service
+    .from('p_file_revisions')
+    .select('id', { count: 'exact', head: true })
+    .eq('ay_code', testAy.ay_code);
+  if ((existing ?? 0) > 0) return 0;
+
+  const { data: statusData, error } = await service
+    .from(statusTable)
+    .select('enroleeNumber, applicationStatus')
+    .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)']);
+  if (error || !statusData) return 0;
+  const enrolees = (statusData as Array<{ enroleeNumber: string | null }>)
+    .map((r) => r.enroleeNumber)
+    .filter((n): n is string => !!n)
+    .sort();
+  if (enrolees.length === 0) return 0;
+
+  const rand = mulberry32(hashString(`${testAy.ay_code}:pfile-revisions`));
+  const ARCHIVE_URL =
+    'https://vnhklhppftebbcuupfjw.supabase.co/storage/v1/object/public/parent-portal/ay2025/documents/1766798602565_Sample%20document.pdf';
+  const SLOTS = ['passport', 'medical', 'birthCert', 'idPicture', 'pass'];
+  const SOURCES = ['pfile-upload', 'parent-portal', 'sis-direct'] as const;
+
+  const rows: Array<Record<string, unknown>> = [];
+  for (const enroleeNumber of enrolees.slice(0, 6)) {
+    const revCount = rand() < 0.4 ? 2 : 1;
+    for (let r = 0; r < revCount; r += 1) {
+      const slot = SLOTS[Math.floor(rand() * SLOTS.length)];
+      const source = SOURCES[Math.floor(rand() * SOURCES.length)];
+      const daysAgo = 10 + Math.floor(rand() * 110);
+      const replacedAt = new Date(
+        Date.now() - daysAgo * 86_400_000
+      ).toISOString();
+      rows.push({
+        ay_code: testAy.ay_code,
+        enrolee_number: enroleeNumber,
+        slot_key: slot,
+        // previous_url is the dedupe key (partial unique index, migration 033);
+        // keep it unique per row so multiple revisions never collide.
+        previous_url: `${ARCHIVE_URL}?prev=${enroleeNumber}-${slot}-${r}`,
+        archived_url: ARCHIVE_URL,
+        archived_path: `${prefix}/${enroleeNumber}/${slot}/revisions/seed-${r}.pdf`,
+        status_snapshot: 'Valid',
+        source,
+        note: r === 0 ? 'Replaced with an updated copy.' : null,
+        replaced_by_email: 'p-file.seed@hfse.test',
+        replaced_at: replacedAt,
+      });
+    }
+  }
+  if (rows.length === 0) return 0;
+  const { error: insErr } = await service.from('p_file_revisions').insert(rows);
+  if (insErr) {
+    console.error(
+      '[populated seeder] p_file_revisions insert failed:',
+      insErr.message
+    );
+    return 0;
+  }
+  return rows.length;
+}
+
 async function seedAdmissionsDocuments(
   service: SupabaseClient,
   testAy: { id: string; ay_code: string }

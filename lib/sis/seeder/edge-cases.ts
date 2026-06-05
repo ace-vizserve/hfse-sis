@@ -140,12 +140,42 @@ export async function seedEdgeCases(
             ww_scores: null,
             pt_scores: null,
             qa_score: null,
-            ww_total: null,
-            pt_total: null,
+            // Clear the server-computed columns too. ww_total/pt_total do NOT
+            // exist on grade_entries (they live on grading_sheets) — PostgREST
+            // silently ignores unknown columns, so the stale computed values
+            // would otherwise survive the "nullify" and the proration / missing-
+            // grade paths wouldn't fire. The real computed columns are ww_ps /
+            // pt_ps / qa_ps / initial_grade (per 001_initial_schema.sql).
+            ww_ps: null,
+            pt_ps: null,
+            qa_ps: null,
+            initial_grade: null,
             quarterly_grade: null,
           })
           .eq('grading_sheet_id', sheetId)
           .eq('section_student_id', ss.id);
+      }
+
+      // Re-run the attendance rollup for T1 + T2 now that enrollment_date is
+      // set. seedAttendanceSummary already inserted attendance_daily rows for
+      // this student across the FULL T1 + early-T2 windows (it ran while the
+      // student was still 'active', enrollment_date NULL — so no proration
+      // applied). Without this recompute the stored attendance_records rollup
+      // keeps counting those pre-enrolment days; recomputing now exercises the
+      // migration-068 `date >= enrollment_date` proration filter genuinely —
+      // T1 (entirely before the late-enrol date) collapses to 0/0/0 and the
+      // early-T2 days before t2EnrollDate drop out of the denominator.
+      for (const term of [t1, t2]) {
+        const { error: rollupErr } = await service.rpc(
+          'recompute_attendance_rollup',
+          { p_term_id: term.id, p_section_student_id: ss.id }
+        );
+        if (rollupErr) {
+          console.error(
+            `[edge-cases] EC1/EC2 rollup recompute failed for T${term.term_number} ${ss.id}:`,
+            rollupErr.message
+          );
+        }
       }
     }
   } catch (err) {
