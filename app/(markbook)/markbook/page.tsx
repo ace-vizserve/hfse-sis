@@ -366,19 +366,17 @@ export default async function MarkbookHome({
             intent={
               kpisResult.current.changeRequestsPending > 0 ? 'warning' : 'good'
             }
-            subtext={
-              kpisResult.comparison
-                ? `${kpisResult.comparison.changeRequestsPending} in prior period`
-                : undefined
-            }
+            subtext="Open across all terms"
             drillSheet={() => (
+              // Live, un-windowed count → the drill must list ALL pending in
+              // the AY. Omit from/to so the drill route falls back to the
+              // AY-wide row set, then segment="pending" filters status. (Do
+              // NOT pass initialChangeRequests — those are range-clamped by
+              // buildAllRowSets and would under-list.)
               <MarkbookDrillSheet
                 target="change-requests"
                 segment="pending"
                 ayCode={ayCode}
-                initialFrom={rangeInput.from}
-                initialTo={rangeInput.to}
-                initialChangeRequests={drillRowSets?.changeRequests}
               />
             )}
           />

@@ -611,12 +611,14 @@ async function loadMarkbookKpisForRange(
     ).flat();
   };
 
-  const [entryRows, sheetsRes, changeReqRes] = await Promise.all([
+  const [entryRows, sheetsRes, changeReqRes, pendingCrRes] = await Promise.all([
     entriesBySheet(),
     service
       .from('grading_sheets')
       .select('is_locked, locked_at, section:sections!inner(academic_year_id)')
       .eq('section.academic_year_id', ayId),
+    // Windowed change-request query — drives `avgDecisionHours` (decisions
+    // MADE in the picker range). Pending is NOT derived from this.
     service
       .from('grade_change_requests')
       .select(
@@ -625,7 +627,21 @@ async function loadMarkbookKpisForRange(
       .eq('grading_sheet.section.academic_year_id', ayId)
       .gte('requested_at', fromIso)
       .lte('requested_at', toIso),
+    // Pending is a LIVE state, not an activity metric — count ALL currently-
+    // pending requests in the AY with NO date window, so an open request
+    // filed in any term still shows on the card (and matches the AY-wide
+    // drill, which omits from/to for this card). Same AY inner-join as above.
+    service
+      .from('grade_change_requests')
+      .select(
+        'id, grading_sheet:grading_sheets!inner(section:sections!inner(academic_year_id))',
+        { count: 'exact', head: true }
+      )
+      .eq('grading_sheet.section.academic_year_id', ayId)
+      .eq('status', 'pending'),
   ]);
+
+  const changeRequestsPending = pendingCrRes.count ?? 0;
 
   type SheetRow = { is_locked: boolean; locked_at: string | null };
   const sheets = (sheetsRes.data ?? []) as SheetRow[];
@@ -643,7 +659,6 @@ async function loadMarkbookKpisForRange(
     reviewed_at: string | null;
   };
   const crRows = (changeReqRes.data ?? []) as CrRow[];
-  const pending = crRows.filter((r) => r.status === 'pending').length;
 
   let decidedCount = 0;
   let totalMs = 0;
@@ -680,7 +695,7 @@ async function loadMarkbookKpisForRange(
     sheetsLocked: lockedInRange,
     sheetsTotal: sheets.length,
     lockedPct: sheets.length > 0 ? (lockedInRange / sheets.length) * 100 : 0,
-    changeRequestsPending: pending,
+    changeRequestsPending,
     avgDecisionHours,
   };
 }
