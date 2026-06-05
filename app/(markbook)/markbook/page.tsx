@@ -225,9 +225,14 @@ export default async function MarkbookHome({
       ? buildAllRowSets({ ayCode, from: rangeInput.from, to: rangeInput.to })
       : Promise.resolve(null),
     // Teacher velocity is registrar+ only (gated by canSeeAdmin); the rollup
-    // uses the same loadEntryRows cache as the entry-kind drills.
+    // uses the same loadEntryRows cache as the entry-kind drills. Pass the
+    // page range so the card is enteredAt-clamped to match its drill (the
+    // 'teacher-entry-velocity' drill clamps the same way in lib/markbook/drill.ts).
     canSeeAdmin && ayCode
-      ? getTeacherEntryVelocity(ayCode)
+      ? getTeacherEntryVelocity(ayCode, {
+          from: rangeInput.from,
+          to: rangeInput.to,
+        })
       : Promise.resolve(null),
   ]);
 

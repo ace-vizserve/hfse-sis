@@ -12,6 +12,7 @@ import {
   type RangeResult,
 } from '@/lib/dashboard/range';
 import type { VelocityPoint } from '@/lib/dashboard/velocity';
+import { termIdsForRange } from '@/lib/markbook/term-range';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -550,11 +551,21 @@ async function loadMarkbookKpisForRange(
   // (lib/markbook/drill.ts): AY → term IDs → grading_sheets by term_id.
   // This makes "grades entered" scope by term→sheetId exactly like the
   // drill it must match — no embedded join, no AY-by-section detour.
+  //
+  // Scope to the terms overlapping the picker range via the shared
+  // `termIdsForRange` helper — the SAME selection the entry-kind drill uses
+  // — so picking "Term 2" / "This term" counts only that term's grades and
+  // the card matches the drill. No range → all AY terms (AY-wide fallback).
   const { data: termRows } = await service
     .from('terms')
-    .select('id')
+    .select('id, start_date, end_date')
     .eq('academic_year_id', ayId);
-  const termIds = ((termRows ?? []) as Array<{ id: string }>).map((t) => t.id);
+  const terms = (termRows ?? []) as Array<{
+    id: string;
+    start_date: string | null;
+    end_date: string | null;
+  }>;
+  const termIds = termIdsForRange(terms, input.from, input.to);
 
   const { data: sheetIdRows } = await service
     .from('grading_sheets')

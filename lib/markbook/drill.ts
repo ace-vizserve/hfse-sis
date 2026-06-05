@@ -2,6 +2,7 @@ import { unstable_cache } from 'next/cache';
 
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { applyDateRangeFilter } from '@/lib/dashboard/drill-range';
+import { termIdsForRange } from '@/lib/markbook/term-range';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -38,6 +39,15 @@ export type MarkbookDrillTarget =
   | 'teacher-entry-velocity';
 
 export type MarkbookDrillRowKind = 'entry' | 'sheet' | 'change-request';
+
+// State targets load the entry set TERM-scoped (sheet's term ∈ picker terms)
+// so the drill matches its KPI card. The activity target
+// ('teacher-entry-velocity') instead loads AY-wide and clamps by enteredAt —
+// it measures grading ACTIVITY in the window, not state for a term. Splitting
+// the load here keeps applyScopeFilter's entry branch a clean pass-through.
+export function isTermScopedEntryTarget(t: MarkbookDrillTarget): boolean {
+  return t === 'grade-entries' || t === 'grade-bucket-entries';
+}
 
 export function rowKindForTarget(t: MarkbookDrillTarget): MarkbookDrillRowKind {
   switch (t) {
@@ -198,6 +208,8 @@ type TermLite = {
   term_number: number;
   academic_year_id: string;
   label: string;
+  start_date: string | null;
+  end_date: string | null;
 };
 type SubjectLite = { id: string; code: string; name: string };
 
@@ -236,7 +248,7 @@ async function resolveAyContext(ayCode: string): Promise<{
     service.from('levels').select('id, code'),
     service
       .from('terms')
-      .select('id, term_number, academic_year_id, label')
+      .select('id, term_number, academic_year_id, label, start_date, end_date')
       .eq('academic_year_id', ayId),
     service.from('subjects').select('id, code, name'),
   ]);
@@ -264,7 +276,11 @@ async function resolveAyContext(ayCode: string): Promise<{
 
 // ── Entry rows ──────────────────────────────────────────────────────────────
 
-async function loadEntryRowsUncached(ayCode: string): Promise<GradeEntryRow[]> {
+async function loadEntryRowsUncached(
+  ayCode: string,
+  from?: string,
+  to?: string
+): Promise<GradeEntryRow[]> {
   const service = createServiceClient();
   const ctx = await resolveAyContext(ayCode);
   if (!ctx.ayId || ctx.termIds.length === 0) return [];
@@ -274,13 +290,21 @@ async function loadEntryRowsUncached(ayCode: string): Promise<GradeEntryRow[]> {
   const termById = new Map<string, TermLite>();
   for (const t of ctx.terms) termById.set(t.id, t);
 
-  // Sheets in this AY (filter by termIds).
+  // Scope to the terms overlapping the picker range — the SAME selection the
+  // "Grades entered" KPI card uses (lib/markbook/dashboard.ts), so card count
+  // == entry-drill row count. We scope by the SHEET's term (term overlap),
+  // NOT by the entry's own enteredAt/created date — a grade for T2 entered
+  // late must still count under T2. No range → all AY terms (ctx.termIds).
+  const allowedTermIds = termIdsForRange(ctx.terms, from, to);
+  if (allowedTermIds.length === 0) return [];
+
+  // Sheets in this AY, restricted to the in-range terms.
   const { data: sheetsData } = await service
     .from('grading_sheets')
     .select(
       'id, term_id, section_id, subject_id, qa_total, is_locked, locked_at, teacher_name'
     )
-    .in('term_id', ctx.termIds);
+    .in('term_id', allowedTermIds);
   type SheetLite = {
     id: string;
     term_id: string;
@@ -714,8 +738,16 @@ async function loadChangeRequestRowsUncached(
 //      unstable_cache below.
 //   2. Drill API routes for entry-kind drills — already lazy-fetch per
 //      request; per-request latency is acceptable.
-async function loadEntryRows(ayCode: string): Promise<GradeEntryRow[]> {
-  return loadEntryRowsUncached(ayCode);
+// from/to scope the entries to the terms overlapping the picker range (via
+// termIdsForRange inside loadEntryRowsUncached). They're part of the cache
+// key — mirroring getTeacherEntryVelocity below — so a scoped drill (e.g.
+// "Term 2") doesn't share a slot with the AY-wide set. Absent → AY-wide.
+async function loadEntryRows(
+  ayCode: string,
+  from?: string,
+  to?: string
+): Promise<GradeEntryRow[]> {
+  return loadEntryRowsUncached(ayCode, from, to);
 }
 
 async function loadSheetRows(ayCode: string): Promise<SheetRow[]> {
@@ -821,7 +853,32 @@ export async function buildMarkbookDrillRows(
   const kind = rowKindForTarget(input.target);
   let rows: MarkbookDrillRow[];
   if (kind === 'entry') {
-    rows = (await loadEntryRows(input.ayCode)) as MarkbookDrillRow[];
+    if (isTermScopedEntryTarget(input.target)) {
+      // State target ('grade-entries' / 'grade-bucket-entries'): term-scope
+      // entries by the picker range (term overlap) — same selection as the
+      // "Grades entered" KPI card. The enteredAt date-clamp is dropped from
+      // applyScopeFilter for entries (see below) so a late-entered T2 grade
+      // still counts under T2.
+      rows = (await loadEntryRows(
+        input.ayCode,
+        input.from,
+        input.to
+      )) as MarkbookDrillRow[];
+    } else {
+      // Activity target ('teacher-entry-velocity'): load AY-wide (no term
+      // scoping) and clamp by enteredAt to the picker range, matching
+      // getTeacherEntryVelocityUncached so the velocity card == its drill.
+      const all = (await loadEntryRows(input.ayCode)) as MarkbookDrillRow[];
+      rows =
+        input.from && input.to
+          ? applyDateRangeFilter(
+              all as GradeEntryRow[],
+              input,
+              (r) => r.enteredAt,
+              { caller: 'markbook/drill:teacher-entry-velocity' }
+            )
+          : all;
+    }
   } else if (kind === 'sheet') {
     rows = (await loadSheetRows(input.ayCode)) as MarkbookDrillRow[];
   } else {
@@ -894,12 +951,13 @@ function applyScopeFilter(
   input: DrillRangeInput
 ): MarkbookDrillRow[] {
   if (kind === 'entry') {
-    return applyDateRangeFilter(
-      rows as GradeEntryRow[],
-      input,
-      (r) => r.enteredAt,
-      { caller: 'markbook/drill:entry' }
-    ) as MarkbookDrillRow[];
+    // Entries are TERM-scoped at load time (loadEntryRowsUncached restricts
+    // sheets to termIdsForRange) so the drill matches the "Grades entered"
+    // KPI card, which scopes the same way. Do NOT additionally clamp by
+    // enteredAt here — a grade for an in-range term entered late (outside the
+    // picker window) must still count under its term. Scoping by enteredAt
+    // would re-narrow the set and re-break the count↔drill parity.
+    return rows;
   }
   if (kind === 'sheet') {
     // Sheet "in range" = lockedAt OR publishedAt in range. Unlocked +
