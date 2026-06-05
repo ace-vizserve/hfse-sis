@@ -546,22 +546,62 @@ async function loadMarkbookKpisForRange(
   const ayId = (ayRow as { id: string } | null)?.id ?? null;
   if (!ayId) return emptyMarkbookKpis();
 
+  // Resolve the AY's grading-sheet IDs the SAME way the drill does
+  // (lib/markbook/drill.ts): AY → term IDs → grading_sheets by term_id.
+  // This makes "grades entered" scope by term→sheetId exactly like the
+  // drill it must match — no embedded join, no AY-by-section detour.
+  const { data: termRows } = await service
+    .from('terms')
+    .select('id')
+    .eq('academic_year_id', ayId);
+  const termIds = ((termRows ?? []) as Array<{ id: string }>).map((t) => t.id);
+
+  const { data: sheetIdRows } = await service
+    .from('grading_sheets')
+    .select('id')
+    .in('term_id', termIds.length > 0 ? termIds : ['']);
+  const sheetIds = ((sheetIdRows ?? []) as Array<{ id: string }>).map(
+    (s) => s.id
+  );
+
   // "Grades entered" = number of grade_entries with any data anywhere
   // (≥ 1 WW slot OR ≥ 1 PT slot OR QA OR letter_grade). Counts students
   // who have been at least partially graded — not events, not auto-
-  // seeded blank rows. Filtered to this AY + updated_at in range
-  // (updated_at is bumped when a teacher writes scores; created_at
-  // would still be the sheet-generation timestamp).
-  const [entriesRes, sheetsRes, changeReqRes] = await Promise.all([
-    service
-      .from('grade_entries')
-      .select(
-        `ww_scores, pt_scores, qa_score, letter_grade,
-         grading_sheet:grading_sheets!inner(section:sections!inner(academic_year_id))`
+  // seeded blank rows. This is a STATE metric ("grades entered for the
+  // year"), scoped to the AY only — NOT windowed by updated_at — so the
+  // card matches the AY-wide drill (lib/markbook/drill.ts). Fetched by
+  // grading_sheet_id (same sheet set as the drill), chunking the IN-clause
+  // (CHUNK = 200, mirroring the drill) and paginating inside each chunk
+  // because HFSE has 10K+ entries per AY (past PostgREST's 1000 cap).
+  type EntryRow = {
+    ww_scores: (number | null)[] | null;
+    pt_scores: (number | null)[] | null;
+    qa_score: number | null;
+    letter_grade: string | null;
+  };
+  const CHUNK = 200;
+  const entriesBySheet = async (): Promise<EntryRow[]> => {
+    if (sheetIds.length === 0) return [];
+    return (
+      await Promise.all(
+        Array.from({ length: Math.ceil(sheetIds.length / CHUNK) }, (_, i) =>
+          fetchAllPages<EntryRow>((from, to) =>
+            service
+              .from('grade_entries')
+              .select('ww_scores, pt_scores, qa_score, letter_grade')
+              .in(
+                'grading_sheet_id',
+                sheetIds.slice(i * CHUNK, (i + 1) * CHUNK)
+              )
+              .range(from, to)
+          )
+        )
       )
-      .eq('grading_sheet.section.academic_year_id', ayId)
-      .gte('updated_at', fromIso)
-      .lte('updated_at', toIso),
+    ).flat();
+  };
+
+  const [entryRows, sheetsRes, changeReqRes] = await Promise.all([
+    entriesBySheet(),
     service
       .from('grading_sheets')
       .select('is_locked, locked_at, section:sections!inner(academic_year_id)')
@@ -616,13 +656,6 @@ async function loadMarkbookKpisForRange(
       : null;
 
   // Count entries that have any encoded data anywhere.
-  type EntryRow = {
-    ww_scores: (number | null)[] | null;
-    pt_scores: (number | null)[] | null;
-    qa_score: number | null;
-    letter_grade: string | null;
-  };
-  const entryRows = (entriesRes.data ?? []) as EntryRow[];
   const gradesEntered = entryRows.filter((e) => {
     if (e.qa_score !== null) return true;
     if (e.letter_grade !== null) return true;
