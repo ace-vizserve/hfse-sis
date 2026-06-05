@@ -294,10 +294,17 @@ export function applyTargetFilter(
       // 'expired-docs' target's job. Only expiring slots have a
       // non-null `daysToExpiry` so non-expiring slots are naturally
       // filtered out.
+      //
+      // Status gate (matches lib/p-files/dashboard.ts count, which only
+      // counts a slot when its raw status === 'Valid'): "expiring soon" =
+      // a currently-valid document nearing expiry (renewal signal), not an
+      // Uploaded/Rejected slot that happens to carry a future expiry.
+      // normaliseStatus maps raw 'Valid' → 'On file', so gate on that.
       const days = segment ? Number(segment) : 60;
       const window = Number.isFinite(days) && days > 0 ? days : 60;
       return rows.filter(
         (r) =>
+          r.status === 'On file' &&
           r.daysToExpiry !== null &&
           r.daysToExpiry >= 0 &&
           r.daysToExpiry <= window

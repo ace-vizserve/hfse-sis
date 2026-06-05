@@ -449,7 +449,7 @@ export default async function PFilesDashboard({
           value={kpisResult.current.expiringSoon30}
           icon={CalendarClock}
           intent={kpisResult.current.expiringSoon30 > 0 ? 'warning' : 'good'}
-          subtext="From end of range"
+          subtext="From today"
           drillSheet={() => (
             <PFilesDrillSheet
               target="expiring-soon"
@@ -463,7 +463,7 @@ export default async function PFilesDashboard({
           value={kpisResult.current.expiringSoon}
           icon={AlertTriangle}
           intent={kpisResult.current.expiringSoon > 0 ? 'warning' : 'good'}
-          subtext="From end of range"
+          subtext="From today"
           drillSheet={() => (
             <PFilesDrillSheet
               target="expiring-soon"

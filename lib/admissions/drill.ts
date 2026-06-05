@@ -378,8 +378,11 @@ function applyScopeFilter(
   // Different drill targets anchor the date range to different timestamps
   // — pick the anchor that matches the chart whose segment was clicked.
   //
-  //   - 'enrolled' / 'avg-time': enrollmentDate (the KPI counts enrolments
-  //     completed in the range, not applications submitted in the range).
+  //   - 'enrolled' / 'avg-time': applicationDate (created_at). The KPI cards
+  //     are app-anchored — both the enrolled COUNT and the avg-time sample
+  //     set scope on created_at (applications received in range that are now
+  //     enrolled), so conversion % stays bounded 0–100%. The drill must use
+  //     the SAME anchor or the card count won't match the drill row count.
   //   - 'time-to-enroll-bucket': AY-wide (no date filter) — the chart's
   //     histogram is computed over the whole AY's enrolled cohort.
   //   - everything else: applicationDate (the canonical "which applications
@@ -392,12 +395,6 @@ function applyScopeFilter(
   if (target === 'time-to-enroll-bucket') {
     // Chart is AY-wide. Drill mirrors that.
     return rows;
-  }
-  if (target === 'enrolled' || target === 'avg-time') {
-    return applyDateRangeFilter(rows, input, (r) => r.enrollmentDate, {
-      caller: 'admissions/drill:enrolled',
-      includeMissingDate: false,
-    });
   }
   return applyDateRangeFilter(rows, input, (r) => r.applicationDate, {
     caller: 'admissions/drill',

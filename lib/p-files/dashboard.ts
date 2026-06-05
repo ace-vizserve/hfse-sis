@@ -418,10 +418,16 @@ async function loadPFilesKpisForRange(
 
   type DocRow = Record<string, string | null>;
   const docs = (docsRes.data ?? []) as unknown as DocRow[];
-  const endDate = parseLocalDate(input.to) ?? new Date();
-  const sixtyDaysOut = new Date(endDate);
+  // "Expiring ≤30d / ≤60d" is a LIVE state, not range activity — anchor the
+  // window to TODAY, not the picker's range endpoint. The drill
+  // (lib/p-files/drill.ts) anchors today (Date.now()) and filters
+  // 0 ≤ daysToExpiry ≤ N; anchoring the count to the range end made the two
+  // expiring cards diverge from their drills whenever the picker range wasn't
+  // "ending today". Now count == drill regardless of the picker.
+  const today = new Date();
+  const sixtyDaysOut = new Date(today);
   sixtyDaysOut.setDate(sixtyDaysOut.getDate() + 60);
-  const thirtyDaysOut = new Date(endDate);
+  const thirtyDaysOut = new Date(today);
   thirtyDaysOut.setDate(thirtyDaysOut.getDate() + 30);
 
   let expiringSoon = 0;
@@ -436,8 +442,8 @@ async function loadPFilesKpisForRange(
       if (slot.expires && row[`${slot.key}Status`] === 'Valid') {
         const expiry = row[`${slot.key}Expiry`];
         const exp = expiry ? parseLocalDate(expiry) : null;
-        if (exp && exp >= endDate && exp <= sixtyDaysOut) expiringSoon += 1;
-        if (exp && exp >= endDate && exp <= thirtyDaysOut) expiringSoon30 += 1;
+        if (exp && exp >= today && exp <= sixtyDaysOut) expiringSoon += 1;
+        if (exp && exp >= today && exp <= thirtyDaysOut) expiringSoon30 += 1;
       }
     }
   }

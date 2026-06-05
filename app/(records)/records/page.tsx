@@ -337,7 +337,7 @@ export default async function RecordsDashboard({
           value={kpisResult.current.expiringSoon}
           icon={AlertTriangle}
           intent={kpisResult.current.expiringSoon > 0 ? 'warning' : 'good'}
-          subtext="From end of range"
+          subtext="From today"
           drillSheet={() => (
             <RecordsDrillSheet target="expiring-docs" ayCode={selectedAy} />
           )}
@@ -408,7 +408,7 @@ export default async function RecordsDashboard({
             label="Doc expiring ≤ 60d"
             value={kpisResult.current.expiringSoon}
             icon={History}
-            footnote="From end of selected range"
+            footnote="From today"
           />
         </div>
       </section>

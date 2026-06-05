@@ -748,8 +748,14 @@ async function loadRecordsKpisForRange(
     ]);
 
   type DocRow = Record<string, string | null>;
-  const endDate = parseLocalDate(input.to) ?? new Date();
-  const windowEnd = new Date(endDate);
+  // "Docs expiring ≤60d" is a LIVE state, not range activity — anchor the
+  // window to TODAY, not the picker's range endpoint. The drill
+  // (lib/sis/drill.ts::enrichWithDocs) already anchors today → today+60d;
+  // anchoring the count to the range end made the card diverge from the drill
+  // whenever the picker range wasn't "ending today". Matches the drill's
+  // raw `new Date()` exactly so count == drill rows.
+  const today = new Date();
+  const windowEnd = new Date(today);
   windowEnd.setDate(windowEnd.getDate() + 60);
   let expiringSoon = 0;
   for (const row of (docsRes.data ?? []) as unknown as DocRow[]) {
@@ -757,8 +763,11 @@ async function loadRecordsKpisForRange(
       if (!slot.expires) continue;
       const exp = row[`${slot.key}Expiry`];
       if (!exp) continue;
-      const d = parseLocalDate(exp);
-      if (d && d >= endDate && d <= windowEnd) expiringSoon += 1;
+      // Slice to the date portion first so a full-ISO timestamp still yields its
+      // date (parseLocalDate is strict ^\d{4}-\d{2}-\d{2}$); bare dates are
+      // unaffected. Mirrors lib/sis/drill.ts::enrichWithDocs so count == drill.
+      const d = parseLocalDate(exp.slice(0, 10));
+      if (d && d >= today && d <= windowEnd) expiringSoon += 1;
     }
   }
 

@@ -645,6 +645,7 @@ async function loadMarkbookKpisForRange(
 
   type SheetRow = { is_locked: boolean; locked_at: string | null };
   const sheets = (sheetsRes.data ?? []) as SheetRow[];
+  // Activity metric: sheets LOCKED inside the picker range (by locked_at).
   const lockedInRange = sheets.filter(
     (s) =>
       s.is_locked &&
@@ -652,6 +653,11 @@ async function loadMarkbookKpisForRange(
       s.locked_at >= fromIso &&
       s.locked_at <= toIso
   ).length;
+  // Live-state ratio: "% locked" is current state, not activity — so it's
+  // AY-wide locked ÷ AY-wide total (both unwindowed). Mixing a range-windowed
+  // numerator with an AY-wide denominator under-reported the percentage
+  // whenever the picker range was narrower than the whole year.
+  const lockedTotalAyWide = sheets.filter((s) => s.is_locked).length;
 
   type CrRow = {
     status: string;
@@ -694,7 +700,8 @@ async function loadMarkbookKpisForRange(
     gradesEntered,
     sheetsLocked: lockedInRange,
     sheetsTotal: sheets.length,
-    lockedPct: sheets.length > 0 ? (lockedInRange / sheets.length) * 100 : 0,
+    lockedPct:
+      sheets.length > 0 ? (lockedTotalAyWide / sheets.length) * 100 : 0,
     changeRequestsPending,
     avgDecisionHours,
   };

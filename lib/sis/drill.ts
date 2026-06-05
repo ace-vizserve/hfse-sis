@@ -8,6 +8,7 @@ import {
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
+import { parseLocalDate } from '@/lib/dashboard/range';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 import { EXPIRING_SOON_THRESHOLD_DAYS } from '@/lib/sis/process';
 
@@ -394,9 +395,12 @@ async function enrichWithDocs(
       if (!slot.expiryCol) continue;
       const exp = d[slot.expiryCol];
       if (!exp) continue;
-      const dt = new Date(exp);
-      if (Number.isNaN(dt.getTime())) continue;
-      if (dt >= today && dt <= windowEnd) expiringDocsCount += 1;
+      // Slice to the date portion first so a full-ISO timestamp still yields its
+      // date (parseLocalDate is strict ^\d{4}-\d{2}-\d{2}$); bare dates are
+      // unaffected. Mirrors lib/sis/dashboard.ts expiring-soon count so the
+      // card count == drill rows.
+      const dt = parseLocalDate(String(exp).slice(0, 10));
+      if (dt && dt >= today && dt <= windowEnd) expiringDocsCount += 1;
     }
     return {
       ...r,
