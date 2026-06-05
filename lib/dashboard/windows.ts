@@ -2,6 +2,7 @@ import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
 
 import { createServiceClient } from '@/lib/supabase/service';
+import { resolveCurrentTerm } from '@/lib/sis/current-term';
 import {
   toISODate,
   type AYWindows,
@@ -91,12 +92,13 @@ export const getDashboardWindows = cache(async function getDashboardWindowsImpl(
     .filter((t) => t.start_date && t.end_date)
     .sort((a, b) => (a.start_date! < b.start_date! ? -1 : 1));
 
-  // Resolve "current" term (today-anchored → is_current flag → first term in AY).
-  const current =
-    sortedAy.find((t) => t.start_date! <= today && today <= t.end_date!) ??
-    sortedAy.find((t) => t.is_current) ??
-    sortedAy[0] ??
-    null;
+  // Resolve "current" term via the shared date-based resolver (KD #116):
+  // today-in-window → is_current flag → most-recently-ended → earliest. The
+  // old inline fallback ended at sortedAy[0] (= T1), so when the AY's terms
+  // don't span today (no live term + no is_current flag) every dashboard
+  // silently defaulted to Term 1 — making `thisTerm`-scoped cards miss the
+  // most-recent term's activity.
+  const current = resolveCurrentTerm(sortedAy, today);
 
   const thisTermInAy: DateRange | null =
     current?.start_date && current.end_date
@@ -133,8 +135,11 @@ export const getDashboardWindows = cache(async function getDashboardWindowsImpl(
   // dashboards always have a meaningful default range to land on.
   const thisTerm: DateRange | null = thisTermInAy ?? priorAyLastTerm;
 
-  // Banner flag — page RSC renders "showing previous term" hint.
-  const activeTermFallback = !hasTodayInCurrent && priorAyLastTerm !== null;
+  // Banner flag — page RSC renders "showing previous term" hint. Only true
+  // when `thisTerm` actually falls back to a PRIOR-AY term (no dated term in
+  // this AY); a between-terms gap now resolves to this AY's most-recently-ended
+  // term via resolveCurrentTerm, so the banner must not fire for it.
+  const activeTermFallback = thisTermInAy === null && priorAyLastTerm !== null;
   if (process.env.NODE_ENV === 'development' && activeTermFallback) {
     console.warn(
       `[dashboard/windows] activeTermFallback triggered for ${ayCode} — is_current may not be set on the new AY's terms`
