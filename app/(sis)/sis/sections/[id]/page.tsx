@@ -25,7 +25,6 @@ import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GenerateSheetsDialog } from '@/components/sis/generate-sheets-dialog';
 import { SectionRenameDialog } from '@/components/sis/section-rename-dialog';
-import { RealphabetizeRosterButton } from '@/components/sis/realphabetize-roster-button';
 import { TeacherAssignmentsPanel } from '@/components/sis/section-teachers-tab';
 import {
   SectionRosterTable,
@@ -413,12 +412,6 @@ export default async function SisSectionDetailPage({
               focuses on section-level admin moves. */}
           {ay && (
             <div className="space-y-3">
-              <div className="flex justify-end">
-                <RealphabetizeRosterButton
-                  sectionId={section.id}
-                  sectionName={section.name}
-                />
-              </div>
               <SectionRosterTable
                 rows={rosterRows}
                 ayCode={ay.ay_code}
