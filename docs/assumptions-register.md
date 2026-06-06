@@ -4,8 +4,6 @@
 
 **How to use.** For each item: ask the question to the named person. If the answer is "yes, that's how we do it" → mark Confirmed. If "no / not quite" → note what they actually do; that becomes a change request. Don't pre-build alternatives.
 
-**Fillable version to share.** A staff-facing Word version with an empty "Your answer" column per row is at `docs/assumptions-register.docx` — share that with Joann/Chandana/officers so they answer directly. Regenerate it after editing this file with `python scripts/build-assumptions-docx.py`. This Markdown is the internal source and keeps the "if no → impact" engineering notes (the .docx drops them for clarity).
-
 **Who's who.** Joann = registrar (enrolment, approvals, chasing, attendance ops). Chandana = academic/school_admin (grading, evaluation, virtues). P-file officer = document renewals. Admissions team = pre-enrolment funnel + document validation.
 
 **Status legend.** ☐ to confirm · ✅ confirmed against a real artifact/person · ⏸ deferred decision (already flagged).
