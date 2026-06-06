@@ -53,25 +53,31 @@ function formatLongDate(iso: string): string {
   });
 }
 
+// Selected-mark fills for the P/L/A/EX segmented control — HFSE paper-sheet
+// palette (KD A3), the SAME washes as the wide-grid cells (P light blue, L
+// pink, A yellow, EX cyan) with dark mark-ink so the letter stays legible
+// (≥4.5:1). This is the marking surface, so it carries the local paper-sheet
+// colour language; the day-summary stat cards below keep the semantic palette.
+// The LETTER on each button is always the signal; colour is secondary.
 const STATUS_BTN: Record<
   'P' | 'L' | 'A' | 'EX',
   { label: string; on: string }
 > = {
   P: {
     label: 'P',
-    on: 'bg-gradient-to-b from-brand-mint to-brand-sky text-ink shadow-xs',
+    on: 'bg-attendance-present text-attendance-mark-ink shadow-xs',
   },
   L: {
     label: 'L',
-    on: 'bg-gradient-to-b from-brand-amber to-brand-amber/80 text-white shadow-xs',
+    on: 'bg-attendance-late text-attendance-mark-ink shadow-xs',
   },
   A: {
     label: 'A',
-    on: 'bg-gradient-to-b from-destructive to-destructive/80 text-white shadow-xs',
+    on: 'bg-attendance-absent text-attendance-mark-ink shadow-xs',
   },
   EX: {
     label: 'EX',
-    on: 'bg-gradient-to-b from-brand-indigo to-brand-navy text-white shadow-xs',
+    on: 'bg-attendance-excused text-attendance-mark-ink shadow-xs',
   },
 };
 const EX_REASONS: ExReason[] = [

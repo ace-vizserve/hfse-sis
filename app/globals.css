@@ -85,6 +85,21 @@
   --av-hairline: #e2e8f0;
   --av-hairline-strong: #cbd5e1;
 
+  /* Attendance marking-grid mark fills — HFSE paper-sheet palette (KD A3).
+     LOCAL to the encode/marking surface only (wide-grid + Daily view); the
+     attendance dashboard / drills / quota cards keep the semantic
+     mint/amber/destructive palette. Each fill is a light wash paired with
+     dark ink foreground so the P/A/L/EX letter stays legible (≥4.5:1).
+     Present (light blue, hue ~210) and Excused (cyan, hue ~175 — noticeably
+     greener + brighter) are deliberately distinct so they never blur in a
+     dense grid. The LETTER is always the primary signal; colour is secondary
+     (never colour-only, per accessibility). */
+  --av-attendance-present: #cfe6fb; /* light blue */
+  --av-attendance-absent: #fde68a; /* yellow */
+  --av-attendance-excused: #a5f0ea; /* cyan — greener/brighter than present */
+  --av-attendance-late: #fbcfe0; /* pink */
+  --av-attendance-mark-ink: #0f172a; /* dark ink — ≥4.5:1 on all four fills */
+
   --av-shadow-input: inset 0 1px 2px 0 rgba(15, 23, 42, 0.06);
   --av-shadow-brand-tile:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
@@ -238,6 +253,13 @@
   --color-ink-5: var(--av-ink-5);
   --color-hairline: var(--av-hairline);
   --color-hairline-strong: var(--av-hairline-strong);
+
+  /* Attendance marking-grid mark tokens (see --av-attendance-* above). */
+  --color-attendance-present: var(--av-attendance-present);
+  --color-attendance-absent: var(--av-attendance-absent);
+  --color-attendance-excused: var(--av-attendance-excused);
+  --color-attendance-late: var(--av-attendance-late);
+  --color-attendance-mark-ink: var(--av-attendance-mark-ink);
 
   --shadow-input: var(--av-shadow-input);
   --shadow-brand-tile: var(--av-shadow-brand-tile);

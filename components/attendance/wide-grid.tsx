@@ -78,19 +78,6 @@ import {
   type ExReason,
 } from '@/lib/schemas/attendance';
 
-// Status → ChartLegendChip color. The CELL renders the same gradient
-// (via statusChipGradient below) and the LEGEND renders ChartLegendChip
-// with this color, so cell + chip pixel-match per §10 of the design
-// patterns doc. EX shares one color regardless of subtype — the LETTER
-// (EM/EC/ES) disambiguates, not the colour.
-const STATUS_CHIP_COLOR: Record<AttendanceStatus, ChartLegendChipColor> = {
-  P: 'fresh',
-  L: 'stale',
-  EX: 'primary',
-  A: 'very-stale',
-  NC: 'neutral',
-};
-
 // Day-type → ChartLegendChip color. Mirrors the calendar admin's
 // DAY_TYPE_LEGEND_COLOR exactly so the wide-grid header chip and the
 // calendar's day-type chip read as the same affordance across surfaces.
@@ -114,22 +101,24 @@ const DAY_TYPE_HEADER_CHIP_LABEL: Record<DayType, string | null> = {
   no_class: 'NC',
 };
 
-// Status → cell gradient classes. Uses the SAME gradient palette as
-// ChartLegendChip's chipGradientByColor map, so the cell wash + the
-// legend chip render as the same affordance. White text on gradient
-// matches ChartLegendChip's text-white default.
-const STATUS_CHIP_GRADIENT: Record<AttendanceStatus, string> = {
-  P: 'from-chart-5 to-chart-3 text-white',
-  L: 'from-brand-amber to-brand-amber/80 text-white',
-  EX: 'from-brand-indigo to-brand-navy text-white',
-  A: 'from-destructive to-destructive/80 text-white',
-  NC: 'from-ink-4 to-ink-3 text-white',
+// Status → marking-cell wash. HFSE paper-sheet palette (KD A3): solid light
+// fills matching the old paper register — P light blue, A yellow, EX cyan,
+// L pink — each with dark mark-ink so the letter stays legible (≥4.5:1).
+// SINGLE SOURCE OF TRUTH: the cell wash AND the legend swatch both read this
+// map (per §10.2), so they can never drift. EX shares one fill regardless of
+// subtype — the LETTER (EM/EV/EC/ES) disambiguates, not the colour (colour is
+// never the only signal). NC is no-class chrome, not a paper-sheet mark, so it
+// keeps the neutral ink wash.
+const STATUS_CELL_WASH: Record<AttendanceStatus, string> = {
+  P: 'bg-attendance-present text-attendance-mark-ink',
+  L: 'bg-attendance-late text-attendance-mark-ink',
+  EX: 'bg-attendance-excused text-attendance-mark-ink',
+  A: 'bg-attendance-absent text-attendance-mark-ink',
+  NC: 'bg-ink-4 text-white',
 };
 
-function statusChipGradient(status: AttendanceStatus | null): string {
-  return status
-    ? 'bg-gradient-to-b ' + STATUS_CHIP_GRADIENT[status]
-    : 'text-foreground';
+function statusCellWash(status: AttendanceStatus | null): string {
+  return status ? STATUS_CELL_WASH[status] : 'text-foreground';
 }
 
 // Faint per-day-type cell tint, kept under the gradient pill so non-
@@ -703,7 +692,7 @@ export function AttendanceWideGrid({
                                 className={
                                   'block px-1 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] opacity-40 ' +
                                   (status
-                                    ? statusChipGradient(status)
+                                    ? statusCellWash(status)
                                     : 'text-muted-foreground')
                                 }
                                 title={
@@ -727,9 +716,7 @@ export function AttendanceWideGrid({
                               </span>
                             ) : (
                               <div
-                                className={
-                                  'relative ' + statusChipGradient(status)
-                                }
+                                className={'relative ' + statusCellWash(status)}
                               >
                                 <select
                                   value={currentValue}
@@ -747,8 +734,11 @@ export function AttendanceWideGrid({
                                     );
                                   }}
                                   className={
+                                    // text colour is inherited from the wash
+                                    // wrapper (dark mark-ink when marked); only
+                                    // the unmarked state needs an explicit hue
                                     'w-full appearance-none bg-transparent px-1 py-1 text-center font-mono text-[11px] font-semibold uppercase tracking-[0.06em] focus:outline-none focus:ring-1 focus:ring-primary ' +
-                                    (status ? 'text-white' : 'text-foreground')
+                                    (status ? '' : 'text-foreground')
                                   }
                                   title={
                                     status
@@ -800,12 +790,12 @@ export function AttendanceWideGrid({
         <p className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
           Status · cell colour
         </p>
-        {/* Each chip is the SAME ChartLegendChip used
-            inside the cell when populated, so legend ↔ cell pixel-match
-            per docs/context/09a-design-patterns.md §10. EX has 3 entries
-            (EM / EC / ES) matching the dropdown's letter transform — they
-            share the indigo gradient since the colour is by status family,
-            the letter by sub-reason. */}
+        {/* Each swatch reads the SAME STATUS_CELL_WASH map used inside the
+            cell when populated, so legend ↔ cell pixel-match per
+            docs/context/09a-design-patterns.md §10.2 (bespoke swatch for grid
+            cell tints). EX has 4 entries (EM / EV / EC / ES) matching the
+            dropdown's letter transform — they share the cyan wash since the
+            colour is by status family, the letter by sub-reason. */}
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-foreground">
           <StatusLegendChip status="P" letter="P" description="Present" />
           <StatusLegendChip status="L" letter="L" description="Late" />
@@ -877,10 +867,12 @@ export function AttendanceWideGrid({
   );
 }
 
-// Legend row pairing a ChartLegendChip swatch with a description label.
-// The swatch is the SAME ChartLegendChip rendered inside cells when status
-// is set, so legend + cell read as the same affordance per the "true
-// visual key" rule in docs/context/09a-design-patterns.md §10.
+// Legend row pairing a marking-cell swatch with a description label. The
+// swatch reads the SAME STATUS_CELL_WASH map applied to the cells when status
+// is set, so legend + cell are pixel-identical paint per the "true visual
+// key" rule in docs/context/09a-design-patterns.md §10.2 (bespoke swatch for
+// grid cell tints). The letter sits ON the swatch so the key shows both the
+// colour AND the letter exactly as the grid does.
 function StatusLegendChip({
   status,
   letter,
@@ -892,7 +884,14 @@ function StatusLegendChip({
 }) {
   return (
     <span className="inline-flex items-center gap-2">
-      <ChartLegendChip color={STATUS_CHIP_COLOR[status]} label={letter} />
+      <span
+        className={
+          'inline-flex min-w-7 items-center justify-center rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] shadow-input ' +
+          STATUS_CELL_WASH[status]
+        }
+      >
+        {letter}
+      </span>
       <span className="text-[12px] font-medium text-foreground">
         {description}
       </span>
