@@ -701,11 +701,7 @@ export function AttendanceWideGrid({
                                     : 'Before enrolment date'
                                 }
                               >
-                                {status
-                                  ? status === 'EX' && exReason
-                                    ? `E${exReason.slice(0, 1).toUpperCase()}`
-                                    : status
-                                  : '—'}
+                                {status ?? '—'}
                               </span>
                             ) : !c.encodable ? (
                               <span
@@ -718,6 +714,15 @@ export function AttendanceWideGrid({
                               <div
                                 className={'relative ' + statusCellWash(status)}
                               >
+                                {/* Native <select> couples cell display to the
+                                    selected option's text, which would surface
+                                    the EX subtype mnemonic. We keep the select as
+                                    the interaction layer (its own text is
+                                    transparent) and paint the canonical status
+                                    letter via a pointer-events-none overlay, so
+                                    the cell always reads P / A / L / EX / — while
+                                    the open dropdown keeps distinct subtype
+                                    options. */}
                                 <select
                                   value={currentValue}
                                   disabled={disabled}
@@ -734,11 +739,9 @@ export function AttendanceWideGrid({
                                     );
                                   }}
                                   className={
-                                    // text colour is inherited from the wash
-                                    // wrapper (dark mark-ink when marked); only
-                                    // the unmarked state needs an explicit hue
-                                    'w-full appearance-none bg-transparent px-1 py-1 text-center font-mono text-[11px] font-semibold uppercase tracking-[0.06em] focus:outline-none focus:ring-1 focus:ring-primary ' +
-                                    (status ? '' : 'text-foreground')
+                                    // Own text is always transparent — the
+                                    // overlay span below is the visible label.
+                                    'w-full appearance-none bg-transparent px-1 py-1 text-center font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-transparent focus:outline-none focus:ring-1 focus:ring-primary'
                                   }
                                   title={
                                     status
@@ -756,14 +759,21 @@ export function AttendanceWideGrid({
                                       value={o.value}
                                       className={'text-foreground'}
                                     >
-                                      {o.value === ''
-                                        ? '—'
-                                        : o.value.startsWith('EX:')
-                                          ? `E${o.value.slice(3, 4).toUpperCase()}`
-                                          : o.value}
+                                      {o.label}
                                     </option>
                                   ))}
                                 </select>
+                                {/* Visible cell label — canonical status only
+                                    (any EX subtype collapses to "EX"). */}
+                                <span
+                                  aria-hidden="true"
+                                  className={
+                                    'pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[11px] font-semibold uppercase tracking-[0.06em] ' +
+                                    (status ? '' : 'text-foreground')
+                                  }
+                                >
+                                  {status ?? '—'}
+                                </span>
                                 {cell?.saving && (
                                   <Loader2 className="absolute right-0 top-0 size-2.5 animate-spin text-muted-foreground" />
                                 )}
@@ -793,32 +803,14 @@ export function AttendanceWideGrid({
         {/* Each swatch reads the SAME STATUS_CELL_WASH map used inside the
             cell when populated, so legend ↔ cell pixel-match per
             docs/context/09a-design-patterns.md §10.2 (bespoke swatch for grid
-            cell tints). EX has 4 entries (EM / EV / EC / ES) matching the
-            dropdown's letter transform — they share the cyan wash since the
-            colour is by status family, the letter by sub-reason. */}
+            cell tints). EX is a single chip — the cell collapses every EX
+            subtype (MC / vacation / compassionate / school activity) to "EX";
+            the subtype is still selectable in the dropdown + stored (KD #94),
+            and shown in the cell tooltip. */}
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-foreground">
           <StatusLegendChip status="P" letter="P" description="Present" />
           <StatusLegendChip status="L" letter="L" description="Late" />
-          <StatusLegendChip
-            status="EX"
-            letter="EM"
-            description="Excused · MC"
-          />
-          <StatusLegendChip
-            status="EX"
-            letter="EV"
-            description="Excused · Vacation leave"
-          />
-          <StatusLegendChip
-            status="EX"
-            letter="EC"
-            description="Excused · Compassionate"
-          />
-          <StatusLegendChip
-            status="EX"
-            letter="ES"
-            description="Excused · School activity"
-          />
+          <StatusLegendChip status="EX" letter="EX" description="Excused" />
           <StatusLegendChip status="A" letter="A" description="Absent" />
           {canWriteNc && (
             <StatusLegendChip status="NC" letter="NC" description="No class" />
