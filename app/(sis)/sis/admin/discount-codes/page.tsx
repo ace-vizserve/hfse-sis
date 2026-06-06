@@ -29,6 +29,7 @@ export default async function SisDiscountCodesPage({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
+    sessionUser.role !== 'admissions' &&
     sessionUser.role !== 'registrar' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'

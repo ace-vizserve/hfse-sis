@@ -386,7 +386,18 @@ const EVALUATION_NAV: NavSection[] = [
 // twin was retired and school_admin is now the cross-cutting generalist).
 // Groups mirror the landing-page sections on /sis (page.tsx).
 const SIS_NAV: NavSection[] = [
-  { items: [{ href: '/sis', label: 'Admin Hub' }] },
+  {
+    items: [
+      {
+        href: '/sis',
+        label: 'Admin Hub',
+        // The hub root is school_admin/superadmin+registrar territory; an
+        // admissions user admitted to /sis only for Discount Codes must not
+        // see a dead link to /sis (proxy bounces them off it).
+        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+      },
+    ],
+  },
   {
     label: 'Year Setup',
     items: [
@@ -622,8 +633,13 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   { prefix: '/sis/admin/users', allowed: ['superadmin'] },
   { prefix: '/sis/admin/settings', allowed: ['superadmin'] },
   {
+    // Discount codes are operationally owned by admissions (they assign codes
+    // to applicants); office roles keep access per their rights. Config stays
+    // in SIS Admin (KD #48) — admissions reaches it via the cross-module link
+    // in the Admissions sidebar. This longer prefix wins over the broader
+    // `/sis` rule, so admissions is scoped to this one route, not all of /sis.
     prefix: '/sis/admin/discount-codes',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['admissions', 'registrar', 'school_admin', 'superadmin'],
   },
   { prefix: '/sis/ay-setup', allowed: ['school_admin', 'superadmin'] },
   {

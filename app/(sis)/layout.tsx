@@ -21,7 +21,13 @@ export default async function SisLayout({
   if (!sessionUser) redirect('/login');
 
   const { id, email, role } = sessionUser;
+  // admissions is admitted to this layout for the single cross-module surface
+  // they own operationally — Discount Codes (/sis/admin/discount-codes). The
+  // per-route gate (ROUTE_ACCESS + proxy) keeps them scoped to that one route;
+  // every other /sis nav entry is hidden from them via requiresRoles, and the
+  // bare Admin Hub link is gated so they see no dead links.
   if (
+    role !== 'admissions' &&
     role !== 'registrar' &&
     role !== 'school_admin' &&
     role !== 'superadmin'
