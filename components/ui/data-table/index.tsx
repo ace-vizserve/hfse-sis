@@ -66,6 +66,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     pageSizeOptions = [10, 20, 50, 100],
     hidePagination = false,
     selection,
+    selectionResetSignal,
     csv,
     url = { enabled: false },
     emptyState,
@@ -103,6 +104,13 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     Object.entries(initial.facets ?? {}).map(([id, value]) => ({ id, value }))
   );
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+  // External reset hook — bump `selectionResetSignal` to drop the selection
+  // (and the bulk-action footer) after a bulk action completes.
+  useEffect(() => {
+    if (selectionResetSignal === undefined) return;
+    setRowSelection({});
+  }, [selectionResetSignal]);
 
   const tabFilteredData = useMemo(() => {
     let rows = data;
@@ -181,7 +189,9 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
     onGlobalFilterChange: setSearch,
-    enableRowSelection: selection?.enabled ?? false,
+    enableRowSelection: selection?.enableRowSelection
+      ? (row) => selection.enableRowSelection!(row.original)
+      : (selection?.enabled ?? false),
     initialState: { pagination: { pageSize: initial.pageSize ?? pageSize } },
     globalFilterFn: (row, _columnId, filterValue) => {
       if (!filterValue || !searchKeys) return true;

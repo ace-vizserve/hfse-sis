@@ -1,15 +1,29 @@
 'use client';
 
 import { CheckCircle2, Lock, UserCheck } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { type ColumnDef } from '@tanstack/react-table';
+import { toast } from 'sonner';
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import {
   type FacetConfig,
   type StatusTabConfig,
   type MeScopeConfig,
+  type SelectionConfig,
 } from '@/components/ui/data-table/types';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -43,6 +57,45 @@ export type GradingSheetRow = {
 
 const BADGE_CLASS =
   'h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]';
+
+// Row-selection checkbox column. Only unlocked sheets are selectable — locking
+// is a no-op on an already-locked sheet, so the column disables those rows and
+// the header "select all" only toggles the open ones. Prepended to COLUMNS via
+// buildColumns() only when the viewer can lock.
+const SELECT_COLUMN: ColumnDef<GradingSheetRow> = {
+  id: 'select',
+  header: ({ table }) => {
+    const selectableRows = table
+      .getRowModel()
+      .rows.filter((r) => r.getCanSelect());
+    const selectedCount = selectableRows.filter((r) =>
+      r.getIsSelected()
+    ).length;
+    const allSelected =
+      selectableRows.length > 0 && selectedCount === selectableRows.length;
+    const someSelected = selectedCount > 0 && !allSelected;
+    return (
+      <Checkbox
+        checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+        onCheckedChange={(value) => {
+          for (const r of selectableRows) r.toggleSelected(!!value);
+        }}
+        disabled={selectableRows.length === 0}
+        aria-label="Select all open sheets"
+      />
+    );
+  },
+  cell: ({ row }) => (
+    <Checkbox
+      checked={row.getIsSelected()}
+      onCheckedChange={(value) => row.toggleSelected(!!value)}
+      disabled={!row.getCanSelect()}
+      aria-label="Select sheet"
+    />
+  ),
+  enableSorting: false,
+  enableHiding: false,
+};
 
 const COLUMNS: ColumnDef<GradingSheetRow>[] = [
   {
@@ -256,6 +309,7 @@ export function GradingDataTable({
   teacherOptions,
   formAdviserOptions,
   currentUserId,
+  canLock = false,
 }: {
   data: GradingSheetRow[];
   /** Seed value for the global search input — used to deep-link from
@@ -274,7 +328,55 @@ export function GradingDataTable({
   /** Logged-in auth user_id — drives the "My sheets" toggle. When null
    *  the toggle hides (no teacher session, e.g. anonymous render). */
   currentUserId?: string | null;
+  /** When true (registrar / school_admin / superadmin) the table enables
+   *  multi-select on open (unlocked) rows + a "Lock selected" bulk action.
+   *  Teachers never see selection — they can't lock. */
+  canLock?: boolean;
 }) {
+  const router = useRouter();
+  // Sheets queued for bulk lock — non-empty drives the confirm dialog open.
+  const [pendingLock, setPendingLock] = useState<GradingSheetRow[]>([]);
+  const [clearSelectionToken, setClearSelectionToken] = useState(0);
+  const [isLocking, setIsLocking] = useState(false);
+
+  async function runBulkLock() {
+    const ids = pendingLock.filter((r) => !r.is_locked).map((r) => r.id);
+    if (ids.length === 0) {
+      setPendingLock([]);
+      return;
+    }
+    setIsLocking(true);
+    try {
+      const res = await fetch('/api/grading-sheets/bulk-lock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        locked?: number;
+        skipped?: number;
+        error?: string;
+      };
+      if (!res.ok) {
+        toast.error(json.error ?? 'Could not lock the selected sheets.');
+        return;
+      }
+      const locked = json.locked ?? 0;
+      const skipped = json.skipped ?? 0;
+      toast.success(
+        skipped > 0
+          ? `Locked ${locked} ${locked === 1 ? 'sheet' : 'sheets'} (${skipped} already locked)`
+          : `Locked ${locked} ${locked === 1 ? 'sheet' : 'sheets'}`
+      );
+      setPendingLock([]);
+      setClearSelectionToken((t) => t + 1);
+      router.refresh();
+    } catch {
+      toast.error('Could not reach the server. Please try again.');
+    } finally {
+      setIsLocking(false);
+    }
+  }
   // Compute curated valueOptions for Teacher + Form adviser facets.
   // Include "(unassigned)" when any row has a null value for that column —
   // this mirrors the canonical reference's faceted-unique-values check.
@@ -358,44 +460,110 @@ export function GradingDataTable({
     };
   }, [currentUserId]);
 
+  const columns = useMemo<ColumnDef<GradingSheetRow>[]>(
+    () => (canLock ? [SELECT_COLUMN, ...COLUMNS] : COLUMNS),
+    [canLock]
+  );
+
+  const selection = useMemo<
+    SelectionConfig<GradingSheetRow> | undefined
+  >(() => {
+    if (!canLock) return undefined;
+    return {
+      enabled: true,
+      // Only open sheets are selectable — locked ones can't be re-locked.
+      enableRowSelection: (row) => !row.is_locked,
+      bulkActions: [
+        {
+          key: 'lock',
+          label: 'Lock selected',
+          icon: Lock,
+          onTrigger: (selectedRows) =>
+            setPendingLock(selectedRows.filter((r) => !r.is_locked)),
+        },
+      ],
+    };
+  }, [canLock]);
+
+  const lockableCount = pendingLock.filter((r) => !r.is_locked).length;
+
   return (
-    <DataTable<GradingSheetRow>
-      data={data}
-      columns={COLUMNS}
-      getRowId={(row) => row.id}
-      searchKeys={[
-        'section',
-        'subject',
-        'term',
-        'teacher',
-        'form_adviser',
-        'level',
-      ]}
-      initialSearch={initialSearch}
-      searchPlaceholder="Search section, subject, teacher…"
-      facets={facets}
-      statusTabs={STATUS_TABS}
-      meScope={meScope}
-      initialSort={[
-        { id: 'level', desc: false },
-        { id: 'section', desc: false },
-      ]}
-      initialColumnVisibility={{
-        form_adviser: false,
-        school_level: false,
-        is_examinable: false,
-      }}
-      pageSize={20}
-      pageSizeOptions={[10, 20, 50, 100]}
-      url={{ enabled: true }}
-      emptyState={{
-        title: 'No grading sheets yet.',
-        body: 'Create the first sheet for a subject × section × term.',
-      }}
-      emptyFilteredState={{
-        title: 'No sheets match the current filters.',
-        body: 'Try clearing some filters.',
-      }}
-    />
+    <>
+      <DataTable<GradingSheetRow>
+        data={data}
+        columns={columns}
+        selection={selection}
+        selectionResetSignal={clearSelectionToken}
+        getRowId={(row) => row.id}
+        searchKeys={[
+          'section',
+          'subject',
+          'term',
+          'teacher',
+          'form_adviser',
+          'level',
+        ]}
+        initialSearch={initialSearch}
+        searchPlaceholder="Search section, subject, teacher…"
+        facets={facets}
+        statusTabs={STATUS_TABS}
+        meScope={meScope}
+        initialSort={[
+          { id: 'level', desc: false },
+          { id: 'section', desc: false },
+        ]}
+        initialColumnVisibility={{
+          form_adviser: false,
+          school_level: false,
+          is_examinable: false,
+        }}
+        pageSize={20}
+        pageSizeOptions={[10, 20, 50, 100]}
+        url={{ enabled: true }}
+        emptyState={{
+          title: 'No grading sheets yet.',
+          body: 'Create the first sheet for a subject × section × term.',
+        }}
+        emptyFilteredState={{
+          title: 'No sheets match the current filters.',
+          body: 'Try clearing some filters.',
+        }}
+      />
+      <AlertDialog
+        open={pendingLock.length > 0}
+        onOpenChange={(open) => {
+          if (!open && !isLocking) setPendingLock([]);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Lock {lockableCount} {lockableCount === 1 ? 'sheet' : 'sheets'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Locking stops teachers from editing scores on{' '}
+              {lockableCount === 1 ? 'this sheet' : 'these sheets'}. After
+              locking, any further change has to go through the grade
+              change-request flow for approval. You can unlock a sheet later if
+              needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isLocking}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // Keep the dialog mounted until the request resolves.
+                e.preventDefault();
+                void runBulkLock();
+              }}
+              disabled={isLocking || lockableCount === 0}
+            >
+              <Lock className="mr-1 h-4 w-4" />
+              {isLocking ? 'Locking…' : `Lock ${lockableCount}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

@@ -586,6 +586,9 @@ export default async function GradingListPage({
           // every section, so the toggle has no useful narrowing for
           // them. Pass null to hide it.
           currentUserId={role === 'teacher' ? userId : null}
+          // Multi-select + "Lock selected" — same role set as the single
+          // lock route (registrar / school_admin / superadmin).
+          canLock={canCreate}
         />
       )}
     </PageShell>

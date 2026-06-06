@@ -63,6 +63,10 @@ export type EmptyStateConfig = {
 export type SelectionConfig<TRow> = {
   enabled: boolean;
   bulkActions?: Array<BulkAction<TRow>>;
+  /** Optional per-row gate. When provided, only rows for which this returns
+   *  true are selectable (TanStack `enableRowSelection` predicate). Use to
+   *  exclude rows a bulk action can't apply to (e.g. already-locked sheets). */
+  enableRowSelection?: (row: TRow) => boolean;
 };
 
 export type DataTableProps<TRow> = {
@@ -92,6 +96,9 @@ export type DataTableProps<TRow> = {
   hidePagination?: boolean;
 
   selection?: SelectionConfig<TRow>;
+  /** Changing this value (e.g. an incrementing counter) clears the current
+   *  row selection. Use after a bulk action completes to drop the footer. */
+  selectionResetSignal?: number;
   csv?: CsvConfig<TRow>;
   url?: UrlStateConfig;
 
