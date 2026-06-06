@@ -193,6 +193,62 @@ export async function PATCH(
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 
+  // Re-prorate attendance when enrollment_date actually changed.
+  //
+  // The recompute_attendance_rollup RPC (KD #113, migration 068) filters
+  // attendance_daily to `date >= enrollment_date` before counting school
+  // days / present / absent — so a changed enrollment_date changes proration
+  // for EVERY term, not just one. Nothing else re-runs the rollups on a date
+  // edit, so a wrongly-prorated student would stay wrong until the next
+  // attendance write. Fire the same recompute the attendance writer uses,
+  // once per term in this section's AY. Only on a real change (compare to the
+  // prior value) — idempotent re-saves don't re-prorate. Non-fatal: the edit
+  // already committed, so a rollup hiccup is warned, never 500'd.
+  let attendanceRecomputed = false;
+  let attendanceRecomputeTermCount = 0;
+  const enrollmentDateChanged =
+    'enrollment_date' in patch &&
+    (patch.enrollment_date ?? null) !== (before.enrollment_date ?? null);
+  if (enrollmentDateChanged && sectionAyCode) {
+    try {
+      const { data: ayRow } = await service
+        .from('academic_years')
+        .select('id')
+        .eq('ay_code', sectionAyCode)
+        .maybeSingle();
+      const ayId = (ayRow as { id: string } | null)?.id ?? null;
+      if (ayId) {
+        const { data: termRows } = await service
+          .from('terms')
+          .select('id')
+          .eq('academic_year_id', ayId);
+        const termIds = ((termRows as { id: string }[] | null) ?? []).map(
+          (t) => t.id
+        );
+        for (const termId of termIds) {
+          const { error: rollupErr } = await service.rpc(
+            'recompute_attendance_rollup',
+            { p_term_id: termId, p_section_student_id: enrolmentId }
+          );
+          if (rollupErr) {
+            console.warn(
+              `[enrolment PATCH] attendance rollup recompute failed for term ${termId}:`,
+              rollupErr.message
+            );
+            continue;
+          }
+          attendanceRecomputeTermCount += 1;
+        }
+        attendanceRecomputed = attendanceRecomputeTermCount > 0;
+      }
+    } catch (e) {
+      console.warn(
+        '[enrolment PATCH] attendance re-proration skipped:',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
   // Resolve the joining term for the audit trail + success toast. Prefer the
   // registrar's explicit choice; only derive from today when none was given.
   let lateEnrolleeTerm: { termNumber: number; termLabel: string } | null = null;
@@ -460,6 +516,12 @@ export async function PATCH(
         ? { terminalCascadeSkipped: 'admissions-already-terminal' }
         : {}),
       ...(isReEnrolment ? { reEnrolment: true } : {}),
+      ...(attendanceRecomputed
+        ? {
+            recomputedAttendance: true,
+            recomputedAttendanceTermCount: attendanceRecomputeTermCount,
+          }
+        : {}),
     },
   });
 
