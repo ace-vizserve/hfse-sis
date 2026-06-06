@@ -12,28 +12,24 @@ export type AttendanceStatus = (typeof ATTENDANCE_STATUS_VALUES)[number];
 export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
   P: 'Present',
   L: 'Late',
-  EX: 'Excused',
+  EX: 'Excused (MC / Excuse leave)',
   A: 'Absent',
   NC: 'No class',
 };
 
-// EX reason subtype. 'compassionate' consumes the student's
+// EX reason subtype. Matches HFSE's attendance-sheet legend (verified
+// against their T1 workbook): EX = "Excused (MC-Excuse Leave)" plus the two
+// quota'd subtypes. 'compassionate' consumes the student's
 // `urgent_compassionate_allowance` (5-day-per-year quota by default);
 // 'vacation' consumes `vacation_leave_allowance_per_term` (1-per-term
 // quota by default). Both defaults live on `school_config` and may be
 // overridden per student. See KD #94.
-const EX_REASON_VALUES = [
-  'mc',
-  'compassionate',
-  'school_activity',
-  'vacation',
-] as const;
+const EX_REASON_VALUES = ['mc', 'compassionate', 'vacation'] as const;
 export type ExReason = (typeof EX_REASON_VALUES)[number];
 
 export const EX_REASON_LABELS: Record<ExReason, string> = {
-  mc: 'Medical certificate',
+  mc: 'MC / Excuse leave',
   compassionate: 'Urgent / compassionate',
-  school_activity: 'School activity',
   vacation: 'Vacation leave',
 };
 

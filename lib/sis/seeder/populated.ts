@@ -958,14 +958,14 @@ async function seedAttendanceSummary(
 
   // Weighted random status picker (P heavy, small mix of L/A/EX). Single
   // PRNG instance threaded across both terms so determinism holds. EX rows
-  // also get an `ex_reason` from the migration-015 enum so the donut /
-  // compassionate-quota drill have meaningful spread (KD #50).
+  // also get an `ex_reason` from the HFSE-aligned enum (mc | compassionate
+  // | vacation, migration 070) so the donut / compassionate-quota /
+  // vacation-quota drills have meaningful spread (KD #94).
   const rand = mulberry32(hashString(`${testAy.ay_code}:attendance-daily`));
-  type ExReason = 'mc' | 'compassionate' | 'school_activity' | 'vacation';
+  type ExReason = 'mc' | 'compassionate' | 'vacation';
   function pickExReason(): ExReason {
     const r = rand();
-    if (r < 0.5) return 'mc';
-    if (r < 0.7) return 'school_activity';
+    if (r < 0.6) return 'mc';
     if (r < 0.85) return 'compassionate';
     return 'vacation';
   }

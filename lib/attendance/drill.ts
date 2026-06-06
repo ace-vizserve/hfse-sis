@@ -80,7 +80,7 @@ export type AttendanceEntryRow = {
   studentNumber: string;
   level: string | null;
   status: 'P' | 'L' | 'EX' | 'A' | 'NC';
-  exReason: string | null; // 'mc' | 'compassionate' | 'school_activity' | 'vacation' | null
+  exReason: string | null; // 'mc' | 'compassionate' | 'vacation' | null
   notes: string | null;
 };
 
@@ -836,15 +836,14 @@ function applyTargetFilter(
         return (rows as AttendanceEntryRow[]).filter(
           (r) => r.status === 'EX'
         ) as AttendanceDrillRow[];
-      // Donut sends the LABEL form ('MC' / 'Compassionate' /
-      // 'School activity' / 'Other') from `lib/attendance/dashboard.ts`'s
+      // Donut sends the LABEL form ('MC / Excuse leave' / 'Compassionate' /
+      // 'Vacation leave' / 'Other') from `lib/attendance/dashboard.ts`'s
       // `LABEL` map. Reverse-lookup to the raw `ex_reason` enum so the
       // filter actually matches. `'Other'` matches null (the dashboard
       // groups null reasons under that bucket).
       const labelToEnum: Record<string, string> = {
-        MC: 'mc',
+        'MC / Excuse leave': 'mc',
         Compassionate: 'compassionate',
-        'School activity': 'school_activity',
         'Vacation leave': 'vacation',
       };
       if (segment === 'Other' || segment.toLowerCase() === 'other') {

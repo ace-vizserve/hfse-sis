@@ -307,9 +307,8 @@ async function loadExReasonMixRangeUncached(
     counts[key] = (counts[key] ?? 0) + 1;
   }
   const LABEL: Record<string, string> = {
-    mc: 'MC',
+    mc: 'MC / Excuse leave',
     compassionate: 'Compassionate',
-    school_activity: 'School activity',
     vacation: 'Vacation leave',
     Other: 'Other',
   };

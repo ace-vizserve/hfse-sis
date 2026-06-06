@@ -106,8 +106,9 @@ const DAY_TYPE_HEADER_CHIP_LABEL: Record<DayType, string | null> = {
 // L pink — each with dark mark-ink so the letter stays legible (≥4.5:1).
 // SINGLE SOURCE OF TRUTH: the cell wash AND the legend swatch both read this
 // map (per §10.2), so they can never drift. EX shares one fill regardless of
-// subtype — the LETTER (EM/EV/EC/ES) disambiguates, not the colour (colour is
-// never the only signal). NC is no-class chrome, not a paper-sheet mark, so it
+// subtype — the cell shows just "EX" (the subtype is chosen in the dropdown +
+// shown on the tooltip), and colour is never the only signal. NC is no-class
+// chrome, not a paper-sheet mark, so it
 // keeps the neutral ink wash.
 const STATUS_CELL_WASH: Record<AttendanceStatus, string> = {
   P: 'bg-attendance-present text-attendance-mark-ink',
@@ -153,7 +154,7 @@ export type WideGridEnrolment = {
 };
 
 // Dropdown option value shape: "P" | "L" | "EX:mc" | "EX:compassionate" |
-// "EX:school_activity" | "EX:vacation" | "A" | "NC" | "" (unmarked)
+// "EX:vacation" | "A" | "NC" | "" (unmarked)
 type OptionValue =
   | ''
   | 'P'
@@ -161,23 +162,33 @@ type OptionValue =
   | 'EX:mc'
   | 'EX:vacation'
   | 'EX:compassionate'
-  | 'EX:school_activity'
   | 'A'
   | 'NC';
 
-const TEACHER_OPTIONS: Array<{ value: OptionValue; label: string }> = [
+type Option = { value: OptionValue; label: string };
+
+// Top-level options. The three EX subtypes are nested under their own
+// <optgroup> (EX_GROUP_OPTIONS) so the open dropdown reads as EX → its
+// categories. The collapsed cell still shows the canonical "EX" letter via
+// the pointer-events-none overlay span — the optgroup only affects the open
+// list, not the cell.
+const TEACHER_TOP_OPTIONS: Option[] = [
   { value: '', label: '—' },
   { value: 'P', label: 'P · Present' },
-  { value: 'L', label: 'L · Late' },
-  { value: 'EX:mc', label: 'EX · MC' },
-  { value: 'EX:vacation', label: 'EX · Vacation leave' },
-  { value: 'EX:compassionate', label: 'EX · Compassionate' },
-  { value: 'EX:school_activity', label: 'EX · School activity' },
   { value: 'A', label: 'A · Absent' },
+  { value: 'L', label: 'L · Late' },
 ];
 
-const REGISTRAR_OPTIONS: Array<{ value: OptionValue; label: string }> = [
-  ...TEACHER_OPTIONS,
+// EX subtypes grouped under "Excused (EX)". Order + labels mirror
+// EX_REASON_LABELS (HFSE legend).
+const EX_GROUP_OPTIONS: Option[] = [
+  { value: 'EX:mc', label: 'MC / Excuse leave' },
+  { value: 'EX:compassionate', label: 'Urgent / compassionate' },
+  { value: 'EX:vacation', label: 'Vacation leave' },
+];
+
+const REGISTRAR_TOP_OPTIONS: Option[] = [
+  ...TEACHER_TOP_OPTIONS,
   { value: 'NC', label: 'NC · No class' },
 ];
 
@@ -407,7 +418,7 @@ export function AttendanceWideGrid({
     return groups;
   }, [columns]);
 
-  const options = canWriteNc ? REGISTRAR_OPTIONS : TEACHER_OPTIONS;
+  const topOptions = canWriteNc ? REGISTRAR_TOP_OPTIONS : TEACHER_TOP_OPTIONS;
 
   if (columns.length === 0) {
     return (
@@ -753,7 +764,7 @@ export function AttendanceWideGrid({
                                       : 'Unmarked'
                                   }
                                 >
-                                  {options.map((o) => (
+                                  {topOptions.map((o) => (
                                     <option
                                       key={o.value}
                                       value={o.value}
@@ -762,6 +773,17 @@ export function AttendanceWideGrid({
                                       {o.label}
                                     </option>
                                   ))}
+                                  <optgroup label="Excused (EX)">
+                                    {EX_GROUP_OPTIONS.map((o) => (
+                                      <option
+                                        key={o.value}
+                                        value={o.value}
+                                        className={'text-foreground'}
+                                      >
+                                        {o.label}
+                                      </option>
+                                    ))}
+                                  </optgroup>
                                 </select>
                                 {/* Visible cell label — canonical status only
                                     (any EX subtype collapses to "EX"). */}
@@ -804,7 +826,7 @@ export function AttendanceWideGrid({
             cell when populated, so legend ↔ cell pixel-match per
             docs/context/09a-design-patterns.md §10.2 (bespoke swatch for grid
             cell tints). EX is a single chip — the cell collapses every EX
-            subtype (MC / vacation / compassionate / school activity) to "EX";
+            subtype (MC / vacation / compassionate) to "EX";
             the subtype is still selectable in the dropdown + stored (KD #94),
             and shown in the cell tooltip. */}
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-foreground">

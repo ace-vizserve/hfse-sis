@@ -80,12 +80,7 @@ const STATUS_BTN: Record<
     on: 'bg-attendance-excused text-attendance-mark-ink shadow-xs',
   },
 };
-const EX_REASONS: ExReason[] = [
-  'mc',
-  'compassionate',
-  'school_activity',
-  'vacation',
-];
+const EX_REASONS: ExReason[] = ['mc', 'compassionate', 'vacation'];
 
 // Day-summary stat cards — status gradient tiles (§9.3 palette). The number
 // is `text-foreground`; the tile carries the colour (matches the page's
