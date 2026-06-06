@@ -10,6 +10,42 @@
 
 ---
 
+## Validation results (2026-06-06)
+
+First pass walked through HFSE meetings + the demo recording. **7 confirmed · 10 partial · 7 open · 1 was wrong (R3, now fixed).** The per-module question tables below remain the reference for what each item means + the "if no" impact; this table is the current status.
+
+| # | Assumption | Status | Source / notes |
+|---|-----------|--------|----------------|
+| M1 | Two approvers for post-lock changes | ✅ Confirmed | Grading meeting + demo — but Sir Gary suggested "either/or"; confirm if BOTH must approve or EITHER suffices |
+| M2 | Letter-grade trend alert | ⚠️ Partial | Joann: no current practice ("unless mag-base sa equivalent"); Ms. Chandana to decide |
+| M3 | Publishing checklist soft gate | ⚠️ Partial | Shown at demo, not objected to; soft-vs-hard never explicitly asked — Joann to confirm |
+| M4 | Term grade ±5 difference alerts | ⚠️ Partial | Term comparison + ±5 confirmed; MAPEH letter subjects deferred to Chandana |
+| M5 | Grade-capture date / auto-lock | ❌ Open | Auto-lock-by-date is built; HFSE never confirmed automatic vs Joann locking manually |
+| A1 | Mid-year blank attendance (proration) | ⚠️ Partial | Joann prorates manually — system must support a registrar override ("proration plug") |
+| A2 | Leave-quota soft warning | ❌ Open | Not discussed |
+| A3 | Attendance mark colours | ❌ Open | Not discussed (we already hold a colour request) |
+| E1 | Draft vs Submit visibility | ❌ Open | Sir Gary asked "hindi siya masasave as draft?" at demo — surfaced, never answered |
+| E2 | Comment heading / virtue theme | ✅ Confirmed | Grading meeting + Excel + demo; not contested |
+| E3 | T4 no adviser comment | ✅ Confirmed | T4 report-book Excel + demo; stated, not contested |
+| SC1 | School vs operational calendar | ⚠️ Proposed design | Calendar-drives-grid confirmed; the two-calendar distinction never formally required |
+| AD1 | Document-validation queue | ✅ Confirmed | Admissions Feb meeting + demo — Amier described manual one-by-one verification |
+| AD2 | Chasing status split | ⚠️ Partial | Expiry/rejection confirmed; exact labels (To follow/Rejected/Expired/Uploaded) not confirmed |
+| AD3 | Applicant 1–5 feedback rating | ⚠️ Partial | Suggested by Ms. Jill; not confirmed as implemented/used — remove if unused |
+| AD4 | Early-bird next-year applications | ⚠️ Partial | Mature design decision; HFSE never explicitly confirmed |
+| R1 | Students-with-no-section queue | ✅ Confirmed | **Strongly validated** — 378/471 students null `classSection`; demo acknowledged late enrollees reaching only T3–T4 |
+| R2 | Withdrawal-reason dropdown | ❌ Open | Not discussed |
+| R3 | Alphabetical re-numbering | ✅ **Resolved — feature removed (this session)** | Joann: index numbers are **permanent, never change**. The feature genuinely renumbered `index_number` (mig 042 RPC) — contradicting the rule — so the button + route were removed. Viewing alphabetically stays via roster column sort. RPC left dormant; `section.realphabetize` audit label kept for historical rows |
+| R4 | Combined enrolment-changes feed | ❌ Open | Not discussed |
+| R5 | Discount-codes ownership | ❌ Open | Not discussed (KD #118 already deferred this) |
+| P1 | Email reminder / promised-date chasing | ⚠️ Partial | Auto-expiry notification confirmed; specific email + promised-date mechanism not confirmed |
+| P2 | 30/60/90-day expiry window | ❌ Open | Thresholds shown in UI; never confirmed as HFSE's preference |
+| PA1 | PDF via browser print | ❌ Open → **acceptable** | Physical report cards remain primary; digital PDF is supplementary — browser print is fine for now |
+| PA2 | Report cards per class per term window | ⚠️ Partial | Parents-see-published confirmed; open/close window is system design, not an explicit requirement |
+
+**Two worth a quick HFSE yes/no soon:** **M5** (auto-lock vs manual) and **AD3** (keep or drop the feedback page).
+
+---
+
 ## Markbook (grading)
 
 ✅ Already confirmed: the formula + weights (40/40/20 primary, 30/50/20 secondary), annual grade, General Average (1dp), the award ladder, non-examinable letters + per-term UG/E overrides (JoAnn). No need to re-ask.
