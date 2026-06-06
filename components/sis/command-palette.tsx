@@ -208,8 +208,8 @@ const NAV_ENTRIES: NavEntry[] = [
     icon: FileTextIcon,
   },
   {
-    href: '/markbook/masterfile',
-    label: 'Markbook — Masterfile',
+    href: '/records/academic-summary',
+    label: 'Records — Academic Summary',
     group: 'Modules',
     icon: FileTextIcon,
   },

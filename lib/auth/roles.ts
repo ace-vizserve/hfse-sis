@@ -161,15 +161,14 @@ const RECORDS_NAV: NavSection[] = [
       { href: '/records/cohorts/pass-expiry', label: 'Pass expiry' },
     ],
   },
-  // Cross-module deep-link to the Markbook Masterfile — the registrar's
-  // canonical cross-subject student review surface (KD #95). Page lives
-  // under /markbook/* but mental model = Records (whole-student outcomes).
+  // Academic Summary — the consolidated masterfile (KD #95). The registrar's
+  // canonical cross-subject student review surface, now hosted in Records
+  // (whole-student outcomes); it reads grade data from the Markbook data layer.
   {
-    label: 'Reports',
     items: [
       {
-        href: '/markbook/masterfile',
-        label: 'Masterfile',
+        href: '/records/academic-summary',
+        label: 'Academic Summary',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
     ],
@@ -523,10 +522,7 @@ export const NAV_BY_MODULE: {
         items: [{ href: '/markbook/sections', label: 'Sections' }],
       },
       {
-        items: [
-          { href: '/markbook/masterfile', label: 'Masterfile' },
-          { href: '/markbook/report-cards', label: 'Report Cards' },
-        ],
+        items: [{ href: '/markbook/report-cards', label: 'Report Cards' }],
       },
       {
         label: 'Admin',
@@ -555,10 +551,7 @@ export const NAV_BY_MODULE: {
         items: [{ href: '/markbook/sections', label: 'Sections' }],
       },
       {
-        items: [
-          { href: '/markbook/masterfile', label: 'Masterfile' },
-          { href: '/markbook/report-cards', label: 'Report Cards' },
-        ],
+        items: [{ href: '/markbook/report-cards', label: 'Report Cards' }],
       },
       {
         label: 'Admin',
@@ -591,10 +584,7 @@ export const NAV_BY_MODULE: {
         items: [{ href: '/markbook/sections', label: 'Sections' }],
       },
       {
-        items: [
-          { href: '/markbook/masterfile', label: 'Masterfile' },
-          { href: '/markbook/report-cards', label: 'Report Cards' },
-        ],
+        items: [{ href: '/markbook/report-cards', label: 'Report Cards' }],
       },
       {
         label: 'Admin',
@@ -688,6 +678,13 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   {
     prefix: '/admissions',
     allowed: ['admissions', 'registrar', 'school_admin', 'superadmin'],
+  },
+  // Academic Summary (the consolidated masterfile, KD #95) — registrar+ only.
+  // Matches the same role set as /records overall, but kept explicit so the
+  // restriction is documented at the route and longer-prefix-wins holds.
+  {
+    prefix: '/records/academic-summary',
+    allowed: ['registrar', 'school_admin', 'superadmin'],
   },
   { prefix: '/records', allowed: ['registrar', 'school_admin', 'superadmin'] },
   { prefix: '/sis', allowed: ['school_admin', 'superadmin'] },

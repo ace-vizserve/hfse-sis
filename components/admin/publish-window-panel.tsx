@@ -420,8 +420,8 @@ export function PublishWindowPanel({
   // Masterfile needs the level (it falls back to the first level otherwise).
   const gradingHref = `/markbook/grading?section=${sectionId}`;
   const masterfileHref = levelId
-    ? `/markbook/masterfile?level=${levelId}&class=${sectionId}`
-    : '/markbook/masterfile';
+    ? `/records/academic-summary?level=${levelId}&class=${sectionId}`
+    : '/records/academic-summary';
 
   return (
     <Card className="@container/card gap-0 py-0">
