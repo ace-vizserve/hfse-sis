@@ -73,6 +73,10 @@ export type PopulatedSeedResult = {
 // Created once per test env setup; purged when the env is reset. Identified
 // for cleanup via `user_metadata.seeded_teacher = true`.
 
+// 18 distinct personas — the subject-specialist model needs at least 18
+// (10 primary-subject specialists for P6 + 8 secondary-subject specialists
+// for S1). The 4 form advisers are drawn from this same set (a form adviser
+// also teaches a subject). See seedTeacherAssignments.
 export const TEST_TEACHERS = [
   { email: 'sarah.chen@demo.com', displayName: 'Sarah Chen' },
   { email: 'michael.santos@demo.com', displayName: 'Michael Santos' },
@@ -84,6 +88,14 @@ export const TEST_TEACHERS = [
   { email: 'robert.williams@demo.com', displayName: 'Robert Williams' },
   { email: 'maria.cruz@demo.com', displayName: 'Maria Cruz' },
   { email: 'kevin.lim@demo.com', displayName: 'Kevin Lim' },
+  { email: 'grace.ong@demo.com', displayName: 'Grace Ong' },
+  { email: 'daniel.reyes@demo.com', displayName: 'Daniel Reyes' },
+  { email: 'rachel.goh@demo.com', displayName: 'Rachel Goh' },
+  { email: 'samuel.wong@demo.com', displayName: 'Samuel Wong' },
+  { email: 'olivia.bautista@demo.com', displayName: 'Olivia Bautista' },
+  { email: 'nathan.lee@demo.com', displayName: 'Nathan Lee' },
+  { email: 'jessica.tan@demo.com', displayName: 'Jessica Tan' },
+  { email: 'benjamin.koh@demo.com', displayName: 'Benjamin Koh' },
 ] as const;
 
 export const TEST_TEACHER_PASSWORD = 'demo-2026!Teacher';
@@ -2422,23 +2434,64 @@ async function seedPublication(
   return publications.length;
 }
 
-// Round-robin assigns existing staff users as form_advisers + subject_teachers
-// across the test AY's sections. Prefers `role='teacher'` users; falls back
-// to registrar/school_admin/superadmin if no teachers exist. Skip guard
-// is a single "any row already" count to keep the check cheap.
+// Assigns staff users as form_advisers + subject_teachers following HFSE's
+// real model. HFSE operates only Primary 6 (P6) and Secondary 1 (S1); other
+// levels' sections are created by the structural seeder but get NO teacher
+// assignments. Within P6 + S1:
+//   - FCA: one distinct teacher per section (4 total — P6 has 2, S1 has 2).
+//   - Subject teachers: subject-specialist model — one distinct teacher per
+//     subject per level, teaching BOTH sections of that level. P6 = 10 primary
+//     subjects → 10 specialists (20 rows); S1 = 8 secondary subjects → 8
+//     specialists (16 rows). Primary and secondary specialists are different
+//     people (18 distinct total).
+//   - The 4 FCAs are drawn from these 18 specialists (a form adviser also
+//     teaches a subject), so a form-adviser teacher carries BOTH a
+//     form_adviser row (subject_id null) AND subject_teacher rows.
+// Assignment is deterministic across re-runs: pool sorted by email, subjects
+// by subject_id, sections by name. Idempotency preserved via the existing
+// per-row dedup sets (migration 003's partial unique indexes can't be targeted
+// by a PostgREST upsert onConflict, so manual diff is the correct workaround).
 async function seedTeacherAssignments(
   service: SupabaseClient,
   testAy: { id: string; ay_code: string }
 ): Promise<{ form_adviser: number; subject_teacher: number }> {
-  // AY-scoped sections.
+  // Only HFSE's operational levels receive teacher assignments.
+  const OPERATIONAL_LEVELS = ['P6', 'S1'] as const;
+  const PRIMARY_LEVEL = 'P6';
+  const SECONDARY_LEVEL = 'S1';
+  // Disjoint partition sizes: first 10 staff = P6/primary specialists, next 8
+  // = S1/secondary specialists (10 primary subjects + 8 secondary subjects).
+  const PRIMARY_SPECIALIST_COUNT = 10;
+  const SECONDARY_SPECIALIST_COUNT = 8;
+
+  // AY-scoped sections joined to their level code so we can filter to the
+  // operational levels only.
   const { data: sections } = await service
     .from('sections')
-    .select('id, level_id')
+    .select('id, name, level_id, levels!inner(code)')
     .eq('academic_year_id', testAy.id);
-  const sectionRows = (sections ?? []) as Array<{
+  type RawSection = {
     id: string;
+    name: string;
     level_id: string;
-  }>;
+    levels: { code: string } | { code: string }[] | null;
+  };
+  const allSections = (sections ?? []) as RawSection[];
+  const levelCodeOf = (s: RawSection): string => {
+    const lv = s.levels;
+    if (Array.isArray(lv)) return lv[0]?.code ?? '';
+    return lv?.code ?? '';
+  };
+  const sectionRows = allSections
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      level_id: s.level_id,
+      level_code: levelCodeOf(s),
+    }))
+    .filter((s) =>
+      (OPERATIONAL_LEVELS as readonly string[]).includes(s.level_code)
+    );
   if (sectionRows.length === 0) return { form_adviser: 0, subject_teacher: 0 };
 
   // Idempotent: pull every existing assignment for these sections so we
@@ -2488,6 +2541,7 @@ async function seedTeacherAssignments(
   const staff = (userList?.users ?? [])
     .map((u) => ({
       id: u.id,
+      email: (u.email ?? '').toLowerCase(),
       role:
         (u.app_metadata?.role as string | undefined) ??
         (u.user_metadata?.role as string | undefined) ??
@@ -2497,7 +2551,11 @@ async function seedTeacherAssignments(
 
   const teacherPool = staff.filter((u) => u.role === 'teacher');
   const fallbackPool = staff.filter((u) => u.role !== 'teacher');
-  const pool = teacherPool.length > 0 ? teacherPool : fallbackPool;
+  // Deterministic ordering by email so subject[i]→specialist[i] /
+  // section[k]→specialist[k] is stable across re-runs.
+  const pool = (teacherPool.length > 0 ? teacherPool : fallbackPool)
+    .slice()
+    .sort((a, b) => a.email.localeCompare(b.email));
 
   if (pool.length === 0) {
     console.warn(
@@ -2506,15 +2564,120 @@ async function seedTeacherAssignments(
     return { form_adviser: 0, subject_teacher: 0 };
   }
 
-  // ---- Form advisers: one per section, round-robin ----
-  const faRows = sectionRows
-    .map((s, i) => ({
-      teacher_user_id: pool[i % pool.length].id,
-      section_id: s.id,
-      subject_id: null as string | null,
-      role: 'form_adviser' as const,
-    }))
-    .filter((r) => !existingFAs.has(r.section_id));
+  // Disjoint partition: first N = primary specialists, next M = secondary
+  // specialists. When the pool is short (partial env), fall back to modulo
+  // within each level so we never crash — just warn that realism degrades.
+  // NOTE: in that degraded (<full-pool) path the partition is NOT disjoint
+  // (both arrays = the whole pool), so primary/secondary specialists may
+  // overlap and 1-distinct-FCA-per-section isn't guaranteed. Acceptable — it
+  // only affects demo realism; the full 18-teacher pool is the norm.
+  const haveFullPool =
+    pool.length >= PRIMARY_SPECIALIST_COUNT + SECONDARY_SPECIALIST_COUNT;
+  if (!haveFullPool) {
+    console.warn(
+      `[populated seeder] teacher pool has ${pool.length} (< ${
+        PRIMARY_SPECIALIST_COUNT + SECONDARY_SPECIALIST_COUNT
+      }) — specialist partition will wrap via modulo; assignments stay valid but less realistic`
+    );
+  }
+  const primarySpecialists = haveFullPool
+    ? pool.slice(0, PRIMARY_SPECIALIST_COUNT)
+    : pool;
+  const secondarySpecialists = haveFullPool
+    ? pool.slice(
+        PRIMARY_SPECIALIST_COUNT,
+        PRIMARY_SPECIALIST_COUNT + SECONDARY_SPECIALIST_COUNT
+      )
+    : pool;
+  const specialistsForLevel = (levelCode: string) =>
+    levelCode === SECONDARY_LEVEL ? secondarySpecialists : primarySpecialists;
+
+  // Subject ids per level from subject_configs (operational levels only — P6/S1),
+  // sorted deterministically so subject[i] maps to the level's specialist[i] stably.
+  const operationalLevelIds = [...new Set(sectionRows.map((s) => s.level_id))];
+  const { data: configs } = await service
+    .from('subject_configs')
+    .select('subject_id, level_id')
+    .eq('academic_year_id', testAy.id)
+    .in('level_id', operationalLevelIds);
+  const subjectsByLevelId = new Map<string, string[]>();
+  for (const c of (configs ?? []) as Array<{
+    subject_id: string;
+    level_id: string;
+  }>) {
+    if (!subjectsByLevelId.has(c.level_id))
+      subjectsByLevelId.set(c.level_id, []);
+    subjectsByLevelId.get(c.level_id)!.push(c.subject_id);
+  }
+  for (const [, ids] of subjectsByLevelId)
+    ids.sort((a, b) => a.localeCompare(b));
+
+  // Sections grouped per level_id, each list sorted by name (deterministic).
+  const sectionsByLevelId = new Map<
+    string,
+    Array<{ id: string; name: string; level_code: string }>
+  >();
+  for (const s of sectionRows) {
+    if (!sectionsByLevelId.has(s.level_id))
+      sectionsByLevelId.set(s.level_id, []);
+    sectionsByLevelId.get(s.level_id)!.push(s);
+  }
+  for (const [, list] of sectionsByLevelId)
+    list.sort((a, b) => a.name.localeCompare(b.name));
+
+  // ---- Subject teachers: one specialist per (subject × level), teaching ----
+  // ---- every section of that level. subject[i] → level specialist[i].   ----
+  const stRows: Array<{
+    teacher_user_id: string;
+    section_id: string;
+    subject_id: string;
+    role: 'subject_teacher';
+  }> = [];
+  for (const [levelId, levelSections] of sectionsByLevelId) {
+    const levelCode = levelSections[0]?.level_code ?? '';
+    const specialists = specialistsForLevel(levelCode);
+    if (specialists.length === 0) continue;
+    const subjectIds = subjectsByLevelId.get(levelId) ?? [];
+    subjectIds.forEach((subjectId, i) => {
+      const specialist = specialists[i % specialists.length];
+      for (const section of levelSections) {
+        const key = `${section.id}|${subjectId}`;
+        if (existingSTs.has(key)) continue;
+        stRows.push({
+          teacher_user_id: specialist.id,
+          section_id: section.id,
+          subject_id: subjectId,
+          role: 'subject_teacher',
+        });
+      }
+    });
+  }
+
+  // ---- Form advisers: section[k] of a level → that level's specialist[k] ----
+  // (so the FCA of section k is the teacher of subject k — a real teacher who
+  // also advises). One distinct adviser per section.
+  const faRows: Array<{
+    teacher_user_id: string;
+    section_id: string;
+    subject_id: string | null;
+    role: 'form_adviser';
+  }> = [];
+  for (const [, levelSections] of sectionsByLevelId) {
+    const levelCode = levelSections[0]?.level_code ?? '';
+    const specialists = specialistsForLevel(levelCode);
+    if (specialists.length === 0) continue;
+    levelSections.forEach((section, k) => {
+      if (existingFAs.has(section.id)) return;
+      const specialist = specialists[k % specialists.length];
+      faRows.push({
+        teacher_user_id: specialist.id,
+        section_id: section.id,
+        subject_id: null,
+        role: 'form_adviser',
+      });
+    });
+  }
+
   let formAdviserCount = 0;
   if (faRows.length > 0) {
     const { error: faErr, data: faInserted } = await service
@@ -2528,47 +2691,6 @@ async function seedTeacherAssignments(
       );
     }
     formAdviserCount = faInserted?.length ?? 0;
-  }
-
-  // ---- Subject teachers: one per (section × subject) from subject_configs ----
-  // Pull the full matrix then round-robin. subject_configs scopes by
-  // (academic_year_id, level_id); we need the level match per section.
-  const { data: configs } = await service
-    .from('subject_configs')
-    .select('subject_id, level_id')
-    .eq('academic_year_id', testAy.id);
-  const cfgByLevel = new Map<string, string[]>();
-  for (const c of (configs ?? []) as Array<{
-    subject_id: string;
-    level_id: string;
-  }>) {
-    if (!cfgByLevel.has(c.level_id)) cfgByLevel.set(c.level_id, []);
-    cfgByLevel.get(c.level_id)!.push(c.subject_id);
-  }
-
-  const stRows: Array<{
-    teacher_user_id: string;
-    section_id: string;
-    subject_id: string;
-    role: 'subject_teacher';
-  }> = [];
-  let rotation = 0;
-  for (const section of sectionRows) {
-    const subjectIds = cfgByLevel.get(section.level_id) ?? [];
-    for (const subjectId of subjectIds) {
-      const key = `${section.id}|${subjectId}`;
-      if (existingSTs.has(key)) {
-        rotation += 1; // keep rotation stable so unrelated re-runs assign the same teacher
-        continue;
-      }
-      stRows.push({
-        teacher_user_id: pool[rotation % pool.length].id,
-        section_id: section.id,
-        subject_id: subjectId,
-        role: 'subject_teacher',
-      });
-      rotation += 1;
-    }
   }
 
   let subjectTeacherCount = 0;
