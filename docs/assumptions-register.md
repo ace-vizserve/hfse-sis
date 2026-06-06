@@ -12,37 +12,37 @@
 
 ## Validation results (2026-06-06)
 
-First pass walked through HFSE meetings + the demo recording. **7 confirmed · 10 partial · 7 open · 1 was wrong (R3, now fixed).** The per-module question tables below remain the reference for what each item means + the "if no" impact; this table is the current status.
+First pass (HFSE meetings + demo), then answered by Mr Ace relaying HFSE on 2026-06-06. **18 confirmed/acceptable · 5 changes to build · 2 deferred to Ms. Chandana (M2/M4).** The per-module question tables below remain the reference for what each item means; this table is the current status.
 
-| # | Assumption | Status | Source / notes |
+| # | Assumption | Status | Answer / decision |
 |---|-----------|--------|----------------|
-| M1 | Two approvers for post-lock changes | ✅ Confirmed | Grading meeting + demo — but Sir Gary suggested "either/or"; confirm if BOTH must approve or EITHER suffices |
-| M2 | Letter-grade trend alert | ⚠️ Partial | Joann: no current practice ("unless mag-base sa equivalent"); Ms. Chandana to decide |
-| M3 | Publishing checklist soft gate | ⚠️ Partial | Shown at demo, not objected to; soft-vs-hard never explicitly asked — Joann to confirm |
-| M4 | Term grade ±5 difference alerts | ⚠️ Partial | Term comparison + ±5 confirmed; MAPEH letter subjects deferred to Chandana |
-| M5 | Grade-capture date / auto-lock | ❌ Open | Auto-lock-by-date is built; HFSE never confirmed automatic vs Joann locking manually |
-| A1 | Mid-year blank attendance (proration) | ⚠️ Partial | Joann prorates manually — system must support a registrar override ("proration plug") |
-| A2 | Leave-quota soft warning | ❌ Open | Not discussed |
-| A3 | Attendance mark colours | ❌ Open | Not discussed (we already hold a colour request) |
-| E1 | Draft vs Submit visibility | ❌ Open | Sir Gary asked "hindi siya masasave as draft?" at demo — surfaced, never answered |
-| E2 | Comment heading / virtue theme | ✅ Confirmed | Grading meeting + Excel + demo; not contested |
-| E3 | T4 no adviser comment | ✅ Confirmed | T4 report-book Excel + demo; stated, not contested |
-| SC1 | School vs operational calendar | ⚠️ Proposed design | Calendar-drives-grid confirmed; the two-calendar distinction never formally required |
-| AD1 | Document-validation queue | ✅ Confirmed | Admissions Feb meeting + demo — Amier described manual one-by-one verification |
-| AD2 | Chasing status split | ⚠️ Partial | Expiry/rejection confirmed; exact labels (To follow/Rejected/Expired/Uploaded) not confirmed |
-| AD3 | Applicant 1–5 feedback rating | ⚠️ Partial | Suggested by Ms. Jill; not confirmed as implemented/used — remove if unused |
-| AD4 | Early-bird next-year applications | ⚠️ Partial | Mature design decision; HFSE never explicitly confirmed |
-| R1 | Students-with-no-section queue | ✅ Confirmed | **Strongly validated** — 378/471 students null `classSection`; demo acknowledged late enrollees reaching only T3–T4 |
-| R2 | Withdrawal-reason dropdown | ❌ Open | Not discussed |
-| R3 | Alphabetical re-numbering | ✅ **Resolved — feature removed (this session)** | Joann: index numbers are **permanent, never change**. The feature genuinely renumbered `index_number` (mig 042 RPC) — contradicting the rule — so the button + route were removed. Viewing alphabetically stays via roster column sort. RPC left dormant; `section.realphabetize` audit label kept for historical rows |
-| R4 | Combined enrolment-changes feed | ❌ Open | Not discussed |
-| R5 | Discount-codes ownership | ❌ Open | Not discussed (KD #118 already deferred this) |
-| P1 | Email reminder / promised-date chasing | ⚠️ Partial | Auto-expiry notification confirmed; specific email + promised-date mechanism not confirmed |
-| P2 | 30/60/90-day expiry window | ❌ Open | Thresholds shown in UI; never confirmed as HFSE's preference |
-| PA1 | PDF via browser print | ❌ Open → **acceptable** | Physical report cards remain primary; digital PDF is supplementary — browser print is fine for now |
-| PA2 | Report cards per class per term window | ⚠️ Partial | Parents-see-published confirmed; open/close window is system design, not an explicit requirement |
+| M1 | Two approvers for post-lock changes | ✅ Confirmed | Current dual-approver flow approved as-is (the "either/or" was a musing, not a requirement) |
+| M2 | Letter-grade trend alert | ⚠️ Deferred → Chandana | Joann doesn't do term analysis for non-examinable subjects; hold for Ms. Chandana |
+| M3 | Publishing checklist soft gate | ✅ Confirmed (v1) | "Publish anyway" kept for v1 — **except** the comment check, now hard (see E1); revisit broader hardening post-go-live |
+| M4 | Term grade ±5 difference alerts | ⚠️ Deferred → Chandana | Numeric ±5 confirmed; non-examinable letter trend held with M2 |
+| M5 | Grade-capture date / auto-lock | 🔧 **Build — bulk lock** | Due dates are standard; system keeps **both** auto-lock-by-date (optional) **and** manual lock. Single manual lock exists → add a **bulk manual-lock** action |
+| A1 | Mid-year proration | 🔧 **Build — recompute on date edit** | Not a discretionary override (rejected). The fix: when a wrong proration is corrected via `enrollment_date`, **re-fire `recompute_attendance_rollup`** (it doesn't today). Audit-tracked |
+| A2 | Leave-quota soft warning | ✅ Confirmed — no build | Keep warn-and-allow; already tracked (recorded in `attendance_daily` + quota drills). **No hard block** — attendance must record what actually happened |
+| A3 | Attendance mark colours | 🔧 **Build — recolour grid** | HFSE palette: **P = Light Blue · A = Yellow · EX = Cyan · L = Pink**. As design tokens, scoped to the marking grid only |
+| E1 | Draft vs Submit visibility | 🔧 **Build — hard gate + cumulative render** | Publishing a term is **hard-blocked** until that term's comments are submitted (comment check only; other checks stay soft per M3). Report card renders comment boxes for **terms 1..viewing-term** (T1→1, T2→T1+T2, T3→all 3; T4 none); the gate requires comments for every displayed term (1..N, roster-correct, never future terms) so no empty box ships |
+| E2 | Comment heading / virtue theme | ✅ Confirmed | Not contested |
+| E3 | T4 no adviser comment | ✅ Confirmed | Not contested |
+| SC1 | School vs operational calendar | ✅ Confirmed | Operational calendar drives attendance (correct); school calendar = public-facing overview, admin-managed — the two-calendar split is right |
+| AD1 | Document-validation queue | ✅ Confirmed | Manual one-by-one verification matches |
+| AD2 | Chasing status split | ✅ Confirmed | Status labels (To follow / Rejected / Expired / Uploaded) are correct |
+| AD3 | Applicant 1–5 feedback rating | ✅ Confirmed — keep | They want to see feedback; keep the page |
+| AD4 | Early-bird next-year applications | ✅ Confirmed | Early-bird accepted for the upcoming AY while current AY active; SIS Admin management fine for now |
+| R1 | Students-with-no-section queue | ✅ Confirmed | **Strongly validated** — 378/471 students null `classSection` |
+| R2 | Withdrawal-reason dropdown | ✅ Confirmed | Current list is a fine placeholder; "Other" covers specifics |
+| R3 | Alphabetical re-numbering | ✅ **Resolved — feature removed** | Index numbers are permanent; renumber feature removed (RPC dormant, audit label kept). Supersedes KD #85 |
+| R4 | Combined enrolment-changes feed | ✅ Confirmed | Very useful — it's the existing `/records/movements` feed |
+| R5 | Discount-codes ownership | 🔧 **Build — admissions access** | Option A: grant the **admissions role** access to the existing `/sis/admin/discount-codes` surface; keep superadmin + school_admin |
+| P1 | Email reminder / promised-date chasing | ✅ Confirmed | Canonical flow is **parent-portal resubmit** on rejected/expired; "promised by date" is a kept system add-on |
+| P2 | 30/60/90-day expiry window | ✅ Confirmed (v1) | Good chase windows for v1 |
+| PA1 | PDF via browser print | ✅ Acceptable | Physical report cards remain primary; digital PDF is supplementary |
+| PA2 | Report cards per class per term window | ✅ Confirmed | The publish-window model is correct |
 
-**Two worth a quick HFSE yes/no soon:** **M5** (auto-lock vs manual) and **AD3** (keep or drop the feedback page).
+**5 changes greenlit → building:** **E1** (comment hard-gate + cumulative render) · **A1** (recompute on enrollment_date edit) · **A3** (attendance mark colours) · **M5** (bulk manual lock) · **R5** (admissions discount access). **Deferred:** M2/M4 (Ms. Chandana). Everything else confirmed — no work.
 
 ---
 
