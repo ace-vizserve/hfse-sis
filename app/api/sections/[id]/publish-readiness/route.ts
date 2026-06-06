@@ -2,6 +2,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getSchoolConfig } from '@/lib/sis/school-config';
+import {
+  cumulativeCommentGaps,
+  missingCommentStudents,
+  rosterRequiredForTerm,
+  type RosterStudent,
+  type WriteupLite,
+} from '@/lib/markbook/comment-completeness';
 
 // GET /api/sections/[id]/publish-readiness?term_id=...
 // Returns checklist data for the pre-publish completeness check.
@@ -24,7 +31,7 @@ export async function GET(
   // 1) Resolve term_number + virtue_theme for T4 detection and virtue check (KD #49).
   const { data: rawTerm } = await service
     .from('terms')
-    .select('id, term_number, academic_year_id, virtue_theme')
+    .select('id, term_number, academic_year_id, virtue_theme, end_date')
     .eq('id', termId)
     .single();
   if (!rawTerm) {
@@ -35,6 +42,7 @@ export async function GET(
     term_number: number;
     academic_year_id: string;
     virtue_theme: string | null;
+    end_date: string | null;
   };
   const isT4 = term.term_number === 4;
 
@@ -43,7 +51,7 @@ export async function GET(
     service
       .from('section_students')
       .select(
-        'id, index_number, enrollment_status, student:students(id, student_number, last_name, first_name)'
+        'id, index_number, enrollment_status, enrollment_date, student:students(id, student_number, last_name, first_name)'
       )
       .eq('section_id', sectionId)
       .in('enrollment_status', ['active', 'late_enrollee'])
@@ -57,11 +65,13 @@ export async function GET(
 
   const activeStudents = (enrolments ?? []).map((e) => {
     const s = Array.isArray(e.student) ? e.student[0] : e.student;
+    const rawDate = (e.enrollment_date as string | null) ?? null;
     return {
       sectionStudentId: e.id,
       indexNumber: e.index_number,
       studentId: s?.id ?? null,
       name: s ? `${s.last_name}, ${s.first_name}` : '(unknown)',
+      enrollmentDate: rawDate ? rawDate.slice(0, 10) : null,
     };
   });
   const sheetList = (sheets ?? []).map((sh) => {
@@ -102,31 +112,44 @@ export async function GET(
       : Promise.resolve({ data: [] as unknown[] }),
   ]);
 
-  type WriteupLite = {
-    student_id: string;
-    writeup: string | null;
-    submitted: boolean;
-  };
   const writeupsByStudent = new Map<string, WriteupLite>(
     (writeupRows ?? []).map((w) => [
       (w as WriteupLite).student_id,
       w as WriteupLite,
     ])
   );
-  const missingEvaluations = activeStudents.filter((s) => {
-    if (!s.studentId) return true;
-    const w = writeupsByStudent.get(s.studentId);
-    return !w || !w.writeup || w.writeup.trim().length === 0;
-  });
-  const submittedCount = activeStudents.filter((s) => {
+  // Roster shape for the shared completeness helper (KD #120 — by student_id).
+  const roster: RosterStudent[] = activeStudents.map((s) => ({
+    sectionStudentId: s.sectionStudentId,
+    studentId: s.studentId,
+    indexNumber: s.indexNumber,
+    name: s.name,
+    enrollmentDate: s.enrollmentDate,
+  }));
+  // THIS-term advisory display. Restrict to the roster actually REQUIRED for
+  // this term (KD #49/#120) — a late enrollee who joined after this term ended
+  // could never have written its comment, so the hard gate excludes them via
+  // rosterRequiredForTerm; the advisory must use the SAME roster or it would
+  // falsely flag them "missing" and disagree with the block. T4 has no end_date
+  // gating need (write-up check is skipped on T4 anyway).
+  const requiredRosterForThis = rosterRequiredForTerm(roster, term.end_date);
+  // "Missing" = submitted + non-empty missing (the same predicate the hard gate
+  // enforces, so the checklist never disagrees with the block).
+  const missingEvaluations = missingCommentStudents(
+    requiredRosterForThis,
+    (writeupRows ?? []) as WriteupLite[]
+  );
+  const submittedCount = requiredRosterForThis.filter((s) => {
     if (!s.studentId) return false;
     const w = writeupsByStudent.get(s.studentId);
     // Submitted AND non-empty — an emptied write-up is "missing", not submitted
     // (without this it double-counts as both missing and submitted, skewing drafted).
     return w?.submitted === true && !!w.writeup && w.writeup.trim().length > 0;
   }).length;
+  // Drafted = required − missing − submitted; over the same required roster so
+  // it can never go negative.
   const draftedCount =
-    activeStudents.length - missingEvaluations.length - submittedCount;
+    requiredRosterForThis.length - missingEvaluations.length - submittedCount;
 
   const attendanceBySSId = new Map(
     (attendanceRows ?? []).map((a) => {
@@ -382,6 +405,48 @@ export async function GET(
     };
   }
 
+  // CUMULATIVE comment hard-gate (KD #49 + #120). A published interim card for
+  // term N shows the FCA comment boxes for terms 1..N — so publishing N is
+  // HARD-blocked until comments are done for EVERY term 1..N (roster-correct
+  // per term; never future terms; T4 exempt). This mirrors exactly what the
+  // publish mutation enforces server-side (same shared helper) so the checklist
+  // and the block can't drift.
+  let commentGate: {
+    ok: boolean;
+    required_through_term: number | null;
+    gaps: {
+      term_number: number;
+      missing: { name: string; index: number | null }[];
+    }[];
+  } = { ok: true, required_through_term: null, gaps: [] };
+  if (!isT4) {
+    const { data: ayTerms } = await service
+      .from('terms')
+      .select('id, term_number, end_date')
+      .eq('academic_year_id', term.academic_year_id)
+      .order('term_number');
+    const cumulativeGaps = await cumulativeCommentGaps(
+      service,
+      sectionId,
+      (ayTerms ?? []) as {
+        id: string;
+        term_number: number;
+        end_date: string | null;
+      }[],
+      term.term_number
+    );
+    commentGate = {
+      ok: cumulativeGaps.length === 0,
+      required_through_term: Math.min(term.term_number, 3),
+      gaps: cumulativeGaps.map((g) => ({
+        term_number: g.termNumber,
+        missing: g.missing
+          .slice(0, 20)
+          .map((m) => ({ name: m.name, index: m.indexNumber })),
+      })),
+    };
+  }
+
   // Virtue theme: only relevant for T1–T3 (T4 has no FCA comment block per KD #49).
   const virtueReadiness = !isT4
     ? {
@@ -407,7 +472,10 @@ export async function GET(
           missing: [] as { name: string; index: number | null }[],
         }
       : {
-          total_active: activeStudents.length,
+          // Total over the term-required roster so submitted + drafted + missing
+          // reconcile (late enrollees who joined after this term are excluded,
+          // matching the hard gate).
+          total_active: requiredRosterForThis.length,
           submitted: submittedCount,
           drafted: draftedCount,
           missing: missingEvaluations.map((s) => ({
@@ -425,5 +493,7 @@ export async function GET(
     },
     t4_readiness: t4Readiness,
     virtue_readiness: virtueReadiness,
+    // HARD gate: cumulative comment completeness for terms 1..N (KD #49/#120).
+    comment_gate: commentGate,
   });
 }

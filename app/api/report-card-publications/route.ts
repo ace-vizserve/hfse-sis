@@ -6,6 +6,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { emailParentsPublication } from '@/lib/notifications/email-parents-publication';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
+import { cumulativeCommentGaps } from '@/lib/markbook/comment-completeness';
 
 // GET /api/report-card-publications?section_id=...
 // Registrar+ only. Returns all publications for a section.
@@ -72,6 +73,65 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
   const publishedBy = auth.user.email ?? auth.user.id;
+
+  // HARD gate (KD #49 + #120): a published interim card for term N shows the
+  // FCA comment boxes for terms 1..N, so publishing N requires SUBMITTED +
+  // NON-EMPTY comments for every term 1..min(N,3) — roster-correct per term,
+  // never future terms; T4 is exempt (no FCA block). This is the ONLY hard
+  // publish blocker — every other readiness check stays a soft "publish
+  // anyway" warning (KD #28). Reuses the same shared helper the readiness
+  // route consumes so the block and the checklist can't diverge.
+  const { data: termRow } = await service
+    .from('terms')
+    .select('term_number, academic_year_id')
+    .eq('id', body.term_id)
+    .single();
+  const publishTerm = termRow as {
+    term_number: number;
+    academic_year_id: string;
+  } | null;
+  if (publishTerm && publishTerm.term_number < 4) {
+    const { data: ayTerms } = await service
+      .from('terms')
+      .select('id, term_number, end_date')
+      .eq('academic_year_id', publishTerm.academic_year_id)
+      .order('term_number');
+    const gaps = await cumulativeCommentGaps(
+      service,
+      body.section_id,
+      (ayTerms ?? []) as {
+        id: string;
+        term_number: number;
+        end_date: string | null;
+      }[],
+      publishTerm.term_number
+    );
+    if (gaps.length > 0) {
+      const detail = gaps
+        .map(
+          (g) =>
+            `Term ${g.termNumber} (${g.missing.length} student${g.missing.length === 1 ? '' : 's'})`
+        )
+        .join(', ');
+      return NextResponse.json(
+        {
+          error: `Adviser comments must be submitted for every term this card shows before publishing. Missing: ${detail}.`,
+          code: 'comments_incomplete',
+          comment_gate: {
+            ok: false,
+            gaps: gaps.map((g) => ({
+              term_number: g.termNumber,
+              missing: g.missing.map((m) => ({
+                name: m.name,
+                index: m.indexNumber,
+              })),
+            })),
+          },
+        },
+        { status: 422 }
+      );
+    }
+  }
 
   const { data, error } = await service
     .from('report_card_publications')

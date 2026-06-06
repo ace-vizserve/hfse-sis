@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   Clock,
   Loader2,
+  Lock,
   Share2,
   X,
 } from 'lucide-react';
@@ -91,6 +92,17 @@ type ChecklistData = {
     ok: boolean;
     term_label: string;
   } | null;
+  // HARD gate (KD #49 + #120): cumulative adviser-comment completeness for the
+  // terms this card will display (1..N, T4 exempt). Unlike every other check,
+  // this one BLOCKS publishing — there is no "publish anyway".
+  comment_gate: {
+    ok: boolean;
+    required_through_term: number | null;
+    gaps: {
+      term_number: number;
+      missing: { name: string; index: number | null }[];
+    }[];
+  };
 };
 
 function statusOf(p: Publication | undefined): Status {
@@ -221,6 +233,79 @@ function ChecklistRow({
   );
 }
 
+// The cumulative adviser-comment row is a HARD requirement, not a soft
+// warning — it gets its own visual voice: a destructive (red) lock/alert tile,
+// a "Required" eyebrow, and a per-term breakdown of who is still missing. When
+// it fails, publishing is blocked entirely (the dialog's primary action is
+// disabled). When it passes, it reads as a quiet mint confirmation so the row
+// stays present as a launch-pad.
+function HardCommentRow({
+  ok,
+  gate,
+  href,
+}: {
+  ok: boolean;
+  gate: ChecklistData['comment_gate'];
+  href: string;
+}) {
+  const through = gate.required_through_term;
+  return (
+    <div
+      className={`flex flex-col gap-2 rounded-lg border px-3 py-3 ${
+        ok
+          ? 'border-brand-mint/40 bg-brand-mint/10'
+          : 'border-destructive/40 bg-destructive/10'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        {ok ? (
+          <CheckCircle2
+            className="size-4 shrink-0 text-brand-mint"
+            aria-hidden
+          />
+        ) : (
+          <Lock className="size-4 shrink-0 text-destructive" aria-hidden />
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            {ok ? 'Required · met' : 'Required to publish'}
+          </p>
+          <p className="truncate text-sm font-medium text-foreground">
+            Adviser comments
+            {through ? (
+              <span className="text-muted-foreground">
+                {' '}
+                (Terms 1–{through})
+              </span>
+            ) : null}
+          </p>
+        </div>
+        <Button
+          asChild
+          size="sm"
+          variant={ok ? 'ghost' : 'destructive'}
+          className="shrink-0"
+        >
+          <Link href={href}>
+            {ok ? 'View' : 'Write comments'}
+            <ArrowUpRight className="size-3" />
+          </Link>
+        </Button>
+      </div>
+      {!ok && (
+        <ul className="ml-7 space-y-0.5 text-xs text-destructive">
+          {gate.gaps.map((g) => (
+            <li key={g.term_number} className="tabular-nums">
+              Term {g.term_number}: {g.missing.length} student
+              {g.missing.length === 1 ? '' : 's'} without a submitted comment
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function PublishWindowPanel({
   sectionId,
   levelId,
@@ -279,7 +364,18 @@ export function PublishWindowPanel({
         }),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? 'publish failed');
+      if (!res.ok) {
+        // The server hard-gates on adviser comments (KD #49/#120). When this
+        // path is reached without the checklist dialog (e.g. the readiness
+        // pre-check fetch failed and we fell through to save), surface a clear,
+        // plain-English message instead of the raw server error string.
+        if (body.code === 'comments_incomplete') {
+          throw new Error(
+            "Can't publish yet — some adviser comments aren't submitted. Finish them in Evaluation first."
+          );
+        }
+        throw new Error(body.error ?? 'publish failed');
+      }
       const reload = await fetch(
         `/api/report-card-publications?section_id=${sectionId}`
       );
@@ -332,7 +428,13 @@ export function PublishWindowPanel({
       }
       const data = (await res.json()) as ChecklistData;
 
-      const hasIssues =
+      // The cumulative comment gate is a HARD blocker (KD #49/#120) — when it
+      // fails the registrar cannot "publish anyway". Every other check is a
+      // soft warning. We open the dialog whenever ANY check (soft or hard) is
+      // unsatisfied; the dialog disables its publish action when the hard gate
+      // is open.
+      const commentGateBlocked = data.comment_gate && !data.comment_gate.ok;
+      const hasSoftIssues =
         data.grading_sheets.unlocked.length > 0 ||
         data.evaluations.missing.length > 0 ||
         data.evaluations.drafted > 0 ||
@@ -344,7 +446,7 @@ export function PublishWindowPanel({
             data.t4_readiness.non_examinable_readiness.missing_count > 0 ||
             !data.t4_readiness.letterhead_readiness.ok));
 
-      if (!hasIssues) {
+      if (!commentGateBlocked && !hasSoftIssues) {
         await save(termId);
       } else {
         setChecklist(data);
@@ -378,12 +480,6 @@ export function PublishWindowPanel({
   // card, KD #49). The route reports neutral on T4, but we also hide the row
   // there — t4_readiness is non-null exactly on the T4 publish path.
   const isT4Checklist = checklist?.t4_readiness != null;
-  // commentsOk is true only when nothing is missing AND nothing is still drafted.
-  // drafted > 0 renders as an amber warning so the registrar sees unfinished writeups.
-  const commentsOk = checklist
-    ? checklist.evaluations.missing.length === 0 &&
-      checklist.evaluations.drafted === 0
-    : true;
   const attendanceOk = checklist
     ? checklist.attendance.missing.length === 0
     : true;
@@ -401,6 +497,11 @@ export function PublishWindowPanel({
     : true;
   const virtueOk = checklist?.virtue_readiness
     ? checklist.virtue_readiness.ok
+    : true;
+  // The cumulative comment gate is the ONLY hard blocker. When false, the
+  // dialog's publish action is disabled (no "publish anyway").
+  const commentGateOk = checklist?.comment_gate
+    ? checklist.comment_gate.ok
     : true;
 
   // Status summary for the meta strip — one tally per state, keyed on the same
@@ -659,9 +760,9 @@ export function PublishWindowPanel({
                 Publishing checklist
               </AlertDialogTitle>
               <AlertDialogDescription className="text-sm leading-relaxed text-muted-foreground">
-                A few items need attention before publishing to parents. These
-                are warnings, not hard stops — fix each via the quick-links, or
-                publish anyway.
+                {commentGateOk
+                  ? 'A few items need attention before publishing to parents. These are warnings, not hard stops — fix each via the quick-links, or publish anyway.'
+                  : 'Adviser comments are required before this card can be published — finish them via the quick-link below. Other items are warnings you can publish past.'}
               </AlertDialogDescription>
             </div>
           </div>
@@ -681,24 +782,19 @@ export function PublishWindowPanel({
                 actionLabel={sheetsOk ? 'View' : 'Lock sheets'}
               />
 
-              {/* Adviser comments — T1–T3 only (T4 final card has no FCA
-                  comment block, KD #49). */}
+              {/* Adviser comments — HARD requirement, cumulative across the
+                  terms this card shows (Terms 1..N, T4 exempt) per KD #49/#120.
+                  Unlike every other row, an open gate here BLOCKS publishing
+                  (the footer's publish action is disabled below). T1–T3 only —
+                  the T4 final card has no FCA comment block. */}
               {!isT4Checklist && (
-                <ChecklistRow
-                  passed={commentsOk}
-                  title="Adviser comments"
-                  summary={(() => {
-                    const { submitted, drafted, missing } =
-                      checklist.evaluations;
-                    if (missing.length > 0 && drafted > 0)
-                      return `${missing.length} missing · ${drafted} drafted`;
-                    if (missing.length > 0) return `${missing.length} missing`;
-                    if (drafted > 0) return `${drafted} drafted`;
-                    return `${submitted} submitted`;
-                  })()}
-                  href={`/evaluation/sections/${sectionId}`}
-                  actionLabel={commentsOk ? 'View' : 'Review comments'}
-                />
+                <div className="py-2.5">
+                  <HardCommentRow
+                    ok={commentGateOk}
+                    gate={checklist.comment_gate}
+                    href={`/evaluation/sections/${sectionId}`}
+                  />
+                </div>
               )}
 
               <ChecklistRow
@@ -781,16 +877,26 @@ export function PublishWindowPanel({
 
           <AlertDialogFooter className="shrink-0 border-t border-border pt-4">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                const termId = pendingPublishTermId;
-                setChecklist(null);
-                setPendingPublishTermId(null);
-                if (termId) await save(termId);
-              }}
-            >
-              Publish anyway
-            </AlertDialogAction>
+            {commentGateOk ? (
+              <AlertDialogAction
+                onClick={async () => {
+                  const termId = pendingPublishTermId;
+                  setChecklist(null);
+                  setPendingPublishTermId(null);
+                  if (termId) await save(termId);
+                }}
+              >
+                Publish anyway
+              </AlertDialogAction>
+            ) : (
+              // Hard gate open — publishing is blocked. A disabled plain Button
+              // (not AlertDialogAction) so it neither publishes nor closes the
+              // dialog; the registrar fixes comments via the row's quick-link.
+              <Button disabled variant="destructive">
+                <Lock className="size-3.5" />
+                Comments required
+              </Button>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -272,53 +272,61 @@ export function ReportCardDocument({
           </div>
         </section>
 
-        {/* Adviser comments — T1-T3 only (T4 reference doesn't show comments) */}
-        {!isFinal && (
-          <section className="space-y-3">
-            <SectionHeading>
-              Form Class Adviser&apos;s Comments
-              {(() => {
-                // KD #49: parenthetical carries the viewing term's virtue
-                // theme. Falls back to an unparenthesised heading when the
-                // theme is null (historical terms pre-migration 018).
-                const viewingTerm = terms.find(
-                  (t) => t.term_number === viewingTermNumber
-                );
-                const virtue = viewingTerm?.virtue_theme?.trim() || null;
-                return virtue ? (
-                  <span className="font-sans text-[11px] font-normal tracking-normal text-ink-4">
-                    {' '}
-                    (HFSE Virtues: {virtue})
-                  </span>
-                ) : null;
-              })()}
-            </SectionHeading>
-            <div className="space-y-2.5">
-              {visibleTerms.map((t) => {
-                const comment =
-                  comments.find((c: CommentRecord) => c.term_id === t.id)
-                    ?.comment ?? null;
-                return (
-                  <div
-                    key={t.id}
-                    className="rounded-xl border border-hairline p-4 print:break-inside-avoid"
-                  >
-                    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-4">
-                      {t.label}
-                    </p>
-                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-ink">
-                      {comment ?? (
-                        <span className="italic text-ink-4">
-                          No comment yet.
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
+        {/* Form Class Adviser's Comments — CUMULATIVE per KD #49. A published
+            interim card for term N shows one headed box per term 1..N (capped
+            at 3; T4 has no FCA block). Each box carries that term's own virtue
+            theme in its heading. A term with no comment is omitted (the publish
+            hard-gate guarantees published cards have them; this guards the
+            in-progress staff preview against a broken empty box). */}
+        {(() => {
+          if (isFinal) return null;
+          const cap = Math.min(viewingTermNumber, 3);
+          // Each box shows that term's submitted comment + its own virtue theme.
+          const commentTerms = terms
+            .filter((t) => t.term_number >= 1 && t.term_number <= cap)
+            .map((t) => ({
+              term: t,
+              comment:
+                comments
+                  .find((c: CommentRecord) => c.term_id === t.id)
+                  ?.comment?.trim() || null,
+            }))
+            .filter((entry) => entry.comment != null);
+
+          if (commentTerms.length === 0) return null;
+
+          return (
+            <section className="space-y-3">
+              <SectionHeading>
+                Form Class Adviser&apos;s Comments
+              </SectionHeading>
+              <div className="space-y-2.5">
+                {commentTerms.map(({ term: t, comment }) => {
+                  const virtue = t.virtue_theme?.trim() || null;
+                  return (
+                    <div
+                      key={t.id}
+                      className="rounded-xl border border-hairline p-4 print:break-inside-avoid"
+                    >
+                      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-4">
+                        {t.label}
+                        {virtue ? (
+                          <span className="font-sans normal-case tracking-normal text-ink-4">
+                            {' '}
+                            (HFSE Virtues: {virtue})
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-ink">
+                        {comment}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })()}
 
         {/* Signatures */}
         <section className="pt-2 text-xs text-ink-3 print:break-inside-avoid">
