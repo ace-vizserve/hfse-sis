@@ -12,7 +12,7 @@
 
 ## Validation results (2026-06-06)
 
-First pass (HFSE meetings + demo), then answered by Mr Ace relaying HFSE on 2026-06-06. **18 confirmed/acceptable · 5 changes to build · 2 deferred to Ms. Chandana (M2/M4).** The per-module question tables below remain the reference for what each item means; this table is the current status.
+First pass (HFSE meetings + demo), then answered by Mr Ace relaying HFSE on 2026-06-06. **18 confirmed/acceptable · 5 changes built + shipped (E1/A1/M5/A3/R5) · 2 deferred to Ms. Chandana (M2/M4).** The per-module question tables below remain the reference for what each item means; this table is the current status.
 
 | # | Assumption | Status | Answer / decision |
 |---|-----------|--------|----------------|
@@ -20,11 +20,11 @@ First pass (HFSE meetings + demo), then answered by Mr Ace relaying HFSE on 2026
 | M2 | Letter-grade trend alert | ⚠️ Deferred → Chandana | Joann doesn't do term analysis for non-examinable subjects; hold for Ms. Chandana |
 | M3 | Publishing checklist soft gate | ✅ Confirmed (v1) | "Publish anyway" kept for v1 — **except** the comment check, now hard (see E1); revisit broader hardening post-go-live |
 | M4 | Term grade ±5 difference alerts | ⚠️ Deferred → Chandana | Numeric ±5 confirmed; non-examinable letter trend held with M2 |
-| M5 | Grade-capture date / auto-lock | 🔧 **Build — bulk lock** | Due dates are standard; system keeps **both** auto-lock-by-date (optional) **and** manual lock. Single manual lock exists → add a **bulk manual-lock** action |
-| A1 | Mid-year proration | 🔧 **Build — recompute on date edit** | Not a discretionary override (rejected). The fix: when a wrong proration is corrected via `enrollment_date`, **re-fire `recompute_attendance_rollup`** (it doesn't today). Audit-tracked |
+| M5 | Grade-capture date / auto-lock | ✅ **Shipped (KD #131)** | Due dates are standard; system keeps **both** auto-lock-by-date (optional) **and** manual lock. Single manual lock exists → add a **bulk manual-lock** action |
+| A1 | Mid-year proration | ✅ **Shipped (KD #130)** | Not a discretionary override (rejected). The fix: when a wrong proration is corrected via `enrollment_date`, **re-fire `recompute_attendance_rollup`** (it doesn't today). Audit-tracked |
 | A2 | Leave-quota soft warning | ✅ Confirmed — no build | Keep warn-and-allow; already tracked (recorded in `attendance_daily` + quota drills). **No hard block** — attendance must record what actually happened |
-| A3 | Attendance mark colours | 🔧 **Build — recolour grid** | HFSE palette: **P = Light Blue · A = Yellow · EX = Cyan · L = Pink**. As design tokens, scoped to the marking grid only |
-| E1 | Draft vs Submit visibility | 🔧 **Build — hard gate + cumulative render** | Publishing a term is **hard-blocked** until that term's comments are submitted (comment check only; other checks stay soft per M3). Report card renders comment boxes for **terms 1..viewing-term** (T1→1, T2→T1+T2, T3→all 3; T4 none); the gate requires comments for every displayed term (1..N, roster-correct, never future terms) so no empty box ships |
+| A3 | Attendance mark colours | ✅ **Shipped (KD #132)** | HFSE palette: **P = Light Blue · A = Yellow · EX = Cyan · L = Pink**. As design tokens, scoped to the marking grid only |
+| E1 | Draft vs Submit visibility | ✅ **Shipped (KD #129)** | Publishing a term is **hard-blocked** until that term's comments are submitted (comment check only; other checks stay soft per M3). Report card renders comment boxes for **terms 1..viewing-term** (T1→1, T2→T1+T2, T3→all 3; T4 none); the gate requires comments for every displayed term (1..N, roster-correct, never future terms) so no empty box ships |
 | E2 | Comment heading / virtue theme | ✅ Confirmed | Not contested |
 | E3 | T4 no adviser comment | ✅ Confirmed | Not contested |
 | SC1 | School vs operational calendar | ✅ Confirmed | Operational calendar drives attendance (correct); school calendar = public-facing overview, admin-managed — the two-calendar split is right |
@@ -36,13 +36,13 @@ First pass (HFSE meetings + demo), then answered by Mr Ace relaying HFSE on 2026
 | R2 | Withdrawal-reason dropdown | ✅ Confirmed | Current list is a fine placeholder; "Other" covers specifics |
 | R3 | Alphabetical re-numbering | ✅ **Resolved — feature removed** | Index numbers are permanent; renumber feature removed (RPC dormant, audit label kept). Supersedes KD #85 |
 | R4 | Combined enrolment-changes feed | ✅ Confirmed | Very useful — it's the existing `/records/movements` feed |
-| R5 | Discount-codes ownership | 🔧 **Build — admissions access** | Option A: grant the **admissions role** access to the existing `/sis/admin/discount-codes` surface; keep superadmin + school_admin |
+| R5 | Discount-codes ownership | ✅ **Shipped (KD #133)** | Option A: grant the **admissions role** access to the existing `/sis/admin/discount-codes` surface; keep superadmin + school_admin |
 | P1 | Email reminder / promised-date chasing | ✅ Confirmed | Canonical flow is **parent-portal resubmit** on rejected/expired; "promised by date" is a kept system add-on |
 | P2 | 30/60/90-day expiry window | ✅ Confirmed (v1) | Good chase windows for v1 |
 | PA1 | PDF via browser print | ✅ Acceptable | Physical report cards remain primary; digital PDF is supplementary |
 | PA2 | Report cards per class per term window | ✅ Confirmed | The publish-window model is correct |
 
-**5 changes greenlit → building:** **E1** (comment hard-gate + cumulative render) · **A1** (recompute on enrollment_date edit) · **A3** (attendance mark colours) · **M5** (bulk manual lock) · **R5** (admissions discount access). **Deferred:** M2/M4 (Ms. Chandana). Everything else confirmed — no work.
+**5 changes built + shipped to prod (Sprint 57, 2026-06-06):** **E1** (comment hard-gate + cumulative render, KD #129) · **A1** (recompute on enrollment_date edit, KD #130) · **A3** (attendance mark colours, KD #132) · **M5** (bulk manual lock, KD #131) · **R5** (admissions discount access, KD #133). **Deferred:** M2/M4 (Ms. Chandana). Everything else confirmed — no work.
 
 ---
 
