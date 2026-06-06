@@ -114,6 +114,9 @@ export type NeedsDataItem = {
   detail: string;
   count: number;
   severity: 'warn' | 'bad' | 'info';
+  // Stable machine key so a drill can re-derive this group's members:
+  //   'missing-grades:<subjectId>' | 'unlocked-sheets:<subjectId>' | 'missing-comments'
+  groupKey: string;
 };
 
 export type NeedsAttentionItem = {
@@ -183,7 +186,7 @@ function rowsForStatus(
 }
 
 // Indices (0-based) of the terms in scope given the Term filter.
-function termIndicesInScope(
+export function termIndicesInScope(
   payload: MasterfilePayload,
   termNumber: number | null
 ): number[] {
@@ -195,7 +198,7 @@ function termIndicesInScope(
 }
 
 // Which comment terms (T1–T3) are in scope.
-function commentTermsInScope(
+export function commentTermsInScope(
   payload: MasterfilePayload,
   termNumber: number | null
 ): number[] {
@@ -204,6 +207,143 @@ function commentTermsInScope(
     .filter((n) => n >= 1 && n <= 3);
   if (termNumber == null) return all;
   return all.filter((n) => n === termNumber);
+}
+
+// ---------- Shared scope + predicate helpers (drill parity, KD #124) ----------
+//
+// These are the SINGLE source of truth for "which rows/subjects/terms are in
+// scope" and "is this student missing X". Both computeMasterfileDashboard
+// (below) and buildMasterfileDrillRows (lib/markbook/masterfile-drill.ts)
+// consume them, so a card's count always equals its drill's row count.
+
+export type AwardTier = 'gold' | 'silver' | 'bronze' | 'notEligible';
+export type GaBandTier = 'gold' | 'silver' | 'bronze' | 'below';
+
+// Rows after the Status filter (matches the dashboard's outcome aggregates,
+// which count over the full status-scoped set — withdrawn included).
+export function scopeRows(
+  payload: MasterfilePayload,
+  filters: MasterfileDashboardFilters
+): MasterfileStudentRow[] {
+  return rowsForStatus(payload.rows ?? [], filters.status);
+}
+
+// Rows that readiness + needs-data count over: status-scoped, but withdrawn
+// excluded unless the operator is explicitly inspecting the withdrawn cohort.
+export function enrolledScopeRows(
+  payload: MasterfilePayload,
+  filters: MasterfileDashboardFilters
+): MasterfileStudentRow[] {
+  const rows = scopeRows(payload, filters);
+  return filters.status === 'withdrawn'
+    ? rows
+    : rows.filter((r) => !isWithdrawn(r));
+}
+
+// Subjects after the Subject filter.
+export function subjectsInScope(
+  payload: MasterfilePayload,
+  filters: MasterfileDashboardFilters
+): MasterfileSubject[] {
+  const subjects = payload.subjects ?? [];
+  return filters.subjectId
+    ? subjects.filter((s) => s.id === filters.subjectId)
+    : subjects;
+}
+
+// True when a grade cell counts as "filled" — quarterly, letter, or N/A.
+function cellFilled(
+  cell:
+    | {
+        quarterly: number | null;
+        letter: string | null;
+        isNa: boolean;
+      }
+    | undefined
+): boolean {
+  if (!cell) return false;
+  return cell.quarterly != null || cell.letter != null || cell.isNa;
+}
+
+// Per-student missing-grade-cell count within the given subjects + terms.
+export function studentHasMissingGradeInScope(
+  r: MasterfileStudentRow,
+  subjects: MasterfileSubject[],
+  termIdx: number[]
+): { hasMissing: boolean; count: number } {
+  const subjectIdSet = new Set(subjects.map((s) => s.id));
+  let count = 0;
+  for (const sr of r.subjectRows ?? []) {
+    if (!subjectIdSet.has(sr.subjectId)) continue;
+    for (const ci of termIdx) {
+      const cell = (sr.cells ?? [])[ci];
+      if (!cell) continue;
+      if (!cellFilled(cell)) count += 1;
+    }
+  }
+  return { hasMissing: count > 0, count };
+}
+
+// Comment terms (T1–T3, in scope) a student has NOT written.
+export function studentMissingCommentTerms(
+  r: MasterfileStudentRow,
+  commentTerms: number[]
+): number[] {
+  return commentTerms.filter(
+    (tn) =>
+      !(r.commentsByTerm ?? []).some(
+        (c) => c.termNumber === tn && c.text.trim()
+      )
+  );
+}
+
+// Award tier for the donut — mirrors computeAwardTierCounts' switch.
+export function awardTierForRow(r: MasterfileStudentRow): AwardTier {
+  switch (r.overallAward) {
+    case 'Gold':
+      return 'gold';
+    case 'Silver':
+      return 'silver';
+    case 'Bronze':
+      return 'bronze';
+    default:
+      return 'notEligible';
+  }
+}
+
+// GA band for the spread chart — mirrors computeGaBuckets' bucketing. Returns
+// null for a pending (null) GA, which is unbucketed (matches the chart).
+export function gaBandTierForRow(
+  r: MasterfileStudentRow,
+  thresholds: AwardThresholds
+): GaBandTier | null {
+  const ga = r.generalAverage;
+  if (ga == null) return null;
+  if (ga >= thresholds.goldMin) return 'gold';
+  if (ga >= thresholds.silverMin) return 'silver';
+  if (ga >= thresholds.bronzeMin) return 'bronze';
+  return 'below';
+}
+
+// Unlocked grading sheets in scope (Term + Subject filtered) — the source for
+// the "unlocked-sheets:<subjectId>" needs-data groups.
+export function unlockedSheetsInScope(
+  payload: MasterfilePayload,
+  filters: MasterfileDashboardFilters
+) {
+  const termIdx = termIndicesInScope(payload, filters.termNumber);
+  const termIdsInScope = new Set(
+    termIdx.map((i) => (payload.terms ?? [])[i]?.id).filter(Boolean) as string[]
+  );
+  const subjectIdSet = new Set(
+    subjectsInScope(payload, filters).map((s) => s.id)
+  );
+  return (payload.sheets ?? []).filter(
+    (s) =>
+      (filters.subjectId == null || subjectIdSet.has(s.subjectId)) &&
+      termIdsInScope.has(s.termId) &&
+      !s.isLocked
+  );
 }
 
 // ---------- Main entry ----------
@@ -523,61 +663,48 @@ function computeNeedsData(
   // Mirror computeReadiness: when the Status filter is 'withdrawn', the
   // operator is inspecting that cohort, so include those rows in the chase
   // list too. Otherwise withdrawn students aren't expected to have grades.
-  const enrolledRows =
-    filters.status === 'withdrawn' ? rows : rows.filter((r) => !isWithdrawn(r));
+  // (Same set the drill re-derives via enrolledScopeRows — count == drill.)
+  const enrolledRows = enrolledScopeRows(payload, filters);
   const subjectById = new Map(payload.subjects.map((s) => [s.id, s]));
-  const subjectIdSet = new Set(subjects.map((s) => s.id));
   const items: NeedsDataItem[] = [];
 
   // 1) Missing grades grouped by subject (× FCA, since chasing is per-class).
+  // Keyed by subjectId so the drill ('missing-grades:<subjectId>') re-derives
+  // the same group; counts via the shared studentHasMissingGradeInScope.
   const missingGradesBySubject = new Map<string, number>();
-  for (const r of enrolledRows) {
-    for (const sr of r.subjectRows ?? []) {
-      if (!subjectIdSet.has(sr.subjectId)) continue;
-      const sub = subjectById.get(sr.subjectId);
-      if (!sub) continue;
-      for (const ci of termIdx) {
-        const cell = (sr.cells ?? [])[ci];
-        if (!cell) continue;
-        const filled =
-          cell.quarterly != null || cell.letter != null || cell.isNa;
-        if (!filled) {
-          missingGradesBySubject.set(
-            sub.name,
-            (missingGradesBySubject.get(sub.name) ?? 0) + 1
-          );
-        }
-      }
+  for (const sub of subjects) {
+    let count = 0;
+    for (const r of enrolledRows) {
+      count += studentHasMissingGradeInScope(r, [sub], termIdx).count;
     }
+    if (count > 0) missingGradesBySubject.set(sub.id, count);
   }
-  for (const [subjectName, count] of missingGradesBySubject) {
+  for (const [subjectId, count] of missingGradesBySubject) {
     items.push({
-      group: subjectName,
+      group: subjectById.get(subjectId)?.name ?? 'Subject',
       detail: `${count} grade cell${count === 1 ? '' : 's'} not yet entered`,
       count,
       severity: 'warn',
+      groupKey: `missing-grades:${subjectId}`,
     });
   }
 
-  // 2) Unlocked sheets grouped by subject.
-  const termIdsInScope = new Set(
-    termIdx.map((i) => payload.terms[i]?.id).filter(Boolean) as string[]
-  );
+  // 2) Unlocked sheets grouped by subject (shared unlockedSheetsInScope so the
+  // drill 'unlocked-sheets:<subjectId>' lists exactly these sheets).
   const unlockedBySubject = new Map<string, number>();
-  for (const s of payload.sheets) {
-    if (filters.subjectId != null && !subjectIdSet.has(s.subjectId)) continue;
-    if (!termIdsInScope.has(s.termId)) continue;
-    if (s.isLocked) continue;
-    const sub = subjectById.get(s.subjectId);
-    const name = sub?.name ?? 'Unknown subject';
-    unlockedBySubject.set(name, (unlockedBySubject.get(name) ?? 0) + 1);
+  for (const s of unlockedSheetsInScope(payload, filters)) {
+    unlockedBySubject.set(
+      s.subjectId,
+      (unlockedBySubject.get(s.subjectId) ?? 0) + 1
+    );
   }
-  for (const [subjectName, count] of unlockedBySubject) {
+  for (const [subjectId, count] of unlockedBySubject) {
     items.push({
-      group: subjectName,
+      group: subjectById.get(subjectId)?.name ?? 'Unknown subject',
       detail: `${count} grading sheet${count === 1 ? '' : 's'} not yet locked`,
       count,
       severity: 'info',
+      groupKey: `unlocked-sheets:${subjectId}`,
     });
   }
 
@@ -586,15 +713,7 @@ function computeNeedsData(
   if (commentTerms.length > 0) {
     let missingComments = 0;
     for (const r of enrolledRows) {
-      for (const tn of commentTerms) {
-        if (
-          !(r.commentsByTerm ?? []).some(
-            (c) => c.termNumber === tn && c.text.trim()
-          )
-        ) {
-          missingComments += 1;
-        }
-      }
+      missingComments += studentMissingCommentTerms(r, commentTerms).length;
     }
     if (missingComments > 0) {
       items.push({
@@ -602,6 +721,7 @@ function computeNeedsData(
         detail: `${missingComments} write-up${missingComments === 1 ? '' : 's'} still blank (T1–T3)`,
         count: missingComments,
         severity: 'warn',
+        groupKey: 'missing-comments',
       });
     }
   }

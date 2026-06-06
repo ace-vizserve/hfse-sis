@@ -23,8 +23,15 @@ export type ActionItem = {
   label: string;
   sublabel?: string;
   meta?: string;
+  // Unit label rendered right after `meta` (e.g. "cells", "comments", "sheets")
+  // so the list number is self-labeled in its own unit — important when the
+  // drill it opens counts in a different unit (students).
+  metaLabel?: string;
   severity?: InsightSeverity;
   href?: string;
+  // When set (and no `href`), the row renders as an accessible <button> that
+  // fires this on click. `href` takes precedence when both are provided.
+  onClick?: () => void;
 };
 
 const DOT_BY_SEVERITY: Record<InsightSeverity, string> = {
@@ -99,6 +106,7 @@ export function ActionList({
 
 function ActionRow({ item }: { item: ActionItem }) {
   const dot = DOT_BY_SEVERITY[item.severity ?? 'info'];
+  const interactive = Boolean(item.href || item.onClick);
   const inner = (
     <div className="group flex items-center gap-3 px-5 py-3 transition-colors hover:bg-accent/40">
       <span className={cn('size-2.5 shrink-0 rounded-full', dot)} />
@@ -115,9 +123,12 @@ function ActionRow({ item }: { item: ActionItem }) {
       {item.meta && (
         <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
           {item.meta}
+          {item.metaLabel && (
+            <span className="ml-1 not-italic">{item.metaLabel}</span>
+          )}
         </span>
       )}
-      {item.href && (
+      {interactive && (
         <ArrowRightIcon className="size-3.5 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
       )}
     </div>
@@ -128,6 +139,20 @@ function ActionRow({ item }: { item: ActionItem }) {
         <Link href={item.href} className="block">
           {inner}
         </Link>
+      </li>
+    );
+  }
+  if (item.onClick) {
+    return (
+      <li>
+        <button
+          type="button"
+          onClick={item.onClick}
+          aria-label={`${item.label} — show details`}
+          className="block w-full cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          {inner}
+        </button>
       </li>
     );
   }

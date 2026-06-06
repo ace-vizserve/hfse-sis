@@ -8,7 +8,7 @@ import {
   Lock,
   MessageSquareText,
 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import {
   Card,
@@ -33,10 +33,14 @@ import {
 } from '@/components/dashboard/metric-card';
 import {
   computeMasterfileDashboard,
+  type AwardTier,
+  type GaBandTier,
   type MasterfileDashboardFilters,
   type MasterfileReadiness,
   type ReadinessMetric,
 } from '@/lib/markbook/masterfile-dashboard';
+import type { MasterfileDrillTarget } from '@/lib/markbook/masterfile-drill';
+import { MasterfileDrillSheet } from '@/components/markbook/masterfile-drill-sheet';
 import type { MasterfilePayload } from '@/lib/markbook/masterfile';
 import { cn } from '@/lib/utils';
 
@@ -73,6 +77,9 @@ export function MasterfileDashboard({
     [payload, filters]
   );
 
+  // One piece of drill state for the whole dashboard. null = sheet closed.
+  const [target, setTarget] = useState<MasterfileDrillTarget | null>(null);
+
   return (
     <div className="flex flex-col gap-10">
       {/* ── At a glance — current snapshot ────────────────────────────── */}
@@ -87,7 +94,10 @@ export function MasterfileDashboard({
             label="Grades recorded"
             icon={BookOpenCheck}
             metric={d.readiness.gradesEntered}
+            onDrill={() => setTarget({ kind: 'missing-grades' })}
+            drillHint="See students with missing grades"
           />
+          {/* Sheet-centric, not student-centric — intentionally not drillable. */}
           <ReadinessCard
             label="Sheets locked"
             icon={Lock}
@@ -97,13 +107,18 @@ export function MasterfileDashboard({
             label="Comments in"
             icon={MessageSquareText}
             metric={d.readiness.commentsWritten}
+            onDrill={() => setTarget({ kind: 'missing-comments' })}
+            drillHint="See students with no adviser comment"
           />
           <ReadinessCard
             label="Attendance logged"
             icon={CalendarCheck2}
             metric={d.readiness.attendanceRecorded}
           />
-          <GradableCard readiness={d.readiness} />
+          <GradableCard
+            readiness={d.readiness}
+            onDrill={() => setTarget({ kind: 'incomplete-results' })}
+          />
         </div>
       </section>
 
@@ -115,8 +130,14 @@ export function MasterfileDashboard({
           subtitle="Award distribution, General Average spread, subject performance and attendance. Students without complete data show as pending, not awarded."
         />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <AwardDistributionCard dashboard={d} />
-          <GaSpreadCard dashboard={d} />
+          <AwardDistributionCard
+            dashboard={d}
+            onDrillTier={(tier) => setTarget({ kind: 'award', tier })}
+          />
+          <GaSpreadCard
+            dashboard={d}
+            onDrillBand={(tier) => setTarget({ kind: 'ga-band', tier })}
+          />
           <SubjectPerformanceCard dashboard={d} />
           <AttendanceHealthCard dashboard={d} />
         </div>
@@ -130,11 +151,50 @@ export function MasterfileDashboard({
           subtitle="Two quick lists — what's still coming in, and students whose results stand out — so you know where to look next."
         />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <NeedsDataCard dashboard={d} />
+          <NeedsDataCard
+            dashboard={d}
+            onDrillGroup={(groupKey) =>
+              setTarget({ kind: 'needs-data', groupKey })
+            }
+          />
           <NeedsAttentionCard dashboard={d} />
         </div>
       </section>
+
+      <MasterfileDrillSheet
+        payload={payload}
+        filters={filters}
+        target={target}
+        open={target != null}
+        onOpenChange={(o) => {
+          if (!o) setTarget(null);
+        }}
+      />
     </div>
+  );
+}
+
+// Accessible wrapper that turns a non-interactive card into a drill trigger.
+// The child MetricCard renders a <Card> (a div), so we wrap it in a real
+// <button> for keyboard + screen-reader support (design-system §1/§2).
+function DrillButton({
+  onClick,
+  label,
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="group block w-full cursor-pointer rounded-xl text-left transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] [&>*]:transition-shadow [&>*]:hover:shadow-md"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -177,10 +237,14 @@ function ReadinessCard({
   label,
   icon,
   metric,
+  onDrill,
+  drillHint,
 }: {
   label: string;
   icon: React.ComponentProps<typeof MetricCard>['icon'];
   metric: ReadinessMetric;
+  onDrill?: () => void;
+  drillHint?: string;
 }) {
   const value =
     metric.expected === 0 ? 'Pending' : `${metric.done}/${metric.expected}`;
@@ -188,7 +252,7 @@ function ReadinessCard({
     metric.pct == null
       ? 'Nothing in this scope yet'
       : `${metric.pct.toFixed(0)}% so far`;
-  return (
+  const card = (
     <MetricCard
       label={label}
       value={value}
@@ -198,9 +262,24 @@ function ReadinessCard({
       subtext={subtext}
     />
   );
+  if (!onDrill) return card;
+  return (
+    <DrillButton
+      onClick={onDrill}
+      label={drillHint ?? `${label} — show details`}
+    >
+      {card}
+    </DrillButton>
+  );
 }
 
-function GradableCard({ readiness }: { readiness: MasterfileReadiness }) {
+function GradableCard({
+  readiness,
+  onDrill,
+}: {
+  readiness: MasterfileReadiness;
+  onDrill?: () => void;
+}) {
   // When no examinable subjects are in scope (e.g. Subject = Music), the
   // gradable metric doesn't apply — show "Pending" with a clarifying subtext
   // instead of a misleading "0 / N" deficit.
@@ -217,7 +296,7 @@ function GradableCard({ readiness }: { readiness: MasterfileReadiness }) {
     readiness.gradableApplicable === false
       ? 'No examinable subjects in scope'
       : 'Have complete results so far';
-  return (
+  const card = (
     <MetricCard
       label="Full results"
       value={value}
@@ -226,6 +305,16 @@ function GradableCard({ readiness }: { readiness: MasterfileReadiness }) {
       intent={intent}
       subtext={subtext}
     />
+  );
+  // Drilling only makes sense when there's an examinable roster to be short of.
+  if (!onDrill || notApplicable) return card;
+  return (
+    <DrillButton
+      onClick={onDrill}
+      label="Full results — see students without complete results"
+    >
+      {card}
+    </DrillButton>
   );
 }
 
@@ -271,13 +360,28 @@ function PendingState({ label }: { label: string }) {
   );
 }
 
+const AWARD_LEGEND: { tier: AwardTier; label: string }[] = [
+  { tier: 'gold', label: 'Gold' },
+  { tier: 'silver', label: 'Silver' },
+  { tier: 'bronze', label: 'Bronze' },
+  { tier: 'notEligible', label: 'Not eligible' },
+];
+
 function AwardDistributionCard({
   dashboard,
+  onDrillTier,
 }: {
   dashboard: ReturnType<typeof computeMasterfileDashboard>;
+  onDrillTier: (tier: AwardTier) => void;
 }) {
   const t = dashboard.outcomes.awardTierCounts;
   const total = t.gold + t.silver + t.bronze + t.notEligible;
+  const countByTier: Record<AwardTier, number> = {
+    gold: t.gold,
+    silver: t.silver,
+    bronze: t.bronze,
+    notEligible: t.notEligible,
+  };
   const data = [
     { name: 'Gold', value: t.gold },
     { name: 'Silver', value: t.silver },
@@ -289,21 +393,73 @@ function AwardDistributionCard({
       {total === 0 ? (
         <PendingState label="No students in this scope yet." />
       ) : (
-        <DonutChart
-          data={data}
-          colors={DONUT_COLORS}
-          centerValue={total}
-          centerLabel="Students"
-        />
+        <>
+          <DonutChart
+            data={data}
+            colors={DONUT_COLORS}
+            centerValue={total}
+            centerLabel="Students"
+          />
+          {/* Clickable legend — accessible alternative to chart-segment
+              clicks; one drill chip per award tier. */}
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {AWARD_LEGEND.map(({ tier, label }, i) => (
+              <li key={tier}>
+                <LegendChip
+                  color={DONUT_COLORS[i % DONUT_COLORS.length]}
+                  label={label}
+                  count={countByTier[tier]}
+                  onClick={() => onDrillTier(tier)}
+                  ariaLabel={`${label}: ${countByTier[tier]} students — show list`}
+                />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </ChartCard>
   );
 }
 
+// Small clickable legend chip used by the Award + GA-band cards.
+function LegendChip({
+  color,
+  label,
+  count,
+  onClick,
+  ariaLabel,
+}: {
+  color: string;
+  label: string;
+  count?: number;
+  onClick: () => void;
+  ariaLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground transition-colors hover:border-hairline-strong hover:bg-accent/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+    >
+      <span
+        className="size-2 shrink-0 rounded-full"
+        style={{ backgroundColor: color }}
+      />
+      {label}
+      {count != null && (
+        <span className="tabular-nums text-foreground">{count}</span>
+      )}
+    </button>
+  );
+}
+
 function GaSpreadCard({
   dashboard,
+  onDrillBand,
 }: {
   dashboard: ReturnType<typeof computeMasterfileDashboard>;
+  onDrillBand: (tier: GaBandTier) => void;
 }) {
   const buckets = dashboard.outcomes.gaBuckets;
   const total = buckets.reduce((s, b) => s + b.count, 0);
@@ -327,7 +483,11 @@ function GaSpreadCard({
           height={220}
         />
       )}
-      <BandFootnote colors={GA_COLORS} buckets={buckets} />
+      <BandFootnote
+        colors={GA_COLORS}
+        buckets={buckets}
+        onDrillBand={onDrillBand}
+      />
     </ChartCard>
   );
 }
@@ -335,24 +495,25 @@ function GaSpreadCard({
 function BandFootnote({
   colors,
   buckets,
+  onDrillBand,
 }: {
   colors: string[];
   buckets: ReturnType<
     typeof computeMasterfileDashboard
   >['outcomes']['gaBuckets'];
+  onDrillBand: (tier: GaBandTier) => void;
 }) {
   return (
-    <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+    <ul className="mt-3 flex flex-wrap gap-2">
       {buckets.map((b, i) => (
-        <li
-          key={b.tier}
-          className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground"
-        >
-          <span
-            className="size-2 rounded-full"
-            style={{ backgroundColor: colors[i % colors.length] }}
+        <li key={b.tier}>
+          <LegendChip
+            color={colors[i % colors.length]}
+            label={b.label}
+            count={b.count}
+            onClick={() => onDrillBand(b.tier)}
+            ariaLabel={`${b.label}: ${b.count} students — show list`}
           />
-          {b.label}
         </li>
       ))}
     </ul>
@@ -469,17 +630,34 @@ function RateStat({
 
 // ---------- Act 3 cards ----------
 
+// The "Still coming in" count is in cells / comments / sheets depending on the
+// group; label it so it reads in its own unit (the drill opens to students).
+function needsDataMetaLabel(groupKey: string, count: number): string {
+  const plural = (singular: string) =>
+    count === 1 ? singular : `${singular}s`;
+  if (groupKey.startsWith('missing-grades:')) return plural('cell');
+  if (groupKey.startsWith('unlocked-sheets:')) return plural('sheet');
+  if (groupKey === 'missing-comments') return plural('comment');
+  return '';
+}
+
 function NeedsDataCard({
   dashboard,
+  onDrillGroup,
 }: {
   dashboard: ReturnType<typeof computeMasterfileDashboard>;
+  onDrillGroup: (groupKey: string) => void;
 }) {
   const items: ActionItem[] = dashboard.watchlists.needsData.map((i) => ({
     label: i.group,
     sublabel: i.detail,
     meta: String(i.count),
+    // Self-label the count in its own unit — the drill opens to a student count
+    // (or sheet count), so a bare number on this row would look contradictory.
+    metaLabel: needsDataMetaLabel(i.groupKey, i.count),
     severity:
       i.severity === 'bad' ? 'bad' : i.severity === 'warn' ? 'warn' : 'info',
+    onClick: () => onDrillGroup(i.groupKey),
   }));
   return (
     <ActionList
