@@ -4,10 +4,8 @@ import { MasterfileToolbar } from '@/components/markbook/masterfile-toolbar';
 import { MasterfileView } from '@/components/markbook/masterfile-view';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
-import { requireCurrentAyCode } from '@/lib/academic-year';
-import { loadMasterfile } from '@/lib/markbook/masterfile';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
-import { createServiceClient } from '@/lib/supabase/service';
+import { resolveAcademicSummaryScope } from '@/lib/markbook/academic-summary-scope';
+import { getSessionUser } from '@/lib/supabase/server';
 
 // Academic Records Summary — the consolidated masterfile (KD #95). Lives in the
 // Records module (whole-student outcomes) but reads grade data from the
@@ -42,41 +40,10 @@ export default async function AcademicSummaryPage({
   }
 
   const sp = await searchParams;
-  const supabase = await createClient();
-  const service = createServiceClient();
-  const currentAyCode = await requireCurrentAyCode(service);
+  const scope = await resolveAcademicSummaryScope(sp);
 
-  // Allow the demo / cross-AY review to pick a different AY via ?ay=.
-  // Validates the requested code resolves to a real AY before honoring it.
-  let ayCode = currentAyCode;
-  if (sp.ay && /^AY\d{4}$/.test(sp.ay)) {
-    const { data: requested } = await supabase
-      .from('academic_years')
-      .select('ay_code')
-      .eq('ay_code', sp.ay)
-      .maybeSingle();
-    if (requested) ayCode = (requested as { ay_code: string }).ay_code;
-  }
-
-  // List every AY (both prod + test) so the toolbar can offer cross-AY
-  // review — useful for the demo (flip between AY9999 active and AY9998
-  // closed) and for legitimate prior-year audits.
-  const { data: allAysRaw } = await supabase
-    .from('academic_years')
-    .select('ay_code')
-    .order('ay_code', { ascending: false });
-  const ayCodes = ((allAysRaw ?? []) as Array<{ ay_code: string }>).map(
-    (a) => a.ay_code
-  );
-
-  // Resolve AY id and pull every level that has at least one section
-  // configured this AY (so the picker doesn't list empty levels).
-  const { data: ayRow } = await supabase
-    .from('academic_years')
-    .select('id, ay_code, label')
-    .eq('ay_code', ayCode)
-    .maybeSingle();
-  if (!ayRow) {
+  // Branch 1 (original "!ayRow"): the requested AY doesn't exist in academic_years.
+  if (scope.noAyRow) {
     return (
       <PageShell>
         <div className="text-sm text-destructive">
@@ -85,40 +52,9 @@ export default async function AcademicSummaryPage({
       </PageShell>
     );
   }
-  const ayId = (ayRow as { id: string }).id;
 
-  const { data: sectionLevelRows } = await supabase
-    .from('sections')
-    .select('level:levels(id, code, label, level_type)')
-    .eq('academic_year_id', ayId);
-
-  type LvlLite = {
-    id: string;
-    code: string;
-    label: string;
-    level_type: string;
-  };
-  const levelMap = new Map<string, LvlLite>();
-  for (const row of (sectionLevelRows ?? []) as Array<{
-    level: LvlLite | LvlLite[] | null;
-  }>) {
-    const lvl = Array.isArray(row.level) ? row.level[0] : row.level;
-    if (lvl) levelMap.set(lvl.id, lvl);
-  }
-  const levels = Array.from(levelMap.values()).sort((a, b) => {
-    // Primary first, then Secondary; alphabetical within each group.
-    if (a.level_type !== b.level_type) {
-      return a.level_type === 'primary' ? -1 : 1;
-    }
-    return a.code.localeCompare(b.code);
-  });
-
-  const selectedLevelId =
-    sp.level && levels.some((l) => l.id === sp.level)
-      ? sp.level
-      : (levels[0]?.id ?? null);
-
-  if (!selectedLevelId) {
+  // Branch 2 (original "!selectedLevelId"): AY exists but no levels with sections.
+  if (scope.empty || scope.selectedLevelId === null) {
     return (
       <PageShell>
         <header className="space-y-3">
@@ -142,13 +78,8 @@ export default async function AcademicSummaryPage({
     );
   }
 
-  const payload = await loadMasterfile({
-    ayCode,
-    levelId: selectedLevelId,
-    sectionIds: sp.class ? [sp.class] : undefined,
-  });
-
-  if (!payload) {
+  // Branch 3 (original "!payload"): loadMasterfile returned null.
+  if (!scope.payload) {
     return (
       <PageShell>
         <div className="text-sm text-destructive">
@@ -158,11 +89,6 @@ export default async function AcademicSummaryPage({
     );
   }
 
-  const selectedSectionId =
-    sp.class && payload.sections.some((s) => s.id === sp.class)
-      ? sp.class
-      : null;
-
   return (
     <PageShell>
       <header className="space-y-3">
@@ -171,20 +97,20 @@ export default async function AcademicSummaryPage({
         </p>
         <div className="flex flex-wrap items-baseline gap-3">
           <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            {payload.level.label}
+            {scope.payload.level.label}
           </h1>
           <Badge
             variant="outline"
             className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
           >
-            {ayCode}
+            {scope.ayCode}
           </Badge>
           <Badge
             variant="outline"
             className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
           >
-            {payload.rows.length}{' '}
-            {payload.rows.length === 1 ? 'student' : 'students'}
+            {scope.payload.rows.length}{' '}
+            {scope.payload.rows.length === 1 ? 'student' : 'students'}
           </Badge>
         </div>
         <p className="max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
@@ -197,23 +123,23 @@ export default async function AcademicSummaryPage({
       </header>
 
       <MasterfileToolbar
-        ayCodes={ayCodes}
-        selectedAyCode={ayCode}
-        levels={levels.map((l) => ({ id: l.id, label: l.label }))}
-        selectedLevelId={selectedLevelId}
-        sections={payload.sections}
-        selectedSectionId={selectedSectionId}
+        ayCodes={scope.ayCodes}
+        selectedAyCode={scope.ayCode}
+        levels={scope.levels}
+        selectedLevelId={scope.selectedLevelId}
+        sections={scope.payload.sections}
+        selectedSectionId={scope.selectedSectionId}
       />
 
       <MasterfileView
-        payload={payload}
+        payload={scope.payload}
         initialView={sp.view === 'table' ? 'table' : 'dashboard'}
       />
 
       <p className="border-t border-border pt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-        Award thresholds · Bronze ≥ {payload.thresholds.bronzeMin} · Silver ≥{' '}
-        {payload.thresholds.silverMin} · Gold ≥ {payload.thresholds.goldMin} ·
-        Editable in{' '}
+        Award thresholds · Bronze ≥ {scope.payload.thresholds.bronzeMin} ·
+        Silver ≥ {scope.payload.thresholds.silverMin} · Gold ≥{' '}
+        {scope.payload.thresholds.goldMin} · Editable in{' '}
         <span className="text-foreground">SIS Admin → School config</span>
       </p>
     </PageShell>
