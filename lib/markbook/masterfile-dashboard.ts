@@ -126,8 +126,53 @@ export type NeedsAttentionItem = {
   severity: 'warn' | 'bad';
 };
 
+export type MasterfileOverview = {
+  total: number;
+  active: number;
+  withdrawn: number;
+  lateEnrollee: number;
+  lateUnresolved: number; // late but no term resolved
+  lateByTerm: { termNumber: number; count: number }[]; // ascending, resolved only
+};
+
+export function computeMasterfileOverview(
+  rows: MasterfileStudentRow[]
+): MasterfileOverview {
+  let active = 0,
+    withdrawn = 0,
+    lateEnrollee = 0,
+    lateUnresolved = 0;
+  const byTerm = new Map<number, number>();
+  for (const r of rows) {
+    if (r.enrollmentStatus === 'active') active++;
+    else if (r.enrollmentStatus === 'withdrawn') withdrawn++;
+    else if (r.enrollmentStatus === 'late_enrollee') {
+      if (r.lateEnrolleeTermNumber == null) {
+        lateUnresolved++;
+      } else {
+        lateEnrollee++;
+        byTerm.set(
+          r.lateEnrolleeTermNumber,
+          (byTerm.get(r.lateEnrolleeTermNumber) ?? 0) + 1
+        );
+      }
+    }
+  }
+  return {
+    total: rows.length,
+    active,
+    withdrawn,
+    lateEnrollee,
+    lateUnresolved,
+    lateByTerm: [...byTerm.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([termNumber, count]) => ({ termNumber, count })),
+  };
+}
+
 export type MasterfileDashboard = {
   scopeLabel: string;
+  overview: MasterfileOverview;
   readiness: MasterfileReadiness;
   outcomes: {
     awardTierCounts: AwardTierCounts;
@@ -390,6 +435,7 @@ export function computeMasterfileDashboard(
 
   return {
     scopeLabel: `${payload.level?.label ?? ''}${termLabel}${statusLabel}`,
+    overview: computeMasterfileOverview(payload.rows),
     readiness,
     outcomes,
     watchlists,
