@@ -27,6 +27,7 @@ export type AuditAction =
   | 'section.create'
   | 'section.rename'
   | 'section.realphabetize'
+  | 'section.index.generate'
   | 'attendance.update'
   | 'attendance.daily.update'
   | 'attendance.daily.correct'

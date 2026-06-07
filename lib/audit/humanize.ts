@@ -71,6 +71,7 @@ const ACTION_LABELS: Record<string, string> = {
   'section.create': 'Section created',
   'section.rename': 'Section renamed',
   'section.realphabetize': 'Roster re-alphabetized',
+  'section.index.generate': 'Class index generated',
 
   // Attendance
   'attendance.update': 'Attendance updated',
@@ -520,6 +521,15 @@ function templateSummary(
       const n = numish(ctx.rows_renumbered);
       if (n !== null) return `${n} student${n === 1 ? '' : 's'} renumbered`;
       return null;
+    }
+
+    case 'section.index.generate': {
+      const parts: string[] = [];
+      const section = str(ctx.sectionName ?? ctx.section_name ?? ctx.section);
+      if (section) parts.push(section);
+      const n = numish(ctx.rows_renumbered);
+      if (n !== null) parts.push(`${n} student${n === 1 ? '' : 's'} indexed`);
+      return joinParts(parts);
     }
 
     // Evaluation write-ups ---------------------------------------------------
