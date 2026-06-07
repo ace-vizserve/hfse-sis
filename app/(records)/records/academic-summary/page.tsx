@@ -26,7 +26,6 @@ export default async function AcademicSummaryPage({
     ay?: string;
     level?: string;
     class?: string;
-    view?: string;
   }>;
 }) {
   const session = await getSessionUser();
@@ -116,9 +115,9 @@ export default async function AcademicSummaryPage({
         <p className="max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
           The consolidated masterfile — every student&rsquo;s grades, status and
           remarks across all terms. Award and General Average figures compute
-          server-side; data still coming in shows as pending, never a fabricated
-          grade. Switch to Table for the full grid, or Export to Excel for the
-          complete masterfile sheet.
+          automatically; data still coming in shows as pending, never a
+          fabricated grade. Use the quick views for awards, attendance and
+          comments, or Generate Masterfile for the full spreadsheet.
         </p>
       </header>
 
@@ -131,10 +130,7 @@ export default async function AcademicSummaryPage({
         selectedSectionId={scope.selectedSectionId}
       />
 
-      <MasterfileView
-        payload={scope.payload}
-        initialView={sp.view === 'table' ? 'table' : 'dashboard'}
-      />
+      <MasterfileView payload={scope.payload} />
 
       <p className="border-t border-border pt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         Award thresholds · Bronze ≥ {scope.payload.thresholds.bronzeMin} ·

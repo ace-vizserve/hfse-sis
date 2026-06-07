@@ -1,9 +1,15 @@
 'use client';
 
-import { FileSpreadsheet, LayoutDashboard, Table2 } from 'lucide-react';
+import { ChevronDown, FileSpreadsheet } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Select,
   SelectContent,
@@ -12,25 +18,17 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { MasterfileDashboard } from '@/components/markbook/masterfile-dashboard';
-import { MasterfileGrid } from '@/components/markbook/masterfile-grid';
 import type {
   MasterfileDashboardFilters,
   MasterfileStatusFilter,
 } from '@/lib/markbook/masterfile-dashboard';
 import type { MasterfilePayload } from '@/lib/markbook/masterfile';
-import { cn } from '@/lib/utils';
 
-// Masterfile surface shell (KD #95). Holds the always-visible toolbar — view
-// toggle (Dashboard | Table), the dashboard refinement filters (Term / Subject
-// / Status), and the Export-to-Excel button (lifted out of the grid so it's
-// available in both views). Default view = Dashboard.
-//
-// The Term / Subject / Status filters drive the dashboard client-side (all the
-// data is already in the payload, so no server round-trip). The Table view
-// renders the existing wide grid unchanged — it carries its own award + status
-// + name filters, so the dashboard filters don't apply there.
-
-type ViewMode = 'dashboard' | 'table';
+// Masterfile surface shell (KD #95 / KD #122 / KD #127). The on-screen grid
+// has been demoted to an export-only artifact (Task 11). Always renders the
+// MasterfileDashboard. The toolbar holds the Term / Subject / Status refinement
+// filters (all client-side over the in-memory payload) and a "Generate
+// Masterfile" dropdown that downloads the full sheet as Excel or CSV.
 
 const STATUS_OPTIONS: Array<{ value: MasterfileStatusFilter; label: string }> =
   [
@@ -40,14 +38,7 @@ const STATUS_OPTIONS: Array<{ value: MasterfileStatusFilter; label: string }> =
     { value: 'withdrawn', label: 'Withdrawn' },
   ];
 
-export function MasterfileView({
-  payload,
-  initialView,
-}: {
-  payload: MasterfilePayload;
-  initialView?: ViewMode;
-}) {
-  const [view, setView] = useState<ViewMode>(initialView ?? 'dashboard');
+export function MasterfileView({ payload }: { payload: MasterfilePayload }) {
   const [termNumber, setTermNumber] = useState<number | null>(null);
   const [subjectId, setSubjectId] = useState<string | null>(null);
   const [status, setStatus] = useState<MasterfileStatusFilter>('all');
@@ -57,9 +48,9 @@ export function MasterfileView({
     [termNumber, status, subjectId]
   );
 
-  // Export link mirrors the current ?ay / ?level / ?class scope. The Excel
-  // workbook is the full masterfile sheet — the dashboard refinement filters
-  // (term / subject / status) intentionally don't narrow it.
+  // Export base link mirrors the current ?ay / ?level / ?class scope.
+  // The dashboard refinement filters (term / subject / status) intentionally
+  // don't narrow the export — the workbook always shows the full masterfile.
   const exportHref = useMemo(() => {
     const params = new URLSearchParams();
     params.set('ay', payload.ayCode);
@@ -71,106 +62,68 @@ export function MasterfileView({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Toolbar — view toggle + dashboard filters + export */}
+      {/* Toolbar — dashboard filters + generate masterfile dropdown */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
         <div className="flex flex-wrap items-center gap-3">
-          {/* View toggle */}
-          <div className="inline-flex rounded-lg border border-border bg-muted/30 p-0.5">
-            <ToggleButton
-              active={view === 'dashboard'}
-              onClick={() => setView('dashboard')}
-              icon={LayoutDashboard}
-              label="Dashboard"
-            />
-            <ToggleButton
-              active={view === 'table'}
-              onClick={() => setView('table')}
-              icon={Table2}
-              label="Table"
-            />
-          </div>
-
-          {view === 'dashboard' && (
-            <>
-              <FilterSelect
-                label="Term"
-                value={termNumber == null ? '__all__' : String(termNumber)}
-                onChange={(v) =>
-                  setTermNumber(v === '__all__' ? null : Number(v))
-                }
-                options={[
-                  { value: '__all__', label: 'All terms' },
-                  ...(payload.terms ?? []).map((t) => ({
-                    value: String(t.termNumber),
-                    label: `Term ${t.termNumber}`,
-                  })),
-                ]}
-              />
-              <FilterSelect
-                label="Subject"
-                value={subjectId ?? '__all__'}
-                onChange={(v) => setSubjectId(v === '__all__' ? null : v)}
-                options={[
-                  { value: '__all__', label: 'All subjects' },
-                  ...(payload.subjects ?? []).map((s) => ({
-                    value: s.id,
-                    label: s.name,
-                  })),
-                ]}
-              />
-              <FilterSelect
-                label="Status"
-                value={status}
-                onChange={(v) => setStatus(v as MasterfileStatusFilter)}
-                options={STATUS_OPTIONS}
-              />
-            </>
-          )}
+          <FilterSelect
+            label="Term"
+            value={termNumber == null ? '__all__' : String(termNumber)}
+            onChange={(v) => setTermNumber(v === '__all__' ? null : Number(v))}
+            options={[
+              { value: '__all__', label: 'All terms' },
+              ...(payload.terms ?? []).map((t) => ({
+                value: String(t.termNumber),
+                label: `Term ${t.termNumber}`,
+              })),
+            ]}
+          />
+          <FilterSelect
+            label="Subject"
+            value={subjectId ?? '__all__'}
+            onChange={(v) => setSubjectId(v === '__all__' ? null : v)}
+            options={[
+              { value: '__all__', label: 'All subjects' },
+              ...(payload.subjects ?? []).map((s) => ({
+                value: s.id,
+                label: s.name,
+              })),
+            ]}
+          />
+          <FilterSelect
+            label="Status"
+            value={status}
+            onChange={(v) => setStatus(v as MasterfileStatusFilter)}
+            options={STATUS_OPTIONS}
+          />
         </div>
 
-        <Button asChild variant="outline" size="sm" className="h-9">
-          <a href={exportHref}>
-            <FileSpreadsheet className="size-3.5" />
-            Export to Excel
-          </a>
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-9">
+              <FileSpreadsheet className="size-3.5" />
+              Generate Masterfile
+              <ChevronDown className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild>
+              <a href={exportHref} download>
+                <FileSpreadsheet className="size-3.5" />
+                Excel (.xlsx)
+              </a>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <a href={`${exportHref}&format=csv`} download>
+                <FileSpreadsheet className="size-3.5" />
+                CSV (.csv)
+              </a>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      {view === 'dashboard' ? (
-        <MasterfileDashboard payload={payload} filters={filters} />
-      ) : (
-        <MasterfileGrid payload={payload} />
-      )}
+      <MasterfileDashboard payload={payload} filters={filters} />
     </div>
-  );
-}
-
-function ToggleButton({
-  active,
-  onClick,
-  icon: Icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-all',
-        active
-          ? 'bg-card text-foreground shadow-sm'
-          : 'text-muted-foreground hover:text-foreground'
-      )}
-    >
-      <Icon className="size-3.5" />
-      {label}
-    </button>
   );
 }
 
