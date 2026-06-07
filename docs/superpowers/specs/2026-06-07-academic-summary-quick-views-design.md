@@ -91,7 +91,7 @@ Monitor FCA write-up completion. **Read-only** — editing stays in Evaluation (
 
 **Filters:** AY · Level · Class · Term.
 **Status set:** Submitted · Draft · Missing (resolved per student via `commentsByTerm` + the write-up submitted flag; roster-correct per KD #120; T4 excluded per KD #49).
-**Table/list:** student · class · status(+late term) · adviser · write-up text (truncated, expandable).
+**Table/list:** student · class · status(+late term) · adviser · write-up text — **truncated with inline expand/collapse**, plus a per-row link into Evaluation to read the full write-up in context.
 **Actions:** Export CSV · **Open Evaluation Module** (deep-link to the relevant Evaluation section).
 
 This is the registrar's pre-publish check — directly relevant to the KD #129 comment hard-gate ("are the comments in before I publish?").
@@ -106,7 +106,7 @@ A hub action (not a page). Produces HFSE's traditional Masterfile structure in *
 
 ## Access control
 
-Add explicit `ROUTE_ACCESS` entries for the three child routes = `registrar | school_admin | superadmin`. Records sidebar: keep "Academic Summary" as the entry; optionally add the three quick-views as sub-items (decide at implementation — quick links on the hub may suffice).
+Add explicit `ROUTE_ACCESS` entries for the three child routes = `registrar | school_admin | superadmin`. Records sidebar: keep "Academic Summary" as the entry **and add the three quick-views (Awards / Attendance / Comments) as sub-items under it** (in addition to the hub Quick-Link cards) so they're reachable directly from the sidebar.
 
 ## Out of scope / deferred
 
