@@ -52,6 +52,9 @@ export type MasterfileDrillRow = {
   studentName: string;
   sectionName: string;
   status: MasterfileDrillStatus;
+  // Per-section roll number (section_students.index_number).
+  // null for non-student rows (e.g. unlocked-sheet groups).
+  indexNumber: number | null;
   // The one drill-specific stat for this row (column header = `statLabel`).
   stat: string;
 };
@@ -100,6 +103,7 @@ function toRow(r: MasterfileStudentRow, stat: string): MasterfileDrillRow {
     studentName: r.fullName || r.studentNumber || '—',
     sectionName: r.sectionName,
     status: statusLabel(r),
+    indexNumber: r.indexNumber ?? null,
     stat,
   };
 }
@@ -329,6 +333,7 @@ function buildNeedsDataDrill(
       studentName: `${subjectName} grading sheet`,
       sectionName: sectionNameById.get(sh.sectionId) ?? '—',
       status: 'Active' as const,
+      indexNumber: null,
       stat: `${termLabelById.get(sh.termId) ?? 'Term'} · not locked`,
     }));
     // Sheets: sort by section then term label for a stable order.

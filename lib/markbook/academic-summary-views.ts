@@ -65,6 +65,8 @@ export type AwardsRow = {
   status: EnrollmentStatusLabel;
   /** Resolved joining term for late enrollees; null otherwise. */
   lateTermNumber: number | null;
+  /** Per-section roll number (section_students.index_number). */
+  indexNumber: number | null;
   /** Numeric score: generalAverage (overall) or subject overall / term quarterly. */
   score: number | null;
   /**
@@ -147,6 +149,7 @@ export function buildAwardsRows(
       sectionName: r.sectionName,
       status: statusLabel(r),
       lateTermNumber: r.lateEnrolleeTermNumber,
+      indexNumber: r.indexNumber,
       score,
       tier,
     };
@@ -172,6 +175,8 @@ export type AttendanceRow = {
   sectionName: string;
   status: EnrollmentStatusLabel;
   lateTermNumber: number | null;
+  /** Per-section roll number (section_students.index_number). */
+  indexNumber: number | null;
   present: number;
   late: number;
   /** absent = schoolDays − present − late (floor at 0) */
@@ -219,6 +224,7 @@ export function buildAttendanceRows(
         sectionName: r.sectionName,
         status: statusLabel(r),
         lateTermNumber: r.lateEnrolleeTermNumber,
+        indexNumber: r.indexNumber,
         present,
         late,
         absent,
@@ -239,6 +245,8 @@ export type CommentRow = {
   sectionName: string;
   status: EnrollmentStatusLabel;
   lateTermNumber: number | null;
+  /** Per-section roll number (section_students.index_number). */
+  indexNumber: number | null;
   termNumber: number;
   adviser: string | null;
   commentStatus: CommentStatus;
@@ -285,6 +293,7 @@ export function buildCommentRows(
         sectionName: r.sectionName,
         status: statusLabel(r),
         lateTermNumber: r.lateEnrolleeTermNumber,
+        indexNumber: r.indexNumber,
         termNumber: tn,
         adviser: r.formClassAdviser,
         commentStatus,

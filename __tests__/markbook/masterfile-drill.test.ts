@@ -144,6 +144,7 @@ function student(
     sectionName: partial.sectionName ?? 'P5 Diamond',
     formClassAdviser: 'Ms. Tan',
     enrollmentStatus: partial.enrollmentStatus ?? 'active',
+    indexNumber: partial.indexNumber ?? 1,
     subjectRows: partial.subjectRows,
     generalAverage,
     overallAward,

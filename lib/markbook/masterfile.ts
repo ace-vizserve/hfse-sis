@@ -92,6 +92,8 @@ export type MasterfileStudentRow = {
   formClassAdviser: string | null;
   // 'active' | 'late_enrollee' | 'withdrawn'
   enrollmentStatus: string;
+  // Per-section roll number (section_students.index_number) from the primary enrolment.
+  indexNumber: number | null;
   // Per-subject row (in the same order as `subjects` on the payload).
   subjectRows: MasterfileSubjectRow[];
   // Cross-subject mean of examinable Subject Overalls — 1dp per canonical spec.
@@ -340,7 +342,7 @@ async function loadMasterfileUncached(
   const { data: enrolmentsRaw } = await service
     .from('section_students')
     .select(
-      'id, section_id, enrollment_status, created_at, late_enrollee_term_number, enrollment_date, student:students(id, student_number, last_name, first_name, middle_name)'
+      'id, section_id, enrollment_status, created_at, late_enrollee_term_number, enrollment_date, index_number, student:students(id, student_number, last_name, first_name, middle_name)'
     )
     .in('section_id', filterIds)
     .order('index_number');
@@ -352,6 +354,7 @@ async function loadMasterfileUncached(
     created_at: string | null;
     late_enrollee_term_number: number | null;
     enrollment_date: string | null;
+    index_number: number | null;
     student:
       | {
           id: string;
@@ -385,6 +388,7 @@ async function loadMasterfileUncached(
       createdAt: string | null;
       lateTermOverride: number | null;
       enrollmentDate: string | null;
+      indexNumber: number | null;
     }>;
   };
   const groupedByStudent = new Map<string, StudentGroup>();
@@ -399,6 +403,7 @@ async function loadMasterfileUncached(
       createdAt: e.created_at,
       lateTermOverride: e.late_enrollee_term_number ?? null,
       enrollmentDate: e.enrollment_date ?? null,
+      indexNumber: e.index_number ?? null,
     };
     if (existing) {
       existing.enrolments.push(enrolment);
@@ -749,6 +754,7 @@ async function loadMasterfileUncached(
       sectionName: primarySection.name,
       formClassAdviser: primarySection.form_class_adviser,
       enrollmentStatus: primary.enrollmentStatus,
+      indexNumber: primary.indexNumber ?? null,
       subjectRows,
       generalAverage,
       overallAward,

@@ -104,6 +104,7 @@ type StudentOpts = {
   sectionName?: string;
   enrollmentStatus?: string;
   lateEnrolleeTermNumber?: number | null;
+  indexNumber?: number | null;
   subjectRows: MasterfileSubjectRow[];
   attendanceByTerm?: MasterfileStudentRow['attendanceByTerm'];
   attendanceTotal?: MasterfileStudentRow['attendanceTotal'];
@@ -139,6 +140,7 @@ function makeStudent(opts: StudentOpts): MasterfileStudentRow {
     sectionName: opts.sectionName ?? 'P6 Diamond',
     formClassAdviser: 'Mr. Tan',
     enrollmentStatus: opts.enrollmentStatus ?? 'active',
+    indexNumber: opts.indexNumber ?? 1,
     subjectRows: opts.subjectRows,
     generalAverage,
     overallAward,

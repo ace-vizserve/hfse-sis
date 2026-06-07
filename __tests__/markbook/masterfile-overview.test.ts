@@ -11,6 +11,7 @@ function row(p: Partial<MasterfileStudentRow>): MasterfileStudentRow {
     sectionName: 'Grit',
     formClassAdviser: null,
     enrollmentStatus: 'active',
+    indexNumber: 1,
     lateEnrolleeTermNumber: null,
     subjectRows: [],
     generalAverage: null,
