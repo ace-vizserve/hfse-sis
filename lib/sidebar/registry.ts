@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Archive,
   ArrowRightLeft,
+  Award,
   BookOpen,
   Building2,
   CalendarCheck,
@@ -173,6 +174,10 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/sis/admin/discount-codes': Tag,
       '/sis/sync-students': RefreshCw,
       '/records/audit-log': History,
+      '/records/academic-summary': BookOpen,
+      '/records/academic-summary/awards': Award,
+      '/records/academic-summary/attendance': CalendarCheck,
+      '/records/academic-summary/comments': MessageSquare,
     },
     quickActionByRole: {
       registrar: {

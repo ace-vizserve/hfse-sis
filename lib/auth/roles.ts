@@ -161,14 +161,29 @@ const RECORDS_NAV: NavSection[] = [
       { href: '/records/cohorts/pass-expiry', label: 'Pass expiry' },
     ],
   },
-  // Academic Summary — the consolidated masterfile (KD #95). The registrar's
-  // canonical cross-subject student review surface, now hosted in Records
-  // (whole-student outcomes); it reads grade data from the Markbook data layer.
+  // Academic Summary hub + quick views (KD #95/#127). Labelled group so the
+  // three quick views read as sub-items under the hub.
   {
+    label: 'Academic Summary',
     items: [
       {
         href: '/records/academic-summary',
-        label: 'Academic Summary',
+        label: 'Overview',
+        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+      },
+      {
+        href: '/records/academic-summary/awards',
+        label: 'Awards',
+        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+      },
+      {
+        href: '/records/academic-summary/attendance',
+        label: 'Attendance',
+        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+      },
+      {
+        href: '/records/academic-summary/comments',
+        label: 'Comments',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
     ],
