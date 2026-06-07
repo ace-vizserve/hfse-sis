@@ -114,9 +114,14 @@ function nonExamRow(
 }
 
 function student(
-  partial: Partial<MasterfileStudentRow> & {
+  partial: Partial<Omit<MasterfileStudentRow, 'commentsByTerm'>> & {
     studentNumber: string;
     subjectRows: MasterfileSubjectRow[];
+    commentsByTerm?: {
+      termNumber: number;
+      text: string;
+      submitted?: boolean;
+    }[];
   }
 ): MasterfileStudentRow {
   const examOveralls = partial.subjectRows
@@ -155,7 +160,11 @@ function student(
       late: 0,
       schoolDays: 200,
     },
-    commentsByTerm: partial.commentsByTerm ?? [],
+    commentsByTerm: (partial.commentsByTerm ?? []).map((c) => ({
+      submitted: true,
+      ...c,
+    })),
+    lateEnrolleeTermNumber: partial.lateEnrolleeTermNumber ?? null,
   };
 }
 
