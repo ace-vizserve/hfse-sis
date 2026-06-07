@@ -148,6 +148,15 @@ const RECORDS_NAV: NavSection[] = [
         label: 'Sync from Admissions',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
+      // Section setup lives in SIS Admin, but the registrar can't reach the SIS
+      // module (its /sis hub is school_admin+). Cross-link kept here so she can
+      // get to the section rosters — incl. the Generate-class-index action,
+      // which is registrar work — without a SIS tile. Mirrors the sync link.
+      {
+        href: '/sis/sections',
+        label: 'Section setup',
+        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+      },
     ],
   },
   // Cohort views — pre-baked filtered lists for cross-cutting student

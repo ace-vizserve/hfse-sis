@@ -173,6 +173,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/records/unsynced': UserX,
       '/sis/admin/discount-codes': Tag,
       '/sis/sync-students': RefreshCw,
+      '/sis/sections': LayoutGrid,
       '/records/audit-log': History,
       '/records/academic-summary': BookOpen,
       '/records/academic-summary/awards': Award,
