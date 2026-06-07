@@ -103,7 +103,9 @@ function makePayload(): MasterfilePayload {
     sectionName: 'P5 Diamond',
     formClassAdviser: 'Ms Lee',
     enrollmentStatus: 'active',
-    indexNumber: 1,
+    // indexNumber 7 deliberately differs from array position (idx+1=1) so the
+    // S/N assertion below proves the export uses the real field, not idx+1.
+    indexNumber: 7,
     subjectRows: [examRow([90, 91, 92, 93]), musicRow('Passed'), artRow()],
     generalAverage: 93.4,
     overallAward: 'Silver',
@@ -219,6 +221,14 @@ describe('buildMasterfileWorkbook', () => {
     const payload = makePayload();
     const { aoa } = readBack(payload);
     const activeRow = aoa[2]; // first data row (Tan, Alice)
+    const withdrawnRow = aoa[3]; // second data row (Lim, Bob)
+
+    // S/N uses the permanent indexNumber field, not the array position.
+    // active.indexNumber=7 (not 1), withdrawn.indexNumber=2 (matches position).
+    // If S/N were idx+1 both would be 1 and 2 respectively — this proves it uses
+    // the real field.
+    expect(activeRow[0]).toBe(7); // S/N = indexNumber 7, not array position 1
+    expect(withdrawnRow[0]).toBe(2); // S/N = indexNumber 2 (also happens to be pos 2)
 
     // Examinable block: starts after identity (index 7). Award is the 6th
     // sub-column → index 7 + 6 - 1 = 12.

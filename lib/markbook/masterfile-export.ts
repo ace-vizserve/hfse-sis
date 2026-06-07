@@ -178,9 +178,11 @@ export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
 
   // ---- Data rows ----
   const dataRows: (string | number)[][] = [];
-  payload.rows.forEach((row, idx) => {
+  payload.rows.forEach((row) => {
     const cells: (string | number)[] = [];
-    cells.push(idx + 1);
+    // S/N = the student's permanent per-section index number (KD #85 rule:
+    // index numbers are permanent roll numbers, never renumbered by position).
+    cells.push(row.indexNumber ?? '');
     cells.push(row.fullName || row.studentNumber);
     cells.push(row.studentNumber);
     cells.push(payload.level.label);
@@ -369,10 +371,12 @@ export function flattenMasterfileRows(
   headers.push("Teacher's Comments");
 
   // --- Build data rows (mirrors buildMasterfileWorkbook data section) ---
-  const rows: (string | number | null)[][] = payload.rows.map((row, idx) => {
+  const rows: (string | number | null)[][] = payload.rows.map((row) => {
     const cells: (string | number | null)[] = [];
 
-    cells.push(idx + 1);
+    // S/N = the student's permanent per-section index number (KD #85 rule:
+    // index numbers are permanent roll numbers, never renumbered by position).
+    cells.push(row.indexNumber ?? null);
     cells.push(row.fullName || row.studentNumber);
     cells.push(row.studentNumber);
     cells.push(payload.level.label);
