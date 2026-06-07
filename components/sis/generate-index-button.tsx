@@ -2,9 +2,11 @@
 
 // Generate class index button — per-section + bulk variant.
 //
-// Triggers POST /api/sections/[id]/generate-index (B2 route) which assigns
-// index_numbers 1..N alphabetically by (last_name, first_name) to all
-// non-withdrawn students, appending withdrawn students at the bottom.
+// Triggers POST /api/sections/[id]/generate-index (B2 route) which numbers the
+// non-withdrawn roster alphabetically by (last_name, first_name, middle_name) —
+// active first, late enrollees kept at the bottom in arrival order. Withdrawn
+// students keep their existing (retired) numbers forever — they are never
+// touched and their numbers are never reused.
 //
 // The `termStarted` prop controls the dialog tone:
 //   false → normal confirmation (green year setup path)
@@ -192,7 +194,9 @@ export function GenerateAllIndexButton({
       }
 
       setOpen(false);
-      router.refresh();
+      // Only refresh when something actually changed — an all-failure run leaves
+      // the page identical, so skip the needless re-render.
+      if (successCount > 0) router.refresh();
     } finally {
       setBusy(false);
     }

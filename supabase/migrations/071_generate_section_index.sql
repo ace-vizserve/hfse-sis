@@ -12,8 +12,9 @@
 --        b. late_enrollee rows second, sorted by their existing index_number
 --           (preserving "appended at the bottom in arrival order")
 --      Ordering key: CASE enrollment_status WHEN 'active' THEN 0 ELSE 1 END,
---                    then last_name/first_name/middle_name for the active block,
---                    then existing index_number as tiebreaker (covers the late block).
+--                    then last_name/first_name/middle_name for the ACTIVE block
+--                    only (CASE-gated to '' for late rows), then existing
+--                    index_number — which orders the late block by arrival.
 --   3. Numbers are assigned from the ASCENDING SEQUENCE of positive integers NOT
 --      currently held by any withdrawn row in the section. So burned numbers are
 --      skipped. At start-of-year (no withdrawn) this yields a clean 1..N; mid-year
@@ -130,12 +131,18 @@ begin
   -- Both share the same status-bucket sort key (0 vs 1); within each bucket the
   -- tiebreaker is index_number so ties inside the active block are stable too.
   -- -----------------------------------------------------------------------
+  -- Active rows: bucket 0, sorted alphabetically (last, first, middle), with
+  --   existing index_number as a same-name tiebreaker.
+  -- Late-enrollee rows: bucket 1, sorted PURELY by existing index_number so
+  --   they keep their arrival order at the bottom (HFSE: late enrollees always
+  --   append; they are NOT alphabetized into the sequence). The name columns
+  --   are CASE-gated to empty for the late block so they don't reorder it.
   select array_agg(ss.id order by
       case ss.enrollment_status when 'active' then 0 else 1 end,
-      s.last_name,
-      s.first_name,
-      coalesce(s.middle_name, ''),
-      ss.index_number   -- stable tiebreaker for the late_enrollee block
+      case ss.enrollment_status when 'active' then s.last_name else '' end,
+      case ss.enrollment_status when 'active' then s.first_name else '' end,
+      case ss.enrollment_status when 'active' then coalesce(s.middle_name, '') else '' end,
+      ss.index_number
     )
   into v_ordered_ids
   from section_students ss
