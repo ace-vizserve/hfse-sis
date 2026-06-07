@@ -276,3 +276,184 @@ export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
   const out = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   return out as Buffer;
 }
+
+// ---------------------------------------------------------------------------
+// Flat CSV helper — same column ORDER as the xlsx workbook, single header row.
+//
+// Used by the `?format=csv` branch in the export route so the two export
+// formats share the same column set and can't drift independently.
+//
+// Column order (mirrors buildMasterfileWorkbook exactly):
+//   Identity (7) · examinable subjects (6 each) · non-exam subjects (5 each) ·
+//   General Average · Overall Academic Award · attendance per-term + totals ·
+//   Teacher's Comments
+// ---------------------------------------------------------------------------
+
+/** RFC-4180 escape: wrap fields containing , " or newlines in double-quotes. */
+function csvEscape(v: string | number | null | undefined): string {
+  if (v == null) return '';
+  const s = String(v);
+  if (
+    s.includes(',') ||
+    s.includes('"') ||
+    s.includes('\n') ||
+    s.includes('\r')
+  ) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+/** Shape returned by flattenMasterfileRows. */
+export interface MasterfileFlatTable {
+  /** Single header row, prefixed where needed (e.g. "MATH T1", "MATH Award"). */
+  headers: string[];
+  /** One array per student, values parallel to headers. Nulls = empty in CSV. */
+  rows: (string | number | null)[][];
+}
+
+/**
+ * Produces a flat table (headers + data rows) from the MasterfilePayload with
+ * the same column order as `buildMasterfileWorkbook`.  Used by the CSV branch
+ * of the export route.  Pure — no xlsx dependency.
+ */
+export function flattenMasterfileRows(
+  payload: MasterfilePayload
+): MasterfileFlatTable {
+  const examinable = payload.subjects.filter((s) => s.isExaminable);
+  const nonExam = payload.subjects.filter((s) => !s.isExaminable);
+  const terms = payload.terms;
+
+  // --- Build header row ---
+  const headers: string[] = [
+    'S/N',
+    'Student Name',
+    'Student No.',
+    'Level',
+    'Class',
+    'Form Class Adviser',
+    'Status',
+  ];
+
+  for (const sub of examinable) {
+    headers.push(
+      `${sub.code} Term 1`,
+      `${sub.code} Term 2`,
+      `${sub.code} Term 3`,
+      `${sub.code} Term 4`,
+      `${sub.code} Overall`,
+      `${sub.code} Award`
+    );
+  }
+
+  for (const sub of nonExam) {
+    headers.push(
+      `${sub.code} Term 1`,
+      `${sub.code} Term 2`,
+      `${sub.code} Term 3`,
+      `${sub.code} Term 4`,
+      `${sub.code} Final`
+    );
+  }
+
+  headers.push('General Average', 'Overall Academic Award');
+
+  for (const t of terms) {
+    headers.push(
+      `T${t.termNumber} School Days`,
+      `T${t.termNumber} Present`,
+      `T${t.termNumber} Late`
+    );
+  }
+  headers.push('Total School Days', 'Total Present', 'Total Late');
+  headers.push("Teacher's Comments");
+
+  // --- Build data rows (mirrors buildMasterfileWorkbook data section) ---
+  const rows: (string | number | null)[][] = payload.rows.map((row, idx) => {
+    const cells: (string | number | null)[] = [];
+
+    cells.push(idx + 1);
+    cells.push(row.fullName || row.studentNumber);
+    cells.push(row.studentNumber);
+    cells.push(payload.level.label);
+    cells.push(row.sectionName);
+    cells.push(row.formClassAdviser ?? null);
+    cells.push(statusLabel(row.enrollmentStatus));
+
+    const subjectRowById = new Map(
+      row.subjectRows.map((sr) => [sr.subjectId, sr])
+    );
+
+    // Examinable: T1-T4 quarterly, Overall (2dp), Award.
+    for (const sub of examinable) {
+      const sr = subjectRowById.get(sub.id);
+      if (!sr) {
+        cells.push(null, null, null, null, null, null);
+        continue;
+      }
+      for (const cell of sr.cells) {
+        if (cell.isNa) cells.push('N.A.');
+        else if (cell.quarterly != null) cells.push(cell.quarterly);
+        else cells.push(null);
+      }
+      cells.push(sr.overall != null ? Number(sr.overall.toFixed(2)) : null);
+      cells.push(sr.award ?? null);
+    }
+
+    // Non-examinable: T1-T4 derived/override letters + Final.
+    for (const sub of nonExam) {
+      const sr = subjectRowById.get(sub.id);
+      if (!sr) {
+        cells.push(null, null, null, null, null);
+        continue;
+      }
+      for (const cell of sr.cells) {
+        const resolved = resolveNonExaminableLetter({
+          isNa: cell.isNa,
+          letterOverride: cell.letter,
+          quarterly: cell.quarterly,
+        });
+        cells.push(resolved === 'NA' ? 'N.A.' : (resolved ?? null));
+      }
+      cells.push(sr.annualLetter ?? null);
+    }
+
+    // Overall Academic Award.
+    cells.push(
+      row.generalAverage != null ? Number(row.generalAverage.toFixed(1)) : null
+    );
+    cells.push(row.overallAward ?? null);
+
+    // Attendance per term + totals.
+    for (const att of row.attendanceByTerm) {
+      cells.push(att.schoolDays ?? null);
+      cells.push(att.present ?? null);
+      cells.push(att.late ?? null);
+    }
+    cells.push(row.attendanceTotal.schoolDays ?? null);
+    cells.push(row.attendanceTotal.present ?? null);
+    cells.push(row.attendanceTotal.late ?? null);
+
+    // Teacher's Comments (joined T1-T3).
+    cells.push(commentsText(row) || null);
+
+    return cells;
+  });
+
+  return { headers, rows };
+}
+
+/**
+ * Serialises a MasterfileFlatTable to an RFC-4180 CSV string with a leading
+ * UTF-8 BOM (so Excel opens it correctly — matches the project's drill CSV
+ * convention, KD #56).
+ */
+export function masterfileToCsv(table: MasterfileFlatTable): string {
+  const BOM = '﻿';
+  const lines: string[] = [];
+  lines.push(table.headers.map(csvEscape).join(','));
+  for (const row of table.rows) {
+    lines.push(row.map(csvEscape).join(','));
+  }
+  return BOM + lines.join('\r\n');
+}
