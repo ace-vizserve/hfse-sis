@@ -89,17 +89,20 @@ export default async function RecordsStudentsPage({
     ENROLLED.has((s.applicationStatus ?? '').trim())
   );
 
-  // Merge enrollment_status from section_students so the Late enrollee tab works,
-  // and so we can count mid-year operational withdrawals (distinct from admissions
-  // funnel dropouts). Fetch all statuses — map only captures the non-withdrawn row
-  // (i.e. the current active row for a transferred student); withdrawn count is
-  // the set of enrolee_numbers that have a withdrawn row but no active/late_enrollee row.
+  // Merge enrollment_status + index_number from section_students so the Late
+  // enrollee tab works and the # column shows the per-section roll number.
+  // Fetch all rows — maps capture the non-withdrawn row (i.e. the current
+  // active row for a transferred student); withdrawn count is the set of
+  // enrolee_numbers that have a withdrawn row but no active/late_enrollee row.
+  // `enrolee_number` is AY-scoped (resets each AY per KD #4/#13), so the
+  // .in() filter naturally restricts to the selected AY's students.
   const enrollmentStatusMap = new Map<string, string>();
+  const indexNumberMap = new Map<string, number>();
   let withdrawnFromSections = 0;
   if (students.length > 0) {
     const { data: ssRows } = await service
       .from('section_students')
-      .select('enrolee_number, enrollment_status')
+      .select('enrolee_number, enrollment_status, index_number')
       .in(
         'enrolee_number',
         students.map((s) => s.enroleeNumber)
@@ -111,6 +114,10 @@ export default async function RecordsStudentsPage({
           r.enrolee_number,
           r.enrollment_status as string
         );
+        // index_number is per-section; take the active row's value.
+        if (r.index_number != null) {
+          indexNumberMap.set(r.enrolee_number, r.index_number as number);
+        }
       }
     }
     // Truly withdrawn = has a withdrawn row, no active/late_enrollee row
@@ -130,6 +137,7 @@ export default async function RecordsStudentsPage({
   const studentsWithStatus: StudentListRow[] = students.map((s) => ({
     ...s,
     enrollmentStatus: enrollmentStatusMap.get(s.enroleeNumber) ?? null,
+    indexNumber: indexNumberMap.get(s.enroleeNumber) ?? null,
   }));
 
   const activeCount = studentsWithStatus.filter(
@@ -303,6 +311,7 @@ export default async function RecordsStudentsPage({
             linkBase="/records/students"
             linkAttribute="studentNumber"
             statusBuckets={RECORDS_STATUS_BUCKETS}
+            showIndex
           />
         </CardContent>
       </Card>

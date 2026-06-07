@@ -48,6 +48,10 @@ export type StudentListRow = {
   // Populated by Records pages only — joins section_students.enrollment_status
   // (active | late_enrollee | withdrawn). Undefined for all Admissions callers.
   enrollmentStatus?: string | null;
+  // Per-section roll number (section_students.index_number). Only populated
+  // by the Records student directory — null for Admissions callers and for
+  // students with no active section row (unsynced / withdrawn-only).
+  indexNumber?: number | null;
   // Terminal reason + notes — only present on Cancelled/Withdrawn rows.
   // Populated from _enrolment_status; undefined for non-terminal rows is
   // safe — callers only render these on the closed-applications page.

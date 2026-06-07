@@ -102,6 +102,7 @@ export function StudentDataTable({
   defaultSorting,
   showSubmittedColumn = false,
   showReasonColumn = false,
+  showIndex = false,
   statusBuckets = DEFAULT_STATUS_BUCKETS,
 }: {
   data: StudentListRow[];
@@ -112,6 +113,11 @@ export function StudentDataTable({
   defaultSorting?: SortingState;
   showSubmittedColumn?: boolean;
   showReasonColumn?: boolean;
+  /** When true, prepends a compact # column showing the student's active
+   *  section index number (section_students.index_number). Only pass this
+   *  from the Records student directory — Admissions callers omit it so
+   *  applicants without section assignments don't see an empty column. */
+  showIndex?: boolean;
   statusBuckets?: StatusBucketDef[];
 }) {
   const querySuffix = React.useMemo(() => {
@@ -124,6 +130,25 @@ export function StudentDataTable({
 
   const columns: ColumnDef<StudentListRow>[] = React.useMemo(
     () => [
+      ...(showIndex
+        ? [
+            {
+              accessorFn: (row: StudentListRow) => row.indexNumber ?? null,
+              id: 'indexNumber',
+              header: '#',
+              cell: ({ row }: { row: { original: StudentListRow } }) =>
+                row.original.indexNumber != null ? (
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {row.original.indexNumber}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                ),
+              enableHiding: false,
+              size: 48,
+            } satisfies ColumnDef<StudentListRow>,
+          ]
+        : []),
       {
         accessorFn: (row) => studentDisplayName(row),
         id: 'name',
@@ -308,6 +333,7 @@ export function StudentDataTable({
       querySuffix,
       showSubmittedColumn,
       showReasonColumn,
+      showIndex,
     ]
   );
 
