@@ -179,7 +179,7 @@ export function MasterfileDashboard({
               subtext={
                 missingCommentsCount === 0
                   ? 'All write-ups present'
-                  : 'Students without a submitted write-up'
+                  : 'Students with no write-up text yet (drafts count as written)'
               }
             />
           </DrillButton>

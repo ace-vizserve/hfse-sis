@@ -27,7 +27,6 @@ import {
   buildCommentRows,
   type CommentRow,
   type CommentStatus,
-  type EnrollmentStatusLabel,
 } from '@/lib/markbook/academic-summary-views';
 import type { MasterfilePayload } from '@/lib/markbook/masterfile';
 
@@ -44,15 +43,6 @@ import type { MasterfilePayload } from '@/lib/markbook/masterfile';
 //   - Editing stays in Evaluation (KD #49/#126) — this view is READ-ONLY.
 //   - Deep-link per row → /evaluation/sections/{sectionId} (per KD #81;
 //     route verified at app/(evaluation)/evaluation/sections/[sectionId]).
-
-const STATUS_TO_ENROLLMENT: Record<
-  EnrollmentStatusLabel,
-  'active' | 'late_enrollee' | 'withdrawn'
-> = {
-  Active: 'active',
-  'Late enrollee': 'late_enrollee',
-  Withdrawn: 'withdrawn',
-};
 
 // Comment-status → StatusBadge tone (§9.3 semantic color discipline).
 //   Submitted → healthy (mint — positive/complete)

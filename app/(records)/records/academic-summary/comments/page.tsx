@@ -34,7 +34,12 @@ export default async function CommentsPage({
 
   const sp = await searchParams;
   const scope = await resolveAcademicSummaryScope(sp);
-  const ayQuery = sp.ay ? `?ay=${encodeURIComponent(sp.ay)}` : '';
+  // Back-link preserves the full scope (AY + level + class) so returning to the
+  // hub reopens the same view, not the default level.
+  const backParams = new URLSearchParams({ ay: scope.ayCode });
+  if (scope.selectedLevelId) backParams.set('level', scope.selectedLevelId);
+  if (scope.selectedSectionId) backParams.set('class', scope.selectedSectionId);
+  const ayQuery = `?${backParams.toString()}`;
 
   const subtitle =
     'Form Class Adviser write-up completion (Terms 1–3). Read-only here — edits stay in Evaluation.';
