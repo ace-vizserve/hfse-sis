@@ -130,8 +130,8 @@ export type MasterfileOverview = {
   total: number;
   active: number;
   withdrawn: number;
-  lateEnrollee: number;
-  lateUnresolved: number; // late but no term resolved
+  lateEnrollee: number; // TOTAL late enrollees (= sum(lateByTerm) + lateUnresolved)
+  lateUnresolved: number; // late but joining term couldn't be resolved
   lateByTerm: { termNumber: number; count: number }[]; // ascending, resolved only
 };
 
@@ -147,10 +147,14 @@ export function computeMasterfileOverview(
     if (r.enrollmentStatus === 'active') active++;
     else if (r.enrollmentStatus === 'withdrawn') withdrawn++;
     else if (r.enrollmentStatus === 'late_enrollee') {
+      // lateEnrollee is the TOTAL of late enrollees (the Overview card's
+      // headline must equal the real count); lateUnresolved is a sub-count of
+      // those whose joining term couldn't be resolved, and lateByTerm breaks
+      // down the resolved ones. So total = sum(lateByTerm) + lateUnresolved.
+      lateEnrollee++;
       if (r.lateEnrolleeTermNumber == null) {
         lateUnresolved++;
       } else {
-        lateEnrollee++;
         byTerm.set(
           r.lateEnrolleeTermNumber,
           (byTerm.get(r.lateEnrolleeTermNumber) ?? 0) + 1

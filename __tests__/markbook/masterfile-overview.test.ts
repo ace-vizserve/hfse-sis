@@ -36,11 +36,17 @@ describe('computeMasterfileOverview', () => {
     expect(o.total).toBe(6);
     expect(o.active).toBe(1);
     expect(o.withdrawn).toBe(1);
-    expect(o.lateEnrollee).toBe(3);
+    // lateEnrollee is the TOTAL of late enrollees (4) — the headline count.
+    expect(o.lateEnrollee).toBe(4);
+    // lateByTerm breaks down only the resolved ones; lateUnresolved holds the
+    // rest. sum(lateByTerm) + lateUnresolved === lateEnrollee.
     expect(o.lateByTerm).toEqual([
       { termNumber: 2, count: 2 },
       { termNumber: 3, count: 1 },
     ]);
     expect(o.lateUnresolved).toBe(1);
+    expect(
+      o.lateByTerm.reduce((s, b) => s + b.count, 0) + o.lateUnresolved
+    ).toBe(o.lateEnrollee);
   });
 });
