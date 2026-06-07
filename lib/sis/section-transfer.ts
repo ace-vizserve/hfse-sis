@@ -300,6 +300,11 @@ export async function transferStudentSection(
   const { error: insertErr } = await service.from('section_students').insert({
     section_id: targetSec.id,
     student_id: studentId,
+    // Denormalized AY-scoped key — every other writer (sync, seeder) populates
+    // it; omitting it left transferred rows with NULL enrolee_number, so
+    // enrolee_number-keyed lookups (e.g. the Records directory's index/status
+    // maps) silently missed transferred students. KD #83.
+    enrolee_number: enroleeNumber,
     index_number: nextIndex,
     enrollment_status: 'active',
     enrollment_date: today,
