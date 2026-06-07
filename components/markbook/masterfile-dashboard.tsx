@@ -1,13 +1,19 @@
 'use client';
 
 import {
+  ArrowUpRight,
   Award,
   BookOpenCheck,
   CalendarCheck2,
   GraduationCap,
   Lock,
   MessageSquareText,
+  Users,
+  UserCheck,
+  UserMinus,
+  Timer,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import {
@@ -15,9 +21,11 @@ import {
   CardAction,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import {
   ActionList,
   type ActionItem,
@@ -33,6 +41,9 @@ import {
 } from '@/components/dashboard/metric-card';
 import {
   computeMasterfileDashboard,
+  commentTermsInScope,
+  enrolledScopeRows,
+  studentMissingCommentTerms,
   type AwardTier,
   type GaBandTier,
   type MasterfileDashboardFilters,
@@ -45,10 +56,11 @@ import type { MasterfilePayload } from '@/lib/markbook/masterfile';
 import { cn } from '@/lib/utils';
 
 // Masterfile narrative dashboard (KD #95). A tracking view, not a readiness
-// gate: At a glance (current snapshot) → How they're doing (outcomes) → Worth a
-// look. Computed client-side from the full payload so the Term / Subject /
-// Status filters refine every section without a server round-trip. The Excel
-// export stays the exact masterfile sheet (handled on the toolbar).
+// gate: Overview (who's here) → At a glance (readiness strip) → Academic
+// Performance (outcomes) → Quick Links (child views) → Worth a look.
+// Computed client-side from the full payload so the Term / Subject / Status
+// filters refine every section without a server round-trip. The Excel export
+// stays the exact masterfile sheet (handled on the toolbar).
 
 const DONUT_COLORS = [
   'var(--color-brand-amber)', // Gold
@@ -68,28 +80,126 @@ const GA_COLORS = [
 export function MasterfileDashboard({
   payload,
   filters,
+  scopeQuery = '',
 }: {
   payload: MasterfilePayload;
   filters: MasterfileDashboardFilters;
+  scopeQuery?: string;
 }) {
   const d = useMemo(
     () => computeMasterfileDashboard(payload, filters),
     [payload, filters]
   );
 
+  // Derive missing-comments count for the Overview card (enrolled scope,
+  // same logic as computeNeedsData so count == drill).
+  const missingCommentsCount = useMemo(() => {
+    const commentTerms = commentTermsInScope(payload, filters.termNumber);
+    if (commentTerms.length === 0) return 0;
+    const enrolled = enrolledScopeRows(payload, filters);
+    let total = 0;
+    for (const r of enrolled) {
+      total += studentMissingCommentTerms(r, commentTerms).length;
+    }
+    return total;
+  }, [payload, filters]);
+
   // One piece of drill state for the whole dashboard. null = sheet closed.
   const [target, setTarget] = useState<MasterfileDrillTarget | null>(null);
 
+  // Per-term late-enrollee subtext for the Overview card.
+  const lateSubtext = useMemo(() => {
+    const { lateEnrollee, lateByTerm, lateUnresolved } = d.overview;
+    if (lateEnrollee === 0) return 'None this scope';
+    const termParts = lateByTerm.map((b) => `T${b.termNumber}: ${b.count}`);
+    const parts: string[] = [...termParts];
+    if (lateUnresolved > 0) parts.push(`+${lateUnresolved} unresolved`);
+    return parts.join(' · ');
+  }, [d.overview]);
+
   return (
     <div className="flex flex-col gap-10">
-      {/* ── At a glance — current snapshot ────────────────────────────── */}
+      {/* ── Overview — who's here ─────────────────────────────────────── */}
+      <section className="space-y-4">
+        <ActHeader
+          eyebrow="Overview"
+          title="Where things stand"
+          subtitle="A live snapshot of this cohort — enrolment status, late arrivals, and the two operational readiness signals most likely to need your attention."
+        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {/* Row 1: Enrolment counts */}
+          <MetricCard
+            label="Total students"
+            value={d.overview.total}
+            format="number"
+            icon={Users}
+            intent="default"
+            subtext="All statuses in this scope"
+          />
+          <MetricCard
+            label="Active"
+            value={d.overview.active}
+            format="number"
+            icon={UserCheck}
+            intent={d.overview.active > 0 ? 'good' : 'default'}
+            subtext="Currently enrolled and active"
+          />
+          <MetricCard
+            label="Withdrawn"
+            value={d.overview.withdrawn}
+            format="number"
+            icon={UserMinus}
+            intent="default"
+            subtext="Withdrawn this academic year"
+          />
+
+          {/* Late Enrollees — with per-term breakdown subtext */}
+          <MetricCard
+            label="Late enrolees"
+            value={d.overview.lateEnrollee}
+            format="number"
+            icon={Timer}
+            intent="default"
+            subtext={lateSubtext}
+          />
+
+          {/* Missing FCA Comments — drillable (reuses missing-comments target) */}
+          <DrillButton
+            onClick={() => setTarget({ kind: 'missing-comments' })}
+            label="Missing FCA comments — show students without an adviser write-up"
+          >
+            <MetricCard
+              label="Missing FCA comments"
+              value={
+                missingCommentsCount === 0 ? 'All in' : missingCommentsCount
+              }
+              format={missingCommentsCount === 0 ? 'raw' : 'number'}
+              icon={MessageSquareText}
+              intent={missingCommentsCount === 0 ? 'good' : 'default'}
+              subtext={
+                missingCommentsCount === 0
+                  ? 'All write-ups present'
+                  : 'Students without a submitted write-up'
+              }
+            />
+          </DrillButton>
+
+          {/* Full Results (incomplete-results drill) — moved from At a glance */}
+          <GradableCard
+            readiness={d.readiness}
+            onDrill={() => setTarget({ kind: 'incomplete-results' })}
+          />
+        </div>
+      </section>
+
+      {/* ── At a glance — readiness strip ────────────────────────────── */}
       <section className="space-y-4">
         <ActHeader
           eyebrow="At a glance"
-          title="Where things stand"
-          subtitle="A live snapshot of the masterfile for the selected scope — grades, comments, attendance and results logged so far."
+          title="Readiness snapshot"
+          subtitle="Grades entered, grading sheets locked and attendance recorded — a quick read on how complete the records are for this scope."
         />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <ReadinessCard
             label="Grades recorded"
             icon={BookOpenCheck}
@@ -104,29 +214,18 @@ export function MasterfileDashboard({
             metric={d.readiness.sheetsLocked}
           />
           <ReadinessCard
-            label="Comments in"
-            icon={MessageSquareText}
-            metric={d.readiness.commentsWritten}
-            onDrill={() => setTarget({ kind: 'missing-comments' })}
-            drillHint="See students with no adviser comment"
-          />
-          <ReadinessCard
             label="Attendance logged"
             icon={CalendarCheck2}
             metric={d.readiness.attendanceRecorded}
           />
-          <GradableCard
-            readiness={d.readiness}
-            onDrill={() => setTarget({ kind: 'incomplete-results' })}
-          />
         </div>
       </section>
 
-      {/* ── Act 2 — Outcomes ──────────────────────────────────────────── */}
+      {/* ── Academic Performance — outcomes ───────────────────────────── */}
       <section className="space-y-4">
         <ActHeader
-          eyebrow="How they're doing"
-          title="The cohort so far"
+          eyebrow="Academic Performance"
+          title="How they're doing"
           subtitle="Award distribution, General Average spread, subject performance and attendance. Students without complete data show as pending, not awarded."
         />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -140,6 +239,38 @@ export function MasterfileDashboard({
           />
           <SubjectPerformanceCard dashboard={d} />
           <AttendanceHealthCard dashboard={d} />
+        </div>
+      </section>
+
+      {/* ── Quick Links — child routes ────────────────────────────────── */}
+      <section className="space-y-4">
+        <ActHeader
+          eyebrow="Quick Links"
+          title="Go deeper"
+          subtitle="Jump to a focused view — awards, attendance records, or adviser comments — scoped to the same level and class."
+        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <QuickLinkCard
+            eyebrow="Awards"
+            title="Academic Awards"
+            description="Subject and Overall Academic Award recipients. Gold, Silver, and Bronze tiers."
+            href={`/records/academic-summary/awards${scopeQuery}`}
+            icon={Award}
+          />
+          <QuickLinkCard
+            eyebrow="Attendance"
+            title="Attendance Records"
+            description="Per-term attendance totals, rates and rollups for this cohort."
+            href={`/records/academic-summary/attendance${scopeQuery}`}
+            icon={CalendarCheck2}
+          />
+          <QuickLinkCard
+            eyebrow="Comments"
+            title="Adviser Comments"
+            description="FCA write-up completion by term — see who's submitted and who still needs to."
+            href={`/records/academic-summary/comments${scopeQuery}`}
+            icon={MessageSquareText}
+          />
         </div>
       </section>
 
@@ -224,7 +355,50 @@ function ActHeader({
   );
 }
 
-// ---------- Act 1 cards ----------
+// ---------- Quick link card (§8 interactive quick-link card pattern) ----------
+
+function QuickLinkCard({
+  eyebrow,
+  title,
+  description,
+  href,
+  icon: Icon,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
+  return (
+    <Card className="@container/card group transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+      <CardHeader>
+        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+          {eyebrow}
+        </CardDescription>
+        <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+          {title}
+        </CardTitle>
+        <CardAction>
+          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <Icon className="size-4" />
+          </div>
+        </CardAction>
+      </CardHeader>
+      <CardFooter className="flex-col items-start gap-4 text-sm">
+        <p className="leading-relaxed text-muted-foreground">{description}</p>
+        <Button asChild size="sm">
+          <Link href={href}>
+            View
+            <ArrowUpRight className="size-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+          </Link>
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
+// ---------- Readiness cards ----------
 
 // Snapshot, not a verdict: a full count reads as a quiet positive, everything
 // else stays neutral (no amber/red "you're behind" signal — this is tracking).
@@ -318,7 +492,7 @@ function GradableCard({
   );
 }
 
-// ---------- Act 2 cards ----------
+// ---------- Academic Performance cards ----------
 
 function ChartCard({
   eyebrow,
@@ -628,7 +802,7 @@ function RateStat({
   );
 }
 
-// ---------- Act 3 cards ----------
+// ---------- Worth a look cards ----------
 
 // The "Still coming in" count is in cells / comments / sheets depending on the
 // group; label it so it reads in its own unit (the drill opens to students).

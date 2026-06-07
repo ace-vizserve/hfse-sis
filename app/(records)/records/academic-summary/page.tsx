@@ -4,8 +4,22 @@ import { MasterfileToolbar } from '@/components/markbook/masterfile-toolbar';
 import { MasterfileView } from '@/components/markbook/masterfile-view';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
-import { resolveAcademicSummaryScope } from '@/lib/markbook/academic-summary-scope';
+import {
+  resolveAcademicSummaryScope,
+  type AcademicSummaryScope,
+} from '@/lib/markbook/academic-summary-scope';
 import { getSessionUser } from '@/lib/supabase/server';
+
+// Build a ?ay=…&level=…[&class=…] query string from the resolved scope so
+// child routes (awards / attendance / comments) open scoped to the same cohort.
+function buildScopeQuery(scope: AcademicSummaryScope): string {
+  const params = new URLSearchParams();
+  params.set('ay', scope.ayCode);
+  if (scope.selectedLevelId) params.set('level', scope.selectedLevelId);
+  if (scope.selectedSectionId) params.set('class', scope.selectedSectionId);
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
 
 // Academic Records Summary — the consolidated masterfile (KD #95). Lives in the
 // Records module (whole-student outcomes) but reads grade data from the
@@ -130,7 +144,10 @@ export default async function AcademicSummaryPage({
         selectedSectionId={scope.selectedSectionId}
       />
 
-      <MasterfileView payload={scope.payload} />
+      <MasterfileView
+        payload={scope.payload}
+        scopeQuery={buildScopeQuery(scope)}
+      />
 
       <p className="border-t border-border pt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         Award thresholds · Bronze ≥ {scope.payload.thresholds.bronzeMin} ·

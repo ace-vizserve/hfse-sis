@@ -38,7 +38,13 @@ const STATUS_OPTIONS: Array<{ value: MasterfileStatusFilter; label: string }> =
     { value: 'withdrawn', label: 'Withdrawn' },
   ];
 
-export function MasterfileView({ payload }: { payload: MasterfilePayload }) {
+export function MasterfileView({
+  payload,
+  scopeQuery = '',
+}: {
+  payload: MasterfilePayload;
+  scopeQuery?: string;
+}) {
   const [termNumber, setTermNumber] = useState<number | null>(null);
   const [subjectId, setSubjectId] = useState<string | null>(null);
   const [status, setStatus] = useState<MasterfileStatusFilter>('all');
@@ -122,7 +128,11 @@ export function MasterfileView({ payload }: { payload: MasterfilePayload }) {
         </DropdownMenu>
       </div>
 
-      <MasterfileDashboard payload={payload} filters={filters} />
+      <MasterfileDashboard
+        payload={payload}
+        filters={filters}
+        scopeQuery={scopeQuery}
+      />
     </div>
   );
 }
