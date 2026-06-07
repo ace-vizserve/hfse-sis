@@ -13,6 +13,8 @@ import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { getTeacherList } from '@/lib/auth/staff-list';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { GenerateIndexButton } from '@/components/sis/generate-index-button';
+import { sgToday } from '@/lib/dates';
 import {
   Card,
   CardAction,
@@ -92,14 +94,15 @@ export default async function SisSectionDetailPage({
       : section.academic_year
   ) as { ay_code: string; label: string } | null;
 
-  // Roster, subject configs, sibling section list, teacher list, and
-  // assignments are all independent after section resolves — run in parallel.
+  // Roster, subject configs, sibling section list, teacher list, term list,
+  // and assignments are all independent after section resolves — run in parallel.
   const [
     { data: rows },
     { data: configs },
     { data: rawSibRows },
     teacherList,
     { data: rawAssignments },
+    { data: termRows },
   ] = await Promise.all([
     supabase
       .from('section_students')
@@ -128,7 +131,23 @@ export default async function SisSectionDetailPage({
       .from('teacher_assignments')
       .select('id, teacher_user_id, section_id, subject_id, role')
       .eq('section_id', id),
+    // Terms for this AY — used to compute termStarted (the school year's first
+    // term has started if today ≥ earliest term start_date). Conservative: a
+    // null start_date is treated as "not yet started" (no false escalations
+    // during initial AY setup). Uses sgToday() — KD #32.
+    supabase
+      .from('terms')
+      .select('start_date')
+      .eq('academic_year_id', section.academic_year_id)
+      .order('start_date', { ascending: true }),
   ]);
+
+  const today = sgToday();
+  const earliestTermStart = (termRows ?? [])
+    .map((t: { start_date: string | null }) => t.start_date)
+    .filter((d): d is string => !!d)
+    .sort()[0];
+  const termStarted = !!earliestTermStart && earliestTermStart <= today;
 
   type RosterFetchRow = {
     id: string;
@@ -345,6 +364,11 @@ export default async function SisSectionDetailPage({
           <SectionRenameDialog
             sectionId={section.id}
             currentName={section.name}
+          />
+          <GenerateIndexButton
+            sectionId={section.id}
+            sectionName={section.name}
+            termStarted={termStarted}
           />
           <GenerateSheetsDialog
             scope={{

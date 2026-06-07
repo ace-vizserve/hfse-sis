@@ -10,6 +10,10 @@ import {
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { NewSectionButton } from '@/components/markbook/new-section-button';
+import {
+  GenerateAllIndexButton,
+  GenerateIndexButton,
+} from '@/components/sis/generate-index-button';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -22,6 +26,7 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { compareLevelLabels } from '@/lib/sis/levels';
+import { sgToday } from '@/lib/dates';
 
 type LevelLite = {
   id: string;
@@ -57,6 +62,27 @@ export default async function SisSectionsListPage() {
     .select('id, ay_code, label')
     .eq('is_current', true)
     .single();
+
+  // Compute termStarted = the school year's first term has begun (today ≥
+  // earliest term start_date). Used to escalate the "Generate index" dialog
+  // mid-year. We query terms for the current AY and check the minimum
+  // start_date against sgToday() (SGT date — KD #32). A null start_date on
+  // every term is treated as "not yet started" (conservative, no false
+  // escalations during initial setup).
+  let termStarted = false;
+  if (ay) {
+    const { data: terms } = await supabase
+      .from('terms')
+      .select('start_date')
+      .eq('academic_year_id', ay.id)
+      .order('start_date', { ascending: true });
+    const today = sgToday();
+    const earliestStart = (terms ?? [])
+      .map((t) => t.start_date)
+      .filter((d): d is string => !!d)
+      .sort()[0];
+    termStarted = !!earliestStart && earliestStart <= today;
+  }
 
   const { data: sections } = ay
     ? await supabase
@@ -167,6 +193,12 @@ export default async function SisSectionsListPage() {
               {ay.ay_code}
             </Badge>
           )}
+          {cards.length > 0 && (
+            <GenerateAllIndexButton
+              sections={cards.map((c) => ({ id: c.id, name: c.name }))}
+              termStarted={termStarted}
+            />
+          )}
           <NewSectionButton
             levels={levelOptions}
             ayCode={ay?.ay_code ?? null}
@@ -229,7 +261,12 @@ export default async function SisSectionsListPage() {
           </h2>
           <div className="space-y-4">
             {sortedLevels.map(([level, sects]) => (
-              <LevelGroup key={level} levelLabel={level} sections={sects} />
+              <LevelGroup
+                key={level}
+                levelLabel={level}
+                sections={sects}
+                termStarted={termStarted}
+              />
             ))}
           </div>
         </div>
@@ -241,9 +278,11 @@ export default async function SisSectionsListPage() {
 function LevelGroup({
   levelLabel,
   sections,
+  termStarted,
 }: {
   levelLabel: string;
   sections: SectionCard[];
+  termStarted: boolean;
 }) {
   const levelCode = sections[0]?.level_code ?? '';
   const totalActive = sections.reduce((n, s) => n + s.active, 0);
@@ -271,37 +310,53 @@ function LevelGroup({
       </div>
       <div className="flex flex-wrap gap-2 p-4">
         {sections.map((s) => (
-          <SectionPill key={s.id} section={s} />
+          <SectionPill key={s.id} section={s} termStarted={termStarted} />
         ))}
       </div>
     </Card>
   );
 }
 
-function SectionPill({ section }: { section: SectionCard }) {
+function SectionPill({
+  section,
+  termStarted,
+}: {
+  section: SectionCard;
+  termStarted: boolean;
+}) {
   return (
-    <Link
-      href={`/sis/sections/${section.id}`}
-      className="group/pill inline-flex items-center gap-2.5 rounded-xl border border-hairline bg-gradient-to-b from-card to-muted/20 py-2 pl-2.5 pr-3 shadow-xs transition-all hover:-translate-y-0.5 hover:border-brand-indigo/40 hover:shadow-md"
-    >
-      <div className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-        <GraduationCap className="size-3.5" />
-      </div>
-      <div className="flex flex-col leading-tight">
-        <span className="font-serif text-[14px] font-semibold tracking-tight text-foreground">
-          {section.name}
-        </span>
-        <span className="font-mono text-[9px] uppercase tracking-[0.12em] tabular-nums text-muted-foreground">
-          {section.active} active
-          {section.withdrawn > 0 && (
-            <>
-              <span className="mx-1">·</span>
-              {section.withdrawn} withdrawn
-            </>
-          )}
-        </span>
-      </div>
-    </Link>
+    <div className="group/pill inline-flex items-center gap-2 rounded-xl border border-hairline bg-gradient-to-b from-card to-muted/20 py-2 pl-2.5 pr-2 shadow-xs transition-all hover:border-brand-indigo/40 hover:shadow-md">
+      {/* Section link — takes up most of the pill */}
+      <Link
+        href={`/sis/sections/${section.id}`}
+        className="inline-flex items-center gap-2.5 transition-all hover:-translate-y-0.5"
+      >
+        <div className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+          <GraduationCap className="size-3.5" />
+        </div>
+        <div className="flex flex-col leading-tight">
+          <span className="font-serif text-[14px] font-semibold tracking-tight text-foreground">
+            {section.name}
+          </span>
+          <span className="font-mono text-[9px] uppercase tracking-[0.12em] tabular-nums text-muted-foreground">
+            {section.active} active
+            {section.withdrawn > 0 && (
+              <>
+                <span className="mx-1">·</span>
+                {section.withdrawn} withdrawn
+              </>
+            )}
+          </span>
+        </div>
+      </Link>
+      {/* Generate index button — compact (icon only) to keep pill size trim */}
+      <GenerateIndexButton
+        sectionId={section.id}
+        sectionName={section.name}
+        termStarted={termStarted}
+        variant="compact"
+      />
+    </div>
   );
 }
 
