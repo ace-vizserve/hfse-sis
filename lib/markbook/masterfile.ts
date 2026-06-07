@@ -105,8 +105,13 @@ export type MasterfileStudentRow = {
   // comment). Only terms with non-empty content appear. Sourced from
   // `evaluation_writeups`, resolved per the student's `student_id` (not the
   // denormalized `evaluation_writeups.section_id`) so a mid-year transfer
-  // doesn't drop the comment (KD #120).
-  commentsByTerm: { termNumber: number; text: string }[];
+  // doesn't drop the comment (KD #120). `submitted` reflects the adviser's
+  // explicit finalise action — consumers use it to distinguish Submitted /
+  // Draft / Missing (KD #129).
+  commentsByTerm: { termNumber: number; text: string; submitted: boolean }[];
+  // Resolved joining term for late enrollees (explicit override → date-derived →
+  // null). null for active/withdrawn students or when unresolvable. KD #111/#68.
+  lateEnrolleeTermNumber: number | null;
 };
 
 // One grading sheet in the selected scope, with just the fields the dashboard
@@ -145,6 +150,39 @@ export type MasterfileInput = {
   // Optional — when omitted, includes every section at the level.
   sectionIds?: string[];
 };
+
+// Resolve a late enrollee's joining term: explicit override wins; else the
+// term whose window contains enrollment_date; else the earliest term that
+// starts after it (joined during a break -> next term); else null. KD #111/#68.
+export function resolveLateEnrolleeTerm(
+  override: number | null,
+  enrollmentDate: string | null,
+  terms: {
+    termNumber: number;
+    startDate: string | null;
+    endDate: string | null;
+  }[]
+): number | null {
+  if (override != null) return override;
+  if (!enrollmentDate) return null;
+  const d = enrollmentDate.slice(0, 10);
+  const sorted = terms
+    .filter((t) => t.startDate && t.endDate)
+    .slice()
+    .sort((a, b) => a.termNumber - b.termNumber);
+  for (const t of sorted) {
+    if (
+      d >= (t.startDate as string).slice(0, 10) &&
+      d <= (t.endDate as string).slice(0, 10)
+    ) {
+      return t.termNumber;
+    }
+  }
+  for (const t of sorted) {
+    if (d < (t.startDate as string).slice(0, 10)) return t.termNumber;
+  }
+  return null;
+}
 
 export async function loadMasterfile(
   input: MasterfileInput
@@ -198,7 +236,7 @@ async function loadMasterfileUncached(
       .order('name'),
     service
       .from('terms')
-      .select('id, term_number, label')
+      .select('id, term_number, label, start_date, end_date')
       .eq('academic_year_id', ayId)
       .order('term_number'),
     getSchoolConfig(),
@@ -215,7 +253,13 @@ async function loadMasterfileUncached(
   const sectionByIid = new Map<string, SectionRow>();
   for (const s of sections) sectionByIid.set(s.id, s);
 
-  type TermRow = { id: string; term_number: number; label: string };
+  type TermRow = {
+    id: string;
+    term_number: number;
+    label: string;
+    start_date: string | null;
+    end_date: string | null;
+  };
   const terms = (termsRaw ?? []) as TermRow[];
 
   const thresholds: AwardThresholds = {
@@ -296,7 +340,7 @@ async function loadMasterfileUncached(
   const { data: enrolmentsRaw } = await service
     .from('section_students')
     .select(
-      'id, section_id, enrollment_status, created_at, student:students(id, student_number, last_name, first_name, middle_name)'
+      'id, section_id, enrollment_status, created_at, late_enrollee_term_number, enrollment_date, student:students(id, student_number, last_name, first_name, middle_name)'
     )
     .in('section_id', filterIds)
     .order('index_number');
@@ -306,6 +350,8 @@ async function loadMasterfileUncached(
     section_id: string;
     enrollment_status: string;
     created_at: string | null;
+    late_enrollee_term_number: number | null;
+    enrollment_date: string | null;
     student:
       | {
           id: string;
@@ -337,6 +383,8 @@ async function loadMasterfileUncached(
       sectionId: string;
       enrollmentStatus: string;
       createdAt: string | null;
+      lateTermOverride: number | null;
+      enrollmentDate: string | null;
     }>;
   };
   const groupedByStudent = new Map<string, StudentGroup>();
@@ -349,6 +397,8 @@ async function loadMasterfileUncached(
       sectionId: e.section_id,
       enrollmentStatus: e.enrollment_status,
       createdAt: e.created_at,
+      lateTermOverride: e.late_enrollee_term_number ?? null,
+      enrollmentDate: e.enrollment_date ?? null,
     };
     if (existing) {
       existing.enrolments.push(enrolment);
@@ -472,27 +522,33 @@ async function loadMasterfileUncached(
   const termNumberById = new Map<string, number>();
   for (const t of terms) termNumberById.set(t.id, t.term_number);
 
-  // commentsByStudent: studentId -> termId -> non-empty writeup text.
-  const commentsByStudent = new Map<string, Map<string, string>>();
+  // commentsByStudent: studentId -> termId -> { text, submitted }.
+  // Only non-empty entries are stored; submitted reflects the adviser's
+  // finalise flag (KD #129). Empty writeups are excluded (text="" = Missing).
+  const commentsByStudent = new Map<
+    string,
+    Map<string, { text: string; submitted: boolean }>
+  >();
   if (commentTermIds.length > 0 && studentIds.length > 0) {
     const { data: writeupsRaw } = await service
       .from('evaluation_writeups')
-      .select('student_id, term_id, writeup')
+      .select('student_id, term_id, writeup, submitted')
       .in('student_id', studentIds)
       .in('term_id', commentTermIds);
     for (const w of (writeupsRaw ?? []) as Array<{
       student_id: string;
       term_id: string;
       writeup: string | null;
+      submitted: boolean | null;
     }>) {
       const text = (w.writeup ?? '').trim();
       if (!text) continue;
       let byTerm = commentsByStudent.get(w.student_id);
       if (!byTerm) {
-        byTerm = new Map<string, string>();
+        byTerm = new Map<string, { text: string; submitted: boolean }>();
         commentsByStudent.set(w.student_id, byTerm);
       }
-      byTerm.set(w.term_id, text);
+      byTerm.set(w.term_id, { text, submitted: !!w.submitted });
     }
   }
 
@@ -653,15 +709,37 @@ async function loadMasterfileUncached(
 
     // FCA comments (T1–T3), ordered by term number, non-empty only.
     const byTermMap = commentsByStudent.get(group.studentId);
-    const commentsByTerm: { termNumber: number; text: string }[] = [];
+    const commentsByTerm: {
+      termNumber: number;
+      text: string;
+      submitted: boolean;
+    }[] = [];
     if (byTermMap) {
-      for (const [termId, text] of byTermMap) {
+      for (const [termId, entry] of byTermMap) {
         const termNumber = termNumberById.get(termId);
         if (termNumber == null) continue;
-        commentsByTerm.push({ termNumber, text });
+        commentsByTerm.push({
+          termNumber,
+          text: entry.text,
+          submitted: entry.submitted,
+        });
       }
       commentsByTerm.sort((a, b) => a.termNumber - b.termNumber);
     }
+
+    // Resolved joining term for late enrollees (KD #111/#68).
+    const lateEnrolleeTermNumber =
+      primary.enrollmentStatus === 'late_enrollee'
+        ? resolveLateEnrolleeTerm(
+            primary.lateTermOverride,
+            primary.enrollmentDate,
+            terms.map((t) => ({
+              termNumber: t.term_number,
+              startDate: t.start_date,
+              endDate: t.end_date,
+            }))
+          )
+        : null;
 
     rows.push({
       studentId: group.studentId,
@@ -677,6 +755,7 @@ async function loadMasterfileUncached(
       attendanceByTerm,
       attendanceTotal,
       commentsByTerm,
+      lateEnrolleeTermNumber,
     });
   }
 
