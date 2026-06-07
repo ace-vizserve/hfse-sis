@@ -191,6 +191,7 @@ export function CommentsView({ payload }: { payload: MasterfilePayload }) {
   const handleExportCsv = useCallback(() => {
     const termLabel = termNumber == null ? 'T1-T3' : `T${termNumber}`;
     const headers = [
+      '#',
       'Student',
       'Student number',
       'Class',
@@ -200,6 +201,7 @@ export function CommentsView({ payload }: { payload: MasterfilePayload }) {
       'Comment',
     ];
     const csvRows = rows.map((r) => [
+      r.indexNumber != null ? String(r.indexNumber) : '',
       r.studentName,
       r.studentNumber ?? '',
       r.sectionName,
@@ -262,7 +264,10 @@ export function CommentsView({ payload }: { payload: MasterfilePayload }) {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40">
-              <TableHead className="pl-5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em]">
+              <TableHead className="w-12 pl-5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em]">
+                #
+              </TableHead>
+              <TableHead className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em]">
                 Student
               </TableHead>
               <TableHead className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em]">
@@ -286,7 +291,7 @@ export function CommentsView({ payload }: { payload: MasterfilePayload }) {
             {rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
                   No write-ups match this scope.
@@ -348,8 +353,15 @@ function CommentsTableRow({
 }) {
   return (
     <TableRow>
+      {/* Index number — informational roll number, muted */}
+      <TableCell className="w-12 pl-5">
+        <span className="font-mono text-sm tabular-nums text-muted-foreground">
+          {row.indexNumber ?? '—'}
+        </span>
+      </TableCell>
+
       {/* Student — linkified to Records per KD #81 */}
-      <TableCell className="pl-5">
+      <TableCell>
         <div className="flex flex-col gap-0.5">
           {row.studentNumber ? (
             <IdentifierLink

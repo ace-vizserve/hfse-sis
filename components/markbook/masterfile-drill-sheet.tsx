@@ -105,7 +105,8 @@ export function MasterfileDrillSheet({
             <Table noWrapper>
               <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
-                  <TableHead className="pl-6">Student</TableHead>
+                  <TableHead className="w-12 pl-6">#</TableHead>
+                  <TableHead>Student</TableHead>
                   <TableHead>Class</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="pr-6 text-right">
@@ -118,7 +119,12 @@ export function MasterfileDrillSheet({
                   <TableRow
                     key={`${row.studentNumber ?? row.studentName}-${i}`}
                   >
-                    <TableCell className="pl-6">
+                    <TableCell className="w-12 pl-6">
+                      <span className="font-mono text-sm tabular-nums text-muted-foreground">
+                        {row.indexNumber ?? '—'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
                       {row.studentNumber ? (
                         <IdentifierLink
                           href={`/records/students/${encodeURIComponent(row.studentNumber)}`}

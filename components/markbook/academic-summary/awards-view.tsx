@@ -201,6 +201,7 @@ export function AwardsView({ payload }: { payload: MasterfilePayload }) {
 
   const handleExportCsv = useCallback(() => {
     const headers = [
+      '#',
       'Student',
       'Student number',
       'Class',
@@ -210,6 +211,7 @@ export function AwardsView({ payload }: { payload: MasterfilePayload }) {
       ...(showAwardColumn ? ['Award'] : []),
     ];
     const csvRows = rows.map((r) => [
+      r.indexNumber != null ? String(r.indexNumber) : '',
       r.studentName,
       r.studentNumber ?? '',
       r.sectionName,
@@ -308,7 +310,10 @@ export function AwardsView({ payload }: { payload: MasterfilePayload }) {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40">
-              <TableHead className="pl-5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em]">
+              <TableHead className="w-12 pl-5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em]">
+                #
+              </TableHead>
+              <TableHead className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em]">
                 Student
               </TableHead>
               <TableHead className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em]">
@@ -331,7 +336,7 @@ export function AwardsView({ payload }: { payload: MasterfilePayload }) {
             {rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={showAwardColumn ? 5 : 4}
+                  colSpan={showAwardColumn ? 6 : 5}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
                   No students match this scope.
@@ -378,8 +383,15 @@ function AwardsTableRow({
 }) {
   return (
     <TableRow>
+      {/* Index number — informational roll number, muted */}
+      <TableCell className="w-12 pl-5">
+        <span className="font-mono text-sm tabular-nums text-muted-foreground">
+          {row.indexNumber ?? '—'}
+        </span>
+      </TableCell>
+
       {/* Student — linkified per KD #81 */}
-      <TableCell className="pl-5">
+      <TableCell>
         <div className="flex flex-col gap-0.5">
           {row.studentNumber ? (
             <IdentifierLink
