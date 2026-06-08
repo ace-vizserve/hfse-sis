@@ -1051,7 +1051,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
         statusTabs={STP_STATUS_TABS}
         pageSize={25}
         csv={{ filename: `stp-cohort-${ayCode}.csv` }}
-        url={{ enabled: true }}
+        url={{ enabled: true, namespace: 'cohort' }}
         emptyState={STP_EMPTY_STATE}
         emptyFilteredState={{ title: 'No matches for current filters.' }}
       />
@@ -1072,7 +1072,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
           statusTabs={PROMISED_STATUS_TABS}
           pageSize={25}
           csv={{ filename: `promised-cohort-${ayCode}.csv` }}
-          url={{ enabled: true }}
+          url={{ enabled: true, namespace: 'cohort' }}
           emptyState={PROMISED_EMPTY_STATE}
           emptyFilteredState={{ title: 'No matches for current filters.' }}
           selection={{
@@ -1112,7 +1112,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
           statusTabs={PASS_EXPIRY_STATUS_TABS}
           pageSize={25}
           csv={{ filename: `pass-expiry-cohort-${ayCode}.csv` }}
-          url={{ enabled: true }}
+          url={{ enabled: true, namespace: 'cohort' }}
           emptyState={PASS_EXPIRY_EMPTY_STATE}
           emptyFilteredState={{ title: 'No matches for current filters.' }}
           selection={{
@@ -1151,7 +1151,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
         statusTabs={PRE_COURSE_STATUS_TABS}
         pageSize={25}
         csv={{ filename: `pre-course-cohort-${ayCode}.csv` }}
-        url={{ enabled: true }}
+        url={{ enabled: true, namespace: 'cohort' }}
         emptyState={PRE_COURSE_EMPTY_STATE}
         emptyFilteredState={{ title: 'No matches for current filters.' }}
       />
@@ -1171,7 +1171,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
       statusTabs={MEDICAL_STATUS_TABS}
       pageSize={25}
       csv={{ filename: `medical-cohort-${ayCode}.csv` }}
-      url={{ enabled: true }}
+      url={{ enabled: true, namespace: 'cohort' }}
       emptyState={MEDICAL_EMPTY_STATE}
       emptyFilteredState={{ title: 'No matches for current filters.' }}
     />

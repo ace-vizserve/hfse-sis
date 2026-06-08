@@ -242,7 +242,7 @@ export function AllPublicationsOverview({
       initialColumnVisibility={{ published_by: false }}
       pageSize={25}
       csv={{ filename: 'publications.csv' }}
-      url={{ enabled: true }}
+      url={{ enabled: true, namespace: 'publications' }}
       emptyState={{
         icon: FileText,
         title: 'No publication windows yet.',

@@ -684,7 +684,7 @@ export function ChangeRequestsDataTable({
       initialSort={[{ id: 'requested_at', desc: true }]}
       pageSize={20}
       csv={{ filename: `change-requests-${ayCode ?? 'export'}.csv` }}
-      url={{ enabled: true }}
+      url={{ enabled: true, namespace: 'requests' }}
       emptyState={{
         title: 'No change requests yet.',
         body: 'When teachers request changes to locked sheets, they appear here.',

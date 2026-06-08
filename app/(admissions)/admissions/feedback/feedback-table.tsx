@@ -212,7 +212,7 @@ export function FeedbackTable({
       statusTabs={STATUS_TABS}
       pageSize={25}
       csv={{ filename: `feedback-${ayCode}.csv` }}
-      url={{ enabled: true }}
+      url={{ enabled: true, namespace: 'feedback' }}
       emptyState={{
         title: 'No feedback received yet.',
         body: 'Ratings and comments from the online application form will appear here once parents submit them.',

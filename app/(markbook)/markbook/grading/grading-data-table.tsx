@@ -519,7 +519,7 @@ export function GradingDataTable({
         }}
         pageSize={20}
         pageSizeOptions={[10, 20, 50, 100]}
-        url={{ enabled: true }}
+        url={{ enabled: true, namespace: 'grading' }}
         emptyState={{
           title: 'No grading sheets yet.',
           body: 'Create the first sheet for a subject × section × term.',
