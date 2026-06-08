@@ -1,7 +1,7 @@
 # Virtue-theme editor in the Evaluation module
 
 **Date:** 2026-06-08
-**Status:** Design — approved, ready for implementation plan
+**Status:** Shipped (2026-06-08) — KD #137. `/evaluation/virtue-themes` + virtue-only PATCH route live; virtue field removed from AY-Setup.
 **Module:** Evaluation
 **Cross-refs:** KD #49 (FCA write-ups + virtue theme drives the comment heading; T4 excluded), KD #114 (Evaluation = FCA write-ups, registrar oversight), KD #48 (config placement), KD #39 (school_admin config tier)
 

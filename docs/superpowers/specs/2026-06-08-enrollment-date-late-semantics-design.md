@@ -1,7 +1,7 @@
 # Enrollment-date as the single source of truth for late-enrollee semantics
 
 **Date:** 2026-06-08
-**Status:** Design — deferred follow-up (build after the June training milestone unless prioritized)
+**Status:** Partially shipped (2026-06-08). **C3 shipped** (migration 072 — Generate-index buckets by section-tenure so transfers bottom-pin; KD #136 update). **C2 dropped** — a same-section reactivation reuses the row that already carries pre-withdrawal attendance, so re-stamping `enrollment_date` would prorate that real history out (`recompute_attendance_rollup` filters `date >= enrollment_date`); proper multi-interval proration is a known limitation, out of scope. **C1 deferred** — the `enrollment_status` enum already labels transfers `active` (not late), so deriving the label from earliest-enrollment across ~8 sites is single-source hardening, not a bug fix.
 **Module:** Records / SIS (section_students lifecycle)
 **Cross-refs:** KD #67 (transfer), KD #68 (late-enrollee term detection), KD #111 (late_enrollee_term_number), KD #113 (proration), KD #117 (position-aware late-enrollee), KD #130 (recompute on enrollment_date edit), KD #135/#136 (index + Generate), KD #85 (index permanence)
 
