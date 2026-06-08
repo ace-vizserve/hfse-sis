@@ -28,6 +28,11 @@ import {
 const EVALUATION_AUDIT_ALLOWLIST = [
   'evaluation.writeup.save',
   'evaluation.writeup.submit',
+  'evaluation.writeup.resubmit',
+  // Virtue themes are edited in this module (Evaluation → Virtue themes); the
+  // write originates here even though the action prefix is `ay.*` (the value
+  // lives on `terms`). Surface it in the Evaluation audit log.
+  'ay.term_virtue.update',
   // Checklist topic CRUD — teacher-owned per section (KD #110)
   'evaluation.checklist_item.create',
   'evaluation.checklist_item.update',
