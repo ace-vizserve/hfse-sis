@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
   if (publishTerm && publishTerm.term_number < 4) {
     const { data: ayTerms } = await service
       .from('terms')
-      .select('id, term_number, end_date')
+      .select('id, term_number, end_date, virtue_theme')
       .eq('academic_year_id', publishTerm.academic_year_id)
       .order('term_number');
     const gaps = await cumulativeCommentGaps(
@@ -103,24 +103,31 @@ export async function POST(request: NextRequest) {
         id: string;
         term_number: number;
         end_date: string | null;
+        virtue_theme: string | null;
       }[],
       publishTerm.term_number
     );
     if (gaps.length > 0) {
       const detail = gaps
-        .map(
-          (g) =>
-            `Term ${g.termNumber} (${g.missing.length} student${g.missing.length === 1 ? '' : 's'})`
-        )
+        .map((g) => {
+          const parts: string[] = [];
+          if (g.missing.length > 0)
+            parts.push(
+              `${g.missing.length} student${g.missing.length === 1 ? '' : 's'}`
+            );
+          if (g.virtueMissing) parts.push('virtue theme not set');
+          return `Term ${g.termNumber} (${parts.join(', ')})`;
+        })
         .join(', ');
       return NextResponse.json(
         {
-          error: `Adviser comments must be submitted for every term this card shows before publishing. Missing: ${detail}.`,
+          error: `This card can't publish yet — the adviser-comment block is incomplete for: ${detail}.`,
           code: 'comments_incomplete',
           comment_gate: {
             ok: false,
             gaps: gaps.map((g) => ({
               term_number: g.termNumber,
+              virtue_missing: g.virtueMissing,
               missing: g.missing.map((m) => ({
                 name: m.name,
                 index: m.indexNumber,

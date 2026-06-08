@@ -28,10 +28,13 @@ export async function GET(
 
   const service = createServiceClient();
 
-  // 1) Resolve term_number + virtue_theme for T4 detection and virtue check (KD #49).
+  // 1) Resolve term_number for T4 detection + end_date for per-term roster
+  // correctness (KD #49/#120). virtue_theme is no longer needed here — it is
+  // fetched per-AY by the cumulative comment gate below (which passes it to
+  // cumulativeCommentGaps).
   const { data: rawTerm } = await service
     .from('terms')
-    .select('id, term_number, academic_year_id, virtue_theme, end_date')
+    .select('id, term_number, academic_year_id, end_date')
     .eq('id', termId)
     .single();
   if (!rawTerm) {
@@ -41,7 +44,6 @@ export async function GET(
     id: string;
     term_number: number;
     academic_year_id: string;
-    virtue_theme: string | null;
     end_date: string | null;
   };
   const isT4 = term.term_number === 4;
@@ -408,21 +410,24 @@ export async function GET(
   // CUMULATIVE comment hard-gate (KD #49 + #120). A published interim card for
   // term N shows the FCA comment boxes for terms 1..N — so publishing N is
   // HARD-blocked until comments are done for EVERY term 1..N (roster-correct
-  // per term; never future terms; T4 exempt). This mirrors exactly what the
-  // publish mutation enforces server-side (same shared helper) so the checklist
-  // and the block can't drift.
+  // per term; never future terms; T4 exempt). Virtue theme is included: a term
+  // without a virtue theme is also a gap (the comment-box heading would render
+  // without its HFSE-Virtues framing). This mirrors exactly what the publish
+  // mutation enforces server-side (same shared helper) so the checklist and the
+  // block can't drift.
   let commentGate: {
     ok: boolean;
     required_through_term: number | null;
     gaps: {
       term_number: number;
+      virtue_missing: boolean;
       missing: { name: string; index: number | null }[];
     }[];
   } = { ok: true, required_through_term: null, gaps: [] };
   if (!isT4) {
     const { data: ayTerms } = await service
       .from('terms')
-      .select('id, term_number, end_date')
+      .select('id, term_number, end_date, virtue_theme')
       .eq('academic_year_id', term.academic_year_id)
       .order('term_number');
     const cumulativeGaps = await cumulativeCommentGaps(
@@ -432,6 +437,7 @@ export async function GET(
         id: string;
         term_number: number;
         end_date: string | null;
+        virtue_theme: string | null;
       }[],
       term.term_number
     );
@@ -440,20 +446,13 @@ export async function GET(
       required_through_term: Math.min(term.term_number, 3),
       gaps: cumulativeGaps.map((g) => ({
         term_number: g.termNumber,
+        virtue_missing: g.virtueMissing,
         missing: g.missing
           .slice(0, 20)
           .map((m) => ({ name: m.name, index: m.indexNumber })),
       })),
     };
   }
-
-  // Virtue theme: only relevant for T1–T3 (T4 has no FCA comment block per KD #49).
-  const virtueReadiness = !isT4
-    ? {
-        ok: !!(term.virtue_theme as string | null)?.trim(),
-        term_label: `Term ${term.term_number}`,
-      }
-    : null;
 
   return NextResponse.json({
     grading_sheets: {
@@ -492,8 +491,8 @@ export async function GET(
       })),
     },
     t4_readiness: t4Readiness,
-    virtue_readiness: virtueReadiness,
     // HARD gate: cumulative comment completeness for terms 1..N (KD #49/#120).
+    // virtue_readiness is subsumed here — a term with no virtue theme is a gap.
     comment_gate: commentGate,
   });
 }
