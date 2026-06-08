@@ -1,7 +1,7 @@
 # Section-list surfaces → unified DataTable + row-actions
 
 **Date:** 2026-06-08
-**Status:** Design — approved, ready for implementation plan
+**Status:** Shipped (2026-06-08) — KD #84 update. All three lists tabled; Generate-index in the Markbook row-actions (registrar+).
 **Modules:** SIS Admin, Markbook, Attendance (Evaluation already a table — the reference)
 **Cross-refs:** KD #84 (unified `<DataTable>` shell + RowActionsMenu), KD #136 (Generate-index), KD #106 (evaluation sections list = the reference table), KD #55 (attendance sections picker), KD #3 (teacher_assignments)
 
