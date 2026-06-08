@@ -56,17 +56,20 @@ export default async function SectionsListPage() {
           .from('terms')
           .select('start_date')
           .eq('academic_year_id', ay.id)
-      : Promise.resolve({ data: [] as Array<{ start_date: string }> }),
+      : Promise.resolve({ data: [] as Array<{ start_date: string | null }> }),
   ]);
 
   const sections = sectionsResult.data ?? [];
-  const termRows = (termsResult.data ?? []) as Array<{ start_date: string }>;
+  const termRows = (termsResult.data ?? []) as Array<{
+    start_date: string | null;
+  }>;
 
   // termStarted = the AY's earliest term has started (≤ today SGT). Used to
-  // escalate the Generate-index warning (KD #136).
+  // escalate the Generate-index warning (KD #136). Null start_date guarded.
   const today = sgToday();
-  const termStarted =
-    termRows.length > 0 && termRows.some((t) => t.start_date <= today);
+  const termStarted = termRows.some(
+    (t) => !!t.start_date && t.start_date <= today
+  );
 
   const ids = sections.map((s) => s.id);
   const counts: Record<string, { active: number; withdrawn: number }> = {};
