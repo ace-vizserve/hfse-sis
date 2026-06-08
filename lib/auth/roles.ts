@@ -383,6 +383,16 @@ const EVALUATION_NAV: NavSection[] = [
     items: [{ href: '/evaluation/sections', label: 'All terms' }],
   },
   {
+    label: 'Setup',
+    items: [
+      {
+        href: '/evaluation/virtue-themes',
+        label: 'Virtue themes',
+        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+      },
+    ],
+  },
+  {
     // Per-term quicklinks land on the sections picker with `?term=<number>`
     // preselected. T4 has no FCA comment section (KD #49) so it's omitted.
     label: 'Quick filters',
@@ -697,6 +707,10 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   },
   {
     prefix: '/evaluation/audit-log',
+    allowed: ['registrar', 'school_admin', 'superadmin'],
+  },
+  {
+    prefix: '/evaluation/virtue-themes',
     allowed: ['registrar', 'school_admin', 'superadmin'],
   },
   {

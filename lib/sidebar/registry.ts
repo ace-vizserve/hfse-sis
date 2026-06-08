@@ -28,6 +28,7 @@ import {
   Scale,
   Settings2,
   ShieldCheck,
+  Sparkles,
   SquarePen,
   Tag,
   UserCog,
@@ -261,6 +262,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/evaluation/sections?term=1': CalendarDays,
       '/evaluation/sections?term=2': CalendarRange,
       '/evaluation/sections?term=3': CalendarClock,
+      '/evaluation/virtue-themes': Sparkles,
       '/evaluation/audit-log': History,
     },
     quickActionByRole: {
