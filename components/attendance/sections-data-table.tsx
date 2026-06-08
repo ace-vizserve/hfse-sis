@@ -1,0 +1,149 @@
+'use client';
+
+// Attendance sections list as a unified <DataTable> with per-row ⋯ actions menu.
+// Mirrors MarkbookSectionsDataTable with attendance-specific deltas:
+//   1. Section link → /attendance/${id}?date=${today} (uses the `today` prop).
+//   2. Props omit `role` and `termStarted` — attendance row-action is "Open daily"
+//      only (no Generate-index / Generate-sheets, so no role gating needed).
+//   3. Column header "Active" (vs "Students" in Markbook — both are fine labels;
+//      "Active" mirrors the existing attendance page copy).
+
+import { type ColumnDef } from '@tanstack/react-table';
+import { Layers } from 'lucide-react';
+
+import { SectionRowActions } from '@/components/sections/section-row-actions';
+import { DataTable } from '@/components/ui/data-table';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import { type FacetConfig } from '@/components/ui/data-table/types';
+import { IdentifierLink } from '@/components/ui/identifier-link';
+
+// ─── Row type ────────────────────────────────────────────────────────────────
+
+export type AttendanceSectionRow = {
+  id: string;
+  name: string;
+  levelLabel: string;
+  active: number;
+};
+
+// ─── facetFilterFn (verbatim copy from MarkbookSectionsDataTable) ─────────────
+
+function facetFilterFn(
+  row: { getValue: (id: string) => unknown },
+  id: string,
+  value: unknown
+) {
+  if (!value || (Array.isArray(value) && value.length === 0)) return true;
+  return Array.isArray(value)
+    ? value.includes(row.getValue(id))
+    : row.getValue(id) === value;
+}
+
+// ─── Columns ──────────────────────────────────────────────────────────────────
+
+function buildColumns(today: string): ColumnDef<AttendanceSectionRow>[] {
+  return [
+    {
+      accessorKey: 'name',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Section</SortableHeader>
+      ),
+      cell: ({ row }) => (
+        <IdentifierLink href={`/attendance/${row.original.id}?date=${today}`}>
+          {row.original.name}
+        </IdentifierLink>
+      ),
+    },
+    {
+      accessorKey: 'levelLabel',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Level</SortableHeader>
+      ),
+      cell: ({ row }) => (
+        <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+          {row.original.levelLabel}
+        </span>
+      ),
+      filterFn: facetFilterFn,
+    },
+    {
+      accessorKey: 'active',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Active</SortableHeader>
+      ),
+      cell: ({ row }) => (
+        <span className="font-mono text-[13px] tabular-nums">
+          {row.original.active}
+        </span>
+      ),
+    },
+    {
+      id: 'actions',
+      header: '',
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => (
+        <SectionRowActions
+          module="attendance"
+          sectionId={row.original.id}
+          sectionName={row.original.name}
+          role={null}
+          termStarted={false}
+          todayHref={`/attendance/${row.original.id}?date=${today}`}
+        />
+      ),
+    },
+  ];
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export function AttendanceSectionsDataTable({
+  rows,
+  levels,
+  today,
+}: {
+  rows: AttendanceSectionRow[];
+  levels: { id: string; code: string; label: string }[];
+  today: string;
+}) {
+  const columns = buildColumns(today);
+
+  const facets: FacetConfig[] =
+    levels.length > 1
+      ? [
+          {
+            columnId: 'levelLabel',
+            label: 'Level',
+            valueOptions: levels.map((l) => l.label),
+          },
+        ]
+      : [];
+
+  return (
+    <DataTable<AttendanceSectionRow>
+      data={rows}
+      columns={columns}
+      getRowId={(r) => r.id}
+      searchKeys={['name', 'levelLabel']}
+      searchPlaceholder="Search section or level…"
+      facets={facets}
+      initialSort={[
+        { id: 'levelLabel', desc: false },
+        { id: 'name', desc: false },
+      ]}
+      pageSize={25}
+      csv={{ filename: 'attendance-sections.csv' }}
+      url={{ enabled: true, namespace: 'sections' }}
+      emptyState={{
+        icon: Layers,
+        title: 'No sections yet.',
+        body: 'Sections appear here once they are created and a roster is synced. Ask the registrar to set up sections in SIS Admin.',
+      }}
+      emptyFilteredState={{
+        title: 'No sections match the current filters.',
+        body: 'Try a different level, or clear the search.',
+      }}
+    />
+  );
+}
