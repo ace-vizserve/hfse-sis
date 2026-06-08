@@ -19,13 +19,16 @@
 ## File Structure
 
 **New — pure logic (`lib/attendance/calendar/`):**
+
 - `operational.ts` — `DayStatus`/`ClosedReason` types + `dayStatusToStorage` / `storageToDayStatus` mapping + `isEncodableStatus`.
 - `filters.ts` — `CalendarFilterState`, `CALENDAR_FILTERS` registry, pure predicates, `applyEventFilters` / `applyDayFilters`.
 
 **New — server reads (extend existing):**
+
 - `lib/attendance/calendar.ts` — add `getSchoolCalendarForAy(ayId, audience)` + `getCalendarEventsForAy(ayId, audience)` composing the existing per-term readers (per-term readers stay for other callers).
 
 **New — UI (`components/attendance/calendar/`):**
+
 - `calendar-admin-client.tsx` — orchestrator (replaces the monolith).
 - `calendar-toolbar.tsx` — view switcher + Filters popover trigger + `+ Add`.
 - `calendar-filter-bar.tsx` — filter popover driven by the registry.
@@ -38,12 +41,15 @@
 - `hooks/use-calendar-view-state.ts` — view + cursor + selection + filter state.
 
 **Modified:**
+
 - `app/(sis)/sis/calendar/page.tsx` — aggregate the whole AY; pass terms + AY-wide calendar/events; auto-seed all dated terms.
 
 **Deleted (final task):**
+
 - `components/attendance/calendar-admin-client.tsx` (old monolith) once the new tree is wired and verified.
 
 **Tests (`__tests__/attendance/`):**
+
 - `calendar-operational.test.ts`, `calendar-filters.test.ts`, `calendar-encodable-invariant.test.ts`.
 
 ---
@@ -53,6 +59,7 @@
 ### Task 1: Operational mapping module
 
 **Files:**
+
 - Create: `lib/attendance/calendar/operational.ts`
 - Test: `__tests__/attendance/calendar-operational.test.ts`
 
@@ -88,14 +95,23 @@ describe('operational mapping', () => {
   it('encodability matches the underlying schema rule', () => {
     for (const s of ALL_STATUSES) {
       const { dayType, hblOverlay } = dayStatusToStorage(s);
-      expect(isEncodableStatus(s)).toBe(isEncodableDayType(dayType, hblOverlay));
+      expect(isEncodableStatus(s)).toBe(
+        isEncodableDayType(dayType, hblOverlay)
+      );
     }
   });
 
   it('maps known storage rows to the right UI status', () => {
-    expect(storageToDayStatus({ dayType: 'school_day', hblOverlay: false })).toEqual({ kind: 'open', hbl: false });
-    expect(storageToDayStatus({ dayType: 'hbl', hblOverlay: false })).toEqual({ kind: 'open', hbl: true });
-    expect(storageToDayStatus({ dayType: 'school_holiday', hblOverlay: true })).toEqual({ kind: 'closed', reason: 'school_holiday', hblOverlay: true });
+    expect(
+      storageToDayStatus({ dayType: 'school_day', hblOverlay: false })
+    ).toEqual({ kind: 'open', hbl: false });
+    expect(storageToDayStatus({ dayType: 'hbl', hblOverlay: false })).toEqual({
+      kind: 'open',
+      hbl: true,
+    });
+    expect(
+      storageToDayStatus({ dayType: 'school_holiday', hblOverlay: true })
+    ).toEqual({ kind: 'closed', reason: 'school_holiday', hblOverlay: true });
   });
 });
 ```
@@ -140,7 +156,11 @@ export function storageToDayStatus(s: CalendarStorage): DayStatus {
     case 'hbl':
       return { kind: 'open', hbl: true };
     case 'school_holiday':
-      return { kind: 'closed', reason: 'school_holiday', hblOverlay: s.hblOverlay };
+      return {
+        kind: 'closed',
+        reason: 'school_holiday',
+        hblOverlay: s.hblOverlay,
+      };
     case 'public_holiday':
       return { kind: 'closed', reason: 'public_holiday', hblOverlay: false };
     case 'no_class':
@@ -176,6 +196,7 @@ git commit -m "feat(calendar): operational Open/Closed <-> day_type mapping"
 ### Task 2: Filter registry + predicates
 
 **Files:**
+
 - Create: `lib/attendance/calendar/filters.ts`
 - Test: `__tests__/attendance/calendar-filters.test.ts`
 
@@ -192,15 +213,32 @@ import {
   filterDays,
   type CalendarFilterState,
 } from '@/lib/attendance/calendar/filters';
-import type { CalendarEventRow, SchoolCalendarRow } from '@/lib/attendance/calendar';
+import type {
+  CalendarEventRow,
+  SchoolCalendarRow,
+} from '@/lib/attendance/calendar';
 
 const ev = (over: Partial<CalendarEventRow>): CalendarEventRow => ({
-  id: 'e', termId: 't', startDate: '2026-04-10', endDate: '2026-04-10',
-  label: 'X', category: 'school_event', audience: 'all', tentative: false, ...over,
+  id: 'e',
+  termId: 't',
+  startDate: '2026-04-10',
+  endDate: '2026-04-10',
+  label: 'X',
+  category: 'school_event',
+  audience: 'all',
+  tentative: false,
+  ...over,
 });
 const day = (over: Partial<SchoolCalendarRow>): SchoolCalendarRow => ({
-  id: 'd', termId: 't', date: '2026-04-10', dayType: 'school_day',
-  isHoliday: false, label: null, audience: 'all', hblOverlay: false, ...over,
+  id: 'd',
+  termId: 't',
+  date: '2026-04-10',
+  dayType: 'school_day',
+  isHoliday: false,
+  label: null,
+  audience: 'all',
+  hblOverlay: false,
+  ...over,
 });
 
 describe('calendar filters', () => {
@@ -211,34 +249,66 @@ describe('calendar filters', () => {
   });
 
   it('date range bounds both events and days', () => {
-    const s: CalendarFilterState = { ...defaultFilterState(), from: '2026-04-11', to: '2026-04-30' };
-    expect(filterEvents([ev({ startDate: '2026-04-10', endDate: '2026-04-10' })], s)).toHaveLength(0);
-    expect(filterEvents([ev({ startDate: '2026-04-09', endDate: '2026-04-12' })], s)).toHaveLength(1); // overlaps
+    const s: CalendarFilterState = {
+      ...defaultFilterState(),
+      from: '2026-04-11',
+      to: '2026-04-30',
+    };
+    expect(
+      filterEvents([ev({ startDate: '2026-04-10', endDate: '2026-04-10' })], s)
+    ).toHaveLength(0);
+    expect(
+      filterEvents([ev({ startDate: '2026-04-09', endDate: '2026-04-12' })], s)
+    ).toHaveLength(1); // overlaps
     expect(filterDays([day({ date: '2026-04-10' })], s)).toHaveLength(0);
     expect(filterDays([day({ date: '2026-04-15' })], s)).toHaveLength(1);
   });
 
   it('category filter selects matching events only', () => {
-    const s: CalendarFilterState = { ...defaultFilterState(), categories: ['term_exam'] };
-    expect(filterEvents([ev({ category: 'term_exam' }), ev({ category: 'ptc' })], s)).toHaveLength(1);
+    const s: CalendarFilterState = {
+      ...defaultFilterState(),
+      categories: ['term_exam'],
+    };
+    expect(
+      filterEvents([ev({ category: 'term_exam' }), ev({ category: 'ptc' })], s)
+    ).toHaveLength(1);
   });
 
   it('level filter narrows to the selected audience plus all', () => {
-    const s: CalendarFilterState = { ...defaultFilterState(), level: 'primary' };
-    const out = filterDays([day({ audience: 'all' }), day({ audience: 'primary' }), day({ audience: 'secondary' })], s);
+    const s: CalendarFilterState = {
+      ...defaultFilterState(),
+      level: 'primary',
+    };
+    const out = filterDays(
+      [
+        day({ audience: 'all' }),
+        day({ audience: 'primary' }),
+        day({ audience: 'secondary' }),
+      ],
+      s
+    );
     expect(out.map((d) => d.audience).sort()).toEqual(['all', 'primary']);
   });
 
   it('status filter keeps only open or only closed days', () => {
     const open = day({ dayType: 'school_day' });
     const closed = day({ dayType: 'public_holiday' });
-    expect(filterDays([open, closed], { ...defaultFilterState(), status: 'open' })).toEqual([open]);
-    expect(filterDays([open, closed], { ...defaultFilterState(), status: 'closed' })).toEqual([closed]);
+    expect(
+      filterDays([open, closed], { ...defaultFilterState(), status: 'open' })
+    ).toEqual([open]);
+    expect(
+      filterDays([open, closed], { ...defaultFilterState(), status: 'closed' })
+    ).toEqual([closed]);
   });
 
   it('tentative filter keeps only un-confirmed events', () => {
-    const s: CalendarFilterState = { ...defaultFilterState(), tentativeOnly: true };
-    expect(filterEvents([ev({ tentative: true }), ev({ tentative: false })], s)).toHaveLength(1);
+    const s: CalendarFilterState = {
+      ...defaultFilterState(),
+      tentativeOnly: true,
+    };
+    expect(
+      filterEvents([ev({ tentative: true }), ev({ tentative: false })], s)
+    ).toHaveLength(1);
   });
 });
 ```
@@ -252,8 +322,15 @@ Expected: FAIL — module not found.
 
 ```ts
 // lib/attendance/calendar/filters.ts
-import type { CalendarEventRow, SchoolCalendarRow } from '@/lib/attendance/calendar';
-import { isEncodableDayType, type Audience, type EventCategory } from '@/lib/schemas/attendance';
+import type {
+  CalendarEventRow,
+  SchoolCalendarRow,
+} from '@/lib/attendance/calendar';
+import {
+  isEncodableDayType,
+  type Audience,
+  type EventCategory,
+} from '@/lib/schemas/attendance';
 
 export type StatusFilter = 'all' | 'open' | 'closed';
 
@@ -269,25 +346,41 @@ export type CalendarFilterState = {
 };
 
 export function defaultFilterState(): CalendarFilterState {
-  return { from: null, to: null, categories: [], level: 'all', status: 'all', tentativeOnly: false };
+  return {
+    from: null,
+    to: null,
+    categories: [],
+    level: 'all',
+    status: 'all',
+    tentativeOnly: false,
+  };
 }
 
 function inLevel(rowAudience: Audience, level: Audience): boolean {
-  return level === 'all' ? true : rowAudience === 'all' || rowAudience === level;
+  return level === 'all'
+    ? true
+    : rowAudience === 'all' || rowAudience === level;
 }
 
-export function filterEvents(events: CalendarEventRow[], s: CalendarFilterState): CalendarEventRow[] {
+export function filterEvents(
+  events: CalendarEventRow[],
+  s: CalendarFilterState
+): CalendarEventRow[] {
   return events.filter((e) => {
     if (s.from && e.endDate < s.from) return false; // event ends before window
     if (s.to && e.startDate > s.to) return false; // event starts after window
-    if (s.categories.length > 0 && !s.categories.includes(e.category)) return false;
+    if (s.categories.length > 0 && !s.categories.includes(e.category))
+      return false;
     if (!inLevel(e.audience, s.level)) return false;
     if (s.tentativeOnly && !e.tentative) return false;
     return true;
   });
 }
 
-export function filterDays(days: SchoolCalendarRow[], s: CalendarFilterState): SchoolCalendarRow[] {
+export function filterDays(
+  days: SchoolCalendarRow[],
+  s: CalendarFilterState
+): SchoolCalendarRow[] {
   return days.filter((d) => {
     if (s.from && d.date < s.from) return false;
     if (s.to && d.date > s.to) return false;
@@ -335,6 +428,7 @@ git commit -m "feat(calendar): filter registry + pure predicates"
 ### Task 3: Per-AY read helpers
 
 **Files:**
+
 - Modify: `lib/attendance/calendar.ts` (append two exports)
 
 - [ ] **Step 1: Add the AY-wide readers**
@@ -397,6 +491,7 @@ git commit -m "feat(calendar): AY-wide calendar + events readers"
 This guards the §7 guarantee: the redesign must not change which dates are encodable. It pins the mapping against the real schema rule for a representative term's rows.
 
 **Files:**
+
 - Test: `__tests__/attendance/calendar-encodable-invariant.test.ts`
 
 - [ ] **Step 1: Write the test**
@@ -404,8 +499,16 @@ This guards the §7 guarantee: the redesign must not change which dates are enco
 ```ts
 // __tests__/attendance/calendar-encodable-invariant.test.ts
 import { describe, expect, it } from 'vitest';
-import { isEncodableDayType, DAY_TYPE_VALUES, type DayType } from '@/lib/schemas/attendance';
-import { dayStatusToStorage, storageToDayStatus, isEncodableStatus } from '@/lib/attendance/calendar/operational';
+import {
+  isEncodableDayType,
+  DAY_TYPE_VALUES,
+  type DayType,
+} from '@/lib/schemas/attendance';
+import {
+  dayStatusToStorage,
+  storageToDayStatus,
+  isEncodableStatus,
+} from '@/lib/attendance/calendar/operational';
 
 describe('encodable allowlist invariant', () => {
   it('storage->status->storage preserves encodability for every day_type x overlay', () => {
@@ -447,6 +550,7 @@ git commit -m "test(calendar): pin encodable-allowlist invariant"
 Lift the memoized indexing out of the monolith into a reusable hook so every view shares it.
 
 **Files:**
+
 - Create: `components/attendance/calendar/hooks/use-calendar-index.ts`
 
 - [ ] **Step 1: Implement the hook**
@@ -455,7 +559,10 @@ Lift the memoized indexing out of the monolith into a reusable hook so every vie
 // components/attendance/calendar/hooks/use-calendar-index.ts
 'use client';
 import { useMemo } from 'react';
-import type { CalendarEventRow, SchoolCalendarRow } from '@/lib/attendance/calendar';
+import type {
+  CalendarEventRow,
+  SchoolCalendarRow,
+} from '@/lib/attendance/calendar';
 import type { Audience } from '@/lib/schemas/attendance';
 
 export type CalendarIndex = {
@@ -521,6 +628,7 @@ git commit -m "feat(calendar): shared calendar index hook"
 ### Task 6: Day-action sheet (edit-by-exception)
 
 **Files:**
+
 - Create: `components/attendance/calendar/day-action-sheet.tsx`
 
 > Design-system gate applies. Use shadcn `Sheet` (install via shadcn MCP if `components/ui/sheet.tsx` is missing — do **not** substitute a Dialog), `RadioGroup`, `Select`, `Checkbox`, `Button`. Status/HBL writes hit `POST /api/attendance/calendar` (body `{ termId, audience, entries: [{ date, dayType, label, hblOverlay }] }`); events use the existing event routes via the `event-editor-dialog` (Task wiring).
@@ -532,21 +640,47 @@ git commit -m "feat(calendar): shared calendar index hook"
 'use client';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import type { Audience } from '@/lib/schemas/attendance';
 import {
-  type DayStatus, type ClosedReason, CLOSED_REASON_LABELS,
-  dayStatusToStorage, storageToDayStatus,
+  type DayStatus,
+  type ClosedReason,
+  CLOSED_REASON_LABELS,
+  dayStatusToStorage,
+  storageToDayStatus,
 } from '@/lib/attendance/calendar/operational';
-import type { CalendarEventRow, SchoolCalendarRow } from '@/lib/attendance/calendar';
+import type {
+  CalendarEventRow,
+  SchoolCalendarRow,
+} from '@/lib/attendance/calendar';
 
 export function DayActionSheet({
-  iso, termId, audience, row, events, editable,
-  onClose, onSaved, onAddEvent, onEditEvent, onDeleteEvent,
+  iso,
+  termId,
+  audience,
+  row,
+  events,
+  editable,
+  onClose,
+  onSaved,
+  onAddEvent,
+  onEditEvent,
+  onDeleteEvent,
 }: {
   iso: string | null;
   termId: string;
@@ -574,7 +708,13 @@ export function DayActionSheet({
       const res = await fetch('/api/attendance/calendar', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ termId, audience, entries: [{ date: iso, dayType, label: row?.label ?? null, hblOverlay }] }),
+        body: JSON.stringify({
+          termId,
+          audience,
+          entries: [
+            { date: iso, dayType, label: row?.label ?? null, hblOverlay },
+          ],
+        }),
       });
       if (!res.ok) throw new Error((await res.json())?.error ?? 'Save failed');
       toast.success('Day updated.');
@@ -589,22 +729,46 @@ export function DayActionSheet({
   return (
     <Sheet open={iso !== null} onOpenChange={(o) => !o && onClose()}>
       <SheetContent>
-        <SheetHeader><SheetTitle>{iso}</SheetTitle></SheetHeader>
+        <SheetHeader>
+          <SheetTitle>{iso}</SheetTitle>
+        </SheetHeader>
         {!editable ? (
-          <p className="text-sm text-muted-foreground">Term break — outside any term. Add a labelled break via an event on the adjacent term days.</p>
+          <p className="text-sm text-muted-foreground">
+            Term break — outside any term. Add a labelled break via an event on
+            the adjacent term days.
+          </p>
         ) : (
           <div className="space-y-4">
             <RadioGroup
               value={status.kind}
-              onValueChange={(k) => setStatus(k === 'open' ? { kind: 'open', hbl: false } : { kind: 'closed', reason: 'public_holiday', hblOverlay: false })}
+              onValueChange={(k) =>
+                setStatus(
+                  k === 'open'
+                    ? { kind: 'open', hbl: false }
+                    : {
+                        kind: 'closed',
+                        reason: 'public_holiday',
+                        hblOverlay: false,
+                      }
+                )
+              }
             >
-              <label className="flex items-center gap-2"><RadioGroupItem value="open" /> Open</label>
-              <label className="flex items-center gap-2"><RadioGroupItem value="closed" /> Closed</label>
+              <label className="flex items-center gap-2">
+                <RadioGroupItem value="open" /> Open
+              </label>
+              <label className="flex items-center gap-2">
+                <RadioGroupItem value="closed" /> Closed
+              </label>
             </RadioGroup>
 
             {status.kind === 'open' && (
               <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={status.hbl} onCheckedChange={(v) => setStatus({ kind: 'open', hbl: Boolean(v) })} />
+                <Checkbox
+                  checked={status.hbl}
+                  onCheckedChange={(v) =>
+                    setStatus({ kind: 'open', hbl: Boolean(v) })
+                  }
+                />
                 HBL (taught remotely)
               </label>
             )}
@@ -613,18 +777,39 @@ export function DayActionSheet({
               <div className="space-y-2">
                 <Select
                   value={status.reason}
-                  onValueChange={(r) => setStatus({ kind: 'closed', reason: r as ClosedReason, hblOverlay: status.hblOverlay })}
+                  onValueChange={(r) =>
+                    setStatus({
+                      kind: 'closed',
+                      reason: r as ClosedReason,
+                      hblOverlay: status.hblOverlay,
+                    })
+                  }
                 >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {(Object.keys(CLOSED_REASON_LABELS) as ClosedReason[]).map((r) => (
-                      <SelectItem key={r} value={r}>{CLOSED_REASON_LABELS[r]}</SelectItem>
-                    ))}
+                    {(Object.keys(CLOSED_REASON_LABELS) as ClosedReason[]).map(
+                      (r) => (
+                        <SelectItem key={r} value={r}>
+                          {CLOSED_REASON_LABELS[r]}
+                        </SelectItem>
+                      )
+                    )}
                   </SelectContent>
                 </Select>
                 {status.reason === 'school_holiday' && (
                   <label className="flex items-center gap-2 text-sm">
-                    <Checkbox checked={status.hblOverlay} onCheckedChange={(v) => setStatus({ kind: 'closed', reason: 'school_holiday', hblOverlay: Boolean(v) })} />
+                    <Checkbox
+                      checked={status.hblOverlay}
+                      onCheckedChange={(v) =>
+                        setStatus({
+                          kind: 'closed',
+                          reason: 'school_holiday',
+                          hblOverlay: Boolean(v),
+                        })
+                      }
+                    />
                     Attendance still taken (HBL overlay)
                   </label>
                 )}
@@ -632,20 +817,46 @@ export function DayActionSheet({
             )}
 
             <div className="space-y-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Events</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                Events
+              </p>
               {events.map((e) => (
-                <div key={e.id} className="flex items-center justify-between text-sm">
+                <div
+                  key={e.id}
+                  className="flex items-center justify-between text-sm"
+                >
                   <span>{e.label}</span>
                   <span className="flex gap-2">
-                    <button type="button" onClick={() => onEditEvent(e)} aria-label="Edit">✎</button>
-                    <button type="button" onClick={() => onDeleteEvent(e.id)} aria-label="Delete">🗑</button>
+                    <button
+                      type="button"
+                      onClick={() => onEditEvent(e)}
+                      aria-label="Edit"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteEvent(e.id)}
+                      aria-label="Delete"
+                    >
+                      🗑
+                    </button>
                   </span>
                 </div>
               ))}
-              <Button type="button" variant="outline" size="sm" onClick={() => iso && onAddEvent(iso)}>+ Add event</Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => iso && onAddEvent(iso)}
+              >
+                + Add event
+              </Button>
             </div>
 
-            <Button type="button" onClick={save} disabled={busy}>Save</Button>
+            <Button type="button" onClick={save} disabled={busy}>
+              Save
+            </Button>
           </div>
         )}
       </SheetContent>
@@ -670,6 +881,7 @@ git commit -m "feat(calendar): edit-by-exception day-action sheet"
 ### Task 7: Shared calendar cell + legend
 
 **Files:**
+
 - Create: `components/attendance/calendar/calendar-cell.tsx`
 - Create: `components/attendance/calendar/legend.tsx`
 
@@ -693,7 +905,9 @@ export type CalendarCellProps = {
   clickable: boolean;
   onClick: () => void;
 };
-export function CalendarCell(props: CalendarCellProps): React.JSX.Element { /* lifted cell JSX */ }
+export function CalendarCell(props: CalendarCellProps): React.JSX.Element {
+  /* lifted cell JSX */
+}
 ```
 
 - [ ] **Step 2: Implement `legend.tsx`** — static `ChartLegendChip` row (lift from monolith lines ~637–656, add a "Term break" chip).
@@ -712,6 +926,7 @@ git commit -m "feat(calendar): shared cell + legend"
 ### Task 8: Month view
 
 **Files:**
+
 - Create: `components/attendance/calendar/views/month-view.tsx`
 
 > Lift `buildMonthWeekdayRows` + the month grid/nav from the monolith, but render each day via `CalendarCell` and resolve each cell's `row`/`events` from a passed-in `CalendarIndex`. Add `isBreak` detection: a weekday inside the AY span but outside every term window. Props:
@@ -736,6 +951,7 @@ export type MonthViewProps = {
 ### Task 9: List view
 
 **Files:**
+
 - Create: `components/attendance/calendar/views/list-view.tsx`
 
 > Chronological table (use the unified `<DataTable>` shell, KD #84, with `namespace: 'cal'` to avoid the URL footgun) of **events + closures** within the active date range. Columns: Date · Type (Closure reason / Event category chip) · Label · Level · Tentative. Rows derive from filtered `days` (closed only) + filtered `events`, merged + sorted by date.
@@ -757,6 +973,7 @@ export type ListViewProps = {
 ### Task 10: Filter bar + toolbar
 
 **Files:**
+
 - Create: `components/attendance/calendar/calendar-filter-bar.tsx`
 - Create: `components/attendance/calendar/calendar-toolbar.tsx`
 
@@ -772,6 +989,7 @@ export type ListViewProps = {
 ### Task 11: Orchestrator + page wiring (Phase 1 integration)
 
 **Files:**
+
 - Create: `components/attendance/calendar/calendar-admin-client.tsx`
 - Create: `components/attendance/calendar/hooks/use-calendar-view-state.ts`
 - Create: `components/attendance/calendar/event-editor-dialog.tsx` (lift `AddEventDialog` from the monolith)
@@ -787,12 +1005,17 @@ export type ListViewProps = {
 // shape contract
 export function CalendarAdminClient(props: {
   ayId: string;
-  terms: Array<{ id: string; label: string; startDate: string; endDate: string }>; // dated terms, AY-wide
+  terms: Array<{
+    id: string;
+    label: string;
+    startDate: string;
+    endDate: string;
+  }>; // dated terms, AY-wide
   level: Audience;
   calendar: SchoolCalendarRow[]; // AY-wide
   events: CalendarEventRow[]; // AY-wide
   copyFromPriorAyProps?: CopyFromPriorAyProps | null;
-}): React.JSX.Element
+}): React.JSX.Element;
 ```
 
 - [ ] **Step 4: Rewire `page.tsx`** — replace per-term fetch with AY-wide: keep current-AY + terms load; auto-seed **every dated term** (loop `ensureTermSeeded`); fetch `getSchoolCalendarForAy` + `getCalendarEventsForAy`; pass to the new `CalendarAdminClient` (import path `@/components/attendance/calendar/calendar-admin-client`). Keep the audience query param as the `level` default. Keep the no-terms / no-dates empty states.
@@ -811,6 +1034,7 @@ Manual: load `/sis/calendar` → Month renders the current month; click a day �
 ### Task 12: Week + Day views
 
 **Files:**
+
 - Create: `components/attendance/calendar/views/week-view.tsx`
 - Create: `components/attendance/calendar/views/day-view.tsx`
 
@@ -823,6 +1047,7 @@ Manual: load `/sis/calendar` → Month renders the current month; click a day �
 ### Task 13: Term view
 
 **Files:**
+
 - Create: `components/attendance/calendar/views/term-view.tsx`
 
 - [ ] **Step 1:** Lift the monolith's `TermStripView` (full-term Mon–Fri strip) onto `CalendarCell` + the index; scope to the term containing `cursor`.
@@ -837,6 +1062,7 @@ Manual: load `/sis/calendar` → Month renders the current month; click a day �
 ### Task 14: Break bands, decommission monolith, final verification
 
 **Files:**
+
 - Modify: views (break-band polish)
 - Delete: `components/attendance/calendar-admin-client.tsx`
 
@@ -852,6 +1078,7 @@ Manual: load `/sis/calendar` → Month renders the current month; click a day �
 ## Self-Review
 
 **Spec coverage:**
+
 - Operational model (open/closed + events) → Tasks 1, 6. ✅
 - No-migration mapping (§4.2, refined per D1) → Task 1 + header refinement. ✅
 - Attendance preservation (§7) → Tasks 4, 14 step 5. ✅

@@ -13,6 +13,7 @@
 ---
 
 ## File structure
+
 - **Create** `lib/schemas/virtue-theme.ts` — `VirtueThemeSchema` (`{ termId, virtueTheme }`).
 - **Create** `app/api/evaluation/virtue-theme/route.ts` — PATCH, virtue-only.
 - **Create** `app/(evaluation)/evaluation/virtue-themes/page.tsx` — RSC loader + page.
@@ -27,6 +28,7 @@
 ## Task 1: Schema + virtue-only PATCH route
 
 **Files:**
+
 - Create: `lib/schemas/virtue-theme.ts`
 - Create: `app/api/evaluation/virtue-theme/route.ts`
 - Test: `__tests__/schemas/virtue-theme.test.ts`
@@ -34,6 +36,7 @@
 - [ ] **Step 1: Write the failing schema test**
 
 `__tests__/schemas/virtue-theme.test.ts`:
+
 ```ts
 import { describe, expect, it } from 'vitest';
 import { VirtueThemeSchema } from '@/lib/schemas/virtue-theme';
@@ -47,11 +50,23 @@ describe('VirtueThemeSchema', () => {
     expect(r.success).toBe(true);
   });
   it('accepts null/empty theme (clears)', () => {
-    expect(VirtueThemeSchema.safeParse({ termId: '11111111-1111-1111-1111-111111111111', virtueTheme: null }).success).toBe(true);
-    expect(VirtueThemeSchema.safeParse({ termId: '11111111-1111-1111-1111-111111111111', virtueTheme: '' }).success).toBe(true);
+    expect(
+      VirtueThemeSchema.safeParse({
+        termId: '11111111-1111-1111-1111-111111111111',
+        virtueTheme: null,
+      }).success
+    ).toBe(true);
+    expect(
+      VirtueThemeSchema.safeParse({
+        termId: '11111111-1111-1111-1111-111111111111',
+        virtueTheme: '',
+      }).success
+    ).toBe(true);
   });
   it('rejects a non-uuid termId', () => {
-    expect(VirtueThemeSchema.safeParse({ termId: 'nope', virtueTheme: 'x' }).success).toBe(false);
+    expect(
+      VirtueThemeSchema.safeParse({ termId: 'nope', virtueTheme: 'x' }).success
+    ).toBe(false);
   });
 });
 ```
@@ -64,6 +79,7 @@ Expected: FAIL — module not found.
 - [ ] **Step 3: Create the schema**
 
 `lib/schemas/virtue-theme.ts`:
+
 ```ts
 import { z } from 'zod';
 
@@ -85,6 +101,7 @@ Expected: PASS (3 tests).
 - [ ] **Step 5: Create the route**
 
 `app/api/evaluation/virtue-theme/route.ts` — mirrors the audit + service-client pattern of `app/api/sis/ay-setup/terms/[termId]/route.ts`, but virtue-only:
+
 ```ts
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -117,8 +134,10 @@ export async function PATCH(request: NextRequest) {
     .select('id, academic_year_id, term_number, label, virtue_theme')
     .eq('id', termId)
     .maybeSingle();
-  if (loadErr) return NextResponse.json({ error: loadErr.message }, { status: 500 });
-  if (!before) return NextResponse.json({ error: 'term not found' }, { status: 404 });
+  if (loadErr)
+    return NextResponse.json({ error: loadErr.message }, { status: 500 });
+  if (!before)
+    return NextResponse.json({ error: 'term not found' }, { status: 404 });
 
   const changed = (before.virtue_theme ?? null) !== virtueTheme;
   if (changed) {
@@ -126,7 +145,8 @@ export async function PATCH(request: NextRequest) {
       .from('terms')
       .update({ virtue_theme: virtueTheme })
       .eq('id', termId);
-    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    if (updErr)
+      return NextResponse.json({ error: updErr.message }, { status: 500 });
 
     await logAction({
       service,
@@ -147,6 +167,7 @@ export async function PATCH(request: NextRequest) {
   return NextResponse.json({ ok: true, changed });
 }
 ```
+
 (Confirm `requireRole`'s return shape — `'error' in auth` + `auth.user.id`/`auth.user.email` — matches the AY-Setup terms route exactly; it does.)
 
 - [ ] **Step 6: Typecheck**
@@ -165,23 +186,27 @@ git commit -m "feat(evaluation): virtue-only term-theme PATCH route + schema"
 ## Task 2: Access — ROUTE_ACCESS + sidebar nav + icon
 
 **Files:**
+
 - Modify: `lib/auth/roles.ts`
 - Modify: `lib/sidebar/registry.ts`
 
 - [ ] **Step 1: Add the ROUTE_ACCESS entry**
 
 In `lib/auth/roles.ts`, add a more-specific entry **before** the `{ prefix: '/evaluation', allowed: [...] }` catch-all (the `/evaluation` catch-all includes `teacher`; virtue-themes must exclude teachers):
+
 ```ts
   {
     prefix: '/evaluation/virtue-themes',
     allowed: ['registrar', 'school_admin', 'superadmin'],
   },
 ```
+
 (Place it adjacent to the existing `'/evaluation/audit-log'` entry — same trio, same pattern. Longer-prefix-wins per `isRouteAllowed`, so order among the specific entries doesn't matter, but keep it before the bare `/evaluation`.)
 
 - [ ] **Step 2: Add the EVALUATION_NAV item**
 
 In `EVALUATION_NAV` (roles.ts ~L370), add a new section after the "Write-ups" section:
+
 ```ts
   {
     label: 'Setup',
@@ -198,9 +223,11 @@ In `EVALUATION_NAV` (roles.ts ~L370), add a new section after the "Write-ups" se
 - [ ] **Step 3: Add the sidebar icon**
 
 In `lib/sidebar/registry.ts`, in the `evaluation.iconByHref` map (~L253), add:
+
 ```ts
       '/evaluation/virtue-themes': Sparkles,
 ```
+
 Import `Sparkles` from `lucide-react` at the top of the file if not already imported (check the existing import block; add it alphabetically if missing).
 
 - [ ] **Step 4: Typecheck + build**
@@ -219,6 +246,7 @@ git commit -m "feat(evaluation): route-access + sidebar nav for virtue themes"
 ## Task 3: The page + editor component
 
 **Files:**
+
 - Create: `app/(evaluation)/evaluation/virtue-themes/page.tsx`
 - Create: `components/evaluation/virtue-themes-editor.tsx`
 
@@ -227,6 +255,7 @@ git commit -m "feat(evaluation): route-access + sidebar nav for virtue themes"
 - [ ] **Step 1: The page (RSC)**
 
 `app/(evaluation)/evaluation/virtue-themes/page.tsx`:
+
 ```tsx
 import { redirect } from 'next/navigation';
 import { PageShell } from '@/components/ui/page-shell';
@@ -249,9 +278,19 @@ export default async function VirtueThemesPage() {
   const service = createServiceClient();
   const ayCode = await requireCurrentAyCode(service);
   const { data: ayRow } = await service
-    .from('academic_years').select('id, label').eq('ay_code', ayCode).maybeSingle();
+    .from('academic_years')
+    .select('id, label')
+    .eq('ay_code', ayCode)
+    .maybeSingle();
 
-  type TermRow = { id: string; term_number: number; label: string; start_date: string | null; end_date: string | null; virtue_theme: string | null };
+  type TermRow = {
+    id: string;
+    term_number: number;
+    label: string;
+    start_date: string | null;
+    end_date: string | null;
+    virtue_theme: string | null;
+  };
   let terms: TermRow[] = [];
   if (ayRow) {
     const { data } = await service
@@ -275,8 +314,9 @@ export default async function VirtueThemesPage() {
         </h1>
         <p className="max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
           The virtue theme for each term prints on the report card as the Form
-          Class Adviser&rsquo;s Comments heading (&ldquo;HFSE Virtues: &hellip;&rdquo;)
-          and frames the advisers&rsquo; write-ups. Terms 1&ndash;3 only.
+          Class Adviser&rsquo;s Comments heading (&ldquo;HFSE Virtues:
+          &hellip;&rdquo;) and frames the advisers&rsquo; write-ups. Terms
+          1&ndash;3 only.
         </p>
       </header>
       {terms.length === 0 ? (
@@ -303,6 +343,7 @@ export default async function VirtueThemesPage() {
 - [ ] **Step 2: The editor component**
 
 `components/evaluation/virtue-themes-editor.tsx` (`'use client'`):
+
 - Props: `terms: { id; label; termNumber; startDate; endDate; virtueTheme }[]`.
 - Local state: a per-term controlled value (seed from `virtueTheme`) + per-term saving flag + a "dirty" check (current value !== seeded).
 - Render one row per term (a `Card` or bordered row): term label + window (`toLocaleDateString('en-SG')`, read-only context), a labelled text `Input` bound to the value, and a **Save** `Button` (disabled when not dirty / while saving).
@@ -327,11 +368,13 @@ git commit -m "feat(evaluation): virtue-themes editor page"
 ## Task 4: Remove the virtue field from AY-Setup
 
 **Files:**
+
 - Modify: `components/sis/term-dates-editor.tsx`
 
 - [ ] **Step 1: Remove the virtue input + plumbing**
 
 In `components/sis/term-dates-editor.tsx`:
+
 - Remove the **Virtue theme** `<Field>`/`<Input>` block (the "Secondary row: Virtue + Grading lock" virtue half, ~L344–360) — keep the **Grading lock** control in that row.
 - Remove `virtue_theme` from the row draft type (~L37), the dirty check (~L89), the save payload (`virtueTheme: d.virtue_theme.trim() || null`, ~L136), and the row initializer (`virtue_theme: t.virtue_theme ?? ''`, ~L412).
 - Update the explanatory copy (~L194–196) that mentions virtue themes — point it to Evaluation (e.g. "Virtue themes are set in Evaluation → Virtue themes.") or drop that sentence.
@@ -365,6 +408,7 @@ git commit -m "feat(sis): remove virtue-theme field from AY-Setup (moved to Eval
 ---
 
 ## Self-review notes (author)
+
 - **Spec coverage:** dedicated page (T3) · virtue-only route + audit (T1) · ROUTE_ACCESS + nav + icon (T2) · remove from AY-Setup (T4) · current-AY/T1–T3 scope (T3 loader). All covered.
 - **No schema change** (terms.virtue_theme exists) — confirmed.
 - **Audit reuse:** `ay.term_virtue.update` already exists (used by the AY-Setup route) — no new AuditAction needed.

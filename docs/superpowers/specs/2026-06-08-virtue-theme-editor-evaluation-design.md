@@ -16,6 +16,7 @@ Fix: give the registrar a dedicated virtue-theme editor in the **Evaluation** mo
 ## Design
 
 ### Page — `/evaluation/virtue-themes`
+
 - New route under the Evaluation route group. Explicit `ROUTE_ACCESS` entry = `registrar | school_admin | superadmin`.
 - Lists the **current AY's terms T1 / T2 / T3** (T4 excluded — no FCA comment, KD #49). Each row: term label + window (read-only context), the current `virtue_theme`, an inline text input, and save.
 - A one-line helper explains the theme prints on the report-card FCA heading.
@@ -23,6 +24,7 @@ Fix: give the registrar a dedicated virtue-theme editor in the **Evaluation** mo
 - Evaluation sidebar gains a **"Virtue themes"** nav item (`lib/auth/roles.ts` EVALUATION_NAV + an icon in `lib/sidebar/registry.ts`), gated to the same trio.
 
 ### API — `PATCH /api/evaluation/virtue-theme`
+
 - Body `{ termId: string, virtueTheme: string | null }` (zod-validated; empty string / null clears).
 - `requireRole(['registrar','school_admin','superadmin'])`.
 - Updates **only** `terms.virtue_theme` for that term (never touches `start_date`/`end_date` — decoupled from the combined AY-Setup route, which required the date pair).
@@ -30,10 +32,12 @@ Fix: give the registrar a dedicated virtue-theme editor in the **Evaluation** mo
 - Optional: a small loader for the page (current AY's T1–T3 terms + their virtue_theme) — can be an inline RSC query, no new lib module needed unless it tidies things.
 
 ### AY-Setup change
+
 - **Remove the virtue-theme field** from `<TermDatesEditor>` (the AY-Setup wizard) — single home in Evaluation, avoids the two-places seam. AY-Setup keeps term dates + grading-lock.
 - Leave the combined route's `virtueTheme` handling intact for back-compat (it just stops being sent from the AY-Setup UI). The new dedicated route is the canonical writer going forward.
 
 ## Components / files
+
 - New: `app/(evaluation)/evaluation/virtue-themes/page.tsx` (RSC: resolve current AY + T1–T3 + virtue_theme; render the editor).
 - New: `components/evaluation/virtue-themes-editor.tsx` (`'use client'`: rows with input + save, `toast` feedback, `router.refresh()`; design-system tokens only).
 - New: `app/api/evaluation/virtue-theme/route.ts` (PATCH).
@@ -43,12 +47,14 @@ Fix: give the registrar a dedicated virtue-theme editor in the **Evaluation** mo
 - Modify: `components/sis/term-dates-editor.tsx` (remove the virtue-theme field/input) + its save call (stop sending `virtueTheme`).
 
 ## Non-goals
+
 - No schema change (`terms.virtue_theme` exists).
 - No cross-AY editing (`?ay=`).
 - No change to how the theme is consumed (report card / FCA heading reads `terms.virtue_theme` unchanged).
 - Not touching the combined AY-Setup terms route's server behavior (only the UI stops sending virtue).
 
 ## Verification
+
 - `npx tsc --noEmit` + `npx vitest run` + `npx next build` clean.
 - Registrar can open `/evaluation/virtue-themes` (via the new sidebar item), edit T1–T3 themes, save → value persists on `terms.virtue_theme`; audit shows `ay.term_virtue.update`.
 - The report-card FCA heading reflects the edited theme (existing consumer, unchanged).

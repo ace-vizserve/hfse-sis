@@ -13,6 +13,7 @@
 ---
 
 ## File structure
+
 - **Refactor** `components/sis/generate-index-button.tsx` — extract controlled `<GenerateIndexDialog>`; `GenerateIndexButton`/`GenerateAllIndexButton` reuse it (behavior unchanged).
 - **Create** `components/sections/section-row-actions.tsx` — shared per-row `⋯` menu (module-aware, role-gated).
 - **Create** `components/sis/sections-data-table.tsx`, `components/markbook/sections-data-table.tsx`, `components/attendance/sections-data-table.tsx` — the three tables (mirror `components/evaluation/sections-list.tsx`).
@@ -56,9 +57,12 @@ export function GenerateIndexDialog({
         method: 'POST',
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Could not generate index numbers');
+      if (!res.ok)
+        throw new Error(body.error ?? 'Could not generate index numbers');
       const count: number = body.rows_renumbered ?? 0;
-      toast.success(`Renumbered ${count} student${count === 1 ? '' : 's'} in ${sectionName}`);
+      toast.success(
+        `Renumbered ${count} student${count === 1 ? '' : 's'} in ${sectionName}`
+      );
       onOpenChange(false);
       router.refresh();
     } catch (err) {
@@ -74,20 +78,22 @@ export function GenerateIndexDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Generate class index?</AlertDialogTitle>
           <AlertDialogDescription>
-            This numbers <strong>{sectionName}</strong> alphabetically by surname
-            (last name, then first name). New students enrolled later keep getting
-            the next number at the bottom; withdrawn students retain their retired
-            numbers.
+            This numbers <strong>{sectionName}</strong> alphabetically by
+            surname (last name, then first name). New students enrolled later
+            keep getting the next number at the bottom; withdrawn students
+            retain their retired numbers.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {termStarted && (
           <Alert variant="warning">
-            <AlertIcon variant="warning"><TriangleAlert /></AlertIcon>
+            <AlertIcon variant="warning">
+              <TriangleAlert />
+            </AlertIcon>
             <AlertTitle>School year is in session</AlertTitle>
             <AlertDescription>
-              Students may already know their current numbers and teachers may call
-              them by these during class. Regenerating will renumber everyone — only
-              do this if you&apos;re correcting a setup mistake.
+              Students may already know their current numbers and teachers may
+              call them by these during class. Regenerating will renumber
+              everyone — only do this if you&apos;re correcting a setup mistake.
             </AlertDescription>
           </Alert>
         )}
@@ -109,25 +115,38 @@ export function GenerateIndexDialog({
 ```
 
 Then simplify `GenerateIndexButton` to a trigger + the dialog:
+
 ```tsx
 export function GenerateIndexButton({
-  sectionId, sectionName, termStarted, variant = 'default',
+  sectionId,
+  sectionName,
+  termStarted,
+  variant = 'default',
 }: GenerateIndexButtonProps) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setOpen(true)}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1.5"
+        onClick={() => setOpen(true)}
+      >
         <ArrowDownAZ className="size-3.5" />
         {variant === 'default' && 'Generate index'}
       </Button>
       <GenerateIndexDialog
-        sectionId={sectionId} sectionName={sectionName}
-        termStarted={termStarted} open={open} onOpenChange={setOpen}
+        sectionId={sectionId}
+        sectionName={sectionName}
+        termStarted={termStarted}
+        open={open}
+        onOpenChange={setOpen}
       />
     </>
   );
 }
 ```
+
 Leave `GenerateAllIndexButton` exactly as-is (its own dialog; bulk path unchanged). Keep all existing imports; `AlertDialogTrigger` may become unused — remove it from the import if so.
 
 - [ ] **Step 2: tsc + build**
@@ -135,6 +154,7 @@ Leave `GenerateAllIndexButton` exactly as-is (its own dialog; bulk path unchange
 Run: `npx tsc --noEmit` (clean; ignore `.next/dev/types/validator.ts` phantom) then `npx next build` — `/sis/sections` (which renders `GenerateIndexButton` in its pills today) still compiles + works.
 
 - [ ] **Step 3: Commit**
+
 ```bash
 git add components/sis/generate-index-button.tsx
 git commit -m "refactor(sections): extract controlled GenerateIndexDialog"
@@ -151,6 +171,7 @@ git commit -m "refactor(sections): extract controlled GenerateIndexDialog"
 - [ ] **Step 1: Implement the component**
 
 `'use client'`. Props:
+
 ```tsx
 import type { Role } from '@/lib/auth/roles';
 type SectionRowActionsProps = {
@@ -159,10 +180,12 @@ type SectionRowActionsProps = {
   sectionName: string;
   role: Role | null;
   termStarted: boolean; // only meaningful for sis/markbook (Generate-index)
-  todayHref?: string;   // attendance: /attendance/[id]?date=<today>
+  todayHref?: string; // attendance: /attendance/[id]?date=<today>
 };
 ```
+
 Render a `RowActionsMenu` (from `@/components/ui/data-table`) + the dialogs OUTSIDE it, with local open-state:
+
 - `const isRegistrarPlus = role === 'registrar' || role === 'school_admin' || role === 'superadmin';`
 - **Open link** (always, first item): a `DropdownMenuItem asChild` wrapping a `next/link` `<Link>`:
   - sis → `/sis/sections/${sectionId}` ("Open roster")
@@ -180,6 +203,7 @@ Render a `RowActionsMenu` (from `@/components/ui/data-table`) + the dialogs OUTS
 Run: `npx tsc --noEmit` — clean.
 
 - [ ] **Step 3: Commit**
+
 ```bash
 git add components/sections/section-row-actions.tsx
 git commit -m "feat(sections): shared row-actions menu (open / generate-index / generate-sheets, role-gated)"
@@ -196,6 +220,7 @@ git commit -m "feat(sections): shared row-actions menu (open / generate-index / 
 - [ ] **Step 1: The table component**
 
 `components/sis/sections-data-table.tsx` (`'use client'`), modeled on `EvaluationSectionsList`:
+
 - Row type: `{ id: string; name: string; levelLabel: string; active: number; withdrawn: number }`.
 - Props: `{ rows, levels: {id;code;label}[], role: Role|null, termStarted: boolean, sections: {id;name}[] }`.
 - Columns: **Section** (`IdentifierLink` → `/sis/sections/${id}`, SortableHeader) · **Level** (mono, `facetFilterFn`) · **Active** (tabular-nums, SortableHeader) · **Withdrawn** (tabular-nums, SortableHeader, `text-muted-foreground`) · **actions** (`id:'actions'`, `enableSorting:false, enableHiding:false`, cell → `<SectionRowActions module="sis" sectionId={row.id} sectionName={row.name} role={role} termStarted={termStarted} />`).
@@ -211,6 +236,7 @@ In `app/(sis)/sis/sections/page.tsx`: keep the existing role gate + data loads (
 `npx tsc --noEmit && npx next build` clean. `/sis/sections` renders a sortable/searchable table with a Level facet + CSV; `⋯` → Open roster / Generate index / Generate sheets all work; "Generate all" in the toolbar works; term-started warning fires mid-year.
 
 - [ ] **Step 4: Commit**
+
 ```bash
 git add components/sis/sections-data-table.tsx "app/(sis)/sis/sections/page.tsx"
 git commit -m "feat(sis): sections list as DataTable with row-actions"
@@ -227,6 +253,7 @@ git commit -m "feat(sis): sections list as DataTable with row-actions"
 - [ ] **Step 1: The table component**
 
 `components/markbook/sections-data-table.tsx` — identical shape to the SIS table EXCEPT:
+
 - Row type drops `withdrawn`: `{ id; name; levelLabel; active }`.
 - Columns: Section (`IdentifierLink` → `/markbook/sections/${id}`) · Level · **Students** (the `active` count, SortableHeader) · actions (`<SectionRowActions module="markbook" ... role termStarted />`).
 - `csv={{filename:'markbook-sections.csv'}}`. No bulk "Generate all" in the toolbar (Markbook is teacher-viewable; bulk index stays a SIS/registrar action). Same facet/search/url-namespace/sort/empty.
@@ -240,6 +267,7 @@ In `app/(markbook)/markbook/sections/page.tsx`: keep the existing loads (section
 Clean. As **registrar:** `⋯` → Open grading / Generate index / Generate sheets; Generate index works **without entering SIS Admin** (the headline). As **teacher:** only "Open grading" shows.
 
 - [ ] **Step 4: Commit**
+
 ```bash
 git add components/markbook/sections-data-table.tsx "app/(markbook)/markbook/sections/page.tsx"
 git commit -m "feat(markbook): sections list as DataTable + Generate-index in row-actions (registrar+)"
@@ -256,6 +284,7 @@ git commit -m "feat(markbook): sections list as DataTable + Generate-index in ro
 - [ ] **Step 1: The table component**
 
 `components/attendance/sections-data-table.tsx` — like Markbook's EXCEPT:
+
 - Props: `{ rows, levels, today: string }` (no role/termStarted — no Generate-index here).
 - Columns: Section (`IdentifierLink` → `/attendance/${id}?date=${today}`) · Level · **Active** · actions (`<SectionRowActions module="attendance" sectionId sectionName role={null} termStarted={false} todayHref={`/attendance/${id}?date=${today}`} />`). The attendance row-action menu shows only "Open daily" (per SectionRowActions module logic).
 - `csv={{filename:'attendance-sections.csv'}}`. Facet/search/url-namespace/sort/empty as before.
@@ -269,6 +298,7 @@ In `app/(attendance)/attendance/sections/page.tsx`: keep the existing loads + th
 Clean. Teachers see only their sections; `⋯` → Open daily opens the daily writer for today; sort/facet/search/CSV work.
 
 - [ ] **Step 4: Commit**
+
 ```bash
 git add components/attendance/sections-data-table.tsx "app/(attendance)/attendance/sections/page.tsx"
 git commit -m "feat(attendance): sections list as DataTable"
@@ -287,6 +317,7 @@ git commit -m "feat(attendance): sections list as DataTable"
 ---
 
 ## Self-review notes (author)
+
 - **Spec coverage:** 3 conversions (T3/T4/T5) · row-actions w/ Generate-index registrar-gated (T2) · GenerateIndexDialog reuse (T1) · evaluation untouched · no new queries (each page reuses existing loads; Markbook adds only a terms-for-termStarted read, which is existing-table, not a new analytic column). All covered.
 - **Type consistency:** `SectionRowActions` prop names + `GenerateIndexDialog` signature consistent across T1/T2; row types per module explicit.
 - **Risk:** `GenerateSheetsDialog` controlled-open without a `children` trigger — Task 2 step says to verify it renders trigger-less under controlled `open` (read the file; if it hard-requires a trigger, mount it with a hidden trigger or extend it minimally). The pill-grid deletions (T3–T5) — grep for stragglers in T6.

@@ -15,6 +15,7 @@
 ## File structure
 
 **Create:**
+
 - `components/ui/breadcrumb.tsx` — shadcn breadcrumb primitive (installed).
 - `lib/markbook/academic-summary-scope.ts` — shared server scope-resolver (AY / levels / payload) extracted from the hub page; used by hub + 3 children.
 - `lib/markbook/academic-summary-views.ts` — pure derivation: `buildAwardsRows`, `buildAttendanceRows`, `buildCommentRows` + their row types + tier helpers.
@@ -28,6 +29,7 @@
 - `__tests__/markbook/academic-summary-views.test.ts`
 
 **Modify:**
+
 - `lib/markbook/masterfile.ts` — add `lateEnrolleeTermNumber` to the row + resolve it; add `submitted` to `commentsByTerm` entries.
 - `lib/markbook/masterfile-dashboard.ts` — add an `overview` aggregate (total/active/withdrawn/lateByTerm) to `computeMasterfileDashboard`.
 - `components/markbook/masterfile-dashboard.tsx` — reorganize into Overview cards / Academic Performance / Quick Links / Actions, add Late-Enrollees card, retain watchlists.
@@ -37,6 +39,7 @@
 - `lib/auth/roles.ts` — `RECORDS_NAV`: convert the Academic-Summary section to a labelled group with Overview + Awards + Attendance + Comments.
 
 **Delete:**
+
 - `components/markbook/masterfile-grid.tsx` — no longer rendered on screen (export is server-side via `masterfile-export.ts`).
 
 **No change needed:** `ROUTE_ACCESS` — the existing `{ prefix: '/records/academic-summary', allowed: [...] }` entry (roles.ts ~L702, longer-prefix-wins) already covers all child routes.
@@ -46,6 +49,7 @@
 ## Task 1: Install the breadcrumb primitive
 
 **Files:**
+
 - Create: `components/ui/breadcrumb.tsx`
 
 - [ ] **Step 1: Install via shadcn MCP** (per project rule — install primitives, don't substitute)
@@ -69,6 +73,7 @@ git commit -m "feat(ui): add shadcn breadcrumb primitive"
 ## Task 2: Extend the masterfile loader (late-enrollee term + comment submitted flag)
 
 **Files:**
+
 - Modify: `lib/markbook/masterfile.ts`
 - Test: `__tests__/markbook/masterfile-late-term.test.ts` (new, pure helper test)
 
@@ -124,7 +129,11 @@ In `lib/markbook/masterfile.ts`:
 export function resolveLateEnrolleeTerm(
   override: number | null,
   enrollmentDate: string | null,
-  terms: { termNumber: number; startDate: string | null; endDate: string | null }[]
+  terms: {
+    termNumber: number;
+    startDate: string | null;
+    endDate: string | null;
+  }[]
 ): number | null {
   if (override != null) return override;
   if (!enrollmentDate) return null;
@@ -134,7 +143,10 @@ export function resolveLateEnrolleeTerm(
     .slice()
     .sort((a, b) => a.termNumber - b.termNumber);
   for (const t of sorted) {
-    if (d >= (t.startDate as string).slice(0, 10) && d <= (t.endDate as string).slice(0, 10)) {
+    if (
+      d >= (t.startDate as string).slice(0, 10) &&
+      d <= (t.endDate as string).slice(0, 10)
+    ) {
       return t.termNumber;
     }
   }
@@ -148,9 +160,9 @@ export function resolveLateEnrolleeTerm(
 (b) Add to `MasterfileStudentRow` (after `enrollmentStatus`):
 
 ```ts
-  // Resolved joining term for late enrollees (override -> date-derived -> null).
-  // null for active/withdrawn or when unresolvable. KD #111/#68.
-  lateEnrolleeTermNumber: number | null;
+// Resolved joining term for late enrollees (override -> date-derived -> null).
+// null for active/withdrawn or when unresolvable. KD #111/#68.
+lateEnrolleeTermNumber: number | null;
 ```
 
 (c) Change the `commentsByTerm` field type on `MasterfileStudentRow` from `{ termNumber: number; text: string }[]` to `{ termNumber: number; text: string; submitted: boolean }[]` (additive — existing consumers reading `termNumber`/`text` are unaffected).
@@ -160,6 +172,7 @@ export function resolveLateEnrolleeTerm(
 (e) Extend the write-up select (~L480) from `'student_id, term_id, writeup'` to `'student_id, term_id, writeup, submitted'`; change `commentsByStudent` value type to `Map<string, { text: string; submitted: boolean }>` and store `{ text, submitted: !!w.submitted }` (still skip empty `text`).
 
 (f) When building each student row: set `lateEnrolleeTermNumber` from the `primary` enrolment —
+
 ```ts
 lateEnrolleeTermNumber:
   primary.enrollmentStatus === 'late_enrollee'
@@ -167,6 +180,7 @@ lateEnrolleeTermNumber:
         terms.map((t) => ({ termNumber: t.term_number, startDate: t.start_date, endDate: t.end_date })))
     : null,
 ```
+
 and build `commentsByTerm` entries as `{ termNumber, text, submitted }` from the extended map.
 
 > Note: confirm the `terms` rows in scope carry `start_date`/`end_date` — the `.select('id, term_number, label')` at ~L201 does NOT. Widen it to `'id, term_number, label, start_date, end_date'`.
@@ -193,6 +207,7 @@ git commit -m "feat(masterfile): resolve late-enrollee term + carry comment subm
 ## Task 3: Shared server scope-resolver
 
 **Files:**
+
 - Create: `lib/markbook/academic-summary-scope.ts`
 - Modify: `app/(records)/records/academic-summary/page.tsx`
 
@@ -205,7 +220,10 @@ Extract the ~80 lines of AY/level/payload resolution from the hub page so all fo
 ```ts
 import 'server-only';
 import { requireCurrentAyCode } from '@/lib/academic-year';
-import { loadMasterfile, type MasterfilePayload } from '@/lib/markbook/masterfile';
+import {
+  loadMasterfile,
+  type MasterfilePayload,
+} from '@/lib/markbook/masterfile';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -232,43 +250,98 @@ export async function resolveAcademicSummaryScope(sp: {
   let ayCode = currentAyCode;
   if (sp.ay && /^AY\d{4}$/.test(sp.ay)) {
     const { data } = await supabase
-      .from('academic_years').select('ay_code').eq('ay_code', sp.ay).maybeSingle();
+      .from('academic_years')
+      .select('ay_code')
+      .eq('ay_code', sp.ay)
+      .maybeSingle();
     if (data) ayCode = (data as { ay_code: string }).ay_code;
   }
 
   const { data: allAysRaw } = await supabase
-    .from('academic_years').select('ay_code').order('ay_code', { ascending: false });
-  const ayCodes = ((allAysRaw ?? []) as { ay_code: string }[]).map((a) => a.ay_code);
+    .from('academic_years')
+    .select('ay_code')
+    .order('ay_code', { ascending: false });
+  const ayCodes = ((allAysRaw ?? []) as { ay_code: string }[]).map(
+    (a) => a.ay_code
+  );
 
   const { data: ayRow } = await supabase
-    .from('academic_years').select('id').eq('ay_code', ayCode).maybeSingle();
-  if (!ayRow) return { ayCode, ayCodes, levels: [], selectedLevelId: null, selectedSectionId: null, payload: null, empty: true };
+    .from('academic_years')
+    .select('id')
+    .eq('ay_code', ayCode)
+    .maybeSingle();
+  if (!ayRow)
+    return {
+      ayCode,
+      ayCodes,
+      levels: [],
+      selectedLevelId: null,
+      selectedSectionId: null,
+      payload: null,
+      empty: true,
+    };
   const ayId = (ayRow as { id: string }).id;
 
   const { data: sectionLevelRows } = await supabase
-    .from('sections').select('level:levels(id, code, label, level_type)').eq('academic_year_id', ayId);
-  type LvlLite = { id: string; code: string; label: string; level_type: string };
+    .from('sections')
+    .select('level:levels(id, code, label, level_type)')
+    .eq('academic_year_id', ayId);
+  type LvlLite = {
+    id: string;
+    code: string;
+    label: string;
+    level_type: string;
+  };
   const levelMap = new Map<string, LvlLite>();
-  for (const row of (sectionLevelRows ?? []) as { level: LvlLite | LvlLite[] | null }[]) {
+  for (const row of (sectionLevelRows ?? []) as {
+    level: LvlLite | LvlLite[] | null;
+  }[]) {
     const lvl = Array.isArray(row.level) ? row.level[0] : row.level;
     if (lvl) levelMap.set(lvl.id, lvl);
   }
   const levelsFull = Array.from(levelMap.values()).sort((a, b) =>
-    a.level_type !== b.level_type ? (a.level_type === 'primary' ? -1 : 1) : a.code.localeCompare(b.code)
+    a.level_type !== b.level_type
+      ? a.level_type === 'primary'
+        ? -1
+        : 1
+      : a.code.localeCompare(b.code)
   );
   const levels = levelsFull.map((l) => ({ id: l.id, label: l.label }));
 
   const selectedLevelId =
-    sp.level && levelsFull.some((l) => l.id === sp.level) ? sp.level : (levelsFull[0]?.id ?? null);
-  if (!selectedLevelId) return { ayCode, ayCodes, levels, selectedLevelId: null, selectedSectionId: null, payload: null, empty: true };
+    sp.level && levelsFull.some((l) => l.id === sp.level)
+      ? sp.level
+      : (levelsFull[0]?.id ?? null);
+  if (!selectedLevelId)
+    return {
+      ayCode,
+      ayCodes,
+      levels,
+      selectedLevelId: null,
+      selectedSectionId: null,
+      payload: null,
+      empty: true,
+    };
 
   const payload = await loadMasterfile({
-    ayCode, levelId: selectedLevelId, sectionIds: sp.class ? [sp.class] : undefined,
+    ayCode,
+    levelId: selectedLevelId,
+    sectionIds: sp.class ? [sp.class] : undefined,
   });
   const selectedSectionId =
-    sp.class && payload?.sections.some((s) => s.id === sp.class) ? sp.class : null;
+    sp.class && payload?.sections.some((s) => s.id === sp.class)
+      ? sp.class
+      : null;
 
-  return { ayCode, ayCodes, levels, selectedLevelId, selectedSectionId, payload: payload ?? null, empty: false };
+  return {
+    ayCode,
+    ayCodes,
+    levels,
+    selectedLevelId,
+    selectedSectionId,
+    payload: payload ?? null,
+    empty: false,
+  };
 }
 ```
 
@@ -297,6 +370,7 @@ git commit -m "refactor(academic-summary): shared server scope-resolver"
 ## Task 4: Overview aggregate on the dashboard compute
 
 **Files:**
+
 - Modify: `lib/markbook/masterfile-dashboard.ts`
 - Test: `__tests__/markbook/masterfile-overview.test.ts`
 
@@ -313,11 +387,21 @@ import type { MasterfileStudentRow } from '@/lib/markbook/masterfile';
 
 function row(p: Partial<MasterfileStudentRow>): MasterfileStudentRow {
   return {
-    studentId: 'x', studentNumber: 'S', fullName: 'N', sectionId: 'sec',
-    sectionName: 'Grit', formClassAdviser: null, enrollmentStatus: 'active',
-    lateEnrolleeTermNumber: null, subjectRows: [], generalAverage: null,
-    overallAward: null, attendanceByTerm: [], attendanceTotal: { present: 0, late: 0, schoolDays: 0 },
-    commentsByTerm: [], ...p,
+    studentId: 'x',
+    studentNumber: 'S',
+    fullName: 'N',
+    sectionId: 'sec',
+    sectionName: 'Grit',
+    formClassAdviser: null,
+    enrollmentStatus: 'active',
+    lateEnrolleeTermNumber: null,
+    subjectRows: [],
+    generalAverage: null,
+    overallAward: null,
+    attendanceByTerm: [],
+    attendanceTotal: { present: 0, late: 0, schoolDays: 0 },
+    commentsByTerm: [],
+    ...p,
   };
 }
 
@@ -367,7 +451,10 @@ export type MasterfileOverview = {
 export function computeMasterfileOverview(
   rows: MasterfileStudentRow[]
 ): MasterfileOverview {
-  let active = 0, withdrawn = 0, lateEnrollee = 0, lateUnresolved = 0;
+  let active = 0,
+    withdrawn = 0,
+    lateEnrollee = 0,
+    lateUnresolved = 0;
   const byTerm = new Map<number, number>();
   for (const r of rows) {
     if (r.enrollmentStatus === 'active') active++;
@@ -375,12 +462,22 @@ export function computeMasterfileOverview(
     else if (r.enrollmentStatus === 'late_enrollee') {
       lateEnrollee++;
       if (r.lateEnrolleeTermNumber == null) lateUnresolved++;
-      else byTerm.set(r.lateEnrolleeTermNumber, (byTerm.get(r.lateEnrolleeTermNumber) ?? 0) + 1);
+      else
+        byTerm.set(
+          r.lateEnrolleeTermNumber,
+          (byTerm.get(r.lateEnrolleeTermNumber) ?? 0) + 1
+        );
     }
   }
   return {
-    total: rows.length, active, withdrawn, lateEnrollee, lateUnresolved,
-    lateByTerm: [...byTerm.entries()].sort((a, b) => a[0] - b[0]).map(([termNumber, count]) => ({ termNumber, count })),
+    total: rows.length,
+    active,
+    withdrawn,
+    lateEnrollee,
+    lateUnresolved,
+    lateByTerm: [...byTerm.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([termNumber, count]) => ({ termNumber, count })),
   };
 }
 ```
@@ -404,6 +501,7 @@ git commit -m "feat(masterfile): overview status aggregate with late-by-term"
 ## Task 5: Pure view-derivation library
 
 **Files:**
+
 - Create: `lib/markbook/academic-summary-views.ts`
 - Test: `__tests__/markbook/academic-summary-views.test.ts`
 
@@ -415,15 +513,34 @@ Derives the row sets for Awards/Attendance/Comments from the payload. Reuses `aw
 
 ```ts
 // representative assertions
-expect(buildAwardsRows(payload, { subjectId: 'overall', termNumber: null }).map(r => r.tier))
-  .toContain('gold');
-expect(buildAwardsRows(payload, { subjectId: 'overall', termNumber: 2 })[0].tier).toBeNull(); // per-term: no official tier
-expect(buildAwardsRows(payload, { subjectId: 'overall', termNumber: null, tier: 'gold' }).every(r => r.tier === 'gold')).toBe(true);
-expect(buildAttendanceRows(payload, { termNumber: null })[0].absent).toBe(/* schoolDays - present - late */ 0);
+expect(
+  buildAwardsRows(payload, { subjectId: 'overall', termNumber: null }).map(
+    (r) => r.tier
+  )
+).toContain('gold');
+expect(
+  buildAwardsRows(payload, { subjectId: 'overall', termNumber: 2 })[0].tier
+).toBeNull(); // per-term: no official tier
+expect(
+  buildAwardsRows(payload, {
+    subjectId: 'overall',
+    termNumber: null,
+    tier: 'gold',
+  }).every((r) => r.tier === 'gold')
+).toBe(true);
+expect(buildAttendanceRows(payload, { termNumber: null })[0].absent).toBe(
+  /* schoolDays - present - late */ 0
+);
 const c = buildCommentRows(payload, { termNumber: 1 });
-expect(c.find(r => r.studentNumber === 'SUBMITTED-STU')!.commentStatus).toBe('Submitted');
-expect(c.find(r => r.studentNumber === 'DRAFT-STU')!.commentStatus).toBe('Draft');
-expect(c.find(r => r.studentNumber === 'NONE-STU')!.commentStatus).toBe('Missing');
+expect(c.find((r) => r.studentNumber === 'SUBMITTED-STU')!.commentStatus).toBe(
+  'Submitted'
+);
+expect(c.find((r) => r.studentNumber === 'DRAFT-STU')!.commentStatus).toBe(
+  'Draft'
+);
+expect(c.find((r) => r.studentNumber === 'NONE-STU')!.commentStatus).toBe(
+  'Missing'
+);
 ```
 
 - [ ] **Step 2: Run to confirm fail**
@@ -456,11 +573,16 @@ function statusLabel(r: MasterfileStudentRow): EnrollmentStatusLabel {
 
 export function subjectLabelToTier(label: SubjectAwardLabel): AwardTier | null {
   switch (label) {
-    case 'Gold': return 'gold';
-    case 'Silver': return 'silver';
-    case 'Bronze': return 'bronze';
-    case 'Not eligible for Subject Award': return 'notEligible';
-    default: return null; // null label = blank cell (withdrawn/no data)
+    case 'Gold':
+      return 'gold';
+    case 'Silver':
+      return 'silver';
+    case 'Bronze':
+      return 'bronze';
+    case 'Not eligible for Subject Award':
+      return 'notEligible';
+    default:
+      return null; // null label = blank cell (withdrawn/no data)
   }
 }
 
@@ -512,17 +634,30 @@ export function buildAwardsRows(
       // Per-term performance — provisional, no tier.
       if (opts.subjectId === 'overall') {
         const vals = r.subjectRows
-          .map((sr, i) => (payload.subjects[i]?.isExaminable ? sr.cells[termIndex]?.quarterly ?? null : null))
+          .map((sr, i) =>
+            payload.subjects[i]?.isExaminable
+              ? (sr.cells[termIndex]?.quarterly ?? null)
+              : null
+          )
           .filter((v): v is number => v != null);
-        score = vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null;
+        score = vals.length
+          ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) /
+            10
+          : null;
       } else if (subjectIndex >= 0) {
-        score = r.subjectRows[subjectIndex]?.cells[termIndex]?.quarterly ?? null;
+        score =
+          r.subjectRows[subjectIndex]?.cells[termIndex]?.quarterly ?? null;
       }
     }
 
     return {
-      studentNumber: r.studentNumber, studentName: r.fullName, sectionName: r.sectionName,
-      status: statusLabel(r), lateTermNumber: r.lateEnrolleeTermNumber, score, tier,
+      studentNumber: r.studentNumber,
+      studentName: r.fullName,
+      sectionName: r.sectionName,
+      status: statusLabel(r),
+      lateTermNumber: r.lateEnrolleeTermNumber,
+      score,
+      tier,
     };
   });
 
@@ -532,7 +667,9 @@ export function buildAwardsRows(
       : rows;
 
   // Best-first; nulls last.
-  return filtered.sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity));
+  return filtered.sort(
+    (a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity)
+  );
 }
 
 // ---------- Attendance ----------
@@ -554,21 +691,39 @@ export function buildAttendanceRows(
   opts: { termNumber: number | null }
 ): AttendanceRow[] {
   const termId =
-    opts.termNumber == null ? null : payload.terms.find((t) => t.termNumber === opts.termNumber)?.id ?? null;
+    opts.termNumber == null
+      ? null
+      : (payload.terms.find((t) => t.termNumber === opts.termNumber)?.id ??
+        null);
   return payload.rows
     .map((r) => {
-      let present = 0, late = 0, schoolDays = 0;
+      let present = 0,
+        late = 0,
+        schoolDays = 0;
       if (termId == null) {
-        present = r.attendanceTotal.present; late = r.attendanceTotal.late; schoolDays = r.attendanceTotal.schoolDays;
+        present = r.attendanceTotal.present;
+        late = r.attendanceTotal.late;
+        schoolDays = r.attendanceTotal.schoolDays;
       } else {
         const cell = r.attendanceByTerm.find((c) => c.termId === termId);
-        present = cell?.present ?? 0; late = cell?.late ?? 0; schoolDays = cell?.schoolDays ?? 0;
+        present = cell?.present ?? 0;
+        late = cell?.late ?? 0;
+        schoolDays = cell?.schoolDays ?? 0;
       }
       const absent = Math.max(0, schoolDays - present - late);
-      const rate = schoolDays > 0 ? Math.round((present / schoolDays) * 1000) / 10 : null;
+      const rate =
+        schoolDays > 0 ? Math.round((present / schoolDays) * 1000) / 10 : null;
       return {
-        studentNumber: r.studentNumber, studentName: r.fullName, sectionName: r.sectionName,
-        status: statusLabel(r), lateTermNumber: r.lateEnrolleeTermNumber, present, late, absent, schoolDays, rate,
+        studentNumber: r.studentNumber,
+        studentName: r.fullName,
+        sectionName: r.sectionName,
+        status: statusLabel(r),
+        lateTermNumber: r.lateEnrolleeTermNumber,
+        present,
+        late,
+        absent,
+        schoolDays,
+        rate,
       };
     })
     .sort((a, b) => (b.rate ?? -Infinity) - (a.rate ?? -Infinity));
@@ -608,14 +763,28 @@ export function buildCommentRows(
       else if (cell?.submitted) commentStatus = 'Submitted';
       else commentStatus = 'Draft';
       out.push({
-        studentNumber: r.studentNumber, studentName: r.fullName, sectionName: r.sectionName,
-        status: statusLabel(r), lateTermNumber: r.lateEnrolleeTermNumber, termNumber: tn,
-        adviser: r.formClassAdviser, commentStatus, text,
+        studentNumber: r.studentNumber,
+        studentName: r.fullName,
+        sectionName: r.sectionName,
+        status: statusLabel(r),
+        lateTermNumber: r.lateEnrolleeTermNumber,
+        termNumber: tn,
+        adviser: r.formClassAdviser,
+        commentStatus,
+        text,
       });
     }
   }
-  const filtered = opts.status && opts.status !== 'all' ? out.filter((r) => r.commentStatus === opts.status) : out;
-  return filtered.sort((a, b) => a.sectionName.localeCompare(b.sectionName) || a.studentName.localeCompare(b.studentName) || a.termNumber - b.termNumber);
+  const filtered =
+    opts.status && opts.status !== 'all'
+      ? out.filter((r) => r.commentStatus === opts.status)
+      : out;
+  return filtered.sort(
+    (a, b) =>
+      a.sectionName.localeCompare(b.sectionName) ||
+      a.studentName.localeCompare(b.studentName) ||
+      a.termNumber - b.termNumber
+  );
 }
 ```
 
@@ -636,6 +805,7 @@ git commit -m "feat(academic-summary): pure awards/attendance/comments derivatio
 ## Task 6: Shared quick-view header (breadcrumb + heading)
 
 **Files:**
+
 - Create: `components/markbook/academic-summary/quick-view-header.tsx`
 
 > **UI task** — before writing JSX: invoke the `ui-ux-pro-max@ui-ux-pro-max-skill` skill and re-read `docs/context/09-design-system.md` §8/§9. Tokens only (Hard Rule #7).
@@ -647,25 +817,52 @@ A client/server-agnostic presentational component:
 ```tsx
 import Link from 'next/link';
 import {
-  Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator,
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 
 export function QuickViewHeader({
-  title, subtitle, ayQuery,
-}: { title: string; subtitle: string; ayQuery: string }) {
+  title,
+  subtitle,
+  ayQuery,
+}: {
+  title: string;
+  subtitle: string;
+  ayQuery: string;
+}) {
   return (
     <header className="space-y-3">
       <Breadcrumb>
         <BreadcrumbList className="font-mono text-[11px] uppercase tracking-[0.14em]">
-          <BreadcrumbItem><BreadcrumbLink asChild><Link href="/records">Records</Link></BreadcrumbLink></BreadcrumbItem>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link href="/records">Records</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
           <BreadcrumbSeparator />
-          <BreadcrumbItem><BreadcrumbLink asChild><Link href={`/records/academic-summary${ayQuery}`}>Academic Summary</Link></BreadcrumbLink></BreadcrumbItem>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link href={`/records/academic-summary${ayQuery}`}>
+                Academic Summary
+              </Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
           <BreadcrumbSeparator />
-          <BreadcrumbItem><BreadcrumbPage>{title}</BreadcrumbPage></BreadcrumbItem>
+          <BreadcrumbItem>
+            <BreadcrumbPage>{title}</BreadcrumbPage>
+          </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-      <h1 className="font-serif text-[32px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[38px]">{title}</h1>
-      <p className="max-w-3xl text-[15px] leading-relaxed text-muted-foreground">{subtitle}</p>
+      <h1 className="font-serif text-[32px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[38px]">
+        {title}
+      </h1>
+      <p className="max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
+        {subtitle}
+      </p>
     </header>
   );
 }
@@ -689,6 +886,7 @@ git commit -m "feat(academic-summary): shared breadcrumb header for quick views"
 ## Task 7: Awards quick-view page + component
 
 **Files:**
+
 - Create: `app/(records)/records/academic-summary/awards/page.tsx`
 - Create: `components/markbook/academic-summary/awards-view.tsx`
 
@@ -705,12 +903,15 @@ import { AwardsView } from '@/components/markbook/academic-summary/awards-view';
 import { resolveAcademicSummaryScope } from '@/lib/markbook/academic-summary-scope';
 import { getSessionUser } from '@/lib/supabase/server';
 
-export default async function AwardsPage({ searchParams }: {
+export default async function AwardsPage({
+  searchParams,
+}: {
   searchParams: Promise<{ ay?: string; level?: string; class?: string }>;
 }) {
   const session = await getSessionUser();
   if (!session) redirect('/login');
-  if (!['registrar', 'school_admin', 'superadmin'].includes(session.role ?? '')) redirect('/');
+  if (!['registrar', 'school_admin', 'superadmin'].includes(session.role ?? ''))
+    redirect('/');
 
   const sp = await searchParams;
   const scope = await resolveAcademicSummaryScope(sp);
@@ -728,9 +929,12 @@ export default async function AwardsPage({ searchParams }: {
       ) : (
         <>
           <MasterfileToolbar
-            ayCodes={scope.ayCodes} selectedAyCode={scope.ayCode}
-            levels={scope.levels} selectedLevelId={scope.selectedLevelId}
-            sections={scope.payload.sections} selectedSectionId={scope.selectedSectionId}
+            ayCodes={scope.ayCodes}
+            selectedAyCode={scope.ayCode}
+            levels={scope.levels}
+            selectedLevelId={scope.selectedLevelId}
+            sections={scope.payload.sections}
+            selectedSectionId={scope.selectedSectionId}
           />
           <AwardsView payload={scope.payload} />
         </>
@@ -751,8 +955,9 @@ function EmptyAwards() {
 - [ ] **Step 2: The view component**
 
 `components/markbook/academic-summary/awards-view.tsx` (`'use client'`). Behavior:
+
 - Local state: `subjectId` (`'overall'` default), `termNumber` (`null` = Full year default), `tier` (`'all'`).
-- Controls: three `Select`s styled like `MasterfileView`'s `FilterSelect` — **Subject** (first item `Overall Academic Award`, then `payload.subjects.map`), **Term** (`Full year` + `Term 1..4` from `payload.terms`), **Tier** (`All / Gold / Silver / Bronze / Not eligible`) — *hide the Tier select when `termNumber != null`*.
+- Controls: three `Select`s styled like `MasterfileView`'s `FilterSelect` — **Subject** (first item `Overall Academic Award`, then `payload.subjects.map`), **Term** (`Full year` + `Term 1..4` from `payload.terms`), **Tier** (`All / Gold / Silver / Bronze / Not eligible`) — _hide the Tier select when `termNumber != null`_.
 - When `termNumber != null`, render a quiet note line: `Provisional — awards finalize once Term 4 grades are complete.` (`text-muted-foreground font-mono text-[10px] uppercase`).
 - Rows: `buildAwardsRows(payload, { subjectId, termNumber, tier })`.
 - Render via the unified `<DataTable>` (KD #84). Columns:
@@ -786,6 +991,7 @@ git commit -m "feat(academic-summary): Awards quick view"
 ## Task 8: Attendance quick-view page + component
 
 **Files:**
+
 - Create: `app/(records)/records/academic-summary/attendance/page.tsx`
 - Create: `components/markbook/academic-summary/attendance-view.tsx`
 
@@ -817,6 +1023,7 @@ git commit -m "feat(academic-summary): Attendance quick view"
 ## Task 9: Comments quick-view page + component
 
 **Files:**
+
 - Create: `app/(records)/records/academic-summary/comments/page.tsx`
 - Create: `components/markbook/academic-summary/comments-view.tsx`
 
@@ -850,6 +1057,7 @@ git commit -m "feat(academic-summary): Comments quick view (read-only)"
 ## Task 10: CSV format on the export route ("Generate Masterfile")
 
 **Files:**
+
 - Modify: `app/api/markbook/masterfile/export/route.ts`
 
 - [ ] **Step 1: Add a `?format=csv` branch**
@@ -876,6 +1084,7 @@ git commit -m "feat(masterfile): CSV format on export route (Generate Masterfile
 ## Task 11: Hub — simplify MasterfileView (remove toggle/grid, Generate Masterfile dropdown)
 
 **Files:**
+
 - Modify: `components/markbook/masterfile-view.tsx`
 - Modify: `app/(records)/records/academic-summary/page.tsx`
 - Delete: `components/markbook/masterfile-grid.tsx`
@@ -899,6 +1108,7 @@ In `page.tsx`, drop the `initialView`/`?view=` prop, and edit the hero paragraph
 ```bash
 git rm components/markbook/masterfile-grid.tsx
 ```
+
 Run `npx tsc --noEmit` to confirm nothing else imports it. (If `masterfile-export.ts` imported a type from the grid, move that type; the export builds from the payload, not the grid component.)
 
 - [ ] **Step 5: Build + manual**
@@ -917,6 +1127,7 @@ git commit -m "feat(academic-summary): masterfile export-only; remove on-screen 
 ## Task 12: Hub dashboard reorganization (Overview / Performance / Quick Links / Actions + Late Enrollees)
 
 **Files:**
+
 - Modify: `components/markbook/masterfile-dashboard.tsx`
 
 > **UI task** — invoke `ui-ux-pro-max` + re-read design-system §8/§9 before JSX. This is a re-layout of an existing component — preserve every existing drill (`setTarget`) and the `MasterfileDrillSheet`.
@@ -924,6 +1135,7 @@ git commit -m "feat(academic-summary): masterfile export-only; remove on-screen 
 - [ ] **Step 1: Add the Overview section**
 
 Above the current "At a glance", add an **Overview** section (`ActHeader` eyebrow "Overview") with a card grid: **Total Students · Active · Withdrawn · Late Enrollees · Missing FCA Comments · Incomplete Grades**.
+
 - Total/Active/Withdrawn/Late read from `d.overview` (Task 4). The **Late Enrollees** card shows the count plus a per-term breakdown line built from `d.overview.lateByTerm` (e.g. `T2: 2 · T3: 1`, with `+N unresolved` when `lateUnresolved > 0`) in a `font-mono text-[10px] uppercase` subtext.
 - Missing FCA Comments + Incomplete Grades reuse the existing `missing-comments` / `incomplete-results` drill triggers (move those two `ReadinessCard`/`GradableCard` here, or render parallel cards that call the same `setTarget`). Keep "Grades recorded / Sheets locked / Comments in / Attendance logged" as the existing "At a glance" readiness strip (retitle if desired).
 
@@ -959,6 +1171,7 @@ git commit -m "feat(academic-summary): hub overview + quick links + late-enrolle
 ## Task 13: Sidebar sub-items
 
 **Files:**
+
 - Modify: `lib/auth/roles.ts`
 
 - [ ] **Step 1: Convert the Academic-Summary nav section to a labelled group**
@@ -1011,6 +1224,7 @@ Run: `npx next build` → Expected: clean compile.
 - [ ] **Step 4: count==drill spot-check**
 
 With the test AY (AY9999) seeded, verify for a level with late enrollees:
+
 - Hub "Late Enrollees" card count == sum of its per-term breakdown (+ unresolved).
 - Awards full-year Overall: number of Gold rows == the hub Award donut's Gold legend count (same scope/filters).
 - Comments Missing count (Status=Missing) is consistent with the hub "Missing FCA Comments" card for the same term scope.

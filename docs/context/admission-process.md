@@ -36,18 +36,22 @@
    - Sign Student Contract.
 
 10. **Enrolment**
-   - Pay Enrolment Fees.
-   - School Fees
-   - Payment Method
+
+- Pay Enrolment Fees.
+- School Fees
+- Payment Method
 
 11. **Class Assignment**
-   - The Student Affairs Officers will assign section on a first come, first served basis and subject to a deliberation by Academics Team.
+
+- The Student Affairs Officers will assign section on a first come, first served basis and subject to a deliberation by Academics Team.
 
 12. **Collection of Supplies**
-   - Schedule will be announced.
+
+- Schedule will be announced.
 
 13. **Attend Parents' Orientation**
-   - Schedule will be announced.
+
+- Schedule will be announced.
 
 ## Disclaimer
 

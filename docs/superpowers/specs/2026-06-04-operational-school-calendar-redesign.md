@@ -21,7 +21,7 @@ Most of the noise is (a) the rich day-type enum and (b) the cross-cutting toggle
 
 ## 2. Goals
 
-1. **Reframe editing as an operational calendar**: every weekday is *open* (school in session) by default; the registrar only marks *exceptions* (closures + events). Two concepts replace ~10: **open/closed days (with a reason)** and **events (with a category)**.
+1. **Reframe editing as an operational calendar**: every weekday is _open_ (school in session) by default; the registrar only marks _exceptions_ (closures + events). Two concepts replace ~10: **open/closed days (with a reason)** and **events (with a category)**.
 2. **Conventional view + filter layer**: a single segmented **view switcher** (Term · Month · Week · Day · List) and a single **filter bar** (date range, category, level, status, tentative, + room to grow). Power through a familiar calendar-app convention, not one-off buttons.
 3. **Maintainability**: break the monolith into an orchestrator + toolbar + filter bar + one file per view + one edit sheet + shared cell/hooks.
 4. **Preserve all current behavior**: the attendance encodable-dates allowlist, per-level overrides, HBL, tentative events, and copy-from-prior-AY all keep working.
@@ -40,8 +40,8 @@ Most of the noise is (a) the rich day-type enum and (b) the cross-cutting toggle
 ### 4.1 Two concepts
 
 - **Day status** — every in-term weekday is **Open** or **Closed**.
-  - *Open* = school in session, attendance taken. Sub-state: **in-school** or **HBL** (taught remotely, still counts/encodable).
-  - *Closed* = no attendance. Carries a **reason**: Public holiday · Term break · School holiday · No class.
+  - _Open_ = school in session, attendance taken. Sub-state: **in-school** or **HBL** (taught remotely, still counts/encodable).
+  - _Closed_ = no attendance. Carries a **reason**: Public holiday · Term break · School holiday · No class.
 - **Events** — dated annotations that do **not** change open/closed status: label + **category** (term exam, start of term, parents' dialogue, subject week, school event, PFE, PTC, other) + level + tentative.
 
 > **Note — closure reason vs event category are different fields.** Closure reason maps to `school_calendar.day_type` (drives attendance). Event category maps to `calendar_events.category` (informational). The UI gives both a consistent "category chip" visual language, but they remain distinct underneath. The spec never merges them.
@@ -50,17 +50,17 @@ Most of the noise is (a) the rich day-type enum and (b) the cross-cutting toggle
 
 `school_calendar.day_type` + `hbl_overlay` ⇄ the Open/Closed UI:
 
-| UI state | `day_type` | `hbl_overlay` | Encodable? |
-| --- | --- | --- | --- |
-| Open · in-school | `school_day` | false | ✅ |
-| Open · HBL | `hbl` | false | ✅ |
-| Closed · Public holiday | `public_holiday` | false | ❌ |
-| Closed · Term break | `no_class`¹ | false | ❌ |
-| Closed · School holiday | `school_holiday` | false | ❌ |
-| Closed · School holiday + attendance (HBL overlay) | `school_holiday` | true | ✅ |
-| Closed · No class | `no_class` | false | ❌ |
+| UI state                                           | `day_type`       | `hbl_overlay` | Encodable? |
+| -------------------------------------------------- | ---------------- | ------------- | ---------- |
+| Open · in-school                                   | `school_day`     | false         | ✅         |
+| Open · HBL                                         | `hbl`            | false         | ✅         |
+| Closed · Public holiday                            | `public_holiday` | false         | ❌         |
+| Closed · Term break                                | `no_class`¹      | false         | ❌         |
+| Closed · School holiday                            | `school_holiday` | false         | ❌         |
+| Closed · School holiday + attendance (HBL overlay) | `school_holiday` | true          | ✅         |
+| Closed · No class                                  | `no_class`       | false         | ❌         |
 
-¹ **Open decision (D1):** "Term break" currently has no dedicated `day_type`. Two options: (a) reuse `no_class` as the closed reason and rely on the `calendar_events` `term_break` category for the labelled band; (b) treat break dates as the gap *between* term windows (no row at all). See §7.
+¹ **Open decision (D1):** "Term break" currently has no dedicated `day_type`. Two options: (a) reuse `no_class` as the closed reason and rely on the `calendar_events` `term_break` category for the labelled band; (b) treat break dates as the gap _between_ term windows (no row at all). See §7.
 
 `calendar_events` is unchanged: `term_id`, `start_date`, `end_date`, `label`, `category`, `audience`, `tentative`.
 
@@ -102,25 +102,25 @@ Data may still be fetched AY-wide (`getSchoolCalendarForAy`/`getCalendarEventsFo
 
 **View tabs (one segmented switcher), all scoped to the selected term:**
 
-| View | Purpose |
-| --- | --- |
-| **Month** (default) | Mon–Fri grid for a month within the selected term; the everyday editing surface. |
-| **Week** | Single Mon–Fri week within the term, larger cells, more event detail. |
-| **Day** | One day in the term, full event list + status. |
-| **List** | Chronological table of the selected term's closures + events; pairs with date-from/to. |
+| View                | Purpose                                                                                |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| **Month** (default) | Mon–Fri grid for a month within the selected term; the everyday editing surface.       |
+| **Week**            | Single Mon–Fri week within the term, larger cells, more event detail.                  |
+| **Day**             | One day in the term, full event list + status.                                         |
+| **List**            | Chronological table of the selected term's closures + events; pairs with date-from/to. |
 
 (The previously-planned standalone **Term strip** view is dropped — the Term selector replaces it.) Weekends remain non-rendered across all grid views.
 
 ### 5.3 Filter bar (one popover, extensible)
 
-| Filter | Behavior |
-| --- | --- |
-| **Date range** (from / to) | Bounds List + scopes grid navigation. |
-| **Category** (multi-select, color swatches) | Selecting highlights matching events with their category color and dims the rest. |
-| **Level** (All / Primary / Secondary) | Filters per-level rows + events; the lens for adding/tracking level-specific events. |
-| **Status** (Open / Closed) | Show only open or only closed days. |
-| **Tentative** (toggle) | Show only un-confirmed events (today's "Tentative only"). |
-| **…#2 (TBD)** | Reserved slots via a filter registry; registrar specifies after rebuild. |
+| Filter                                      | Behavior                                                                             |
+| ------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **Date range** (from / to)                  | Bounds List + scopes grid navigation.                                                |
+| **Category** (multi-select, color swatches) | Selecting highlights matching events with their category color and dims the rest.    |
+| **Level** (All / Primary / Secondary)       | Filters per-level rows + events; the lens for adding/tracking level-specific events. |
+| **Status** (Open / Closed)                  | Show only open or only closed days.                                                  |
+| **Tentative** (toggle)                      | Show only un-confirmed events (today's "Tentative only").                            |
+| **…#2 (TBD)**                               | Reserved slots via a filter registry; registrar specifies after rebuild.             |
 
 Filters are declared in a single `CALENDAR_FILTERS` registry (id, label, type, predicate) so adding one is a registry entry + a control, not new wiring.
 
@@ -180,8 +180,11 @@ All JSX conforms to `docs/context/09-design-system.md` + `09a-design-patterns.md
 
 ## 11. Open questions / decisions
 
-- **D1 — Term break storage. [DECIDED 2026-06-04]** Gap-derived read-only band for display + an explicit labelled `term_break` *event* for the break, since break dates have no `term_id`.
+- **D1 — Term break storage. [DECIDED 2026-06-04]** Gap-derived read-only band for display + an explicit labelled `term_break` _event_ for the break, since break dates have no `term_id`.
 - **D2 — AY-wide vs term-scoped data scope (§5.1). [DECIDED 2026-06-04]** AY-wide continuous navigation, phased (term-scoped fallback acceptable for Phase 1).
 - **D3 — The "#2" school-related filters.** Deferred to the registrar after the rebuild; filter registry reserves the slot.
 - **Multi-select bulk classify** — keep (as a lighter affordance, e.g. range/shift-click within a view) or drop? Leaning: keep a minimal range-apply in the day sheet's scope rather than a separate mode. Resolve in the plan.
+
+```
+
 ```

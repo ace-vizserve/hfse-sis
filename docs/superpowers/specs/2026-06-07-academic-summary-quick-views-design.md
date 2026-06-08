@@ -9,7 +9,7 @@
 
 The Academic Summary (`/records/academic-summary`, the relocated Masterfile per KD #127) is the consolidated cross-module academic view — the modern replacement for opening HFSE's Masterfile spreadsheet. Today it's a single long-scroll dashboard with a Dashboard | Table toggle, where the Table view renders the raw wide masterfile grid.
 
-Admins live in Records. They want **quick, focused lookups** — "who got Gold in English," "what's this level's attendance," "are the FCA comments in" — without bouncing into Markbook / Attendance / Evaluation, and without eyeballing a wide grid. The Masterfile spreadsheet earned its place precisely because it *consolidates* everything; the dashboard should inherit that role for daily monitoring, while the spreadsheet becomes an **export artifact you generate on demand**, not a screen.
+Admins live in Records. They want **quick, focused lookups** — "who got Gold in English," "what's this level's attendance," "are the FCA comments in" — without bouncing into Markbook / Attendance / Evaluation, and without eyeballing a wide grid. The Masterfile spreadsheet earned its place precisely because it _consolidates_ everything; the dashboard should inherit that role for daily monitoring, while the spreadsheet becomes an **export artifact you generate on demand**, not a screen.
 
 ## Goal
 
@@ -18,7 +18,7 @@ Turn Academic Summary into a **hub with dedicated, deep-linkable quick-view chil
 ## Non-goals / explicitly dropped
 
 - **Promotion Rate** — promotion is the parent portal's responsibility, not this system; no promotion/retention data is modelled here. Not built.
-- **Class Rankings** — ranking is unvalidated new behavior (HFSE may not rank). Not built. The dashboard keeps *performance* views (avg GA, subject performance) which compare without imposing a rank order.
+- **Class Rankings** — ranking is unvalidated new behavior (HFSE may not rank). Not built. The dashboard keeps _performance_ views (avg GA, subject performance) which compare without imposing a rank order.
 - **The on-screen masterfile grid** — the Dashboard | Table toggle is removed. The grid is reachable only via Generate Masterfile (.xlsx / .csv).
 - **EX/excused attendance breakdown** in the Attendance quick view — the masterfile rollup carries present/late/school-days only; EX lives in the Attendance module. Deferred.
 - True multi-AY behavior changes — child pages honor the existing AY/Level/Class scoping; no new AY semantics.
@@ -67,10 +67,11 @@ The existing dashboard, reorganized into four sections + retained watchlists. No
 Quick view of award recipients + per-term performance.
 
 **Filters:** AY · Level · Class · **Subject** · **Term** · **Tier**.
+
 - **Subject** selector: first option **"Overall Academic Award"**, then each examinable subject. This is the type switch — Overall = the cross-subject award (from GA); a subject = that subject's award (from its Subject Overall).
-- **Term** controls *what you're viewing* (both award types are computed annually, so term cannot change *who wins* — it switches between final award and per-term performance):
+- **Term** controls _what you're viewing_ (both award types are computed annually, so term cannot change _who wins_ — it switches between final award and per-term performance):
   - **Full year (default):** the **official award**. Columns: student · class · status(+late term) · score (**GA 1dp** for Overall / **Subject Overall 2dp** for a subject) · **tier badge** (Gold/Silver/Bronze/Not eligible). Sorted best-first; **Tier** filter applies.
-  - **T1–T4:** that term's **performance** (provisional, no official tier). Columns: student · class · status(+late term) · that-term grade — for a subject = `cells[termIndex].quarterly`; for Overall = the per-term average of examinable quarterly grades. Sorted best-first. A quiet note: *"Provisional — awards finalize once Term 4 grades are complete."* The Tier filter is hidden/inert in per-term mode (no official tier to filter).
+  - **T1–T4:** that term's **performance** (provisional, no official tier). Columns: student · class · status(+late term) · that-term grade — for a subject = `cells[termIndex].quarterly`; for Overall = the per-term average of examinable quarterly grades. Sorted best-first. A quiet note: _"Provisional — awards finalize once Term 4 grades are complete."_ The Tier filter is hidden/inert in per-term mode (no official tier to filter).
 - **Tier** filter (Full-year mode only): Gold / Silver / Bronze / Not eligible / All.
 
 **Actions:** Export CSV · Export Excel · Print (this is the awards-ceremony list).

@@ -33,7 +33,7 @@ Not `@`-imported. Each file carries YAML frontmatter (`description`, `load: on-d
 | `docs/context/04-database-schema.md`        | DB tables / queries                                                                                                              |
 | `docs/context/05-report-card.md`            | Report card UI / PDF                                                                                                             |
 | `docs/context/06-admissions-integration.md` | Admissions sync                                                                                                                  |
-| `docs/context/admission-process.md`         | HFSE's 13-step intake process (Open House → Orientation); maps ~1:1 to the 9-stage SIS pipeline (`STAGE_KEYS`, KD #51/#59)        |
+| `docs/context/admission-process.md`         | HFSE's 13-step intake process (Open House → Orientation); maps ~1:1 to the 9-stage SIS pipeline (`STAGE_KEYS`, KD #51/#59)       |
 | `docs/context/07-api-routes.md`             | API contracts                                                                                                                    |
 | `docs/context/08-admission-dashboard.md`    | Admissions analytics                                                                                                             |
 | `docs/context/09-design-system.md`          | UI tokens, hard rules, page→component matrix, pre-delivery checklist                                                             |
