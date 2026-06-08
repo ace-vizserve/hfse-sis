@@ -40,6 +40,88 @@ import {
 } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 
+// ─── Controlled dialog (no trigger — caller owns open state) ─────────────────
+
+export function GenerateIndexDialog({
+  sectionId,
+  sectionName,
+  termStarted,
+  open,
+  onOpenChange,
+}: {
+  sectionId: string;
+  sectionName: string;
+  termStarted: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  async function handleGenerate(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/sections/${sectionId}/generate-index`, {
+        method: 'POST',
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok)
+        throw new Error(body.error ?? 'Could not generate index numbers');
+      const count: number = body.rows_renumbered ?? 0;
+      toast.success(
+        `Renumbered ${count} student${count === 1 ? '' : 's'} in ${sectionName}`
+      );
+      onOpenChange(false);
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Generate class index?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This numbers <strong>{sectionName}</strong> alphabetically by
+            surname (last name, then first name). New students enrolled later
+            keep getting the next number at the bottom; withdrawn students
+            retain their retired numbers.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {termStarted && (
+          <Alert variant="warning">
+            <AlertIcon variant="warning">
+              <TriangleAlert />
+            </AlertIcon>
+            <AlertTitle>School year is in session</AlertTitle>
+            <AlertDescription>
+              Students may already know their current numbers and teachers may
+              call them by these during class. Regenerating will renumber
+              everyone — only do this if you&apos;re correcting a setup mistake.
+            </AlertDescription>
+          </Alert>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleGenerate}
+            disabled={busy}
+            variant={termStarted ? 'destructive' : 'default'}
+          >
+            {busy && <Loader2 className="mr-1 size-4 animate-spin" />}
+            Generate
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 // ─── Per-section ─────────────────────────────────────────────────────────────
 
 type GenerateIndexButtonProps = {
@@ -57,82 +139,26 @@ export function GenerateIndexButton({
   termStarted,
   variant = 'default',
 }: GenerateIndexButtonProps) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  async function handleGenerate(e: React.MouseEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/sections/${sectionId}/generate-index`, {
-        method: 'POST',
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(body.error ?? 'Could not generate index numbers');
-      }
-      const count: number = body.rows_renumbered ?? 0;
-      toast.success(
-        `Renumbered ${count} student${count === 1 ? '' : 's'} in ${sectionName}`
-      );
-      setOpen(false);
-      router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Something went wrong');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
-          <ArrowDownAZ className="size-3.5" />
-          {variant === 'default' && 'Generate index'}
-        </Button>
-      </AlertDialogTrigger>
-
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Generate class index?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This numbers <strong>{sectionName}</strong> alphabetically by
-            surname (last name, then first name). New students enrolled later
-            keep getting the next number at the bottom; withdrawn students
-            retain their retired numbers.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        {/* Mid-year escalation warning — shown only when a term is in session */}
-        {termStarted && (
-          <Alert variant="warning">
-            <AlertIcon variant="warning">
-              <TriangleAlert />
-            </AlertIcon>
-            <AlertTitle>School year is in session</AlertTitle>
-            <AlertDescription>
-              Students may already know their current numbers and teachers may
-              call them by these during class. Regenerating will renumber
-              everyone — only do this if you&apos;re correcting a setup mistake.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={handleGenerate}
-            disabled={busy}
-            variant={termStarted ? 'destructive' : 'default'}
-          >
-            {busy && <Loader2 className="mr-1 size-4 animate-spin" />}
-            Generate
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1.5"
+        onClick={() => setOpen(true)}
+      >
+        <ArrowDownAZ className="size-3.5" />
+        {variant === 'default' && 'Generate index'}
+      </Button>
+      <GenerateIndexDialog
+        sectionId={sectionId}
+        sectionName={sectionName}
+        termStarted={termStarted}
+        open={open}
+        onOpenChange={setOpen}
+      />
+    </>
   );
 }
 
