@@ -1,0 +1,8 @@
+# Mirror CI's first (and usual-to-fail) check locally so a push can't break CI
+# on formatting. Fast (~2s). If it fails: run `npm run format`, commit, re-push.
+npx prettier --check . || {
+  echo ""
+  echo "✖ Prettier check failed — CI would reject this push."
+  echo "  Fix:  npm run format   (then commit the changes and push again)"
+  exit 1
+}
