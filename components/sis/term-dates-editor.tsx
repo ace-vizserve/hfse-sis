@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Loader2,
   Lock,
-  Sparkle,
   XCircle,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -24,7 +23,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { TermRow } from '@/lib/sis/ay-setup/queries';
 
@@ -34,7 +32,6 @@ type TermDraft = {
   label: string;
   start_date: string; // '' when null
   end_date: string;
-  virtue_theme: string; // '' when null — free-text, used by Evaluation module + report card
   grading_lock_date: string; // '' when null — advisory cutoff chip on /markbook/grading
 };
 
@@ -86,7 +83,6 @@ export function TermDatesEditor({
     return (
       (draft.start_date || '') !== (original?.start_date ?? '') ||
       (draft.end_date || '') !== (original?.end_date ?? '') ||
-      (draft.virtue_theme.trim() || '') !== (original?.virtue_theme ?? '') ||
       (draft.grading_lock_date || '') !== (original?.grading_lock_date ?? '')
     );
   }
@@ -133,7 +129,6 @@ export function TermDatesEditor({
           body: JSON.stringify({
             startDate: d.start_date || null,
             endDate: d.end_date || null,
-            virtueTheme: d.virtue_theme.trim() || null,
             gradingLockDate: d.grading_lock_date || null,
           }),
         });
@@ -191,10 +186,8 @@ export function TermDatesEditor({
             </DialogTitle>
             <DialogDescription>
               {ayLabel}. Dates unblock the Attendance calendar and report-card
-              publish windows. Virtue themes appear as the parenthetical on
-              T1&ndash;T3 report cards (&ldquo;Form Class Adviser&rsquo;s
-              Comments (HFSE Virtues: &hellip;)&rdquo;) and as the prompt in the
-              Evaluation module.
+              publish windows. Virtue themes are set in Evaluation &rarr; Virtue
+              themes.
             </DialogDescription>
           </DialogHeader>
 
@@ -341,22 +334,8 @@ function TermCard({
         </Field>
       </div>
 
-      {/* Secondary row: Virtue + Grading lock. */}
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_220px]">
-        <Field
-          htmlFor={`virtue-${draft.id}`}
-          label="Virtue theme"
-          icon={Sparkle}
-        >
-          <Input
-            id={`virtue-${draft.id}`}
-            value={draft.virtue_theme}
-            onChange={(e) => onChange({ virtue_theme: e.target.value })}
-            placeholder="e.g. Faith, Hope, Love"
-            maxLength={200}
-            className="h-9"
-          />
-        </Field>
+      {/* Secondary row: Grading lock (virtue theme moved to Evaluation → Virtue themes). */}
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field htmlFor={`lock-${draft.id}`} label="Grading lock by" icon={Lock}>
           <DatePicker
             id={`lock-${draft.id}`}
@@ -409,7 +388,6 @@ function toDrafts(terms: TermRow[]): TermDraft[] {
     label: t.label,
     start_date: t.start_date ?? '',
     end_date: t.end_date ?? '',
-    virtue_theme: t.virtue_theme ?? '',
     grading_lock_date: t.grading_lock_date ?? '',
   }));
 }
