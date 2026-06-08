@@ -1,24 +1,15 @@
+import type React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import {
-  ArrowLeft,
-  GraduationCap,
-  LayoutGrid,
-  Users,
-  UserX,
-} from 'lucide-react';
+import { ArrowLeft, LayoutGrid, Users, UserX } from 'lucide-react';
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { NewSectionButton } from '@/components/markbook/new-section-button';
-import {
-  GenerateAllIndexButton,
-  GenerateIndexButton,
-} from '@/components/sis/generate-index-button';
+import { SisSectionsDataTable } from '@/components/sis/sections-data-table';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardAction,
-  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
@@ -138,26 +129,31 @@ export default async function SisSectionsListPage() {
     };
   });
 
-  const grouped = new Map<string, SectionCard[]>();
-  for (const c of cards) {
-    if (!grouped.has(c.level_label)) grouped.set(c.level_label, []);
-    grouped.get(c.level_label)!.push(c);
-  }
-  // Sort levels in canonical pedagogical order (YS-L → YS-J → YS-S → P1 →
-  // P2 → … → S4 → CS1 → CS2) per `lib/sis/levels.ts`. The previous
-  // localeCompare gave alphabetical order ("Primary Five" before "Primary
-  // One"), which read wrong on the page.
-  const sortedLevels = Array.from(grouped.entries()).sort(([a], [b]) =>
-    compareLevelLabels(a, b)
-  );
-  // Sort sections within each level alphabetically (Diamond before Pearl).
-  for (const [, sects] of sortedLevels) {
-    sects.sort((a, b) => a.name.localeCompare(b.name));
-  }
-
   const totalSections = cards.length;
   const totalActive = cards.reduce((n, c) => n + c.active, 0);
   const totalWithdrawn = cards.reduce((n, c) => n + c.withdrawn, 0);
+
+  // Derive unique level options sorted in canonical pedagogical order.
+  const uniqueLevelLabels = Array.from(
+    new Map(cards.map((c) => [c.level_label, c])).entries()
+  ).sort(([a], [b]) => compareLevelLabels(a, b));
+  const levels = uniqueLevelLabels.map(([, c]) => ({
+    id: c.level_code,
+    code: c.level_code,
+    label: c.level_label,
+  }));
+
+  // Flat rows for the DataTable.
+  const rows = cards.map((c) => ({
+    id: c.id,
+    name: c.name,
+    levelLabel: c.level_label,
+    active: c.active,
+    withdrawn: c.withdrawn,
+  }));
+
+  // Section list for the bulk "Generate all indexes" button in the toolbar.
+  const sectionsList = cards.map((c) => ({ id: c.id, name: c.name }));
 
   return (
     <PageShell>
@@ -193,12 +189,6 @@ export default async function SisSectionsListPage() {
               {ay.ay_code}
             </Badge>
           )}
-          {cards.length > 0 && (
-            <GenerateAllIndexButton
-              sections={cards.map((c) => ({ id: c.id, name: c.name }))}
-              termStarted={termStarted}
-            />
-          )}
           <NewSectionButton
             levels={levelOptions}
             ayCode={ay?.ay_code ?? null}
@@ -213,7 +203,7 @@ export default async function SisSectionsListPage() {
             description="Total sections"
             value={totalSections}
             icon={LayoutGrid}
-            footerTitle={`${sortedLevels.length} ${sortedLevels.length === 1 ? 'level' : 'levels'}`}
+            footerTitle={`${levels.length} ${levels.length === 1 ? 'level' : 'levels'}`}
             footerDetail={ay?.label ?? 'No current AY'}
           />
           <SummaryCard
@@ -235,128 +225,17 @@ export default async function SisSectionsListPage() {
         </div>
       </div>
 
-      {/* Empty state */}
-      {sortedLevels.length === 0 && (
-        <Card className="items-center py-12 text-center">
-          <CardContent className="flex flex-col items-center gap-3">
-            <div className="font-serif text-lg font-semibold text-foreground">
-              No sections yet
-            </div>
-            <div className="text-sm text-muted-foreground">
-              Click &ldquo;New section&rdquo; above, or create a new AY via AY
-              Setup to copy sections forward from the prior year.
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Grouped sections — pill design mirrors /sis/admin/template's
-          SectionsTab so the editing surface (template) and the operational
-          surface (this page) read as one family. Each pill links into the
-          section detail page where the Move action + roster live. */}
-      {sortedLevels.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            By level
-          </h2>
-          <div className="space-y-4">
-            {sortedLevels.map(([level, sects]) => (
-              <LevelGroup
-                key={level}
-                levelLabel={level}
-                sections={sects}
-                termStarted={termStarted}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-    </PageShell>
-  );
-}
-
-function LevelGroup({
-  levelLabel,
-  sections,
-  termStarted,
-}: {
-  levelLabel: string;
-  sections: SectionCard[];
-  termStarted: boolean;
-}) {
-  const levelCode = sections[0]?.level_code ?? '';
-  const totalActive = sections.reduce((n, s) => n + s.active, 0);
-  return (
-    <Card className="@container/card gap-0 overflow-hidden py-0">
-      <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-5 py-3">
-        {levelCode && (
-          <Badge
-            variant="outline"
-            className="h-6 border-border bg-white px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-          >
-            {levelCode}
-          </Badge>
-        )}
-        <div className="font-serif text-[15px] font-semibold tracking-tight text-foreground">
-          {levelLabel}
-        </div>
-        <Badge variant="muted" className="ml-auto">
-          {sections.length} section{sections.length === 1 ? '' : 's'}
-          <span className="ml-1.5 text-muted-foreground">·</span>
-          <span className="ml-1.5 font-mono tabular-nums text-muted-foreground">
-            {totalActive} active
-          </span>
-        </Badge>
-      </div>
-      <div className="flex flex-wrap gap-2 p-4">
-        {sections.map((s) => (
-          <SectionPill key={s.id} section={s} termStarted={termStarted} />
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function SectionPill({
-  section,
-  termStarted,
-}: {
-  section: SectionCard;
-  termStarted: boolean;
-}) {
-  return (
-    <div className="group/pill inline-flex items-center gap-2 rounded-xl border border-hairline bg-gradient-to-b from-card to-muted/20 py-2 pl-2.5 pr-2 shadow-xs transition-all hover:border-brand-indigo/40 hover:shadow-md">
-      {/* Section link — takes up most of the pill */}
-      <Link
-        href={`/sis/sections/${section.id}`}
-        className="inline-flex items-center gap-2.5 transition-all hover:-translate-y-0.5"
-      >
-        <div className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-          <GraduationCap className="size-3.5" />
-        </div>
-        <div className="flex flex-col leading-tight">
-          <span className="font-serif text-[14px] font-semibold tracking-tight text-foreground">
-            {section.name}
-          </span>
-          <span className="font-mono text-[9px] uppercase tracking-[0.12em] tabular-nums text-muted-foreground">
-            {section.active} active
-            {section.withdrawn > 0 && (
-              <>
-                <span className="mx-1">·</span>
-                {section.withdrawn} withdrawn
-              </>
-            )}
-          </span>
-        </div>
-      </Link>
-      {/* Generate index button — compact (icon only) to keep pill size trim */}
-      <GenerateIndexButton
-        sectionId={section.id}
-        sectionName={section.name}
+      {/* Sections DataTable — replaces the pill grid. Level facet + search +
+          per-row ⋯ actions (Open roster / Generate index / Generate sheets).
+          The bulk "Generate all indexes" button lives in toolbarTrailing. */}
+      <SisSectionsDataTable
+        rows={rows}
+        levels={levels}
+        role={sessionUser.role}
         termStarted={termStarted}
-        variant="compact"
+        sections={sectionsList}
       />
-    </div>
+    </PageShell>
   );
 }
 
