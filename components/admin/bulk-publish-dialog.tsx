@@ -165,7 +165,7 @@ export function BulkPublishDialog({
   useEffect(() => {
     if (!open || !termId) return;
 
-    const capturedTermId = termId; // capture for stale-result guard
+    const capturedTermId = termId; // for the fetch URL + cache key
 
     // Determine which sections still need fetching.
     const toFetch = sortedSections.filter(
@@ -209,14 +209,17 @@ export function BulkPublishDialog({
               const res = await fetch(
                 `/api/sections/${s.id}/publish-readiness?term_id=${capturedTermId}`
               );
-              if (cancelled || termId !== capturedTermId) return; // stale
+              // `cancelled` is flipped true by this effect's cleanup when the
+              // dialog closes or the term changes, so a stale in-flight run
+              // never writes to state for the wrong term.
+              if (cancelled) return;
               if (!res.ok) throw new Error(`HTTP ${res.status}`);
               const data = await res.json();
               const result = classify(data);
               readinessCache.current[key] = result;
               setReadiness((prev) => ({ ...prev, [s.id]: result }));
             } catch {
-              if (cancelled || termId !== capturedTermId) return;
+              if (cancelled) return;
               const fallback: SectionReadiness = {
                 state: 'warn',
                 reasons: ['readiness check failed'],
