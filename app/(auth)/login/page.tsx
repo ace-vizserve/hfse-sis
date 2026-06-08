@@ -171,46 +171,32 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* ───────────────── Brand column ───────────────── */}
-      <aside className="relative hidden overflow-hidden bg-brand-navy lg:block">
-        {/* Layer 1 — top-left indigo glow */}
+      {/* ───────────────── Brand column (HFSE identity) ───────────────── */}
+      <aside className="relative hidden overflow-hidden bg-gradient-to-br from-brand-indigo via-brand-indigo-deep to-brand-navy text-white lg:block">
+        {/* Soft brand glows — token-based, no raw color */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(ellipse 60% 50% at 15% 10%, rgba(99,102,241,0.28), transparent 65%)',
-          }}
+          className="pointer-events-none absolute -left-28 -top-24 size-[26rem] rounded-full bg-brand-indigo-soft/30 blur-[120px]"
         />
-        {/* Layer 2 — bottom-right sky glow */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(ellipse 50% 40% at 90% 90%, rgba(14,165,233,0.14), transparent 60%)',
-          }}
+          className="pointer-events-none absolute -bottom-28 -right-20 size-[22rem] rounded-full bg-brand-amber/25 blur-[110px]"
         />
-        {/* Layer 3 — hairline grid with radial mask */}
-        <div
+        {/* Faint crest watermark */}
+        <Image
+          src="/hfse-logo-favicon.webp"
+          alt=""
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage:
-              'linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)',
-            backgroundSize: '48px 48px',
-            maskImage:
-              'radial-gradient(ellipse at center, black 30%, transparent 80%)',
-            WebkitMaskImage:
-              'radial-gradient(ellipse at center, black 30%, transparent 80%)',
-          }}
+          width={520}
+          height={520}
+          className="pointer-events-none absolute -bottom-20 -right-16 size-[34rem] opacity-[0.05]"
         />
 
         {/* Content */}
-        <div className="relative flex h-full flex-col justify-between p-14 text-white">
-          {/* Top: lockup */}
+        <div className="relative flex h-full flex-col justify-between p-14">
+          {/* Top: wordmark lockup */}
           <div className="flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-xl bg-white/[0.06] ring-1 ring-white/15 backdrop-blur-sm">
+            <span className="flex size-11 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15 backdrop-blur-sm">
               <Image
                 src="/hfse-logo-favicon.webp"
                 alt=""
@@ -223,93 +209,53 @@ export default function LoginPage() {
               <span className="font-serif text-[15px] font-semibold tracking-tight">
                 HFSE International School
               </span>
-              <span className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.1em] text-white/50">
+              <span className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.1em] text-white/55">
                 Singapore · AY2026
               </span>
             </div>
           </div>
 
-          {/* Center: glass product-glimpse card */}
-          <div className="flex flex-1 items-center justify-center py-12">
-            <div className="w-full max-w-sm -rotate-[1.5deg] rounded-2xl border border-white/10 bg-white/[0.04] p-5 shadow-glass-card backdrop-blur-xl">
-              {/* Window chrome */}
-              <div className="flex items-center gap-2">
-                <span className="size-2 rounded-full bg-[#FF5F57]" />
-                <span className="size-2 rounded-full bg-[#FEBC2E]" />
-                <span className="size-2 rounded-full bg-[#28C840]" />
-                <span className="ml-3 truncate font-mono text-[10px] text-white/40">
-                  /grading / sec-1a
-                </span>
-              </div>
-
-              <div className="mt-4 border-t border-white/10 pt-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50">
-                  Mathematics · Sec-1A · Q3
-                </p>
-                <div className="mt-4 grid grid-cols-3 gap-3">
-                  <Stat label="Students" value="24" />
-                  <Stat label="Status" value="Locked" accent />
-                  <Stat label="Average" value="87.4" />
-                </div>
-
-                {/* Progress */}
-                <div className="mt-5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase tracking-wider text-white/40">
-                      Entries complete
-                    </span>
-                    <span className="font-mono text-[10px] tabular-nums text-white/60">
-                      82%
-                    </span>
-                  </div>
-                  <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
-                    <div className="h-full w-[82%] rounded-full bg-gradient-to-r from-brand-indigo-soft to-brand-sky" />
-                  </div>
-                </div>
-
-                <p className="mt-4 font-mono text-[10px] text-white/40">
-                  Last edited 2h ago · 3 pending totals
-                </p>
-              </div>
+          {/* Center: crest hero + tagline + accent */}
+          <div className="flex flex-1 flex-col items-center justify-center text-center">
+            <span className="flex size-24 items-center justify-center rounded-3xl bg-white/10 ring-1 ring-white/15 shadow-brand-tile backdrop-blur-md">
+              <Image
+                src="/hfse-logo-favicon.webp"
+                alt="HFSE crest"
+                width={120}
+                height={120}
+                className="size-14"
+                priority
+              />
+            </span>
+            <h2 className="mt-8 max-w-sm font-serif text-[30px] font-semibold leading-[1.15] tracking-tight">
+              Every student&apos;s journey, in one trusted record.
+            </h2>
+            <p className="mt-4 max-w-xs text-[14px] leading-relaxed text-white/65">
+              From application to report card — admissions, attendance, grades
+              and evaluation, all in one secure place.
+            </p>
+            {/* Amber accent chip */}
+            <div className="mt-8 inline-flex items-center gap-2.5 rounded-full border border-white/15 bg-white/[0.06] px-4 py-2 backdrop-blur-sm">
+              <span className="size-1.5 rounded-full bg-brand-amber" />
+              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-white/70">
+                EduTrust Certified · Singapore
+              </span>
             </div>
           </div>
 
           {/* Bottom: trust row */}
           <div className="flex items-center justify-between border-t border-white/10 pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-white/50">
             <div className="flex items-center gap-3">
-              <span>✓ Secured</span>
+              <span>Secured</span>
               <span className="text-white/20">·</span>
-              <span>✓ Audited</span>
+              <span>Audited</span>
               <span className="text-white/20">·</span>
-              <span>✓ Compliant</span>
+              <span>PDPA-aligned</span>
             </div>
             <span>&copy; {new Date().getFullYear()} HFSE</span>
           </div>
         </div>
       </aside>
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-white/40">
-        {label}
-      </span>
-      <span
-        className={`font-serif text-[22px] leading-none tabular-nums ${accent ? 'text-brand-mint' : 'text-white'}`}
-      >
-        {value}
-      </span>
     </div>
   );
 }
