@@ -76,10 +76,20 @@ describe('missingCommentStudents', () => {
 // ── Cumulative gate (with a stubbed service client) ────────────────────────
 
 const TERMS: CumulativeTerm[] = [
-  { id: 't1', term_number: 1, end_date: '2026-03-31' },
-  { id: 't2', term_number: 2, end_date: '2026-06-30' },
-  { id: 't3', term_number: 3, end_date: '2026-09-30' },
-  { id: 't4', term_number: 4, end_date: '2026-11-30' },
+  {
+    id: 't1',
+    term_number: 1,
+    end_date: '2026-03-31',
+    virtue_theme: 'Diligence',
+  },
+  { id: 't2', term_number: 2, end_date: '2026-06-30', virtue_theme: 'Respect' },
+  {
+    id: 't3',
+    term_number: 3,
+    end_date: '2026-09-30',
+    virtue_theme: 'Integrity',
+  },
+  { id: 't4', term_number: 4, end_date: '2026-11-30', virtue_theme: null },
 ];
 
 /**
@@ -337,6 +347,46 @@ describe('cumulativeCommentGaps', () => {
       writeupsByTerm: {}, // nothing anywhere
     });
     expect(await cumulativeCommentGaps(service, 'sec', TERMS, 4)).toHaveLength(
+      0
+    );
+  });
+
+  // ── Virtue-theme gate ─────────────────────────────────────────────────────
+
+  it('blocks when a displayed term has comments done but no virtue theme', async () => {
+    const service = makeService({
+      rosterRows: ROSTER_ROWS,
+      writeupsByTerm: { t1: [done('A'), done('B')] },
+    });
+    const termsNoVirtue: CumulativeTerm[] = [
+      { id: 't1', term_number: 1, end_date: '2026-03-31', virtue_theme: '   ' },
+    ];
+    const gaps = await cumulativeCommentGaps(service, 'sec', termsNoVirtue, 1);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].virtueMissing).toBe(true);
+    expect(gaps[0].missing).toHaveLength(0);
+  });
+
+  it('reports both a comment gap and a virtue gap on the same term', async () => {
+    const service = makeService({
+      rosterRows: ROSTER_ROWS,
+      writeupsByTerm: { t1: [done('A')] }, // B missing
+    });
+    const termsNoVirtue: CumulativeTerm[] = [
+      { id: 't1', term_number: 1, end_date: '2026-03-31', virtue_theme: null },
+    ];
+    const gaps = await cumulativeCommentGaps(service, 'sec', termsNoVirtue, 1);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].virtueMissing).toBe(true);
+    expect(gaps[0].missing.map((m) => m.studentId)).toEqual(['B']);
+  });
+
+  it('passes when comments are done and the virtue theme is set', async () => {
+    const service = makeService({
+      rosterRows: ROSTER_ROWS,
+      writeupsByTerm: { t1: [done('A'), done('B')] },
+    });
+    expect(await cumulativeCommentGaps(service, 'sec', TERMS, 1)).toHaveLength(
       0
     );
   });

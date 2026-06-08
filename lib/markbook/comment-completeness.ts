@@ -168,12 +168,16 @@ export type CumulativeTerm = {
   term_number: number;
   /** Term's date-only `yyyy-MM-dd` end_date — drives per-term roster correctness. */
   end_date?: string | null;
+  /** Term's free-text virtue theme; null/blank counts as a gap when this term is displayed (KD #49/#129). */
+  virtue_theme?: string | null;
 };
 
 export type CumulativeGap = {
   termId: string;
   termNumber: number;
   missing: RosterStudent[];
+  /** True when the term's virtue_theme is null/blank — the comment-box heading would drop its HFSE-Virtues framing. */
+  virtueMissing: boolean;
 };
 
 /**
@@ -183,8 +187,12 @@ export type CumulativeGap = {
  * for every term 1..min(N, 3). Future terms are never required; T4 is exempt
  * entirely (no FCA block).
  *
- * Returns the list of terms 1..N that still have ≥1 missing student. An empty
- * array means the cumulative comment requirement is satisfied (publish allowed).
+ * A term is a gap when ≥1 student is missing a submitted/non-empty write-up
+ * OR the term's `virtue_theme` is null/blank (the comment-box heading would
+ * otherwise render without its HFSE-Virtues framing — KD #49/#129).
+ *
+ * Returns the list of terms 1..N that are still incomplete. An empty array
+ * means the cumulative comment requirement is satisfied (publish allowed).
  */
 export async function cumulativeCommentGaps(
   service: SupabaseClient,
@@ -211,11 +219,13 @@ export async function cumulativeCommentGaps(
       roster,
       t.end_date ?? null
     );
-    if (missing.length > 0) {
+    const virtueMissing = !t.virtue_theme?.trim();
+    if (missing.length > 0 || virtueMissing) {
       gaps.push({
         termId: t.id,
         termNumber: t.term_number,
         missing,
+        virtueMissing,
       });
     }
   }
