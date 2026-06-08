@@ -507,13 +507,19 @@ async function loadEvaluationTeacherPriorityUncached(
       const expected = studentIds.length;
       let submitted = 0;
       if (expected > 0) {
-        const { count } = await service
+        // KD #120: "submitted" requires non-empty content — an emptied-but-
+        // still-submitted write-up must not count (mirrors getWriteupProgressByTerm,
+        // publish-readiness, and the chase loader). The DB filter handles
+        // submitted=true; the JS filter enforces non-empty.
+        const { data: subRows } = await service
           .from('evaluation_writeups')
-          .select('id', { count: 'exact', head: true })
+          .select('writeup, submitted')
           .eq('term_id', currentTerm.id)
           .eq('submitted', true)
           .in('student_id', studentIds);
-        submitted = count ?? 0;
+        submitted = (subRows ?? []).filter(
+          (w) => !!w.writeup && w.writeup.trim().length > 0
+        ).length;
       }
       const pending = Math.max(0, expected - submitted);
       const sectionName =
@@ -656,13 +662,19 @@ async function loadEvaluationRegistrarPriorityUncached(
       const expected = studentIds.length;
       let submitted = 0;
       if (expected > 0) {
-        const { count } = await service
+        // KD #120: "submitted" requires non-empty content — an emptied-but-
+        // still-submitted write-up must not count (mirrors getWriteupProgressByTerm,
+        // publish-readiness, and the chase loader). The DB filter handles
+        // submitted=true; the JS filter enforces non-empty.
+        const { data: subRows } = await service
           .from('evaluation_writeups')
-          .select('id', { count: 'exact', head: true })
+          .select('writeup, submitted')
           .eq('term_id', currentTerm.id)
           .eq('submitted', true)
           .in('student_id', studentIds);
-        submitted = count ?? 0;
+        submitted = (subRows ?? []).filter(
+          (w) => !!w.writeup && w.writeup.trim().length > 0
+        ).length;
       }
       return {
         sectionId: s.id,

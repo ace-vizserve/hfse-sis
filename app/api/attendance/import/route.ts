@@ -181,6 +181,11 @@ type SheetReport = {
 };
 
 export async function POST(request: NextRequest) {
+  // NOTE: teachers are intentionally excluded here. Unlike PATCH /api/attendance/daily
+  // (which calls assertAdviserForSections for the teacher role), this bulk-import path
+  // has NO per-section scope guard. If teachers are ever added to this role list, add an
+  // assertAdviserForSections check over the imported sections first — otherwise a teacher
+  // could import attendance for sections they don't advise.
   const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
