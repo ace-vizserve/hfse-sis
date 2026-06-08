@@ -82,22 +82,17 @@ export default async function GradingListPage({
   searchParams,
 }: {
   searchParams?: Promise<{
+    // Server-side scope: the publish-checklist / drill deep-link (KD #75/#81)
+    // lands here with ?section=<id> to scope the stat cards + roster.
     section?: string;
-    // Filter params written by the DataTable shell (url state) — read
-    // here so the stat cards reflect what the table actually shows.
-    q?: string;
-    status?: string;
-    mine?: string;
-    level?: string;
-    subject?: string;
-    term?: string;
-    teacher?: string;
-    form_adviser?: string;
+    // The grading DataTable's namespaced url-state search key (KD #84) — read so
+    // a shared/bookmarked link seeds the search box on the server render too.
+    'grading.q'?: string;
   }>;
 }) {
   const supabase = await createClient();
   const sp = searchParams ? await searchParams : undefined;
-  const initialSearch = sp?.q ?? undefined;
+  const initialSearch = sp?.['grading.q'] ?? undefined;
 
   const { data: claimsData } = await supabase.auth.getClaims();
   const claims = claimsData?.claims ?? null;
