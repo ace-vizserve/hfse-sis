@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useState, useTransition, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
 import {
@@ -88,18 +88,18 @@ type ChecklistData = {
       missing_fields: string[];
     };
   } | null;
-  virtue_readiness: {
-    ok: boolean;
-    term_label: string;
-  } | null;
   // HARD gate (KD #49 + #120): cumulative adviser-comment completeness for the
   // terms this card will display (1..N, T4 exempt). Unlike every other check,
   // this one BLOCKS publishing — there is no "publish anyway".
+  // virtue_missing is surfaced here (not as a separate soft row) because virtue
+  // is now part of the comment hard gate: a missing virtue theme on a term also
+  // blocks publishing (the server rejects it as part of comment_gate).
   comment_gate: {
     ok: boolean;
     required_through_term: number | null;
     gaps: {
       term_number: number;
+      virtue_missing: boolean;
       missing: { name: string; index: number | null }[];
     }[];
   };
@@ -235,10 +235,11 @@ function ChecklistRow({
 
 // The cumulative adviser-comment row is a HARD requirement, not a soft
 // warning — it gets its own visual voice: a destructive (red) lock/alert tile,
-// a "Required" eyebrow, and a per-term breakdown of who is still missing. When
-// it fails, publishing is blocked entirely (the dialog's primary action is
-// disabled). When it passes, it reads as a quiet mint confirmation so the row
-// stays present as a launch-pad.
+// a "Required" eyebrow, and a per-term breakdown of what is still missing.
+// Virtue gaps are surfaced here too (not in a separate soft row): a term can
+// appear because of missing student comments, a missing virtue theme, or both.
+// When the gate fails, publishing is blocked entirely (the dialog's primary
+// action is disabled). When it passes, it reads as a quiet mint confirmation.
 function HardCommentRow({
   ok,
   gate,
@@ -249,6 +250,23 @@ function HardCommentRow({
   href: string;
 }) {
   const through = gate.required_through_term;
+  // Decide whether any gap is virtue-only (all gaps have no missing students,
+  // but at least one has virtue_missing) — to pick the most actionable CTA.
+  const hasVirtueGaps = gate.gaps.some((g) => g.virtue_missing);
+  const hasCommentGaps = gate.gaps.some((g) => g.missing.length > 0);
+  // Point virtue-only gaps directly to the virtue-themes editor (KD #137).
+  // When both comment and virtue gaps exist, keep the evaluation sections href
+  // as the primary action (comments are the more involved fix); the virtue
+  // deep-link appears per-line in the breakdown below.
+  const primaryHref =
+    !ok && hasVirtueGaps && !hasCommentGaps
+      ? '/evaluation/virtue-themes'
+      : href;
+  const primaryLabel = ok
+    ? 'View'
+    : hasVirtueGaps && !hasCommentGaps
+      ? 'Set themes'
+      : 'Write comments';
   return (
     <div
       className={`flex flex-col gap-2 rounded-lg border px-3 py-3 ${
@@ -286,20 +304,47 @@ function HardCommentRow({
           variant={ok ? 'ghost' : 'destructive'}
           className="shrink-0"
         >
-          <Link href={href}>
-            {ok ? 'View' : 'Write comments'}
+          <Link href={primaryHref}>
+            {primaryLabel}
             <ArrowUpRight className="size-3" />
           </Link>
         </Button>
       </div>
       {!ok && (
         <ul className="ml-7 space-y-0.5 text-xs text-destructive">
-          {gate.gaps.map((g) => (
-            <li key={g.term_number} className="tabular-nums">
-              Term {g.term_number}: {g.missing.length} student
-              {g.missing.length === 1 ? '' : 's'} without a submitted comment
-            </li>
-          ))}
+          {gate.gaps.map((g) => {
+            const lines: ReactNode[] = [];
+            if (g.missing.length > 0) {
+              lines.push(
+                <li key={`${g.term_number}-comments`} className="tabular-nums">
+                  Term {g.term_number} — {g.missing.length} comment
+                  {g.missing.length === 1 ? '' : 's'} missing
+                </li>
+              );
+            }
+            if (g.virtue_missing) {
+              lines.push(
+                <li
+                  key={`${g.term_number}-virtue`}
+                  className="flex items-center gap-1.5 tabular-nums"
+                >
+                  <span>Term {g.term_number} — virtue theme not set</span>
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="ghost"
+                    className="h-auto px-1 py-0 text-xs text-destructive underline-offset-2 hover:underline"
+                  >
+                    <Link href="/evaluation/virtue-themes">
+                      Set theme
+                      <ArrowUpRight className="size-2.5" />
+                    </Link>
+                  </Button>
+                </li>
+              );
+            }
+            return lines;
+          })}
         </ul>
       )}
     </div>
@@ -439,7 +484,6 @@ export function PublishWindowPanel({
         data.evaluations.missing.length > 0 ||
         data.evaluations.drafted > 0 ||
         data.attendance.missing.length > 0 ||
-        (data.virtue_readiness && !data.virtue_readiness.ok) ||
         (data.t4_readiness &&
           (!data.t4_readiness.all_terms_locked ||
             data.t4_readiness.missing_annual_count > 0 ||
@@ -494,9 +538,6 @@ export function PublishWindowPanel({
     : true;
   const letterheadOk = checklist?.t4_readiness
     ? checklist.t4_readiness.letterhead_readiness.ok
-    : true;
-  const virtueOk = checklist?.virtue_readiness
-    ? checklist.virtue_readiness.ok
     : true;
   // The cumulative comment gate is the ONLY hard blocker. When false, the
   // dialog's publish action is disabled (no "publish anyway").
@@ -808,17 +849,6 @@ export function PublishWindowPanel({
                 href={`/attendance/${sectionId}`}
                 actionLabel={attendanceOk ? 'View' : 'Mark attendance'}
               />
-
-              {/* Virtue theme — T1–T3 only (T4 has no FCA comment block per KD #49). */}
-              {checklist.virtue_readiness && (
-                <ChecklistRow
-                  passed={virtueOk}
-                  title="Virtue theme"
-                  summary={virtueOk ? 'Set' : 'Not set'}
-                  href="/sis/ay-setup"
-                  actionLabel={virtueOk ? 'View' : 'Set theme'}
-                />
-              )}
 
               {/* T4 final-card sub-checks — only render on the T4 publish path. */}
               {checklist.t4_readiness && (
