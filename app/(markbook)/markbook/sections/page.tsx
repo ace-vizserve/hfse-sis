@@ -1,25 +1,19 @@
 import Link from 'next/link';
-import {
-  ArrowUpRight,
-  GraduationCap,
-  LayoutGrid,
-  Settings,
-  Users,
-  UserX,
-} from 'lucide-react';
+import { ArrowUpRight, LayoutGrid, Settings, Users, UserX } from 'lucide-react';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { MarkbookSectionsDataTable } from '@/components/markbook/sections-data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Card,
   CardAction,
-  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { sgToday } from '@/lib/dates';
 import { compareLevelLabels } from '@/lib/sis/levels';
 
 type LevelLite = {
@@ -27,15 +21,6 @@ type LevelLite = {
   code: string;
   label: string;
   level_type: 'primary' | 'secondary';
-};
-type SectionCard = {
-  id: string;
-  name: string;
-  level_code: string;
-  level_label: string;
-  level_type: 'primary' | 'secondary' | 'unknown';
-  active: number;
-  withdrawn: number;
 };
 
 export default async function SectionsListPage() {
@@ -52,20 +37,38 @@ export default async function SectionsListPage() {
     .eq('is_current', true)
     .single();
 
-  const { data: sections } = ay
-    ? await supabase
-        .from('sections')
-        .select('id, name, level:levels(id, code, label, level_type)')
-        .eq('academic_year_id', ay.id)
-    : {
-        data: [] as Array<{
-          id: string;
-          name: string;
-          level: LevelLite | LevelLite[] | null;
-        }>,
-      };
+  const [sectionsResult, termsResult] = await Promise.all([
+    ay
+      ? supabase
+          .from('sections')
+          .select('id, name, level:levels(id, code, label, level_type)')
+          .eq('academic_year_id', ay.id)
+      : Promise.resolve({
+          data: [] as Array<{
+            id: string;
+            name: string;
+            level: LevelLite | LevelLite[] | null;
+          }>,
+        }),
+    // terms for termStarted computation (KD #136) — run in parallel with sections
+    ay
+      ? supabase
+          .from('terms')
+          .select('start_date')
+          .eq('academic_year_id', ay.id)
+      : Promise.resolve({ data: [] as Array<{ start_date: string }> }),
+  ]);
 
-  const ids = (sections ?? []).map((s) => s.id);
+  const sections = sectionsResult.data ?? [];
+  const termRows = (termsResult.data ?? []) as Array<{ start_date: string }>;
+
+  // termStarted = the AY's earliest term has started (≤ today SGT). Used to
+  // escalate the Generate-index warning (KD #136).
+  const today = sgToday();
+  const termStarted =
+    termRows.length > 0 && termRows.some((t) => t.start_date <= today);
+
+  const ids = sections.map((s) => s.id);
   const counts: Record<string, { active: number; withdrawn: number }> = {};
   if (ids.length > 0) {
     const { data: enrolments } = await supabase
@@ -82,38 +85,49 @@ export default async function SectionsListPage() {
   const getLevel = (l: LevelLite | LevelLite[] | null): LevelLite | null =>
     Array.isArray(l) ? (l[0] ?? null) : l;
 
-  const cards: SectionCard[] = (sections ?? []).map((s) => {
+  // Build flat rows for the DataTable
+  const allCards = sections.map((s) => {
     const lvl = getLevel(s.level as LevelLite | LevelLite[] | null);
     return {
       id: s.id,
       name: s.name,
+      level_id: lvl?.id ?? '',
       level_code: lvl?.code ?? '',
       level_label: lvl?.label ?? 'Unknown',
-      level_type: (lvl?.level_type ?? 'unknown') as SectionCard['level_type'],
       active: counts[s.id]?.active ?? 0,
       withdrawn: counts[s.id]?.withdrawn ?? 0,
     };
   });
 
-  const grouped = new Map<string, SectionCard[]>();
-  for (const c of cards) {
-    if (!grouped.has(c.level_label)) grouped.set(c.level_label, []);
-    grouped.get(c.level_label)!.push(c);
-  }
-  // Canonical pedagogical order (P1→P2→…→S4) per `lib/sis/levels.ts` —
-  // matches `/sis/sections`. localeCompare gave alphabetical order
-  // ("Primary Five" before "Primary One") which read wrong.
-  const sortedLevels = Array.from(grouped.entries()).sort(([a], [b]) =>
-    compareLevelLabels(a, b)
-  );
-  // Sort sections within each level alphabetically (Diamond before Pearl).
-  for (const [, sects] of sortedLevels) {
-    sects.sort((a, b) => a.name.localeCompare(b.name));
-  }
+  // DataTable rows — markbook omits withdrawn count
+  const rows = allCards.map((c) => ({
+    id: c.id,
+    name: c.name,
+    levelLabel: c.level_label,
+    active: c.active,
+  }));
 
-  const totalSections = cards.length;
-  const totalActive = cards.reduce((n, c) => n + c.active, 0);
-  const totalWithdrawn = cards.reduce((n, c) => n + c.withdrawn, 0);
+  // Unique levels for the Level facet, sorted canonically
+  const levelMap = new Map<
+    string,
+    { id: string; code: string; label: string }
+  >();
+  for (const c of allCards) {
+    if (c.level_id && !levelMap.has(c.level_id)) {
+      levelMap.set(c.level_id, {
+        id: c.level_id,
+        code: c.level_code,
+        label: c.level_label,
+      });
+    }
+  }
+  const levels = Array.from(levelMap.values()).sort((a, b) =>
+    compareLevelLabels(a.label, b.label)
+  );
+
+  const totalSections = allCards.length;
+  const totalActive = allCards.reduce((n, c) => n + c.active, 0);
+  const totalWithdrawn = allCards.reduce((n, c) => n + c.withdrawn, 0);
 
   return (
     <PageShell>
@@ -160,7 +174,7 @@ export default async function SectionsListPage() {
             description="Total sections"
             value={totalSections}
             icon={LayoutGrid}
-            footerTitle={`${sortedLevels.length} ${sortedLevels.length === 1 ? 'level' : 'levels'}`}
+            footerTitle={`${levels.length} ${levels.length === 1 ? 'level' : 'levels'}`}
             footerDetail={ay?.label ?? 'No current AY'}
           />
           <SummaryCard
@@ -182,118 +196,16 @@ export default async function SectionsListPage() {
         </div>
       </div>
 
-      {/* Empty state */}
-      {sortedLevels.length === 0 && (
-        <Card className="items-center py-12 text-center">
-          <CardContent className="flex flex-col items-center gap-3">
-            <div className="font-serif text-lg font-semibold text-foreground">
-              No sections yet
-            </div>
-            <div className="text-sm text-muted-foreground">
-              {canManage ? (
-                <>
-                  Create sections for the current AY in{' '}
-                  <Link
-                    href="/sis/sections"
-                    className="font-medium text-foreground underline"
-                  >
-                    SIS Admin
-                  </Link>
-                  .
-                </>
-              ) : (
-                <>Ask the registrar to create sections for the current AY.</>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Grouped sections — pill design mirrors /sis/sections so the
-          structural-config surface (SIS Admin) and the operational
-          surface (this page) read as one family. Each pill links into
-          the markbook section detail page where the roster + grading
-          surfaces live. */}
-      {sortedLevels.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            By level
-          </h2>
-          <div className="space-y-4">
-            {sortedLevels.map(([level, sects]) => (
-              <LevelGroup key={level} levelLabel={level} sections={sects} />
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Sections DataTable — replaces the former pill/card grid.
+          Row-actions menu surfaces Generate-index + Generate-sheets for
+          registrar+ so they needn't enter SIS Admin (KD #136 item A). */}
+      <MarkbookSectionsDataTable
+        rows={rows}
+        levels={levels}
+        role={sessionUser?.role ?? null}
+        termStarted={termStarted}
+      />
     </PageShell>
-  );
-}
-
-function LevelGroup({
-  levelLabel,
-  sections,
-}: {
-  levelLabel: string;
-  sections: SectionCard[];
-}) {
-  const levelCode = sections[0]?.level_code ?? '';
-  const totalActive = sections.reduce((n, s) => n + s.active, 0);
-  return (
-    <Card className="@container/card gap-0 overflow-hidden py-0">
-      <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-5 py-3">
-        {levelCode && (
-          <Badge
-            variant="outline"
-            className="h-6 border-border bg-white px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-          >
-            {levelCode}
-          </Badge>
-        )}
-        <div className="font-serif text-[15px] font-semibold tracking-tight text-foreground">
-          {levelLabel}
-        </div>
-        <Badge variant="muted" className="ml-auto">
-          {sections.length} section{sections.length === 1 ? '' : 's'}
-          <span className="ml-1.5 text-muted-foreground">·</span>
-          <span className="ml-1.5 font-mono tabular-nums text-muted-foreground">
-            {totalActive} active
-          </span>
-        </Badge>
-      </div>
-      <div className="flex flex-wrap gap-2 p-4">
-        {sections.map((s) => (
-          <SectionPill key={s.id} section={s} />
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function SectionPill({ section }: { section: SectionCard }) {
-  return (
-    <Link
-      href={`/markbook/sections/${section.id}`}
-      className="group/pill inline-flex items-center gap-2.5 rounded-xl border border-hairline bg-gradient-to-b from-card to-muted/20 py-2 pl-2.5 pr-3 shadow-xs transition-all hover:-translate-y-0.5 hover:border-brand-indigo/40 hover:shadow-md"
-    >
-      <div className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-        <GraduationCap className="size-3.5" />
-      </div>
-      <div className="flex flex-col leading-tight">
-        <span className="font-serif text-[14px] font-semibold tracking-tight text-foreground">
-          {section.name}
-        </span>
-        <span className="font-mono text-[9px] uppercase tracking-[0.12em] tabular-nums text-muted-foreground">
-          {section.active} active
-          {section.withdrawn > 0 && (
-            <>
-              <span className="mx-1">·</span>
-              {section.withdrawn} withdrawn
-            </>
-          )}
-        </span>
-      </div>
-    </Link>
   );
 }
 
