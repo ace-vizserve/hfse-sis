@@ -624,6 +624,22 @@ export function PublishWindowPanel({
   const noSheetsBlocked = hardBlockerCodes.has('no_grading_sheets');
   const hardBlockerCount = checklist?.hardBlockers?.length ?? 0;
 
+  // Suppress checks that "pass" only because their denominator is zero. With no
+  // students every per-student check reads "0 of 0" → a vacuous green pass; with
+  // no grading sheets the "0 locked" row is likewise vacuous. In those cases we
+  // show only the real hard-blocker row(s), so the checklist never says "met" /
+  // shows green for a section that has nothing to publish.
+  const showSheetsRow = !noStudentsBlocked && !noSheetsBlocked;
+  const showAttendanceRow = !noStudentsBlocked;
+  // Comments: hide only when it's a vacuous pass (no students AND the gate is
+  // satisfied). A real gap (e.g. a missing virtue theme) still renders so the
+  // visible rows match the hard-blocker count.
+  const showCommentRow =
+    !isT4Checklist && (!noStudentsBlocked || !commentGateOk);
+  // T4 grade/lock sub-checks need both a roster and grading sheets to be meaningful.
+  const showT4Block =
+    checklist?.t4_readiness != null && !noStudentsBlocked && !noSheetsBlocked;
+
   // Status summary for the meta strip — one tally per state, keyed on the same
   // statusOf() the per-row badges use so the counts can't drift from the rows.
   const statusCounts: Record<Status, number> = {
@@ -933,25 +949,29 @@ export function PublishWindowPanel({
                 </div>
               )}
 
-              {/* Core checks — same scope across every term. */}
-              <ChecklistRow
-                passed={sheetsOk}
-                title="Grading sheets"
-                summary={
-                  sheetsOk
-                    ? `${checklist.grading_sheets.total} locked`
-                    : `${checklist.grading_sheets.unlocked.length} unlocked`
-                }
-                href={gradingHref}
-                actionLabel={sheetsOk ? 'View' : 'Lock sheets'}
-              />
+              {/* Core checks — same scope across every term. Each is hidden when
+                  it would only show a vacuous "0 of 0" green pass (no students /
+                  no sheets); the hard-blocker row above says what to fix. */}
+              {showSheetsRow && (
+                <ChecklistRow
+                  passed={sheetsOk}
+                  title="Grading sheets"
+                  summary={
+                    sheetsOk
+                      ? `${checklist.grading_sheets.total} locked`
+                      : `${checklist.grading_sheets.unlocked.length} unlocked`
+                  }
+                  href={gradingHref}
+                  actionLabel={sheetsOk ? 'View' : 'Lock sheets'}
+                />
+              )}
 
               {/* Adviser comments — HARD requirement, cumulative across the
                   terms this card shows (Terms 1..N, T4 exempt) per KD #49/#120.
                   Unlike every other row, an open gate here BLOCKS publishing
                   (the footer's publish action is disabled below). T1–T3 only —
                   the T4 final card has no FCA comment block. */}
-              {!isT4Checklist && (
+              {showCommentRow && (
                 <div className="py-2.5">
                   <HardCommentRow
                     ok={commentGateOk}
@@ -961,20 +981,23 @@ export function PublishWindowPanel({
                 </div>
               )}
 
-              <ChecklistRow
-                passed={attendanceOk}
-                title="Attendance records"
-                summary={
-                  attendanceOk
-                    ? `${checklist.attendance.total_active} complete`
-                    : `${checklist.attendance.missing.length} missing`
-                }
-                href={`/attendance/${sectionId}`}
-                actionLabel={attendanceOk ? 'View' : 'Mark attendance'}
-              />
+              {showAttendanceRow && (
+                <ChecklistRow
+                  passed={attendanceOk}
+                  title="Attendance records"
+                  summary={
+                    attendanceOk
+                      ? `${checklist.attendance.total_active} complete`
+                      : `${checklist.attendance.missing.length} missing`
+                  }
+                  href={`/attendance/${sectionId}`}
+                  actionLabel={attendanceOk ? 'View' : 'Mark attendance'}
+                />
+              )}
 
-              {/* T4 final-card sub-checks — only render on the T4 publish path. */}
-              {checklist.t4_readiness && (
+              {/* T4 final-card sub-checks — only render on the T4 publish path
+                  (and only when there's a roster + grading sheets to check). */}
+              {showT4Block && checklist.t4_readiness && (
                 <>
                   <p className="px-1 pt-3 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Term 4 final card
