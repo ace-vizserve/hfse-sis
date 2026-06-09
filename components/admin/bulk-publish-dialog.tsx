@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
+  ArrowUpRight,
   CheckCircle2,
   Loader2,
   Radio,
   XCircle,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -443,7 +444,7 @@ export function BulkPublishDialog({
           Publish many
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Bulk publish report cards</DialogTitle>
           <DialogDescription>
@@ -541,6 +542,20 @@ export function BulkPublishDialog({
                       <span className="text-foreground">{s.name}</span>
                     </div>
                     <ReadinessPill readiness={r} />
+                    {/* Jump to this section's grading sheets to fix any gap.
+                        Opens a new tab so the bulk dialog stays open;
+                        stopPropagation prevents the label from toggling the row. */}
+                    <a
+                      href={`/markbook/grading?section=${s.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      title="Open this section's grading sheets"
+                      aria-label={`Open grading sheets for ${s.level_label} ${s.name}`}
+                      className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-primary"
+                    >
+                      <ArrowUpRight className="size-3.5" />
+                    </a>
                   </label>
                 );
               })}
