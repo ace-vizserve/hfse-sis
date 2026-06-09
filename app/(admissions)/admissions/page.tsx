@@ -6,7 +6,6 @@ import {
   Hourglass,
   TrendingUp,
   UserPlus,
-  Users,
 } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -26,8 +25,6 @@ import {
   ReferralDrillCard,
   TimeToEnrollDrillCard,
 } from '@/components/admissions/drills/chart-drill-cards';
-import { OutdatedApplicationsTable } from '@/components/admissions/outdated-applications-table';
-import { TimeToEnrollmentCard } from '@/components/admissions/time-to-enrollment-card';
 import {
   ActionList,
   type ActionItem,
@@ -62,7 +59,6 @@ import {
   getApplicationsByLevelRange,
   getApplicationsVelocityRange,
   getAssessmentOutcomes,
-  getAverageTimeToEnrollment,
   getConversionFunnel,
   getDocumentCompletionByLevel,
   getOutdatedApplications,
@@ -87,7 +83,6 @@ import {
 } from '@/lib/dashboard/range';
 import { getDashboardWindows } from '@/lib/dashboard/windows';
 import { getPipelineStageBreakdown } from '@/lib/sis/dashboard';
-import { getSisDashboardSummary } from '@/lib/sis/queries';
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -296,9 +291,7 @@ export default async function AdmissionsDashboard({
   }
 
   const [
-    summary,
     pipelineStages,
-    timeToEnroll,
     funnel,
     outdated,
     assessment,
@@ -314,9 +307,7 @@ export default async function AdmissionsDashboard({
     feedbackResult,
     preCourseStats,
   ] = await Promise.all([
-    getSisDashboardSummary(selectedAy),
     getPipelineStageBreakdown(selectedAy),
-    getAverageTimeToEnrollment(selectedAy),
     getConversionFunnel(selectedAy),
     getOutdatedApplications(selectedAy),
     getAssessmentOutcomes(selectedAy),
@@ -493,19 +484,20 @@ export default async function AdmissionsDashboard({
         }
       />
 
+      {/* ───────────────── ACT NOW ─────────────────
+          Operational top-of-fold: early-bird signal, new-application triage,
+          and the document-chase cluster. Gated to admissions/registrar;
+          oversight roles skip this (they see the same counts via the NUMBERS
+          grid + drill sheets below). */}
       {/* KD #77 — early-bird signal. Renders only when an upcoming AY is
           accepting applications AND the user is viewing the current AY
           (the card is a forward-looking signal, not a historical lens). */}
       {upcomingAyCardData && <UpcomingAyCard {...upcomingAyCardData} />}
 
-      {/* Operational top-of-fold — new applications waiting on triage. Only
-          rendered for admissions/registrar; oversight roles skip this
-          because they don't action triage. */}
+      {/* New applications waiting on triage. */}
       {isOperational && <NewApplicationsPriority ayCode={selectedAy} />}
 
-      {/* Operational chase strip + chase priority + chase narrative —
-          gated to admissions/registrar. Oversight roles see the same
-          counts via the KPI grid + drill sheets below. */}
+      {/* Chase strip + chase priority + chase narrative. */}
       {isOperational && (
         <>
           <DocumentChaseQueueStrip ayCode={selectedAy} lens="admissions" />
@@ -514,9 +506,10 @@ export default async function AdmissionsDashboard({
         </>
       )}
 
-      <InsightsPanel insights={insights} />
-
-      {/* Range-aware KPIs */}
+      {/* ───────────────── NUMBERS ─────────────────
+          Range-aware funnel KPIs, immediately followed by the funnel
+          narrative insights so the headline numbers and their story sit
+          together. */}
       <section className="grid gap-4 xl:grid-cols-4">
         <MetricCard
           label="Applications (range)"
@@ -602,7 +595,11 @@ export default async function AdmissionsDashboard({
         />
       </section>
 
-      {/* Bento row 1: intake velocity (wide) + follow-up action list (narrow) */}
+      <InsightsPanel insights={insights} />
+
+      {/* ───────────────── ANALYTICS ─────────────────
+          Trend, distribution, and breakdown charts grouped under one zone.
+          Bento row 1: intake velocity (wide) + follow-up action list (narrow). */}
       <section className="grid gap-4 lg:grid-cols-3">
         {velocity.current.length > 1 && (
           <Card className="lg:col-span-2">
@@ -686,19 +683,14 @@ export default async function AdmissionsDashboard({
         />
       </section>
 
-      {/* Referral + time-to-enrol + browse — three-up footer row */}
-      <section className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-1">
-          <ReferralDrillCard
-            data={referral}
-            ayCode={selectedAy}
-            drillRows={drillRows}
-          />
-        </div>
-        <div className="lg:col-span-1">
-          <TimeToEnrollmentCard data={timeToEnroll} />
-        </div>
-        <Card className="lg:col-span-1">
+      {/* Referral + browse — two-up footer row */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <ReferralDrillCard
+          data={referral}
+          ayCode={selectedAy}
+          drillRows={drillRows}
+        />
+        <Card>
           <CardHeader>
             <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
               Browse
@@ -718,37 +710,8 @@ export default async function AdmissionsDashboard({
         </Card>
       </section>
 
-      {/* Static AY counters — dashboard-01 SectionCards pattern */}
-      <section className="@container/main">
-        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
-          <SummaryStat
-            label="Total applications"
-            value={summary.totalStudents}
-            icon={Users}
-            footnote="In this AY"
-          />
-          <SummaryStat
-            label="In pipeline"
-            value={summary.pending}
-            icon={Hourglass}
-            footnote="Pre-enrolment stages"
-          />
-          <SummaryStat
-            label="Enrolled (final stage)"
-            value={summary.enrolled}
-            icon={FileStack}
-            footnote="Active + conditional"
-          />
-          <SummaryStat
-            label="Avg time to enroll"
-            value={Math.round(timeToEnroll.avgDays ?? 0)}
-            icon={Hourglass}
-            footnote={`days (n=${timeToEnroll.sampleSize ?? 0})`}
-          />
-        </div>
-      </section>
-
-      {/* Pre-course + feedback spotlight cards */}
+      {/* ───────────────── SPOTLIGHT ─────────────────
+          Pre-course + feedback spotlight cards. */}
       <section className="@container/main">
         <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2">
           <SummaryStat
@@ -776,18 +739,7 @@ export default async function AdmissionsDashboard({
         </div>
       </section>
 
-      <section className="space-y-3 print:hidden">
-        <div className="space-y-1">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Full list
-          </p>
-          <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
-            All outdated applications
-          </h2>
-        </div>
-        <OutdatedApplicationsTable rows={outdated} ayCode={selectedAy} />
-      </section>
-
+      {/* Footer trust strip */}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         <ChartBar className="size-3" strokeWidth={2.25} />
         <span>{selectedAy}</span>
