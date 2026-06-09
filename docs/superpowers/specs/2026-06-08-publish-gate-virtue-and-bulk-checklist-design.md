@@ -1,7 +1,7 @@
 # Publish gate: virtue theme into the comment hard-gate + readiness checklist in bulk publish
 
 **Date:** 2026-06-08
-**Status:** Design — approved, ready for implementation plan
+**Status:** Shipped (2026-06-09) — KD #138. Virtue in the comment hard-gate + bulk-publish readiness checklist live on prod.
 **Module:** Markbook (report-card publishing)
 **Cross-refs:** KD #28 (soft gate + "publish anyway"), KD #49 (virtue theme frames the FCA comment), KD #75 (publish checklist = nav hub), KD #129 (comment hard-gate + cumulative render), KD #120 (roster-correct counts), KD #137 (virtue-theme editor in Evaluation)
 
