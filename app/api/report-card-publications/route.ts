@@ -6,7 +6,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { emailParentsPublication } from '@/lib/notifications/email-parents-publication';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
-import { cumulativeCommentGaps } from '@/lib/markbook/comment-completeness';
+import { computePublishReadiness } from '@/lib/markbook/publish-readiness';
 
 // GET /api/report-card-publications?section_id=...
 // Registrar+ only. Returns all publications for a section.
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   let q = supabase
     .from('report_card_publications')
     .select(
-      'id, section_id, term_id, publish_from, publish_until, published_by, created_at, updated_at'
+      'id, section_id, term_id, publish_from, publish_until, published_by, published_with_gaps, created_at, updated_at'
     )
     .order('created_at', { ascending: false });
   if (sectionId) q = q.eq('section_id', sectionId);
@@ -74,71 +74,47 @@ export async function POST(request: NextRequest) {
   const service = createServiceClient();
   const publishedBy = auth.user.email ?? auth.user.id;
 
-  // HARD gate (KD #49 + #120): a published interim card for term N shows the
-  // FCA comment boxes for terms 1..N, so publishing N requires SUBMITTED +
-  // NON-EMPTY comments for every term 1..min(N,3) — roster-correct per term,
-  // never future terms; T4 is exempt (no FCA block). This is the ONLY hard
-  // publish blocker — every other readiness check stays a soft "publish
-  // anyway" warning (KD #28). Reuses the same shared helper the readiness
-  // route consumes so the block and the checklist can't diverge.
-  const { data: termRow } = await service
-    .from('terms')
-    .select('term_number, academic_year_id')
-    .eq('id', body.term_id)
-    .single();
-  const publishTerm = termRow as {
-    term_number: number;
-    academic_year_id: string;
-  } | null;
-  if (publishTerm && publishTerm.term_number < 4) {
-    const { data: ayTerms } = await service
-      .from('terms')
-      .select('id, term_number, end_date, virtue_theme')
-      .eq('academic_year_id', publishTerm.academic_year_id)
-      .order('term_number');
-    const gaps = await cumulativeCommentGaps(
-      service,
-      body.section_id,
-      (ayTerms ?? []) as {
-        id: string;
-        term_number: number;
-        end_date: string | null;
-        virtue_theme: string | null;
-      }[],
-      publishTerm.term_number
+  // HARD/SOFT publish gate (KD #28/#49/#120/#129/#138). The shared evaluator is
+  // the single source of truth (also consumed by the readiness route so the
+  // checklist and the block can't drift). HARD blockers stop the publish:
+  //   • comments_incomplete — cumulative FCA comment + virtue gate (interim)
+  //   • no_students         — empty section (vacuous-pass hole)
+  //   • no_grading_sheets   — no grading sheets for the term (vacuous-pass hole)
+  // SOFT gaps (grades/attendance/sheets-locked/letterhead) stay "publish
+  // anyway" — but are now snapshotted on the publication row + audit.
+  const readiness = await computePublishReadiness(
+    service,
+    body.section_id,
+    body.term_id
+  );
+  if ('error' in readiness) {
+    return NextResponse.json(
+      { error: readiness.error },
+      { status: readiness.status }
     );
-    if (gaps.length > 0) {
-      const detail = gaps
-        .map((g) => {
-          const parts: string[] = [];
-          if (g.missing.length > 0)
-            parts.push(
-              `${g.missing.length} student${g.missing.length === 1 ? '' : 's'}`
-            );
-          if (g.virtueMissing) parts.push('virtue theme not set');
-          return `Term ${g.termNumber} (${parts.join(', ')})`;
-        })
-        .join(', ');
-      return NextResponse.json(
-        {
-          error: `This card can't publish yet — the adviser-comment block is incomplete for: ${detail}.`,
-          code: 'comments_incomplete',
-          comment_gate: {
-            ok: false,
-            gaps: gaps.map((g) => ({
-              term_number: g.termNumber,
-              virtue_missing: g.virtueMissing,
-              missing: g.missing.map((m) => ({
-                name: m.name,
-                index: m.indexNumber,
-              })),
-            })),
-          },
-        },
-        { status: 422 }
-      );
-    }
   }
+  if (readiness.hardBlockers.length > 0) {
+    const summary = readiness.hardBlockers.map((b) => b.label).join('; ');
+    return NextResponse.json(
+      {
+        error: `This card can't publish yet — ${summary}.`,
+        code: 'publish_blocked',
+        hardBlockers: readiness.hardBlockers,
+      },
+      { status: 422 }
+    );
+  }
+
+  // Override snapshot: record the soft gaps the registrar published past, or
+  // null when the card published clean.
+  const publishedWithGaps =
+    readiness.softGaps.length > 0
+      ? {
+          gaps: readiness.softGaps,
+          by: publishedBy,
+          at: new Date().toISOString(),
+        }
+      : null;
 
   const { data, error } = await service
     .from('report_card_publications')
@@ -149,11 +125,14 @@ export async function POST(request: NextRequest) {
         publish_from: from.toISOString(),
         publish_until: until.toISOString(),
         published_by: publishedBy,
+        published_with_gaps: publishedWithGaps,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'section_id,term_id' }
     )
-    .select('id, section_id, term_id, publish_from, publish_until, notified_at')
+    .select(
+      'id, section_id, term_id, publish_from, publish_until, published_with_gaps, notified_at'
+    )
     .single();
   if (error || !data) {
     return NextResponse.json(
@@ -196,6 +175,8 @@ export async function POST(request: NextRequest) {
       publish_from: data.publish_from,
       publish_until: data.publish_until,
       notification,
+      overridden: readiness.softGaps.length > 0,
+      gaps: readiness.softGaps.map((g) => g.code),
     },
   });
 

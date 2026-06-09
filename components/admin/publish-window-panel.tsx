@@ -42,6 +42,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 type Term = { id: string; term_number: number; label: string };
 
+// One soft gap the registrar published past (snapshotted on the row server-side).
+type PublishGap = { code: string; label: string; count?: number };
+
 type Publication = {
   id: string;
   section_id: string;
@@ -49,6 +52,9 @@ type Publication = {
   publish_from: string;
   publish_until: string;
   published_by: string;
+  // Null on a clean publish; the override snapshot when the registrar published
+  // past one or more soft gaps (KD #28 "publish anyway", now recorded).
+  published_with_gaps: { gaps: PublishGap[]; by: string; at: string } | null;
 };
 
 type Status = 'active' | 'scheduled' | 'expired' | 'none';
@@ -103,6 +109,12 @@ type ChecklistData = {
       missing: { name: string; index: number | null }[];
     }[];
   };
+  // Verdict (server-derived). hardBlockers stop publishing entirely (codes:
+  // no_students, no_grading_sheets, comments_incomplete); softGaps are the
+  // overridable "publish anyway" items. canPublish === hardBlockers.length === 0.
+  hardBlockers?: PublishGap[];
+  softGaps?: PublishGap[];
+  canPublish?: boolean;
 };
 
 function statusOf(p: Publication | undefined): Status {
@@ -177,6 +189,14 @@ function fmt(iso: string): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+// Is publishing hard-blocked? Prefer the server's verdict (hardBlockers); fall
+// back to the legacy comment-gate check if the array is somehow absent so we
+// never accidentally allow publishing past a comment gap.
+function isHardBlocked(data: ChecklistData): boolean {
+  if (data.hardBlockers) return data.hardBlockers.length > 0;
+  return data.comment_gate ? !data.comment_gate.ok : false;
 }
 
 // One compact row in the publishing checklist — a triage line, not a card.
@@ -351,6 +371,32 @@ function HardCommentRow({
   );
 }
 
+// A structural hard blocker with no deep-link fix (an empty section, or no
+// grading sheets for the term). Same destructive voice as HardCommentRow — a
+// red lock tile + "Required to publish" eyebrow + short explanation — but no
+// action button, because there is nothing to navigate to: the registrar must
+// add students / create grading sheets upstream first.
+function HardBlockerRow({
+  title,
+  explanation,
+}: {
+  title: string;
+  explanation: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-3">
+      <Lock className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Required to publish
+        </p>
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        <p className="text-xs text-destructive">{explanation}</p>
+      </div>
+    </div>
+  );
+}
+
 export function PublishWindowPanel({
   sectionId,
   levelId,
@@ -473,24 +519,26 @@ export function PublishWindowPanel({
       }
       const data = (await res.json()) as ChecklistData;
 
-      // The cumulative comment gate is a HARD blocker (KD #49/#120) — when it
-      // fails the registrar cannot "publish anyway". Every other check is a
-      // soft warning. We open the dialog whenever ANY check (soft or hard) is
-      // unsatisfied; the dialog disables its publish action when the hard gate
-      // is open.
-      const commentGateBlocked = data.comment_gate && !data.comment_gate.ok;
-      const hasSoftIssues =
-        data.grading_sheets.unlocked.length > 0 ||
-        data.evaluations.missing.length > 0 ||
-        data.evaluations.drafted > 0 ||
-        data.attendance.missing.length > 0 ||
-        (data.t4_readiness &&
-          (!data.t4_readiness.all_terms_locked ||
-            data.t4_readiness.missing_annual_count > 0 ||
-            data.t4_readiness.non_examinable_readiness.missing_count > 0 ||
-            !data.t4_readiness.letterhead_readiness.ok));
+      // The server returns the verdict (hardBlockers / softGaps). Hard blockers
+      // (no_students, no_grading_sheets, comments_incomplete) cannot be
+      // "published past"; soft gaps can. We open the dialog whenever ANY check
+      // (soft or hard) is unsatisfied; the dialog disables its publish action
+      // when a hard blocker is present. Fall back to the old comment-gate +
+      // per-field detection if the verdict arrays are somehow absent.
+      const hardBlocked = isHardBlocked(data);
+      const hasSoftIssues = data.softGaps
+        ? data.softGaps.length > 0
+        : data.grading_sheets.unlocked.length > 0 ||
+          data.evaluations.missing.length > 0 ||
+          data.evaluations.drafted > 0 ||
+          data.attendance.missing.length > 0 ||
+          (data.t4_readiness &&
+            (!data.t4_readiness.all_terms_locked ||
+              data.t4_readiness.missing_annual_count > 0 ||
+              data.t4_readiness.non_examinable_readiness.missing_count > 0 ||
+              !data.t4_readiness.letterhead_readiness.ok));
 
-      if (!commentGateBlocked && !hasSoftIssues) {
+      if (!hardBlocked && !hasSoftIssues) {
         await save(termId);
       } else {
         setChecklist(data);
@@ -539,11 +587,23 @@ export function PublishWindowPanel({
   const letterheadOk = checklist?.t4_readiness
     ? checklist.t4_readiness.letterhead_readiness.ok
     : true;
-  // The cumulative comment gate is the ONLY hard blocker. When false, the
-  // dialog's publish action is disabled (no "publish anyway").
+  // The cumulative comment gate is still surfaced as its own hard row; the
+  // overall hard-block verdict now spans the full hardBlockers set (empty
+  // section / no grading sheets / comments). When hard-blocked, the dialog's
+  // publish action is disabled (no "publish anyway").
   const commentGateOk = checklist?.comment_gate
     ? checklist.comment_gate.ok
     : true;
+  const hardBlocked = checklist ? isHardBlocked(checklist) : false;
+  // The structural existence blockers (no students / no grading sheets) — shown
+  // as destructive rows with no deep-link (nothing to navigate to). Read from
+  // the server verdict; absent → none (the comment gate is rendered separately).
+  const hardBlockerCodes = new Set(
+    (checklist?.hardBlockers ?? []).map((b) => b.code)
+  );
+  const noStudentsBlocked = hardBlockerCodes.has('no_students');
+  const noSheetsBlocked = hardBlockerCodes.has('no_grading_sheets');
+  const hardBlockerCount = checklist?.hardBlockers?.length ?? 0;
 
   // Status summary for the meta strip — one tally per state, keyed on the same
   // statusOf() the per-row badges use so the counts can't drift from the rows.
@@ -652,6 +712,28 @@ export function PublishWindowPanel({
                         No window set — not visible to parents yet.
                       </p>
                     )}
+                    {/* Override note — this window was published past one or more
+                        soft warnings (KD #28). Amber/warning treatment; the
+                        shape (icon) carries meaning, not colour alone. */}
+                    {existing?.published_with_gaps &&
+                      existing.published_with_gaps.gaps.length > 0 && (
+                        <div className="flex items-start gap-1.5 text-xs text-brand-amber">
+                          <AlertTriangle
+                            className="mt-0.5 size-3 shrink-0"
+                            aria-hidden
+                          />
+                          <span>
+                            Published with gaps:{' '}
+                            {existing.published_with_gaps.gaps
+                              .map((g) =>
+                                g.count != null
+                                  ? `${g.label} (${g.count})`
+                                  : g.label
+                              )
+                              .join(', ')}
+                          </span>
+                        </div>
+                      )}
                   </div>
                   {!isEditing && (
                     <div className="flex shrink-0 gap-2">
@@ -801,15 +883,36 @@ export function PublishWindowPanel({
                 Publishing checklist
               </AlertDialogTitle>
               <AlertDialogDescription className="text-sm leading-relaxed text-muted-foreground">
-                {commentGateOk
-                  ? 'A few items need attention before publishing to parents. These are warnings, not hard stops — fix each via the quick-links, or publish anyway.'
-                  : 'Adviser comments are required before this card can be published — finish them via the quick-link below. Other items are warnings you can publish past.'}
+                {hardBlocked
+                  ? 'Some required items are missing before this card can be published — fix the items marked “Required to publish” first. Anything else is a warning you can publish past.'
+                  : 'A few items need attention before publishing to parents. These are warnings, not hard stops — fix each via the quick-links, or publish anyway.'}
               </AlertDialogDescription>
             </div>
           </div>
 
           {checklist && (
             <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto border-t border-border">
+              {/* Structural hard blockers (KD #28). Both are vacuous-pass holes:
+                  an empty section or a section with no grading sheets would
+                  otherwise publish an empty window. No deep-link — the registrar
+                  must add students / create grading sheets upstream first. */}
+              {noStudentsBlocked && (
+                <div className="py-2.5">
+                  <HardBlockerRow
+                    title="Section has no students"
+                    explanation="There is nothing to publish — add students to this section first."
+                  />
+                </div>
+              )}
+              {noSheetsBlocked && (
+                <div className="py-2.5">
+                  <HardBlockerRow
+                    title="No grading sheets for this term"
+                    explanation="Create grading sheets for this section and term before publishing."
+                  />
+                </div>
+              )}
+
               {/* Core checks — same scope across every term. */}
               <ChecklistRow
                 passed={sheetsOk}
@@ -907,7 +1010,7 @@ export function PublishWindowPanel({
 
           <AlertDialogFooter className="shrink-0 border-t border-border pt-4">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            {commentGateOk ? (
+            {!hardBlocked ? (
               <AlertDialogAction
                 onClick={async () => {
                   const termId = pendingPublishTermId;
@@ -919,12 +1022,13 @@ export function PublishWindowPanel({
                 Publish anyway
               </AlertDialogAction>
             ) : (
-              // Hard gate open — publishing is blocked. A disabled plain Button
-              // (not AlertDialogAction) so it neither publishes nor closes the
-              // dialog; the registrar fixes comments via the row's quick-link.
+              // A hard blocker is present — publishing is blocked. A disabled
+              // plain Button (not AlertDialogAction) so it neither publishes nor
+              // closes the dialog; the registrar fixes each required item first.
               <Button disabled variant="destructive">
                 <Lock className="size-3.5" />
-                Comments required
+                Cannot publish — {hardBlockerCount} item
+                {hardBlockerCount === 1 ? '' : 's'} required
               </Button>
             )}
           </AlertDialogFooter>

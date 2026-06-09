@@ -44,10 +44,22 @@ type SectionReadiness =
   | { state: 'warn'; reasons: string[] }
   | { state: 'blocked'; reasons: string[] };
 
+// A hard blocker / soft gap as returned by the server verdict.
+type PublishGap = { code: string; label: string; count?: number };
+
+// Build the per-pill reason strings from a verdict array. The label already
+// reads plain-English ("Section has no students", "Adviser comments / virtue
+// theme incomplete"); append the count when present.
+function reasonsFromGaps(gaps: PublishGap[]): string[] {
+  return gaps.map((g) =>
+    g.count != null ? `${g.label} (${g.count})` : g.label
+  );
+}
+
 // Classify the readiness API response into one of the four states.
-// The `t4_readiness` field is a complex object — derive `ok` from whether
-// there are any unlocked terms or missing grades (the actual shape from the
-// route differs from the simple { ok: boolean } stub in the spec).
+// Prefers the server's verdict (hardBlockers / softGaps — codes no_students,
+// no_grading_sheets, comments_incomplete are all hard now); falls back to the
+// legacy comment-gate + per-field derivation if the verdict arrays are absent.
 function classify(r: {
   grading_sheets: { unlocked: { subject_name: string }[] };
   attendance: { missing: unknown[] };
@@ -65,8 +77,22 @@ function classify(r: {
       missing: unknown[];
     }[];
   };
+  hardBlockers?: PublishGap[];
+  softGaps?: PublishGap[];
+  canPublish?: boolean;
 }): SectionReadiness {
-  // Hard block: cumulative comment gate (KD #129).
+  // Preferred path: the server verdict drives the classification.
+  if (r.hardBlockers || r.softGaps) {
+    if ((r.hardBlockers?.length ?? 0) > 0) {
+      return { state: 'blocked', reasons: reasonsFromGaps(r.hardBlockers!) };
+    }
+    if ((r.softGaps?.length ?? 0) > 0) {
+      return { state: 'warn', reasons: reasonsFromGaps(r.softGaps!) };
+    }
+    return { state: 'ready' };
+  }
+
+  // Fallback path (verdict absent) — legacy comment-gate + per-field logic.
   if (!r.comment_gate.ok) {
     const reasons = r.comment_gate.gaps.map((g) => {
       const bits: string[] = [];
@@ -329,7 +355,7 @@ export function BulkPublishDialog({
     setProgress({ done: 0, total: publishIds.length });
 
     let published = 0;
-    let skipped = 0; // 422 comments_incomplete slipping through the pre-flight
+    let skipped = 0; // 422 publish_blocked slipping through the pre-flight check
     let failed = 0;
     let done = 0;
 
@@ -350,14 +376,18 @@ export function BulkPublishDialog({
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
-              const isIncomplete =
+              // A section that became hard-blocked between the pre-flight check
+              // and publish time returns 422 publish_blocked — count it as
+              // skipped (a deliberate skip), not a failure.
+              const isBlocked =
                 res.status === 422 &&
-                (body?.code === 'comments_incomplete' ||
+                (body?.code === 'publish_blocked' ||
+                  body?.code === 'comments_incomplete' ||
                   body?.error?.includes('comment'));
               return {
                 sectionId,
                 ok: false as const,
-                skipped: isIncomplete,
+                skipped: isBlocked,
                 message: body?.error ?? `HTTP ${res.status}`,
               };
             }
