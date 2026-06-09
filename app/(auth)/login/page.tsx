@@ -155,7 +155,7 @@ export default function LoginPage() {
                 </button>
 
                 <p className="pt-1 text-center text-[13px] text-ink-4">
-                  Forgot your password? Contact your school admin.
+                  Forgot your password? Contact IT Support.
                 </p>
               </form>
             </Form>
