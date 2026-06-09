@@ -258,6 +258,8 @@ export function ApproversDataTable({
         },
       ]}
       toolbarTrailing={<>{assignButtons}</>}
+      // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+      url={{ enabled: true, namespace: 'approvers' }}
       initialSort={[{ id: 'flow', desc: false }]}
       pageSize={25}
       emptyState={{

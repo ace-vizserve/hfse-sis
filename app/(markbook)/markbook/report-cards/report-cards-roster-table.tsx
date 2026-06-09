@@ -142,6 +142,8 @@ export function ReportCardsRosterTable({
       searchKeys={['name', 'student_number']}
       searchPlaceholder="Search name or student number…"
       statusTabs={STATUS_TABS}
+      // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+      url={{ enabled: true, namespace: 'rcroster' }}
       initialSort={[{ id: 'index_number', desc: false }]}
       hidePagination
       emptyState={{ title: 'No students enrolled.' }}

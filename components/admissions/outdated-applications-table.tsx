@@ -331,6 +331,8 @@ export function OutdatedApplicationsTable({
         searchPlaceholder="Search applicant, enrolee #, level, status…"
         facets={FACETS}
         statusTabs={STATUS_TABS}
+        // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+        url={{ enabled: true, namespace: 'outdated' }}
         initialSort={[{ id: 'tier', desc: true }]}
         initialColumnVisibility={INITIAL_COLUMN_VISIBILITY}
         pageSize={25}

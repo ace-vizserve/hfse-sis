@@ -319,6 +319,8 @@ export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
         statusTabs={statusTabs}
         meScope={expiresScope}
         toolbarTrailing={modeToggle}
+        // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+        url={{ enabled: true, namespace: 'validation' }}
         initialSort={[{ id: 'fullName', desc: false }]}
         pageSize={25}
       />

@@ -313,6 +313,8 @@ export function AySetupDataTable({ rows, onNewAy }: AySetupDataTableProps) {
       initialSort={[{ id: 'ay_code', desc: true }]}
       initialColumnVisibility={{ created_at: false }}
       hidePagination
+      // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+      url={{ enabled: true, namespace: 'aysetup' }}
       emptyState={{
         title: 'No academic years yet.',
         body: 'Create the first AY to get started.',

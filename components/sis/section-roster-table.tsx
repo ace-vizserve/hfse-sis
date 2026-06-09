@@ -264,6 +264,8 @@ export function SectionRosterTable({
       searchKeys={['studentName', 'studentNumber']}
       searchPlaceholder="Search student…"
       statusTabs={statusTabs}
+      // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+      url={{ enabled: true, namespace: 'roster' }}
       initialSort={[{ id: 'indexNumber', desc: false }]}
       initialColumnVisibility={{
         enrollment_date: false,

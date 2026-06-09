@@ -235,6 +235,8 @@ export function AttendanceReadOnlyTable({ rows }: { rows: ReadOnlyRow[] }) {
       searchPlaceholder="Search student…"
       facets={FACETS}
       statusTabs={STATUS_TABS.length > 0 ? STATUS_TABS : undefined}
+      // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+      url={{ enabled: true, namespace: 'attn' }}
       initialSort={[{ id: 'indexNumber', desc: false }]}
       initialColumnVisibility={{ _status: false }}
       pageSize={50}

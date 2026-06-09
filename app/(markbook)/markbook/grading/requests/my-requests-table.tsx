@@ -287,6 +287,8 @@ export function MyRequestsTable({ data }: { data: MyRequestRow[] }) {
       searchPlaceholder="Search field, reason, value…"
       facets={facets}
       statusTabs={STATUS_TABS}
+      // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+      url={{ enabled: true, namespace: 'myreq' }}
       initialSort={[{ id: 'requested_at', desc: true }]}
       pageSize={25}
       pageSizeOptions={[10, 25, 50]}

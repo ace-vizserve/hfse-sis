@@ -290,6 +290,8 @@ export function MovementsTable({
         facets={facets}
         statusTabs={statusTabs}
         toolbarLeading={toolbarLeading}
+        // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+        url={{ enabled: true, namespace: 'movements' }}
         initialSort={[{ id: 'date', desc: true }]}
         pageSize={25}
         csv={{ filename: `movements-${ayCode}.csv` }}

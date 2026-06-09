@@ -217,6 +217,8 @@ export function RosterTable({
       ]}
       searchPlaceholder="Search name, student number, index…"
       statusTabs={STATUS_TABS}
+      // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+      url={{ enabled: true, namespace: 'roster' }}
       initialSort={[{ id: 'index_number', desc: false }]}
       initialColumnVisibility={{
         enrollment_date: false,

@@ -536,6 +536,8 @@ export function UsersAdminClient({
         },
       ]}
       toolbarTrailing={toolbarTrailing}
+      // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+      url={{ enabled: true, namespace: 'users' }}
       initialSort={[{ id: 'user', desc: false }]}
       initialColumnVisibility={{ created_at: false }}
       pageSize={25}
