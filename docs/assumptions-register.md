@@ -1,5 +1,7 @@
 # HFSE SIS — Assumptions to Confirm
 
+> **Staff-facing companion (2026-06-09):** plain-English, per-role **UAT docs** derived from this register live in `docs/uat/` — `uat-registrar`, `uat-academics`, `uat-admin-office` (each `.md` + `.csv`). Those are what you hand to staff at the onsite (run the test, mark Yes/No, write the correct process). This file stays the dev-side record (IDs, KD refs, decisions). Spec: `docs/superpowers/specs/2026-06-09-uat-acceptance-docs-design.md`.
+
 **Purpose.** The SIS's academic core (grading formula, weights, awards, attendance quotas, admissions pipeline, identity) was validated against real HFSE documents and people. The **operational / workflow layer** (approvals, chasing, validation, some convenience features) was built on reasonable defaults that haven't been pressure-tested against real use — because there are no live users yet. This is the checklist to walk through with the people who do the work, so we change only what's actually wrong (twice already, speculative workflow features — PTC and SOW-ownership — were built then unwound; this prevents a third).
 
 **How to use.** For each item: ask the question to the named person. If the answer is "yes, that's how we do it" → mark Confirmed. If "no / not quite" → note what they actually do; that becomes a change request. Don't pre-build alternatives.
