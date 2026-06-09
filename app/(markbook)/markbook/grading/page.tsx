@@ -176,6 +176,7 @@ export default async function GradingListPage({
     grading_sheet_id: string;
     quarterly_grade: number | null;
     letter_grade: string | null;
+    is_na: boolean;
     section_student:
       | { enrollment_status: string }
       | { enrollment_status: string }[]
@@ -192,7 +193,7 @@ export default async function GradingListPage({
       supabase
         .from('grade_entries')
         .select(
-          `grading_sheet_id, quarterly_grade, letter_grade,
+          `grading_sheet_id, quarterly_grade, letter_grade, is_na,
            section_student:section_students(enrollment_status)`
         )
         .in('grading_sheet_id', slice)
@@ -215,25 +216,23 @@ export default async function GradingListPage({
     entriesBySheet.set(e.grading_sheet_id, list);
   }
 
-  // Per-sheet gradedPct — copy of app/(markbook)/markbook/grading/[id]/page.tsx:249-255:
-  //   activeRows  = entries.filter(e => !withdrawn)
-  //   total       = activeRows.length
-  //   gradedCount = activeRows.filter(e =>
-  //     isExaminable ? e.quarterly_grade !== null : e.letter_grade !== null
-  //   ).length
-  //   gradedPct   = round(gradedCount / total * 100)
+  // Per-sheet "graded" count — uses the SAME predicate as the sheet-detail page
+  // (app/(markbook)/markbook/grading/[id]/page.tsx): a student is graded when
+  // quarterly_grade, a UG/E letter_grade override, OR is_na is set — for BOTH
+  // subject types, so this list's count matches the detail page. For a
+  // non-examinable subject the normal grade is a WW/PT/QA score → a derived
+  // A/B/C/IP from quarterly_grade (letter_grade only holds UG/E per KD #104),
+  // so the old letter_grade-only check missed normally-graded students.
   const slotsBySheet = new Map<string, { graded: number; total: number }>();
   for (const s of (sheets ?? []) as SheetRow[]) {
-    const subject = first(s.subject);
-    const isExaminable = subject?.is_examinable !== false;
     const entries = entriesBySheet.get(s.id) ?? [];
     const activeRows = entries.filter((e) => {
       const ss = first(e.section_student);
       return ss?.enrollment_status !== 'withdrawn';
     });
     const totalStudents = activeRows.length;
-    const gradedCount = activeRows.filter((e) =>
-      isExaminable ? e.quarterly_grade !== null : e.letter_grade !== null
+    const gradedCount = activeRows.filter(
+      (e) => e.quarterly_grade !== null || e.letter_grade !== null || e.is_na
     ).length;
     slotsBySheet.set(s.id, { graded: gradedCount, total: totalStudents });
   }
