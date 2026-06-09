@@ -31,7 +31,6 @@ import {
   getDailyAttendanceRange,
   getDayTypeDistributionRange,
   getExReasonMixRange,
-  getTopAbsentRange,
 } from '@/lib/attendance/dashboard';
 import { buildAllRowSets } from '@/lib/attendance/drill';
 import { attendanceInsights } from '@/lib/dashboard/insights';
@@ -112,12 +111,11 @@ export default async function AttendanceDashboard({
 
   const schoolConfig = await getSchoolConfig();
 
-  const [kpisResult, dailySeries, exMix, topAbsent, dayTypes, drillRowSets] =
+  const [kpisResult, dailySeries, exMix, dayTypes, drillRowSets] =
     await Promise.all([
       getAttendanceKpisRange(rangeInput),
       getDailyAttendanceRange(rangeInput),
       getExReasonMixRange(rangeInput),
-      getTopAbsentRange(rangeInput, 10),
       getDayTypeDistributionRange(rangeInput),
       buildAllRowSets({
         ayCode: selectedAy,
@@ -315,30 +313,32 @@ export default async function AttendanceDashboard({
         />
       </section>
 
-      {/* Section breakdown + compassionate quota */}
+      {/* Section breakdown — sits with the other range-aware analytics. */}
+      <AttendanceBySectionCard
+        data={drillRowSets.sectionAttendance}
+        ayCode={selectedAy}
+        rangeFrom={rangeInput.from}
+        rangeTo={rangeInput.to}
+      />
+
+      {/* Leave quotas — compassionate (per-year) + vacation (per-term, KD #94)
+          are both "students near/over a leave quota," grouped side-by-side.
+          The vacation card surfaces only when a term is resolvable (otherwise
+          this renders as a single column — that's fine). */}
       <section className="grid gap-4 lg:grid-cols-2">
-        <AttendanceBySectionCard
-          data={drillRowSets.sectionAttendance}
-          ayCode={selectedAy}
-          rangeFrom={rangeInput.from}
-          rangeTo={rangeInput.to}
-        />
         <CompassionateQuotaCard
           data={drillRowSets.compassionate}
           ayCode={selectedAy}
         />
+        {currentTermId && currentTermLabel && (
+          <VacationLeaveQuotaCard
+            data={drillRowSets.vacationLeave}
+            ayCode={selectedAy}
+            termId={currentTermId}
+            termLabel={currentTermLabel}
+          />
+        )}
       </section>
-
-      {/* Vacation leave (per-term, KD #94). Surfaces only when a term is
-          resolvable — otherwise the loader returns []. */}
-      {currentTermId && currentTermLabel && (
-        <VacationLeaveQuotaCard
-          data={drillRowSets.vacationLeave}
-          ayCode={selectedAy}
-          termId={currentTermId}
-          termLabel={currentTermLabel}
-        />
-      )}
 
       {/* Top-absent students */}
       <TopAbsentDrillCard
