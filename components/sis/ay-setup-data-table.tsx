@@ -65,7 +65,7 @@ const columns: ColumnDef<AyTableRow>[] = [
     cell: ({ row }) => <span className="text-sm">{row.original.label}</span>,
   },
   {
-    id: 'status',
+    id: 'ay_status',
     accessorFn: (row) => ayStatus(row),
     header: 'Status',
     cell: ({ row }) => {
@@ -305,7 +305,7 @@ export function AySetupDataTable({ rows, onNewAy }: AySetupDataTableProps) {
       getRowId={(row) => row.ay_code}
       facets={[
         {
-          columnId: 'status',
+          columnId: 'ay_status',
           label: 'Status',
           valueOptions: ['Active', 'Inactive', 'Early-bird open'],
         },

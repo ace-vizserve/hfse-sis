@@ -221,7 +221,7 @@ const STATUS_TABS: StatusTabConfig<AdminRequestRow>[] = [
 
 const FACETS: FacetConfig[] = [
   {
-    columnId: 'status',
+    columnId: 'cr_status',
     label: 'Status',
     valueOptions: ['pending', 'approved', 'applied', 'rejected', 'cancelled'],
   },
@@ -523,6 +523,7 @@ export function ChangeRequestsDataTable({
         },
       },
       {
+        id: 'cr_status',
         accessorKey: 'status',
         header: 'Status',
         cell: ({ row }) => {

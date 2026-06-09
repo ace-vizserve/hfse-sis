@@ -127,6 +127,7 @@ const COLUMNS: ColumnDef<MyRequestRow>[] = [
     ),
   },
   {
+    id: 'req_status',
     accessorKey: 'status',
     header: 'Status',
     cell: ({ row }) => {
@@ -263,7 +264,7 @@ export function MyRequestsTable({ data }: { data: MyRequestRow[] }) {
   const facets = useMemo<FacetConfig[]>(
     () => [
       {
-        columnId: 'status',
+        columnId: 'req_status',
         label: 'Status',
         valueOptions: STATUS_OPTIONS,
       },

@@ -77,7 +77,7 @@ const columns: ColumnDef<DiscountCodeRow>[] = [
     enableSorting: false,
   },
   {
-    id: 'status',
+    id: 'dc_status',
     accessorFn: (row) => row.status,
     header: 'Status',
     cell: ({ row }) => <DiscountCodeStatusBadge status={row.original.status} />,
@@ -164,7 +164,7 @@ export function DiscountCodesDataTable({
             ]
           : []),
         {
-          columnId: 'status',
+          columnId: 'dc_status',
           label: 'Status',
           valueOptions: ['Active', 'Scheduled', 'Expired', 'Inactive'],
         },

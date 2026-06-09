@@ -96,7 +96,7 @@ function buildColumns(
       },
     },
     {
-      id: 'status',
+      id: 'user_status',
       accessorFn: (row) => (row.disabled ? 'Disabled' : 'Active'),
       header: 'Status',
       cell: ({ row }) =>
@@ -530,7 +530,7 @@ export function UsersAdminClient({
           valueOptions: ROLES.map((r) => r),
         },
         {
-          columnId: 'status',
+          columnId: 'user_status',
           label: 'Status',
           valueOptions: ['Active', 'Disabled'],
         },
