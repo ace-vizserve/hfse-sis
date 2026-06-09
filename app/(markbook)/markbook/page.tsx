@@ -11,13 +11,11 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { unstable_cache } from 'next/cache';
 import Link from 'next/link';
 
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
-import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { PriorityPanel } from '@/components/dashboard/priority-panel';
 import { ChangeRequestPanel } from '@/components/markbook/change-request-panel';
@@ -44,7 +42,6 @@ import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { getRoleFromClaims } from '@/lib/auth/roles';
 import { isUserAssignedApprover } from '@/lib/sis/approvers/queries';
-import { markbookInsights } from '@/lib/dashboard/insights';
 import {
   formatRangeLabel,
   resolveRange,
@@ -157,7 +154,6 @@ export default async function MarkbookHome({
   const rangeInput = resolveRange(resolvedSearchParams, windows, ayCode);
 
   const [
-    stats,
     kpisResult,
     velocity,
     crVelocity,
@@ -170,7 +166,6 @@ export default async function MarkbookHome({
     drillRowSets,
     teacherVelocity,
   ] = await Promise.all([
-    ayId ? loadStats(ayId, ayCode) : Promise.resolve(null),
     canSeeAdmin ? getMarkbookKpisRange(rangeInput) : Promise.resolve(null),
     canSeeAdmin
       ? getGradeEntryVelocityRange(rangeInput)
@@ -266,18 +261,6 @@ export default async function MarkbookHome({
       : Promise.resolve(null),
   ]);
 
-  const insights = kpisResult
-    ? markbookInsights({
-        gradesEntered: kpisResult.current.gradesEntered,
-        gradesDelta: kpisResult.delta ?? undefined,
-        sheetsLocked: kpisResult.current.sheetsLocked,
-        sheetsTotal: kpisResult.current.sheetsTotal,
-        lockedPct: kpisResult.current.lockedPct,
-        changeRequestsPending: kpisResult.current.changeRequestsPending,
-        avgDecisionHours: kpisResult.current.avgDecisionHours,
-      })
-    : [];
-
   return (
     <PageShell>
       <DashboardHero
@@ -318,10 +301,6 @@ export default async function MarkbookHome({
       )}
 
       {registrarPriority && <PriorityPanel payload={registrarPriority} />}
-
-      {canSeeAdmin && insights.length > 0 && (
-        <InsightsPanel insights={insights} />
-      )}
 
       {/* Range-aware KPIs — new MetricCards driven by ComparisonToolbar */}
       {canSeeAdmin && kpisResult && ayCode && (
@@ -454,47 +433,6 @@ export default async function MarkbookHome({
           </section>
         )}
 
-      {/* Static school-wide counters — Markbook scope only. "Students enrolled"
-          and "Active sections" were dropped (Records-territory per KD #51);
-          "Publications live" was dropped because the actionable surface is
-          the publishing checklist on /report-cards, not a count card on the
-          Markbook dashboard (KD #75). Remaining: total sheets + locked %. */}
-      <div className="@container/main">
-        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2">
-          <StatCard
-            description="Grading sheets"
-            value={
-              stats ? formatNumber(stats.sheetsOpen + stats.sheetsLocked) : '—'
-            }
-            icon={ClipboardList}
-            footerTitle={
-              stats
-                ? `${formatNumber(stats.sheetsOpen)} open · ${formatNumber(stats.sheetsLocked)} locked`
-                : 'No data'
-            }
-            footerDetail="Across all terms"
-          />
-          <StatCard
-            description="% sheets locked"
-            value={
-              stats
-                ? formatPercent(
-                    stats.sheetsLocked,
-                    stats.sheetsOpen + stats.sheetsLocked
-                  )
-                : '—'
-            }
-            icon={Lock}
-            footerTitle={
-              stats && stats.sheetsOpen + stats.sheetsLocked > 0
-                ? `${stats.sheetsLocked} of ${stats.sheetsOpen + stats.sheetsLocked} sheets`
-                : 'No sheets yet'
-            }
-            footerDetail="Locked = finalized for parents"
-          />
-        </div>
-      </div>
-
       {canSeeAdmin && ayCode && (gradeDist || sheetProgress) && (
         <section className="grid gap-4 lg:grid-cols-3">
           {gradeDist && (
@@ -614,148 +552,6 @@ export default async function MarkbookHome({
         <span>Secure sign-in</span>
       </div>
     </PageShell>
-  );
-}
-
-type Stats = {
-  studentsActive: number;
-  sectionsActive: number;
-  sheetsOpen: number;
-  sheetsLocked: number;
-  publicationsActive: number;
-  publicationsScheduled: number;
-};
-
-async function loadStatsUncached(academicYearId: string): Promise<Stats> {
-  const service = createServiceClient();
-
-  const [sectionsRes, termsRes] = await Promise.all([
-    service
-      .from('sections')
-      .select('id', { count: 'exact' })
-      .eq('academic_year_id', academicYearId),
-    service.from('terms').select('id').eq('academic_year_id', academicYearId),
-  ]);
-
-  const sectionIds = (sectionsRes.data ?? []).map((r) => r.id as string);
-  const sectionsActive = sectionsRes.count ?? 0;
-  const termIds = (termsRes.data ?? []).map((r) => r.id as string);
-
-  const nowIso = new Date().toISOString();
-  type CountRes = { count: number | null };
-  const zero: Promise<CountRes> = Promise.resolve({ count: 0 });
-
-  const [
-    studentsRes,
-    sheetsOpenRes,
-    sheetsLockedRes,
-    pubActiveRes,
-    pubScheduledRes,
-  ] = await Promise.all([
-    sectionIds.length > 0
-      ? service
-          .from('section_students')
-          .select('*', { count: 'exact', head: true })
-          .eq('enrollment_status', 'active')
-          .in('section_id', sectionIds)
-      : zero,
-    termIds.length > 0
-      ? service
-          .from('grading_sheets')
-          .select('*', { count: 'exact', head: true })
-          .eq('is_locked', false)
-          .in('term_id', termIds)
-      : zero,
-    termIds.length > 0
-      ? service
-          .from('grading_sheets')
-          .select('*', { count: 'exact', head: true })
-          .eq('is_locked', true)
-          .in('term_id', termIds)
-      : zero,
-    sectionIds.length > 0
-      ? service
-          .from('report_card_publications')
-          .select('*', { count: 'exact', head: true })
-          .in('section_id', sectionIds)
-          .lte('publish_from', nowIso)
-          .gte('publish_until', nowIso)
-      : zero,
-    sectionIds.length > 0
-      ? service
-          .from('report_card_publications')
-          .select('*', { count: 'exact', head: true })
-          .in('section_id', sectionIds)
-          .gt('publish_from', nowIso)
-      : zero,
-  ]);
-
-  return {
-    studentsActive: studentsRes.count ?? 0,
-    sectionsActive,
-    sheetsOpen: sheetsOpenRes.count ?? 0,
-    sheetsLocked: sheetsLockedRes.count ?? 0,
-    publicationsActive: pubActiveRes.count ?? 0,
-    publicationsScheduled: pubScheduledRes.count ?? 0,
-  };
-}
-
-// AY-keyed cache wrapper (KD #46). The previous tuple `["dashboard-stats"]`
-// shared a single cache slot across every AY, so two users on different
-// AYs saw each other's stats and a single user switching AYs got stale
-// numbers for up to 60 seconds. Per-AY tag invalidation already exists
-// elsewhere via `markbook:${ayCode}` — wire it through here too.
-function loadStats(academicYearId: string, ayCode: string): Promise<Stats> {
-  return unstable_cache(
-    () => loadStatsUncached(academicYearId),
-    ['dashboard-stats', academicYearId],
-    { revalidate: 60, tags: ['dashboard-stats', `markbook:${ayCode}`] }
-  )();
-}
-
-function formatNumber(n: number): string {
-  return n.toLocaleString('en-SG');
-}
-
-function formatPercent(num: number, den: number): string {
-  if (den === 0) return '—';
-  const pct = Math.round((num / den) * 100);
-  return `${pct}%`;
-}
-
-function StatCard({
-  description,
-  value,
-  icon: Icon,
-  footerTitle,
-  footerDetail,
-}: {
-  description: string;
-  value: string;
-  icon: LucideIcon;
-  footerTitle: string;
-  footerDetail: string;
-}) {
-  return (
-    <Card className="@container/card">
-      <CardHeader>
-        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          {description}
-        </CardDescription>
-        <CardTitle className="font-serif text-[32px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]">
-          {value}
-        </CardTitle>
-        <CardAction>
-          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <Icon className="size-4" />
-          </div>
-        </CardAction>
-      </CardHeader>
-      <CardFooter className="flex-col items-start gap-1 text-sm">
-        <p className="font-medium text-foreground">{footerTitle}</p>
-        <p className="text-xs text-muted-foreground">{footerDetail}</p>
-      </CardFooter>
-    </Card>
   );
 }
 
