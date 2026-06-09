@@ -19,10 +19,6 @@ import {
   AlertTitle,
 } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import {
-  ActionList,
-  type ActionItem,
-} from '@/components/dashboard/action-list';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
@@ -39,10 +35,8 @@ import { RecordsDrillSheet } from '@/components/sis/drills/records-drill-sheet';
 import { RecentActivityFeed } from '@/components/sis/recent-activity-feed';
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -181,23 +175,6 @@ export default async function RecordsDashboard({
     enrollmentDelta: kpisResult.delta ?? undefined,
   });
 
-  // Expiring-doc action list: top N students whose docs expire soonest.
-  const expiringItems: ActionItem[] = expiring.slice(0, 6).map((row) => ({
-    label: row.studentName,
-    sublabel: `${row.slotLabel}`,
-    meta:
-      row.daysUntilExpiry < 0
-        ? `${Math.abs(row.daysUntilExpiry)}d overdue`
-        : `${row.daysUntilExpiry}d left`,
-    severity:
-      row.daysUntilExpiry < 0
-        ? 'bad'
-        : row.daysUntilExpiry <= 14
-          ? 'warn'
-          : 'info',
-    href: `/records/students/by-enrolee/${row.enroleeNumber}`,
-  }));
-
   return (
     <PageShell>
       <DashboardHero
@@ -310,8 +287,10 @@ export default async function RecordsDashboard({
           deltaGoodWhen="down"
           subtext={
             kpisResult.comparison
-              ? `${kpisResult.comparison.withdrawalsInRange} prior`
-              : undefined
+              ? `${kpisResult.comparison.withdrawalsInRange} prior · ${summary.withdrawn.toLocaleString(
+                  'en-SG'
+                )} all-time`
+              : `${summary.withdrawn.toLocaleString('en-SG')} all-time`
           }
           drillSheet={() => (
             <RecordsDrillSheet
@@ -327,7 +306,7 @@ export default async function RecordsDashboard({
           value={kpisResult.current.activeEnrolled}
           icon={GraduationCap}
           intent="good"
-          subtext="Total headcount"
+          subtext={`${summary.enrolled.toLocaleString('en-SG')} all-time (active + conditional)`}
           drillSheet={() => (
             <RecordsDrillSheet target="active-enrolled" ayCode={selectedAy} />
           )}
@@ -386,33 +365,6 @@ export default async function RecordsDashboard({
         )}
       </section>
 
-      {/* All-time AY counters — enrolled-only per KD #51. "Total applications"
-          previously surfaced here; dropped because it conflated pre-enrolment
-          funnel state (admissions territory) with the enrolled-only Records
-          dashboard. Funnel counts live on /admissions. */}
-      <section className="@container/main">
-        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-3">
-          <SummaryStat
-            label="Enrolled (all)"
-            value={summary.enrolled}
-            icon={GraduationCap}
-            footnote="Active + conditional"
-          />
-          <SummaryStat
-            label="Withdrawn (all)"
-            value={summary.withdrawn}
-            icon={UserMinus}
-            footnote="Left during the year"
-          />
-          <SummaryStat
-            label="Doc expiring ≤ 60d"
-            value={kpisResult.current.expiringSoon}
-            icon={History}
-            footnote="From today"
-          />
-        </div>
-      </section>
-
       <section className="grid gap-4 md:grid-cols-3">
         <QuickLink
           href={`/records/students?ay=${selectedAy}`}
@@ -450,26 +402,14 @@ export default async function RecordsDashboard({
         <ExpiringDocsDrillCard rows={expiring} ayCode={selectedAy} />
       </section>
 
-      {/* Operational action lists — registrar-only. Oversight roles see the
-          underlying counts in the KPI grid + drill sheets, but the
-          chase-style action list + class-assignment readiness card frame
+      {/* Class-assignment readiness — registrar-only. Oversight roles see the
+          underlying counts in the KPI grid + drill sheets, but this card frames
           the data as work to do, which doesn't fit the oversight role. */}
       {isOperational && (
-        <>
-          <ActionList
-            id="recent-withdrawals"
-            title="Documents to collect"
-            description="Students with documents expiring soon or already overdue."
-            items={expiringItems}
-            emptyLabel="No documents expiring in range."
-            viewAllHref={`/p-files?ay=${selectedAy}`}
-          />
-
-          <ClassAssignmentReadinessCard
-            data={classAssignment}
-            ayCode={selectedAy}
-          />
-        </>
+        <ClassAssignmentReadinessCard
+          data={classAssignment}
+          ayCode={selectedAy}
+        />
       )}
 
       <RecentActivityFeed rows={activity} />
@@ -483,39 +423,6 @@ export default async function RecordsDashboard({
         <span>Refreshes every 10 minutes</span>
       </div>
     </PageShell>
-  );
-}
-
-function SummaryStat({
-  label,
-  value,
-  icon: Icon,
-  footnote,
-}: {
-  label: string;
-  value: number;
-  icon: React.ComponentType<{ className?: string }>;
-  footnote: string;
-}) {
-  return (
-    <Card className="@container/card">
-      <CardHeader>
-        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          {label}
-        </CardDescription>
-        <CardTitle className="font-serif text-[32px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]">
-          {value.toLocaleString('en-SG')}
-        </CardTitle>
-        <CardAction>
-          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <Icon className="size-4" />
-          </div>
-        </CardAction>
-      </CardHeader>
-      <CardFooter className="text-xs text-muted-foreground">
-        {footnote}
-      </CardFooter>
-    </Card>
   );
 }
 
