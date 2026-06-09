@@ -240,10 +240,10 @@ export default async function EvaluationSectionsPickerPage({
             <p className="text-sm leading-relaxed text-muted-foreground">
               Registrar sets the virtue theme in{' '}
               <Link
-                href="/sis/ay-setup"
+                href="/evaluation/virtue-themes"
                 className="font-medium text-brand-amber underline underline-offset-2"
               >
-                SIS Admin → AY Setup → Dates
+                Evaluation → Virtue themes
               </Link>
               . Until it&apos;s set,{' '}
               {isTeacher

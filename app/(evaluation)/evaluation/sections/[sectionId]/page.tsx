@@ -186,10 +186,10 @@ export default async function EvaluationSectionRosterPage({
               <>
                 Set it in{' '}
                 <Link
-                  href="/sis/ay-setup"
+                  href="/evaluation/virtue-themes"
                   className="font-medium underline underline-offset-2"
                 >
-                  SIS Admin → AY Setup → Dates
+                  Evaluation → Virtue themes
                 </Link>
                 . Editing stays possible for registrar+ in the meantime.
               </>
