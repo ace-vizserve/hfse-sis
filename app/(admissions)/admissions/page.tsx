@@ -1,9 +1,16 @@
 import {
+  Archive,
   ArrowLeft,
   ArrowRight,
+  CalendarClock,
   ChartBar,
+  FileCheck,
   FileStack,
+  Handshake,
+  History,
   Hourglass,
+  Plane,
+  Stethoscope,
   TrendingUp,
   UserPlus,
 } from 'lucide-react';
@@ -683,29 +690,73 @@ export default async function AdmissionsDashboard({
         />
       </section>
 
-      {/* Referral + browse — two-up footer row */}
-      <section className="grid gap-4 lg:grid-cols-2">
+      {/* Referral (narrow) + browse hub (wide, grid of quick-links) */}
+      <section className="grid gap-4 lg:grid-cols-3">
         <ReferralDrillCard
           data={referral}
           ayCode={selectedAy}
           drillRows={drillRows}
         />
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
               Browse
             </CardDescription>
             <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-              Applications
+              Jump to a surface
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <QuickLink
-              href={`/admissions/applications?ay=${selectedAy}`}
-              icon={FileStack}
-              title="All applications"
-              description="Every application in flight."
-            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <QuickLink
+                href={`/admissions/applications?ay=${selectedAy}`}
+                icon={FileStack}
+                title="All applications"
+                description="Every application in flight."
+              />
+              <QuickLink
+                href={`/admissions/applications/closed?ay=${selectedAy}`}
+                icon={Archive}
+                title="Closed applications"
+                description="Withdrawn & cancelled archive."
+              />
+              <QuickLink
+                href={`/admissions/document-validation?ay=${selectedAy}`}
+                icon={FileCheck}
+                title="Document validation"
+                description="Review parent uploads waiting on you."
+              />
+              <QuickLink
+                href="/admissions/upcoming/applications"
+                icon={CalendarClock}
+                title="Upcoming applications"
+                description="Early-bird intake for next year."
+              />
+              <QuickLink
+                href={`/admissions/cohorts/stp?ay=${selectedAy}`}
+                icon={Plane}
+                title="Student Pass cohort"
+                description="ICA Student Pass applicants."
+              />
+              <QuickLink
+                href={`/admissions/cohorts/medical?ay=${selectedAy}`}
+                icon={Stethoscope}
+                title="Medical cohort"
+                description="Health & special-needs notes."
+              />
+              <QuickLink
+                href={`/admissions/cohorts/promised?ay=${selectedAy}`}
+                icon={Handshake}
+                title="Promised documents"
+                description="Files parents committed to send."
+              />
+              <QuickLink
+                href={`/admissions/audit-log?ay=${selectedAy}`}
+                icon={History}
+                title="Audit log"
+                description="Recent admissions changes."
+              />
+            </div>
           </CardContent>
         </Card>
       </section>
