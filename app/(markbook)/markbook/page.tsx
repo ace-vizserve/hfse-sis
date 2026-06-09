@@ -2,7 +2,6 @@ import {
   ArrowUpRight,
   BarChart3,
   ClipboardList,
-  Clock,
   FileText,
   History,
   Lock,
@@ -22,7 +21,6 @@ import { ChangeRequestPanel } from '@/components/markbook/change-request-panel';
 import {
   GradeDistributionDrillCard,
   PublicationCoverageDrillCard,
-  SheetProgressDrillCard,
 } from '@/components/markbook/drills/chart-drill-cards';
 import { MarkbookDrillSheet } from '@/components/markbook/drills/markbook-drill-sheet';
 import { SheetReadinessCard } from '@/components/markbook/drills/sheet-readiness-card';
@@ -51,7 +49,6 @@ import {
 import { getDashboardWindows } from '@/lib/dashboard/windows';
 import {
   getChangeRequestSummary,
-  getChangeRequestVelocityRange,
   getGradeDistribution,
   getGradeEntryVelocityRange,
   getMarkbookKpisRange,
@@ -59,7 +56,6 @@ import {
   getMarkbookTeacherPriority,
   getPublicationCoverage,
   getRecentMarkbookActivity,
-  getSheetLockProgressByTerm,
 } from '@/lib/markbook/dashboard';
 import { buildAllRowSets, getTeacherEntryVelocity } from '@/lib/markbook/drill';
 import { createClient } from '@/lib/supabase/server';
@@ -156,9 +152,7 @@ export default async function MarkbookHome({
   const [
     kpisResult,
     velocity,
-    crVelocity,
     gradeDist,
-    sheetProgress,
     changeRequests,
     pubCoverage,
     activity,
@@ -170,13 +164,7 @@ export default async function MarkbookHome({
     canSeeAdmin
       ? getGradeEntryVelocityRange(rangeInput)
       : Promise.resolve(null),
-    canSeeAdmin
-      ? getChangeRequestVelocityRange(rangeInput)
-      : Promise.resolve(null),
     canSeeAdmin && ayId ? getGradeDistribution(ayId) : Promise.resolve(null),
-    canSeeAdmin && ayId
-      ? getSheetLockProgressByTerm(ayId)
-      : Promise.resolve(null),
     canSeeAdmin ? getChangeRequestSummary(ayCode, 30) : Promise.resolve(null),
     canSeeAdmin && ayId ? getPublicationCoverage(ayId) : Promise.resolve(null),
     canSeeAdmin ? getRecentMarkbookActivity(8) : Promise.resolve(null),
@@ -304,7 +292,7 @@ export default async function MarkbookHome({
 
       {/* Range-aware KPIs — new MetricCards driven by ComparisonToolbar */}
       {canSeeAdmin && kpisResult && ayCode && (
-        <section className="grid gap-4 xl:grid-cols-4">
+        <section className="grid gap-4 md:grid-cols-3">
           <MetricCard
             label="Grades entered"
             value={kpisResult.current.gradesEntered}
@@ -360,109 +348,46 @@ export default async function MarkbookHome({
               />
             )}
           />
-          <MetricCard
-            label="Avg decision time"
-            value={kpisResult.current.avgDecisionHours ?? '—'}
-            format="hours"
-            icon={Clock}
-            intent="default"
-            subtext={
-              kpisResult.comparison?.avgDecisionHours != null
-                ? `${kpisResult.comparison.avgDecisionHours.toFixed(1)}h prior`
-                : kpisResult.comparison
-                  ? 'No prior decisions'
-                  : undefined
-            }
-            drillSheet={() => (
-              <MarkbookDrillSheet
-                target="change-requests"
-                segment="decided"
-                ayCode={ayCode}
-                initialFrom={rangeInput.from}
-                initialTo={rangeInput.to}
-                initialChangeRequests={drillRowSets?.changeRequests}
-              />
-            )}
-          />
         </section>
       )}
 
-      {/* Row 4 — velocity trends side-by-side (grade entry + change requests) */}
-      {canSeeAdmin &&
-        ((velocity && velocity.current.length > 1) ||
-          (crVelocity && crVelocity.current.length > 1)) && (
-          <section className="grid gap-4 lg:grid-cols-2">
-            {velocity && velocity.current.length > 1 && (
-              <Card>
-                <CardHeader>
-                  <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                    Grade entry velocity
-                  </CardDescription>
-                  <CardTitle className="font-serif text-xl">
-                    Entries per day
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <TrendChart
-                    label="Entries"
-                    current={velocity.current}
-                    comparison={velocity.comparison}
-                  />
-                </CardContent>
-              </Card>
-            )}
-            {crVelocity && crVelocity.current.length > 1 && (
-              <Card>
-                <CardHeader>
-                  <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                    Change requests
-                  </CardDescription>
-                  <CardTitle className="font-serif text-xl">
-                    Requests per day
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <TrendChart
-                    label="Requests"
-                    current={crVelocity.current}
-                    comparison={crVelocity.comparison}
-                  />
-                </CardContent>
-              </Card>
-            )}
-          </section>
-        )}
-
-      {canSeeAdmin && ayCode && (gradeDist || sheetProgress) && (
-        <section className="grid gap-4 lg:grid-cols-3">
-          {gradeDist && (
-            <div className="lg:col-span-2">
-              <GradeDistributionDrillCard
-                data={gradeDist}
-                termLabel={
-                  currentTerm != null ? `Term ${currentTerm}` : 'Current term'
-                }
-                ayCode={ayCode}
-                rangeFrom={rangeInput.from}
-                rangeTo={rangeInput.to}
+      {/* Grade entry velocity — the one legit activity trend (full width) */}
+      {canSeeAdmin && velocity && velocity.current.length > 1 && (
+        <section>
+          <Card>
+            <CardHeader>
+              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                Grade entry velocity
+              </CardDescription>
+              <CardTitle className="font-serif text-xl">
+                Entries per day
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TrendChart
+                label="Entries"
+                current={velocity.current}
+                comparison={velocity.comparison}
               />
-            </div>
-          )}
-          {sheetProgress && (
-            <div className="lg:col-span-1">
-              <SheetProgressDrillCard
-                data={sheetProgress}
-                ayCode={ayCode}
-                initialSheets={drillRowSets?.sheets}
-              />
-            </div>
-          )}
+            </CardContent>
+          </Card>
         </section>
       )}
 
-      {canSeeAdmin && ayCode && (changeRequests || pubCoverage) && (
+      {/* Grade distribution + publication coverage */}
+      {canSeeAdmin && ayCode && (gradeDist || pubCoverage) && (
         <section className="grid gap-4 lg:grid-cols-2">
-          {changeRequests && <ChangeRequestPanel summary={changeRequests} />}
+          {gradeDist && (
+            <GradeDistributionDrillCard
+              data={gradeDist}
+              termLabel={
+                currentTerm != null ? `Term ${currentTerm}` : 'Current term'
+              }
+              ayCode={ayCode}
+              rangeFrom={rangeInput.from}
+              rangeTo={rangeInput.to}
+            />
+          )}
           {pubCoverage && (
             <PublicationCoverageDrillCard
               data={pubCoverage}
@@ -473,12 +398,19 @@ export default async function MarkbookHome({
         </section>
       )}
 
-      {canSeeAdmin && ayCode && drillRowSets && (
+      {/* Change requests (per-status + avg-decision) + per-section sheet readiness */}
+      {canSeeAdmin && ayCode && (changeRequests || drillRowSets) && (
         <section className="grid gap-4 lg:grid-cols-2">
-          <SheetReadinessCard sheets={drillRowSets.sheets} ayCode={ayCode} />
-          {teacherVelocity && (
-            <TeacherEntryVelocityCard data={teacherVelocity} ayCode={ayCode} />
+          {changeRequests && <ChangeRequestPanel summary={changeRequests} />}
+          {drillRowSets && (
+            <SheetReadinessCard sheets={drillRowSets.sheets} ayCode={ayCode} />
           )}
+        </section>
+      )}
+
+      {canSeeAdmin && ayCode && teacherVelocity && (
+        <section>
+          <TeacherEntryVelocityCard data={teacherVelocity} ayCode={ayCode} />
         </section>
       )}
 
