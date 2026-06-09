@@ -399,10 +399,14 @@ function HardBlockerRow({
 
 export function PublishWindowPanel({
   sectionId,
+  sectionName,
   levelId,
   terms,
 }: {
   sectionId: string;
+  /** Bare section name — drives the exact-match `grading.section` facet on the
+   *  grading deep-link (the facet matches the section NAME, not the id). */
+  sectionName: string;
   /** Level the section belongs to — needed for the precise Masterfile
    *  deep-link (`?level=` is required there; `?class=` filters within it). */
   levelId: string | null;
@@ -633,9 +637,10 @@ export function PublishWindowPanel({
       1;
   }
 
-  // Canonical deep-links (KD #81). Grading filters by the exact section id;
-  // Masterfile needs the level (it falls back to the first level otherwise).
-  const gradingHref = `/markbook/grading?section=${sectionId}`;
+  // Canonical deep-links (KD #81). Grading filters by the exact section name
+  // via the namespaced `grading.section` facet (KD #84); Masterfile needs the
+  // level (it falls back to the first level otherwise).
+  const gradingHref = `/markbook/grading?grading.section=${encodeURIComponent(sectionName)}`;
   const masterfileHref = levelId
     ? `/records/academic-summary?level=${levelId}&class=${sectionId}`
     : '/records/academic-summary';

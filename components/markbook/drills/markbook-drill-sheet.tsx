@@ -208,7 +208,7 @@ function buildEntryColumns(
           header: DRILL_COLUMN_LABELS.sectionName,
           cell: ({ row }) => (
             <Link
-              href={`/markbook/grading?q=${encodeURIComponent(row.original.sectionName)}`}
+              href={`/markbook/grading?grading.section=${encodeURIComponent(row.original.sectionName)}`}
               className="text-sm text-foreground transition-colors hover:text-primary hover:underline underline-offset-4"
             >
               {row.original.sectionName}
@@ -386,12 +386,18 @@ function buildSheetColumns(
           accessorKey: 'sectionName',
           header: DRILL_COLUMN_LABELS.sectionName,
           cell: ({ row }) => {
+            // Namespaced filter params (KD #84 — the grading DataTable reads
+            // its url-state under the `grading.` prefix). `grading.section` is
+            // an exact-match facet; `grading.subject`/`grading.term` values
+            // mirror the table's cell values (subject name + term.label).
             const p: Record<string, string> = {
-              q: row.original.sectionName,
-              status: row.original.isLocked ? 'locked' : 'open',
+              'grading.section': row.original.sectionName,
+              'grading.status': row.original.isLocked ? 'locked' : 'open',
             };
-            if (row.original.subjectName) p.subject = row.original.subjectName;
-            if (row.original.termLabel) p.term = row.original.termLabel;
+            if (row.original.subjectName)
+              p['grading.subject'] = row.original.subjectName;
+            if (row.original.termLabel)
+              p['grading.term'] = row.original.termLabel;
             return (
               <Link
                 href={`/markbook/grading?${new URLSearchParams(p).toString()}`}
@@ -514,7 +520,7 @@ function buildChangeRequestColumns(
           header: DRILL_COLUMN_LABELS.sectionName,
           cell: ({ row }) => (
             <Link
-              href={`/markbook/grading?q=${encodeURIComponent(row.original.sectionName)}`}
+              href={`/markbook/grading?grading.section=${encodeURIComponent(row.original.sectionName)}`}
               className="text-sm text-foreground transition-colors hover:text-primary hover:underline underline-offset-4"
             >
               {row.original.sectionName}

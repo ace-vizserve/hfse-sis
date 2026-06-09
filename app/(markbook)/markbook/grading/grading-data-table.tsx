@@ -125,6 +125,12 @@ const COLUMNS: ColumnDef<GradingSheetRow>[] = [
         {row.original.section}
       </IdentifierLink>
     ),
+    filterFn: (row, id, value) => {
+      if (!value || (Array.isArray(value) && value.length === 0)) return true;
+      return Array.isArray(value)
+        ? value.includes(row.getValue(id))
+        : row.getValue(id) === value;
+    },
   },
   {
     accessorKey: 'subject',
@@ -422,6 +428,7 @@ export function GradingDataTable({
 
   const facets = useMemo<FacetConfig[]>(
     () => [
+      { columnId: 'section', label: 'Section' },
       {
         columnId: 'school_level',
         label: 'School level',

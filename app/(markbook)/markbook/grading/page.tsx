@@ -82,11 +82,10 @@ export default async function GradingListPage({
   searchParams,
 }: {
   searchParams?: Promise<{
-    // Server-side scope: the publish-checklist / drill deep-link (KD #75/#81)
-    // lands here with ?section=<id> to scope the stat cards + roster.
-    section?: string;
     // The grading DataTable's namespaced url-state search key (KD #84) — read so
     // a shared/bookmarked link seeds the search box on the server render too.
+    // Section deep-links now drive the client-side `grading.section` facet
+    // (KD #84) rather than a server-side scope, so there's no `?section=` here.
     'grading.q'?: string;
   }>;
 }) {
@@ -275,12 +274,10 @@ export default async function GradingListPage({
       });
   }
 
-  // `?section=<id>` deep-link (KD #81) — scope the whole page (rows + stat
-  // cards) to one section's sheets. Falls through to all sheets when absent.
-  const allRowsUnscoped = (sheets ?? []) as SheetRow[];
-  const allRows = sp?.section
-    ? allRowsUnscoped.filter((s) => first(s.section)?.id === sp.section)
-    : allRowsUnscoped;
+  // All current-AY sheets. Section deep-links now drive the client-side
+  // `grading.section` facet (KD #84) instead of a server-side scope, so the
+  // page (rows + stat cards) is AY-wide and the table filters in the browser.
+  const allRows = (sheets ?? []) as SheetRow[];
 
   // Resolve teacher assignments for the visible sections via
   // `teacher_assignments` (KD #3 — canonical source for SIS-Admin's

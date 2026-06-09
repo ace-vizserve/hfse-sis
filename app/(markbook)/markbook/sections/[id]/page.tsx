@@ -199,7 +199,7 @@ export default async function SectionRosterPage({
             icon={BookOpen}
             footerTitle="Open the list"
             footerDetail="Filtered to this section"
-            href={`/markbook/grading?q=${encodeURIComponent(section.name)}`}
+            href={`/markbook/grading?grading.section=${encodeURIComponent(section.name)}`}
           />
         </div>
       </div>
@@ -220,7 +220,9 @@ export default async function SectionRosterPage({
           </Button>
         )}
         <Button asChild variant="outline" size="sm">
-          <Link href={`/markbook/grading?q=${section.name}`}>
+          <Link
+            href={`/markbook/grading?grading.section=${encodeURIComponent(section.name)}`}
+          >
             <BookOpen className="h-4 w-4" />
             Grading sheets
             <ArrowUpRight className="h-3 w-3" />

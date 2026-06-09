@@ -97,7 +97,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
     quickActionByRole: {
       teacher: {
         label: 'Open my sheets',
-        href: '/markbook/grading?mine=1',
+        href: '/markbook/grading?grading.mine=1',
         icon: ClipboardList,
       },
       registrar: MARKBOOK_QUICK_REGISTRAR,

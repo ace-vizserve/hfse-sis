@@ -204,6 +204,7 @@ export default async function ReportCardsListPage({
 
   // Section-detail data (only when a section is selected)
   let selectedLabel: string | null = null;
+  let selectedSectionName: string | null = null;
   let selectedLevelId: string | null = null;
   let rosterRows: ReportCardsRosterRow[] = [];
   let activeCount = 0;
@@ -224,6 +225,7 @@ export default async function ReportCardsListPage({
           | null
       );
       selectedLabel = `${lvl?.label ?? ''} ${sec.name}`.trim();
+      selectedSectionName = sec.name;
       selectedLevelId = lvl?.id ?? null;
     }
 
@@ -443,6 +445,7 @@ export default async function ReportCardsListPage({
           {selectedLabel && termList.length > 0 && (
             <PublishWindowPanel
               sectionId={q.section_id}
+              sectionName={selectedSectionName ?? selectedLabel}
               levelId={selectedLevelId}
               terms={termList}
             />

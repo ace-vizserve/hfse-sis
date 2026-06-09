@@ -546,7 +546,7 @@ export function BulkPublishDialog({
                         Opens a new tab so the bulk dialog stays open;
                         stopPropagation prevents the label from toggling the row. */}
                     <a
-                      href={`/markbook/grading?section=${s.id}`}
+                      href={`/markbook/grading?grading.section=${encodeURIComponent(s.name)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}

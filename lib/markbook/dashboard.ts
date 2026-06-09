@@ -1096,7 +1096,7 @@ async function loadMarkbookTeacherPriorityUncached(
     .map(([sectionId, info]) => ({
       label: info.name,
       count: info.count,
-      href: `/markbook/grading?q=${encodeURIComponent(info.name)}`,
+      href: `/markbook/grading?grading.section=${encodeURIComponent(info.name)}`,
       severity: 'warn' as const,
     }));
 
@@ -1201,7 +1201,12 @@ async function loadMarkbookRegistrarPriorityUncached(
     .map((t) => ({
       label: `Term ${t.termNumber}`,
       count: t.unlocked,
-      href: `/markbook/grading?status=open&term=Term+${t.termNumber}+—+${input.ayCode}`,
+      // Namespaced grading-table filters (KD #84). `grading.term` must equal a
+      // real `term` cell value — the term row's `label`, formatted server-side
+      // as `Term {n} — {ayCode}` (migration 030/031: 'Term ' || n || ' — ' || code).
+      href: `/markbook/grading?grading.status=open&grading.term=${encodeURIComponent(
+        `Term ${t.termNumber} — ${input.ayCode}`
+      )}`,
       severity: 'warn' as const,
     }));
 
