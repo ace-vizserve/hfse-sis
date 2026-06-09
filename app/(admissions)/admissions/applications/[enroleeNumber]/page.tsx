@@ -113,7 +113,28 @@ export default async function SisStudentDetailPage({
     freshenAyDocuments(selectedAy),
     getStudentDetail(selectedAy, enroleeNumber),
   ]);
-  if (!detail) notFound();
+
+  // Lenient AY resolution. The `enroleeNumber` in the path identifies WHO; the
+  // `?ay` query is only a hint for which year's tables to read. If the applicant
+  // isn't in the hinted AY — e.g. the operator switched AY while on this page,
+  // leaving a stale `?ay` against an enrolee from another year — don't 404.
+  // Find the AY this enrolee actually lives in and self-correct the URL so the
+  // back-link, tabs, and every AY-scoped sub-fetch stay consistent. (Per Hard
+  // Rule #4 the enroleeNumber is AY-scoped, so it resolves to a single AY.)
+  if (!detail) {
+    const otherAys = ayCodes.filter((ay) => ay !== selectedAy);
+    const candidates = await Promise.all(
+      otherAys.map((ay) => getStudentDetail(ay, enroleeNumber))
+    );
+    const foundIdx = candidates.findIndex((c) => c != null);
+    if (foundIdx === -1) notFound();
+    const resolvedAy = otherAys[foundIdx];
+    const q = new URLSearchParams({ ay: resolvedAy });
+    if (tabParam) q.set('tab', tabParam);
+    redirect(
+      `/admissions/applications/${encodeURIComponent(enroleeNumber)}?${q.toString()}`
+    );
+  }
 
   const { application, status, documents } = detail;
 
