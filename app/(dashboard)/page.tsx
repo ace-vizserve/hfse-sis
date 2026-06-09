@@ -40,9 +40,9 @@ export default async function Home() {
   const { role, email } = sessionUser;
 
   // Roles with 0 or 1 module accesses skip the picker — there's nothing to
-  // pick. Everyone else (teacher, registrar, school_admin, admin, superadmin)
+  // pick. Everyone else (teacher, registrar, school_admin, superadmin)
   // sees the centered tile picker, scoped to the modules they can open.
-  if (!role) redirect('/parent');
+  if (!role) redirect('/login');
   if (role === 'p-file') redirect('/p-files');
   if (role === 'admissions') redirect('/admissions');
   // Only modules the role can actually open are rendered — disabled tiles

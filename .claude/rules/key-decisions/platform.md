@@ -28,7 +28,7 @@ Email via Resend is best-effort; no-op without `RESEND_API_KEY`; idempotent via 
 
 ### KD #22
 
-Three Supabase clients, strict separation: server (cookie-scoped, RLS-enforced), service (bypass, server-only), browser (rare — only `/parent/enter`).
+Three Supabase clients, strict separation: server (cookie-scoped, RLS-enforced), service (bypass, server-only), browser (rare — only for staff login sign-in, `/account` change-password, and sidebar sign-out; the old `/parent/enter` use-case was removed with the in-SIS parent surface).
 
 ### KD #23
 
@@ -46,7 +46,7 @@ Dates: ISO 8601 UTC in storage/transit; local formatting at render via `toLocale
 
 ### KD #33
 
-Module switcher visible to `school_admin`/`admin`/`superadmin`/`registrar`; teachers + `p-file` users locked. `currentModule` type includes `null` for neutral pages.
+Module switcher visibility is `allowedModules.length > 1` (`components/module-sidebar/sidebar-header.tsx::canSwitch`). Roles with access to multiple modules — teacher (markbook/attendance/evaluation), registrar, school_admin, superadmin — see the popover switcher. Roles effectively locked to a single module (p-file → p-files only, admissions → admissions only) see a non-interactive brand tile instead. The retired `admin` role no longer exists (see KD #39). `currentModule` type includes `null` for neutral pages.
 
 ### KD #35
 
@@ -70,7 +70,7 @@ Records at `/records/*`; SIS Admin at `/sis/*`. Internal identifiers (`lib/sis/*
 
 ### KD #43
 
-Markbook at `/markbook/*`; `/` is a neutral peer-module picker. Tile picker scoped via `isRouteAllowed()` so each role only sees modules they can open. Forced redirects only when the picker would be useless: `null` → `/parent`, `p-file` → `/p-files`, `admissions` → `/admissions`. Everyone else lands on the picker.
+Markbook at `/markbook/*`; `/` is a neutral peer-module picker. Tile picker scoped via `isRouteAllowed()` so each role only sees modules they can open. Forced redirects only when the picker would be useless: `null`-role → `/login` (no SIS home; proxy already bounces null-role sessions to re-authenticate), `p-file` → `/p-files`, `admissions` → `/admissions`. Everyone else lands on the picker.
 
 ### KD #52
 
