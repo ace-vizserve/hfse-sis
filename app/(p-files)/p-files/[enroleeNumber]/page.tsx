@@ -105,7 +105,24 @@ export default async function StudentDocumentDetailPage({
     freshenAyDocuments(selectedAy),
     isStudentEnrolled(selectedAy, enroleeNumber),
   ]);
-  if (!enrolled) notFound();
+
+  // Lenient AY resolution (mirrors /admissions/applications/[enroleeNumber]).
+  // The enroleeNumber identifies WHO; ?ay is only a hint for which year's tables
+  // to read. If this enrolee isn't enrolled in the hinted AY — e.g. the operator
+  // switched AY, leaving a stale ?ay — don't 404: find the AY where they ARE
+  // enrolled and self-correct the URL. enroleeNumber is AY-scoped (Hard Rule #4),
+  // so it resolves to a single AY.
+  if (!enrolled) {
+    const otherAys = ayCodes.filter((ay) => ay !== selectedAy);
+    const found = await Promise.all(
+      otherAys.map((ay) => isStudentEnrolled(ay, enroleeNumber))
+    );
+    const idx = found.findIndex(Boolean);
+    if (idx === -1) notFound();
+    redirect(
+      `/p-files/${encodeURIComponent(enroleeNumber)}?ay=${encodeURIComponent(otherAys[idx])}`
+    );
+  }
 
   const student = await getStudentDocumentDetail(selectedAy, enroleeNumber);
   if (!student) {
