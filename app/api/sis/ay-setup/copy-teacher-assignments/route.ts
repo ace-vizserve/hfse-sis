@@ -3,6 +3,7 @@
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
+import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
 // POST /api/sis/ay-setup/copy-teacher-assignments
 // Body: { sourceAyCode, targetAyCode }
@@ -85,6 +86,13 @@ export async function POST(request: NextRequest) {
       ...result,
     },
   });
+
+  // Bulk-copied assignments scope the target AY's grading-sheet lists,
+  // evaluation sections, and attendance section drills — bust those tags so the
+  // newly-assigned teachers show up immediately (not after the 60s TTL).
+  invalidateDrillTags('markbook', targetAyCode);
+  invalidateDrillTags('evaluation', targetAyCode);
+  invalidateDrillTags('attendance', targetAyCode);
 
   return NextResponse.json({ ok: true, ...result });
 }

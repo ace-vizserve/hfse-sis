@@ -5,6 +5,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { TermDatesSchema } from '@/lib/schemas/ay-setup';
 import { resyncTermCalendarWindow } from '@/lib/attendance/calendar';
+import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
 // PATCH /api/sis/ay-setup/terms/[termId]
 //
@@ -172,6 +173,23 @@ export async function PATCH(
         after: { grading_lock_date: gradingLockDate },
       },
     });
+  }
+
+  // Term windows feed the attendance + markbook dashboards/drills (`unstable_cache`d).
+  // Only the dates are a cached input — virtue theme / grading-lock are read by
+  // dynamic (uncached) routes — so bust those two modules only when the dates
+  // actually moved (a virtue-only / lock-only save shouldn't churn the cache).
+  if (datesChanged) {
+    const { data: ay } = await service
+      .from('academic_years')
+      .select('ay_code')
+      .eq('id', before.academic_year_id)
+      .maybeSingle();
+    const ayCode = (ay as { ay_code: string } | null)?.ay_code ?? null;
+    if (ayCode) {
+      invalidateDrillTags('attendance', ayCode);
+      invalidateDrillTags('markbook', ayCode);
+    }
   }
 
   return NextResponse.json({ ok: true });

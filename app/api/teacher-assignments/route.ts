@@ -3,6 +3,34 @@ import { requireRole } from '@/lib/auth/require-role';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
+import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+// Teacher assignments scope per-section grading-sheet lists (markbook),
+// evaluation sections, and attendance section drills — all `unstable_cache`d.
+// A change must bust those three modules' tags for the section's AY so the
+// next dashboard/drill read is fresh (not stale until the 60s TTL backstop).
+// Best-effort: never fail the mutation if the AY lookup hiccups.
+async function invalidateForSection(
+  service: SupabaseClient,
+  sectionId: string
+): Promise<void> {
+  const { data } = await service
+    .from('sections')
+    .select('academic_year:academic_years(ay_code)')
+    .eq('id', sectionId)
+    .maybeSingle();
+  const rel = (
+    data as {
+      academic_year: { ay_code: string } | { ay_code: string }[] | null;
+    } | null
+  )?.academic_year;
+  const ayCode = (Array.isArray(rel) ? rel[0]?.ay_code : rel?.ay_code) ?? null;
+  if (!ayCode) return;
+  invalidateDrillTags('markbook', ayCode);
+  invalidateDrillTags('evaluation', ayCode);
+  invalidateDrillTags('attendance', ayCode);
+}
 
 // GET /api/teacher-assignments?section_id=... â€” list assignments.
 // Managers (registrar+) see all; any other authenticated user can request
@@ -132,6 +160,8 @@ export async function POST(request: NextRequest) {
       role: data.role,
     },
   });
+
+  await invalidateForSection(service, data.section_id);
 
   return NextResponse.json({ assignment: data });
 }

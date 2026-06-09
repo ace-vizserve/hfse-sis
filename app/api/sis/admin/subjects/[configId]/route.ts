@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { SubjectConfigUpdateSchema } from '@/lib/schemas/subject-config';
+import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
 // PATCH /api/sis/admin/subjects/[configId]
 //
@@ -114,6 +115,17 @@ export async function PATCH(
         (syncResult as { updated_sheets?: number } | null)?.updated_sheets ?? 0,
     },
   });
+
+  // Weights + slot maxes feed the cached markbook masterfile/drill, and the
+  // RPC just resynced unlocked sheets — bust the markbook tags for this AY so
+  // the change shows on the next read (not after the 60s TTL). Best-effort.
+  const { data: ay } = await service
+    .from('academic_years')
+    .select('ay_code')
+    .eq('id', before.academic_year_id)
+    .maybeSingle();
+  const ayCode = (ay as { ay_code: string } | null)?.ay_code ?? null;
+  if (ayCode) invalidateDrillTags('markbook', ayCode);
 
   return NextResponse.json({ ok: true });
 }
