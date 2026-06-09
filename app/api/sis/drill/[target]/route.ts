@@ -47,8 +47,16 @@ export async function GET(
   }
   const format = url.searchParams.get('format') ?? 'json';
   const columnsParam = url.searchParams.get('columns');
+  // Optional lens scopes the four document-chase targets to the surface's
+  // enrollment population (admissions = funnel, p-files = enrolled) so the
+  // drill matches the card it opened from. Ignored for other targets.
+  const lensParam = url.searchParams.get('lens');
+  const lens =
+    lensParam === 'admissions' || lensParam === 'p-files'
+      ? lensParam
+      : undefined;
 
-  const rows = await buildLifecycleDrillRows(ayCode, target);
+  const rows = await buildLifecycleDrillRows(ayCode, target, lens);
 
   if (format === 'csv') {
     return csvResponse(rows, target, ayCode, columnsParam);

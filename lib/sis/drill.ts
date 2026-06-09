@@ -1231,9 +1231,33 @@ const ACTIVE_FUNNEL = new Set([
   'Processing',
 ]);
 
+const ENROLLED_APP_STATUSES = new Set(['Enrolled', 'Enrolled (Conditional)']);
+
+// The four document-chase targets are mounted on two surfaces with opposite
+// populations: /admissions chases NON-enrolled funnel applicants, /records +
+// /p-files chase ENROLLED students. The `lens` mirrors getDocumentChaseQueueCounts
+// exactly so the drill matches the card it was opened from (KD #124 count==drill).
+// No lens → no scope (back-compat for any lens-less caller).
+type ChaseDrillLens = 'admissions' | 'p-files';
+
+function inChaseLensScope(
+  lens: ChaseDrillLens | undefined,
+  appStatus: string,
+  classSection: string | null | undefined
+): boolean {
+  if (!lens) return true;
+  if (lens === 'admissions') return ACTIVE_FUNNEL.has(appStatus);
+  // p-files: enrolled + has a class section (KD #31/#71).
+  return (
+    ENROLLED_APP_STATUSES.has(appStatus) &&
+    (classSection ?? '').toString().trim().length > 0
+  );
+}
+
 export async function buildLifecycleDrillRows(
   ayCode: string,
-  target: LifecycleDrillTarget
+  target: LifecycleDrillTarget,
+  lens?: ChaseDrillLens
 ): Promise<LifecycleDrillRow[]> {
   const snap = await getLifecycleSnapshot(ayCode);
   const out: LifecycleDrillRow[] = [];
@@ -1242,6 +1266,9 @@ export async function buildLifecycleDrillRows(
     const appStatus = (status.applicationStatus ?? '').trim();
     const app = snap.apps.get(enroleeNumber);
     const docs = snap.docs.get(enroleeNumber);
+    // Scope the document-chase targets to the lens's enrollment population so
+    // the drill can't show students the card's count excluded.
+    const lensOk = inChaseLensScope(lens, appStatus, status.classSection);
 
     switch (target) {
       case 'awaiting-fee-payment': {
@@ -1256,7 +1283,7 @@ export async function buildLifecycleDrillRows(
         break;
       }
       case 'awaiting-document-revalidation': {
-        if (!docs) break;
+        if (!docs || !lensOk) break;
         const rejectedSlots: string[] = [];
         const expiredSlots: string[] = [];
         for (const slot of DOCUMENT_SLOTS) {
@@ -1275,7 +1302,7 @@ export async function buildLifecycleDrillRows(
         break;
       }
       case 'awaiting-document-validation': {
-        if (!docs) break;
+        if (!docs || !lensOk) break;
         const uploadedSlots: string[] = [];
         for (const slot of DOCUMENT_SLOTS) {
           const v = (docs[slot.statusCol] ?? '').toString().trim();
@@ -1291,7 +1318,7 @@ export async function buildLifecycleDrillRows(
         break;
       }
       case 'awaiting-promised-documents': {
-        if (!docs) break;
+        if (!docs || !lensOk) break;
         const promisedSlots: string[] = [];
         for (const slot of DOCUMENT_SLOTS) {
           const v = (docs[slot.statusCol] ?? '').toString().trim();
@@ -1307,7 +1334,7 @@ export async function buildLifecycleDrillRows(
         break;
       }
       case 'awaiting-expiring-documents': {
-        if (!docs) break;
+        if (!docs || !lensOk) break;
         const expiringSlots: string[] = [];
         let soonestDays: number | null = null;
         const now = Date.now();

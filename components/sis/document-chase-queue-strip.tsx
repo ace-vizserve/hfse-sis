@@ -209,7 +209,11 @@ export async function DocumentChaseQueueStrip({
                 </Card>
               </button>
             </SheetTrigger>
-            <LifecycleDrillSheet target={tile.target} ayCode={ayCode} />
+            <LifecycleDrillSheet
+              target={tile.target}
+              ayCode={ayCode}
+              lens={moduleKey}
+            />
           </Sheet>
         );
       })}

@@ -36,6 +36,10 @@ import {
 export type LifecycleDrillSheetProps = {
   target: LifecycleDrillTarget;
   ayCode: string;
+  /** Scopes the four document-chase targets to the surface's enrollment
+   *  population so the drill matches the card it opened from (admissions =
+   *  non-enrolled funnel, p-files = enrolled). Omit elsewhere. */
+  lens?: 'admissions' | 'p-files';
   /** Pre-fetched rows — when provided, the drill renders immediately without
    *  a network call. Subsequent re-renders triggered by target changes will
    *  still hit the API. */
@@ -468,10 +472,12 @@ function buildDrillUrl(
   target: LifecycleDrillTarget,
   ayCode: string,
   format: 'json' | 'csv',
-  visibleColumnKeys?: string[]
+  visibleColumnKeys?: string[],
+  lens?: 'admissions' | 'p-files'
 ): string {
   const params = new URLSearchParams();
   params.set('ay', ayCode);
+  if (lens) params.set('lens', lens);
   if (format === 'csv') {
     params.set('format', 'csv');
     if (visibleColumnKeys && visibleColumnKeys.length > 0) {
@@ -484,6 +490,7 @@ function buildDrillUrl(
 export function LifecycleDrillSheet({
   target,
   ayCode,
+  lens,
   initialRows,
 }: LifecycleDrillSheetProps) {
   const [rows, setRows] = React.useState<LifecycleDrillRow[]>(
@@ -513,7 +520,7 @@ export function LifecycleDrillSheet({
     }
     let cancelled = false;
     setLoading(true);
-    const url = buildDrillUrl(target, ayCode, 'json');
+    const url = buildDrillUrl(target, ayCode, 'json', undefined, lens);
     fetch(url, { credentials: 'include' })
       .then(async (res) => {
         if (!res.ok) throw new Error(`status ${res.status}`);
@@ -535,7 +542,7 @@ export function LifecycleDrillSheet({
     return () => {
       cancelled = true;
     };
-  }, [target, ayCode]);
+  }, [target, ayCode, lens]);
 
   // Pre-filter by status + level (universal toolkit).
   const preFiltered = React.useMemo<LifecycleDrillRow[]>(() => {
@@ -595,7 +602,7 @@ export function LifecycleDrillSheet({
     return <DrillSheetSkeleton title={heading.title} />;
   }
 
-  const csvHref = buildDrillUrl(target, ayCode, 'csv', visibleColumnKeys);
+  const csvHref = buildDrillUrl(target, ayCode, 'csv', visibleColumnKeys, lens);
 
   return (
     <DrillDownSheet<LifecycleDrillRow>
