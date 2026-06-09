@@ -1,6 +1,12 @@
 'use client';
 
-import { AlertTriangle, ChevronRight, Loader2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  CalendarDays,
+  ChevronRight,
+  Clock,
+  Loader2,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import type { SlotMeta, SlotLabels } from '@/lib/schemas/grading-sheet';
@@ -1096,13 +1102,15 @@ function ActivityRow({
   needsLabel?: boolean;
 }) {
   const label = fixedLabel ?? meta?.label;
+  const isOngoing = meta?.date === 'Ongoing';
   const hasDate = !!meta?.date;
   const hasPage = !!meta?.page;
 
   return (
-    <div className="flex items-center gap-2.5">
-      {/* Code badge */}
-      <span className="inline-flex w-14 shrink-0 items-baseline justify-center gap-0.5 rounded border border-border bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-foreground">
+    <div className="group -mx-1 flex items-center gap-3 rounded-md px-1 py-1 transition-colors hover:bg-muted/40">
+      {/* Code chip — neutral; the list is already grouped by activity type.
+          Mono code (the data voice) with the max demoted to micro-copy. */}
+      <span className="inline-flex h-6 min-w-[3.5rem] shrink-0 items-center justify-center gap-0.5 rounded-md border border-border bg-muted/60 px-1.5 font-mono text-[11px] font-semibold tabular-nums text-foreground">
         {code}
         {max != null && (
           <span className="text-[9px] font-normal text-muted-foreground/60">
@@ -1111,12 +1119,13 @@ function ActivityRow({
         )}
       </span>
 
-      {/* Label — amber "Needs a label" when scored without a description */}
+      {/* Label (body voice) — three states: set / scored-but-missing (amber
+          soft flag) / unset. Warning carries icon + text, never colour alone. */}
       {label ? (
         <span className="flex-1 truncate text-sm text-foreground">{label}</span>
       ) : needsLabel ? (
         <span className="flex flex-1 items-center gap-1 text-sm font-medium text-brand-amber">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
           Needs a label
         </span>
       ) : (
@@ -1125,12 +1134,27 @@ function ActivityRow({
         </span>
       )}
 
-      {/* Date + page metadata */}
+      {/* Right metadata (mono micro-copy). "Ongoing" is a state → accent pill;
+          a real date gets a calendar glyph; page number trails, muted. */}
       {(hasDate || hasPage) && (
-        <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">
-          {hasDate && formatChipDate(meta!.date!)}
-          {hasDate && hasPage && ' · '}
-          {hasPage && `p. ${meta!.page}`}
+        <span className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-muted-foreground">
+          {isOngoing ? (
+            <span className="inline-flex items-center gap-1 rounded bg-accent px-1.5 py-0.5 text-[10px] font-medium text-brand-indigo-deep">
+              <Clock className="h-3 w-3" aria-hidden />
+              Ongoing
+            </span>
+          ) : hasDate ? (
+            <span className="inline-flex items-center gap-1">
+              <CalendarDays
+                className="h-3 w-3 text-muted-foreground/70"
+                aria-hidden
+              />
+              {formatChipDate(meta!.date!)}
+            </span>
+          ) : null}
+          {hasPage && (
+            <span className="text-muted-foreground/60">· p.{meta!.page}</span>
+          )}
         </span>
       )}
     </div>
