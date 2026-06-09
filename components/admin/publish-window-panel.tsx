@@ -465,6 +465,21 @@ export function PublishWindowPanel({
             "Can't publish yet — some adviser comments aren't submitted. Finish them in Evaluation first."
           );
         }
+        // Generalized hard-block (no students / no grading sheets / comments).
+        // Surface the blocker labels rather than the raw server error string.
+        if (body.code === 'publish_blocked') {
+          const summary = Array.isArray(body.hardBlockers)
+            ? body.hardBlockers
+                .map((b: { label?: string }) => b.label)
+                .filter(Boolean)
+                .join(' · ')
+            : null;
+          throw new Error(
+            summary
+              ? `Can't publish yet — ${summary}.`
+              : (body.error ?? 'publish failed')
+          );
+        }
         throw new Error(body.error ?? 'publish failed');
       }
       const reload = await fetch(

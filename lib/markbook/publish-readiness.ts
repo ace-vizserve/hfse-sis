@@ -113,7 +113,7 @@ export async function computePublishReadiness(
     service
       .from('section_students')
       .select(
-        'id, index_number, enrollment_status, enrollment_date, student:students(id, student_number, last_name, first_name)'
+        'id, index_number, enrollment_status, enrollment_date, student:students(id, last_name, first_name)'
       )
       .eq('section_id', sectionId)
       .in('enrollment_status', ['active', 'late_enrollee'])
@@ -583,7 +583,9 @@ export async function computePublishReadiness(
   if (!gradingSheetsPresent) {
     hardBlockers.push({
       code: 'no_grading_sheets',
-      label: 'No grading sheets for this term',
+      label: isT4
+        ? 'No grading sheets found for this section'
+        : 'No grading sheets for this term',
     });
   }
 
