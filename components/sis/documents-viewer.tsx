@@ -20,7 +20,6 @@ import { NotifyDialog } from '@/components/p-files/notify-dialog';
 import { PromiseDialog } from '@/components/p-files/promise-dialog';
 import { DocumentValidationActions } from '@/components/sis/document-validation-actions';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -30,6 +29,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   OPTIONAL_DOCUMENT_SLOT_KEYS,
   STP_CONDITIONAL_SLOT_KEYS,
@@ -431,7 +431,7 @@ function Toolbar({
 
       <div className="border-t border-hairline bg-muted/25 px-3 py-2.5">
         <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterKey)}>
-          <TabsList className="flex h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
+          <TabsList variant={'default'}>
             {FILTER_OPTIONS.map((opt) => {
               const count = counts[opt.key];
               return (
@@ -441,11 +441,7 @@ function Toolbar({
                   className="gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]"
                 >
                   {opt.label}
-                  {count > 0 && (
-                    <span className="tabular-nums text-muted-foreground/80 data-[state=active]:text-brand-indigo-deep">
-                      {count}
-                    </span>
-                  )}
+                  {count > 0 && <span className="tabular-nums">{count}</span>}
                 </TabsTrigger>
               );
             })}
