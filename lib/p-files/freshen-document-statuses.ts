@@ -3,6 +3,7 @@ import 'server-only';
 import { unstable_cache } from 'next/cache';
 
 import { logAction } from '@/lib/audit/log-action';
+import { sgToday } from '@/lib/dates';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
@@ -71,7 +72,7 @@ async function freshenAyDocumentsUncached(
   const prefix = prefixFor(ayCode);
   const expiredSeen = new Set<string>();
   const revivedSeen = new Set<string>();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = sgToday();
 
   try {
     // 16 UPDATEs in parallel (8 expiring slots × {expire, revive}). All are

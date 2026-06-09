@@ -3,12 +3,8 @@ import { unstable_cache } from 'next/cache';
 
 import { createServiceClient } from '@/lib/supabase/service';
 import { resolveCurrentTerm } from '@/lib/sis/current-term';
-import {
-  toISODate,
-  type AYWindows,
-  type DateRange,
-  type TermWindows,
-} from './range';
+import { sgToday } from '@/lib/dates';
+import { type AYWindows, type DateRange, type TermWindows } from './range';
 
 /**
  * Server-side window resolver — turns the `terms` table into the
@@ -85,7 +81,7 @@ export const getDashboardWindows = cache(async function getDashboardWindowsImpl(
   ayCode: string
 ): Promise<{ term: TermWindows; ay: AYWindows; activeTermFallback: boolean }> {
   const terms = await loadTerms();
-  const today = toISODate(new Date());
+  const today = sgToday();
 
   const ayTerms = terms.filter((t) => t.ay_code === ayCode);
   const sortedAy = ayTerms

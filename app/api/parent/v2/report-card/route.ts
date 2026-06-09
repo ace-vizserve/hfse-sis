@@ -37,6 +37,12 @@ export async function GET(request: Request) {
   const studentId = url.searchParams.get('studentId') ?? '';
   const termNumberRaw = url.searchParams.get('termNumber');
   const termNumber = termNumberRaw ? parseInt(termNumberRaw, 10) : null;
+  if (termNumberRaw && Number.isNaN(termNumber)) {
+    return NextResponse.json(
+      { error: 'invalid termNumber' },
+      { status: 400, headers: cors }
+    );
+  }
 
   if (!studentId) {
     return NextResponse.json(

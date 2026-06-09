@@ -2,6 +2,7 @@ import { unstable_cache } from 'next/cache';
 
 import { loadAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
+import { sgToday } from '@/lib/dates';
 import type { PriorityPayload } from '@/lib/dashboard/priority';
 import {
   computeDelta,
@@ -69,7 +70,7 @@ async function loadGradeDistributionUncached(
   // without per-term date windows.
   let effectiveTermId = termId;
   if (!effectiveTermId) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = sgToday();
     const { data: termRows } = await service
       .from('terms')
       .select('id, term_number, is_current, start_date, end_date')

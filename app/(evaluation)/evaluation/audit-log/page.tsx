@@ -128,9 +128,9 @@ export default async function EvaluationAuditLogPage({
           Audit log.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          A history of every evaluation entry — writeups, checklist topics,
-          per-topic ratings, subject comments, and parent-teacher-conference
-          feedback. Past entries are kept on the record.
+          A history of every evaluation action — form-class-adviser write-ups,
+          resubmissions, and virtue theme updates. Past entries are kept on the
+          record.
         </p>
       </header>
 

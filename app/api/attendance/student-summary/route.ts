@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { requireRole } from '@/lib/auth/require-role';
 import { sgToday } from '@/lib/dates';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
 import { createServiceClient } from '@/lib/supabase/service';
-import { getSessionUser } from '@/lib/supabase/server';
 
 export type TermStat = {
   termId: string;
@@ -29,10 +29,13 @@ export type StudentSummaryResponse = {
 // rate = (present incl. excused) / recorded school days. The current term is
 // resolved BY DATE (terms.is_current is deprecated).
 export async function GET(req: NextRequest) {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser?.role) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await requireRole([
+    'teacher',
+    'registrar',
+    'school_admin',
+    'superadmin',
+  ]);
+  if ('error' in auth) return auth.error;
 
   const { searchParams } = new URL(req.url);
   const sectionStudentId = searchParams.get('sectionStudentId');
@@ -57,6 +60,25 @@ export async function GET(req: NextRequest) {
       { status: 404 }
     );
   }
+
+  // Teacher scope gate — teachers may only view students in sections they
+  // form-advise. Registrar / school_admin / superadmin skip this check.
+  if (auth.role === 'teacher') {
+    const { data: assignment } = await service
+      .from('teacher_assignments')
+      .select('section_id')
+      .eq('teacher_user_id', auth.user.id)
+      .eq('section_id', (ss as { section_id: string }).section_id)
+      .eq('role', 'form_adviser')
+      .maybeSingle();
+    if (!assignment) {
+      return NextResponse.json(
+        { error: 'not form adviser for this section' },
+        { status: 403 }
+      );
+    }
+  }
+
   const enrollmentDate = (ss as { enrollment_date: string | null })
     .enrollment_date;
 

@@ -20,7 +20,7 @@ export default async function DashboardLayout({
   if (!sessionUser) redirect('/login');
 
   const { role } = sessionUser;
-  if (!role) redirect('/parent');
+  if (!role) redirect('/login');
   if (role === 'p-file') redirect('/p-files');
   if (role === 'admissions') redirect('/admissions');
 

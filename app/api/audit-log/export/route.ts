@@ -1,20 +1,15 @@
 import { NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
+import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
-import { getUserRole } from '@/lib/auth/roles';
 import { buildCsv } from '@/lib/csv';
 
 // Admin + superadmin CSV export of the audit log within a date range.
 // Unions `public.audit_log` + legacy `public.grade_audit_log` filtered by
 // timestamp, same merge shape the /admin/audit-log page uses.
 export async function GET(req: Request) {
-  const supabase = await createClient();
-  const { data: userData } = await supabase.auth.getUser();
-  const role = getUserRole(userData.user);
-  if (role !== 'school_admin' && role !== 'superadmin') {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  }
+  const auth = await requireRole(['school_admin', 'superadmin']);
+  if ('error' in auth) return auth.error;
 
   const url = new URL(req.url);
   const fromParam = url.searchParams.get('from');

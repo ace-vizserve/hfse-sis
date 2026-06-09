@@ -31,7 +31,7 @@ export default async function AdmissionsLayout({
   if (!role || !(allowed as readonly string[]).includes(role)) {
     if (role === 'p-file') redirect('/p-files');
     if (role === 'teacher') redirect('/markbook');
-    if (!role) redirect('/parent');
+    if (!role) redirect('/login');
     redirect('/');
   }
 

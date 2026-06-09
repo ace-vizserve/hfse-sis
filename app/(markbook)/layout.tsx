@@ -22,7 +22,7 @@ export default async function MarkbookLayout({
   if (!sessionUser) redirect('/login');
 
   const { id, email, role } = sessionUser;
-  if (!role) redirect('/parent');
+  if (!role) redirect('/login');
   if (role === 'p-file') redirect('/p-files');
 
   const cookieStore = await cookies();

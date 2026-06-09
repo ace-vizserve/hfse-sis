@@ -33,7 +33,7 @@ export default async function SisLayout({
     role !== 'superadmin'
   ) {
     if (role === 'p-file') redirect('/p-files');
-    if (!role) redirect('/parent');
+    if (!role) redirect('/login');
     redirect('/');
   }
 

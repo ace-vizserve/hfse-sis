@@ -55,7 +55,7 @@ export default async function MyRequestsPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   const { role, id: userId } = sessionUser;
-  if (!role) redirect('/parent');
+  if (!role) redirect('/login');
 
   // Teachers see only their own; anyone else can still view this page as a
   // history of their own-filed requests (admin usually files none).

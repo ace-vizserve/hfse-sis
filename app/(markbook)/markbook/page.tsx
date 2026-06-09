@@ -67,6 +67,7 @@ import {
 import { buildAllRowSets, getTeacherEntryVelocity } from '@/lib/markbook/drill';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { sgToday } from '@/lib/dates';
 
 type Tool = {
   eyebrow: string;
@@ -199,7 +200,7 @@ export default async function MarkbookHome({
             };
             const rows = (r.data ?? []) as TermRow[];
             if (rows.length === 0) return null;
-            const today = new Date().toISOString().slice(0, 10);
+            const today = sgToday();
             const current = rows.find((t) => t.is_current === true);
             const containingToday = rows.find(
               (t) =>

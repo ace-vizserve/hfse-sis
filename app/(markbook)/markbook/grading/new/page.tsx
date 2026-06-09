@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 
 import { PageShell } from '@/components/ui/page-shell';
 import { getTeacherList } from '@/lib/auth/staff-list';
+import { sgToday } from '@/lib/dates';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 import { NewSheetForm } from './new-sheet-form';
@@ -78,7 +79,7 @@ export default async function NewGradingSheetPage() {
   // Pick the default term by today's date (matches getTermForDate semantics
   // from lib/sis/terms.ts), falling back to terms.is_current, then term 1.
   // is_current is a per-AY flag the seeder sets — can drift, so date wins.
-  const today = new Date().toISOString().slice(0, 10);
+  const today = sgToday();
   type TermRow = {
     id: string;
     term_number: number;

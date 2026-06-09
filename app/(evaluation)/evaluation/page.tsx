@@ -176,7 +176,7 @@ export default async function EvaluationHub({
       <DashboardHero
         eyebrow="Student Evaluation · Hub"
         title="Form class adviser write-ups"
-        description="FCA write-ups, per-topic ratings by subject teachers, and PTC notes — one term at a time. Sole source for T1–T3 report card comments. T4 is FCA-inactive."
+        description="Form-class-adviser write-ups and virtue themes — one term at a time. Sole source for T1–T3 report card comments. T4 is FCA-inactive."
         badges={ayCode ? [{ label: ayCode }] : []}
       />
 
@@ -195,14 +195,15 @@ export default async function EvaluationHub({
             configured.{' '}
             {canToggle ? (
               <Link
-                href="/sis/ay-setup"
+                href="/evaluation/virtue-themes"
                 className="font-medium underline underline-offset-2"
               >
-                Set virtue themes in AY Setup →
+                Set virtue themes →
               </Link>
             ) : (
               <span>
-                Ask the registrar to set the virtue theme in AY Setup.
+                Ask the registrar to set the virtue theme in Evaluation → Virtue
+                themes.
               </span>
             )}
           </AlertDescription>
@@ -378,12 +379,12 @@ export default async function EvaluationHub({
           cta="Open roster"
         />
         <HubCard
-          href="/sis/ay-setup"
+          href="/evaluation/virtue-themes"
           icon={NotebookPen}
           eyebrow="Configuration"
-          title="Virtue theme"
-          description="Set in SIS Admin → Term dates, per term. The theme appears as a prompt to advisers and as the parenthetical on printed report cards."
-          cta="Open AY Setup"
+          title="Virtue themes"
+          description="Set the virtue theme per term. The theme appears as a prompt to advisers and as the parenthetical on printed report cards."
+          cta="Edit virtue themes"
         />
         <HubCard
           href="/sis/calendar"
