@@ -29,6 +29,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Input } from '@/components/ui/input';
+import { DateAdministeredField } from './date-administered-field';
 import {
   DEFAULT_GRID_FILTERS,
   GridFilterToolbar,
@@ -86,6 +88,9 @@ type Props = {
   qaWeight: number;
   /** When true, renders the Quarterly column as a derived letter (non-examinable subjects). */
   letterDisplay?: boolean;
+  /** When true, the scoring guide rows become inline editors (description / page / date)
+   *  that autosave on blur. Mirrors the old Activity Labels dialog's gate. */
+  canEditLabels?: boolean;
   /** Prior-term grades keyed by section_student_id. Omit for T1 sheets. */
   priorGrades?: Record<string, PriorTermGrade[]>;
   currentTermNumber?: number;
@@ -140,6 +145,7 @@ export function ScoreEntryGrid({
   ptWeight,
   qaWeight,
   letterDisplay = false,
+  canEditLabels = false,
   priorGrades,
   currentTermNumber = 1,
   currentTermLabel = 'Term',
@@ -171,6 +177,73 @@ export function ScoreEntryGrid({
       qa: slotLabels?.qa ?? null,
     });
   }, [slotLabels]);
+
+  const [savingLabels, setSavingLabels] = useState(false);
+  const labelsRef = useRef(labels);
+  labelsRef.current = labels;
+
+  // Inline label edit — update local state immediately (optimistic); the
+  // ScoringGuide commits on blur via saveLabels.
+  const onSlotChange = useCallback(
+    (kind: 'ww' | 'pt', index: number, patch: Partial<SlotMeta>) => {
+      setLabels((prev) => {
+        const arr = [...prev[kind]];
+        const current = (arr[index] ?? {}) as SlotMeta;
+        arr[index] = { ...current, ...patch };
+        return { ...prev, [kind]: arr };
+      });
+    },
+    []
+  );
+
+  const onQaChange = useCallback((value: string) => {
+    setLabels((prev) => ({ ...prev, qa: value }));
+  }, []);
+
+  // Persist the FULL slot arrays (KD #105 — the labels route is a full-array
+  // replace, not a per-slot merge). Normalize each array to its real slot
+  // length so a single-row edit never drops other slots; trim text → null.
+  const saveLabels = useCallback(async () => {
+    const snapshot = labelsRef.current;
+    const wwOut = Array.from({ length: wwTotals.length }, (_, i) => {
+      const m = snapshot.ww[i];
+      if (!m) return null;
+      return {
+        label: m.label?.trim() || null,
+        page: m.page?.trim() || null,
+        date: m.date || null,
+      };
+    });
+    const ptOut = Array.from({ length: ptTotals.length }, (_, i) => {
+      const m = snapshot.pt[i];
+      if (!m) return null;
+      return {
+        label: m.label?.trim() || null,
+        page: m.page?.trim() || null,
+        date: m.date || null,
+      };
+    });
+    const qaOut = (snapshot.qa ?? '').trim() || null;
+
+    setSavingLabels(true);
+    try {
+      const res = await fetch(`/api/grading-sheets/${sheetId}/labels`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ww: wwOut, pt: ptOut, qa: qaOut }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to save activity labels.'
+      );
+    } finally {
+      setSavingLabels(false);
+    }
+  }, [sheetId, wwTotals.length, ptTotals.length]);
 
   const locked = readOnly && !requireApproval;
 
@@ -361,6 +434,11 @@ export function ScoreEntryGrid({
         qaPct={qaPct}
         wwScored={wwScored}
         ptScored={ptScored}
+        canEditLabels={canEditLabels}
+        saving={savingLabels}
+        onSlotChange={onSlotChange}
+        onQaChange={onQaChange}
+        commit={saveLabels}
       />
       <div className="flex items-center justify-between gap-3">
         <GridFilterToolbar
@@ -956,6 +1034,11 @@ function ScoringGuide({
   qaPct,
   wwScored,
   ptScored,
+  canEditLabels = false,
+  saving = false,
+  onSlotChange,
+  onQaChange,
+  commit,
 }: {
   wwTotals: number[];
   ptTotals: number[];
@@ -967,8 +1050,21 @@ function ScoringGuide({
   /** Per-slot "has at least one score" — flags scored-but-unlabeled slots. */
   wwScored: boolean[];
   ptScored: boolean[];
+  /** When true, rows render inline editors and autosave on blur. */
+  canEditLabels?: boolean;
+  /** Saving indicator (true while a label PATCH is in flight). */
+  saving?: boolean;
+  onSlotChange?: (
+    kind: 'ww' | 'pt',
+    index: number,
+    patch: Partial<SlotMeta>
+  ) => void;
+  onQaChange?: (value: string) => void;
+  /** Persist all labels (called on blur of an editable field). */
+  commit?: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  // When the guide is editable, default it open so editors land on the rows.
+  const [expanded, setExpanded] = useState(canEditLabels);
 
   const effectiveWw = (i: number): SlotMeta | null => {
     return labels.ww[i] ?? null;
@@ -1008,6 +1104,11 @@ function ScoringGuide({
         <ChevronRight
           className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
         />
+        {canEditLabels && (
+          <span className="shrink-0 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground">
+            Activity labels
+          </span>
+        )}
         <span className="font-mono text-[11px] text-muted-foreground">
           {summaryParts.map((part, i) => (
             <span key={i}>
@@ -1027,6 +1128,12 @@ function ScoringGuide({
             </span>
           )}
         </span>
+        {saving && (
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1 font-mono text-[10px] font-semibold text-brand-indigo">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Saving…
+          </span>
+        )}
       </button>
 
       {/* Expanded grouped list */}
@@ -1045,6 +1152,10 @@ function ScoringGuide({
                     max={max}
                     meta={effectiveWw(i)}
                     needsLabel={needsLabelWw(i)}
+                    editable={canEditLabels}
+                    placeholder="e.g. Worksheet 2: Multiplication Tables"
+                    onMetaChange={(patch) => onSlotChange?.('ww', i, patch)}
+                    onCommit={commit}
                   />
                 ))}
               </div>
@@ -1063,6 +1174,10 @@ function ScoringGuide({
                     max={max}
                     meta={effectivePt(i)}
                     needsLabel={needsLabelPt(i)}
+                    editable={canEditLabels}
+                    placeholder="e.g. Quiz 1"
+                    onMetaChange={(patch) => onSlotChange?.('pt', i, patch)}
+                    onCommit={commit}
                   />
                 ))}
               </div>
@@ -1072,7 +1187,17 @@ function ScoringGuide({
             <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               Quarterly Assessment ({qaPct}%)
             </p>
-            <ActivityRow code="QA" max={qaTotal} fixedLabel="Exam" />
+            <ActivityRow
+              code="QA"
+              max={qaTotal}
+              fixedLabel="Exam"
+              editable={canEditLabels}
+              qaMode
+              qaValue={labels.qa ?? ''}
+              placeholder="e.g. Quarterly Exam"
+              onQaChange={onQaChange}
+              onCommit={commit}
+            />
           </div>
         </div>
       )}
@@ -1093,6 +1218,13 @@ function ActivityRow({
   meta,
   fixedLabel,
   needsLabel = false,
+  editable = false,
+  qaMode = false,
+  qaValue = '',
+  placeholder,
+  onMetaChange,
+  onQaChange,
+  onCommit,
 }: {
   code: string;
   max?: number | null;
@@ -1100,7 +1232,87 @@ function ActivityRow({
   fixedLabel?: string;
   /** Scored but no description set — soft amber flag (non-blocking). */
   needsLabel?: boolean;
+  /** Inline edit mode — description / page / date inputs that autosave on blur. */
+  editable?: boolean;
+  /** QA row — single description input, no page/date (mirrors the old dialog). */
+  qaMode?: boolean;
+  qaValue?: string;
+  placeholder?: string;
+  onMetaChange?: (patch: Partial<SlotMeta>) => void;
+  onQaChange?: (value: string) => void;
+  /** Persist all labels (blur autosave). */
+  onCommit?: () => void;
 }) {
+  const codeChip = (
+    <span className="inline-flex h-6 min-w-[3.5rem] shrink-0 items-center justify-center gap-0.5 rounded-md border border-border bg-muted/60 px-1.5 font-mono text-[11px] font-semibold tabular-nums text-foreground">
+      {code}
+      {max != null && (
+        <span className="text-[9px] font-normal text-muted-foreground/60">
+          /{max}
+        </span>
+      )}
+    </span>
+  );
+
+  // ── Editable mode ──────────────────────────────────────────────────────
+  // Autosave fires on blur of the wrapping field group (a focus move out of
+  // the row's inputs); typing never saves. The DatePicker commits via its own
+  // onChange (a discrete pick), so a value change there also persists.
+  if (editable) {
+    if (qaMode) {
+      return (
+        <div className="group -mx-1 flex items-center gap-3 rounded-md px-1 py-1 transition-colors hover:bg-muted/40">
+          {codeChip}
+          <Input
+            value={qaValue}
+            onChange={(e) => onQaChange?.(e.target.value)}
+            onBlur={() => onCommit?.()}
+            placeholder={placeholder}
+            className="h-8 flex-1 text-sm"
+            maxLength={120}
+            aria-label="Quarterly assessment description"
+          />
+        </div>
+      );
+    }
+    return (
+      <div className="group -mx-1 flex items-center gap-2 rounded-md px-1 py-1 transition-colors hover:bg-muted/40">
+        {codeChip}
+        <Input
+          value={meta?.label ?? ''}
+          onChange={(e) => onMetaChange?.({ label: e.target.value })}
+          onBlur={() => onCommit?.()}
+          placeholder={placeholder}
+          className="h-8 flex-1 text-sm"
+          maxLength={120}
+          aria-label={`${code} description`}
+        />
+        <Input
+          value={meta?.page ?? ''}
+          onChange={(e) => onMetaChange?.({ page: e.target.value })}
+          onBlur={() => onCommit?.()}
+          placeholder="p.#"
+          className="h-8 w-16 shrink-0 text-sm"
+          maxLength={40}
+          aria-label={`${code} page number`}
+        />
+        <div onBlur={() => onCommit?.()}>
+          <DateAdministeredField
+            value={meta?.date ?? ''}
+            onChange={(date) => {
+              onMetaChange?.({ date });
+              // A date pick / Ongoing toggle / clear is a discrete commit —
+              // persist immediately (the picker popover closes, so a blur
+              // isn't guaranteed to fire on the same interaction).
+              onCommit?.();
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Read-only mode (unchanged design) ──────────────────────────────────
   const label = fixedLabel ?? meta?.label;
   const isOngoing = meta?.date === 'Ongoing';
   const hasDate = !!meta?.date;

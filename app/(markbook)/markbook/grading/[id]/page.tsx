@@ -33,9 +33,7 @@ import { PageShell } from '@/components/ui/page-shell';
 import { ScoreEntryGrid } from '@/components/grading/score-entry-grid';
 import { LockToggle } from '@/components/grading/lock-toggle';
 import { TotalsEditor } from '@/components/grading/totals-editor';
-import { ActivityLabelsDialog } from '@/components/grading/activity-labels-dialog';
 import { listApproversForFlow } from '@/lib/sis/approvers/queries';
-import type { SlotLabels } from '@/lib/schemas/grading-sheet';
 import { RequestEditButton } from './request-edit-button';
 
 /**
@@ -314,6 +312,11 @@ export default async function GradingSheetPage({
   const gradedPct =
     totalStudents > 0 ? Math.round((gradedCount / totalStudents) * 100) : 0;
 
+  // Who may edit the activity labels inline in the scoring guide — mirrors the
+  // gate that previously controlled the (now removed) Activity Labels dialog:
+  // assigned subject teachers on an unlocked sheet, or any manager.
+  const canEditLabels = (isAssignedTeacher && !sheet.is_locked) || canManage;
+
   const wwW = Math.round(Number(config?.ww_weight ?? 0) * 100);
   const ptW = Math.round(Number(config?.pt_weight ?? 0) * 100);
   const qaW = Math.round(Number(config?.qa_weight ?? 0) * 100);
@@ -393,14 +396,6 @@ export default async function GradingSheetPage({
               wwMaxSlots={Number(config?.ww_max_slots ?? 5)}
               ptMaxSlots={Number(config?.pt_max_slots ?? 5)}
               isLocked={sheet.is_locked}
-            />
-          )}
-          {((isAssignedTeacher && !sheet.is_locked) || canManage) && (
-            <ActivityLabelsDialog
-              sheetId={sheet.id}
-              wwCount={(sheet.ww_totals ?? []).length}
-              ptCount={(sheet.pt_totals ?? []).length}
-              initialLabels={(sheet.slot_labels as SlotLabels) ?? {}}
             />
           )}
           {canManage && (
@@ -638,6 +633,7 @@ export default async function GradingSheetPage({
           } | null) ?? undefined
         }
         letterDisplay={!isExaminable}
+        canEditLabels={canEditLabels}
         priorGrades={priorGrades}
         currentTermNumber={term?.term_number ?? 1}
         currentTermLabel={term?.label ?? 'Term'}
