@@ -9,7 +9,6 @@ import {
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
@@ -26,7 +25,6 @@ import {
   SlotStatusDrillCard,
 } from '@/components/p-files/drills/chart-drill-cards';
 import { PFilesDrillSheet } from '@/components/p-files/drills/pfiles-drill-sheet';
-import { RevisionsHeatmapCard } from '@/components/p-files/revisions-heatmap-card';
 import { RevisionsOverTimeChart } from '@/components/p-files/revisions-over-time-chart';
 import { SummaryCards } from '@/components/p-files/summary-cards';
 import { ExpiringDocumentsPanel } from '@/components/sis/expiring-documents-panel';
@@ -56,7 +54,6 @@ import {
   getPFilesKpisRange,
   getPFilesPriority,
   getRevisionVelocityRange,
-  getRevisionsHeatmap,
   getRevisionsOverTime,
   getSlotStatusMix,
 } from '@/lib/p-files/dashboard';
@@ -330,7 +327,6 @@ export default async function PFilesDashboard({
     kpisResult,
     velocity,
     slotMix,
-    revisionsHeatmap,
     priority,
   ] = await Promise.all([
     getDocumentDashboardData(selectedAy),
@@ -340,7 +336,6 @@ export default async function PFilesDashboard({
     getPFilesKpisRange(rangeInput),
     getRevisionVelocityRange(rangeInput),
     getSlotStatusMix(selectedAy),
-    getRevisionsHeatmap(selectedAy, 12),
     // Priority panel is officer-only; skip the fetch entirely for oversight
     // roles so the dashboard renders one fewer trip on every load.
     isOfficer
@@ -486,14 +481,9 @@ export default async function PFilesDashboard({
 
       <SummaryCards summary={summary} />
 
-      {/* Row 6 — wide revision trend + heatmap (12-week reference) */}
-      <section className="grid gap-4 lg:grid-cols-2">
+      {/* Row 6 — wide revision trend (12-week reference) */}
+      <section>
         <RevisionsOverTimeChart data={revisions} />
-        <RevisionsHeatmapCard
-          data={revisionsHeatmap}
-          ayCode={selectedAy}
-          weeks={12}
-        />
       </section>
 
       {/* Row 7 — completion by level (2/3) + slot status mix (1/3) */}
@@ -526,20 +516,6 @@ export default async function PFilesDashboard({
           />
         </CardContent>
       </Card>
-
-      {/* Legend — placed immediately above the table it documents. Phase 2B
-          collapsed the legend to the renewal-only states (On file vs
-          Expired); Pending review + Missing belong on the admissions
-          dashboard. */}
-      <section className="rounded-xl border border-hairline bg-background p-4">
-        <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          Document Status Legend
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <ChartLegendChip color="fresh" label="On file" />
-          <ChartLegendChip color="very-stale" label="Expired" />
-        </div>
-      </section>
 
       <CompletenessCsvButton ayCode={selectedAy} />
       {/* `key` forces a fresh mount when the sidebar Quicklink flips
