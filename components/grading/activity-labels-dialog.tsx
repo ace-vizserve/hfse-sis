@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
@@ -33,6 +33,60 @@ function draftToMeta(d: DraftMeta): SlotMeta {
 
 const COL_HEADER_CLASS =
   'pb-1.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground';
+
+/**
+ * Date Administered cell. Accepts a real date (via DatePicker) OR the literal
+ * "Ongoing" (HFSE's Excel uses both). When "Ongoing", shows an amber pill +
+ * clear button; otherwise shows the picker plus an "Ongoing" quick-set button.
+ */
+function DateAdministeredField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  if (value === 'Ongoing') {
+    return (
+      <div className="flex items-center gap-1">
+        <span className="inline-flex items-center rounded-md border border-brand-amber/30 bg-brand-amber/10 px-2 py-1 font-mono text-[11px] font-semibold text-brand-amber">
+          Ongoing
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 shrink-0 p-0 text-muted-foreground"
+          aria-label="Clear ongoing — pick a date instead"
+          onClick={() => onChange('')}
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <DatePicker
+        value={value}
+        onChange={onChange}
+        placeholder="Pick a date"
+        className="h-8"
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-8 shrink-0 px-2 text-[11px] text-muted-foreground"
+        aria-label="Mark as ongoing"
+        onClick={() => onChange('Ongoing')}
+      >
+        Ongoing
+      </Button>
+    </div>
+  );
+}
 
 export function ActivityLabelsDialog({
   sheetId,
@@ -180,15 +234,13 @@ export function ActivityLabelsDialog({
                       />
                     </td>
                     <td className="py-1.5">
-                      <DatePicker
+                      <DateAdministeredField
                         value={d.date}
                         onChange={(date) => {
                           const next = [...wwDraft];
                           next[i] = { ...next[i], date };
                           setWwDraft(next);
                         }}
-                        placeholder="Pick a date"
-                        className="h-8"
                       />
                     </td>
                   </tr>
@@ -236,15 +288,13 @@ export function ActivityLabelsDialog({
                       />
                     </td>
                     <td className="py-1.5">
-                      <DatePicker
+                      <DateAdministeredField
                         value={d.date}
                         onChange={(date) => {
                           const next = [...ptDraft];
                           next[i] = { ...next[i], date };
                           setPtDraft(next);
                         }}
-                        placeholder="Pick a date"
-                        className="h-8"
                       />
                     </td>
                   </tr>

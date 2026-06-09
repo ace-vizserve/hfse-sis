@@ -102,6 +102,7 @@ export async function PATCH(
   const sanitizeDate = (v: string | null | undefined): string | null => {
     if (v == null) return null;
     const t = String(v).trim();
+    if (t === 'Ongoing') return 'Ongoing';
     return ISO_DATE_RE.test(t) ? t : null;
   };
   const sanitizeMeta = (m: SlotMeta | null | undefined): SlotMeta | null => {

@@ -6,7 +6,9 @@ export const SlotMetaSchema = z.object({
   label: z.string().max(120).nullable().optional(),
   date: z
     .string()
-    .refine((v) => ISO_DATE_RE.test(v), { message: 'must be YYYY-MM-DD' })
+    .refine((v) => v === 'Ongoing' || ISO_DATE_RE.test(v), {
+      message: 'must be YYYY-MM-DD or "Ongoing"',
+    })
     .nullable()
     .optional(),
   page: z.string().max(40).nullable().optional(),

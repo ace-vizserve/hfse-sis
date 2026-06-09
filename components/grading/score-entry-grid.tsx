@@ -323,6 +323,26 @@ export function ScoreEntryGrid({
   const wwMaxTotal = wwTotals.reduce((a, b) => a + b, 0);
   const ptMaxTotal = ptTotals.reduce((a, b) => a + b, 0);
 
+  // Per-slot "has at least one score entered" — drives the soft "needs a label"
+  // flag in the ScoringGuide (a slot with scores but no description).
+  // "Has any score in this slot" is a property of the DATA, not the current
+  // view — compute over the full roster (rows), not visibleRows, so the
+  // unlabeled-slot flag doesn't flicker when the teacher filters/searches.
+  const wwScored = useMemo(
+    () =>
+      Array.from({ length: wwLen }, (_, i) =>
+        rows.some((r) => r.ww_scores[i] != null)
+      ),
+    [rows, wwLen]
+  );
+  const ptScored = useMemo(
+    () =>
+      Array.from({ length: ptLen }, (_, i) =>
+        rows.some((r) => r.pt_scores[i] != null)
+      ),
+    [rows, ptLen]
+  );
+
   return (
     <div className="space-y-3">
       <ScoringGuide
@@ -333,6 +353,8 @@ export function ScoreEntryGrid({
         wwPct={wwPct}
         ptPct={ptPct}
         qaPct={qaPct}
+        wwScored={wwScored}
+        ptScored={ptScored}
       />
       <div className="flex items-center justify-between gap-3">
         <GridFilterToolbar
@@ -926,6 +948,8 @@ function ScoringGuide({
   wwPct,
   ptPct,
   qaPct,
+  wwScored,
+  ptScored,
 }: {
   wwTotals: number[];
   ptTotals: number[];
@@ -934,6 +958,9 @@ function ScoringGuide({
   wwPct: number;
   ptPct: number;
   qaPct: number;
+  /** Per-slot "has at least one score" — flags scored-but-unlabeled slots. */
+  wwScored: boolean[];
+  ptScored: boolean[];
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -943,6 +970,16 @@ function ScoringGuide({
   const effectivePt = (i: number): SlotMeta | null => {
     return labels.pt[i] ?? null;
   };
+
+  // A slot "needs a label" when it has scores but no description set.
+  const needsLabelWw = (i: number): boolean =>
+    !!wwScored[i] && !effectiveWw(i)?.label;
+  const needsLabelPt = (i: number): boolean =>
+    !!ptScored[i] && !effectivePt(i)?.label;
+
+  const flaggedCount =
+    wwTotals.reduce((acc, _, i) => acc + (needsLabelWw(i) ? 1 : 0), 0) +
+    ptTotals.reduce((acc, _, i) => acc + (needsLabelPt(i) ? 1 : 0), 0);
 
   const summaryParts = [
     wwTotals.length > 0
@@ -974,6 +1011,15 @@ function ScoringGuide({
               {part}
             </span>
           ))}
+          {flaggedCount > 0 && (
+            <span className="inline-flex items-center font-semibold text-brand-amber">
+              <span className="mx-1.5 select-none text-muted-foreground opacity-40">
+                ·
+              </span>
+              <AlertTriangle className="mr-1 h-3 w-3" />
+              {flaggedCount} need{flaggedCount === 1 ? 's' : ''} a label
+            </span>
+          )}
         </span>
       </button>
 
@@ -992,6 +1038,7 @@ function ScoringGuide({
                     code={`W${i + 1}`}
                     max={max}
                     meta={effectiveWw(i)}
+                    needsLabel={needsLabelWw(i)}
                   />
                 ))}
               </div>
@@ -1009,6 +1056,7 @@ function ScoringGuide({
                     code={`PT${i + 1}`}
                     max={max}
                     meta={effectivePt(i)}
+                    needsLabel={needsLabelPt(i)}
                   />
                 ))}
               </div>
@@ -1038,11 +1086,14 @@ function ActivityRow({
   max,
   meta,
   fixedLabel,
+  needsLabel = false,
 }: {
   code: string;
   max?: number | null;
   meta?: SlotMeta | null;
   fixedLabel?: string;
+  /** Scored but no description set — soft amber flag (non-blocking). */
+  needsLabel?: boolean;
 }) {
   const label = fixedLabel ?? meta?.label;
   const hasDate = !!meta?.date;
@@ -1060,12 +1111,19 @@ function ActivityRow({
         )}
       </span>
 
-      {/* Label */}
-      <span
-        className={`flex-1 truncate text-sm ${label ? 'text-foreground' : 'italic text-muted-foreground/50'}`}
-      >
-        {label ?? 'No label set'}
-      </span>
+      {/* Label — amber "Needs a label" when scored without a description */}
+      {label ? (
+        <span className="flex-1 truncate text-sm text-foreground">{label}</span>
+      ) : needsLabel ? (
+        <span className="flex flex-1 items-center gap-1 text-sm font-medium text-brand-amber">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          Needs a label
+        </span>
+      ) : (
+        <span className="flex-1 truncate text-sm italic text-muted-foreground/50">
+          No label set
+        </span>
+      )}
 
       {/* Date + page metadata */}
       {(hasDate || hasPage) && (
