@@ -1296,18 +1296,16 @@ function ActivityRow({
           maxLength={40}
           aria-label={`${code} page number`}
         />
-        <div onBlur={() => onCommit?.()}>
-          <DateAdministeredField
-            value={meta?.date ?? ''}
-            onChange={(date) => {
-              onMetaChange?.({ date });
-              // A date pick / Ongoing toggle / clear is a discrete commit —
-              // persist immediately (the picker popover closes, so a blur
-              // isn't guaranteed to fire on the same interaction).
-              onCommit?.();
-            }}
-          />
-        </div>
+        <DateAdministeredField
+          value={meta?.date ?? ''}
+          onChange={(date) => {
+            onMetaChange?.({ date });
+            // A date pick / Ongoing toggle / clear is a discrete commit — persist
+            // here (NOT via a wrapping onBlur: the popover returns focus inside
+            // the row, so a blur would either miss the pick or double-fire).
+            onCommit?.();
+          }}
+        />
       </div>
     );
   }
