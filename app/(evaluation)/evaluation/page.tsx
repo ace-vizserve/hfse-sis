@@ -15,7 +15,6 @@ import { redirect } from 'next/navigation';
 
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
-import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { PriorityPanel } from '@/components/dashboard/priority-panel';
 import {
@@ -39,7 +38,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import { evaluationInsights } from '@/lib/dashboard/insights';
 import {
   formatRangeLabel,
   resolveRange,
@@ -151,20 +149,6 @@ export default async function EvaluationHub({
       : Promise.resolve(null),
   ]);
 
-  const insights = kpisResult
-    ? evaluationInsights({
-        submissionPct: kpisResult.current.submissionPct,
-        submitted: kpisResult.current.submitted,
-        expected: kpisResult.current.expected,
-        outstandingWriteups: chaseKpis?.available
-          ? chaseKpis.outstandingWriteups
-          : undefined,
-        advisersBehind: chaseKpis?.available
-          ? chaseKpis.advisersBehind
-          : undefined,
-      })
-    : [];
-
   // Soft-warn when any T1–T3 term in the current AY lacks a virtue theme.
   // Per KD #28, NULL virtue locks teacher textareas; registrars can still
   // write but face the same content gap on the report card. Surface the gap
@@ -237,8 +221,6 @@ export default async function EvaluationHub({
             showAySwitcher={false}
             presets={TERM_SCOPED_PRESETS}
           />
-
-          {insights.length > 0 && <InsightsPanel insights={insights} />}
 
           <section className="grid gap-4 xl:grid-cols-4">
             <MetricCard
