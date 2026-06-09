@@ -220,6 +220,9 @@ export function ExpiringQueue({ rows }: Props) {
       facets={facets}
       statusTabs={statusTabs}
       toolbarTrailing={windowFilter}
+      // Distinct namespace from the sibling Awaiting queue on this same page so
+      // the two tables' filters don't collide in the URL (KD #84).
+      url={{ enabled: true, namespace: 'expiring' }}
       initialSort={[{ id: 'daysUntilExpiry', desc: false }]}
       pageSize={25}
     />

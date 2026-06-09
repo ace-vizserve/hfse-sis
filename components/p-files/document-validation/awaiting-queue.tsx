@@ -246,6 +246,9 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
         searchPlaceholder="Search student or document…"
         facets={facets}
         toolbarTrailing={modeToggle ?? undefined}
+        // Distinct namespace from the sibling Expiring queue on this same page
+        // so the two tables' filters don't collide in the URL (KD #84).
+        url={{ enabled: true, namespace: 'awaiting' }}
         initialSort={[{ id: 'fullName', desc: false }]}
         pageSize={25}
       />

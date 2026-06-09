@@ -375,6 +375,9 @@ export function StudentDataTable({
         { columnId: 'section', label: 'Section' },
       ]}
       statusTabs={statusTabs}
+      // Namespaced so filters/search/tab persist + are shareable. 'students.*'
+      // only — the page's own ?ay= (server-scope) is left untouched (KD #84).
+      url={{ enabled: true, namespace: 'students' }}
       initialSort={
         defaultSorting ?? [
           { id: 'level', desc: false },

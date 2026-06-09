@@ -170,6 +170,9 @@ export function DiscountCodesDataTable({
         },
       ]}
       toolbarTrailing={toolbarTrailing}
+      // Namespaced so filters/search persist + are shareable; leaves the page's
+      // own ?ay= (server-scope) untouched (KD #84).
+      url={{ enabled: true, namespace: 'discounts' }}
       initialSort={[{ id: 'discountCode', desc: false }]}
       pageSize={25}
       emptyState={{
