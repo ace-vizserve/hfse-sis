@@ -111,7 +111,7 @@ export default async function AdmissionsComparePage({
       ) : compareData && compareData.cells.length > 0 ? (
         <CompareGrid
           title="KPI comparison"
-          description={`${compareData.cells.length} month${compareData.cells.length === 1 ? '' : 's'} — ${input.kind === 'month' ? input.months.join(', ') : input.terms.map((t) => 'T' + t).join(', ')}`}
+          description={`${compareData.cells.length} month${compareData.cells.length === 1 ? '' : 's'} — ${compareData.cells.map((c) => c.cell.label).join(', ')}`}
           cells={compareData.cells}
           metrics={metrics}
         />
