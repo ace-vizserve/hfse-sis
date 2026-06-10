@@ -119,8 +119,8 @@ const RECORDS_NAV: NavSection[] = [
     items: [
       { href: '/records', label: 'Dashboard' },
       {
-        href: '/records/compare',
-        label: 'Compare',
+        href: '/records/insights',
+        label: 'Insights',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
     ],
