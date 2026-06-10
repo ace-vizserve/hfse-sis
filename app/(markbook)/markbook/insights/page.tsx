@@ -198,7 +198,6 @@ export default async function MarkbookInsightsPage({
 
   // ── Throughput ────────────────────────────────────────────────────────────
   const crs = changeRequests;
-  const crPending = crs ? crs.byStatus.pending : 0;
   const haveVelocity = velocity.current.length > 1;
 
   return (
@@ -235,7 +234,10 @@ export default async function MarkbookInsightsPage({
             : 'Quarterly grades recorded for the current term, and the share scoring in the top bands.'
         }
       >
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {/* Two cards only — "Change requests pending" lives in the Grading
+            throughput section below, with its full context (filed / pending /
+            avg-decision); duplicating it here read as redundant. */}
+        <section className="grid gap-4 sm:grid-cols-2">
           <MetricCard
             label="Grades recorded"
             value={totalGraded}
@@ -256,13 +258,6 @@ export default async function MarkbookInsightsPage({
                   : 'default'
             }
             subtext="scoring 85 and above"
-          />
-          <MetricCard
-            label="Change requests pending"
-            value={crPending}
-            icon={GitPullRequestArrow}
-            intent={crPending > 0 ? 'warning' : 'good'}
-            subtext="post-lock grade edits awaiting a decision"
           />
         </section>
       </InsightsSection>
