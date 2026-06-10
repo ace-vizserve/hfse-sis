@@ -104,14 +104,17 @@ export type CohortStudentRow = {
   daysUntilEarliestPromise?: number | null;
   hasPastDuePromise?: boolean;
 
-  // Pre-course-counselling-specific
+  // Pre-course-counselling-specific. A mandatory step for EVERY applicant
+  // (HFSE counsels the parent + co-signs the Pre-Course Counselling
+  // Acknowledgement Form before the application is submitted). Two buckets only:
+  //   complete  = counselled — answered "Yes" WITH a signed date (the proof).
+  //   not-yet   = NOT counselled — answered "No", or no answer recorded at all
+  //               (a blank is simply "not done yet", same as an explicit No).
+  // (A "Yes" with no date is an invalid record — the loader excludes it.)
   preCourseAnswer?: 'Yes' | 'No' | null;
   preCourseDate?: string | null;
   preCourseAcknowledgedAt?: string | null;
-  // complete = answered Yes OR formal acknowledgement recorded
-  // not-yet  = answered No (hasn't attended yet)
-  // pending  = no response yet
-  preCourseStatus?: 'complete' | 'not-yet' | 'pending';
+  preCourseStatus?: 'complete' | 'not-yet';
 };
 
 // ─── Snapshot read helpers ──────────────────────────────────────────────────
@@ -707,14 +710,13 @@ async function loadPreCourseCohortUncached(
     // rather than render an incomplete proof.
     if (answer === 'Yes' && date === null) continue;
 
-    // complete = "Yes" (date guaranteed present by the guard above) — the proof
-    //            is on file.
-    // not-yet  = "No" — still needs counselling scheduled before enrolment.
-    // pending  = no response yet.
-    // NB: `preCourseDate` (the signed date) is the completion proof, NOT
-    // `preCourseAcknowledgedAt` (an app-confirmation timestamp, kept for display).
-    const preCourseStatus: 'complete' | 'not-yet' | 'pending' =
-      answer === 'Yes' ? 'complete' : answer === 'No' ? 'not-yet' : 'pending';
+    // Two-bucket worklist: counselled vs not-yet. complete = "Yes" (date
+    // guaranteed present by the guard above) — proof on file. not-yet = anything
+    // else (explicit "No" OR no answer yet) — every applicant needs counselling,
+    // so a blank is just "not done yet". NB: `preCourseDate` (the signed date) is
+    // the proof, NOT `preCourseAcknowledgedAt` (an app timestamp, kept for display).
+    const preCourseStatus: 'complete' | 'not-yet' =
+      answer === 'Yes' ? 'complete' : 'not-yet';
 
     rows.push({
       ...commonFields(app, status),
@@ -725,16 +727,12 @@ async function loadPreCourseCohortUncached(
     });
   }
 
-  // Sort: not-yet first (explicitly declined — needs scheduling), then pending
-  // (no response — needs outreach), then complete; alphabetically within each group.
-  const PRIORITY: Record<string, number> = {
-    'not-yet': 0,
-    pending: 1,
-    complete: 2,
-  };
+  // Sort: not-yet first (needs counselling — the actionable bucket), then
+  // counselled; alphabetically within each group.
+  const PRIORITY: Record<string, number> = { 'not-yet': 0, complete: 1 };
   rows.sort((a, b) => {
-    const ap = PRIORITY[a.preCourseStatus ?? 'pending'] ?? 0;
-    const bp = PRIORITY[b.preCourseStatus ?? 'pending'] ?? 0;
+    const ap = PRIORITY[a.preCourseStatus ?? 'not-yet'] ?? 0;
+    const bp = PRIORITY[b.preCourseStatus ?? 'not-yet'] ?? 0;
     if (ap !== bp) return ap - bp;
     return (a.enroleeFullName ?? '').localeCompare(b.enroleeFullName ?? '');
   });

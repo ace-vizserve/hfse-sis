@@ -178,8 +178,10 @@ export function getAdmissionsFeedback(ayCode: string): Promise<FeedbackResult> {
 export type PreCourseStats = {
   total: number;
   complete: number;
+  // not-yet-counselled = explicit "No" OR no answer recorded yet — every
+  // applicant must be counselled before submitting, so a blank is simply "not
+  // done yet" (no separate "pending" bucket).
   notYet: number;
-  pending: number;
   completionPct: number | null;
 };
 
@@ -234,7 +236,6 @@ async function loadPreCourseStatsUncached(
   let total = 0;
   let complete = 0;
   let notYet = 0;
-  let pending = 0;
 
   for (const app of apps) {
     if (!app.enroleeNumber) continue;
@@ -257,12 +258,12 @@ async function loadPreCourseStatsUncached(
     if (answer === 'Yes' && date === null) continue;
 
     total++;
+    // Counselled = "Yes" (date guaranteed present by the guard above). Everything
+    // else (explicit "No" OR no answer yet) is not-yet-counselled.
     if (answer === 'Yes') {
       complete++;
-    } else if (answer === 'No') {
-      notYet++;
     } else {
-      pending++;
+      notYet++;
     }
   }
 
@@ -270,7 +271,6 @@ async function loadPreCourseStatsUncached(
     total,
     complete,
     notYet,
-    pending,
     completionPct: total > 0 ? Math.round((complete / total) * 100) : null,
   };
 }

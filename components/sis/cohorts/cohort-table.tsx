@@ -860,11 +860,12 @@ function preCourseDetailHref(enroleeNumber: string, ayCode: string): string {
 function PreCourseStatusBadge({
   status,
 }: {
-  status: 'complete' | 'not-yet' | 'pending' | undefined;
+  status: 'complete' | 'not-yet' | undefined;
 }) {
-  if (status === 'complete') return <Badge variant="success">Completed</Badge>;
-  if (status === 'not-yet') return <Badge variant="blocked">Not yet</Badge>;
-  return <Badge variant="muted">Pending</Badge>;
+  if (status === 'complete') return <Badge variant="success">Counselled</Badge>;
+  // Anything not counselled (explicit "No" or no answer yet) is the actionable
+  // bucket — every applicant must be counselled before submitting.
+  return <Badge variant="blocked">Not yet counselled</Badge>;
 }
 
 function PreCourseAnswerBadge({
@@ -925,12 +926,7 @@ function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
     },
     {
       id: 'preCourseStatus',
-      accessorFn: (r) =>
-        r.preCourseStatus === 'complete'
-          ? 2
-          : r.preCourseStatus === 'not-yet'
-            ? 0
-            : 1,
+      accessorFn: (r) => (r.preCourseStatus === 'complete' ? 1 : 0),
       header: 'Status',
       cell: ({ row }) => (
         <PreCourseStatusBadge status={row.original.preCourseStatus} />
@@ -975,24 +971,14 @@ function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
 
 const PRE_COURSE_STATUS_TABS: StatusTabConfig<CohortStudentRow>[] = [
   {
-    value: 'incomplete',
-    label: 'Incomplete',
+    value: 'not-yet',
+    label: 'Not yet counselled',
     predicate: (r) => r.preCourseStatus !== 'complete',
     isDefault: true,
   },
   {
-    value: 'not-yet',
-    label: 'Answered No',
-    predicate: (r) => r.preCourseStatus === 'not-yet',
-  },
-  {
-    value: 'pending',
-    label: 'No response',
-    predicate: (r) => r.preCourseStatus === 'pending',
-  },
-  {
     value: 'complete',
-    label: 'Completed',
+    label: 'Counselled',
     predicate: (r) => r.preCourseStatus === 'complete',
   },
   {
