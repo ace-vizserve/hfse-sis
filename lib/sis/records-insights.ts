@@ -5,6 +5,7 @@ import { unstable_cache } from 'next/cache';
 import { growthDelta, type Growth } from '@/lib/dashboard/growth';
 import { getLevelDistribution, type LevelCount } from '@/lib/sis/dashboard';
 import type { MovementEvent } from '@/lib/sis/movements';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Records Insights synthesis (Phase 2 of Module Insights, KD #140).
@@ -112,21 +113,28 @@ async function loadEnrolledStudentNumbers(
     .maybeSingle();
   const ayId = (ay as { id: string } | null)?.id;
   if (!ayId) return new Set();
-  const { data, error } = await service
-    .from('section_students')
-    .select(
-      'student:students(student_number), section:sections!inner(academic_year_id)'
-    )
-    .eq('section.academic_year_id', ayId)
-    .neq('enrollment_status', 'withdrawn');
-  if (error || !data) return new Set();
-  const out = new Set<string>();
-  for (const r of data as {
+  // Walk past the PostgREST 1000-row cap — a growing school's roster (esp. the
+  // prior AY's) can exceed it, and a silent truncation would undercount
+  // retention (the exact metric where that goes unnoticed). Mirrors the
+  // fetchAllPages pattern used across cross-AY bulk reads.
+  type EnrolRow = {
     student:
       | { student_number: string | null }
       | { student_number: string | null }[]
       | null;
-  }[]) {
+  };
+  const rows = await fetchAllPages<EnrolRow>((from, to) =>
+    service
+      .from('section_students')
+      .select(
+        'student:students(student_number), section:sections!inner(academic_year_id)'
+      )
+      .eq('section.academic_year_id', ayId)
+      .neq('enrollment_status', 'withdrawn')
+      .range(from, to)
+  );
+  const out = new Set<string>();
+  for (const r of rows) {
     const s = Array.isArray(r.student) ? r.student[0] : r.student;
     if (s?.student_number) out.add(s.student_number);
   }
