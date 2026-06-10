@@ -96,8 +96,9 @@ export default async function AdmissionsComparePage({
           Month-on-month, year-on-year.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Pick the academic years and months you want to line up, side by side.
-          Same calendar month across years gives an honest seasonal comparison.
+          Pick the months you want to line up, side by side — e.g. the same
+          calendar month across years for an honest seasonal comparison. Each
+          month draws from its own academic year automatically.
         </p>
       </header>
 
@@ -105,12 +106,12 @@ export default async function AdmissionsComparePage({
 
       {!input ? (
         <div className="rounded-xl border border-dashed border-border bg-muted/20 p-12 text-center text-sm text-muted-foreground">
-          Pick at least one AY and one month above to see the comparison.
+          Pick one or more months above to see the comparison.
         </div>
       ) : compareData && compareData.cells.length > 0 ? (
         <CompareGrid
           title="KPI comparison"
-          description={`${compareData.cells.length} cell${compareData.cells.length === 1 ? '' : 's'} — ${input.ays.join(', ')} × ${input.kind === 'month' ? input.months.join(', ') : ''}`}
+          description={`${compareData.cells.length} month${compareData.cells.length === 1 ? '' : 's'} — ${input.kind === 'month' ? input.months.join(', ') : input.terms.map((t) => 'T' + t).join(', ')}`}
           cells={compareData.cells}
           metrics={metrics}
         />

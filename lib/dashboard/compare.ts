@@ -20,7 +20,10 @@ import type { DateRange } from './range';
  */
 export type CompareInput =
   | { kind: 'term'; ays: string[]; terms: number[] }
-  | { kind: 'month'; ays: string[]; months: string[] };
+  // Month-kind is AY-agnostic: each month resolves to its own AY by calendar
+  // year inside buildCompareCells (AY codes are single calendar years, KD #13),
+  // so the user picks months only — no separate AY axis.
+  | { kind: 'month'; months: string[] };
 
 /** A single (AY × term-or-month) intersection — what gets rendered in one cell. */
 export type CompareCell = {
@@ -55,13 +58,24 @@ export function parseCompareParams(params: {
   const pickStr = (v: string | string[] | undefined): string | undefined =>
     Array.isArray(v) ? v[0] : v;
 
+  const termsRaw = pickStr(params.terms);
+  const monthsRaw = pickStr(params.months);
+
+  // Month-kind (flexible modules) is AY-agnostic — months carry their own year
+  // and each resolves to its AY by calendar year in buildCompareCells. No `ays`
+  // param required.
+  if (monthsRaw) {
+    const months = monthsRaw.split(',').filter((m) => /^\d{4}-\d{2}$/.test(m));
+    if (months.length === 0) return null;
+    return { kind: 'month', months };
+  }
+
+  // Term-kind (academic modules) needs the AY axis — terms are AY-relative, so
+  // "AY × term" is the meaningful comparison.
   const aysRaw = pickStr(params.ays);
   if (!aysRaw) return null;
   const ays = aysRaw.split(',').filter((c) => /^AY\d{4}$/.test(c));
   if (ays.length === 0) return null;
-
-  const termsRaw = pickStr(params.terms);
-  const monthsRaw = pickStr(params.months);
 
   if (termsRaw) {
     const terms = termsRaw
@@ -70,12 +84,6 @@ export function parseCompareParams(params: {
       .filter((n) => Number.isInteger(n) && n >= 1 && n <= 4);
     if (terms.length === 0) return null;
     return { kind: 'term', ays, terms };
-  }
-
-  if (monthsRaw) {
-    const months = monthsRaw.split(',').filter((m) => /^\d{4}-\d{2}$/.test(m));
-    if (months.length === 0) return null;
-    return { kind: 'month', ays, months };
   }
 
   return null;
@@ -92,17 +100,28 @@ export async function buildCompareCells(
   service?: SupabaseClient
 ): Promise<CompareCell[]> {
   if (input.kind === 'month') {
+    // Each month resolves to the AY whose code matches its calendar year (AY
+    // codes are single calendar years, KD #13). Validate against existing AYs so
+    // we never query a non-existent ay{YYYY}_* table; the label is just the
+    // month (no AY prefix) since the year is already in it.
+    const supabase = service ?? createServiceClient();
+    const { data: ayRows } = await supabase
+      .from('academic_years')
+      .select('ay_code');
+    const validAys = new Set(
+      (ayRows ?? []).map((r) => (r as { ay_code: string }).ay_code)
+    );
     const cells: CompareCell[] = [];
-    for (const ay of input.ays) {
-      for (const m of input.months) {
-        cells.push({
-          ayCode: ay,
-          label: `${ay} · ${formatMonthLabel(m)}`,
-          range: monthToRange(m),
-          kind: 'month',
-          month: m,
-        });
-      }
+    for (const m of input.months) {
+      const ay = `AY${m.slice(0, 4)}`;
+      if (!validAys.has(ay)) continue;
+      cells.push({
+        ayCode: ay,
+        label: formatMonthLabel(m),
+        range: monthToRange(m),
+        kind: 'month',
+        month: m,
+      });
     }
     return cells;
   }

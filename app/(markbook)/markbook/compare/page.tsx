@@ -130,7 +130,7 @@ export default async function MarkbookComparePage({
           />
           <CompareGrid
             title="KPI comparison"
-            description={`${compareData.cells.length} cell${compareData.cells.length === 1 ? '' : 's'} — ${input.ays.join(', ')} × ${input.kind === 'term' ? input.terms.map((t) => `T${t}`).join(', ') : ''}`}
+            description={`${compareData.cells.length} cell${compareData.cells.length === 1 ? '' : 's'} — ${input.kind === 'term' ? input.ays.join(', ') + ' × ' + input.terms.map((t) => 'T' + t).join(', ') : ''}`}
             cells={compareData.cells}
             metrics={metrics}
           />
