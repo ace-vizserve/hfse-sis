@@ -186,6 +186,7 @@ export type PreCourseStats = {
 const PRE_COURSE_STAT_COLUMNS = [
   'enroleeNumber',
   'preCourseAnswer',
+  'preCourseDate',
   'preCourseAcknowledgedAt',
 ];
 
@@ -240,17 +241,23 @@ async function loadPreCourseStatsUncached(
     const appStatus = (statusByEnrolee.get(app.enroleeNumber) ?? '').trim();
     if (!FUNNEL_STATUSES.has(appStatus)) continue;
 
-    total++;
     const answer =
       typeof app.preCourseAnswer === 'string'
         ? app.preCourseAnswer.trim()
         : null;
-    const acknowledgedAt =
-      typeof app.preCourseAcknowledgedAt === 'string'
-        ? app.preCourseAcknowledgedAt.trim() || null
+    const date =
+      typeof app.preCourseDate === 'string'
+        ? app.preCourseDate.trim() || null
         : null;
 
-    if (answer === 'Yes' || acknowledgedAt !== null) {
+    // Mirror the pre-course cohort table (lib/sis/cohorts.ts): a "Yes" with no
+    // signing date is an invalid compliance record — exclude it from the counts
+    // entirely so this stat agrees with the table. Completion proof = "Yes"
+    // WITH a date (not the app-confirmation timestamp).
+    if (answer === 'Yes' && date === null) continue;
+
+    total++;
+    if (answer === 'Yes') {
       complete++;
     } else if (answer === 'No') {
       notYet++;

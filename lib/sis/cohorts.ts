@@ -700,15 +700,21 @@ async function loadPreCourseCohortUncached(
     const date = toNullableString(app.preCourseDate);
     const acknowledgedAt = toNullableString(app.preCourseAcknowledgedAt);
 
-    // "complete" = parent answered Yes OR the SIS recorded a formal timestamp.
-    // "not-yet"  = parent explicitly said No (needs follow-up / scheduling).
-    // "pending"  = no response at all yet.
+    // Regulatory record (ICA/CPE pre-course counselling for STP applicants).
+    // "Yes" = counselling completed + acknowledgement signed; `preCourseDate` is
+    // the signing date — the actual proof. The intake form blocks "Yes" without
+    // a date, so a Yes-with-no-date is an invalid/legacy record: exclude it
+    // rather than render an incomplete proof.
+    if (answer === 'Yes' && date === null) continue;
+
+    // complete = "Yes" (date guaranteed present by the guard above) — the proof
+    //            is on file.
+    // not-yet  = "No" — still needs counselling scheduled before enrolment.
+    // pending  = no response yet.
+    // NB: `preCourseDate` (the signed date) is the completion proof, NOT
+    // `preCourseAcknowledgedAt` (an app-confirmation timestamp, kept for display).
     const preCourseStatus: 'complete' | 'not-yet' | 'pending' =
-      answer === 'Yes' || acknowledgedAt !== null
-        ? 'complete'
-        : answer === 'No'
-          ? 'not-yet'
-          : 'pending';
+      answer === 'Yes' ? 'complete' : answer === 'No' ? 'not-yet' : 'pending';
 
     rows.push({
       ...commonFields(app, status),
