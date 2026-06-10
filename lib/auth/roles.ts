@@ -212,8 +212,8 @@ const ATTENDANCE_NAV: NavSection[] = [
       { href: '/attendance', label: 'Dashboard' },
       { href: '/attendance/sections', label: 'Sections' },
       {
-        href: '/attendance/compare',
-        label: 'Compare',
+        href: '/attendance/insights',
+        label: 'Insights',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
     ],
