@@ -552,7 +552,7 @@ export const NAV_BY_MODULE: {
       {
         items: [
           { href: '/markbook', label: 'Dashboard' },
-          { href: '/markbook/compare', label: 'Compare' },
+          { href: '/markbook/insights', label: 'Insights' },
         ],
       },
       {
@@ -588,7 +588,7 @@ export const NAV_BY_MODULE: {
       {
         items: [
           { href: '/markbook', label: 'Dashboard' },
-          { href: '/markbook/compare', label: 'Compare' },
+          { href: '/markbook/insights', label: 'Insights' },
         ],
       },
       {
@@ -614,7 +614,7 @@ export const NAV_BY_MODULE: {
       {
         items: [
           { href: '/markbook', label: 'Dashboard' },
-          { href: '/markbook/compare', label: 'Compare' },
+          { href: '/markbook/insights', label: 'Insights' },
         ],
       },
       {
