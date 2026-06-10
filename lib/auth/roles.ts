@@ -249,8 +249,8 @@ const ADMISSIONS_NAV: NavSection[] = [
     items: [
       { href: '/admissions', label: 'Dashboard' },
       {
-        href: '/admissions/compare',
-        label: 'Compare',
+        href: '/admissions/insights',
+        label: 'Insights',
         requiresRoles: [
           'admissions',
           'registrar',
