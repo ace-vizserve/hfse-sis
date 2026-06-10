@@ -198,7 +198,13 @@ export default async function EvaluationSectionRosterPage({
         </div>
       )}
 
+      {/* key on the term so a term switch remounts the client and re-seeds its
+          local row state from the new term's roster — without it, the textareas
+          keep showing the prior term's write-ups until a hard reload (the
+          client seeds rows via a mount-only useState initializer). Same-term
+          refresh keeps the key, so saving a draft doesn't lose focus/scroll. */}
       <WriteupRosterClient
+        key={selectedTerm.id}
         termId={selectedTerm.id}
         sectionId={section.id}
         roster={roster}

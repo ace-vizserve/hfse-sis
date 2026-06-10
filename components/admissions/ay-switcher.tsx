@@ -39,6 +39,11 @@ export function AySwitcher({
     next.delete('cmpTo');
     startTransition(() => {
       router.push(`?${next.toString()}`, { scroll: false });
+      // The consuming pages (/admissions/applications, /records/students) fetch
+      // the student list keyed on ?ay= server-side. Without refresh, the client
+      // Router Cache can replay the prior AY's payload — refresh forces the RSC
+      // to re-run for the new AY (mirrors TermSwitcher).
+      router.refresh();
     });
   }
 

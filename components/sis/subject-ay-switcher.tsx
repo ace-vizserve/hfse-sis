@@ -25,6 +25,10 @@ export function SubjectAySwitcher({
   function onChange(next: string) {
     if (next === current) return;
     router.push(`/sis/admin/subjects?ay=${encodeURIComponent(next)}`);
+    // Same route + changed ?ay= → force the RSC to re-fetch the subject-config
+    // matrix for the new AY (the client Router Cache would otherwise replay the
+    // prior AY's matrix until a hard reload).
+    router.refresh();
   }
 
   return (

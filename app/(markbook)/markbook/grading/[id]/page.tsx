@@ -606,7 +606,13 @@ export default async function GradingSheetPage({
         </div>
       )}
 
+      {/* key on the slot-max signature: when TotalsEditor edits a max/slot it
+          calls router.refresh(), which recomputes grades server-side — remount
+          the grid so it re-seeds from the fresh rows instead of showing stale
+          computed grades. Per-cell saves don't change the maxes, so the key is
+          stable during entry (no remount, no lost in-progress edits). */}
       <ScoreEntryGrid
+        key={`${(sheet.ww_totals ?? []).join(',')}|${(sheet.pt_totals ?? []).join(',')}|${sheet.qa_total ?? ''}`}
         sheetId={sheet.id}
         wwTotals={(sheet.ww_totals ?? []) as number[]}
         ptTotals={(sheet.pt_totals ?? []) as number[]}
