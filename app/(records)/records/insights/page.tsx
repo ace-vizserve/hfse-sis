@@ -494,8 +494,8 @@ export default async function RecordsInsightsPage({
       {/* 6 — Withdrawal analysis: reason donut + level bar. */}
       <InsightsSection
         eyebrow="Attrition"
-        title="Why do students leave?"
-        description="Reasons recorded when a student is withdrawn mid-year, overall and per level."
+        title="Why do enrolled students leave?"
+        description="Reasons recorded when an enrolled student is withdrawn mid-year — overall and per level. (Applicants who cancelled before enrolling are in Admissions → Insights.)"
       >
         {!haveWithdrawals ? (
           <Card className="border-dashed">

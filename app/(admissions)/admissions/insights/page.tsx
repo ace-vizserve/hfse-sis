@@ -1,4 +1,10 @@
-import { ArrowLeft, Hourglass, TrendingUp, UserMinus } from 'lucide-react';
+import {
+  ArrowLeft,
+  FileStack,
+  Percent,
+  TrendingUp,
+  UserMinus,
+} from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
@@ -125,13 +131,23 @@ export default async function AdmissionsInsightsPage({
     getAdmissionsKpisRange(rangeInput),
   ]);
 
-  // AY-wide enrolled count from the funnel's terminal "Enrolled" stage —
-  // a whole-year figure (not the picker-windowed range count).
+  // AY-wide funnel figures (whole-year, not the picker-windowed range count).
+  // Admissions owns the FUNNEL: applications in (demand) + conversion out — NOT
+  // the enrolled headcount, which is the enrolled body and belongs to Records
+  // Insights (KD #51). Enrolment here appears only as the conversion %.
+  const appsStage = funnel.find((s) => s.stage === 'Submitted'); // total applications
+  const applicationsCount = appsStage?.count ?? 0;
+  const priorAppsStage = priorFunnel?.find((s) => s.stage === 'Submitted');
+  const priorApplications = priorFunnel ? (priorAppsStage?.count ?? 0) : null;
+  // Year-over-year growth is measured on application DEMAND.
+  const growth = growthDelta(applicationsCount, priorApplications);
+
   const enrolledStage = funnel.find((s) => s.stage === 'Enrolled');
   const enrolledCount = enrolledStage?.count ?? 0;
-  const priorEnrolledStage = priorFunnel?.find((s) => s.stage === 'Enrolled');
-  const priorEnrolled = priorFunnel ? (priorEnrolledStage?.count ?? 0) : null;
-  const growth = growthDelta(enrolledCount, priorEnrolled);
+  const conversionPct =
+    applicationsCount > 0
+      ? Math.round((enrolledCount / applicationsCount) * 1000) / 10
+      : 0;
 
   // Biggest drop-off stage — the single point where the funnel leaks most.
   const biggestDrop = funnel.reduce<(typeof funnel)[number] | null>(
@@ -191,7 +207,7 @@ export default async function AdmissionsInsightsPage({
       <DashboardHero
         eyebrow="Admissions · Insights"
         title="Enrollment Health"
-        description="The story behind the funnel — where applicants come from, where they fall away, and how steadily the school is growing year over year."
+        description="The story behind the funnel — how application demand is trending, how well we convert applicants, and where they fall away before enrolling."
         badges={[
           { label: selectedAy },
           {
@@ -202,43 +218,43 @@ export default async function AdmissionsInsightsPage({
         ]}
       />
 
-      {/* 1 — Growth headline: enrolled this year vs prior AY. */}
+      {/* 1 — Funnel headline: application demand + conversion (NOT enrolled
+          headcount — that's the enrolled body, owned by Records Insights). */}
       <InsightsSection
-        eyebrow="Growth"
-        title="Are we growing?"
+        eyebrow="Demand & conversion"
+        title="Is the funnel healthy?"
         description={
           growth.pct === null
-            ? 'Year-over-year growth unlocks once a prior academic year is on record. Until then, this is the current enrolled headcount.'
-            : `Enrolled students this year compared with ${priorAy}.`
+            ? 'Year-over-year demand unlocks once a prior academic year is on record. Until then, this is the current cycle.'
+            : `Application demand this year compared with ${priorAy}.`
         }
       >
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <MetricCard
-            label="Enrolled this year"
-            value={enrolledCount}
-            icon={TrendingUp}
-            intent="good"
+            label="Applications received"
+            value={applicationsCount}
+            icon={FileStack}
+            intent="default"
             subtext={
-              priorEnrolled !== null
-                ? `${priorEnrolled.toLocaleString('en-SG')} in ${priorAy}`
+              priorApplications !== null
+                ? `${priorApplications.toLocaleString('en-SG')} in ${priorAy}`
                 : 'No prior year on record'
             }
           />
           <MetricCard
-            label="Avg time to enroll"
-            value={timeToEnroll.avgDays}
-            format="days"
-            icon={Hourglass}
-            intent="default"
-            subtext={`across ${timeToEnroll.sampleSize.toLocaleString('en-SG')} enrolment${timeToEnroll.sampleSize === 1 ? '' : 's'}`}
-            deltaGoodWhen="down"
+            label="Conversion rate"
+            value={conversionPct}
+            format="percent"
+            icon={Percent}
+            intent="good"
+            subtext={`${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`}
           />
           <MetricCard
             label="Applications cancelled"
             value={terminal.total}
             icon={UserMinus}
             intent={terminal.total > 0 ? 'warning' : 'default'}
-            subtext="withdrawn or cancelled this year"
+            subtext="withdrawn or cancelled before enrolling"
           />
         </section>
       </InsightsSection>
@@ -332,11 +348,12 @@ export default async function AdmissionsInsightsPage({
         </Card>
       </InsightsSection>
 
-      {/* 4 — Why they cancel. */}
+      {/* 4 — Why applicants are lost (pre-enrolment; distinct from Records'
+          enrolled-student withdrawals). */}
       <InsightsSection
-        eyebrow="Attrition"
-        title="Why do they cancel?"
-        description="Reasons recorded when an application is withdrawn or cancelled, overall and per level."
+        eyebrow="Lost applicants"
+        title="Why don't they enroll?"
+        description="Reasons recorded when an application is withdrawn or cancelled before enrolling — overall and per level. (Students who leave after enrolling are in Records → Insights.)"
       >
         {terminal.total === 0 ? (
           <Card className="border-dashed">
