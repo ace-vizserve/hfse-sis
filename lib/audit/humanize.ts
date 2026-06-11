@@ -115,6 +115,7 @@ const ACTION_LABELS: Record<string, string> = {
   'sis.family.update': 'Family details updated',
   'sis.stage.update': 'Enrolment stage updated',
   'sis.stp.update': 'Student Pass updated',
+  'sis.precourse.update': 'Pre-course session recorded',
   'sis.discount_code.create': 'Discount code created',
   'sis.discount_code.update': 'Discount code updated',
   'sis.discount_code.expire': 'Discount code expired',

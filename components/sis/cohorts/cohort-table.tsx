@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Mail } from 'lucide-react';
 import { type ColumnDef } from '@tanstack/react-table';
 
+import { PreCourseDateCell } from '@/components/sis/cohorts/pre-course-date-cell';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
@@ -938,9 +939,11 @@ function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
       accessorFn: (r) => r.preCourseDate ?? '',
       header: 'Session date',
       cell: ({ row }) => (
-        <span className="text-sm tabular-nums text-foreground">
-          {formatDate(row.original.preCourseDate)}
-        </span>
+        <PreCourseDateCell
+          enroleeNumber={row.original.enroleeNumber}
+          ayCode={ayCode}
+          value={row.original.preCourseDate ?? null}
+        />
       ),
       enableSorting: true,
     },

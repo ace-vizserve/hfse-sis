@@ -60,6 +60,7 @@ export type AuditAction =
   | 'sis.family.update'
   | 'sis.stage.update'
   | 'sis.stp.update'
+  | 'sis.precourse.update'
   | 'sis.discount_code.create'
   | 'sis.discount_code.update'
   | 'sis.discount_code.expire'

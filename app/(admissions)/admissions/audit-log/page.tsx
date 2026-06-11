@@ -28,6 +28,7 @@ const ADMISSIONS_AUDIT_ACTIONS = [
   'sis.family.update',
   'sis.stage.update',
   'sis.stp.update',
+  'sis.precourse.update',
   'sis.document.approve',
   'sis.document.reject',
   'sis.documents.auto-expire',
