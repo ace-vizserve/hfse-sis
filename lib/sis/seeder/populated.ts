@@ -2011,13 +2011,21 @@ async function seedAdmissionsFunnel(
   // mulberry32 seed → same sequence). Build the full row set, then drop any
   // enroleeNumbers that already exist before inserting the remainder.
 
+  // Mirror the parent-portal "How did you hear about us?" dropdown exactly so
+  // the seeded referral breakdown matches what production can actually produce.
+  // (The portal also offers "Other (Please specify)" → free text; we seed one
+  // representative custom value to exercise the chart's long-tail / "other" bucket.)
   const REFERRALS = [
+    'Google / Search Engine',
     'Facebook',
-    'Google',
-    'Word of Mouth',
-    'School Visit',
-    'Alumni',
-    'Parent Referral',
+    'Instagram',
+    'Word of Mouth (Friend / Colleague)',
+    'Current / Former HFSE Parent',
+    'Sibling Enrolled at HFSE',
+    'Walk-in / Open House',
+    'Education Fair',
+    'Education Agent / Consultant',
+    'Newspaper feature', // an "Other (Please specify)" free-text example
   ];
 
   const rand = mulberry32(hashString(`${testAy.ay_code}:funnel`));
