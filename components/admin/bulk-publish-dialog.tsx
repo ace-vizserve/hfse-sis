@@ -2,7 +2,6 @@
 
 import {
   AlertTriangle,
-  ArrowUpRight,
   CheckCircle2,
   Loader2,
   Radio,
@@ -12,8 +11,12 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import {
+  concernsFor,
+  type Concern,
+} from '@/components/admin/bulk-publish-concerns';
+import { SectionReadinessRow } from '@/components/admin/section-readiness-row';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
 import {
   Dialog,
@@ -40,10 +43,10 @@ type TermLite = { id: string; label: string; term_number: number };
 
 // Per-section readiness state (fetched from GET /api/sections/[id]/publish-readiness).
 type SectionReadiness =
-  | { state: 'loading' }
-  | { state: 'ready' }
-  | { state: 'warn'; reasons: string[] }
-  | { state: 'blocked'; reasons: string[] };
+  | { state: 'loading'; concerns?: Concern[] }
+  | { state: 'ready'; concerns?: Concern[] }
+  | { state: 'warn'; reasons: string[]; concerns?: Concern[] }
+  | { state: 'blocked'; reasons: string[]; concerns?: Concern[] };
 
 // A hard blocker / soft gap as returned by the server verdict.
 type PublishGap = { code: string; label: string; count?: number };
@@ -242,7 +245,10 @@ export function BulkPublishDialog({
               if (cancelled) return;
               if (!res.ok) throw new Error(`HTTP ${res.status}`);
               const data = await res.json();
-              const result = classify(data);
+              const result: SectionReadiness = {
+                ...classify(data),
+                concerns: concernsFor(data),
+              };
               readinessCache.current[key] = result;
               setReadiness((prev) => ({ ...prev, [s.id]: result }));
             } catch {
@@ -250,6 +256,7 @@ export function BulkPublishDialog({
               const fallback: SectionReadiness = {
                 state: 'warn',
                 reasons: ['readiness check failed'],
+                concerns: [],
               };
               readinessCache.current[key] = fallback;
               setReadiness((prev) => ({ ...prev, [s.id]: fallback }));
@@ -444,7 +451,7 @@ export function BulkPublishDialog({
           Publish many
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>Bulk publish report cards</DialogTitle>
           <DialogDescription>
@@ -522,41 +529,19 @@ export function BulkPublishDialog({
               {sortedSections.map((s) => {
                 const r = readiness[s.id];
                 const isBlocked = r?.state === 'blocked';
+                const concerns =
+                  r && r.state !== 'loading' ? (r.concerns ?? []) : [];
                 return (
-                  <label
+                  <SectionReadinessRow
                     key={s.id}
-                    className={
-                      'flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/40' +
-                      (isBlocked ? ' cursor-not-allowed opacity-60' : '')
-                    }
-                  >
-                    <Checkbox
-                      checked={!!selection[s.id]}
-                      onCheckedChange={() => toggle(s.id)}
-                      disabled={submitting || isBlocked}
-                    />
-                    <div className="min-w-0 flex-1 text-sm">
-                      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                        {s.level_label}
-                      </span>{' '}
-                      <span className="text-foreground">{s.name}</span>
-                    </div>
-                    <ReadinessPill readiness={r} />
-                    {/* Jump to this section's grading sheets to fix any gap.
-                        Opens a new tab so the bulk dialog stays open;
-                        stopPropagation prevents the label from toggling the row. */}
-                    <a
-                      href={`/markbook/grading?grading.section=${encodeURIComponent(s.name)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      title="Open this section's grading sheets"
-                      aria-label={`Open grading sheets for ${s.level_label} ${s.name}`}
-                      className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-primary"
-                    >
-                      <ArrowUpRight className="size-3.5" />
-                    </a>
-                  </label>
+                    section={s}
+                    concerns={concerns}
+                    termId={termId}
+                    selected={!!selection[s.id]}
+                    disabled={submitting || isBlocked}
+                    onToggle={() => toggle(s.id)}
+                    pill={<ReadinessPill readiness={r} />}
+                  />
                 );
               })}
             </ScrollArea>
