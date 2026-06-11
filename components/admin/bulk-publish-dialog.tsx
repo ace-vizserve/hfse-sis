@@ -526,24 +526,26 @@ export function BulkPublishDialog({
                   No sections available.
                 </div>
               )}
-              {sortedSections.map((s) => {
-                const r = readiness[s.id];
-                const isBlocked = r?.state === 'blocked';
-                const concerns =
-                  r && r.state !== 'loading' ? (r.concerns ?? []) : [];
-                return (
-                  <SectionReadinessRow
-                    key={s.id}
-                    section={s}
-                    concerns={concerns}
-                    termId={termId}
-                    selected={!!selection[s.id]}
-                    disabled={submitting || isBlocked}
-                    onToggle={() => toggle(s.id)}
-                    pill={<ReadinessPill readiness={r} />}
-                  />
-                );
-              })}
+              <div className="space-y-0.5">
+                {sortedSections.map((s) => {
+                  const r = readiness[s.id];
+                  const isBlocked = r?.state === 'blocked';
+                  const concerns =
+                    r && r.state !== 'loading' ? (r.concerns ?? []) : [];
+                  return (
+                    <SectionReadinessRow
+                      key={s.id}
+                      section={s}
+                      concerns={concerns}
+                      termId={termId}
+                      selected={!!selection[s.id]}
+                      disabled={submitting || isBlocked}
+                      onToggle={() => toggle(s.id)}
+                      pill={<ReadinessPill readiness={r} />}
+                    />
+                  );
+                })}
+              </div>
             </ScrollArea>
           </div>
 
