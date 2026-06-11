@@ -262,6 +262,10 @@ export async function seedMovements(
           enrollment_status: 'withdrawn',
           withdrawal_date: date,
         },
+        // Top-level reason (KD #111) — the movements feed reads
+        // context.withdrawalReason, so the reason column renders instead of blank.
+        withdrawalReason: pick([...WITHDRAWAL_REASON_VALUES]),
+        withdrawalNotes: null,
       },
       created_at: iso,
     });

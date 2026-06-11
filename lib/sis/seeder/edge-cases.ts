@@ -9,6 +9,47 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeQuarterly } from '@/lib/compute/quarterly';
 import { mulberry32, hashString, prefixFor } from './random';
 
+const SEED_ACTOR_EMAIL = 'registrar.seed@hfse.test';
+
+// Resolve a student's display name + admissions enroleeNumber from a
+// section_students row's student_id. Mirrors what the real routes carry in
+// their audit context (studentName + enroleeNumber) so the movements feed
+// and admissions surfaces render without falling back to an AY-apps lookup.
+async function resolveStudentIdentity(
+  service: SupabaseClient,
+  studentId: string,
+  appsTable: string
+): Promise<{
+  studentNumber: string | null;
+  studentName: string | null;
+  enroleeNumber: string | null;
+}> {
+  const { data: studentRow } = await service
+    .from('students')
+    .select('student_number, first_name, last_name')
+    .eq('id', studentId)
+    .maybeSingle();
+  const s = studentRow as {
+    student_number: string | null;
+    first_name: string | null;
+    last_name: string | null;
+  } | null;
+  const studentNumber = s?.student_number ?? null;
+  const studentName =
+    `${s?.first_name ?? ''} ${s?.last_name ?? ''}`.trim() || null;
+  let enroleeNumber: string | null = null;
+  if (studentNumber) {
+    const { data: appRow } = await service
+      .from(appsTable)
+      .select('enroleeNumber')
+      .eq('studentNumber', studentNumber)
+      .maybeSingle();
+    enroleeNumber =
+      (appRow as { enroleeNumber: string } | null)?.enroleeNumber ?? null;
+  }
+  return { studentNumber, studentName, enroleeNumber };
+}
+
 export type EdgeCaseResult = {
   edge_cases_inserted: number;
 };
@@ -40,16 +81,21 @@ export async function seedEdgeCases(
 
   const { data: sectionRows } = await service
     .from('sections')
-    .select('id, name, level_id, levels(code)')
+    .select('id, name, level_id, levels(code, label)')
     .eq('academic_year_id', testAy.id);
   const sections = (sectionRows ?? []) as Array<{
     id: string;
     name: string;
     level_id: string;
-    levels: { code: string } | { code: string }[] | null;
+    levels:
+      | { code: string; label: string }
+      | { code: string; label: string }[]
+      | null;
   }>;
   const levelCodeOf = (s: (typeof sections)[number]) =>
     Array.isArray(s.levels) ? s.levels[0]?.code : s.levels?.code;
+  const levelLabelOf = (s: (typeof sections)[number]) =>
+    Array.isArray(s.levels) ? s.levels[0]?.label : s.levels?.label;
   const grit = sections.find(
     (s) => s.name === 'Grit' && levelCodeOf(s) === 'P6'
   );
@@ -105,6 +151,13 @@ export async function seedEdgeCases(
   const transferStudent =
     gritSS[Math.floor(rand() * gritSS.length)] ?? gritSS[0];
 
+  // Admissions table names (single shared Supabase project per KD #1 — the
+  // ay####_* tables are reachable via the same service client; EC8 already
+  // relies on this).
+  const prefix = prefixFor(testAy.ay_code);
+  const appsTable = `${prefix}_enrolment_applications`;
+  const statusTable = `${prefix}_enrolment_status`;
+
   // ── EC1 & EC2 — Late enrollees ─────────────────────────────────────────────
   try {
     const t2Start = t2.start_date ?? new Date().toISOString().slice(0, 10);
@@ -125,6 +178,44 @@ export async function seedEdgeCases(
         .eq('id', ss.id)
         .eq('enrollment_status', 'active');
       if (!error) count++;
+
+      // Audit row — mirrors the real section-students PATCH's
+      // `enrolment.metadata.update` with the lateEnrolleeTransition block
+      // (app/api/sections/[id]/students/[enrolmentId]/route.ts ~491-509).
+      // Without it the late-enrol is invisible on /records/movements, which
+      // reads enrolment.metadata.update rows with lateEnrolleeTransition=true.
+      // Idempotent: guarded on an existing audit row for this entity+transition.
+      const { count: existingLateAudit } = await service
+        .from('audit_log')
+        .select('id', { count: 'exact', head: true })
+        .eq('action', 'enrolment.metadata.update')
+        .eq('entity_id', ss.id)
+        .eq('context->>lateEnrolleeTransition', 'true');
+      if ((existingLateAudit ?? 0) === 0) {
+        await service.from('audit_log').insert({
+          action: 'enrolment.metadata.update',
+          actor_email: SEED_ACTOR_EMAIL,
+          entity_type: 'section_student',
+          entity_id: ss.id,
+          context: {
+            section_id: ss.section_id,
+            before: {
+              bus_no: null,
+              classroom_officer_role: null,
+              enrollment_status: 'active',
+            },
+            after: {
+              enrollment_status: 'late_enrollee',
+              enrollment_date: t2EnrollDate,
+              late_enrollee_term_number: 2,
+            },
+            lateEnrolleeTransition: true,
+            lateEnrolleeTransitionAt: new Date().toISOString(),
+            lateEnrolleeTermNumber: 2,
+            lateEnrolleeTermLabel: 'T2',
+          },
+        });
+      }
 
       // Null out T1 grade entries so the late-enrollee proration path fires.
       const { data: t1Sheets } = await service
@@ -215,7 +306,7 @@ export async function seedEdgeCases(
       if (!ss || ss.enrollment_status === 'withdrawn') continue;
       const wMeta = withdrawalMeta.get(ss.id) ?? {
         reason: 'other',
-        notes: null,
+        notes: null as string | null,
       };
       const { error } = await service
         .from('section_students')
@@ -229,22 +320,98 @@ export async function seedEdgeCases(
         .eq('enrollment_status', 'active');
       if (!error) {
         count++;
-        await service.from('audit_log').insert({
-          action: 'enrolment.metadata.update',
-          actor_email: 'registrar.seed@hfse.test',
-          entity_type: 'section_student',
-          entity_id: ss.id,
-          context: {
-            before: { enrollment_status: 'active' },
-            after: {
-              enrollment_status: 'withdrawn',
-              withdrawal_date: t2Mid,
-              // camelCase key — what lib/sis/movements.ts:413 reads for reasonLabel.
+
+        // Primary audit — mirror the real section-students PATCH's
+        // `enrolment.metadata.update` (route ~491-524): full before block,
+        // after = the real column-name patch, withdrawalReason/withdrawalNotes
+        // as TOP-LEVEL keys (movements.ts:414 reads ctx.withdrawalReason).
+        // Idempotent: guarded on an existing withdrawal audit row for this row.
+        const { count: existingWdAudit } = await service
+          .from('audit_log')
+          .select('id', { count: 'exact', head: true })
+          .eq('action', 'enrolment.metadata.update')
+          .eq('entity_id', ss.id)
+          .eq('context->after->>enrollment_status', 'withdrawn');
+        if ((existingWdAudit ?? 0) === 0) {
+          await service.from('audit_log').insert({
+            action: 'enrolment.metadata.update',
+            actor_email: SEED_ACTOR_EMAIL,
+            entity_type: 'section_student',
+            entity_id: ss.id,
+            context: {
+              section_id: ss.section_id,
+              before: {
+                bus_no: null,
+                classroom_officer_role: null,
+                enrollment_status: 'active',
+              },
+              after: {
+                enrollment_status: 'withdrawn',
+                withdrawal_date: t2Mid,
+                withdrawal_reason: wMeta.reason,
+                withdrawal_notes: wMeta.notes,
+              },
+              // Top-level keys — what the movements feed reads for reasonLabel.
               withdrawalReason: wMeta.reason,
               withdrawalNotes: wMeta.notes,
             },
-          },
-        });
+          });
+        }
+
+        // Admissions cascade — mirror the real route's `student.withdrawal.cascade`
+        // (route ~360-404): flip ay####_enrolment_status.applicationStatus to
+        // 'Withdrawn' + record the terminal reason so the withdrawn student no
+        // longer reads "Enrolled" in admissions. Single shared project (KD #1).
+        const identity = await resolveStudentIdentity(
+          service,
+          ss.student_id,
+          appsTable
+        );
+        if (identity.enroleeNumber) {
+          const nowIso = new Date().toISOString();
+          const { error: admErr } = await service
+            .from(statusTable)
+            .update({
+              applicationStatus: 'Withdrawn',
+              applicationTerminalReason: wMeta.reason,
+              applicationTerminalNotes: wMeta.notes,
+              applicationUpdatedDate: nowIso,
+              applicationUpdatedBy: SEED_ACTOR_EMAIL,
+            })
+            .eq('enroleeNumber', identity.enroleeNumber);
+          if (admErr) {
+            console.warn(
+              `[edge-cases] EC3/EC4 admissions cascade failed for ${identity.enroleeNumber}:`,
+              admErr.message
+            );
+          } else {
+            // Cascade audit — idempotent guard on entity_id + action.
+            const { count: existingCascade } = await service
+              .from('audit_log')
+              .select('id', { count: 'exact', head: true })
+              .eq('action', 'student.withdrawal.cascade')
+              .eq('entity_id', identity.enroleeNumber);
+            if ((existingCascade ?? 0) === 0) {
+              await service.from('audit_log').insert({
+                action: 'student.withdrawal.cascade',
+                actor_email: SEED_ACTOR_EMAIL,
+                entity_type: 'enrolment_status',
+                entity_id: identity.enroleeNumber,
+                context: {
+                  ay_code: testAy.ay_code,
+                  trigger: 'section_student.withdrawn',
+                  enroleeNumber: identity.enroleeNumber,
+                  ...(identity.studentName
+                    ? { studentName: identity.studentName }
+                    : {}),
+                  section_student_id: ss.id,
+                  section_id: ss.section_id,
+                  applicationStatus_after: 'Withdrawn',
+                },
+              });
+            }
+          }
+        }
       }
     }
   } catch (err) {
@@ -428,9 +595,6 @@ export async function seedEdgeCases(
 
   // ── EC8 — P-Files expired chase outreach ──────────────────────────────────
   try {
-    const prefix = prefixFor(testAy.ay_code);
-    const appsTable = `${prefix}_enrolment_applications`;
-
     for (const ss of [pfileStudent1, pfileStudent2].filter(Boolean)) {
       if (!ss) continue;
       const { data: studentRow } = await service
@@ -690,38 +854,123 @@ export async function seedEdgeCases(
         .eq('enrollment_status', 'active');
 
       if (!loyaltyActive) {
-        // Step A: withdraw from Grit
-        await service
-          .from('section_students')
-          .update({
-            enrollment_status: 'withdrawn',
-            withdrawal_date: transferDate,
-          })
-          .eq('id', transferStudent.id);
+        // Resolve identity so the audit context matches the REAL transfer route
+        // (lib/sis/section-transfer.ts). The movements feed
+        // (lib/sis/movements.ts::fetchTransferEvents) filters on
+        // context->>ay_code and reads enroleeNumber/studentName/fromSection/
+        // toSection/toLevel/termNumber — a hand-rolled {fromSectionName,…} row is
+        // dropped entirely. Mirror seedMovements' transfer shape.
+        const identity = await resolveStudentIdentity(
+          service,
+          transferStudent.student_id,
+          appsTable
+        );
+        const p6Label = levelLabelOf(loyalty) ?? 'Primary Six';
 
-        // Step B: insert into Loyalty with next available index number
-        const maxIdx = Math.max(0, ...loyaltySS.map((r) => r.index_number)) + 1;
-        await service.from('section_students').insert({
-          section_id: loyalty.id,
-          student_id: transferStudent.student_id,
-          index_number: maxIdx,
-          enrollment_status: 'active',
-          enrollment_date: transferDate,
-        });
+        // A faithful transfer needs the enrolee number — the movements feed keys
+        // on it (entity_id + context.enroleeNumber). If it can't be resolved
+        // (rare; only on a partially-seeded AY), skip the whole transfer rather
+        // than seed a row the feed would render as "(unnamed)".
+        if (!identity.enroleeNumber) {
+          console.warn(
+            '[edge-cases] EC12 skipped — enroleeNumber unresolved for transfer student'
+          );
+        } else {
+          // Step A: withdraw from Grit
+          await service
+            .from('section_students')
+            .update({
+              enrollment_status: 'withdrawn',
+              withdrawal_date: transferDate,
+            })
+            .eq('id', transferStudent.id);
 
-        // Step C: audit log (KD #83 reads this for the movements page)
-        await service.from('audit_log').insert({
-          action: 'student.section.transfer',
-          actor_email: 'registrar.seed@hfse.test',
-          entity_type: 'section_student',
-          entity_id: transferStudent.id,
-          context: {
-            fromSectionName: 'Grit',
-            toSectionName: 'Loyalty',
-            transferDate,
-          },
-        });
-        count++;
+          // Step B: insert into Loyalty (with enrolee_number — enrolee_number-keyed
+          // lookups, e.g. the Records directory index/status maps per KD #135,
+          // silently miss NULL rows). Select the new id back for the attendance seed.
+          const maxIdx =
+            Math.max(0, ...loyaltySS.map((r) => r.index_number)) + 1;
+          const { data: newRow } = await service
+            .from('section_students')
+            .insert({
+              section_id: loyalty.id,
+              student_id: transferStudent.student_id,
+              index_number: maxIdx,
+              enrollment_status: 'active',
+              enrollment_date: transferDate,
+              enrolee_number: identity.enroleeNumber,
+            })
+            .select('id')
+            .single();
+          const newSsId = (newRow as { id: string } | null)?.id ?? null;
+
+          // Step C: audit log — full real-route shape so /records/movements shows it.
+          await service.from('audit_log').insert({
+            action: 'student.section.transfer',
+            actor_email: 'registrar.seed@hfse.test',
+            entity_type: 'section_student',
+            entity_id: identity.enroleeNumber,
+            context: {
+              ay_code: testAy.ay_code,
+              enroleeNumber: identity.enroleeNumber,
+              studentName: identity.studentName,
+              fromSection: 'Grit',
+              fromLevel: p6Label,
+              toSection: 'Loyalty',
+              toLevel: p6Label,
+              targetSectionId: loyalty.id,
+              transferDate,
+              termNumber: t2.term_number,
+              termLabel: `T${t2.term_number}`,
+            },
+          });
+
+          // Step D: seed destination attendance from the transfer date onward, then
+          // recompute every term's rollup. A real transfer accrues attendance in the
+          // new section (the daily writer recomputes on each save); without it the
+          // active Loyalty row has no attendance_records rollup and
+          // lib/markbook/publish-readiness.ts false-flags it as attendance_incomplete.
+          // Mirrors seedAttendanceSummary's row shape: {section_student_id, term_id,
+          // date, status, ex_reason} — no recorded_by.
+          if (newSsId) {
+            const { data: calRows } = await service
+              .from('school_calendar')
+              .select('date, term_id')
+              .in('day_type', ['school_day', 'hbl'])
+              .gte('date', transferDate)
+              .order('date');
+            const byDate = new Map<string, string>();
+            for (const c of (calRows ?? []) as Array<{
+              date: string;
+              term_id: string | null;
+            }>) {
+              if (c.term_id && !byDate.has(c.date))
+                byDate.set(c.date, c.term_id);
+            }
+            const dailyRows = Array.from(byDate.entries()).map(
+              ([date, term_id]) => ({
+                section_student_id: newSsId,
+                term_id,
+                date,
+                status: 'P' as const,
+                ex_reason: null,
+              })
+            );
+            const CHUNK = 500;
+            for (let i = 0; i < dailyRows.length; i += CHUNK) {
+              await service
+                .from('attendance_daily')
+                .insert(dailyRows.slice(i, i + CHUNK));
+            }
+            for (const term of terms) {
+              await service.rpc('recompute_attendance_rollup', {
+                p_term_id: term.id,
+                p_section_student_id: newSsId,
+              });
+            }
+          }
+          count++;
+        }
       }
     }
   } catch (err) {

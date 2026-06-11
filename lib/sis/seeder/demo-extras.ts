@@ -17,6 +17,7 @@ import { hashString, mulberry32, prefixFor } from './random';
 export type DemoExtrasResult = {
   calendar_events_extra: number;
   school_calendar_audience_overrides: number;
+  vacation_leave_entries: number;
 };
 
 export async function seedDemoExtras(
@@ -26,11 +27,21 @@ export async function seedDemoExtras(
   const result: DemoExtrasResult = {
     calendar_events_extra: 0,
     school_calendar_audience_overrides: 0,
+    vacation_leave_entries: 0,
   };
 
   const cal = await seedCalendarEnhancements(service, testAy);
   result.calendar_events_extra = cal.events;
   result.school_calendar_audience_overrides = cal.audienceOverrides;
+
+  // Vacation-leave entries — fills the attendance dashboard's
+  // VacationLeaveQuotaCard, which is otherwise empty in test (KD #94). The other
+  // dormant demo-extras helpers (change-requests, enrollment-status-mix) overlap
+  // the EC1–EC7 edge cases and are deliberately left unwired to avoid double-seeding.
+  result.vacation_leave_entries = await seedVacationLeaveEntries(
+    service,
+    testAy
+  );
 
   return result;
 }
