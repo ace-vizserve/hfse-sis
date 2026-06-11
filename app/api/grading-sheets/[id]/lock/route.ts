@@ -19,6 +19,25 @@ export async function POST(
   const service = createServiceClient();
   const lockedBy = auth.user.email ?? auth.user.id;
 
+  // No-op guard: re-POSTing on an already-locked sheet would re-stamp
+  // locked_at/updated_at and write a duplicate sheet.lock audit row. Bail out
+  // before any write when the sheet is already locked. (bulk-lock guards the
+  // same way.)
+  const { data: existing, error: existingErr } = await service
+    .from('grading_sheets')
+    .select('is_locked')
+    .eq('id', id)
+    .maybeSingle();
+  if (existingErr) {
+    return NextResponse.json({ error: existingErr.message }, { status: 500 });
+  }
+  if (!existing) {
+    return NextResponse.json({ error: 'sheet not found' }, { status: 404 });
+  }
+  if (existing.is_locked) {
+    return NextResponse.json({ ok: true, already_locked: true });
+  }
+
   const { data, error } = await service
     .from('grading_sheets')
     .update({

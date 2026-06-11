@@ -540,27 +540,37 @@ export async function PATCH(
     }
   }
 
-  await logAction({
-    service: supabase,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
-    action: 'sis.stage.update',
-    entityType: 'enrolment_status',
-    entityId: enroleeNumber,
-    context: {
-      ay_code: ayCode,
-      stage: stageKey,
-      stage_label: STAGE_LABELS[stageKey],
-      changes,
-      ...(stageKey === 'application' && {
-        terminalReason:
-          (extras as Record<string, unknown> | undefined)?.terminalReason ??
-          null,
-        terminalNotes:
-          (extras as Record<string, unknown> | undefined)?.terminalNotes ??
-          null,
-      }),
-    },
-  });
+  // Suppress the audit row on a true no-op re-save. `changes` is the field
+  // diff (empty when status/remarks/extras all match the pre-image) and
+  // `classAutoAssigned` is the only column-write that happens outside the diff
+  // (it merges into `update`, so its columns already show up in `changes` when
+  // they actually change). The post-audit cascades (sync, withdrawal,
+  // mid-term) only fire when a status was actually set, which makes `changes`
+  // non-empty — so gating purely on `changes.length` never silences a real
+  // mutation. Idempotent re-saves no longer write a duplicate stage row.
+  if (changes.length > 0) {
+    await logAction({
+      service: supabase,
+      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      action: 'sis.stage.update',
+      entityType: 'enrolment_status',
+      entityId: enroleeNumber,
+      context: {
+        ay_code: ayCode,
+        stage: stageKey,
+        stage_label: STAGE_LABELS[stageKey],
+        changes,
+        ...(stageKey === 'application' && {
+          terminalReason:
+            (extras as Record<string, unknown> | undefined)?.terminalReason ??
+            null,
+          terminalNotes:
+            (extras as Record<string, unknown> | undefined)?.terminalNotes ??
+            null,
+        }),
+      },
+    });
+  }
 
   // 4) Invalidate the per-AY cache so detail + list re-render with new data.
   revalidateTag(`sis:${ayCode}`, 'max');

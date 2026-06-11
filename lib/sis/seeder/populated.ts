@@ -3005,8 +3005,9 @@ async function seedEnrolledAdmissionsRows(
 // snapshot the current grading DB, plan via the pure buildSyncPlan, then commit
 // students + section_students. Deliberately does NOT use syncOneStudent — that
 // helper stamps enrollment_date=today (breaking KD #113 attendance proration,
-// which filters date >= enrollment_date) and never sets enrolee_number. Here we
-// stamp enrollment_date = the AY's T1 start_date and back-write enrolee_number.
+// which filters date >= enrollment_date). Here we stamp enrollment_date = the
+// AY's T1 start_date; enrolee_number is back-written below via the separate
+// idempotent UPDATE loop (the two-phase approach the date requirement forces).
 async function syncEnrolledPersonas(
   service: SupabaseClient,
   testAy: { id: string; ay_code: string },
@@ -3034,6 +3035,7 @@ async function syncEnrolledPersonas(
     class_level: p.levelLabel,
     class_section: p.sectionName,
     class_ay: testAy.ay_code,
+    enrolee_number: p.enroleeNumber,
   }));
 
   // ---- Snapshot the grading DB for this AY ----

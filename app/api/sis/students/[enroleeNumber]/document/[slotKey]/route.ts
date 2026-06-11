@@ -114,6 +114,14 @@ export async function PATCH(
     );
   }
 
+  // No-op short-circuit. Re-approving an already-'Valid' slot or re-rejecting
+  // an already-'Rejected' slot would re-run the update, write a duplicate
+  // audit row, AND re-send the parent rejection email. Bail out before any of
+  // that when the status isn't actually changing.
+  if (priorStatus === parsed.data.status) {
+    return NextResponse.json({ ok: true, changed: false });
+  }
+
   // Block manual approval of an expired document. Per KD #60, expiring
   // slots flow null → 'Valid' → 'Expired' (auto-flip when expiry passes);
   // the proper recovery is parent re-upload, which auto-sets the status

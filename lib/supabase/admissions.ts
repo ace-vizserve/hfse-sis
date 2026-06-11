@@ -18,6 +18,7 @@ export type AdmissionsRow = {
   class_level: string | null;   // e.g. "Primary One"
   class_section: string | null; // e.g. "Patience" (may contain known typos)
   class_ay: string | null;      // e.g. "AY2026"
+  enrolee_number: string | null; // admissions key, stamped onto section_students
 };
 
 // Fetch the full active roster for a given academic year from admissions.
@@ -82,6 +83,7 @@ export async function fetchAdmissionsRoster(ayCode: string): Promise<AdmissionsR
       class_level: s.classLevel,
       class_section: s.classSection,
       class_ay: s.classAY,
+      enrolee_number: s.enroleeNumber,
     });
   }
   return out;

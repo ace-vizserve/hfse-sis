@@ -47,6 +47,7 @@ export type EnrollmentInsert = {
   section_id: string;
   student_number: string; // resolved to student_id at commit time
   index_number: number;
+  enrolee_number: string | null; // admissions key, stamped onto section_students
 };
 
 export type EnrollmentStatusChange = {
@@ -260,6 +261,7 @@ export function buildSyncPlan(
       section_id: section.id,
       student_number: number,
       index_number: nextIndex,
+      enrolee_number: row.enrolee_number?.trim() || null,
     });
     plan.stats.enrollments_to_add++;
     bumpLevel(level.label, 'add');
@@ -410,6 +412,7 @@ export async function syncOneStudent(
       class_level: status.classLevel,
       class_section: status.classSection,
       class_ay: ayCode,
+      enrolee_number: enroleeNumber,
     };
 
     // 2. Load a minimal grading snapshot in parallel. The three queries are

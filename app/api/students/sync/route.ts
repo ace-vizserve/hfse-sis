@@ -91,6 +91,9 @@ export async function POST(request: Request) {
           index_number: e.index_number,
           enrollment_status: 'active' as const,
           enrollment_date: sgToday(),
+          // Stamp the admissions key (twin of the syncOneStudent fix) so
+          // enrolee_number-keyed lookups resolve bulk-synced rows too (KD #135).
+          enrolee_number: e.enrolee_number,
         };
       });
       const { error } = await service.from('section_students').insert(payload);

@@ -105,6 +105,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Detect an unchanged-window re-publish so we can skip the redundant audit
+  // row. A genuine window change (different publish_from/publish_until) still
+  // updates + audits as normal. The parent-email path is untouched (it stays
+  // gated on notified_at below).
+  const { data: priorPub } = await service
+    .from('report_card_publications')
+    .select('publish_from, publish_until')
+    .eq('section_id', body.section_id)
+    .eq('term_id', body.term_id)
+    .maybeSingle();
+  const windowUnchanged =
+    priorPub != null &&
+    new Date(priorPub.publish_from as string).getTime() === from.getTime() &&
+    new Date(priorPub.publish_until as string).getTime() === until.getTime();
+
   // Override snapshot: record the soft gaps the registrar published past, or
   // null when the card published clean.
   const publishedWithGaps =
@@ -163,22 +178,27 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  await logAction({
-    service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
-    action: 'publication.create',
-    entityType: 'report_card_publication',
-    entityId: data.id,
-    context: {
-      section_id: data.section_id,
-      term_id: data.term_id,
-      publish_from: data.publish_from,
-      publish_until: data.publish_until,
-      notification,
-      overridden: readiness.softGaps.length > 0,
-      gaps: readiness.softGaps.map((g) => g.code),
-    },
-  });
+  // Skip the audit row on an unchanged-window re-publish (true no-op). A real
+  // window change still audits. We never skip when a notification actually
+  // fired — that's a meaningful event worth recording.
+  if (!windowUnchanged || (notification && notification.sent > 0)) {
+    await logAction({
+      service,
+      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      action: 'publication.create',
+      entityType: 'report_card_publication',
+      entityId: data.id,
+      context: {
+        section_id: data.section_id,
+        term_id: data.term_id,
+        publish_from: data.publish_from,
+        publish_until: data.publish_until,
+        notification,
+        overridden: readiness.softGaps.length > 0,
+        gaps: readiness.softGaps.map((g) => g.code),
+      },
+    });
+  }
 
   invalidateDrillTags('markbook', await requireCurrentAyCode(service));
 
