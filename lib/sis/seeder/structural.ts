@@ -113,7 +113,14 @@ export async function ensureTestStructure(
     const rows = SECTIONS.flatMap((s) => {
       const lv = levelByCode.get(s.level_code);
       if (!lv) return [];
-      return [{ academic_year_id: testAy.id, level_id: lv.id, name: s.name }];
+      return [
+        {
+          academic_year_id: testAy.id,
+          level_id: lv.id,
+          name: s.name,
+          schedule: s.schedule,
+        },
+      ];
     });
     if (rows.length > 0) {
       const { data, error } = await service

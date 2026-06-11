@@ -13,6 +13,7 @@ import type {
   EventCategory,
   Audience,
 } from '@/lib/schemas/attendance';
+import type { Schedule } from '@/lib/schemas/section';
 
 export type LevelSeed = {
   code: string;
@@ -168,29 +169,38 @@ export const SUBJECTS: SubjectSeed[] = [
   },
 ];
 
-export type SectionSeed = { level_code: string; name: string };
+export type SectionSeed = {
+  level_code: string;
+  name: string;
+  schedule: Schedule;
+};
 
+// HFSE's official virtue sections + schedules (mirrors migration 074's template
+// reset, so the test environment reflects the real per-level section list).
+// Name = the virtue only (level is the FK; schedule its own field). YS omitted —
+// the Faith/Love tier+schedule mapping is unconfirmed (deferred, KD #144).
 export const SECTIONS: SectionSeed[] = [
-  { level_code: 'P1', name: 'Patience' },
-  { level_code: 'P1', name: 'Obedience' },
-  { level_code: 'P2', name: 'Honesty' },
-  { level_code: 'P2', name: 'Humility' },
-  { level_code: 'P3', name: 'Courtesy' },
-  { level_code: 'P3', name: 'Courageous' },
-  { level_code: 'P3', name: 'Responsibility' },
-  { level_code: 'P4', name: 'Diligence' },
-  { level_code: 'P4', name: 'Trust' },
-  { level_code: 'P5', name: 'Commitment' },
-  { level_code: 'P5', name: 'Perseverance' },
-  { level_code: 'P5', name: 'Tenacity' },
-  { level_code: 'P6', name: 'Grit' },
-  { level_code: 'P6', name: 'Loyalty' },
-  { level_code: 'S1', name: 'Discipline 1' },
-  { level_code: 'S1', name: 'Discipline 2' },
-  { level_code: 'S2', name: 'Integrity 1' },
-  { level_code: 'S2', name: 'Integrity 2' },
-  { level_code: 'S3', name: 'Consistency' },
-  { level_code: 'S4', name: 'Excellence' },
+  { level_code: 'P1', name: 'Obedience', schedule: 'morning' },
+  { level_code: 'P1', name: 'Patience', schedule: 'morning' },
+  { level_code: 'P1', name: 'Respect', schedule: 'afternoon' },
+  { level_code: 'P2', name: 'Honesty', schedule: 'morning' },
+  { level_code: 'P2', name: 'Humility', schedule: 'morning' },
+  { level_code: 'P2', name: 'Gentleness', schedule: 'afternoon' },
+  { level_code: 'P3', name: 'Courageous', schedule: 'morning' },
+  { level_code: 'P3', name: 'Courtesy', schedule: 'morning' },
+  { level_code: 'P3', name: 'Responsibility', schedule: 'afternoon' },
+  { level_code: 'P4', name: 'Diligence', schedule: 'morning' },
+  { level_code: 'P4', name: 'Trust', schedule: 'morning' },
+  { level_code: 'P4', name: 'Compassion', schedule: 'afternoon' },
+  { level_code: 'P5', name: 'Commitment', schedule: 'morning' },
+  { level_code: 'P5', name: 'Tenacity', schedule: 'morning' },
+  { level_code: 'P5', name: 'Perseverance', schedule: 'afternoon' },
+  { level_code: 'P6', name: 'Grit', schedule: 'morning' },
+  { level_code: 'P6', name: 'Loyalty', schedule: 'afternoon' },
+  { level_code: 'S1', name: 'Discipline', schedule: 'whole_day' },
+  { level_code: 'S2', name: 'Integrity', schedule: 'whole_day' },
+  { level_code: 'S3', name: 'Consistency', schedule: 'whole_day' },
+  { level_code: 'S4', name: 'Excellence', schedule: 'whole_day' },
 ];
 
 // Term templates mirroring HFSE's actual AY 2026 academic calendar (KD #13:
