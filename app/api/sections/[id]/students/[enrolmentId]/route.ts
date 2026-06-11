@@ -181,7 +181,20 @@ export async function PATCH(
     patch.withdrawal_notes = parsed.data.withdrawal_notes ?? null;
   }
 
-  if (Object.keys(patch).length === 0) {
+  // Idempotency guard. The provided fields (enrollment_status,
+  // late_enrollee_term_number, …) are staged into `patch` even when the registrar
+  // re-saves the SAME value — e.g. re-marking an already-`late_enrollee` row — so
+  // an empty-key check alone isn't enough. Compare each staged field against
+  // `before`; when nothing actually changed, return a no-op BEFORE the update,
+  // audit, and cascades. Without this, repeat saves pile up redundant
+  // `enrolment.metadata.update` audit rows (and movement-feed noise). The
+  // late-enrollee transition flag is already boundary-guarded, so a genuine
+  // active→late_enrollee change still has a differing enrollment_status here and
+  // proceeds normally.
+  const meaningfulChange = Object.keys(patch).some(
+    (k) => (before as Record<string, unknown>)[k] !== patch[k]
+  );
+  if (!meaningfulChange) {
     return NextResponse.json({ ok: true, changed: false });
   }
 
