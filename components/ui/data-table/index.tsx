@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Columns3, Download, Search, X } from 'lucide-react';
 import {
   type ColumnFiltersState,
@@ -192,7 +192,20 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     enableRowSelection: selection?.enableRowSelection
       ? (row) => selection.enableRowSelection!(row.original)
       : (selection?.enabled ?? false),
-    initialState: { pagination: { pageSize: initial.pageSize ?? pageSize } },
+    // Pagination is uncontrolled (seeded here, read back for the url-state
+    // effect). autoResetPageIndex MUST be off: url-state writes via
+    // router.replace, which re-runs the RSC and hands us a new `data` array;
+    // with the default (true) that array-identity change snaps pageIndex back to
+    // 0 — so "next page" reverts to page 1. We instead reset to page 1 only on
+    // genuine filter changes (the effect below). pageIndex is restored from
+    // ?page= so it round-trips on refresh / share.
+    autoResetPageIndex: false,
+    initialState: {
+      pagination: {
+        pageSize: initial.pageSize ?? pageSize,
+        pageIndex: initial.page && initial.page > 1 ? initial.page - 1 : 0,
+      },
+    },
     globalFilterFn: (row, _columnId, filterValue) => {
       if (!filterValue || !searchKeys) return true;
       const haystack = searchKeys
@@ -212,6 +225,21 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
   });
+
+  // Reset to page 1 when the FILTER inputs change (search / status tab /
+  // me-scope / facets) so the user isn't stranded on a now-empty page. This is
+  // the deliberate counterpart to autoResetPageIndex:false above — data-identity
+  // re-renders (a url-state navigation) no longer reset the page, but a genuine
+  // filter change does. Skips the initial mount so a deep-linked ?page= survives.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    table.setPageIndex(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, statusTab, mineActive, columnFilters]);
 
   useEffect(() => {
     if (!url.enabled) return;

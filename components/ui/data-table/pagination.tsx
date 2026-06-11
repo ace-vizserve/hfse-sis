@@ -28,6 +28,12 @@ export function DataTablePagination<TRow>({
   const pageIndex = table.getState().pagination.pageIndex;
   const pageCount = table.getPageCount();
   const pageSize = table.getState().pagination.pageSize;
+  // The active pageSize must always have a matching <SelectItem>, else the
+  // Select renders blank. Consumers can pass a pageSize outside the default
+  // options (e.g. 25), so fold it in (deduped + sorted).
+  const sizeOptions = Array.from(new Set([...pageSizeOptions, pageSize])).sort(
+    (a, b) => a - b
+  );
   return (
     <div className="flex items-center justify-between gap-4 px-1 py-2 text-xs">
       <div className="flex items-center gap-2 text-muted-foreground">
@@ -40,7 +46,7 @@ export function DataTablePagination<TRow>({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {pageSizeOptions.map((n) => (
+            {sizeOptions.map((n) => (
               <SelectItem
                 key={n}
                 value={String(n)}
