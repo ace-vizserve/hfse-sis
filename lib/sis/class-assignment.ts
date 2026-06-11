@@ -38,13 +38,14 @@ type ApplicationLite = {
  *   - classType both null (neutral):                          +3
  *   - classType one-sided null:                               +1
  *   - classType set on both but different:                    +0
- *   - preferredSchedule case-insensitive substring of
- *     section.name OR section.class_type:                     +5
+ *   - preferredSchedule matches section.schedule (structured):  +5
+ *       · `whole_day` sections satisfy ANY preference (no AM/PM split).
+ *       · when section.schedule is null (legacy / not-yet-applied), falls back
+ *         to the old name/class_type substring grep so those AYs don't regress.
  *
- * Sections don't have a dedicated schedule column; the school can embed
- * schedule hints in the section name (e.g. `Diamond-MWF`) to make the
- * preferredSchedule signal pay off. Without that the score degenerates to
- * classType + load.
+ * Schedule is a SOFT preference; capacity (step 3) is hard. A full preferred
+ * section is dropped before scoring, so the applicant lands in the best
+ * available section rather than overfilling or hard-failing.
  */
 export async function pickSectionForApplicant(
   service: SupabaseClient,
@@ -87,7 +88,7 @@ export async function pickSectionForApplicant(
   // 2. Load sections + active counts.
   const { data: sectionRows, error: sectionsErr } = await service
     .from('sections')
-    .select('id, name, class_type')
+    .select('id, name, class_type, schedule')
     .eq('academic_year_id', ayId)
     .eq('level_id', level.id);
   if (sectionsErr) {
@@ -97,6 +98,7 @@ export async function pickSectionForApplicant(
     id: string;
     name: string;
     class_type: string | null;
+    schedule: string | null;
   }>;
   if (sections.length === 0) {
     return { error: `No sections configured at ${level.label} for ${ayCode}` };
@@ -155,8 +157,8 @@ export async function pickSectionForApplicant(
   };
 }
 
-function scoreSection(
-  section: { name: string; class_type: string | null },
+export function scoreSection(
+  section: { name: string; class_type: string | null; schedule: string | null },
   app: ApplicationLite
 ): number {
   let score = 0;
@@ -173,12 +175,26 @@ function scoreSection(
     score += 1;
   }
 
-  // preferredSchedule fuzzy match on section name or class_type.
-  const pref = app.preferredSchedule?.trim().toLowerCase() ?? '';
-  if (pref) {
-    const haystack =
-      `${section.name} ${section.class_type ?? ''}`.toLowerCase();
-    if (haystack.includes(pref)) score += 5;
+  // preferredSchedule match. `app.preferredSchedule` is the human form
+  // ('Morning' / 'Afternoon' / 'Whole Day'); `section.schedule` is the
+  // normalized enum ('morning' / 'afternoon' / 'whole_day').
+  const rawPref = app.preferredSchedule?.trim().toLowerCase() ?? '';
+  if (rawPref) {
+    const secSched = section.schedule?.trim().toLowerCase() ?? '';
+    if (secSched) {
+      // Structured match: normalize the preference's spaces to underscores
+      // ('whole day' → 'whole_day'). A whole-day section has no AM/PM split, so
+      // it satisfies ANY preference.
+      const pref = rawPref.replace(/\s+/g, '_');
+      if (secSched === pref || secSched === 'whole_day') score += 5;
+    } else {
+      // Fallback for sections without a structured schedule (legacy AYs, or any
+      // not yet re-applied from the template): the old name/class_type grep,
+      // using the raw space-form preference to match names like "… | Morning".
+      const haystack =
+        `${section.name} ${section.class_type ?? ''}`.toLowerCase();
+      if (haystack.includes(rawPref)) score += 5;
+    }
   }
 
   return score;
