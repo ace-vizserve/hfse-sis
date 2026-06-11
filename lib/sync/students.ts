@@ -546,6 +546,12 @@ export async function syncOneStudent(
         index_number: e.index_number,
         enrollment_status: 'active',
         enrollment_date: sgToday(),
+        // Stamp the admissions key on the row. enrolee_number-keyed lookups
+        // depend on it — notably the stage route's late-enrollee prompt
+        // (it finds the freshly-synced row by enrolee_number) and the Records
+        // directory index/status maps (KD #135). Omitting it left it NULL, so
+        // the late-enrollee suggestion never fired for a just-enrolled applicant.
+        enrolee_number: enroleeNumber,
       });
       if (error)
         return {
