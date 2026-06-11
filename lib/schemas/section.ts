@@ -10,6 +10,17 @@ import { z } from 'zod';
 export const SECTION_CLASS_TYPES = ['Global', 'Standard'] as const;
 export type SectionClassType = (typeof SECTION_CLASS_TYPES)[number];
 
+// Structured daily schedule for a section. Drives future auto-enrollment
+// (matching an applicant's preferred schedule against the section's). YS
+// (preschool) deferred. `null` = unspecified.
+export const SCHEDULE_VALUES = ['morning', 'afternoon', 'whole_day'] as const;
+export type Schedule = (typeof SCHEDULE_VALUES)[number];
+export const SCHEDULE_LABELS: Record<Schedule, string> = {
+  morning: 'Morning',
+  afternoon: 'Afternoon',
+  whole_day: 'Whole Day',
+};
+
 const uuidString = z.string().uuid('Invalid id');
 
 export const SectionCreateSchema = z.object({
@@ -20,6 +31,7 @@ export const SectionCreateSchema = z.object({
     .max(60, 'Keep it under 60 chars'),
   level_id: uuidString,
   class_type: z.enum(SECTION_CLASS_TYPES).nullable().optional(),
+  schedule: z.enum(SCHEDULE_VALUES).nullable().optional(),
 });
 
 export type SectionCreateInput = z.infer<typeof SectionCreateSchema>;
@@ -34,6 +46,7 @@ export const SectionUpdateSchema = z.object({
     .min(1, 'Name required')
     .max(60, 'Keep it under 60 chars')
     .optional(),
+  schedule: z.enum(SCHEDULE_VALUES).nullable().optional(),
 });
 
 export type SectionUpdateInput = z.infer<typeof SectionUpdateSchema>;

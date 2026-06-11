@@ -10,11 +10,13 @@ import { Layers } from 'lucide-react';
 
 import { SectionRowActions } from '@/components/sections/section-row-actions';
 import { GenerateAllIndexButton } from '@/components/sis/generate-index-button';
+import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { type FacetConfig } from '@/components/ui/data-table/types';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import type { Role } from '@/lib/auth/roles';
+import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 
 // ─── Row type ────────────────────────────────────────────────────────────────
 
@@ -22,6 +24,7 @@ export type SisSectionRow = {
   id: string;
   name: string;
   levelLabel: string;
+  schedule: Schedule | null;
   active: number;
   withdrawn: number;
 };
@@ -68,6 +71,23 @@ function buildColumns(
         </span>
       ),
       filterFn: facetFilterFn,
+    },
+    {
+      accessorKey: 'schedule',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Schedule</SortableHeader>
+      ),
+      cell: ({ row }) =>
+        row.original.schedule ? (
+          <Badge
+            variant="outline"
+            className="h-6 border-border bg-white px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-foreground"
+          >
+            {SCHEDULE_LABELS[row.original.schedule]}
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground/50">—</span>
+        ),
     },
     {
       accessorKey: 'active',

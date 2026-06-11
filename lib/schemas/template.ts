@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { SECTION_CLASS_TYPES } from '@/lib/schemas/section';
+import { SCHEDULE_VALUES, SECTION_CLASS_TYPES } from '@/lib/schemas/section';
 
 // Master template tables that new AYs copy from. Mirrors the per-AY
 // schemas (`section.ts`, `subject-config.ts`) minus `academic_year_id`.
@@ -15,6 +15,7 @@ export const TemplateSectionCreateSchema = z.object({
     .min(1, 'Name required')
     .max(60, 'Keep it under 60 chars'),
   class_type: z.enum(SECTION_CLASS_TYPES).nullable().optional(),
+  schedule: z.enum(SCHEDULE_VALUES).nullable().optional(),
 });
 export type TemplateSectionCreateInput = z.infer<
   typeof TemplateSectionCreateSchema
@@ -27,6 +28,7 @@ export const TemplateSectionUpdateSchema = z.object({
     .min(1, 'Name required')
     .max(60, 'Keep it under 60 chars'),
   class_type: z.enum(SECTION_CLASS_TYPES).nullable().optional(),
+  schedule: z.enum(SCHEDULE_VALUES).nullable().optional(),
 });
 export type TemplateSectionUpdateInput = z.infer<
   typeof TemplateSectionUpdateSchema

@@ -21,7 +21,12 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import {
+  useForm,
+  type Control,
+  type FieldValues,
+  type Path,
+} from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
@@ -72,7 +77,10 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  SCHEDULE_LABELS,
+  SCHEDULE_VALUES,
   SECTION_CLASS_TYPES,
+  type Schedule,
   type SectionClassType,
 } from '@/lib/schemas/section';
 import {
@@ -346,11 +354,21 @@ function SectionPill({ section }: { section: TemplateSectionRow }) {
         <span className="font-serif text-[14px] font-semibold tracking-tight text-foreground">
           {section.name}
         </span>
-        {section.class_type && (
-          <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
-            {section.class_type}
-          </span>
-        )}
+        <span className="flex items-center gap-1.5">
+          {section.class_type && (
+            <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
+              {section.class_type}
+            </span>
+          )}
+          {section.schedule && (
+            <Badge
+              variant="outline"
+              className="h-4 border-brand-indigo/30 bg-brand-indigo/10 px-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-brand-indigo"
+            >
+              {SCHEDULE_LABELS[section.schedule as Schedule]}
+            </Badge>
+          )}
+        </span>
       </div>
       <div className="ml-1 flex items-center gap-0.5 opacity-60 transition-opacity group-hover/pill:opacity-100">
         <EditTemplateSectionButton section={section} compact />
@@ -885,7 +903,55 @@ const BLANK_SECTION: TemplateSectionCreateInput = {
   name: '',
   level_id: '',
   class_type: null,
+  schedule: null,
 };
+
+// Sentinel for the shadcn Select's clear-to-None option, since an empty
+// string value isn't allowed as a SelectItem value.
+const SCHEDULE_NONE = '__none__';
+
+// Shared Schedule <Select> field for the create + edit section dialogs.
+// Both TemplateSectionCreateInput and TemplateSectionUpdateInput carry a
+// nullable `schedule`; generic over the form shape so each dialog's
+// Control type is accepted (RHF's Control is invariant).
+function ScheduleFormField<T extends FieldValues>({
+  control,
+}: {
+  control: Control<T>;
+}) {
+  return (
+    <FormField
+      control={control}
+      name={'schedule' as Path<T>}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Schedule</FormLabel>
+          <Select
+            value={field.value ?? SCHEDULE_NONE}
+            onValueChange={(v) =>
+              field.onChange(v === SCHEDULE_NONE ? null : (v as Schedule))
+            }
+          >
+            <FormControl>
+              <SelectTrigger>
+                <SelectValue placeholder="Optional" />
+              </SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              <SelectItem value={SCHEDULE_NONE}>None</SelectItem>
+              {SCHEDULE_VALUES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {SCHEDULE_LABELS[s]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
 
 function NewTemplateSectionButton({
   levels,
@@ -921,6 +987,7 @@ function NewTemplateSectionButton({
           name: values.name.trim(),
           level_id: values.level_id,
           class_type: values.class_type ?? null,
+          schedule: values.schedule ?? null,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -1041,6 +1108,7 @@ function NewTemplateSectionButton({
                 </FormItem>
               )}
             />
+            <ScheduleFormField control={form.control} />
             <DialogFooter>
               <Button
                 type="button"
@@ -1079,6 +1147,7 @@ function EditTemplateSectionButton({
     defaultValues: {
       name: section.name,
       class_type: (section.class_type as SectionClassType | null) ?? null,
+      schedule: (section.schedule as Schedule | null) ?? null,
     },
   });
 
@@ -1086,9 +1155,10 @@ function EditTemplateSectionButton({
     form.reset({
       name: section.name,
       class_type: (section.class_type as SectionClassType | null) ?? null,
+      schedule: (section.schedule as Schedule | null) ?? null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [section.id, section.name, section.class_type]);
+  }, [section.id, section.name, section.class_type, section.schedule]);
 
   async function onSubmit(values: TemplateSectionUpdateInput) {
     try {
@@ -1100,6 +1170,7 @@ function EditTemplateSectionButton({
           body: JSON.stringify({
             name: values.name.trim(),
             class_type: values.class_type ?? null,
+            schedule: values.schedule ?? null,
           }),
         }
       );
@@ -1185,6 +1256,7 @@ function EditTemplateSectionButton({
                 </FormItem>
               )}
             />
+            <ScheduleFormField control={form.control} />
             <DialogFooter>
               <Button
                 type="button"

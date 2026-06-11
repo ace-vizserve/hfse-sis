@@ -24,13 +24,13 @@ export async function PATCH(
       { status: 400 }
     );
   }
-  const { name, class_type } = parsed.data;
+  const { name, class_type, schedule } = parsed.data;
 
   const service = createServiceClient();
 
   const { data: before, error: loadErr } = await service
     .from('template_sections')
-    .select('id, level_id, name, class_type')
+    .select('id, level_id, name, class_type, schedule')
     .eq('id', id)
     .maybeSingle();
   if (loadErr)
@@ -46,6 +46,7 @@ export async function PATCH(
     .update({
       name,
       class_type: class_type ?? null,
+      schedule: schedule ?? null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id);
@@ -70,8 +71,16 @@ export async function PATCH(
     entityId: id,
     context: {
       level_id: before.level_id,
-      before: { name: before.name, class_type: before.class_type },
-      after: { name, class_type: class_type ?? null },
+      before: {
+        name: before.name,
+        class_type: before.class_type,
+        schedule: before.schedule,
+      },
+      after: {
+        name,
+        class_type: class_type ?? null,
+        schedule: schedule ?? null,
+      },
     },
   });
 
@@ -93,7 +102,7 @@ export async function DELETE(
 
   const { data: before, error: loadErr } = await service
     .from('template_sections')
-    .select('id, level_id, name, class_type')
+    .select('id, level_id, name, class_type, schedule')
     .eq('id', id)
     .maybeSingle();
   if (loadErr)
@@ -121,6 +130,7 @@ export async function DELETE(
       level_id: before.level_id,
       name: before.name,
       class_type: before.class_type,
+      schedule: before.schedule,
     },
   });
 

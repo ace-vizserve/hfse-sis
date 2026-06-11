@@ -21,14 +21,19 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const { name, level_id, class_type } = parsed.data;
+  const { name, level_id, class_type, schedule } = parsed.data;
 
   const service = createServiceClient();
 
   const { data: inserted, error } = await service
     .from('template_sections')
-    .insert({ level_id, name, class_type: class_type ?? null })
-    .select('id, level_id, name, class_type')
+    .insert({
+      level_id,
+      name,
+      class_type: class_type ?? null,
+      schedule: schedule ?? null,
+    })
+    .select('id, level_id, name, class_type, schedule')
     .single();
 
   if (error) {
@@ -49,7 +54,12 @@ export async function POST(request: NextRequest) {
     action: 'template.section.create',
     entityType: 'template_section',
     entityId: inserted.id,
-    context: { name, level_id, class_type: class_type ?? null },
+    context: {
+      name,
+      level_id,
+      class_type: class_type ?? null,
+      schedule: schedule ?? null,
+    },
   });
 
   return NextResponse.json({ ok: true, id: inserted.id });

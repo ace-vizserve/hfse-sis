@@ -18,6 +18,7 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { sgToday } from '@/lib/dates';
+import type { Schedule } from '@/lib/schemas/section';
 
 type LevelLite = {
   id: string;
@@ -31,6 +32,7 @@ type SectionCard = {
   level_code: string;
   level_label: string;
   level_type: 'primary' | 'secondary' | 'unknown';
+  schedule: Schedule | null;
   active: number;
   withdrawn: number;
 };
@@ -78,12 +80,13 @@ export default async function SisSectionsListPage() {
   const { data: sections } = ay
     ? await supabase
         .from('sections')
-        .select('id, name, level:levels(id, code, label, level_type)')
+        .select('id, name, schedule, level:levels(id, code, label, level_type)')
         .eq('academic_year_id', ay.id)
     : {
         data: [] as Array<{
           id: string;
           name: string;
+          schedule: Schedule | null;
           level: LevelLite | LevelLite[] | null;
         }>,
       };
@@ -124,6 +127,8 @@ export default async function SisSectionsListPage() {
       level_code: lvl?.code ?? '',
       level_label: lvl?.label ?? 'Unknown',
       level_type: (lvl?.level_type ?? 'unknown') as SectionCard['level_type'],
+      schedule: ((s as { schedule?: Schedule | null }).schedule ??
+        null) as Schedule | null,
       active: counts[s.id]?.active ?? 0,
       withdrawn: counts[s.id]?.withdrawn ?? 0,
     };
@@ -148,6 +153,7 @@ export default async function SisSectionsListPage() {
     id: c.id,
     name: c.name,
     levelLabel: c.level_label,
+    schedule: c.schedule,
     active: c.active,
     withdrawn: c.withdrawn,
   }));
