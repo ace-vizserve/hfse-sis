@@ -140,6 +140,7 @@ export function EnrolmentEditSheet({
         (initial.withdrawal_reason as WithdrawalReason) ?? ''
       );
       setWithdrawalNotes(initial.withdrawal_notes ?? '');
+      setRevertReason('');
       setLateTermOverride(initial.late_enrollee_term_number);
       setShowTermOverride(false);
       setSaving(false);
@@ -325,6 +326,11 @@ export function EnrolmentEditSheet({
                   </SelectTrigger>
                   <SelectContent>
                     {ENROLLMENT_STATUS_VALUES.map((s) => {
+                      // T2–T4 late enrollees are unambiguously late — block
+                      // reverting to Active (spec 2026-06-12). Known limitation:
+                      // a null term_number (rare — the tag flow always sets it)
+                      // is conservatively blocked here too; the server does the
+                      // enrollment_date-derived T1 fallback.
                       const blockActive =
                         s === 'active' &&
                         initial.enrollment_status === 'late_enrollee' &&
