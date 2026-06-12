@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { DatePicker } from '@/components/ui/date-picker';
@@ -11,6 +11,18 @@ import { DatePicker } from '@/components/ui/date-picker';
 // clearing reverts to Not-yet. After a successful write we router.refresh() so the
 // status badge, the Not-yet/Counselled tab membership, and the dashboard stat all
 // reconcile from the server (the cell only owns its own displayed date).
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-SG', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 export function PreCourseDateCell({
   enroleeNumber,
   ayCode,
@@ -55,13 +67,17 @@ export function PreCourseDateCell({
 
   return (
     <div className="w-40">
-      <DatePicker
-        value={date}
-        onChange={commit}
-        allowClear
-        disabled={pending}
-        placeholder="Record session"
-      />
+      {date ? (
+        <span>{formatDate(date)}</span>
+      ) : (
+        <DatePicker
+          value={date}
+          onChange={commit}
+          allowClear
+          disabled={pending}
+          placeholder="Record session"
+        />
+      )}
     </div>
   );
 }

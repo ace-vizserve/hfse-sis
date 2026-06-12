@@ -179,7 +179,6 @@ export function ScreenGuard() {
 
       {/* Refresh — lets the user check after resizing without a manual reload */}
       <Button
-        variant="outline"
         size="sm"
         onClick={() => window.location.reload()}
         className="gap-2"

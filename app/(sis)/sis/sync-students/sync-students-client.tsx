@@ -1,7 +1,5 @@
 'use client';
 
-import Link from 'next/link';
-import { useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -17,6 +15,8 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
+import Link from 'next/link';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
@@ -132,7 +132,7 @@ export function SyncStudentsClient({
     : [];
 
   return (
-    <PageShell className="max-w-5xl">
+    <PageShell className="max-w-[1440px]">
       <Link
         href="/sis"
         className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
