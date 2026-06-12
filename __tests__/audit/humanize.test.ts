@@ -219,6 +219,27 @@ describe('auditContextSummary — per-action templates', () => {
   });
 });
 
+describe('auditContextSummary — late enrollee reverted', () => {
+  it('renders the revert line with the reason', () => {
+    const out = auditContextSummary('enrolment.metadata.update', {
+      lateEnrolleeReverted: true,
+      revertReason: 'Joined day 2 of T1 — effectively on-time',
+      before: { enrollment_status: 'late_enrollee' },
+      after: { enrollment_status: 'active' },
+    });
+    expect(out).toBe(
+      'Late enrollee reverted to active — Joined day 2 of T1 — effectively on-time'
+    );
+  });
+
+  it('renders the revert line without a reason', () => {
+    const out = auditContextSummary('enrolment.metadata.update', {
+      lateEnrolleeReverted: true,
+    });
+    expect(out).toBe('Late enrollee reverted to active');
+  });
+});
+
 describe('auditContextSummary — friendly identifiers + name preference', () => {
   it('prefers the name and suppresses the raw number (generic path)', () => {
     const out = auditContextSummary('some.action', {

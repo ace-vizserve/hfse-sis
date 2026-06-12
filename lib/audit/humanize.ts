@@ -433,6 +433,12 @@ function templateSummary(
 
     // Enrolment metadata -----------------------------------------------------
     case 'enrolment.metadata.update': {
+      if (ctx.lateEnrolleeReverted === true) {
+        const reason = str(ctx.revertReason);
+        return reason
+          ? `Late enrollee reverted to active — ${reason}`
+          : 'Late enrollee reverted to active';
+      }
       const before = isRecord(ctx.before) ? ctx.before : null;
       const after = isRecord(ctx.after) ? ctx.after : null;
       const fromS = labelFor(
