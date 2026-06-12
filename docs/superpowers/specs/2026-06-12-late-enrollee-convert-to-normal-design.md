@@ -57,7 +57,7 @@ For a T1 late enrollee, saving "Active" opens a confirm dialog (same pattern as 
 
 - The **Reason** field is **required** — Confirm is disabled until it's non-empty (trimmed). Mirrors the change-request reject-reason pattern (KD #25/#88).
 - The "will / will not" lists use clear, distinct visual treatment (semantic icons, not colour-only — design-system §9 / Hard Rule #7): the "will" items read as changes, the "will not" items as preserved guarantees.
-- This is a **soft block** — the action is allowed, just confirmed + reasoned. No hard server 422 on the transition itself (only on a missing reason — see below).
+- For a **T1** late enrollee this is a **soft block** — the transition is allowed, just confirmed + reasoned (the server only 422s a missing reason). The hard 422 (`late_revert_not_t1`) applies only to the **T2–T4** rows, which the UI already disables.
 
 ## Server behavior
 
