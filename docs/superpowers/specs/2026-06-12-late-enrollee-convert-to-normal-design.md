@@ -77,6 +77,23 @@ Reuse the existing `enrolment.metadata.update` action (lighter than a new enum v
 - `lib/audit/humanize.ts` (KD #121) renders a distinct line — e.g. **"Late enrollee reverted to active — {reason}"** — so it's unmistakable in the audit log rather than buried in a generic metadata edit. Tone `warning`.
 - Surfaces on the existing Records/SIS audit-log pages (the `enrolment.metadata.update` action is already in their allowlists — no allowlist change).
 
+## Effect on grading & attendance
+
+The convert changes only `enrollment_status` + `late_enrollee_term_number`. Because both grading and attendance key off `section_student_id` (the unchanged row) and `enrollment_date` (deliberately untouched), there is **no effect on stored academic or attendance data** — only on the classification label.
+
+**Attendance — no data change, fully automatic.** Proration is a pure function of `enrollment_date`, recomputed every time `recompute_attendance_rollup` runs (KD #113):
+
+- `enrollment_date IS NULL` → counts the full term (true on-time student).
+- `enrollment_date` set → counts only school days on/after that date (prorated).
+
+The `late_enrollee` label plays **no part** — the date _is_ the switch, detected by the system automatically with no manual flag. The convert keeps `enrollment_date`, so the rollup is **byte-for-byte identical** and continues to auto-prorate from the real join date; the convert **fires no recompute** (recompute only runs on a real `enrollment_date` change, KD #130). The grid's "Before enrolment date" dimming is also `enrollment_date`-driven → unchanged.
+
+**Grading — no change.** Grade entries key on `section_student_id` (Hard Rule #6) and compute from scores → quarterly/annual/report cards identical. Publish-readiness's per-term roster requirement (`rosterRequiredForTerm`, KD #129) keys on `enrollment_date`, not the label → unchanged.
+
+**Only change = cosmetic classification.** The masterfile / Academic Summary stops rendering **"late enrolment - term 1"** and shows the student as a normal enrollee. That is the intended effect.
+
+**Clear-eyed caveat (the flip side of keeping the date):** a converted student is **not** identical to a born-on-time student. On-time = `enrollment_date NULL` (full term); converted = keeps the real mid-T1 date (still prorated). So "normal" means _the label_, while attendance still honors _when they actually walked in_. Likewise, a future "Generate class index" would still bottom-pin them if their `enrollment_date` is after T1-start (KD #144 ordering uses the date, not the label). This is correct given the immutable-date rule: the date is the truth; the convert only fixes the classification. Giving them full-year attendance/ordering would require editing `enrollment_date`, which is off-limits once history exists.
+
 ## Edge cases
 
 - **Early-T1 join the registrar considers on-time** → handled by this exact flow (convert to normal, with a reason). The T1-boundary _policy_ (is early-T1 late?) is not encoded — the registrar decides per student.
