@@ -265,7 +265,7 @@ export default async function RecordsDashboard({
             kpisResult.current.lateEnroleesInRange > 0
               ? `${kpisResult.current.lateEnroleesInRange} late enrollee${
                   kpisResult.current.lateEnroleesInRange === 1 ? '' : 's'
-                } (KD #68)`
+                }`
               : undefined
           }
           drillSheet={() => (
