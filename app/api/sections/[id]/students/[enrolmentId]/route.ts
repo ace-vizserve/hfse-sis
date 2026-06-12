@@ -103,6 +103,11 @@ export async function PATCH(
   // has a terminal reason — lets us skip overwriting it and record why.
   let terminalCascadeSkipped = false;
 
+  // Set when a T1 late enrollee is converted back to a normal (active) enrollee
+  // — drives the audit context line. revertReason is audit-only.
+  let lateEnrolleeReverted = false;
+  let revertReason: string | null = null;
+
   // Build the update payload. Only touch fields actually provided.
   const patch: Record<string, unknown> = {};
   if ('bus_no' in parsed.data) patch.bus_no = parsed.data.bus_no;
@@ -157,6 +162,50 @@ export async function PATCH(
         lateEnrolleeTransition = true;
       }
     }
+  }
+
+  // Convert late enrollee → normal (active). T1-only, requires a reason, clears
+  // the late-term tag, and NEVER touches enrollment_date (KD #117 / spec
+  // 2026-06-12). enrollment_date staying put means the attendance rollup is
+  // unchanged + no recompute fires (the guard below requires 'enrollment_date'
+  // in patch). For T2–T4 the UI disables this; this is the server backstop.
+  if (
+    before.enrollment_status === 'late_enrollee' &&
+    parsed.data.enrollment_status === 'active'
+  ) {
+    let lateTermNumber =
+      (before.late_enrollee_term_number as number | null) ?? null;
+    if (lateTermNumber == null && before.enrollment_date && sectionAyCode) {
+      const derived = await getTermForDate(
+        before.enrollment_date as string,
+        sectionAyCode,
+        service
+      );
+      lateTermNumber = derived?.termNumber ?? null;
+    }
+    if (lateTermNumber !== 1) {
+      return NextResponse.json(
+        {
+          error: 'Only a Term 1 late enrollee can be converted to normal.',
+          code: 'late_revert_not_t1',
+        },
+        { status: 422 }
+      );
+    }
+    revertReason = parsed.data.lateRevertReason ?? null;
+    if (!revertReason) {
+      return NextResponse.json(
+        {
+          error: 'A reason is required to convert a late enrollee to normal.',
+          code: 'reason_required',
+        },
+        { status: 422 }
+      );
+    }
+    // Drop the late-only classification tag. enrollment_status is already staged
+    // to 'active' above; enrollment_date is intentionally left untouched.
+    patch.late_enrollee_term_number = null;
+    lateEnrolleeReverted = true;
   }
 
   // Standalone late_enrollee_term_number correction: the registrar is correcting
@@ -529,6 +578,9 @@ export async function PATCH(
         ? { terminalCascadeSkipped: 'admissions-already-terminal' }
         : {}),
       ...(isReEnrolment ? { reEnrolment: true } : {}),
+      ...(lateEnrolleeReverted
+        ? { lateEnrolleeReverted: true, revertReason }
+        : {}),
       ...(attendanceRecomputed
         ? {
             recomputedAttendance: true,
