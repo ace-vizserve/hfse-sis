@@ -60,6 +60,10 @@ export const EnrolmentMetadataSchema = z
       .max(4)
       .nullable()
       .optional(),
+    // Audit-only reason captured when a late enrollee is converted back to a
+    // normal (active) enrollee. Required-ness is enforced in the route (it
+    // depends on the row's current status). optionalText: '' → null.
+    lateRevertReason: optionalText(WITHDRAWAL_REASON_MAX).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.enrollment_status === 'withdrawn' && !data.withdrawal_reason) {
