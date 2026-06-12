@@ -109,9 +109,13 @@ type ChecklistData = {
       missing: { name: string; index: number | null }[];
     }[];
   };
+  // Whether the section has a form class adviser assigned. false → the
+  // no_form_adviser hard blocker (all terms).
+  form_adviser?: { assigned: boolean };
   // Verdict (server-derived). hardBlockers stop publishing entirely (codes:
-  // no_students, no_grading_sheets, comments_incomplete); softGaps are the
-  // overridable "publish anyway" items. canPublish === hardBlockers.length === 0.
+  // no_students, no_grading_sheets, no_form_adviser, comments_incomplete);
+  // softGaps are the overridable "publish anyway" items.
+  // canPublish === hardBlockers.length === 0.
   hardBlockers?: PublishGap[];
   softGaps?: PublishGap[];
   canPublish?: boolean;
@@ -371,17 +375,22 @@ function HardCommentRow({
   );
 }
 
-// A structural hard blocker with no deep-link fix (an empty section, or no
-// grading sheets for the term). Same destructive voice as HardCommentRow — a
-// red lock tile + "Required to publish" eyebrow + short explanation — but no
-// action button, because there is nothing to navigate to: the registrar must
-// add students / create grading sheets upstream first.
+// A structural hard blocker rendered in the same destructive voice as
+// HardCommentRow — a red lock tile + "Required to publish" eyebrow + short
+// explanation. Some structural blockers have nowhere to navigate (an empty
+// section, no grading sheets — fixed upstream) and render with no button;
+// others (no form adviser) have a one-click fix surface, so an optional
+// destructive deep-link button is shown when `href` is provided.
 function HardBlockerRow({
   title,
   explanation,
+  href,
+  actionLabel,
 }: {
   title: string;
   explanation: string;
+  href?: string;
+  actionLabel?: string;
 }) {
   return (
     <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-3">
@@ -393,6 +402,14 @@ function HardBlockerRow({
         <p className="text-sm font-medium text-foreground">{title}</p>
         <p className="text-xs text-destructive">{explanation}</p>
       </div>
+      {href && actionLabel && (
+        <Button asChild size="sm" variant="destructive" className="shrink-0">
+          <Link href={href}>
+            {actionLabel}
+            <ArrowUpRight className="size-3" />
+          </Link>
+        </Button>
+      )}
     </div>
   );
 }
@@ -622,6 +639,7 @@ export function PublishWindowPanel({
   );
   const noStudentsBlocked = hardBlockerCodes.has('no_students');
   const noSheetsBlocked = hardBlockerCodes.has('no_grading_sheets');
+  const noAdviserBlocked = hardBlockerCodes.has('no_form_adviser');
   const hardBlockerCount = checklist?.hardBlockers?.length ?? 0;
 
   // Suppress checks that "pass" only because their denominator is zero. With no
@@ -945,6 +963,19 @@ export function PublishWindowPanel({
                   <HardBlockerRow
                     title="No grading sheets for this term"
                     explanation="Create grading sheets for this section and term before publishing."
+                  />
+                </div>
+              )}
+              {/* No form class adviser assigned (all terms). The FCA is named on
+                  every report-card template + signature and writes the interim
+                  comments — a one-click fix on the section's Teachers tab. */}
+              {noAdviserBlocked && (
+                <div className="py-2.5">
+                  <HardBlockerRow
+                    title="No form class adviser assigned"
+                    explanation="Assign a form class adviser to this section before publishing — the report card names them and they write the comments."
+                    href={`/sis/sections/${sectionId}`}
+                    actionLabel="Assign adviser"
                   />
                 </div>
               )}

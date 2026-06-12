@@ -89,6 +89,9 @@ export function concernHref(
       return '/markbook/report-cards';
     case 'letterhead_incomplete':
       return '/sis/admin/school-config';
+    case 'no_form_adviser':
+      // Form advisers are assigned on the section's Teachers tab.
+      return `/sis/sections/${sectionId}`;
     case 'no_students':
     default:
       return null;

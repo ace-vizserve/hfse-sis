@@ -16,6 +16,10 @@ import {
 // HARD gates (block publish, not overridable):
 //   • no_students          — the section has no active roster (vacuous-pass hole)
 //   • no_grading_sheets    — no grading sheets for the term (vacuous-pass hole)
+//   • no_form_adviser      — the section has no form class adviser assigned. The
+//                            FCA is named on every report-card template (header +
+//                            signature) and authors the T1–T3 comments, so a card
+//                            with no adviser is never valid. All terms (incl. T4).
 //   • comments_incomplete  — cumulative FCA comment + virtue gate (KD #49/#129/#138),
 //                            interim terms only (T4 has no FCA block)
 //
@@ -72,6 +76,11 @@ export type PublishReadiness = {
       missing: { name: string; index: number | null }[];
     }[];
   };
+  // Whether the section has a form class adviser assigned (authoritative
+  // `teacher_assignments` row, role='form_adviser'). false → `no_form_adviser`
+  // hard blocker (all terms). The denormalized `sections.form_class_adviser`
+  // display mirror is intentionally NOT used here — it can drift.
+  form_adviser: { assigned: boolean };
   // Verdict (new):
   hardBlockers: PublishBlocker[];
   softGaps: PublishBlocker[];
@@ -108,22 +117,34 @@ export async function computePublishReadiness(
   };
   const isT4 = term.term_number === 4;
 
-  // 2+3) Active students and grading sheets are independent — fetch in parallel.
-  const [{ data: enrolments }, { data: sheets }] = await Promise.all([
-    service
-      .from('section_students')
-      .select(
-        'id, index_number, enrollment_status, enrollment_date, student:students(id, last_name, first_name)'
-      )
-      .eq('section_id', sectionId)
-      .in('enrollment_status', ['active', 'late_enrollee'])
-      .order('index_number'),
-    service
-      .from('grading_sheets')
-      .select('id, is_locked, subject:subjects(id, name)')
-      .eq('section_id', sectionId)
-      .eq('term_id', termId),
-  ]);
+  // 2+3+4) Active students, grading sheets, and the form-adviser assignment are
+  // independent — fetch in parallel. The form adviser is the authoritative
+  // `teacher_assignments` row (unique per section, role='form_adviser') — NOT the
+  // denormalized `sections.form_class_adviser` mirror, which is best-effort and
+  // can drift.
+  const [{ data: enrolments }, { data: sheets }, { data: adviserRow }] =
+    await Promise.all([
+      service
+        .from('section_students')
+        .select(
+          'id, index_number, enrollment_status, enrollment_date, student:students(id, last_name, first_name)'
+        )
+        .eq('section_id', sectionId)
+        .in('enrollment_status', ['active', 'late_enrollee'])
+        .order('index_number'),
+      service
+        .from('grading_sheets')
+        .select('id, is_locked, subject:subjects(id, name)')
+        .eq('section_id', sectionId)
+        .eq('term_id', termId),
+      service
+        .from('teacher_assignments')
+        .select('id')
+        .eq('section_id', sectionId)
+        .eq('role', 'form_adviser')
+        .maybeSingle(),
+    ]);
+  const hasFormAdviser = !!adviserRow;
 
   const activeStudents = (enrolments ?? []).map((e) => {
     const s = Array.isArray(e.student) ? e.student[0] : e.student;
@@ -559,6 +580,7 @@ export async function computePublishReadiness(
     // HARD gate: cumulative comment completeness for terms 1..N (KD #49/#120).
     // virtue_readiness is subsumed here — a term with no virtue theme is a gap.
     comment_gate: commentGate,
+    form_adviser: { assigned: hasFormAdviser },
   };
 
   // ── Derive the hard/soft verdict from the computed detail ─────────────────
@@ -586,6 +608,16 @@ export async function computePublishReadiness(
       label: isT4
         ? 'No grading sheets found for this section'
         : 'No grading sheets for this term',
+    });
+  }
+  // HARD — no form class adviser assigned (all terms). The FCA is named on every
+  // report-card template + signature and authors the interim comments, so a card
+  // with no adviser is never valid. One boolean per section, no false-positive
+  // risk (same safety rationale as the virtue hard gate, KD #138).
+  if (!hasFormAdviser) {
+    hardBlockers.push({
+      code: 'no_form_adviser',
+      label: 'No form class adviser assigned',
     });
   }
 
