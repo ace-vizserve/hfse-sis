@@ -156,6 +156,8 @@ function csvCell(row: RecordsDrillRow, key: DrillColumnKey): string | number {
       return row.sectionName ?? '';
     case 'pipelineStage':
       return row.pipelineStage;
+    case 'applicationDate':
+      return row.applicationDate?.slice(0, 10) ?? '';
     case 'enrollmentDate':
       return row.enrollmentDate?.slice(0, 10) ?? '';
     case 'withdrawalDate':

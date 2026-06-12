@@ -9,6 +9,7 @@ import {
 } from '@/lib/notifications/email-pfile-reminder';
 import { DocumentValidationSchema } from '@/lib/schemas/sis';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
+import { isStudentEnrolled } from '@/lib/p-files/queries';
 import { createServiceClient } from '@/lib/supabase/service';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
@@ -57,6 +58,41 @@ export async function PATCH(
       { error: 'Invalid or missing ay query param' },
       { status: 400 }
     );
+  }
+
+  // Document-axis ownership handoff at enrolment (module-ownership rule). The
+  // document lifecycle is Admissions' before enrolment and P-Files' after.
+  // `registrar`/`superadmin` may validate either side (KD #37 — Records is the
+  // sole writer of 'Rejected' for enrolled students; superadmin = break-glass).
+  // But the role-specific writers must stay on their side of the handoff:
+  //   • enrolled student  → `admissions` is rejected (post-enrolment docs are
+  //     P-Files territory; the UI already routes them to /p-files).
+  //   • un-enrolled student → `p-file` is rejected (pre-enrolment validation is
+  //     the admissions funnel's job).
+  // Closes the gap where the shared UI queues were split but the write route
+  // wasn't (an admissions user could approve/reject an enrolled student's doc).
+  if (auth.role === 'admissions' || auth.role === 'p-file') {
+    const enrolled = await isStudentEnrolled(ayCode, enroleeNumber);
+    if (enrolled && auth.role === 'admissions') {
+      return NextResponse.json(
+        {
+          error:
+            "This student is enrolled — their documents are managed in P-Files. The admissions document queue only covers applicants who haven't enrolled yet.",
+          code: 'enrolled_documents_pfiles_only',
+        },
+        { status: 403 }
+      );
+    }
+    if (!enrolled && auth.role === 'p-file') {
+      return NextResponse.json(
+        {
+          error:
+            'This applicant has not enrolled yet — pre-enrolment document validation is handled in the Admissions module.',
+          code: 'unenrolled_documents_admissions_only',
+        },
+        { status: 403 }
+      );
+    }
   }
 
   const body = await request.json().catch(() => null);

@@ -1,7 +1,11 @@
 import { unstable_cache } from 'next/cache';
 
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
-import { loadActorActivity } from '@/lib/sis/drill';
+import {
+  loadActorActivity,
+  buildRecordsDrillRows,
+  applyTargetFilter,
+} from '@/lib/sis/drill';
 import {
   DOCUMENT_SLOTS,
   resolveStatus,
@@ -669,83 +673,87 @@ async function loadRecordsKpisForRange(
     };
   }
 
-  // KD #68: late enrollees are real new enrollments tagged for term-of-entry
-  // visibility — count them in both `enrollmentsInRange` (so the headline
-  // KPI is honest) and `lateEnroleesInRange` (so the breakdown surfaces).
-  const [enrolRes, lateRes, withdrawRes, activeRes, docsRes] =
-    await Promise.all([
-      service
-        .from('section_students')
-        .select('id, sections!inner(academic_year_id)', {
-          count: 'exact',
-          head: true,
-        })
-        .eq('sections.academic_year_id', ayId)
-        .in('enrollment_status', ['active', 'late_enrollee'])
-        .gte('enrollment_date', input.from)
-        .lte('enrollment_date', input.to),
-      service
-        .from('section_students')
-        .select('id, sections!inner(academic_year_id)', {
-          count: 'exact',
-          head: true,
-        })
-        .eq('sections.academic_year_id', ayId)
-        .eq('enrollment_status', 'late_enrollee')
-        .gte('enrollment_date', input.from)
-        .lte('enrollment_date', input.to),
-      service
-        .from('section_students')
-        .select('id, sections!inner(academic_year_id)', {
-          count: 'exact',
-          head: true,
-        })
-        .eq('sections.academic_year_id', ayId)
-        .eq('enrollment_status', 'withdrawn')
-        .gte('withdrawal_date', input.from)
-        .lte('withdrawal_date', input.to),
-      service
-        .from('section_students')
-        .select('id, sections!inner(academic_year_id)', {
-          count: 'exact',
-          head: true,
-        })
-        .eq('sections.academic_year_id', ayId)
-        .in('enrollment_status', ['active', 'late_enrollee']),
-      // Records is enrolled-only per KD #51 — narrow the docs scan to the
-      // enrolled set so the "Docs expiring ≤60d" KPI doesn't count slots
-      // belonging to pre-enrolment funnel applicants. Without this filter
-      // the card was showing 47 when the drill (which IS enrolled-filtered)
-      // would show 3 — classic card-vs-drill disagreement.
-      (async () => {
-        const { data: enrolledStatus } = await admissions
-          .from(`${prefix}_enrolment_status`)
-          .select('enroleeNumber, applicationStatus')
-          .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)']);
-        const enrolledNumbers = (
-          (enrolledStatus ?? []) as { enroleeNumber: string | null }[]
+  // "New enrollments" = enrolled students anchored on their admissions
+  // APPLICATION date (applicationDate = app.created_at), filtered to the
+  // currently-enrolled roster — mirroring Admissions "Enrolled (range)"
+  // (lib/admissions/dashboard.ts::computeRangeKpis). NOT
+  // section_students.enrollment_date (class-start), which mis-buckets late
+  // enrollees at their joining term (KD #68/#117). The count is derived from
+  // the SAME drill rows + filter the drill sheet uses, so count == drill ==
+  // velocity by construction (KD #82/#124).
+  // Withdrawals + active-enrolled are now ALSO derived from the same drill rows
+  // (below) so card == drill (KD #124). Only the docs scan stays a direct query.
+  const [drillRows, docsRes] = await Promise.all([
+    buildRecordsDrillRows({ ayCode: input.ayCode }),
+    // Records is enrolled-only per KD #51 — narrow the docs scan to the
+    // enrolled set so the "Docs expiring ≤60d" KPI doesn't count slots
+    // belonging to pre-enrolment funnel applicants. Without this filter
+    // the card was showing 47 when the drill (which IS enrolled-filtered)
+    // would show 3 — classic card-vs-drill disagreement.
+    (async () => {
+      const { data: enrolledStatus } = await admissions
+        .from(`${prefix}_enrolment_status`)
+        .select('enroleeNumber, applicationStatus')
+        .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)']);
+      const enrolledNumbers = (
+        (enrolledStatus ?? []) as { enroleeNumber: string | null }[]
+      )
+        .map((s) => s.enroleeNumber)
+        .filter((v): v is string => v !== null);
+      if (enrolledNumbers.length === 0) {
+        return {
+          data: [] as Array<Record<string, string | null>>,
+          error: null,
+        };
+      }
+      return admissions
+        .from(`${prefix}_enrolment_documents`)
+        .select(
+          [
+            'enroleeNumber',
+            ...DOCUMENT_SLOTS.flatMap((s) =>
+              s.expires ? [`${s.key}Expiry`] : []
+            ),
+          ].join(', ')
         )
-          .map((s) => s.enroleeNumber)
-          .filter((v): v is string => v !== null);
-        if (enrolledNumbers.length === 0) {
-          return {
-            data: [] as Array<Record<string, string | null>>,
-            error: null,
-          };
-        }
-        return admissions
-          .from(`${prefix}_enrolment_documents`)
-          .select(
-            [
-              'enroleeNumber',
-              ...DOCUMENT_SLOTS.flatMap((s) =>
-                s.expires ? [`${s.key}Expiry`] : []
-              ),
-            ].join(', ')
-          )
-          .in('enroleeNumber', enrolledNumbers);
-      })(),
-    ]);
+        .in('enroleeNumber', enrolledNumbers);
+    })(),
+  ]);
+
+  // Re-use the drill's enrollments-range filter so the card count == the drill
+  // rows (KD #124). lateEnroleesInRange is the late_enrollee subset of the same
+  // window, so the headline and its breakdown stay consistent.
+  const enrolledInWindow = applyTargetFilter(
+    drillRows,
+    'enrollments-range',
+    null,
+    {
+      from: input.from,
+      to: input.to,
+    }
+  );
+  const enrollmentsInRange = enrolledInWindow.length;
+  const lateEnroleesInRange = enrolledInWindow.filter(
+    (r) => r.enrollmentStatus === 'late_enrollee'
+  ).length;
+
+  // Withdrawals (genuine leavers — transfers excluded) + active enrolled, both
+  // derived from the SAME drill rows + filters the drill sheet uses, so card ==
+  // drill (KD #124). withdrawals-range encodes the leaver/transfer/dedup logic.
+  const withdrawalsInRange = applyTargetFilter(
+    drillRows,
+    'withdrawals-range',
+    null,
+    {
+      from: input.from,
+      to: input.to,
+    }
+  ).length;
+  const activeEnrolled = applyTargetFilter(
+    drillRows,
+    'active-enrolled',
+    null
+  ).length;
 
   type DocRow = Record<string, string | null>;
   // "Docs expiring ≤60d" is a LIVE state, not range activity — anchor the
@@ -772,10 +780,10 @@ async function loadRecordsKpisForRange(
   }
 
   return {
-    enrollmentsInRange: enrolRes.count ?? 0,
-    lateEnroleesInRange: lateRes.count ?? 0,
-    withdrawalsInRange: withdrawRes.count ?? 0,
-    activeEnrolled: activeRes.count ?? 0,
+    enrollmentsInRange,
+    lateEnroleesInRange,
+    withdrawalsInRange,
+    activeEnrolled,
     expiringSoon,
   };
 }
@@ -862,7 +870,6 @@ function bucketByDay(
 async function loadEnrollmentVelocityRangeUncached(
   input: RangeInput
 ): Promise<RangeResult<VelocityPoint[]>> {
-  const service = createServiceClient();
   const hasCmp = input.cmpFrom != null && input.cmpTo != null;
   const earliest =
     hasCmp && input.cmpFrom! < input.from ? input.cmpFrom! : input.from;
@@ -879,21 +886,19 @@ async function loadEnrollmentVelocityRangeUncached(
     };
   }
 
-  // KD #68: late enrollees are real enrollments — include them so the
-  // velocity chart aligns with the New Enrollments KPI. AY-scope via
-  // sections!inner so counts don't span other AYs.
-  const { data } = await service
-    .from('section_students')
-    .select('enrollment_date, sections!inner(academic_year_id)')
-    .eq('sections.academic_year_id', ayId)
-    .in('enrollment_status', ['active', 'late_enrollee'])
-    .gte('enrollment_date', earliest)
-    .lte('enrollment_date', latest);
-
-  type Row = { enrollment_date: string };
-  const rows = ((data ?? []) as Row[])
-    .filter((r) => r.enrollment_date)
-    .map((r) => ({ ts: r.enrollment_date }));
+  // Bucket the SAME enrolled-in-window rows the "New enrollments" KPI counts,
+  // keyed on the admissions application date (applicationDate) — NOT
+  // section_students.enrollment_date (class-start) — so the card sparkline and
+  // its headline number tell one story (KD #82/#124). Mirrors Admissions
+  // "Enrolled (range)".
+  const drillRows = await buildRecordsDrillRows({ ayCode: input.ayCode });
+  const windowed = applyTargetFilter(drillRows, 'enrollments-range', null, {
+    from: earliest,
+    to: latest,
+  });
+  const rows = windowed
+    .filter((r) => r.applicationDate)
+    .map((r) => ({ ts: r.applicationDate as string }));
   const current = bucketByDay(rows, input.from, input.to);
   if (!hasCmp) {
     return {
@@ -941,36 +946,23 @@ export function getEnrollmentVelocityRange(
 async function loadWithdrawalVelocityRangeUncached(
   input: RangeInput
 ): Promise<RangeResult<VelocityPoint[]>> {
-  const service = createServiceClient();
   const hasCmp = input.cmpFrom != null && input.cmpTo != null;
   const earliest =
     hasCmp && input.cmpFrom! < input.from ? input.cmpFrom! : input.from;
   const latest = hasCmp && input.to < input.cmpTo! ? input.cmpTo! : input.to;
 
-  const ayId = await getAyIdByCode(input.ayCode);
-  if (ayId == null) {
-    return {
-      current: [],
-      comparison: null,
-      delta: null,
-      range: { from: input.from, to: input.to },
-      comparisonRange: null,
-    };
-  }
-
-  // AY-scope via sections!inner so counts don't span other AYs.
-  const { data } = await service
-    .from('section_students')
-    .select('withdrawal_date, sections!inner(academic_year_id)')
-    .eq('sections.academic_year_id', ayId)
-    .eq('enrollment_status', 'withdrawn')
-    .gte('withdrawal_date', earliest)
-    .lte('withdrawal_date', latest);
-
-  type Row = { withdrawal_date: string };
-  const rows = ((data ?? []) as Row[])
-    .filter((r) => r.withdrawal_date)
-    .map((r) => ({ ts: r.withdrawal_date }));
+  // Bucket the SAME genuine-leaver rows the "Withdrawals" KPI counts (transfers
+  // excluded, deduped per student), keyed on withdrawal_date — so the trend
+  // can't diverge from the headline (KD #82/#124). Mirrors the enrollment
+  // velocity re-source.
+  const drillRows = await buildRecordsDrillRows({ ayCode: input.ayCode });
+  const windowed = applyTargetFilter(drillRows, 'withdrawals-range', null, {
+    from: earliest,
+    to: latest,
+  });
+  const rows = windowed
+    .filter((r) => r.withdrawalDate)
+    .map((r) => ({ ts: r.withdrawalDate as string }));
   const current = bucketByDay(rows, input.from, input.to);
   if (!hasCmp) {
     return {

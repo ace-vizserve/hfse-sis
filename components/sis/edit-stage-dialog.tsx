@@ -73,6 +73,7 @@ export function EditStageDialog({
   initialRemarks,
   initialExtras,
   prereqStatuses,
+  frozen = false,
 }: {
   ayCode: string;
   enroleeNumber: string;
@@ -80,6 +81,12 @@ export function EditStageDialog({
   initialStatus: string | null;
   initialRemarks: string | null;
   initialExtras: ExtraValues;
+  /**
+   * When true the student is fully Enrolled — the admissions funnel becomes a
+   * read-only record (KD #147). The trigger button is disabled and submit is
+   * guarded. Enrolment changes move to Records, documents to P-Files.
+   */
+  frozen?: boolean;
   /**
    * Current statuses for the 5 ENROLLED_PREREQ_STAGES. Optional — when
    * provided AND `stageKey === 'application'` AND the user picks `Enrolled`
@@ -189,6 +196,7 @@ export function EditStageDialog({
   }, [isTerminalStatus]);
 
   async function onSubmit(values: StageUpdateInput) {
+    if (frozen) return;
     try {
       const extrasPayload = {
         ...values.extras,
@@ -364,7 +372,17 @@ export function EditStageDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="h-7 gap-1 text-xs">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1 text-xs"
+          disabled={frozen}
+          title={
+            frozen
+              ? 'Enrolled — managed in Records (enrolment) and P-Files (documents).'
+              : undefined
+          }
+        >
           <Pencil className="size-3" />
           Edit
         </Button>

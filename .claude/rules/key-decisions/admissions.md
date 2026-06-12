@@ -50,6 +50,8 @@ Admissions document validation triage page. KD #70's "awaiting validation" half 
 
 ### KD #97
 
+> **Amended by KD #147 (module-ownership rule).** The "Records is **read-only** on these axes" stance below is now **narrowed to the application-history axis only**. The **shared Student Profile** (Profile + Family on `ay{YY}_enrolment_applications` — identity/contacts/parents) is **editable from Records too** (it's one record; both modules write the same row). Status + documents stay owned post-enrolment by Records / P-Files respectively (Admissions is frozen on them once Enrolled). See `docs/context/22-module-ownership-truth-model.md`.
+
 **Admissions detail is the cross-stage editor for pre-enrolment.** The `/admissions/applications/[enroleeNumber]` surface mounts every editor that operates on `ay{YY}_enrolment_*` tables: Profile, Family, Documents (view-only record for enrolled applicants — renewals live in P-Files), STP application + residence history, class-stage Enrollment editor, Lifecycle. Records (`/records/students/[studentNumber]`) is **read-only on these axes** and only ever shows the consolidated cross-year history (KD #51).
 
 **Rule:** when a field lives on an `ay{YY}_*` admissions table, the editor goes on the admissions detail surface; when it lives on `public.section_students` (post-enrolment operational data), the editor goes on Records (per the Records pencil + transfer + re-enrol pattern). Withdrawn-then-re-enrolled students: their enrolment lifecycle edits (section assignment, enrollment status) stay on Records since those live in `section_students`; their admissions identity (profile, family, documents, STP) stays editable on `/admissions/applications/[enroleeNumber]` for the AY they enrolled in.
