@@ -57,9 +57,25 @@ function makeService(opts: {
   sheetRows: SheetRow[];
   writeupsByTerm: Record<string, WriteupLite[]>;
   attendanceRows: AttendanceRow[];
+  /** Whether the section has a form_adviser teacher_assignment. Default true. */
+  hasFormAdviser?: boolean;
 }): SupabaseClient {
+  const hasFormAdviser = opts.hasFormAdviser ?? true;
   return {
     from(table: string) {
+      if (table === 'teacher_assignments') {
+        // .select('id').eq('section_id', X).eq('role', 'form_adviser').maybeSingle()
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: () =>
+            Promise.resolve({
+              data: hasFormAdviser ? { id: 'ta1' } : null,
+              error: null,
+            }),
+        };
+        return chain;
+      }
       if (table === 'terms') {
         // Two shapes: .eq('id', X).single()  AND  .eq('academic_year_id', X).order()
         let col = '';
@@ -323,6 +339,38 @@ describe('computePublishReadiness — verdict classification', () => {
     if (!isReadiness(r)) throw new Error('expected readiness');
     expect(r.softGaps.map((g) => g.code)).toContain('attendance_incomplete');
     expect(r.canPublish).toBe(true);
+  });
+
+  it('no form adviser assigned → hardBlockers includes no_form_adviser, canPublish false', async () => {
+    const service = makeService({
+      termsById: TERMS_BY_ID,
+      ayTerms: AY_TERMS,
+      rosterRows: ROSTER_AB,
+      sheetRows: [LOCKED_SHEET],
+      writeupsByTerm: { t1: [done('A'), done('B')] },
+      attendanceRows: [fullAttendance('ssA'), fullAttendance('ssB')],
+      hasFormAdviser: false,
+    });
+    const r = await computePublishReadiness(service, 'sec', 't1');
+    if (!isReadiness(r)) throw new Error('expected readiness');
+    expect(r.hardBlockers.map((b) => b.code)).toContain('no_form_adviser');
+    expect(r.form_adviser.assigned).toBe(false);
+    expect(r.canPublish).toBe(false);
+  });
+
+  it('form adviser assigned (default) → no no_form_adviser blocker', async () => {
+    const service = makeService({
+      termsById: TERMS_BY_ID,
+      ayTerms: AY_TERMS,
+      rosterRows: ROSTER_AB,
+      sheetRows: [LOCKED_SHEET],
+      writeupsByTerm: { t1: [done('A'), done('B')] },
+      attendanceRows: [fullAttendance('ssA'), fullAttendance('ssB')],
+    });
+    const r = await computePublishReadiness(service, 'sec', 't1');
+    if (!isReadiness(r)) throw new Error('expected readiness');
+    expect(r.hardBlockers.map((b) => b.code)).not.toContain('no_form_adviser');
+    expect(r.form_adviser.assigned).toBe(true);
   });
 
   it('missing term → returns { error, status: 404 }', async () => {

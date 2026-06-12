@@ -366,6 +366,7 @@ export function DocumentsViewer({
             onClose={() => setSelectedKey(null)}
             isAdmissionsScope={isAdmissionsScope}
             recipients={recipients}
+            applicationStatus={application.applicationStatus ?? null}
           />
         )}
       </div>
@@ -711,6 +712,7 @@ function PreviewPane({
   onClose,
   isAdmissionsScope,
   recipients,
+  applicationStatus,
 }: {
   doc: DocumentSlot;
   enroleeNumber: string;
@@ -722,6 +724,7 @@ function PreviewPane({
     fatherEmail: string | null;
     guardianEmail: string | null;
   };
+  applicationStatus: string | null;
 }) {
   const kind = fileKind(doc.url);
   const filename = fileNameFromUrl(doc.url);
@@ -789,6 +792,7 @@ function PreviewPane({
               label={doc.label}
               status={doc.status}
               url={doc.url}
+              applicationStatus={applicationStatus}
             />
             {showAdmissionsChase && (
               <>

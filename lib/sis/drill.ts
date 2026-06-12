@@ -46,7 +46,14 @@ export type RecordsDrillRow = {
   sectionId: string | null;
   sectionName: string | null;
   pipelineStage: string;
-  enrollmentDate: string | null; // ISO
+  /**
+   * Admissions application `created_at` (ISO). The anchor for the "new
+   * enrollments" metric — mirrors how Admissions "Enrolled (range)" counts
+   * applications by submission date filtered to currently-enrolled status
+   * (lib/admissions/dashboard.ts::computeRangeKpis). NOT the class-start date.
+   */
+  applicationDate: string | null; // ISO
+  enrollmentDate: string | null; // ISO — section_students.enrollment_date = class-start
   withdrawalDate: string | null; // ISO
   daysSinceUpdate: number | null;
   hasMissingDocs: boolean;
@@ -71,6 +78,17 @@ const CORE_DOC_STATUS_COLUMNS = [
 // enrollee from drill results, producing card-vs-drill mismatches.
 const ENROLLED_STATUSES = new Set(['active', 'late_enrollee']);
 const SOFT_CLOSED_APPLICATION_STATUSES = new Set(['Cancelled', 'Withdrawn']);
+
+// A row whose ADMISSIONS applicationStatus is soft-closed (Cancelled/Withdrawn)
+// should be excluded from "enrolled"/application analytics — an active
+// section_students row whose admissions record says Cancelled shouldn't read as
+// currently enrolled. Applied PER-TARGET (not globally at row build) so the
+// withdrawals-range target can still see Records-withdrawn rows whose admissions
+// status cascaded to 'Withdrawn'. (r.applicationStatus is `raw || pipelineStage`
+// — `deriveStage` only yields 'Withdrawn'/'Cancelled' for already-withdrawn
+// rows, never for an active row, so this check is safe on the stored field.)
+const isSoftClosed = (r: RecordsDrillRow): boolean =>
+  SOFT_CLOSED_APPLICATION_STATUSES.has(r.applicationStatus);
 
 // ─── Range input ────────────────────────────────────────────────────────────
 
@@ -287,7 +305,11 @@ async function loadRecordsRowsUncached(
       : undefined;
 
     const applicationStatus = (status?.applicationStatus ?? '').trim();
-    if (SOFT_CLOSED_APPLICATION_STATUSES.has(applicationStatus)) continue;
+    // NOTE: soft-closed (Cancelled/Withdrawn) rows are NO LONGER dropped here.
+    // The exclusion moved into applyTargetFilter per-target (isSoftClosed) so
+    // the withdrawals-range target can see Records-withdrawn rows whose
+    // admissions status cascaded to 'Withdrawn'. All enrolled/application
+    // targets re-apply isSoftClosed, so their populations are unchanged.
 
     const updated = status?.applicationUpdatedDate ?? app?.created_at ?? null;
     const updatedMs = updated ? Date.parse(updated) : NaN;
@@ -320,6 +342,7 @@ async function loadRecordsRowsUncached(
       sectionId: section?.id ?? null,
       sectionName: section?.name ?? null,
       pipelineStage,
+      applicationDate: app?.created_at ?? null,
       enrollmentDate: enrol.enrollment_date,
       withdrawalDate: enrol.withdrawal_date,
       daysSinceUpdate,
@@ -527,6 +550,9 @@ async function loadUnsyncedReadinessDrillRowsUncached(
       sectionId: null, // null signals "no section"; used as routing discriminator in drill sheet (KD #81)
       sectionName: null,
       pipelineStage: 'Enrolled',
+      // Unsynced rows belong to the class-assignment-readiness target, never
+      // enrollments-range — applicationDate is set for completeness only.
+      applicationDate: app?.created_at ?? null,
       enrollmentDate: null,
       withdrawalDate: null,
       daysSinceUpdate,
@@ -575,46 +601,93 @@ export function applyTargetFilter(
 ): RecordsDrillRow[] {
   switch (target) {
     case 'enrollments-range': {
-      // KD #82 scope-anchor: enrolment-velocity chart anchors on
-      // section_students.enrollment_date; drill must match (M12).
+      // "New enrollments" anchors on the admissions APPLICATION date
+      // (applicationDate = app.created_at), filtered to the currently-enrolled
+      // roster — mirroring Admissions "Enrolled (range)"
+      // (lib/admissions/dashboard.ts::computeRangeKpis). NOT
+      // section_students.enrollment_date, which is the class-start date and
+      // would mis-bucket late enrollees at their joining term (KD #68/#117).
+      // The KPI count + velocity chart re-use THIS filter so count == chart ==
+      // drill (KD #82/#124).
       if (!range)
-        return rows.filter((r) => ENROLLED_STATUSES.has(r.enrollmentStatus));
+        return rows.filter(
+          (r) => ENROLLED_STATUSES.has(r.enrollmentStatus) && !isSoftClosed(r)
+        );
       return rows.filter((r) => {
         if (!ENROLLED_STATUSES.has(r.enrollmentStatus)) return false;
-        if (!r.enrollmentDate) return false;
-        const d = r.enrollmentDate.slice(0, 10);
+        if (isSoftClosed(r)) return false;
+        if (!r.applicationDate) return false;
+        const d = r.applicationDate.slice(0, 10);
         return d >= range.from && d <= range.to;
       });
     }
     case 'withdrawals-range': {
-      if (!range) return rows.filter((r) => r.enrollmentStatus === 'withdrawn');
-      return rows.filter((r) => {
-        if (r.enrollmentStatus !== 'withdrawn') return false;
+      // Records "Withdrawals" = genuine LEAVERS only (Records signal:
+      // section_students.enrollment_status='withdrawn' + withdrawal_date). A
+      // mid-year section TRANSFER withdraws the source row but the student stays
+      // active in the destination — that is NOT a withdrawal (matches the
+      // movements feed's transfer-vs-withdrawal split, KD #83). So exclude a
+      // withdrawn row when the same student still has an active/late enrolment
+      // in the AY, and dedup per student (a transfer-then-leave leaves multiple
+      // withdrawn rows) keeping the latest withdrawal_date. Admissions
+      // applicationStatus plays NO part here.
+      const stillEnrolled = new Set(
+        rows
+          .filter((r) => ENROLLED_STATUSES.has(r.enrollmentStatus))
+          .map((r) => r.studentNumber)
+          .filter((sn): sn is string => !!sn)
+      );
+      const byStudent = new Map<string, RecordsDrillRow>();
+      const orphans: RecordsDrillRow[] = [];
+      for (const r of rows) {
+        if (r.enrollmentStatus !== 'withdrawn') continue;
+        if (r.studentNumber && stillEnrolled.has(r.studentNumber)) continue; // transfer artifact
+        if (!r.studentNumber) {
+          orphans.push(r);
+          continue;
+        }
+        const prev = byStudent.get(r.studentNumber);
+        if (!prev || (r.withdrawalDate ?? '') > (prev.withdrawalDate ?? '')) {
+          byStudent.set(r.studentNumber, r);
+        }
+      }
+      const leavers = [...byStudent.values(), ...orphans];
+      if (!range) return leavers;
+      return leavers.filter((r) => {
         if (!r.withdrawalDate) return false;
         const d = r.withdrawalDate.slice(0, 10);
         return d >= range.from && d <= range.to;
       });
     }
     case 'active-enrolled':
-      return rows.filter((r) => ENROLLED_STATUSES.has(r.enrollmentStatus));
+      return rows.filter(
+        (r) => ENROLLED_STATUSES.has(r.enrollmentStatus) && !isSoftClosed(r)
+      );
     case 'expiring-docs':
-      return rows.filter((r) => r.expiringDocsCount > 0);
+      return rows.filter((r) => r.expiringDocsCount > 0 && !isSoftClosed(r));
     case 'students-by-pipeline-stage':
-      if (!segment) return rows;
-      return rows.filter((r) => r.pipelineStage === segment);
+      if (!segment) return rows.filter((r) => !isSoftClosed(r));
+      return rows.filter(
+        (r) => r.pipelineStage === segment && !isSoftClosed(r)
+      );
     case 'students-by-level':
-      if (!segment) return rows;
-      return rows.filter((r) => (r.level ?? 'Unknown') === segment);
+      if (!segment) return rows.filter((r) => !isSoftClosed(r));
+      return rows.filter(
+        (r) => (r.level ?? 'Unknown') === segment && !isSoftClosed(r)
+      );
     case 'backlog-by-document': {
       // segment format = "{slotKey}|{statusBucket}" e.g. "medical|missing"
-      if (!segment) return rows.filter((r) => r.hasMissingDocs);
       // Without per-slot enrichment in the row we filter by hasMissingDocs as
-      // a proxy. The drill API can pass a richer segment if needed later.
-      return rows.filter((r) => r.hasMissingDocs);
+      // a proxy (segment ignored for now). The drill API can pass a richer
+      // segment if needed later.
+      return rows.filter((r) => r.hasMissingDocs && !isSoftClosed(r));
     }
     case 'class-assignment-readiness':
       return rows.filter(
-        (r) => ENROLLED_STATUSES.has(r.enrollmentStatus) && r.sectionId === null
+        (r) =>
+          ENROLLED_STATUSES.has(r.enrollmentStatus) &&
+          r.sectionId === null &&
+          !isSoftClosed(r)
       );
     default: {
       const _exhaustive: never = target;
@@ -634,6 +707,7 @@ export type DrillColumnKey =
   | 'level'
   | 'sectionName'
   | 'pipelineStage'
+  | 'applicationDate'
   | 'enrollmentDate'
   | 'withdrawalDate'
   | 'daysSinceUpdate'
@@ -648,6 +722,7 @@ export const ALL_DRILL_COLUMNS: DrillColumnKey[] = [
   'level',
   'sectionName',
   'pipelineStage',
+  'applicationDate',
   'enrollmentDate',
   'withdrawalDate',
   'daysSinceUpdate',
@@ -663,7 +738,10 @@ export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
   level: 'Level',
   sectionName: 'Section',
   pipelineStage: 'Stage',
-  enrollmentDate: 'Enrolled on',
+  applicationDate: 'Applied on',
+  // section_students.enrollment_date is the class-start date, NOT the enrolment
+  // event — label it honestly so late enrollees don't read as "Enrolled on T3".
+  enrollmentDate: 'Starts class on',
   withdrawalDate: 'Withdrawn on',
   daysSinceUpdate: 'Days since update',
   documentsComplete: 'Documents',
@@ -678,7 +756,7 @@ export function defaultColumnsForTarget(
         'fullName',
         'level',
         'sectionName',
-        'enrollmentDate',
+        'applicationDate',
         'enrollmentStatus',
       ];
     case 'withdrawals-range':

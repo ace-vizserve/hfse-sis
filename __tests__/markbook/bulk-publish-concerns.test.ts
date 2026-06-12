@@ -91,6 +91,7 @@ describe('concernHref', () => {
     expect(concernHref('letterhead_incomplete', ctx)).toBe(
       '/sis/admin/school-config'
     );
+    expect(concernHref('no_form_adviser', ctx)).toBe('/sis/sections/sec-1');
     expect(concernHref('no_students', ctx)).toBeNull();
   });
 

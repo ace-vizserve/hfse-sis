@@ -144,7 +144,8 @@ function buildColumns(sectionId: string): ColumnDef<RosterRow>[] {
     },
     {
       accessorKey: 'enrollment_date',
-      header: 'Enrolled',
+      // Class-start date (when attendance begins), not the enrolment event.
+      header: 'Starts class',
       cell: ({ row }) => {
         const d = row.original.enrollment_date;
         if (!d) return <span className="text-muted-foreground">—</span>;

@@ -33,6 +33,8 @@ import { notFound, redirect } from 'next/navigation';
 import React from 'react';
 
 import { CompassionateAllowanceInline } from '@/components/sis/compassionate-allowance-inline';
+import { EditFamilySheet } from '@/components/sis/edit-family-sheet';
+import { EditProfileSheet } from '@/components/sis/edit-profile-sheet';
 import { PlacementEditButton } from '@/components/sis/placement-edit-button';
 import { RecordsLitePage } from '@/components/sis/records-lite-page';
 import {
@@ -70,6 +72,7 @@ import {
   WITHDRAWAL_REASON_LABELS,
   type WithdrawalReason,
 } from '@/lib/schemas/enrolment';
+import type { ProfileUpdateInput } from '@/lib/schemas/sis';
 import { getStudentLifecycle } from '@/lib/sis/process';
 import {
   getEnrollmentHistory,
@@ -152,6 +155,115 @@ function displayName(s: {
 function fmtPercentage(num: number | null, den: number | null): string {
   if (!num || !den || den === 0) return '—';
   return `${((num / den) * 100).toFixed(1)}%`;
+}
+
+// Build the shared-profile editor's `initial` from the current-AY application
+// row. Mirrors components/sis/profile-tab.tsx — the same admissions editor
+// (EditProfileSheet) is mounted on Records since the profile is one shared
+// row, editable from both surfaces (KD #147). Always fully editable here.
+function buildProfileInitial(app: ApplicationRow): Partial<ProfileUpdateInput> {
+  return {
+    firstName: app.firstName,
+    middleName: app.middleName,
+    lastName: app.lastName,
+    preferredName: app.preferredName,
+    enroleeFullName: app.enroleeFullName,
+    category: app.category as ProfileUpdateInput['category'],
+    nric: app.nric,
+    birthDay: app.birthDay,
+    gender: app.gender,
+    nationality: app.nationality,
+    primaryLanguage: app.primaryLanguage,
+    religion: app.religion,
+    religionOther: app.religionOther,
+    passportNumber: app.passportNumber,
+    passportExpiry: app.passportExpiry,
+    pass: app.pass,
+    passExpiry: app.passExpiry,
+    homePhone: app.homePhone,
+    homeAddress: app.homeAddress,
+    postalCode: app.postalCode,
+    livingWithWhom: app.livingWithWhom,
+    contactPerson: app.contactPerson,
+    contactPersonNumber: app.contactPersonNumber,
+    parentMaritalStatus: app.parentMaritalStatus,
+    levelApplied: app.levelApplied,
+    preferredSchedule: app.preferredSchedule,
+    classType: app.classType,
+    paymentOption: app.paymentOption,
+    availSchoolBus: app.availSchoolBus as ProfileUpdateInput['availSchoolBus'],
+    availStudentCare:
+      app.availStudentCare as ProfileUpdateInput['availStudentCare'],
+    studentCareProgram: app.studentCareProgram,
+    availUniform: app.availUniform as ProfileUpdateInput['availUniform'],
+    additionalLearningNeeds: app.additionalLearningNeeds,
+    otherLearningNeeds: app.otherLearningNeeds,
+    previousSchool: app.previousSchool,
+    howDidYouKnowAboutHFSEIS: app.howDidYouKnowAboutHFSEIS,
+    otherSource: app.otherSource,
+    referrerName: app.referrerName,
+    referrerMobile: app.referrerMobile,
+    contractSignatory: app.contractSignatory,
+    discount1: app.discount1,
+    discount2: app.discount2,
+    discount3: app.discount3,
+  };
+}
+
+// Per-parent `initial` for EditFamilySheet — mirrors components/sis/family-tab.tsx.
+function buildFamilyInitial(
+  app: ApplicationRow,
+  parent: 'father' | 'mother' | 'guardian'
+): Record<string, unknown> {
+  if (parent === 'father') {
+    return {
+      fatherFullName: app.fatherFullName,
+      fatherFirstName: app.fatherFirstName,
+      fatherLastName: app.fatherLastName,
+      fatherNric: app.fatherNric,
+      fatherBirthDay: app.fatherBirthDay,
+      fatherMobile: app.fatherMobile,
+      fatherEmail: app.fatherEmail,
+      fatherNationality: app.fatherNationality,
+      fatherCompanyName: app.fatherCompanyName,
+      fatherPosition: app.fatherPosition,
+      fatherPassport: app.fatherPassport,
+      fatherPassportExpiry: app.fatherPassportExpiry,
+      fatherPass: app.fatherPass,
+      fatherPassExpiry: app.fatherPassExpiry,
+      fatherWhatsappTeamsConsent: app.fatherWhatsappTeamsConsent,
+    };
+  }
+  if (parent === 'mother') {
+    return {
+      motherFullName: app.motherFullName,
+      motherFirstName: app.motherFirstName,
+      motherLastName: app.motherLastName,
+      motherNric: app.motherNric,
+      motherBirthDay: app.motherBirthDay,
+      motherMobile: app.motherMobile,
+      motherEmail: app.motherEmail,
+      motherNationality: app.motherNationality,
+      motherCompanyName: app.motherCompanyName,
+      motherPosition: app.motherPosition,
+      motherPassport: app.motherPassport,
+      motherPassportExpiry: app.motherPassportExpiry,
+      motherPass: app.motherPass,
+      motherPassExpiry: app.motherPassExpiry,
+      motherWhatsappTeamsConsent: app.motherWhatsappTeamsConsent,
+    };
+  }
+  return {
+    guardianFullName: app.guardianFullName,
+    guardianMobile: app.guardianMobile,
+    guardianEmail: app.guardianEmail,
+    guardianNationality: app.guardianNationality,
+    guardianPassport: app.guardianPassport,
+    guardianPassportExpiry: app.guardianPassportExpiry,
+    guardianPass: app.guardianPass,
+    guardianPassExpiry: app.guardianPassExpiry,
+    guardianWhatsappTeamsConsent: app.guardianWhatsappTeamsConsent,
+  };
 }
 
 const TAB_KEYS = [
@@ -502,7 +614,11 @@ export default async function RecordsStudentCrossYearPage({
         <TabsContent value="family" className="space-y-6">
           {currentAyDetail ? (
             <>
-              <FamilyContactCard app={currentAyDetail.application} />
+              <FamilyContactCard
+                app={currentAyDetail.application}
+                ayCode={currentAyDetail.ayCode}
+                enroleeNumber={currentAyDetail.application.enroleeNumber}
+              />
               <ServicePreferencesCard
                 app={currentAyDetail.application}
                 status={currentAyDetail.status}
@@ -1541,13 +1657,18 @@ function StudentProfileCard({
           </div>
         )}
       </CardContent>
-      <CardFooter className="border-t border-hairline bg-muted/20">
-        <Button asChild variant="outline" size="sm">
+      <CardFooter className="flex flex-wrap items-center gap-2 border-t border-hairline bg-muted/20">
+        <EditProfileSheet
+          ayCode={ayCode}
+          enroleeNumber={app.enroleeNumber}
+          initial={buildProfileInitial(app)}
+        />
+        <Button asChild variant="ghost" size="sm">
           <Link
             href={`/admissions/applications/${app.enroleeNumber}?ay=${ayCode}&tab=profile`}
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            Edit in admissions
+            Open in admissions
           </Link>
         </Button>
       </CardFooter>
@@ -1793,9 +1914,18 @@ function formatShort(iso: string | null | undefined): string {
 // postal / home phone trail underneath.
 // ──────────────────────────────────────────────────────────────────────────
 
-function FamilyContactCard({ app }: { app: ApplicationRow }) {
+function FamilyContactCard({
+  app,
+  ayCode,
+  enroleeNumber,
+}: {
+  app: ApplicationRow;
+  ayCode: string;
+  enroleeNumber: string;
+}) {
   const blocks: Array<{
     role: string;
+    slot: 'father' | 'mother' | 'guardian';
     name: string | null;
     email: string | null;
     mobile: string | null;
@@ -1804,6 +1934,7 @@ function FamilyContactCard({ app }: { app: ApplicationRow }) {
   }> = [
     {
       role: 'Mother',
+      slot: 'mother',
       name: app.motherFullName,
       email: app.motherEmail,
       mobile: app.motherMobile,
@@ -1812,6 +1943,7 @@ function FamilyContactCard({ app }: { app: ApplicationRow }) {
     },
     {
       role: 'Father',
+      slot: 'father',
       name: app.fatherFullName,
       email: app.fatherEmail,
       mobile: app.fatherMobile,
@@ -1820,6 +1952,7 @@ function FamilyContactCard({ app }: { app: ApplicationRow }) {
     },
     {
       role: 'Guardian',
+      slot: 'guardian',
       name: app.guardianFullName,
       email: app.guardianEmail,
       mobile: app.guardianMobile,
@@ -1827,7 +1960,9 @@ function FamilyContactCard({ app }: { app: ApplicationRow }) {
       icon: ShieldCheck,
     },
   ];
-  const visibleBlocks = blocks.filter((b) => b.name || b.email || b.mobile);
+  // Show every parent slot so the registrar can edit (and fill in) any of
+  // them — the profile + family are one shared row, editable from Records
+  // and Admissions alike (KD #147).
   const hasHome = app.homePhone || app.homeAddress || app.postalCode;
 
   return (
@@ -1844,118 +1979,118 @@ function FamilyContactCard({ app }: { app: ApplicationRow }) {
         </CardAction>
       </CardHeader>
       <CardContent className="space-y-5">
-        {visibleBlocks.length === 0 && !hasHome ? (
-          <p className="text-sm text-muted-foreground">
-            No family contact on file.
-          </p>
-        ) : (
-          <>
-            {visibleBlocks.length > 0 && (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                {visibleBlocks.map((b) => {
-                  const Icon = b.icon;
-                  return (
-                    <div
-                      key={b.role}
-                      className="rounded-xl bg-gradient-to-t from-primary/5 to-card p-4 ring-1 ring-inset ring-border shadow-xs"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-                          <Icon className="size-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                            {b.role}
-                          </p>
-                          {b.name && (
-                            <p className="font-serif text-[14px] font-semibold leading-tight text-foreground">
-                              {b.name}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      {b.nationality && (
-                        <div className="mt-3">
-                          <Badge
-                            variant="outline"
-                            className="font-mono text-[10px] uppercase tracking-[0.12em]"
-                          >
-                            {b.nationality}
-                          </Badge>
-                        </div>
-                      )}
-                      {(b.email || b.mobile) && (
-                        <div className="mt-3 space-y-1.5 border-t border-hairline pt-3">
-                          {b.email && (
-                            <ContactPill
-                              href={`mailto:${b.email}`}
-                              icon={Mail}
-                              value={b.email}
-                            />
-                          )}
-                          {b.mobile && (
-                            <ContactPill
-                              href={`tel:${b.mobile}`}
-                              icon={Phone}
-                              value={b.mobile}
-                              mono
-                            />
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {hasHome && (
-              <div className="rounded-xl bg-muted/25 p-4 ring-1 ring-inset ring-border">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {blocks.map((b) => {
+            const Icon = b.icon;
+            return (
+              <div
+                key={b.role}
+                className="rounded-xl bg-gradient-to-t from-primary/5 to-card p-4 ring-1 ring-inset ring-border shadow-xs"
+              >
                 <div className="flex items-center gap-3">
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-                    <Home className="size-4" />
+                    <Icon className="size-4" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Home
+                      {b.role}
                     </p>
-                    {app.homeAddress && (
-                      <p className="text-[13px] leading-tight text-foreground">
-                        {app.homeAddress}
+                    {b.name ? (
+                      <p className="font-serif text-[14px] font-semibold leading-tight text-foreground">
+                        {b.name}
+                      </p>
+                    ) : (
+                      <p className="text-[13px] leading-tight text-muted-foreground">
+                        Not on file
                       </p>
                     )}
                   </div>
-                  {app.postalCode && (
+                  <EditFamilySheet
+                    ayCode={ayCode}
+                    enroleeNumber={enroleeNumber}
+                    parent={b.slot}
+                    initial={buildFamilyInitial(app, b.slot)}
+                  />
+                </div>
+                {b.nationality && (
+                  <div className="mt-3">
                     <Badge
                       variant="outline"
-                      className="font-mono text-[10px] uppercase tracking-[0.12em] tabular-nums"
+                      className="font-mono text-[10px] uppercase tracking-[0.12em]"
                     >
-                      {app.postalCode}
+                      {b.nationality}
                     </Badge>
-                  )}
-                </div>
-                {(app.homePhone || app.livingWithWhom) && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-hairline pt-3">
-                    {app.homePhone && (
+                  </div>
+                )}
+                {(b.email || b.mobile) && (
+                  <div className="mt-3 space-y-1.5 border-t border-hairline pt-3">
+                    {b.email && (
                       <ContactPill
-                        href={`tel:${app.homePhone}`}
-                        icon={Phone}
-                        value={app.homePhone}
-                        mono
+                        href={`mailto:${b.email}`}
+                        icon={Mail}
+                        value={b.email}
                       />
                     )}
-                    {app.livingWithWhom && (
-                      <Badge
-                        variant="outline"
-                        className="font-mono text-[10px] uppercase tracking-[0.12em]"
-                      >
-                        Living with · {app.livingWithWhom}
-                      </Badge>
+                    {b.mobile && (
+                      <ContactPill
+                        href={`tel:${b.mobile}`}
+                        icon={Phone}
+                        value={b.mobile}
+                        mono
+                      />
                     )}
                   </div>
                 )}
               </div>
+            );
+          })}
+        </div>
+        {hasHome && (
+          <div className="rounded-xl bg-muted/25 p-4 ring-1 ring-inset ring-border">
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                <Home className="size-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Home
+                </p>
+                {app.homeAddress && (
+                  <p className="text-[13px] leading-tight text-foreground">
+                    {app.homeAddress}
+                  </p>
+                )}
+              </div>
+              {app.postalCode && (
+                <Badge
+                  variant="outline"
+                  className="font-mono text-[10px] uppercase tracking-[0.12em] tabular-nums"
+                >
+                  {app.postalCode}
+                </Badge>
+              )}
+            </div>
+            {(app.homePhone || app.livingWithWhom) && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-hairline pt-3">
+                {app.homePhone && (
+                  <ContactPill
+                    href={`tel:${app.homePhone}`}
+                    icon={Phone}
+                    value={app.homePhone}
+                    mono
+                  />
+                )}
+                {app.livingWithWhom && (
+                  <Badge
+                    variant="outline"
+                    className="font-mono text-[10px] uppercase tracking-[0.12em]"
+                  >
+                    Living with · {app.livingWithWhom}
+                  </Badge>
+                )}
+              </div>
             )}
-          </>
+          </div>
         )}
       </CardContent>
     </Card>

@@ -124,7 +124,10 @@ export function SectionRosterTable({
         // enrollment_date: hidden-by-default, promoted per spec
         id: 'enrollment_date',
         accessorKey: 'enrollment_date',
-        header: 'Date enrolled',
+        // This is the class-start date (when the student begins attending),
+        // NOT the admissions enrolment date — label it honestly for late
+        // enrollees (KD #68/#117).
+        header: 'Starts class on',
         cell: ({ row }) => {
           const d = formatDate(row.original.enrollment_date);
           return d ? (

@@ -328,6 +328,18 @@ function buildColumnDef(
         cell: ({ row }) => <StageBadge stage={row.original.pipelineStage} />,
         enableSorting: true,
       };
+    case 'applicationDate':
+      return {
+        id: 'applicationDate',
+        accessorKey: 'applicationDate',
+        header,
+        cell: ({ row }) => (
+          <span className="text-sm tabular-nums text-muted-foreground">
+            {formatDate(row.original.applicationDate)}
+          </span>
+        ),
+        enableSorting: true,
+      };
     case 'enrollmentDate':
       return {
         id: 'enrollmentDate',

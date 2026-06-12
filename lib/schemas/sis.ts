@@ -365,6 +365,48 @@ export const STAGE_TERMINAL_STATUS: Partial<Record<StageKey, string>> = {
   // class gets 'Finished' set by the auto-assign algorithm, not a prereq.
 };
 
+// Module-ownership rule (KD #147): once a student is FULLY 'Enrolled', the
+// admissions stage editor freezes — the funnel is historical. EXCEPTION:
+// `supplies` + `orientation` legitimately happen AFTER enrolment (kit pickup,
+// orientation day), so they stay editable post-Enrolled until they reach a
+// FINALIZED status, after which they lock too (forward-only — a finalized step
+// is never rewritten).
+export const POST_ENROLMENT_EDITABLE_STAGES = [
+  'supplies',
+  'orientation',
+] as const satisfies readonly StageKey[];
+
+// The terminal/finalized statuses that lock a post-enrolment stage.
+export const STAGE_FINALIZED_STATUSES: Partial<
+  Record<StageKey, readonly string[]>
+> = {
+  supplies: ['Claimed', 'Cancelled'],
+  orientation: ['Finished', 'Cancelled'],
+};
+
+// Is this admissions stage frozen for editing right now? SHARED by the stage
+// PATCH route (server enforcement) and the enrollment-tab UI so they can't
+// drift. Rules:
+//   • not fully 'Enrolled' → nothing frozen (the funnel is still in progress;
+//     'Enrolled (Conditional)' stays fully editable until it resolves);
+//   • fully 'Enrolled' → every stage freezes EXCEPT supplies/orientation, which
+//     stay editable until their OWN status is finalized.
+export function isAdmissionsStageFrozen(
+  stageKey: StageKey,
+  currentStageStatus: string | null,
+  applicationStatus: string | null
+): boolean {
+  if ((applicationStatus ?? '').trim() !== 'Enrolled') return false;
+  if (
+    !(POST_ENROLMENT_EDITABLE_STAGES as readonly StageKey[]).includes(stageKey)
+  ) {
+    return true;
+  }
+  return (STAGE_FINALIZED_STATUSES[stageKey] ?? []).includes(
+    (currentStageStatus ?? '').trim()
+  );
+}
+
 export const APPLICATION_TERMINAL_REASON_VALUES = [
   'chose_another_school',
   'visa_denied',

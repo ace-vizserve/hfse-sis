@@ -36,7 +36,11 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { ENROLLED_PREREQ_STAGES, type StageKey } from '@/lib/schemas/sis';
+import {
+  ENROLLED_PREREQ_STAGES,
+  isAdmissionsStageFrozen,
+  type StageKey,
+} from '@/lib/schemas/sis';
 import { isFieldEmpty } from '@/lib/sis/field-helpers';
 import type { ApplicationRow, StatusRow } from '@/lib/sis/queries';
 import { cn } from '@/lib/utils';
@@ -421,6 +425,9 @@ export function EnrollmentTab({
   ];
 
   const applicationStatus = s.applicationStatus ?? null;
+  // Fully Enrolled freezes the funnel (KD #147). 'Enrolled (Conditional)' stays
+  // editable — it still has an outstanding condition to resolve.
+  const frozen = applicationStatus === 'Enrolled';
   const applicationTone: ApplicationTone =
     applicationStatus === 'Enrolled'
       ? 'enrolled'
@@ -454,6 +461,23 @@ export function EnrollmentTab({
         </div>
       )}
 
+      {frozen && (
+        <div className="flex items-start gap-3 rounded-xl border border-brand-mint/40 bg-brand-mint/10 p-4">
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-brand-mint" />
+          <div className="space-y-1 text-sm leading-relaxed">
+            <p className="font-medium text-foreground">
+              This student is enrolled — the admissions funnel is now a
+              read-only record.
+            </p>
+            <p className="text-muted-foreground">
+              Supplies and orientation can still be updated until they&apos;re
+              finalized. Manage enrolment (withdrawal, re-enrolment) in Records
+              and documents in P-Files.
+            </p>
+          </div>
+        </div>
+      )}
+
       <StageProgressCard
         prereqStages={[...intakeCards, ...commitmentsCards].filter((c) =>
           (ENROLLED_PREREQ_STAGES as readonly StageKey[]).includes(c.key)
@@ -467,6 +491,7 @@ export function EnrollmentTab({
         s={s}
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
+        frozen={frozen}
       />
 
       <StatusGroupCard
@@ -476,6 +501,7 @@ export function EnrollmentTab({
         stages={intakeCards}
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
+        applicationStatus={applicationStatus}
       />
 
       <StatusGroupCard
@@ -485,6 +511,7 @@ export function EnrollmentTab({
         stages={commitmentsCards}
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
+        applicationStatus={applicationStatus}
       />
 
       <StatusGroupCard
@@ -495,6 +522,7 @@ export function EnrollmentTab({
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
         currentSectionId={currentSectionId}
+        applicationStatus={applicationStatus}
       />
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -603,12 +631,14 @@ function ApplicationStatusCard({
   s,
   ayCode,
   enroleeNumber,
+  frozen,
 }: {
   applicationCard: StageCard;
   applicationTone: ApplicationTone;
   s: StatusRow;
   ayCode: string;
   enroleeNumber: string;
+  frozen: boolean;
 }) {
   const tile = APPLICATION_TILE[applicationTone];
   const TileIcon = tile.icon;
@@ -683,6 +713,7 @@ function ApplicationStatusCard({
             initialStatus={applicationCard.status}
             initialRemarks={applicationCard.remarks}
             initialExtras={applicationCard.extrasInitial}
+            frozen={frozen}
           />
         </div>
 
@@ -940,6 +971,7 @@ function StatusGroupCard({
   ayCode,
   enroleeNumber,
   currentSectionId,
+  applicationStatus,
 }: {
   eyebrow: string;
   title: string;
@@ -949,6 +981,8 @@ function StatusGroupCard({
   enroleeNumber: string;
   /** Optional — only meaningful for the Placement group's class tile. */
   currentSectionId?: string | null;
+  /** Drives the per-stage freeze (KD #147) — passed to each tile. */
+  applicationStatus: string | null;
 }) {
   const counts = stageBucketCounts(stages);
 
@@ -998,6 +1032,7 @@ function StatusGroupCard({
             ayCode={ayCode}
             enroleeNumber={enroleeNumber}
             currentSectionId={stage.key === 'class' ? currentSectionId : null}
+            applicationStatus={applicationStatus}
           />
         ))}
       </div>
@@ -1010,6 +1045,7 @@ function StageStatusTile({
   ayCode,
   enroleeNumber,
   currentSectionId,
+  applicationStatus,
 }: {
   stage: StageCard;
   ayCode: string;
@@ -1017,7 +1053,16 @@ function StageStatusTile({
   /** Set only for the `class` stage when the section ID is known.
    *  Drives the "Move to another section →" CTA. */
   currentSectionId?: string | null;
+  applicationStatus: string | null;
 }) {
+  // Per-stage freeze (KD #147): all stages freeze once fully Enrolled, except
+  // supplies/orientation which stay editable until finalized. Shared with the
+  // stage PATCH route so the disabled control matches the server's 422.
+  const frozen = isAdmissionsStageFrozen(
+    stage.key,
+    stage.status,
+    applicationStatus
+  );
   const StageIcon = STAGE_ICON[stage.key];
   const stripe = statusStripeClass(stage.status);
   // Class assignment is auto-populated by pickSectionForApplicant when
@@ -1058,6 +1103,7 @@ function StageStatusTile({
             initialStatus={stage.status}
             initialRemarks={stage.remarks}
             initialExtras={stage.extrasInitial}
+            frozen={frozen}
           />
         )}
       </div>

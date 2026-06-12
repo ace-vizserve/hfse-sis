@@ -36,7 +36,18 @@ type Props = {
   status: string | null;
   /** Effective file URL — no file means nothing to validate */
   url: string | null;
+  /**
+   * Current application status. When the student is enrolled
+   * (`Enrolled` / `Enrolled (Conditional)`), document validation moves to
+   * P-Files (KD #147), so Approve / Reject are hidden here. The server route
+   * also 403s these calls for enrolled students.
+   */
+  applicationStatus?: string | null;
 };
+
+// Statuses where the student is enrolled — documents are handed to P-Files
+// post-enrolment (mirrors isStudentEnrolled in lib/p-files/queries.ts).
+const ENROLLED_STATUSES = new Set(['Enrolled', 'Enrolled (Conditional)']);
 
 // Local schema — the route-side DocumentValidationSchema is a discriminated
 // union; here we only need the Reject reason validated client-side.
@@ -61,6 +72,7 @@ export function DocumentValidationActions({
   label,
   status,
   url,
+  applicationStatus,
 }: Props) {
   const router = useRouter();
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -70,6 +82,16 @@ export function DocumentValidationActions({
     resolver: zodResolver(RejectFormSchema),
     defaultValues: { rejectionReason: '' },
   });
+
+  // Enrolled students → document validation is handled in P-Files (KD #147).
+  if (ENROLLED_STATUSES.has((applicationStatus ?? '').trim())) {
+    return (
+      <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <AlertCircle className="size-3 text-muted-foreground" />
+        Enrolled — document validation is handled in P-Files.
+      </span>
+    );
+  }
 
   // No file → nothing to validate. Parent hasn't uploaded yet.
   if (!url) return null;

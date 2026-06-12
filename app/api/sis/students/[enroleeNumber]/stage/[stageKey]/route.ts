@@ -7,6 +7,8 @@ import {
   APPLICATION_TERMINAL_REASON_VALUES,
   APPLICATION_TERMINAL_STATUSES,
   ENROLLED_PREREQ_STAGES,
+  isAdmissionsStageFrozen,
+  POST_ENROLMENT_EDITABLE_STAGES,
   STAGE_COLUMN_MAP,
   STAGE_KEYS,
   STAGE_LABELS,
@@ -140,6 +142,54 @@ export async function PATCH(
     return NextResponse.json(
       { error: 'No status row for this enrolee in this AY' },
       { status: 404 }
+    );
+  }
+
+  // 1.4) Post-enrolment stage freeze (module-ownership rule — historical vs
+  // current truth, KD #147). Once a student is FULLY 'Enrolled', the admissions
+  // funnel is historical: the post-enrolment lifecycle is owned by Records
+  // (enrolment / withdrawal / re-enrolment — which cascades the applicationStatus
+  // mirror) and P-Files (documents). Every stage freezes EXCEPT `supplies` +
+  // `orientation`, which legitimately happen after enrolment and stay editable
+  // until they reach a finalized status (then they lock too — forward-only).
+  // 'Enrolled (Conditional)' is fully editable (it still has a condition to
+  // resolve). The withdrawal / re-enrol cascades write applicationStatus via the
+  // section-students route (direct table write), NOT this editor, so they are
+  // unaffected. Shared `isAdmissionsStageFrozen` so the UI can't drift.
+  const currentStageStatus =
+    ((before as unknown as Record<string, unknown>)[cols.statusCol] as
+      | string
+      | null) ?? null;
+  let currentAppStatus: string | null;
+  if (stageKey === 'application') {
+    currentAppStatus = currentStageStatus;
+  } else {
+    const { data: appRow } = await supabase
+      .from(statusTable)
+      .select('"applicationStatus"')
+      .eq('enroleeNumber', enroleeNumber)
+      .maybeSingle();
+    currentAppStatus =
+      (appRow as { applicationStatus: string | null } | null)
+        ?.applicationStatus ?? null;
+  }
+  if (isAdmissionsStageFrozen(stageKey, currentStageStatus, currentAppStatus)) {
+    const isPostEnrol = (
+      POST_ENROLMENT_EDITABLE_STAGES as readonly string[]
+    ).includes(stageKey);
+    return NextResponse.json(
+      isPostEnrol
+        ? {
+            error:
+              'This step is already finalized and can no longer be changed.',
+            code: 'stage_finalized',
+          }
+        : {
+            error:
+              'This student is enrolled — their record is now managed in Records (enrolment, withdrawal, re-enrolment) and P-Files (documents). The admissions funnel is read-only.',
+            code: 'enrolled_frozen',
+          },
+      { status: 422 }
     );
   }
 
