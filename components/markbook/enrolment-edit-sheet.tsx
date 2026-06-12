@@ -89,6 +89,8 @@ export function EnrolmentEditSheet({
   const [showTermOverride, setShowTermOverride] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
+  const [confirmConvert, setConfirmConvert] = useState(false);
+  const [revertReason, setRevertReason] = useState('');
 
   type Position = {
     activeTerm: { termNumber: number } | null;
@@ -150,6 +152,12 @@ export function EnrolmentEditSheet({
   // to Withdrawn (server-side cascade). Confirm before firing.
   const isWithdrawing =
     status === 'withdrawn' && initial.enrollment_status !== 'withdrawn';
+  // Convert is offered only for a T1 late enrollee (T2–T4 keep "Active"
+  // disabled). The server re-checks with an enrollment_date fallback.
+  const isConvertingLate =
+    status === 'active' &&
+    initial.enrollment_status === 'late_enrollee' &&
+    initial.late_enrollee_term_number === 1;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -157,11 +165,16 @@ export function EnrolmentEditSheet({
       setConfirmWithdraw(true);
       return;
     }
+    if (isConvertingLate) {
+      setConfirmConvert(true);
+      return;
+    }
     void doSave();
   }
 
   async function doSave() {
     setConfirmWithdraw(false);
+    setConfirmConvert(false);
     setSaving(true);
     try {
       const requestBody: Record<string, unknown> = {
@@ -180,6 +193,10 @@ export function EnrolmentEditSheet({
         lateTermOverride !== null
       ) {
         requestBody.late_enrollee_term_number = lateTermOverride;
+      }
+      // Convert late enrollee → normal — send the required reason (audit-only).
+      if (isConvertingLate) {
+        requestBody.lateRevertReason = revertReason.trim();
       }
       const res = await fetch(
         `/api/sections/${sectionId}/students/${enrolmentId}`,
@@ -207,6 +224,8 @@ export function EnrolmentEditSheet({
         toast.success(
           `Tagged ${studentName} as late enrollee · ${lateTerm.termLabel}`
         );
+      } else if (isConvertingLate) {
+        toast.success(`Converted ${studentName} to a normal enrollee`);
       } else if (status === 'late_enrollee') {
         toast.success(`Tagged ${studentName} as late enrollee · between terms`);
       } else if (admissionsCascade) {
@@ -305,11 +324,18 @@ export function EnrolmentEditSheet({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ENROLLMENT_STATUS_VALUES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {ENROLLMENT_STATUS_LABELS[s]}
-                      </SelectItem>
-                    ))}
+                    {ENROLLMENT_STATUS_VALUES.map((s) => {
+                      const blockActive =
+                        s === 'active' &&
+                        initial.enrollment_status === 'late_enrollee' &&
+                        initial.late_enrollee_term_number !== 1;
+                      return (
+                        <SelectItem key={s} value={s} disabled={blockActive}>
+                          {ENROLLMENT_STATUS_LABELS[s]}
+                          {blockActive ? ' — joined mid-year' : ''}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground">
@@ -548,6 +574,61 @@ export function EnrolmentEditSheet({
               onClick={() => void doSave()}
             >
               Withdraw
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Convert late enrollee → normal confirmation */}
+      <AlertDialog open={confirmConvert} onOpenChange={setConfirmConvert}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Convert to normal enrollee?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm">
+                <div>
+                  <p className="font-medium text-foreground">This will</p>
+                  <ul className="mt-1 space-y-1 text-muted-foreground">
+                    <li>• Remove the late-enrollee classification</li>
+                    <li>• Clear the late-enrollee term</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">This will not</p>
+                  <ul className="mt-1 space-y-1 text-muted-foreground">
+                    <li>• Change the enrollment date</li>
+                    <li>• Change attendance records</li>
+                    <li>• Change grades or report cards</li>
+                  </ul>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1.5">
+            <label
+              htmlFor="revert-reason"
+              className="text-xs font-medium text-foreground"
+            >
+              Reason <span className="text-destructive">*</span>
+            </label>
+            <Textarea
+              id="revert-reason"
+              value={revertReason}
+              onChange={(e) => setRevertReason(e.target.value)}
+              placeholder="Why is the late-enrollee tag being removed?"
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving || revertReason.trim().length === 0}
+              onClick={(e) => {
+                e.preventDefault();
+                void doSave();
+              }}
+            >
+              Convert
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
