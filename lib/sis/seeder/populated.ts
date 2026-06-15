@@ -844,7 +844,10 @@ async function seedGradeEntries(
       // sheet has no scored row for pre-join terms). Correct-by-construction +
       // re-run-safe (the join term is read from section_students each run).
       const jt = lateJoinByEnrolmentId.get(e.id);
-      if (jt && (termNumberByTermId.get(sheet.term_id) ?? 1) < jt) continue;
+      const sheetTermNum = termNumberByTermId.get(sheet.term_id);
+      // Only skip when the sheet's term is KNOWN and strictly before the join
+      // term — an unresolvable term_id must never silently drop a grade.
+      if (jt != null && sheetTermNum != null && sheetTermNum < jt) continue;
 
       // One per-entry timestamp shared by created_at AND updated_at — mirrors
       // a real save (the entries route stamps updated_at = now() each PATCH).
@@ -3313,9 +3316,13 @@ async function syncEnrolledPersonas(
   //      create scored grades or daily attendance for terms BEFORE the student
   //      joined — correct-by-construction and re-run-safe (the late designation
   //      lives on section_students.late_enrollee_term_number, which the grade
-  //      and attendance seeders re-read on every run). Indices are picked higher
-  //      than the Conditional quirk block (syncable[0..2]) so they stay stable
-  //      and never collide with it. ----
+  //      and attendance seeders re-read on every run). Index clearance (Withdrawn
+  //      personas are already filtered out of `syncable`, so positions shift):
+  //        syncable[0..2]  = Enrolled (Conditional) quirk — avoid
+  //        syncable[3..7]  = verified-docs quirk (PERSONA_VERIFIED_DOCS_RANGE) — avoid
+  //        syncable[8..9]  = first post-gap Enrolled (= full[10..11])
+  //      First clean landing zone is syncable[10..] (= full[12..]); the picks
+  //      below stay there so they never collide with another quirk. ----
   const lateJoinByStudentNumber = new Map<string, number>(); // studentNumber → join term number
   const latePicks: Array<[number, number]> = [
     // [syncable index, join term number]
