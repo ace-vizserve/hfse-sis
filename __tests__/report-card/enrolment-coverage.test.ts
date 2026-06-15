@@ -5,6 +5,7 @@ import {
   termEnrolment,
   type EnrolmentInterval,
 } from '@/lib/report-card/enrolment-coverage';
+import { computeAnnualGrade } from '@/lib/compute/annual';
 
 const T1 = { start_date: '2026-01-05', end_date: '2026-03-13' };
 const T3 = { start_date: '2026-06-29', end_date: '2026-09-04' };
@@ -79,5 +80,39 @@ describe('termEnrolment', () => {
       enrolled: true,
       enrolledSchoolDays: 0,
     });
+  });
+});
+
+describe('coverage drives annual-grade proration', () => {
+  const TERMS = [
+    { term_number: 1, start_date: '2026-01-05', end_date: '2026-03-13' },
+    { term_number: 2, start_date: '2026-03-30', end_date: '2026-05-29' },
+    { term_number: 3, start_date: '2026-06-29', end_date: '2026-09-04' },
+    { term_number: 4, start_date: '2026-09-21', end_date: '2026-11-27' },
+  ];
+  // Quarterly grades as if entered for every term.
+  const Q = { 1: 80, 2: 80, 3: 85, 4: 90 } as Record<number, number>;
+
+  function annualFor(cov: EnrolmentInterval[]): number | null {
+    const na = TERMS.map(
+      (t) => !isEnrolledForTerm(cov, t.start_date, t.end_date)
+    ) as [boolean, boolean, boolean, boolean];
+    const q = TERMS.map((t, i) => (na[i] ? null : Q[t.term_number]));
+    return computeAnnualGrade(q[0], q[1], q[2], q[3], na);
+  }
+
+  it('late enrollee (joins T3) → annual over T3+T4 renormalized', () => {
+    // 85*.2 + 90*.4 = 17 + 36 = 53; weightSum 0.6; 53/0.6 = 88.33
+    expect(annualFor([{ start: '2026-06-29', end: null }])).toBe(88.33);
+  });
+
+  it('withdrawal after T2 → annual over T1+T2 renormalized', () => {
+    // 80*.2 + 80*.2 = 32; weightSum 0.4; 32/0.4 = 80
+    expect(annualFor([{ start: null, end: '2026-05-29' }])).toBe(80);
+  });
+
+  it('full year → standard weighted annual', () => {
+    // 80*.2+80*.2+85*.2+90*.4 = 16+16+17+36 = 85
+    expect(annualFor([{ start: null, end: null }])).toBe(85);
   });
 });

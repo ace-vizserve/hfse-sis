@@ -358,6 +358,15 @@ export async function buildReportCard(
         t4_sheet_id = entry.grading_sheet_id;
       }
     }
+    // Terms the student wasn't enrolled for → N.A., so computeAnnualGrade (and
+    // the non-exam annual) exclude them and renormalize the remaining weights to
+    // 100% instead of treating a missing term as incomplete. quarterly forced
+    // null guards the rare stray-grade-on-a-non-enrolled-term case.
+    for (const t of termList) {
+      if (enrolledByTermNumber.get(t.term_number) === false) {
+        byTerm[t.term_number] = { quarterly: null, letter: null, is_na: true };
+      }
+    }
     const annual_letter_derived = !sub.is_examinable
       ? deriveAnnualLetterForNonExam(
           [1, 2, 3, 4].map((n) => ({
