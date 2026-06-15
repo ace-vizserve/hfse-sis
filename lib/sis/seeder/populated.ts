@@ -28,6 +28,11 @@ import { fetchAllPages } from '@/lib/supabase/paginate';
 
 import { pickNames } from './names';
 
+// Seed actor for synthetic audit rows (movements feed, late-enrol transitions).
+// Matches the literal in lib/sis/seeder/edge-cases.ts (SEED_ACTOR_EMAIL) so the
+// movements feed renders a consistent actor across all seeded enrolment events.
+const SEEDER_ACTOR_EMAIL = 'registrar.seed@hfse.test';
+
 // Populated seeder — layers on top of `ensureTestStructure`. Once structure
 // + students are in place, this fills grade entries, attendance, evaluation
 // writeups, admissions-funnel rows, discount codes, and a demo publication
@@ -585,27 +590,40 @@ async function seedGradeEntries(
   );
   const targetSheets = sheets.filter((s) => targetTermIds.includes(s.term_id));
 
-  // Pull every section_student per section we're about to seed.
+  // Pull every section_student per section we're about to seed. Carry
+  // late_enrollee_term_number so we never write scored grades for terms BEFORE
+  // a late enrollee joined (correct-by-construction; matches real behaviour —
+  // no grade entry exists for pre-join terms). Re-reading the column on every
+  // run keeps the skip correct on a top-up.
   const sectionIds = [...new Set(targetSheets.map((s) => s.section_id))];
   const { data: enrolments } = await service
     .from('section_students')
-    .select('id, section_id, student_id')
+    .select('id, section_id, student_id, late_enrollee_term_number')
     .in('section_id', sectionIds);
   const enrolmentsBySection = new Map<
     string,
     Array<{ id: string; student_id: string }>
   >();
+  const lateJoinByEnrolmentId = new Map<string, number>();
   for (const e of (enrolments ?? []) as Array<{
     id: string;
     section_id: string;
     student_id: string;
+    late_enrollee_term_number: number | null;
   }>) {
     if (!enrolmentsBySection.has(e.section_id))
       enrolmentsBySection.set(e.section_id, []);
     enrolmentsBySection
       .get(e.section_id)!
       .push({ id: e.id, student_id: e.student_id });
+    if (e.late_enrollee_term_number != null)
+      lateJoinByEnrolmentId.set(e.id, e.late_enrollee_term_number);
   }
+
+  // term_id → term_number, so the per-sheet skip can compare against the
+  // student's join term.
+  const termNumberByTermId = new Map<string, number>();
+  for (const t of terms) termNumberByTermId.set(t.id, t.term_number);
 
   // Pull weights per subject_config_id (needed for computeQuarterly).
   const configIds = [...new Set(targetSheets.map((s) => s.subject_config_id))];
@@ -821,6 +839,13 @@ async function seedGradeEntries(
     const sheetTermNumber = termById.get(sheet.term_id)?.term_number ?? 1;
 
     for (const e of enrolments) {
+      // Late enrollee: create NO grade entry for terms BEFORE their join term.
+      // Matches real behaviour (the report card shows N.A. and the grading
+      // sheet has no scored row for pre-join terms). Correct-by-construction +
+      // re-run-safe (the join term is read from section_students each run).
+      const jt = lateJoinByEnrolmentId.get(e.id);
+      if (jt && (termNumberByTermId.get(sheet.term_id) ?? 1) < jt) continue;
+
       // One per-entry timestamp shared by created_at AND updated_at — mirrors
       // a real save (the entries route stamps updated_at = now() each PATCH).
       const entryTimestamp = createdAtForTerm(sheet.term_id);
@@ -981,11 +1006,22 @@ async function seedAttendanceSummary(
   if (sectionIds.length === 0) return { daily: 0, rollups: 0 };
   const { data: enrolments } = await service
     .from('section_students')
-    .select('id')
+    .select('id, enrollment_date')
     .in('section_id', sectionIds);
-  const enrolList = ((enrolments ?? []) as Array<{ id: string }>).map(
-    (e) => e.id
-  );
+  const enrolRowsAtt = (enrolments ?? []) as Array<{
+    id: string;
+    enrollment_date: string | null;
+  }>;
+  const enrolList = enrolRowsAtt.map((e) => e.id);
+  // Don't seed daily rows before a student's enrollment_date — for active
+  // students enrollment_date = T1 start so there's no effect, but for late
+  // enrollees this keeps the daily ledger consistent with the prorated rollup
+  // (KD #113: recompute filters date >= enrollment_date). Re-read each run.
+  const enrollDateByEnrolmentId = new Map<string, string>();
+  for (const e of enrolRowsAtt) {
+    if (e.enrollment_date)
+      enrollDateByEnrolmentId.set(e.id, e.enrollment_date.slice(0, 10));
+  }
   if (enrolList.length === 0) {
     console.warn(
       '[populated seeder] attendance: no enrolments in test AY — skipping'
@@ -1071,7 +1107,11 @@ async function seedAttendanceSummary(
       ex_reason: ExReason | null;
     }> = [];
     for (const enrolmentId of enrolList) {
+      const joinDate = enrollDateByEnrolmentId.get(enrolmentId);
       for (const date of schoolDays) {
+        // Skip pre-enrollment days (string compare on yyyy-mm-dd). For active
+        // students joinDate = T1 start so nothing is skipped.
+        if (joinDate && date < joinDate) continue;
         const picked = pickStatus();
         allRows.push({
           section_student_id: enrolmentId,
@@ -3247,17 +3287,55 @@ async function syncEnrolledPersonas(
     for (const r of resolved) idByNumber.set(r.student_number, r.id);
   }
 
-  // ---- enrollment_date = the AY's T1 start_date (NOT today — today would
-  //      break KD #113 attendance proration). ----
-  const { data: t1Row } = await service
+  // ---- enrollment_date = the AY's T1 start_date for on-time students (NOT
+  //      today — today would break KD #113 attendance proration). Late
+  //      enrollees get their join-term start + 7 days. Fetch ALL terms so we
+  //      can map a join-term number → start_date. ----
+  const { data: allTermRows } = await service
     .from('terms')
-    .select('start_date')
+    .select('id, term_number, start_date')
     .eq('academic_year_id', testAy.id)
-    .eq('term_number', 1)
-    .maybeSingle();
+    .order('term_number');
+  const allTerms = (allTermRows ?? []) as Array<{
+    id: string;
+    term_number: number;
+    start_date: string | null;
+  }>;
+  const startDateByTermNumber = new Map<number, string>();
+  for (const t of allTerms) {
+    if (t.start_date) startDateByTermNumber.set(t.term_number, t.start_date);
+  }
   const enrollDate =
-    (t1Row as { start_date: string } | null)?.start_date ??
-    new Date().toISOString().slice(0, 10);
+    startDateByTermNumber.get(1) ?? new Date().toISOString().slice(0, 10);
+
+  // ---- Deterministically designate 4 late enrollees from the syncable list.
+  //      Done UP FRONT (before grade/attendance seeding) so those seeders never
+  //      create scored grades or daily attendance for terms BEFORE the student
+  //      joined — correct-by-construction and re-run-safe (the late designation
+  //      lives on section_students.late_enrollee_term_number, which the grade
+  //      and attendance seeders re-read on every run). Indices are picked higher
+  //      than the Conditional quirk block (syncable[0..2]) so they stay stable
+  //      and never collide with it. ----
+  const lateJoinByStudentNumber = new Map<string, number>(); // studentNumber → join term number
+  const latePicks: Array<[number, number]> = [
+    // [syncable index, join term number]
+    [10, 2],
+    [11, 2],
+    [12, 3],
+    [13, 3],
+  ];
+  for (const [idx, termNum] of latePicks) {
+    const p = syncable[idx];
+    if (p) lateJoinByStudentNumber.set(p.studentNumber, termNum);
+  }
+  // Compute "join term start + 7 days" as a SGT yyyy-mm-dd string.
+  const lateEnrollDateFor = (joinTermNum: number): string | null => {
+    const startStr = startDateByTermNumber.get(joinTermNum);
+    if (!startStr) return null;
+    const d = new Date(startStr);
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().slice(0, 10);
+  };
 
   // ---- Commit section_students from the plan's enrollment_inserts. ----
   let enrolmentsInserted = 0;
@@ -3265,8 +3343,9 @@ async function syncEnrolledPersonas(
     section_id: string;
     student_id: string;
     index_number: number;
-    enrollment_status: 'active';
+    enrollment_status: 'active' | 'late_enrollee';
     enrollment_date: string;
+    late_enrollee_term_number: number | null;
   }> = [];
   for (const e of plan.enrollment_inserts) {
     const studentId = idByNumber.get(e.student_number);
@@ -3276,13 +3355,28 @@ async function syncEnrolledPersonas(
       );
       continue;
     }
-    enrolRows.push({
-      section_id: e.section_id,
-      student_id: studentId,
-      index_number: e.index_number,
-      enrollment_status: 'active',
-      enrollment_date: enrollDate,
-    });
+    const joinTermNum = lateJoinByStudentNumber.get(e.student_number);
+    const lateDate =
+      joinTermNum != null ? lateEnrollDateFor(joinTermNum) : null;
+    if (joinTermNum != null && lateDate) {
+      enrolRows.push({
+        section_id: e.section_id,
+        student_id: studentId,
+        index_number: e.index_number,
+        enrollment_status: 'late_enrollee',
+        enrollment_date: lateDate,
+        late_enrollee_term_number: joinTermNum,
+      });
+    } else {
+      enrolRows.push({
+        section_id: e.section_id,
+        student_id: studentId,
+        index_number: e.index_number,
+        enrollment_status: 'active',
+        enrollment_date: enrollDate,
+        late_enrollee_term_number: null,
+      });
+    }
   }
   if (enrolRows.length > 0) {
     const { data, error } = await service
@@ -3296,6 +3390,53 @@ async function syncEnrolledPersonas(
       );
     } else {
       enrolmentsInserted = data?.length ?? 0;
+      // The insert preserves enrolRows order, so the returned ids align 1:1.
+      // For each late enrollee, write ONE idempotent movements audit row so
+      // /records/movements surfaces the late-enrol (it reads
+      // enrolment.metadata.update rows with lateEnrolleeTransition=true).
+      const newIds = (data ?? []) as Array<{ id: string }>;
+      for (let i = 0; i < enrolRows.length; i++) {
+        const row = enrolRows[i];
+        const newId = newIds[i]?.id;
+        if (
+          !newId ||
+          row.enrollment_status !== 'late_enrollee' ||
+          row.late_enrollee_term_number == null
+        )
+          continue;
+        const joinTermNum = row.late_enrollee_term_number;
+        const { count: existingLateAudit } = await service
+          .from('audit_log')
+          .select('id', { count: 'exact', head: true })
+          .eq('action', 'enrolment.metadata.update')
+          .eq('entity_id', newId)
+          .eq('context->>lateEnrolleeTransition', 'true');
+        if ((existingLateAudit ?? 0) === 0) {
+          await service.from('audit_log').insert({
+            action: 'enrolment.metadata.update',
+            actor_email: SEEDER_ACTOR_EMAIL,
+            entity_type: 'section_student',
+            entity_id: newId,
+            context: {
+              section_id: row.section_id,
+              before: {
+                enrollment_status: 'active',
+                bus_no: null,
+                classroom_officer_role: null,
+              },
+              after: {
+                enrollment_status: 'late_enrollee',
+                enrollment_date: row.enrollment_date,
+                late_enrollee_term_number: joinTermNum,
+              },
+              lateEnrolleeTransition: true,
+              lateEnrolleeTransitionAt: new Date().toISOString(),
+              lateEnrolleeTermNumber: joinTermNum,
+              lateEnrolleeTermLabel: `T${joinTermNum}`,
+            },
+          });
+        }
+      }
     }
   }
 
