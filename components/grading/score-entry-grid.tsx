@@ -8,8 +8,11 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { SlotMeta, SlotLabels } from '@/lib/schemas/grading-sheet';
+
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -227,15 +230,13 @@ export function ScoreEntryGrid({
 
     setSavingLabels(true);
     try {
-      const res = await fetch(`/api/grading-sheets/${sheetId}/labels`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ww: wwOut, pt: ptOut, qa: qaOut }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `HTTP ${res.status}`);
-      }
+      // Routed through apiFetch (Tier-3 label autosave) — a non-2xx throws
+      // ApiError whose message already resolves to body.error, preserving the
+      // existing toast; the local optimistic label state is untouched.
+      await apiFetch(
+        `/api/grading-sheets/${sheetId}/labels`,
+        jsonInit('PATCH', { ww: wwOut, pt: ptOut, qa: qaOut })
+      );
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Failed to save activity labels.'
@@ -269,6 +270,33 @@ export function ScoreEntryGrid({
       return true;
     });
   }, [rows, filters, wwLen, ptLen]);
+
+  // Tier-3 autosave: the per-cell PATCH is routed through useMutation purely so
+  // it gets retry:0 + the shared apiFetch error handling. The optimistic UX is
+  // UNCHANGED — cells still update via local state (updateLocal) and reconcile
+  // from data.entry on success; this mutation owns no cache and does not touch
+  // the optimistic flow. The 422 error codes the autosave surfaces + the exact
+  // per-cell revert/toast are preserved in patchEntry below.
+  const entryMutation = useMutation({
+    mutationFn: (vars: { entryId: string; payload: Record<string, unknown> }) =>
+      apiFetch<{
+        entry: {
+          ww_scores: (number | null)[];
+          pt_scores: (number | null)[];
+          qa_score: number | null;
+          ww_ps: number | null;
+          pt_ps: number | null;
+          qa_ps: number | null;
+          initial_grade: number | null;
+          quarterly_grade: number | null;
+          letter_grade: string | null;
+          is_na: boolean;
+        };
+      }>(
+        `/api/grading-sheets/${sheetId}/entries/${vars.entryId}`,
+        jsonInit('PATCH', vars.payload)
+      ),
+  });
 
   const patchEntry = useCallback(
     async (
@@ -320,22 +348,7 @@ export function ScoreEntryGrid({
       setSavingId(entryId);
       try {
         const payload = { ...body, ...(bodyOverride ?? {}), ...extraPayload };
-        const res = await fetch(
-          `/api/grading-sheets/${sheetId}/entries/${entryId}`,
-          {
-            method: 'PATCH',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(payload),
-          }
-        );
-        const data = await res.json();
-        if (!res.ok) {
-          const row = rowsRef.current.find((r) => r.entry_id === entryId);
-          toast.error(
-            `Failed to save ${row ? `#${row.index_number} ${row.student_name}` : 'entry'}: ${data.error ?? 'save failed'}`
-          );
-          return;
-        }
+        const data = await entryMutation.mutateAsync({ entryId, payload });
         setRows((current) =>
           current.map((r) =>
             r.entry_id === entryId
@@ -361,7 +374,20 @@ export function ScoreEntryGrid({
           toast.success('Correction logged on activity history');
         }
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Failed to save entry');
+        // Preserve the exact per-cell error voices: a non-2xx (ApiError) keeps
+        // the "Failed to save #N Name: {server error}" line with the same
+        // 'save failed' fallback (reading body.error off ApiError.body); any
+        // other failure (network) keeps the generic 'Failed to save entry'.
+        if (e instanceof ApiError) {
+          const row = rowsRef.current.find((r) => r.entry_id === entryId);
+          const serverError =
+            (e.body as { error?: string } | null)?.error ?? 'save failed';
+          toast.error(
+            `Failed to save ${row ? `#${row.index_number} ${row.student_name}` : 'entry'}: ${serverError}`
+          );
+        } else {
+          toast.error(e instanceof Error ? e.message : 'Failed to save entry');
+        }
       } finally {
         setSavingId(null);
       }
@@ -372,6 +398,7 @@ export function ScoreEntryGrid({
       requireChangeReference,
       wwTotals.length,
       ptTotals.length,
+      entryMutation,
     ]
   );
 

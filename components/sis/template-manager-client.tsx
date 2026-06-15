@@ -27,7 +27,10 @@ import {
   type FieldValues,
   type Path,
 } from 'react-hook-form';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
+
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -91,6 +94,7 @@ import {
   type TemplateSectionCreateInput,
   type TemplateSectionUpdateInput,
   type TemplateSubjectConfigCreateInput,
+  type TemplateSubjectConfigUpdateInput,
 } from '@/lib/schemas/template';
 import {
   SubjectCreateSchema,
@@ -732,7 +736,6 @@ function PropagateDialog({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [submitting, setSubmitting] = useState(false);
 
   const allSelected =
     eligibleAys.length > 0 && selected.size === eligibleAys.length;
@@ -752,29 +755,29 @@ function PropagateDialog({
     });
   }
 
-  async function onConfirm() {
-    if (selected.size === 0) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/sis/admin/template/apply', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ay_codes: Array.from(selected) }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        results?: Array<{
-          ay_code: string;
-          sections_inserted: number;
-          sections_updated: number;
-          configs_inserted: number;
-          configs_updated: number;
-        }>;
-        failures?: Array<{ ay_code: string; error: string }>;
-        error?: string;
-      };
-      if (!res.ok) throw new Error(body?.error ?? 'apply failed');
+  type ApplyResult = {
+    ok?: boolean;
+    results?: Array<{
+      ay_code: string;
+      sections_inserted: number;
+      sections_updated: number;
+      configs_inserted: number;
+      configs_updated: number;
+    }>;
+    failures?: Array<{ ay_code: string; error: string }>;
+    error?: string;
+  };
 
+  // Tier-2 mutation: useMutation owns the pending/error UX. The bespoke
+  // success-body handling (results → summary; failures → toast.warning vs
+  // toast.success) is preserved exactly.
+  const applyMutation = useMutation({
+    mutationFn: (ayCodes: string[]) =>
+      apiFetch<ApplyResult>(
+        '/api/sis/admin/template/apply',
+        jsonInit('POST', { ay_codes: ayCodes })
+      ),
+    onSuccess: (body) => {
       const summary = (body.results ?? [])
         .map((r) => {
           const secTotal = r.sections_inserted + r.sections_updated;
@@ -793,11 +796,15 @@ function PropagateDialog({
       setOpen(false);
       setSelected(new Set());
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'apply failed');
-    } finally {
-      setSubmitting(false);
-    }
+    },
+  });
+
+  function onConfirm() {
+    if (selected.size === 0) return;
+    applyMutation.mutate(Array.from(selected));
   }
 
   return (
@@ -878,15 +885,17 @@ function PropagateDialog({
           <Button
             type="button"
             onClick={onConfirm}
-            disabled={selected.size === 0 || submitting}
+            disabled={selected.size === 0 || applyMutation.isPending}
             className="gap-1.5"
           >
-            {submitting ? (
+            {applyMutation.isPending ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <Send className="size-3.5" />
             )}
-            {submitting ? 'Propagating…' : `Propagate to ${selected.size}`}
+            {applyMutation.isPending
+              ? 'Propagating…'
+              : `Propagate to ${selected.size}`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -978,26 +987,35 @@ function NewTemplateSectionButton({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, defaultLevelId]);
 
+  // Tier-2 mutation; mutateAsync is awaited inside the RHF submit handler so
+  // form.formState.isSubmitting drives the busy UX.
+  const createMutation = useMutation({
+    mutationFn: (payload: {
+      name: string;
+      level_id: string;
+      class_type: SectionClassType | null;
+      schedule: Schedule | null;
+    }) =>
+      apiFetch('/api/sis/admin/template/sections', jsonInit('POST', payload)),
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'create failed');
+    },
+  });
+
   async function onSubmit(values: TemplateSectionCreateInput) {
     try {
-      const res = await fetch('/api/sis/admin/template/sections', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: values.name.trim(),
-          level_id: values.level_id,
-          class_type: values.class_type ?? null,
-          schedule: values.schedule ?? null,
-        }),
+      await createMutation.mutateAsync({
+        name: values.name.trim(),
+        level_id: values.level_id,
+        class_type: values.class_type ?? null,
+        schedule: values.schedule ?? null,
       });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'create failed');
       toast.success(`Added ${values.name} to template`);
       setOpen(false);
       form.reset({ ...BLANK_SECTION, level_id: defaultLevelId ?? '' });
       router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'create failed');
+    } catch {
+      // onError already surfaced the toast.
     }
   }
 
@@ -1160,27 +1178,35 @@ function EditTemplateSectionButton({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section.id, section.name, section.class_type, section.schedule]);
 
+  // Tier-2 mutation; mutateAsync awaited inside the RHF submit handler so
+  // form.formState.isSubmitting drives the busy UX.
+  const saveMutation = useMutation({
+    mutationFn: (payload: {
+      name: string;
+      class_type: SectionClassType | null;
+      schedule: Schedule | null;
+    }) =>
+      apiFetch(
+        `/api/sis/admin/template/sections/${section.id}`,
+        jsonInit('PATCH', payload)
+      ),
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'save failed');
+    },
+  });
+
   async function onSubmit(values: TemplateSectionUpdateInput) {
     try {
-      const res = await fetch(
-        `/api/sis/admin/template/sections/${section.id}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            name: values.name.trim(),
-            class_type: values.class_type ?? null,
-            schedule: values.schedule ?? null,
-          }),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'save failed');
+      await saveMutation.mutateAsync({
+        name: values.name.trim(),
+        class_type: values.class_type ?? null,
+        schedule: values.schedule ?? null,
+      });
       toast.success(`Updated ${values.name}`);
       setOpen(false);
       router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'save failed');
+    } catch {
+      // onError already surfaced the toast.
     }
   }
 
@@ -1290,27 +1316,26 @@ function DeleteTemplateSectionButton({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
-  async function onConfirm() {
-    setSubmitting(true);
-    try {
-      const res = await fetch(
+  // Tier-2 body-less DELETE.
+  const deleteMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(
         `/api/sis/admin/template/sections/${section.id}`,
-        {
-          method: 'DELETE',
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'delete failed');
+        jsonInit('DELETE')
+      ),
+    onSuccess: () => {
       toast.success(`Removed ${section.name} from template`);
       setOpen(false);
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'delete failed');
-    } finally {
-      setSubmitting(false);
-    }
+    },
+  });
+
+  function onConfirm() {
+    deleteMutation.mutate();
   }
 
   return (
@@ -1356,15 +1381,15 @@ function DeleteTemplateSectionButton({
             type="button"
             variant="destructive"
             onClick={onConfirm}
-            disabled={submitting}
+            disabled={deleteMutation.isPending}
             className="gap-1.5"
           >
-            {submitting ? (
+            {deleteMutation.isPending ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <Trash2 className="size-3.5" />
             )}
-            {submitting ? 'Removing…' : 'Remove'}
+            {deleteMutation.isPending ? 'Removing…' : 'Remove'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1392,8 +1417,6 @@ function TemplateSubjectConfigEditDialog({
   const [wwSlots, setWwSlots] = useState('5');
   const [ptSlots, setPtSlots] = useState('5');
   const [qaMax, setQaMax] = useState('30');
-  const [saving, setSaving] = useState(false);
-  const [removing, setRemoving] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   useEffect(() => {
@@ -1411,32 +1434,37 @@ function TemplateSubjectConfigEditDialog({
     if (!open) setConfirmRemove(false);
   }, [open]);
 
-  async function remove() {
-    if (!draft) return;
-    setRemoving(true);
-    try {
-      const res = await fetch(
-        `/api/sis/admin/template/subject-configs/${draft.configId}`,
-        {
-          method: 'DELETE',
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(
-          (body as { error?: string }).error ?? `Remove failed (${res.status})`
-        );
-        return;
-      }
-      toast.success(`Removed ${draft.subjectName} from ${draft.levelLabel}`);
+  // Tier-2 body-less DELETE. The original branched on the non-ok body:
+  // `body.error ?? \`Remove failed (${status})\``. ApiError.message already
+  // resolves to body.error when present; when absent we reconstruct the exact
+  // status fallback from ApiError.status so the copy is preserved.
+  const removeMutation = useMutation({
+    mutationFn: (configId: string) =>
+      apiFetch(
+        `/api/sis/admin/template/subject-configs/${configId}`,
+        jsonInit('DELETE')
+      ),
+    onSuccess: () => {
+      toast.success(`Removed ${draft?.subjectName} from ${draft?.levelLabel}`);
       onOpenChange(false);
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
+      if (e instanceof ApiError) {
+        const bodyError = (e.body as { error?: string } | null)?.error;
+        toast.error(bodyError ?? `Remove failed (${e.status})`);
+        return;
+      }
       toast.error(e instanceof Error ? e.message : 'remove failed');
-    } finally {
-      setRemoving(false);
-    }
+    },
+  });
+
+  function remove() {
+    if (!draft) return;
+    removeMutation.mutate(draft.configId);
   }
+
+  const removing = removeMutation.isPending;
 
   const wwN = Number(ww) || 0;
   const ptN = Number(pt) || 0;
@@ -1453,35 +1481,40 @@ function TemplateSubjectConfigEditDialog({
     qa_max: Number(qaMax) || 0,
   });
 
-  async function save() {
+  // Tier-2 PATCH. The success toast reads several draft/local fields, so it's
+  // built inside save() and passed through to onSuccess via a closure-captured
+  // message; the network call is the only thing the mutation owns.
+  const saveMutation = useMutation({
+    mutationFn: (vars: {
+      configId: string;
+      payload: TemplateSubjectConfigUpdateInput;
+    }) =>
+      apiFetch(
+        `/api/sis/admin/template/subject-configs/${vars.configId}`,
+        jsonInit('PATCH', vars.payload)
+      ),
+    onSuccess: () => {
+      toast.success(
+        `${draft?.subjectName} · ${draft?.levelCode}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
+      );
+      onOpenChange(false);
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'save failed');
+    },
+  });
+
+  function save() {
     if (!draft || !parsed.success) {
       if (!parsed.success)
         toast.error(parsed.error.issues[0]?.message ?? 'Invalid values');
       return;
     }
-    setSaving(true);
-    try {
-      const res = await fetch(
-        `/api/sis/admin/template/subject-configs/${draft.configId}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(parsed.data),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'save failed');
-      toast.success(
-        `${draft.subjectName} · ${draft.levelCode}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
-      );
-      onOpenChange(false);
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'save failed');
-    } finally {
-      setSaving(false);
-    }
+    saveMutation.mutate({ configId: draft.configId, payload: parsed.data });
   }
+
+  const saving = saveMutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1931,7 +1964,6 @@ function SubjectsCatalogTab({
 function NewSubjectButton() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
   const form = useForm<SubjectCreateInput>({
     resolver: zodResolver(SubjectCreateSchema),
@@ -1942,30 +1974,34 @@ function NewSubjectButton() {
     if (!open) form.reset({ code: '', name: '', is_examinable: true });
   }, [open, form]);
 
-  async function onSubmit(values: SubjectCreateInput) {
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/sis/admin/subjects/catalog', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(values),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(
-          (body as { error?: string }).error ?? `Save failed (${res.status})`
-        );
+  // Tier-2 POST. The original branched on the non-ok body
+  // (`body.error ?? \`Save failed (${status})\``); reconstructed from
+  // ApiError so the status fallback is preserved.
+  const createMutation = useMutation({
+    mutationFn: (values: SubjectCreateInput) =>
+      apiFetch('/api/sis/admin/subjects/catalog', jsonInit('POST', values)),
+    onError: (e) => {
+      if (e instanceof ApiError) {
+        const bodyError = (e.body as { error?: string } | null)?.error;
+        toast.error(bodyError ?? `Save failed (${e.status})`);
         return;
       }
+      toast.error(e instanceof Error ? e.message : 'Save failed');
+    },
+  });
+
+  async function onSubmit(values: SubjectCreateInput) {
+    try {
+      await createMutation.mutateAsync(values);
       toast.success(`Added ${values.code} — ${values.name}`);
       setOpen(false);
       router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Save failed');
-    } finally {
-      setSubmitting(false);
+    } catch {
+      // onError already surfaced the toast.
     }
   }
+
+  const submitting = createMutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -2088,33 +2124,37 @@ function DropFromAllLevelsButton({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
-  async function submit() {
-    setSubmitting(true);
-    try {
-      const res = await fetch(
+  // Tier-2 body-less DELETE. Bespoke `Drop failed (${status})` fallback
+  // reconstructed from ApiError.
+  const dropMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(
         `/api/sis/admin/subjects/catalog/${encodeURIComponent(subjectId)}/configs`,
-        { method: 'DELETE' }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(
-          (body as { error?: string }).error ?? `Drop failed (${res.status})`
-        );
-        return;
-      }
+        jsonInit('DELETE')
+      ),
+    onSuccess: () => {
       toast.success(
         `Dropped ${subjectCode} from ${configCount} level${configCount === 1 ? '' : 's'}`
       );
       setOpen(false);
       router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Drop failed');
-    } finally {
-      setSubmitting(false);
-    }
+    },
+    onError: (e) => {
+      if (e instanceof ApiError) {
+        const bodyError = (e.body as { error?: string } | null)?.error;
+        toast.error(bodyError ?? `Drop failed (${e.status})`);
+        return;
+      }
+      toast.error(e instanceof Error ? e.message : 'Drop failed');
+    },
+  });
+
+  function submit() {
+    dropMutation.mutate();
   }
+
+  const submitting = dropMutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -2188,7 +2228,6 @@ function TemplateSubjectConfigCreateDialog({
   level: LevelRow | null;
 }) {
   const router = useRouter();
-  const [submitting, setSubmitting] = useState(false);
 
   // Default weights based on level type. Matches the seeder convention
   // (lib/sis/seeder/structural.ts:129-132).
@@ -2230,7 +2269,31 @@ function TemplateSubjectConfigCreateDialog({
   const sumOk = sum === 100;
   const profile = sumOk ? classifyProfile(wwN, ptN, qaN) : 'invalid';
 
-  async function submit() {
+  // Tier-2 POST. Bespoke `Save failed (${status})` fallback reconstructed
+  // from ApiError; the success toast reads subject/level so it's built in
+  // onSuccess from the closure.
+  const createMutation = useMutation({
+    mutationFn: (payload: TemplateSubjectConfigCreateInput) =>
+      apiFetch(
+        '/api/sis/admin/template/subject-configs',
+        jsonInit('POST', payload)
+      ),
+    onSuccess: () => {
+      toast.success(`Enabled ${subject?.code} at ${level?.label}`);
+      onOpenChange(false);
+      router.refresh();
+    },
+    onError: (e) => {
+      if (e instanceof ApiError) {
+        const bodyError = (e.body as { error?: string } | null)?.error;
+        toast.error(bodyError ?? `Save failed (${e.status})`);
+        return;
+      }
+      toast.error(e instanceof Error ? e.message : 'Save failed');
+    },
+  });
+
+  function submit() {
     if (!subject || !level || !sumOk) return;
     const payload: TemplateSubjectConfigCreateInput = {
       subject_id: subject.id,
@@ -2247,29 +2310,10 @@ function TemplateSubjectConfigCreateDialog({
       toast.error(validated.error.issues[0]?.message ?? 'Invalid input');
       return;
     }
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/sis/admin/template/subject-configs', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(
-          (body as { error?: string }).error ?? `Save failed (${res.status})`
-        );
-        return;
-      }
-      toast.success(`Enabled ${subject.code} at ${level.label}`);
-      onOpenChange(false);
-      router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Save failed');
-    } finally {
-      setSubmitting(false);
-    }
+    createMutation.mutate(payload);
   }
+
+  const submitting = createMutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

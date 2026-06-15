@@ -13,7 +13,10 @@ import {
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
+
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -198,18 +201,21 @@ export function RequestEditButton({
 
   const busy = form.formState.isSubmitting;
 
-  async function onSubmit(values: ChangeRequestFormInput) {
-    try {
-      const res = await fetch('/api/change-requests', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
+  // Tier-2 mutation. The success response can carry a `warning` field (e.g.
+  // approvers couldn't be emailed) — in that case we show toast.warning with the
+  // warning text as the description INSTEAD of the success toast. apiFetch
+  // returns the parsed body, so onSuccess branches on `body.warning`; on failure
+  // ApiError.message already resolves to the route's `error` field.
+  const requestMutation = useMutation({
+    mutationFn: (values: ChangeRequestFormInput) =>
+      apiFetch<{ warning?: string }>(
+        '/api/change-requests',
+        jsonInit('POST', {
           ...values,
           current_value: currentValueDisplay || null,
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? 'failed to file request');
+        })
+      ),
+    onSuccess: (body) => {
       if (body.warning) {
         toast.warning("Heads up — approvers couldn't be reached by email", {
           description: body.warning,
@@ -220,8 +226,20 @@ export function RequestEditButton({
       setOpen(false);
       form.reset();
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'Failed to submit request');
+    },
+  });
+
+  // Keep RHF as the submit-state owner (busy = form.formState.isSubmitting) by
+  // awaiting the mutation here; the try/catch keeps the rejection from
+  // bubbling out of handleSubmit (onError already surfaced it).
+  async function onSubmit(values: ChangeRequestFormInput) {
+    try {
+      await requestMutation.mutateAsync(values);
+    } catch {
+      // Handled in onError.
     }
   }
 

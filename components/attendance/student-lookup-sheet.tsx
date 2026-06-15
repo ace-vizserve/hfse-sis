@@ -11,8 +11,11 @@ import {
   UserSearch,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
+import { apiFetch } from '@/lib/query/fetcher';
+import { queryKeys } from '@/lib/query/keys';
 import type {
   StudentSummaryResponse,
   TermStat,
@@ -187,8 +190,27 @@ export function StudentLookupSheet({ enrolments, termLabel }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [summary, setSummary] = useState<StudentSummaryResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+
+  // The per-student summary is an action-triggered READ — fetched only once a
+  // student is picked (`enabled`), keyed on the selection so switching students
+  // refetches. Forwards the abort signal so a fast back/forward aborts the
+  // stale request. While loading (or with no selection) `summary` is null,
+  // preserving the prior skeleton-on-`loading` UX.
+  const summaryQuery = useQuery({
+    queryKey: queryKeys.attendanceStudentSummary(selectedId ?? ''),
+    queryFn: ({ signal }) =>
+      apiFetch<StudentSummaryResponse>(
+        `/api/attendance/student-summary?sectionStudentId=${selectedId}`,
+        { signal }
+      ),
+    enabled: selectedId !== null,
+  });
+  // Treat any error the same as the prior `.catch(() => setSummary(null))` —
+  // the detail view degrades to the empty/loading-style state rather than
+  // surfacing a route error inside the lookup dialog.
+  const summary: StudentSummaryResponse | null =
+    selectedId !== null && summaryQuery.isSuccess ? summaryQuery.data : null;
+  const loading = selectedId !== null && summaryQuery.isPending;
 
   const selected = enrolments.find((e) => e.enrolmentId === selectedId);
 
@@ -212,32 +234,16 @@ export function StudentLookupSheet({ enrolments, termLabel }: Props) {
     [summary]
   );
 
-  useEffect(() => {
-    if (!selectedId) {
-      setSummary(null);
-      return;
-    }
-    setLoading(true);
-    setSummary(null);
-    fetch(`/api/attendance/student-summary?sectionStudentId=${selectedId}`)
-      .then((r) => r.json())
-      .then((data: StudentSummaryResponse) => setSummary(data))
-      .catch(() => setSummary(null))
-      .finally(() => setLoading(false));
-  }, [selectedId]);
-
   function handleDialogChange(open: boolean) {
     setDialogOpen(open);
     if (!open) {
       setQuery('');
       setSelectedId(null);
-      setSummary(null);
     }
   }
 
   function handleBack() {
     setSelectedId(null);
-    setSummary(null);
     setQuery('');
   }
 

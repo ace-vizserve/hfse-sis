@@ -2,9 +2,9 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
-import { ArrowUpRight } from 'lucide-react';
-import { toast } from 'sonner';
+import { ArrowUpRight, AlertTriangle, RotateCcw } from 'lucide-react';
 
 import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
 import {
@@ -12,7 +12,11 @@ import {
   type DrillDownDensity,
   type DrillDownGroupBy,
 } from '@/components/dashboard/drill-down-sheet';
+import { apiFetch } from '@/lib/query/fetcher';
+import { queryKeys } from '@/lib/query/keys';
+import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   allColumnsForKind,
   defaultColumnsForTarget,
@@ -702,6 +706,10 @@ function buildCalendarColumns(
   return cols;
 }
 
+// Stable empty reference so `rows` keeps a steady identity while loading
+// (downstream memos depend on its identity).
+const EMPTY_ROWS: AttendanceDrillRow[] = [];
+
 export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
   const {
     target,
@@ -737,8 +745,6 @@ export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
     initialCalendar,
   ]);
 
-  const [rows, setRows] = React.useState<AttendanceDrillRow[]>(seedRows);
-  const [loading, setLoading] = React.useState(seedRows.length === 0);
   const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>([]);
   const [selectedLevels, setSelectedLevels] = React.useState<string[]>([]);
   const [groupBy, setGroupBy] = React.useState<DrillDownGroupBy>('none');
@@ -747,44 +753,59 @@ export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
     DrillColumnKey[]
   >(() => defaultColumnsForTarget(target));
 
-  const skipNextFetchRef = React.useRef(seedRows.length > 0);
+  // Was a server seed actually hydrated for this kind? (An empty seed array —
+  // e.g. the parent passed `initialEntries={[]}` — is still a seed.) When no
+  // seed prop is defined we always fetch on open, mirroring the prior
+  // skipNextFetchRef(seedRows.length > 0) behaviour but distinguishing
+  // "seeded with []" from "not seeded".
+  const hasSeed =
+    kind === 'entry'
+      ? initialEntries !== undefined
+      : kind === 'top-absent'
+        ? initialTopAbsent !== undefined
+        : kind === 'section-rollup'
+          ? initialSectionAttendance !== undefined
+          : kind === 'compassionate'
+            ? initialCompassionate !== undefined
+            : kind === 'vacation-leave'
+              ? initialVacationLeave !== undefined
+              : initialCalendar !== undefined;
 
-  React.useEffect(() => {
-    if (skipNextFetchRef.current) {
-      skipNextFetchRef.current = false;
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    const params = new URLSearchParams({ ay: ayCode });
-    if (initialFrom) params.set('from', initialFrom);
-    if (initialTo) params.set('to', initialTo);
-    if (segment) params.set('segment', segment);
-    if (termId) params.set('termId', termId);
-    fetch(`/api/attendance/drill/${target}?${params.toString()}`)
-      .then((r) => {
-        if (!r.ok) throw new Error('drill_fetch_failed');
-        return r.json();
-      })
-      .then((data: { rows: AttendanceDrillRow[] }) => {
-        if (!cancelled) {
-          setRows(data.rows ?? []);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) toast.error('Failed to load drill data');
-      })
-      .finally(() => {
-        if (!cancelled) {
-          React.startTransition(() => {
-            setLoading(false);
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [target, segment, ayCode, initialFrom, initialTo, termId]);
+  // Read via TanStack Query. seedRows (when the parent hydrated us) are the
+  // initialData, so the drill renders instantly and skips the round-trip
+  // within staleTime; otherwise it fetches on open and shows the skeleton. The
+  // queryFn forwards the abort signal so a fast close/reopen aborts the stale
+  // request. The route's specific errors land on isError → the retry block.
+  const drillQuery = useQuery({
+    queryKey: queryKeys.attendanceDrill(target, {
+      ay: ayCode,
+      from: initialFrom ?? null,
+      to: initialTo ?? null,
+      segment: segment ?? null,
+      termId: termId ?? null,
+    }),
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams({ ay: ayCode });
+      if (initialFrom) params.set('from', initialFrom);
+      if (initialTo) params.set('to', initialTo);
+      if (segment) params.set('segment', segment);
+      if (termId) params.set('termId', termId);
+      const data = await apiFetch<{ rows?: AttendanceDrillRow[] }>(
+        `/api/attendance/drill/${target}?${params.toString()}`,
+        { signal }
+      );
+      return data.rows ?? [];
+    },
+    // The seed is the broad (kind-level) row set — per-(target,segment/termId)
+    // narrowing happens server-side in the drill route (KD #82). So it's a
+    // placeholder for instant paint, not authoritative: placeholderData paints
+    // it immediately while the query STILL fetches the narrowed rows and
+    // replaces it. (initialData + a fresh timestamp would skip the fetch and
+    // leave the un-narrowed set showing.)
+    placeholderData: hasSeed ? seedRows : undefined,
+  });
+
+  const rows = drillQuery.data ?? EMPTY_ROWS;
 
   const statusOptions = React.useMemo(() => {
     if (kind !== 'entry') return undefined;
@@ -889,8 +910,42 @@ export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
 
   const header = drillHeaderForTarget(target, segment ?? null);
 
-  if (loading && rows.length === 0) {
+  if (drillQuery.isLoading && rows.length === 0) {
     return <DrillSheetSkeleton title={header.title} />;
+  }
+
+  if (
+    drillQuery.isError &&
+    (rows.length === 0 || drillQuery.isPlaceholderData)
+  ) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+        <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive ring-1 ring-inset ring-destructive/20">
+          <AlertTriangle className="size-6" />
+        </div>
+        <div className="space-y-1">
+          <p className="font-serif text-lg font-semibold text-foreground">
+            Couldn’t load {header.title.toLowerCase()}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {drillQuery.error instanceof Error
+              ? drillQuery.error.message
+              : 'Something went wrong while loading this list.'}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void drillQuery.refetch()}
+          disabled={drillQuery.isFetching}
+        >
+          <RotateCcw
+            className={cn('size-4', drillQuery.isFetching && 'animate-spin')}
+          />
+          Try again
+        </Button>
+      </div>
+    );
   }
 
   const csvParams = new URLSearchParams({ ay: ayCode, format: 'csv' });

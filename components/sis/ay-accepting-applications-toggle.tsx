@@ -1,10 +1,11 @@
 'use client';
 
+import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { Switch } from '@/components/ui/switch';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 // Per-row "Accepting applications" Switch on the SIS AY-setup table (KD #77).
 // Current AY → its live application window; non-current AY → early-bird, which
@@ -20,29 +21,34 @@ export function AyAcceptingApplicationsToggle({
   isCurrentAy: boolean;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
 
-  async function flip(next: boolean) {
-    setBusy(true);
-    try {
-      const res = await fetch('/api/sis/ay-setup/accepting-applications', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ay_code: ayCode, accepting: next }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'Update failed');
+  // Tier-2: no local optimistic value — the Switch reflects the server-provided
+  // `current` prop, and a successful flip router.refresh()es to re-read it.
+  // `isPending` drives the disable, the route's `body.error` is preserved via
+  // ApiError.message (fallback 'Update failed' unchanged).
+  const flipMutation = useMutation({
+    mutationFn: (next: boolean) =>
+      apiFetch(
+        '/api/sis/ay-setup/accepting-applications',
+        jsonInit('PATCH', { ay_code: ayCode, accepting: next })
+      ),
+    onSuccess: (_data, next) => {
       toast.success(
         next
           ? `${ayCode} is now accepting applications.`
           : `${ayCode} is no longer accepting applications.`
       );
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'Update failed');
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+
+  const busy = flipMutation.isPending;
+
+  function flip(next: boolean) {
+    flipMutation.mutate(next);
   }
 
   const stateHint = current

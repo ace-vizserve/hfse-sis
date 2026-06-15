@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -11,6 +12,8 @@ import {
   LockOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 
 import {
   AlertDialog,
@@ -32,7 +35,6 @@ export function LockToggle({
   isLocked: boolean;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   // Surfaced after the server returns 409 because pending CRs exist; the
   // dialog this state opens is the explicit break-glass override path.
@@ -46,39 +48,66 @@ export function LockToggle({
 
   const action: 'lock' | 'unlock' = isLocked ? 'unlock' : 'lock';
 
-  async function runToggle(opts: { force?: boolean } = {}) {
-    setBusy(true);
-    try {
-      const qs = opts.force ? '?force=true' : '';
-      const res = await fetch(`/api/grading-sheets/${sheetId}/${action}${qs}`, {
-        method: 'POST',
-      });
-      const body = await res.json();
-      if (res.status === 409 && body?.error === 'grading_lock_date_passed') {
-        setDeadlineBlock({
-          termLabel: body.termLabel ?? 'this term',
-          lockDate: body.lockDate ?? '',
-        });
-        return;
-      }
-      if (res.status === 409 && body?.error === 'pending_change_requests') {
-        setPendingBlock({ pendingCount: body.pendingCount ?? 0 });
-        return;
-      }
-      if (!res.ok) throw new Error(body.error ?? `${action} failed`);
+  // Tier-2 mutation. The two 409 break-glass codes are NOT errors to the user —
+  // they open a confirm dialog instead of toasting. apiFetch throws ApiError on
+  // a 409, so we intercept those codes in onError and open the matching dialog
+  // (returning without a toast); any other failure keeps the original
+  // `body.error ?? \`${action} failed\`` fallback message. The success toast still
+  // branches on whether this was a force-unlock, so `force` rides along in the
+  // mutation variables. router.refresh() stays on the success path (Model A).
+  const toggleMutation = useMutation({
+    mutationFn: (vars: { force: boolean }) => {
+      const qs = vars.force ? '?force=true' : '';
+      return apiFetch(
+        `/api/grading-sheets/${sheetId}/${action}${qs}`,
+        jsonInit('POST')
+      );
+    },
+    onSuccess: (_body, vars) => {
       toast.success(
         action === 'lock'
           ? 'Sheet locked'
-          : opts.force
+          : vars.force
             ? 'Sheet unlocked (pending requests bypassed)'
             : 'Sheet unlocked'
       );
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
+      if (e instanceof ApiError && e.status === 409) {
+        const body = (e.body ?? {}) as {
+          error?: string;
+          termLabel?: string;
+          lockDate?: string;
+          pendingCount?: number;
+        };
+        if (body.error === 'grading_lock_date_passed') {
+          setDeadlineBlock({
+            termLabel: body.termLabel ?? 'this term',
+            lockDate: body.lockDate ?? '',
+          });
+          return;
+        }
+        if (body.error === 'pending_change_requests') {
+          setPendingBlock({ pendingCount: body.pendingCount ?? 0 });
+          return;
+        }
+      }
+      // ApiError.message already resolves to the body's `error` field; fall
+      // back to the original generic message for non-JSON / unknown failures.
       toast.error(e instanceof Error ? e.message : `Failed to ${action} sheet`);
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+
+  const busy = toggleMutation.isPending;
+
+  async function runToggle(opts: { force?: boolean } = {}) {
+    await toggleMutation
+      .mutateAsync({ force: opts.force ?? false })
+      .catch(() => {
+        // onError already surfaced the outcome (dialog or toast); swallow so the
+        // dialog-close callers don't see an unhandled rejection.
+      });
   }
 
   return (

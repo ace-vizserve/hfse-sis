@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import { Check, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
+
+import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -37,7 +40,6 @@ export function ChangeRequestDecisionButtons({
   const [open, setOpen] = useState(false);
   const [action, setAction] = useState<Action>('approve');
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
   const noteRef = useRef<HTMLTextAreaElement | null>(null);
   const confirmRef = useRef<HTMLButtonElement | null>(null);
   const lastNonceRef = useRef<string | null>(null);
@@ -76,22 +78,35 @@ export function ChangeRequestDecisionButtons({
 
   const rejectNeedsNote = action === 'reject' && note.trim().length === 0;
 
-  async function submit() {
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/change-requests/${requestId}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          decision_note: note.trim() ? note.trim() : undefined,
-        }),
-      });
-      // Concurrent-decision race: another administrator approved or declined
-      // this request before us. Don't treat as a generic error — clear the
-      // dialog, refresh the list, and tell the user what happened.
-      if (res.status === 409) {
-        const body = await res.json().catch(() => ({}));
+  // Tier-2 mutation. The success toast text depends on the action, so `action`
+  // rides along in the mutation variables. The concurrent-decision race (409)
+  // is NOT a generic error — it closes the dialog, refreshes, and shows the
+  // "Already handled" toast with the route's specific description. apiFetch
+  // throws ApiError on a 409, so we intercept it in onError; ApiError.message
+  // already carries the body's `error` field for the non-409 fallback path.
+  const decisionMutation = useMutation({
+    mutationFn: (vars: { action: Action; note?: string }) =>
+      apiFetch(
+        `/api/change-requests/${requestId}`,
+        jsonInit('PATCH', {
+          action: vars.action,
+          decision_note: vars.note ? vars.note : undefined,
+        })
+      ),
+    onSuccess: (_body, vars) => {
+      toast.success(
+        vars.action === 'approve' ? 'Request approved' : 'Request declined'
+      );
+      setOpen(false);
+      router.refresh();
+    },
+    onError: (e) => {
+      if (e instanceof ApiError && e.status === 409) {
+        // Concurrent-decision race: another administrator approved or declined
+        // this request before us. Clear the dialog, refresh the list, and tell
+        // the user what happened. Read body.error directly so the fallback
+        // matches the original (statusText is not an acceptable description).
+        const body = (e.body ?? {}) as { error?: string };
         toast.error('Already handled', {
           description:
             body.error ??
@@ -101,18 +116,15 @@ export function ChangeRequestDecisionButtons({
         router.refresh();
         return;
       }
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? 'failed');
-      toast.success(
-        action === 'approve' ? 'Request approved' : 'Request declined'
-      );
-      setOpen(false);
-      router.refresh();
-    } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to submit decision');
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+
+  const busy = decisionMutation.isPending;
+
+  function submit() {
+    const trimmed = note.trim();
+    decisionMutation.mutate({ action, note: trimmed ? trimmed : undefined });
   }
 
   return (

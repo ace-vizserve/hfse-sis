@@ -5,8 +5,10 @@ import { AlertTriangle, CheckCircle2, Loader2, Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -105,7 +107,6 @@ export function EditStageDialog({
   // The registrar-chosen joining term (active term = "join current",
   // next term = "start next"). Defaults to the active term when the prompt opens.
   const [chosenTerm, setChosenTerm] = useState<number | null>(null);
-  const [applyingLate, setApplyingLate] = useState(false);
 
   const cols = STAGE_COLUMN_MAP[stageKey];
   const canonicalOptions = STAGE_STATUS_OPTIONS[stageKey];
@@ -195,82 +196,30 @@ export function EditStageDialog({
     }
   }, [isTerminalStatus]);
 
-  async function onSubmit(values: StageUpdateInput) {
-    if (frozen) return;
-    try {
-      const extrasPayload = {
-        ...values.extras,
-        ...(stageKey === 'application' &&
-          isTerminalStatus && {
-            terminalReason: terminalReason || undefined,
-            terminalNotes: terminalNotes.trim() || undefined,
-          }),
-      };
-      const res = await fetch(
+  type StageResponse = {
+    changed?: number;
+    classAutoAssigned?: boolean;
+    autoSync?: { change?: string; reason?: string; error?: string };
+    autoSyncFailed?: boolean;
+    withdrawalCascade?: {
+      rowsAffected: number;
+      sectionStudentIds: string[];
+    } | null;
+    midTermEnrolment?: MidTermPayload | null;
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch<StageResponse>(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/stage/${stageKey}?ay=${encodeURIComponent(ayCode)}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ ...values, extras: extrasPayload }),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // 422 + `blockers` covers two different server-side gates. Discriminate
-        // by stageKey:
-        //   - documents → per-slot validation gate (P-Files hasn't marked all
-        //     required slots as 'Valid'). Surface the slot list and offer a
-        //     one-click hop to the student's P-Files profile.
-        //   - application → Enrolled-prereq gate (one of the 5 prereq stages
-        //     is incomplete).
-        if (
-          res.status === 422 &&
-          Array.isArray(body.blockers) &&
-          body.blockers.length > 0
-        ) {
-          if (stageKey === 'documents') {
-            const docBlockers = body.blockers as Array<{
-              slot: string;
-              label: string;
-              current: string | null;
-              expected: string;
-            }>;
-            const lines = docBlockers.map(
-              (b) => `${b.label} (${b.current ?? 'missing'})`
-            );
-            toast.error(
-              `Documents not ready — ${docBlockers.length} slot${docBlockers.length === 1 ? '' : 's'} pending validation`,
-              { description: lines.join(' · ') }
-            );
-            return;
-          }
-          const enrolBlockers = body.blockers as Array<{
-            stage: string;
-            current: string | null;
-            expected: string;
-          }>;
-          const lines = enrolBlockers.map(
-            (b) =>
-              `${b.stage}: ${b.current ?? 'not started'} → needs ${b.expected}`
-          );
-          toast.error(
-            `Can't enroll yet — ${enrolBlockers.length} stage${enrolBlockers.length === 1 ? '' : 's'} still open`,
-            { description: lines.join(' · ') }
-          );
-          return;
-        }
-        throw new Error(body.error ?? 'Failed to save');
-      }
+        jsonInit('PATCH', payload)
+      ),
+    onSuccess: (body) => {
       const changed = body.changed as number | undefined;
       const classAutoAssigned = body.classAutoAssigned === true;
-      const autoSync = body.autoSync as
-        | { change?: string; reason?: string; error?: string }
-        | undefined;
+      const autoSync = body.autoSync;
       const autoSyncFailed = body.autoSyncFailed === true;
-      const withdrawalCascade = body.withdrawalCascade as
-        | { rowsAffected: number; sectionStudentIds: string[] }
-        | null
-        | undefined;
+      const withdrawalCascade = body.withdrawalCascade;
 
       // Withdrawn / Cancelled cascade outcome takes priority on the toast.
       // The cascade only fires when the flip actually changed section rows;
@@ -315,10 +264,7 @@ export function EditStageDialog({
             : `${STAGE_LABELS[stageKey]} updated`
         );
       }
-      const midTermPayload = body.midTermEnrolment as
-        | MidTermPayload
-        | null
-        | undefined;
+      const midTermPayload = body.midTermEnrolment;
       if (midTermPayload?.sectionId) {
         setPendingMidTerm(midTermPayload);
         setChosenTerm(midTermPayload.termNumber); // default = active term
@@ -326,10 +272,110 @@ export function EditStageDialog({
       }
       setOpen(false);
       router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save');
-    }
+    },
+    onError: (e) => {
+      // 422 + `blockers` covers two different server-side gates. Discriminate
+      // by stageKey:
+      //   - documents → per-slot validation gate (P-Files hasn't marked all
+      //     required slots as 'Valid'). Surface the slot list and offer a
+      //     one-click hop to the student's P-Files profile.
+      //   - application → Enrolled-prereq gate (one of the 5 prereq stages
+      //     is incomplete).
+      if (e instanceof ApiError && e.status === 422) {
+        const body = (e.body ?? {}) as {
+          blockers?: unknown;
+          error?: string;
+        };
+        if (Array.isArray(body.blockers) && body.blockers.length > 0) {
+          if (stageKey === 'documents') {
+            const docBlockers = body.blockers as Array<{
+              slot: string;
+              label: string;
+              current: string | null;
+              expected: string;
+            }>;
+            const lines = docBlockers.map(
+              (b) => `${b.label} (${b.current ?? 'missing'})`
+            );
+            toast.error(
+              `Documents not ready — ${docBlockers.length} slot${docBlockers.length === 1 ? '' : 's'} pending validation`,
+              { description: lines.join(' · ') }
+            );
+            return;
+          }
+          const enrolBlockers = body.blockers as Array<{
+            stage: string;
+            current: string | null;
+            expected: string;
+          }>;
+          const lines = enrolBlockers.map(
+            (b) =>
+              `${b.stage}: ${b.current ?? 'not started'} → needs ${b.expected}`
+          );
+          toast.error(
+            `Can't enroll yet — ${enrolBlockers.length} stage${enrolBlockers.length === 1 ? '' : 's'} still open`,
+            { description: lines.join(' · ') }
+          );
+          return;
+        }
+      }
+      // Mirror the original `throw new Error(body.error ?? 'Failed to save')`
+      // fallback string when the server body carries no `error` field.
+      const serverError =
+        e instanceof ApiError && e.body && typeof e.body === 'object'
+          ? (e.body as { error?: string }).error
+          : undefined;
+      toast.error(serverError ?? 'Failed to save');
+    },
+  });
+
+  async function onSubmit(values: StageUpdateInput) {
+    if (frozen) return;
+    const extrasPayload = {
+      ...values.extras,
+      ...(stageKey === 'application' &&
+        isTerminalStatus && {
+          terminalReason: terminalReason || undefined,
+          terminalNotes: terminalNotes.trim() || undefined,
+        }),
+    };
+    // Awaited inside RHF's handleSubmit so `formState.isSubmitting` stays the
+    // busy signal.
+    await saveMutation
+      .mutateAsync({ ...values, extras: extrasPayload })
+      .catch(() => {});
   }
+
+  // Late-enrollee confirm in the mid-term prompt. The original threw a bespoke
+  // 'Failed to mark as late enrollee' without reading the body, so onError
+  // surfaces that fixed copy; onSettled mirrors the original `finally` block.
+  const lateMutation = useMutation({
+    mutationFn: (vars: {
+      sectionId: string;
+      sectionStudentId: string;
+      term: number;
+    }) =>
+      apiFetch(
+        `/api/sections/${vars.sectionId}/students/${vars.sectionStudentId}`,
+        jsonInit('PATCH', {
+          enrollment_status: 'late_enrollee',
+          late_enrollee_term_number: vars.term,
+        })
+      ),
+    onSuccess: (_data, vars) => {
+      toast.success(`Marked as late enrollee · T${vars.term}`);
+    },
+    onError: () => {
+      toast.error('Failed to mark as late enrollee');
+    },
+    onSettled: () => {
+      setPendingMidTerm(null);
+      setChosenTerm(null);
+      setOpen(false);
+      router.refresh();
+    },
+  });
+  const applyingLate = lateMutation.isPending;
 
   const busy = form.formState.isSubmitting;
 
@@ -456,37 +502,13 @@ export function EditStageDialog({
                 type="button"
                 size="sm"
                 disabled={applyingLate || chosenTerm === null}
-                onClick={async () => {
+                onClick={() => {
                   if (chosenTerm === null) return;
-                  setApplyingLate(true);
-                  try {
-                    const res = await fetch(
-                      `/api/sections/${pendingMidTerm.sectionId}/students/${pendingMidTerm.sectionStudentId}`,
-                      {
-                        method: 'PATCH',
-                        headers: { 'content-type': 'application/json' },
-                        body: JSON.stringify({
-                          enrollment_status: 'late_enrollee',
-                          late_enrollee_term_number: chosenTerm,
-                        }),
-                      }
-                    );
-                    if (!res.ok)
-                      throw new Error('Failed to mark as late enrollee');
-                    toast.success(`Marked as late enrollee · T${chosenTerm}`);
-                  } catch (e) {
-                    toast.error(
-                      e instanceof Error
-                        ? e.message
-                        : 'Could not mark as late enrollee'
-                    );
-                  } finally {
-                    setApplyingLate(false);
-                    setPendingMidTerm(null);
-                    setChosenTerm(null);
-                    setOpen(false);
-                    router.refresh();
-                  }
+                  lateMutation.mutate({
+                    sectionId: pendingMidTerm.sectionId,
+                    sectionStudentId: pendingMidTerm.sectionStudentId,
+                    term: chosenTerm,
+                  });
                 }}
               >
                 {applyingLate && <Loader2 className="size-3.5 animate-spin" />}

@@ -15,10 +15,12 @@
 // JSX. The only local markup is a centered muted placeholder card for the
 // not-yet-built views and the page stack spacing. Tokens only (Hard Rule #7).
 
+import { useMutation } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
+import { apiFetch } from '@/lib/query/fetcher';
 import {
   CalendarToolbar,
   type CalendarView,
@@ -301,25 +303,26 @@ export function CalendarAdminClient({
   // The trash control sets a pending id; the AlertDialog confirms before the
   // actual DELETE fires (destructive action — no accidental one-click deletes).
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const deleteEvent = useCallback(
-    async (id: string) => {
-      try {
-        const res = await fetch(
-          `/api/attendance/calendar/events?id=${encodeURIComponent(id)}`,
-          { method: 'DELETE' }
-        );
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok)
-          throw new Error(
-            (body as { error?: string }).error ?? 'Failed to delete event'
-          );
-        toast.success('Event deleted');
-        router.refresh();
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Failed to delete event');
-      }
+  // Tier-2 mutation (Model A): the DELETE routes through useMutation (retry: 0
+  // + consistent error handling); on success we router.refresh(). The
+  // route-specific error copy is preserved — ApiError.message resolves the
+  // body's `error` field.
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/attendance/calendar/events?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      toast.success('Event deleted');
+      router.refresh();
     },
-    [router]
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete event');
+    },
+  });
+  const deleteEvent = useCallback(
+    (id: string) => deleteMutation.mutate(id),
+    [deleteMutation]
   );
 
   // ── Render ──────────────────────────────────────────────────────────────────

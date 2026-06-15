@@ -180,7 +180,9 @@ export async function transferStudentSection(
 
   const { data: enrRows, error: enrErr } = await service
     .from('section_students')
-    .select('id, section_id, enrollment_status')
+    .select(
+      'id, section_id, enrollment_status, enrollment_date, late_enrollee_term_number'
+    )
     .eq('student_id', studentId)
     .in('section_id', aySectionIds);
   if (enrErr) {
@@ -190,8 +192,14 @@ export async function transferStudentSection(
       status: 500,
     };
   }
+  // A `late_enrollee` (enrolled but joining a future term) is a legitimate
+  // transfer source — the registrar can move them to the section they'll start
+  // in. Match both active + late_enrollee (the class-headcount statuses); the
+  // late-enrollee semantics are carried onto the destination row below.
   const activeRows = (enrRows ?? []).filter(
-    (r) => r.enrollment_status === 'active'
+    (r) =>
+      r.enrollment_status === 'active' ||
+      r.enrollment_status === 'late_enrollee'
   );
   if (activeRows.length === 0) {
     return {
@@ -207,7 +215,13 @@ export async function transferStudentSection(
       status: 409,
     };
   }
-  const sourceEnr = activeRows[0] as { id: string; section_id: string };
+  const sourceEnr = activeRows[0] as {
+    id: string;
+    section_id: string;
+    enrollment_status: string;
+    enrollment_date: string | null;
+    late_enrollee_term_number: number | null;
+  };
   const sourceSec = aySections.find((s) => s.id === sourceEnr.section_id);
   if (!sourceSec) {
     return { ok: false, error: 'Source section metadata missing', status: 500 };
@@ -236,7 +250,10 @@ export async function transferStudentSection(
 
   // ── 7. Capacity check on target ────────────────────────────────────────
   const targetActive = (enrRows ?? []).filter(
-    (r) => r.section_id === targetSec.id && r.enrollment_status === 'active'
+    (r) =>
+      r.section_id === targetSec.id &&
+      (r.enrollment_status === 'active' ||
+        r.enrollment_status === 'late_enrollee')
   ).length;
   // The student being transferred isn't in target yet (filtered above as
   // single active row in source), so the count above is the standalone
@@ -296,7 +313,13 @@ export async function transferStudentSection(
     };
   }
 
-  // Step B: insert new active row
+  // Step B: insert the destination row, PRESERVING the source's enrolment
+  // semantics. An active student transfers as active starting today (their
+  // attendance in the new section begins now). A late enrollee stays a late
+  // enrollee, keeping their original joining date + term override — so
+  // attendance proration (KD #113/#130) and the joining-term badge (KD #68/#117)
+  // carry over to the new section instead of being reset to today's break date.
+  const isLateSource = sourceEnr.enrollment_status === 'late_enrollee';
   const { error: insertErr } = await service.from('section_students').insert({
     section_id: targetSec.id,
     student_id: studentId,
@@ -306,14 +329,22 @@ export async function transferStudentSection(
     // maps) silently missed transferred students. KD #83.
     enrolee_number: enroleeNumber,
     index_number: nextIndex,
-    enrollment_status: 'active',
-    enrollment_date: today,
+    enrollment_status: isLateSource ? 'late_enrollee' : 'active',
+    enrollment_date: isLateSource ? sourceEnr.enrollment_date : today,
+    late_enrollee_term_number: isLateSource
+      ? sourceEnr.late_enrollee_term_number
+      : null,
   });
   if (insertErr) {
-    // Best-effort rollback of step A so the student isn't left orphaned.
+    // Best-effort rollback of step A so the student isn't left orphaned —
+    // restore the source row's ORIGINAL status (active or late_enrollee), not a
+    // hardcoded 'active' which would silently promote a late enrollee.
     await service
       .from('section_students')
-      .update({ enrollment_status: 'active', withdrawal_date: null })
+      .update({
+        enrollment_status: sourceEnr.enrollment_status,
+        withdrawal_date: null,
+      })
       .eq('id', sourceEnr.id);
     return {
       ok: false,

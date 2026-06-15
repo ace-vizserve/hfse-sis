@@ -31,8 +31,11 @@ import {
   Star,
   Users,
 } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 // Local-tz ISO for today. Inline helper — the file doesn't pull from
 // lib/attendance/calendar.ts to stay a pure client leaf.
@@ -275,6 +278,22 @@ export function AttendanceWideGrid({
     });
   }
 
+  // Tier-3 autosave grid: the cell state stays in the local `cells` Map with
+  // its own optimistic write + revert-on-failure (unchanged). The ONLY change
+  // is that the per-cell PATCH now goes through useMutation so it gets the
+  // shared retry: 0 + apiFetch error handling. `mutate` is called per cell —
+  // each call is independent. The optimistic write, the saved-tick timeout, and
+  // the revert all stay inside writeCell exactly as before.
+  const saveCellMutation = useMutation({
+    mutationFn: (payload: {
+      sectionStudentId: string;
+      termId: string;
+      date: string;
+      status: AttendanceStatus;
+      exReason: ExReason | null;
+    }) => apiFetch('/api/attendance/daily', jsonInit('PATCH', payload)),
+  });
+
   async function writeCell(
     enrolmentId: string,
     date: string,
@@ -318,19 +337,13 @@ export function AttendanceWideGrid({
 
     updateCell(k, { status, exReason, saving: true });
     try {
-      const res = await fetch('/api/attendance/daily', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          sectionStudentId: enrolmentId,
-          termId,
-          date,
-          status,
-          exReason,
-        }),
+      await saveCellMutation.mutateAsync({
+        sectionStudentId: enrolmentId,
+        termId,
+        date,
+        status,
+        exReason,
       });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'save failed');
       updateCell(k, { saving: false, savedAt: Date.now() });
       setTimeout(() => {
         setCells((current) => {

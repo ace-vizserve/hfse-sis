@@ -1,5 +1,7 @@
 ﻿import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { hashString, mulberry32 } from './random';
+
 // 20-persona realistic admissions seed for the test AY.
 //
 // Scope: ay9999_enrolment_applications + ay9999_enrolment_status +
@@ -24,6 +26,15 @@ const IMAGE_URL =
   'https://vnhklhppftebbcuupfjw.supabase.co/storage/v1/object/public/parent-portal/ay2027/documents/1774407491653_favicon.png';
 
 const SEEDER_ACTOR = 'seeder@demo.com';
+
+// Number of admissions-minimal funnel personas (E990001–E990030). On a fresh
+// test AY the ay####_* tables are dropped+recreated so the apps.id SERIAL
+// restarts at 1 — these personas therefore occupy ids 1..30. The populated
+// seeder imports this to offset its enrolled cohort's E99/H99 suffixes past
+// this block so numbers are contiguous and track the auto-increment id (real
+// portal semantics: enrolee/student suffix == apps.id). Keep in sync with
+// PERSONAS.length.
+export const ADMISSIONS_MINIMAL_COUNT = 30;
 
 function isoDateOffset(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000)
@@ -153,8 +164,8 @@ type Persona = {
   motherWhatsappTeamsConsent: boolean;
   fatherWhatsappTeamsConsent?: boolean | null;
   guardianWhatsappTeamsConsent?: boolean | null;
-  // Pre-course acknowledgment
-  preCourseAnswer: string;
+  // Pre-course counselling answer + feedback are derived deterministically in
+  // buildAppsRow (not per-persona), so they're not carried on the Persona type.
   // Pipeline — SIS-side applicationStatus (7-value enum per KD #59)
   applicationStatus:
     | 'Submitted'
@@ -184,10 +195,18 @@ type Persona = {
   docs: Record<string, DocFill>;
 };
 
-// ─── 20 personas ─────────────────────────────────────────────────────────────
+// ─── 30 personas ─────────────────────────────────────────────────────────────
 
-const PRE_COURSE_ANSWER =
-  "I have read and understood the school's pre-course materials and agree to support my child's learning journey at HFSE International School.";
+// Sample application-experience feedback comments (KD #102). buildAppsRow picks
+// one per applicant (deterministically) when the applicant left feedback.
+const FEEDBACK_COMMENTS = [
+  'The online form was clear and easy to follow.',
+  'Took a while to upload all the documents, but manageable.',
+  'Very intuitive — completed the whole application in one sitting.',
+  'A few questions felt repetitive, otherwise a smooth process.',
+  'Loved the progress indicator; always knew what was left.',
+  'Wished I could save and resume the form more easily.',
+];
 
 const PERSONAS: Persona[] = [
   // ── SUBMITTED (7) ──────────────────────────────────────────────────────────
@@ -265,7 +284,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Submitted',
     enrolmentDateOffset: -30,
     registrationStatus: 'Pending',
@@ -368,7 +386,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Submitted',
     enrolmentDateOffset: -14,
     registrationStatus: 'Pending',
@@ -466,7 +483,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: null,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Submitted',
     enrolmentDateOffset: -21,
     registrationStatus: 'Pending',
@@ -569,7 +585,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Submitted',
     enrolmentDateOffset: -10,
     registrationStatus: 'Pending',
@@ -678,7 +693,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Submitted',
     enrolmentDateOffset: -35,
     registrationStatus: 'Pending',
@@ -790,7 +804,6 @@ const PERSONAS: Persona[] = [
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
     guardianWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Submitted',
     enrolmentDateOffset: -25,
     registrationStatus: 'Pending',
@@ -874,7 +887,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Submitted',
     enrolmentDateOffset: -18,
     registrationStatus: 'Pending',
@@ -965,7 +977,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Ongoing Verification',
     enrolmentDateOffset: -45,
     registrationStatus: 'Finished',
@@ -1077,7 +1088,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Ongoing Verification',
     enrolmentDateOffset: -55,
     registrationStatus: 'Finished',
@@ -1179,7 +1189,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Ongoing Verification',
     enrolmentDateOffset: -60,
     registrationStatus: 'Finished',
@@ -1274,7 +1283,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: false,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Ongoing Verification',
     enrolmentDateOffset: -50,
     registrationStatus: 'Finished',
@@ -1369,7 +1377,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Ongoing Verification',
     enrolmentDateOffset: -65,
     registrationStatus: 'Finished',
@@ -1469,7 +1476,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Ongoing Verification',
     enrolmentDateOffset: -40,
     registrationStatus: 'Finished',
@@ -1587,7 +1593,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Processing',
     enrolmentDateOffset: -80,
     registrationStatus: 'Finished',
@@ -1703,7 +1708,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Processing',
     enrolmentDateOffset: -90,
     registrationStatus: 'Finished',
@@ -1803,7 +1807,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Processing',
     enrolmentDateOffset: -75,
     registrationStatus: 'Finished',
@@ -1900,7 +1903,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Processing',
     enrolmentDateOffset: -70,
     registrationStatus: 'Finished',
@@ -2007,7 +2009,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: false,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Cancelled',
     applicationRemarks:
       'Family relocated to overseas posting prior to start of academic year. Parent requested withdrawal on 2026-04-21.',
@@ -2105,7 +2106,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Withdrawn',
     applicationRemarks:
       'Student has decided to continue at current school and will not be transferring to HFSE for AY2027.',
@@ -2205,7 +2205,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Withdrawn',
     applicationRemarks:
       'Family unable to proceed with enrolment due to financial constraints. Registration fee refund requested.',
@@ -2317,7 +2316,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Submitted',
     enrolmentDateOffset: -5,
     registrationStatus: 'Pending',
@@ -2408,7 +2406,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Ongoing Verification',
     enrolmentDateOffset: -22,
     registrationStatus: 'Finished',
@@ -2507,7 +2504,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Ongoing Verification',
     enrolmentDateOffset: -18,
     registrationStatus: 'Finished',
@@ -2607,7 +2603,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Processing',
     enrolmentDateOffset: -38,
     registrationStatus: 'Finished',
@@ -2709,7 +2704,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: false,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Processing',
     enrolmentDateOffset: -32,
     registrationStatus: 'Finished',
@@ -2811,7 +2805,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Processing',
     enrolmentDateOffset: -48,
     registrationStatus: 'Finished',
@@ -2919,7 +2912,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Processing',
     enrolmentDateOffset: -55,
     registrationStatus: 'Finished',
@@ -3025,7 +3017,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Processing',
     enrolmentDateOffset: -62,
     registrationStatus: 'Finished',
@@ -3132,7 +3123,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Cancelled',
     applicationRemarks:
       'Family decided to remain at current school. Parent notified admissions team on 2026-03-15.',
@@ -3233,7 +3223,6 @@ const PERSONAS: Persona[] = [
     socialMediaConsent: true,
     motherWhatsappTeamsConsent: true,
     fatherWhatsappTeamsConsent: true,
-    preCourseAnswer: PRE_COURSE_ANSWER,
     applicationStatus: 'Withdrawn',
     applicationRemarks:
       'Student admitted to sibling school abroad. Parent withdrew application prior to contract stage.',
@@ -3367,6 +3356,20 @@ export async function seedAdmissionsMinimal(
 // ─── Row builders ─────────────────────────────────────────────────────────────
 
 function buildAppsRow(p: Persona): Record<string, unknown> {
+  // Deterministic per-applicant variety for pre-course counselling + application
+  // feedback, keyed on the stable enroleeNumber. Funnel applicants all submitted
+  // the form (so feedback is plausible), and pre-course may or may not be done
+  // yet pre-enrolment — hence the tri-state answer.
+  const fp = mulberry32(hashString(`${p.enroleeNumber}:feedback-precourse`));
+  const hasFeedback = fp() < 0.55; // ~55% leave optional feedback
+  const RATING_POOL = [5, 5, 4, 4, 4, 3, 3, 2, 1]; // positive-skewed 1–5
+  const rating = RATING_POOL[Math.floor(fp() * RATING_POOL.length)];
+  const wantsComment = fp() < 0.45;
+  const comment =
+    FEEDBACK_COMMENTS[Math.floor(fp() * FEEDBACK_COMMENTS.length)];
+  const consent = fp() < 0.6;
+  const pcRoll = fp();
+  const preCourseAnswer = pcRoll < 0.55 ? 'Yes' : pcRoll < 0.7 ? 'No' : null;
   const preCourseDate = isoDateOffset(p.enrolmentDateOffset + 1);
   return {
     enroleeNumber: p.enroleeNumber,
@@ -3508,10 +3511,19 @@ function buildAppsRow(p: Persona): Record<string, unknown> {
     motherWhatsappTeamsConsent: p.motherWhatsappTeamsConsent,
     fatherWhatsappTeamsConsent: p.fatherWhatsappTeamsConsent ?? null,
     guardianWhatsappTeamsConsent: p.guardianWhatsappTeamsConsent ?? null,
-    // Pre-course
-    preCourseAnswer: p.preCourseAnswer,
-    preCourseDate: `${preCourseDate}T09:00:00+08:00`,
-    preCourseAcknowledgedAt: `${preCourseDate}T09:15:00+08:00`,
+    // Pre-course counselling — varied tri-state ('Yes'/'No'/not-yet); dates only
+    // when counselled, acknowledgement only when answered 'Yes'.
+    preCourseAnswer,
+    preCourseDate: preCourseAnswer ? `${preCourseDate}T09:00:00+08:00` : null,
+    preCourseAcknowledgedAt:
+      preCourseAnswer === 'Yes' ? `${preCourseDate}T09:15:00+08:00` : null,
+    // Application-experience feedback (KD #102) — ~55% leave it
+    feedbackRating: hasFeedback ? rating : null,
+    feedbackComments: hasFeedback ? (wantsComment ? comment : '') : null,
+    feedbackConsent: hasFeedback ? consent : null,
+    feedbackSubmittedAt: hasFeedback
+      ? `${isoDateOffset(p.enrolmentDateOffset)}T10:30:00+08:00`
+      : null,
     // Photo
     enroleePhoto: IMAGE_URL,
   };

@@ -11,8 +11,10 @@ import {
 import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -74,37 +76,25 @@ function AySetupWizard({ preview, children }: Props) {
   const [createdAyCode, setCreatedAyCode] = useState<string | null>(null);
   const [creationSummary, setCreationSummary] =
     useState<CreationSummary | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
   const form = useForm<CreateAyInput>({
     resolver: zodResolver(CreateAySchema),
     defaultValues: BLANK,
   });
 
-  function resetAll() {
-    form.reset(BLANK);
-    setStep('identity');
-    setCreatedAyCode(null);
-    setCreationSummary(null);
-    setSubmitting(false);
-  }
+  type CreateAyResponse = {
+    alreadyExisted?: boolean;
+    summary?: {
+      ay_existed?: boolean;
+      sections_copied?: number;
+      subject_configs_copied?: number;
+    };
+  };
 
-  async function onStep1Submit(values: CreateAyInput) {
-    // Step 1 only validates — the actual commit happens on step 2.
-    setStep('review');
-  }
-
-  async function onCommit() {
-    const values = form.getValues();
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/sis/ay-setup', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(values),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Failed to create AY');
+  const createMutation = useMutation({
+    mutationFn: (values: CreateAyInput) =>
+      apiFetch<CreateAyResponse>('/api/sis/ay-setup', jsonInit('POST', values)),
+    onSuccess: (body, values) => {
       if (body.alreadyExisted) {
         toast.info(
           `${values.ay_code} is already fully set up — nothing to do.`
@@ -148,11 +138,33 @@ function AySetupWizard({ preview, children }: Props) {
       });
       setStep('follow-up');
       router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to create AY');
-    } finally {
-      setSubmitting(false);
-    }
+    },
+    onError: (e) => {
+      // Preserve the original fallback: `body.error ?? 'Failed to create AY'`.
+      const serverError =
+        e instanceof ApiError && e.body && typeof e.body === 'object'
+          ? (e.body as { error?: string }).error
+          : undefined;
+      toast.error(serverError ?? 'Failed to create AY');
+    },
+  });
+  const submitting = createMutation.isPending;
+
+  function resetAll() {
+    form.reset(BLANK);
+    setStep('identity');
+    setCreatedAyCode(null);
+    setCreationSummary(null);
+    createMutation.reset();
+  }
+
+  async function onStep1Submit(_values: CreateAyInput) {
+    // Step 1 only validates — the actual commit happens on step 2.
+    setStep('review');
+  }
+
+  function onCommit() {
+    createMutation.mutate(form.getValues());
   }
 
   function handleOpenChange(next: boolean) {

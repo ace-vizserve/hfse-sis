@@ -1,5 +1,6 @@
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
 import { Globe2, Loader2, Search, X } from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
@@ -8,6 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { apiFetch } from '@/lib/query/fetcher';
+import { queryKeys } from '@/lib/query/keys';
 
 type Match = {
   ayCode: string;
@@ -23,41 +26,45 @@ const DEBOUNCE_MS = 300;
 
 export function CrossAySearch() {
   const [query, setQuery] = React.useState('');
-  const [matches, setMatches] = React.useState<Match[]>([]);
-  const [loading, setLoading] = React.useState(false);
+  // Debounced query that drives the read — raw `query` updates per keystroke,
+  // this trailing-edge value (300ms) feeds the queryKey/enabled.
+  const [debouncedQuery, setDebouncedQuery] = React.useState('');
   const [open, setOpen] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Debounce the query → fetch.
+  // Debounce the query → debouncedQuery. Preserves the original 300ms debounce.
   React.useEffect(() => {
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setMatches([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    const handle = window.setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `/api/sis/search?q=${encodeURIComponent(trimmed)}`,
-          { cache: 'no-store' }
-        );
-        if (!res.ok) {
-          setMatches([]);
-          return;
-        }
-        const data = (await res.json()) as { matches?: Match[] };
-        setMatches(data.matches ?? []);
-      } catch {
-        setMatches([]);
-      } finally {
-        setLoading(false);
-      }
+    const handle = window.setTimeout(() => {
+      setDebouncedQuery(query);
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
   }, [query]);
+
+  // Search read via TanStack Query, enabled when the debounced query is ≥ 2
+  // chars. Errors / non-2xx resolve to an empty list (the original behaviour).
+  const trimmed = debouncedQuery.trim();
+  const searchEnabled = trimmed.length >= 2;
+
+  const searchQuery = useQuery({
+    queryKey: queryKeys.crossAySearch(trimmed),
+    queryFn: async ({ signal }) => {
+      const data = await apiFetch<{ matches?: Match[] }>(
+        `/api/sis/search?q=${encodeURIComponent(trimmed)}`,
+        { cache: 'no-store', signal }
+      );
+      return data.matches ?? [];
+    },
+    enabled: searchEnabled,
+  });
+
+  const matches: Match[] = searchEnabled ? (searchQuery.data ?? []) : [];
+  // Loading mirrors the original: true while a request for a valid query is
+  // in flight. Also true when the user has typed ≥2 chars but the debounce
+  // hasn't yet flushed to a fetch — so the spinner shows immediately on type.
+  const loading =
+    (query.trim().length >= 2 && trimmed !== query.trim()) ||
+    (searchEnabled && searchQuery.isFetching);
 
   // Click outside → close.
   React.useEffect(() => {
@@ -92,7 +99,7 @@ export function CrossAySearch() {
             type="button"
             onClick={() => {
               setQuery('');
-              setMatches([]);
+              setDebouncedQuery('');
               inputRef.current?.focus();
             }}
             className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

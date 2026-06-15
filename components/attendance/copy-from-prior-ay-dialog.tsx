@@ -1,10 +1,12 @@
 'use client';
 
+import { useMutation } from '@tanstack/react-query';
 import { CalendarRange, Loader2, Sparkles } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -74,7 +76,6 @@ export function CopyFromPriorAyDialog({
 }: CopyFromPriorAyProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
 
   // Default every row checked. Tentative defaults true (per Q4 lock —
   // registrar reviews + un-flags). Toggleable batch-wide.
@@ -145,7 +146,56 @@ export function CopyFromPriorAyDialog({
     setEventSelection(Object.fromEntries(sourceEvents.map((e) => [e.id, v])));
   }
 
-  async function commit() {
+  // Tier-2 mutation (Model A): the POST routes through useMutation (retry: 0 +
+  // consistent error handling); on success we close + router.refresh(). The
+  // mutationFn returns the parsed body so the success toast can read the
+  // route's per-kind copied counts. Route-specific error copy is preserved —
+  // ApiError.message resolves the body's `error` field.
+  const copyMutation = useMutation({
+    mutationFn: (payload: {
+      dayTypeRows: Array<{
+        date: string;
+        dayType: DayType;
+        audience: Audience;
+        label: string;
+      }>;
+      events: Array<{
+        startDate: string;
+        endDate: string;
+        label: string;
+        category: EventCategory;
+        audience: Audience;
+      }>;
+    }) =>
+      apiFetch<{ dayTypeRowsCopied?: number; eventsCopied?: number }>(
+        '/api/attendance/calendar/copy-from-prior-ay',
+        jsonInit('POST', {
+          targetTermId,
+          dayTypeRows: payload.dayTypeRows,
+          events: payload.events,
+          markTentative,
+        })
+      ),
+    onSuccess: (body) => {
+      const total = (body?.dayTypeRowsCopied ?? 0) + (body?.eventsCopied ?? 0);
+      toast.success(
+        `Copied ${total} entr${total === 1 ? 'y' : 'ies'} to ${targetTermLabel}. ${
+          markTentative
+            ? 'Each row is marked tentative — review the dates before locking.'
+            : ''
+        }`.trim()
+      );
+      setOpen(false);
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'save failed');
+    },
+  });
+
+  const saving = copyMutation.isPending;
+
+  function commit() {
     const dayTypeRows = holidayRows
       .filter((r) => r.targetDate && holidaySelection[r.source.id])
       .map((r) => ({
@@ -171,35 +221,7 @@ export function CopyFromPriorAyDialog({
       return;
     }
 
-    setSaving(true);
-    try {
-      const res = await fetch('/api/attendance/calendar/copy-from-prior-ay', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          targetTermId,
-          dayTypeRows,
-          events,
-          markTentative,
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'save failed');
-      const total = (body?.dayTypeRowsCopied ?? 0) + (body?.eventsCopied ?? 0);
-      toast.success(
-        `Copied ${total} entr${total === 1 ? 'y' : 'ies'} to ${targetTermLabel}. ${
-          markTentative
-            ? 'Each row is marked tentative — review the dates before locking.'
-            : ''
-        }`.trim()
-      );
-      setOpen(false);
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'save failed');
-    } finally {
-      setSaving(false);
-    }
+    copyMutation.mutate({ dayTypeRows, events });
   }
 
   if (sourceHolidays.length === 0 && sourceEvents.length === 0) {

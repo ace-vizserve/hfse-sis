@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeAnnualGrade } from '@/lib/compute/annual';
 import {
+  isEnrolledForTerm,
+  termEnrolment,
+} from '@/lib/report-card/enrolment-coverage';
+import {
   resolveNonExaminableLetter,
   deriveAnnualLetterForNonExam,
 } from '@/lib/compute/letter-grade';
@@ -51,6 +55,8 @@ export type Term = {
    * configured a theme (or for T4, which has no comment section).
    */
   virtue_theme: string | null;
+  start_date: string;
+  end_date: string;
 };
 
 export type AttendanceRecord = {
@@ -124,7 +130,7 @@ export async function buildReportCard(
 
   const { data: terms } = await supabase
     .from('terms')
-    .select('id, term_number, label, virtue_theme')
+    .select('id, term_number, label, virtue_theme, start_date, end_date')
     .eq('academic_year_id', ay.id)
     .order('term_number');
   const termList = (terms ?? []) as Term[];
@@ -132,7 +138,7 @@ export async function buildReportCard(
   const { data: enrolments } = await supabase
     .from('section_students')
     .select(
-      `id, enrollment_status, created_at,
+      `id, enrollment_status, created_at, enrollment_date, withdrawal_date,
        section:sections!inner(id, name, form_class_adviser, academic_year_id,
          level:levels(id, code, label, level_type))`
     )
@@ -155,6 +161,8 @@ export async function buildReportCard(
     id: string;
     enrollment_status: string;
     created_at: string | null;
+    enrollment_date: string | null;
+    withdrawal_date: string | null;
     section: SectionLite | SectionLite[] | null;
   };
 
@@ -174,6 +182,8 @@ export async function buildReportCard(
         id: string;
         enrollment_status: string;
         created_at: string | null;
+        enrollment_date: string | null;
+        withdrawal_date: string | null;
         section: SectionLite;
       } => !!e.section && e.section.academic_year_id === ay.id
     );
@@ -182,6 +192,21 @@ export async function buildReportCard(
       ok: false,
       error: { kind: 'not_enrolled_this_ay', ayLabel: ay.label },
     };
+  }
+
+  // Per-term enrolment coverage (KD #67 transfer-safe: union of all rows).
+  // Drives N.A. for terms the student wasn't enrolled in (late enrollee pre-join
+  // / post-withdrawal) on both attendance and grades.
+  const coverage = ayEnrolments.map((e) => ({
+    start: e.enrollment_date,
+    end: e.withdrawal_date,
+  }));
+  const enrolledByTermNumber = new Map<number, boolean>();
+  for (const t of termList) {
+    enrolledByTermNumber.set(
+      t.term_number,
+      isEnrolledForTerm(coverage, t.start_date, t.end_date)
+    );
   }
 
   // Pick the "primary" enrolment for the report header (section name, FCA,
@@ -336,6 +361,15 @@ export async function buildReportCard(
         t4_sheet_id = entry.grading_sheet_id;
       }
     }
+    // Terms the student wasn't enrolled for → N.A., so computeAnnualGrade (and
+    // the non-exam annual) exclude them and renormalize the remaining weights to
+    // 100% instead of treating a missing term as incomplete. quarterly forced
+    // null guards the rare stray-grade-on-a-non-enrolled-term case.
+    for (const t of termList) {
+      if (enrolledByTermNumber.get(t.term_number) === false) {
+        byTerm[t.term_number] = { quarterly: null, letter: null, is_na: true };
+      }
+    }
     const annual_letter_derived = !sub.is_examinable
       ? deriveAnnualLetterForNonExam(
           [1, 2, 3, 4].map((n) => ({
@@ -429,11 +463,11 @@ export async function buildReportCard(
   // student-recorded count from `attendance_records` so the report card
   // doesn't mis-render as 0 / N during early-term setup.
   const levelType = levelTypeForAudienceLookup(level.code);
-  const calendarSchoolDaysByTerm = new Map<string, number>();
+  const calendarDatesByTerm = new Map<string, string[]>();
   await Promise.all(
     termList.map(async (t) => {
       const dates = await getEncodableDatesForTerm(t.id, levelType);
-      calendarSchoolDaysByTerm.set(t.id, dates.length);
+      calendarDatesByTerm.set(t.id, dates);
     })
   );
 
@@ -459,23 +493,35 @@ export async function buildReportCard(
     );
   }
 
-  const attendance: AttendanceRecord[] = termList.map((t) => {
+  const attendance: AttendanceRecord[] = [];
+  for (const t of termList) {
+    const { enrolled, enrolledSchoolDays } = termEnrolment(
+      coverage,
+      t,
+      calendarDatesByTerm.get(t.id) ?? []
+    );
+    // Not enrolled this term → omit the record. The document renders N.A. for a
+    // missing term record, and computeAttendancePercentage then sums only
+    // enrolled terms (do NOT push a null-school_days record — that nulls the
+    // whole cumulative %).
+    if (!enrolled) continue;
     const studentDays = studentDaysByTerm.get(t.id) ?? {
       days_present: null,
       days_late: null,
     };
-    const calendarCount = calendarSchoolDaysByTerm.get(t.id) ?? 0;
+    // Clamped calendar count; fall back to the recorded (already prorated)
+    // rollup count only when the calendar is unconfigured for the term.
     const schoolDays =
-      calendarCount > 0
-        ? calendarCount
+      enrolledSchoolDays > 0
+        ? enrolledSchoolDays
         : (recordedSchoolDaysByTerm.get(t.id) ?? null);
-    return {
+    attendance.push({
       term_id: t.id,
       school_days: schoolDays,
       days_present: studentDays.days_present,
       days_late: studentDays.days_late,
-    };
-  });
+    });
+  }
 
   // KD #49: FCA comments on T1–T3 report cards come from `evaluation_writeups`.
   // The table is uniquely keyed on `(term_id, student_id)` (migration 018) so

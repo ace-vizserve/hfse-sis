@@ -3,8 +3,10 @@
 import { useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, FilePlus2 } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,7 +46,6 @@ export function GenerateSheetsDialog({
   onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = openProp !== undefined;
   const open = isControlled ? openProp : internalOpen;
@@ -53,21 +54,18 @@ export function GenerateSheetsDialog({
     onOpenChange?.(next);
   };
 
-  async function run() {
-    setBusy(true);
-    try {
+  const generateMutation = useMutation({
+    mutationFn: () => {
       const body =
         scope.kind === 'ay'
           ? { ay_id: scope.ayId }
           : { section_id: scope.sectionId };
-      const res = await fetch('/api/grading-sheets/bulk-create', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error ?? 'generation failed');
-
+      return apiFetch<{ inserted?: number }>(
+        '/api/grading-sheets/bulk-create',
+        jsonInit('POST', body)
+      );
+    },
+    onSuccess: (json) => {
       const inserted = Number(json?.inserted ?? 0);
       const label = scope.kind === 'ay' ? scope.ayCode : scope.sectionLabel;
 
@@ -83,11 +81,20 @@ export function GenerateSheetsDialog({
 
       setOpen(false);
       router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'generation failed');
-    } finally {
-      setBusy(false);
-    }
+    },
+    onError: (e) => {
+      // Preserve the original `json?.error ?? 'generation failed'` fallback.
+      const serverError =
+        e instanceof ApiError && e.body && typeof e.body === 'object'
+          ? (e.body as { error?: string }).error
+          : undefined;
+      toast.error(serverError ?? 'generation failed');
+    },
+  });
+  const busy = generateMutation.isPending;
+
+  function run() {
+    generateMutation.mutate();
   }
 
   const scopeLabel = scope.kind === 'ay' ? scope.ayCode : scope.sectionLabel;

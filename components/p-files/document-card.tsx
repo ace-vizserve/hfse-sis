@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import {
   CalendarClock,
   CheckCircle2,
@@ -13,6 +14,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { RejectDialog } from '@/components/p-files/document-validation/reject-dialog';
 
 import { Badge } from '@/components/ui/badge';
@@ -208,7 +210,6 @@ export function DocumentCard({
   activePromise,
 }: DocumentCardProps) {
   const router = useRouter();
-  const [approving, setApproving] = React.useState(false);
   const [rejectOpen, setRejectOpen] = React.useState(false);
 
   const hasFile = status !== 'missing' && status !== 'na';
@@ -216,50 +217,47 @@ export function DocumentCard({
   const showValidate = canWrite && status === 'uploaded';
   const showReclassify = canWrite && status === 'valid';
 
-  async function handleApprove() {
-    setApproving(true);
-    try {
-      const res = await fetch(
-        `/api/sis/students/${encodeURIComponent(enroleeNumber)}/document/${encodeURIComponent(slotKey)}?ay=${encodeURIComponent(ayCode)}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ status: 'Valid' }),
-        }
-      );
-      if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(err.error ?? 'Could not approve the document.');
-        return;
-      }
+  const docUrl = `/api/sis/students/${encodeURIComponent(enroleeNumber)}/document/${encodeURIComponent(slotKey)}?ay=${encodeURIComponent(ayCode)}`;
+
+  // Tier-2 mutations — settled card re-renders via router.refresh() (Model A),
+  // so there's no inline status to optimistically flip. Approve disables its
+  // own buttons via `approveMutation.isPending`. The route's bespoke
+  // `body.error` message is preserved via ApiError.message.
+  const approveMutation = useMutation({
+    mutationFn: () => apiFetch(docUrl, jsonInit('PATCH', { status: 'Valid' })),
+    onSuccess: () => {
       toast.success(`${label} approved.`);
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) =>
       toast.error(
         e instanceof Error ? e.message : 'Could not approve the document.'
-      );
-    } finally {
-      setApproving(false);
-    }
-  }
+      ),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (reason: string) =>
+      apiFetch(
+        docUrl,
+        jsonInit('PATCH', { status: 'Rejected', rejectionReason: reason })
+      ),
+    onSuccess: () => {
+      toast.success(`${label} rejected.`);
+      setRejectOpen(false);
+      router.refresh();
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof Error ? e.message : 'Could not reject the document.'
+      ),
+  });
+
+  const approving = approveMutation.isPending;
 
   async function handleReject(reason: string) {
-    const res = await fetch(
-      `/api/sis/students/${encodeURIComponent(enroleeNumber)}/document/${encodeURIComponent(slotKey)}?ay=${encodeURIComponent(ayCode)}`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status: 'Rejected', rejectionReason: reason }),
-      }
-    );
-    if (!res.ok) {
-      const err = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(err.error ?? 'Could not reject the document.');
-      return;
-    }
-    toast.success(`${label} rejected.`);
-    setRejectOpen(false);
-    router.refresh();
+    await rejectMutation.mutateAsync(reason).catch(() => {
+      // onError already toasted; swallow so the dialog stays open for retry.
+    });
   }
   const reminderText = reminderBadgeText(lastReminderAt);
   const promiseText = promiseBadgeText(activePromise?.promisedUntil);
@@ -350,7 +348,7 @@ export function DocumentCard({
               size="sm"
               variant="default"
               disabled={approving}
-              onClick={() => void handleApprove()}
+              onClick={() => approveMutation.mutate()}
             >
               {approving ? 'Approving…' : 'Approve'}
             </Button>

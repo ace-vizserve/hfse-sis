@@ -9,8 +9,10 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -53,7 +55,6 @@ export function TermDatesEditor({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [drafts, setDrafts] = useState<TermDraft[]>(() => toDrafts(terms));
-  const [savingAll, setSavingAll] = useState(false);
   const [justSavedIds, setJustSavedIds] = useState<Set<string>>(new Set());
 
   function handleOpenChange(next: boolean) {
@@ -87,7 +88,63 @@ export function TermDatesEditor({
     );
   }
 
-  async function saveAll() {
+  const saveAllMutation = useMutation({
+    // Parallel PATCH per dirty term via Promise.allSettled so partial failures
+    // don't block the rest. Aggregation preserved; toast/refresh in onSuccess.
+    mutationFn: async (dirtyDrafts: TermDraft[]) => {
+      const results = await Promise.allSettled(
+        dirtyDrafts.map(async (d) => {
+          await apiFetch(
+            `/api/sis/ay-setup/terms/${d.id}`,
+            jsonInit('PATCH', {
+              startDate: d.start_date || null,
+              endDate: d.end_date || null,
+              gradingLockDate: d.grading_lock_date || null,
+            })
+          ).catch((err) => {
+            // Mirror the original `body?.error ?? 'save failed'` per-term copy.
+            const serverError =
+              err instanceof ApiError &&
+              err.body &&
+              typeof err.body === 'object'
+                ? (err.body as { error?: string }).error
+                : undefined;
+            throw new Error(serverError ?? 'save failed');
+          });
+          return d.id;
+        })
+      );
+
+      const succeeded = new Set<string>();
+      const failures: string[] = [];
+      results.forEach((r, i) => {
+        const d = dirtyDrafts[i];
+        if (r.status === 'fulfilled') {
+          succeeded.add(d.id);
+        } else {
+          failures.push(
+            `${d.label}: ${r.reason instanceof Error ? r.reason.message : 'save failed'}`
+          );
+        }
+      });
+      return { succeeded, failures, total: dirtyDrafts.length };
+    },
+    onSuccess: ({ succeeded, failures, total }) => {
+      setJustSavedIds(succeeded);
+      if (failures.length === 0) {
+        toast.success(`${total} term${total === 1 ? '' : 's'} updated.`);
+        router.refresh();
+        setTimeout(() => setOpen(false), 400);
+      } else {
+        toast.error(failures.join(' · '));
+        // Partial success still worth refreshing so the UI reflects what landed.
+        if (succeeded.size > 0) router.refresh();
+      }
+    },
+  });
+  const savingAll = saveAllMutation.isPending;
+
+  function saveAll() {
     // Pre-validate all dirty drafts — abort cleanly on any date-order issue
     // so we don't half-commit the batch.
     const dirtyDrafts = drafts.filter(isDirty);
@@ -120,53 +177,7 @@ export function TermDatesEditor({
       }
     }
 
-    setSavingAll(true);
-    const results = await Promise.allSettled(
-      dirtyDrafts.map(async (d) => {
-        const res = await fetch(`/api/sis/ay-setup/terms/${d.id}`, {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            startDate: d.start_date || null,
-            endDate: d.end_date || null,
-            gradingLockDate: d.grading_lock_date || null,
-          }),
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body?.error ?? 'save failed');
-        }
-        return d.id;
-      })
-    );
-
-    const succeeded = new Set<string>();
-    const failures: string[] = [];
-    results.forEach((r, i) => {
-      const d = dirtyDrafts[i];
-      if (r.status === 'fulfilled') {
-        succeeded.add(d.id);
-      } else {
-        failures.push(
-          `${d.label}: ${r.reason instanceof Error ? r.reason.message : 'save failed'}`
-        );
-      }
-    });
-
-    setJustSavedIds(succeeded);
-    setSavingAll(false);
-
-    if (failures.length === 0) {
-      toast.success(
-        `${dirtyDrafts.length} term${dirtyDrafts.length === 1 ? '' : 's'} updated.`
-      );
-      router.refresh();
-      setTimeout(() => setOpen(false), 400);
-    } else {
-      toast.error(failures.join(' · '));
-      // Partial success still worth refreshing so the UI reflects what did land.
-      if (succeeded.size > 0) router.refresh();
-    }
+    saveAllMutation.mutate(dirtyDrafts);
   }
 
   const sorted = drafts.slice().sort((a, b) => a.term_number - b.term_number);

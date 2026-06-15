@@ -5,8 +5,10 @@ import { Loader2, Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
@@ -158,18 +160,13 @@ export function EditProfileSheet({
     defaultValues: defaults,
   });
 
-  async function onSubmit(values: ProfileUpdateInput) {
-    try {
-      const res = await fetch(
+  const saveMutation = useMutation({
+    mutationFn: (values: ProfileUpdateInput) =>
+      apiFetch<{ changed?: number }>(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/profile?ay=${encodeURIComponent(ayCode)}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(values),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Failed to save');
+        jsonInit('PATCH', values)
+      ),
+    onSuccess: (body) => {
       const changed = body.changed as number | undefined;
       toast.success(
         changed === 0
@@ -178,9 +175,16 @@ export function EditProfileSheet({
       );
       setOpen(false);
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'Failed to save');
-    }
+    },
+  });
+
+  // Awaited inside RHF's handleSubmit so `formState.isSubmitting` is the busy
+  // signal.
+  async function onSubmit(values: ProfileUpdateInput) {
+    await saveMutation.mutateAsync(values).catch(() => {});
   }
 
   const busy = form.formState.isSubmitting;

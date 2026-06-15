@@ -2,8 +2,10 @@
 
 import { Pencil } from 'lucide-react';
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -41,7 +43,26 @@ export function AnnualLetterInput({
   const [saved, setSaved] = useState<string | null>(initialValue);
   const [selected, setSelected] = useState<string | null>(null);
   const [note, setNote] = useState('');
-  const [saving, setSaving] = useState(false);
+
+  // Tier-2 mutation: the inline value has no optimistic local state (`saved`
+  // only updates after the PATCH succeeds), so we don't add optimism — we just
+  // route the existing fetch through useMutation. mutateAsync lets doSave keep
+  // its exact early-return-on-failure semantics. The 'Failed to save' fallback
+  // is preserved (ApiError.message already resolves to body.error).
+  const saveMutation = useMutation({
+    mutationFn: (vars: {
+      value: string | null;
+      correctionNote: string | null;
+    }) =>
+      apiFetch(
+        `/api/grading-sheets/${sheetId}/entries/${entryId}/annual-letter`,
+        jsonInit('PATCH', {
+          annual_letter_grade: vars.value,
+          correction_note: vars.correctionNote,
+        })
+      ),
+  });
+  const saving = saveMutation.isPending;
 
   const isFirstEntry = saved === null;
   const showNoteField =
@@ -57,31 +78,16 @@ export function AnnualLetterInput({
   }
 
   async function doSave(value: string | null, correctionNote: string | null) {
-    setSaving(true);
     try {
-      const res = await fetch(
-        `/api/grading-sheets/${sheetId}/entries/${entryId}/annual-letter`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            annual_letter_grade: value,
-            correction_note: correctionNote,
-          }),
-        }
-      );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        toast.error((body as { error?: string })?.error ?? 'Failed to save');
-        return;
-      }
+      await saveMutation.mutateAsync({ value, correctionNote });
       setSaved(value);
       setNote('');
       setOpen(false);
-    } catch {
-      toast.error('Failed to save');
-    } finally {
-      setSaving(false);
+    } catch (e) {
+      // Non-2xx (ApiError) surfaces the route's message (body.error ?? 'Failed
+      // to save'); any other failure (network) keeps the generic 'Failed to
+      // save' exactly as before.
+      toast.error(e instanceof ApiError ? e.message : 'Failed to save');
     }
   }
 

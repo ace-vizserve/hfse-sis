@@ -1,10 +1,12 @@
 'use client';
 
+import { useMutation } from '@tanstack/react-query';
 import { CalendarClock, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
@@ -51,7 +53,6 @@ export function PromiseDialog({
 }: PromiseDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [promisedUntil, setPromisedUntil] = useState<string>(
     isoDateOffset(DEFAULT_HORIZON_DAYS)
   );
@@ -65,41 +66,38 @@ export function PromiseDialog({
     }
   }
 
-  async function handleSubmit() {
-    if (!promisedUntil) {
-      toast.error('Pick a promise date');
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await fetch(
+  // Tier-2 mutation. The route's bespoke `body.error` surfaces via
+  // ApiError.message, preserving the 'Failed to record promise' fallback.
+  const promiseMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(
         `/api/p-files/${encodeURIComponent(enroleeNumber)}/promise`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            slotKey,
-            promisedUntil,
-            note: note.trim() || undefined,
-            module,
-          }),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(body.error ?? 'Failed to record promise');
-        return;
-      }
+        jsonInit('PATCH', {
+          slotKey,
+          promisedUntil,
+          note: note.trim() || undefined,
+          module,
+        })
+      ),
+    onSuccess: () => {
       toast.success(
         `Promise recorded — slot marked as 'To follow' through ${promisedUntil}`
       );
       setOpen(false);
       router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to record promise');
-    } finally {
-      setBusy(false);
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Failed to record promise'),
+  });
+
+  const busy = promiseMutation.isPending;
+
+  function handleSubmit() {
+    if (!promisedUntil) {
+      toast.error('Pick a promise date');
+      return;
     }
+    promiseMutation.mutate();
   }
 
   return (

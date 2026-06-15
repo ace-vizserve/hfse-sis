@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Loader2, UserCheck } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -50,7 +52,6 @@ export function CopyTeacherAssignmentsDialog({
     onOpenChange?.(next);
   };
   const [sourceAy, setSourceAy] = useState(sourceOptions[0]?.ayCode ?? '');
-  const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<null | {
     copied: number;
     skipped_no_section: number;
@@ -58,18 +59,20 @@ export function CopyTeacherAssignmentsDialog({
     source_total: number;
   }>(null);
 
-  async function commit() {
-    if (!sourceAy) return;
-    setSubmitting(true);
-    setResult(null);
-    try {
-      const res = await fetch('/api/sis/ay-setup/copy-teacher-assignments', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sourceAyCode: sourceAy, targetAyCode }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'copy failed');
+  type CopyResponse = {
+    copied?: number;
+    skipped_no_section?: number;
+    skipped_already_existed?: number;
+    source_total?: number;
+  };
+
+  const copyMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<CopyResponse>(
+        '/api/sis/ay-setup/copy-teacher-assignments',
+        jsonInit('POST', { sourceAyCode: sourceAy, targetAyCode })
+      ),
+    onSuccess: (body) => {
       setResult({
         copied: Number(body.copied ?? 0),
         skipped_no_section: Number(body.skipped_no_section ?? 0),
@@ -80,11 +83,22 @@ export function CopyTeacherAssignmentsDialog({
         `Copied ${body.copied ?? 0} teacher assignment${(body.copied ?? 0) === 1 ? '' : 's'} from ${sourceAy}.`
       );
       router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'copy failed');
-    } finally {
-      setSubmitting(false);
-    }
+    },
+    onError: (e) => {
+      // Preserve the original fallback: `body?.error ?? 'copy failed'`.
+      const serverError =
+        e instanceof ApiError && e.body && typeof e.body === 'object'
+          ? (e.body as { error?: string }).error
+          : undefined;
+      toast.error(serverError ?? 'copy failed');
+    },
+  });
+  const submitting = copyMutation.isPending;
+
+  function commit() {
+    if (!sourceAy) return;
+    setResult(null);
+    copyMutation.mutate();
   }
 
   const disabled = sourceOptions.length === 0;

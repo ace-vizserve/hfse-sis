@@ -1,11 +1,13 @@
 'use client';
 
+import { useMutation } from '@tanstack/react-query';
 import { Clock, Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { EditDiscountCodeDialog } from '@/components/sis/edit-discount-code-dialog';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { isExpired } from '@/components/ui/discount-code-status-badge';
 import {
   AlertDialog,
@@ -38,7 +40,6 @@ function todayISO(): string {
 export function DiscountCodeRowActions({ ayCode, code }: Props) {
   const router = useRouter();
   const [expireOpen, setExpireOpen] = useState(false);
-  const [expiring, setExpiring] = useState(false);
 
   const alreadyExpired = isExpired(code.endDate);
 
@@ -52,27 +53,30 @@ export function DiscountCodeRowActions({ ayCode, code }: Props) {
     details: code.details,
   };
 
-  async function handleExpire() {
-    setExpiring(true);
-    try {
-      const res = await fetch(
+  // Tier-2: no local optimistic value — expire just mutates then
+  // router.refresh() so the server re-renders the new end date. `isPending`
+  // drives the disable; the route's `body.error` is preserved via
+  // ApiError.message (fallback 'Failed to expire code' unchanged).
+  const expireMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(
         `/api/sis/discount-codes/${encodeURIComponent(String(code.id))}?ay=${encodeURIComponent(ayCode)}&op=expire`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ endDate: todayISO() }),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Failed to expire code');
+        jsonInit('PATCH', { endDate: todayISO() })
+      ),
+    onSuccess: () => {
       toast.success('Code expired');
       setExpireOpen(false);
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'Failed to expire code');
-    } finally {
-      setExpiring(false);
-    }
+    },
+  });
+
+  const expiring = expireMutation.isPending;
+
+  function handleExpire() {
+    expireMutation.mutate();
   }
 
   return (

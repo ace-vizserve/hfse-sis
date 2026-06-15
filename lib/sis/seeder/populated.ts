@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { ADMISSIONS_MINIMAL_COUNT } from './admissions-minimal';
 import { seedDemoExtras, type DemoExtrasResult } from './demo-extras';
 import { seedMovements } from './movements';
 import { seedEdgeCases, type EdgeCaseResult } from './edge-cases';
@@ -26,6 +27,11 @@ import { DOCUMENT_SLOTS, OPTIONAL_DOCUMENT_SLOT_KEYS } from '@/lib/sis/queries';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 
 import { pickNames } from './names';
+
+// Seed actor for synthetic audit rows (movements feed, late-enrol transitions).
+// Matches the literal in lib/sis/seeder/edge-cases.ts (SEED_ACTOR_EMAIL) so the
+// movements feed renders a consistent actor across all seeded enrolment events.
+const SEEDER_ACTOR_EMAIL = 'registrar.seed@hfse.test';
 
 // Populated seeder — layers on top of `ensureTestStructure`. Once structure
 // + students are in place, this fills grade entries, attendance, evaluation
@@ -411,23 +417,37 @@ type EnrolledPersona = {
   applicationStatus: ApplicationStatus;
 };
 
+// Persona-quirk index ranges over the post-sort enrolled persona list. Shared
+// by buildEnrolledPersonas (pipeline-status quirks) and seedEnrolledAdmissionsRows
+// (documentStatus + backdate quirks) so the two complementary halves of the same
+// invariant can never silently drift.
+const PERSONA_CONDITIONAL_RANGE = { start: 0, end: 3 } as const;
+const PERSONA_VERIFIED_DOCS_RANGE = { start: 3, end: 8 } as const;
+const PERSONA_WITHDRAWN_RANGE = { start: 8, end: 10 } as const;
+
 // Generates the enrolled personas deterministically from the per-section
-// config — the same global-sequence H270{ayDigits}{seq4} numbering + per-section
-// pickNames as the legacy seedTestAy, so student_numbers are byte-for-byte
-// identical and stable across re-runs. Personas are sorted by student_number so
-// the persona-quirk ranges (Conditional / Withdrawn / Verified-docs) and the
-// enroleeNumber sequence are deterministic regardless of section iteration order.
+// config. IDs mirror the real portal scheme: `E{ay2}{suf4}` / `H{ay2}{suf4}`
+// where ay2 = the AY's last two digits (→ "99" for AY9999) and BOTH the
+// enrolee- and student-number for a given persona share the SAME suf4 (real:
+// E990114 ↔ H990114). The suffix is offset past the admissions-minimal funnel
+// block (ADMISSIONS_MINIMAL_COUNT) so the enrolled cohort starts at the id that
+// block's inserts leave off (E990031 ↔ apps.id 31) — contiguous, no collision,
+// and tracking the apps.id SERIAL the same way real rows do.
+//
+// Personas are sorted by a STABLE name+section key (independent of the final
+// number) BEFORE both numbers are assigned from the same post-sort index, so
+// the enrolee/student suffixes match AND the persona-quirk ranges (Conditional
+// / Withdrawn / Verified-docs) stay deterministic across re-runs regardless of
+// section iteration order.
 function buildEnrolledPersonas(
   testAy: { id: string; ay_code: string },
   config: EnrolledSection[]
 ): EnrolledPersona[] {
-  const ayDigits = testAy.ay_code.replace(/^AY/i, '');
-  const upperPrefix = prefixFor(testAy.ay_code).toUpperCase();
+  const ayPre2 = testAy.ay_code.slice(-2);
 
-  // First pass: mint student_number + names using the SAME global sequence and
-  // per-section pickNames key as seedTestAy in students.ts.
+  // First pass: pick names per-section (same pickNames key as before so the
+  // chosen names are byte-for-byte stable), WITHOUT yet assigning any number.
   type Base = {
-    studentNumber: string;
     firstName: string;
     lastName: string;
     middleName: string | null;
@@ -437,17 +457,13 @@ function buildEnrolledPersonas(
     levelLabel: string;
   };
   const base: Base[] = [];
-  let globalSeq = 0;
   for (const section of config) {
     const names = pickNames(
       `${testAy.ay_code}:${section.sectionId}`,
       section.count
     );
     for (let i = 0; i < section.count; i++) {
-      globalSeq += 1;
-      const seq4 = String(globalSeq).padStart(4, '0');
       base.push({
-        studentNumber: `H270${ayDigits}${seq4}`,
         firstName: names[i].first_name,
         lastName: names[i].last_name,
         middleName: null, // pickNames yields first/last only — same as seedTestAy
@@ -459,8 +475,15 @@ function buildEnrolledPersonas(
     }
   }
 
-  // Sort by student_number for stable persona-range + enroleeNumber assignment.
-  base.sort((a, b) => a.studentNumber.localeCompare(b.studentNumber));
+  // Sort by a STABLE key (lastName, firstName, sectionId) — does NOT depend on
+  // the final number — so both studentNumber and enroleeNumber can be assigned
+  // from the same post-sort index and therefore share the same suffix.
+  base.sort(
+    (a, b) =>
+      a.lastName.localeCompare(b.lastName) ||
+      a.firstName.localeCompare(b.firstName) ||
+      a.sectionId.localeCompare(b.sectionId)
+  );
 
   // Persona quirks layered on the "everything Enrolled" baseline (counted from
   // the start of the sorted array so they're deterministic across re-seeds):
@@ -468,21 +491,28 @@ function buildEnrolledPersonas(
   //   - 2 Withdrawn post-enrollment — exercises the withdrawal timeline. These
   //     are EXCLUDED from the sync roster so they never become active enrolments.
   // (Verified-docs is a documentStatus quirk handled in seedEnrolledAdmissionsRows.)
-  const CONDITIONAL_RANGE = { start: 0, end: 3 };
-  const WITHDRAWN_RANGE = { start: 8, end: 10 };
   const statusFor = (i: number): ApplicationStatus => {
-    if (i >= CONDITIONAL_RANGE.start && i < CONDITIONAL_RANGE.end)
+    if (
+      i >= PERSONA_CONDITIONAL_RANGE.start &&
+      i < PERSONA_CONDITIONAL_RANGE.end
+    )
       return 'Enrolled (Conditional)';
-    if (i >= WITHDRAWN_RANGE.start && i < WITHDRAWN_RANGE.end)
+    if (i >= PERSONA_WITHDRAWN_RANGE.start && i < PERSONA_WITHDRAWN_RANGE.end)
       return 'Withdrawn';
     return 'Enrolled';
   };
 
-  return base.map((b, i) => ({
-    ...b,
-    enroleeNumber: `${upperPrefix}-ENR-${String(i + 1).padStart(4, '0')}`,
-    applicationStatus: statusFor(i),
-  }));
+  return base.map((b, i) => {
+    // Offset past the admissions-minimal funnel block so suffixes are
+    // contiguous with — and track — the apps.id SERIAL (id 31 → suf4 0031).
+    const suf4 = String(ADMISSIONS_MINIMAL_COUNT + i + 1).padStart(4, '0');
+    return {
+      ...b,
+      studentNumber: `H${ayPre2}${suf4}`,
+      enroleeNumber: `E${ayPre2}${suf4}`,
+      applicationStatus: statusFor(i),
+    };
+  });
 }
 
 // For every (grading_sheet × section_student) pair in T1, insert a
@@ -560,27 +590,40 @@ async function seedGradeEntries(
   );
   const targetSheets = sheets.filter((s) => targetTermIds.includes(s.term_id));
 
-  // Pull every section_student per section we're about to seed.
+  // Pull every section_student per section we're about to seed. Carry
+  // late_enrollee_term_number so we never write scored grades for terms BEFORE
+  // a late enrollee joined (correct-by-construction; matches real behaviour —
+  // no grade entry exists for pre-join terms). Re-reading the column on every
+  // run keeps the skip correct on a top-up.
   const sectionIds = [...new Set(targetSheets.map((s) => s.section_id))];
   const { data: enrolments } = await service
     .from('section_students')
-    .select('id, section_id, student_id')
+    .select('id, section_id, student_id, late_enrollee_term_number')
     .in('section_id', sectionIds);
   const enrolmentsBySection = new Map<
     string,
     Array<{ id: string; student_id: string }>
   >();
+  const lateJoinByEnrolmentId = new Map<string, number>();
   for (const e of (enrolments ?? []) as Array<{
     id: string;
     section_id: string;
     student_id: string;
+    late_enrollee_term_number: number | null;
   }>) {
     if (!enrolmentsBySection.has(e.section_id))
       enrolmentsBySection.set(e.section_id, []);
     enrolmentsBySection
       .get(e.section_id)!
       .push({ id: e.id, student_id: e.student_id });
+    if (e.late_enrollee_term_number != null)
+      lateJoinByEnrolmentId.set(e.id, e.late_enrollee_term_number);
   }
+
+  // term_id → term_number, so the per-sheet skip can compare against the
+  // student's join term.
+  const termNumberByTermId = new Map<string, number>();
+  for (const t of terms) termNumberByTermId.set(t.id, t.term_number);
 
   // Pull weights per subject_config_id (needed for computeQuarterly).
   const configIds = [...new Set(targetSheets.map((s) => s.subject_config_id))];
@@ -796,6 +839,16 @@ async function seedGradeEntries(
     const sheetTermNumber = termById.get(sheet.term_id)?.term_number ?? 1;
 
     for (const e of enrolments) {
+      // Late enrollee: create NO grade entry for terms BEFORE their join term.
+      // Matches real behaviour (the report card shows N.A. and the grading
+      // sheet has no scored row for pre-join terms). Correct-by-construction +
+      // re-run-safe (the join term is read from section_students each run).
+      const jt = lateJoinByEnrolmentId.get(e.id);
+      const sheetTermNum = termNumberByTermId.get(sheet.term_id);
+      // Only skip when the sheet's term is KNOWN and strictly before the join
+      // term — an unresolvable term_id must never silently drop a grade.
+      if (jt != null && sheetTermNum != null && sheetTermNum < jt) continue;
+
       // One per-entry timestamp shared by created_at AND updated_at — mirrors
       // a real save (the entries route stamps updated_at = now() each PATCH).
       const entryTimestamp = createdAtForTerm(sheet.term_id);
@@ -956,11 +1009,22 @@ async function seedAttendanceSummary(
   if (sectionIds.length === 0) return { daily: 0, rollups: 0 };
   const { data: enrolments } = await service
     .from('section_students')
-    .select('id')
+    .select('id, enrollment_date')
     .in('section_id', sectionIds);
-  const enrolList = ((enrolments ?? []) as Array<{ id: string }>).map(
-    (e) => e.id
-  );
+  const enrolRowsAtt = (enrolments ?? []) as Array<{
+    id: string;
+    enrollment_date: string | null;
+  }>;
+  const enrolList = enrolRowsAtt.map((e) => e.id);
+  // Don't seed daily rows before a student's enrollment_date — for active
+  // students enrollment_date = T1 start so there's no effect, but for late
+  // enrollees this keeps the daily ledger consistent with the prorated rollup
+  // (KD #113: recompute filters date >= enrollment_date). Re-read each run.
+  const enrollDateByEnrolmentId = new Map<string, string>();
+  for (const e of enrolRowsAtt) {
+    if (e.enrollment_date)
+      enrollDateByEnrolmentId.set(e.id, e.enrollment_date.slice(0, 10));
+  }
   if (enrolList.length === 0) {
     console.warn(
       '[populated seeder] attendance: no enrolments in test AY — skipping'
@@ -1046,7 +1110,11 @@ async function seedAttendanceSummary(
       ex_reason: ExReason | null;
     }> = [];
     for (const enrolmentId of enrolList) {
+      const joinDate = enrollDateByEnrolmentId.get(enrolmentId);
       for (const date of schoolDays) {
+        // Skip pre-enrollment days (string compare on yyyy-mm-dd). For active
+        // students joinDate = T1 start so nothing is skipped.
+        if (joinDate && date < joinDate) continue;
         const picked = pickStatus();
         allRows.push({
           section_student_id: enrolmentId,
@@ -2748,6 +2816,7 @@ async function seedEnrolledAdmissionsRows(
   // shape the original section_students-derived mapping produced (minus the
   // sectionStudentId, which no longer exists at this point).
   const rows = personas.map((p) => ({
+    enroleeNumber: p.enroleeNumber,
     studentNumber: p.studentNumber,
     firstName: p.firstName,
     lastName: p.lastName,
@@ -2760,7 +2829,19 @@ async function seedEnrolledAdmissionsRows(
   if (rows.length === 0) return 0;
 
   const todayIso = new Date().toISOString().slice(0, 10);
-  const upperPrefix = prefix.toUpperCase();
+
+  // "LASTNAME, FIRSTNAME [MIDDLE]" uppercase — matches the real portal-written
+  // enroleeFullName / status.enroleeName (e.g. "GUEVARRA, ACE").
+  const fullNameOf = (
+    first: string,
+    last: string,
+    middle: string | null
+  ): string =>
+    `${last}, ${[first, middle].filter(Boolean).join(' ')}`.toUpperCase();
+
+  // Seeder actor stamped on the per-stage {stage}Updatedby trail, matching
+  // admissions-minimal's SEEDER_ACTOR.
+  const SEEDER_ACTOR = 'seeder@demo.com';
 
   // Persona quirks layered on top of the default "everything Finished, status
   // Enrolled" baseline:
@@ -2771,12 +2852,11 @@ async function seedEnrolledAdmissionsRows(
   //   - 2 are Withdrawn post-enrollment (~30 days back) so the
   //     <StudentLifecycleTimeline> branches into the withdrawal path.
   // The Conditional/Withdrawn split is decided in buildEnrolledPersonas (carried
-  // on persona.applicationStatus); VERIFIED_DOCS stays an index range here
-  // since it's a documentStatus quirk, not a pipeline-status one. Indices align
-  // because both functions iterate the same student_number-sorted persona list.
-  const VERIFIED_DOCS_RANGE = { start: 3, end: 8 };
-  const WITHDRAWN_RANGE = { start: 8, end: 10 };
-
+  // on persona.applicationStatus); the verified-docs quirk stays an index range
+  // here since it's a documentStatus quirk, not a pipeline-status one. Indices
+  // align because this function iterates the same (already name-sorted) persona
+  // list buildEnrolledPersonas returned; the ranges are the shared module-level
+  // PERSONA_* constants so the two halves cannot drift.
   const personaApplicationStatus = (i: number): ApplicationStatus =>
     personas[i].applicationStatus;
 
@@ -2786,7 +2866,8 @@ async function seedEnrolledAdmissionsRows(
   // they enrolled before withdrawing.
   const personaStageFill = (i: number) => {
     const isVerified =
-      i >= VERIFIED_DOCS_RANGE.start && i < VERIFIED_DOCS_RANGE.end;
+      i >= PERSONA_VERIFIED_DOCS_RANGE.start &&
+      i < PERSONA_VERIFIED_DOCS_RANGE.end;
     return {
       registrationStatus: 'Finished',
       documentStatus: isVerified ? 'Verified' : 'Finished',
@@ -2815,7 +2896,7 @@ async function seedEnrolledAdmissionsRows(
   const monthStartDay = 1;
   const monthMaxDay = now.getDate();
   const personaUpdatedDate = (i: number): string => {
-    if (i >= WITHDRAWN_RANGE.start && i < WITHDRAWN_RANGE.end)
+    if (i >= PERSONA_WITHDRAWN_RANGE.start && i < PERSONA_WITHDRAWN_RANGE.end)
       return thirtyDaysAgo;
     if (enrolledRand() < 0.35) {
       const day = monthStartDay + Math.floor(enrolledRand() * monthMaxDay);
@@ -2834,7 +2915,7 @@ async function seedEnrolledAdmissionsRows(
   // averages of healthy enrol times.
   const personaCreatedAtIso = (i: number): string => {
     const daysAgo =
-      i >= WITHDRAWN_RANGE.start && i < WITHDRAWN_RANGE.end
+      i >= PERSONA_WITHDRAWN_RANGE.start && i < PERSONA_WITHDRAWN_RANGE.end
         ? 60 + Math.floor(enrolledRand() * 60) // 60–120d for withdrawn
         : 14 + Math.floor(enrolledRand() * 76); // 14–90d for active
     return new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
@@ -2873,6 +2954,47 @@ async function seedEnrolledAdmissionsRows(
     };
   });
 
+  // Application-experience feedback (KD #102) + pre-course counselling, with
+  // realistic variety so the Admissions feedback page and the pre-course cohort
+  // have data. Uses its own rand stream so the demographic/medical/parent fields
+  // above stay byte-for-byte stable. Each branch is computed unconditionally so
+  // the per-row PRNG consumption is constant (deterministic across re-runs).
+  const fpRand = mulberry32(hashString(`${testAy.ay_code}:feedback-precourse`));
+  const isoBackdate = (days: number): string =>
+    new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const FEEDBACK_COMMENTS = [
+    'The online form was clear and easy to follow.',
+    'Took a while to upload all the documents, but manageable.',
+    'Very intuitive — completed the whole application in one sitting.',
+    'A few questions felt repetitive, otherwise a smooth process.',
+    'Loved the progress indicator; always knew what was left.',
+    'Wished I could save and resume the form more easily.',
+  ];
+  const feedbackPrecourse = rows.map(() => {
+    const hasFeedback = fpRand() < 0.65; // ~65% leave optional feedback
+    const RATING_POOL = [5, 5, 5, 4, 4, 4, 3, 2, 1]; // positive-skewed 1–5
+    const rating = RATING_POOL[Math.floor(fpRand() * RATING_POOL.length)];
+    const wantsComment = fpRand() < 0.45;
+    const comment =
+      FEEDBACK_COMMENTS[Math.floor(fpRand() * FEEDBACK_COMMENTS.length)];
+    const consent = fpRand() < 0.6;
+    const fbAt = isoBackdate(7 + Math.floor(fpRand() * 90));
+    // Pre-course counselling tri-state: ~85% Yes (with counselling + ack dates),
+    // ~10% No, ~5% not-yet (null) — mirrors the pre-course route's model.
+    const pcRoll = fpRand();
+    const pcDays = 10 + Math.floor(fpRand() * 60);
+    const pcYes = pcRoll < 0.85;
+    return {
+      feedbackRating: hasFeedback ? rating : null,
+      feedbackComments: hasFeedback ? (wantsComment ? comment : '') : null,
+      feedbackConsent: hasFeedback ? consent : null,
+      feedbackSubmittedAt: hasFeedback ? fbAt : null,
+      preCourseAnswer: pcYes ? 'Yes' : pcRoll < 0.95 ? 'No' : null,
+      preCourseDate: pcYes ? isoBackdate(pcDays) : null,
+      preCourseAcknowledgedAt: pcYes ? isoBackdate(pcDays - 1) : null,
+    };
+  });
+
   const appInserts = rows.map((r, i) => {
     const m = personaMeta[i];
     const parentFields = buildParentFields(
@@ -2887,15 +3009,13 @@ async function seedEnrolledAdmissionsRows(
     );
     const medical = buildMedicalData(enrolledRand);
     return {
-      enroleeNumber: `${upperPrefix}-ENR-${String(i + 1).padStart(4, '0')}`,
+      enroleeNumber: r.enroleeNumber,
       studentNumber: r.studentNumber,
       category: m.category,
       firstName: r.firstName,
       lastName: r.lastName,
       middleName: r.middleName,
-      enroleeFullName: [r.firstName, r.middleName, r.lastName]
-        .filter(Boolean)
-        .join(' '),
+      enroleeFullName: fullNameOf(r.firstName, r.lastName, r.middleName),
       levelApplied: r.levelLabel,
       classType: m.classType,
       paymentOption: m.paymentOption,
@@ -2917,6 +3037,7 @@ async function seedEnrolledAdmissionsRows(
       residenceHistory: m.isStpApplicant ? STP_RESIDENCE_HISTORY : null,
       socialMediaConsent: m.socialMediaConsent,
       created_at: personaCreatedAtIso(i),
+      ...feedbackPrecourse[i],
       ...demographics,
       ...medical,
       ...parentFields,
@@ -2925,8 +3046,17 @@ async function seedEnrolledAdmissionsRows(
   const statusInserts = rows.map((r, i) => {
     const fill = personaStageFill(i);
     const m = personaMeta[i];
+    // Single backdate for the whole stage trail of this row, so the per-stage
+    // {stage}UpdatedDate values are internally consistent (real rows stamp them
+    // around the enrolment moment). Column casing intentionally mirrors the live
+    // schema's inconsistency (see the real-data dump): registration uses
+    // `registrationUpdateDate`, the rest use `{stage}UpdatedDate`; all use the
+    // lowercase `Updatedby` except `applicationUpdatedBy` (capital B).
+    const stageDate = personaUpdatedDate(i);
     return {
-      enroleeNumber: `${upperPrefix}-ENR-${String(i + 1).padStart(4, '0')}`,
+      enroleeNumber: r.enroleeNumber,
+      enroleeName: fullNameOf(r.firstName, r.lastName, r.middleName),
+      enrolmentDate: stageDate,
       // SIS-side pipeline status — Enrolled / Enrolled (Conditional) / Withdrawn
       // per the persona ranges.
       applicationStatus: personaApplicationStatus(i),
@@ -2936,12 +3066,29 @@ async function seedEnrolledAdmissionsRows(
       classLevel: r.levelLabel,
       classSection: r.sectionName,
       classStatus: 'Finished',
-      applicationUpdatedDate: personaUpdatedDate(i),
+      classUpdatedDate: stageDate,
+      classUpdatedby: SEEDER_ACTOR,
+      applicationUpdatedDate: stageDate,
+      applicationUpdatedBy: SEEDER_ACTOR,
+      // Every completed stage stamps its own updated date + actor. These
+      // personas are all fully enrolled, so every stage below is set.
       registrationStatus: fill.registrationStatus,
+      registrationUpdateDate: stageDate,
+      registrationUpdatedby: SEEDER_ACTOR,
       documentStatus: fill.documentStatus,
+      documentUpdatedDate: stageDate,
+      documentUpdatedby: SEEDER_ACTOR,
       assessmentStatus: fill.assessmentStatus,
+      assessmentUpdatedDate: stageDate,
+      assessmentUpdatedby: SEEDER_ACTOR,
       contractStatus: fill.contractStatus,
+      contractUpdatedDate: stageDate,
+      contractUpdatedby: SEEDER_ACTOR,
       feeStatus: fill.feeStatus,
+      feeUpdatedDate: stageDate,
+      feeUpdatedby: SEEDER_ACTOR,
+      // Post-enrolment stages stay null for a just-enrolled student (real dump
+      // shows supplies/orientation null) — and classAY stays null.
     };
   });
 
@@ -3143,17 +3290,59 @@ async function syncEnrolledPersonas(
     for (const r of resolved) idByNumber.set(r.student_number, r.id);
   }
 
-  // ---- enrollment_date = the AY's T1 start_date (NOT today — today would
-  //      break KD #113 attendance proration). ----
-  const { data: t1Row } = await service
+  // ---- enrollment_date = the AY's T1 start_date for on-time students (NOT
+  //      today — today would break KD #113 attendance proration). Late
+  //      enrollees get their join-term start + 7 days. Fetch ALL terms so we
+  //      can map a join-term number → start_date. ----
+  const { data: allTermRows } = await service
     .from('terms')
-    .select('start_date')
+    .select('id, term_number, start_date')
     .eq('academic_year_id', testAy.id)
-    .eq('term_number', 1)
-    .maybeSingle();
+    .order('term_number');
+  const allTerms = (allTermRows ?? []) as Array<{
+    id: string;
+    term_number: number;
+    start_date: string | null;
+  }>;
+  const startDateByTermNumber = new Map<number, string>();
+  for (const t of allTerms) {
+    if (t.start_date) startDateByTermNumber.set(t.term_number, t.start_date);
+  }
   const enrollDate =
-    (t1Row as { start_date: string } | null)?.start_date ??
-    new Date().toISOString().slice(0, 10);
+    startDateByTermNumber.get(1) ?? new Date().toISOString().slice(0, 10);
+
+  // ---- Deterministically designate 4 late enrollees from the syncable list.
+  //      Done UP FRONT (before grade/attendance seeding) so those seeders never
+  //      create scored grades or daily attendance for terms BEFORE the student
+  //      joined — correct-by-construction and re-run-safe (the late designation
+  //      lives on section_students.late_enrollee_term_number, which the grade
+  //      and attendance seeders re-read on every run). Index clearance (Withdrawn
+  //      personas are already filtered out of `syncable`, so positions shift):
+  //        syncable[0..2]  = Enrolled (Conditional) quirk — avoid
+  //        syncable[3..7]  = verified-docs quirk (PERSONA_VERIFIED_DOCS_RANGE) — avoid
+  //        syncable[8..9]  = first post-gap Enrolled (= full[10..11])
+  //      First clean landing zone is syncable[10..] (= full[12..]); the picks
+  //      below stay there so they never collide with another quirk. ----
+  const lateJoinByStudentNumber = new Map<string, number>(); // studentNumber → join term number
+  const latePicks: Array<[number, number]> = [
+    // [syncable index, join term number]
+    [10, 2],
+    [11, 2],
+    [12, 3],
+    [13, 3],
+  ];
+  for (const [idx, termNum] of latePicks) {
+    const p = syncable[idx];
+    if (p) lateJoinByStudentNumber.set(p.studentNumber, termNum);
+  }
+  // Compute "join term start + 7 days" as a SGT yyyy-mm-dd string.
+  const lateEnrollDateFor = (joinTermNum: number): string | null => {
+    const startStr = startDateByTermNumber.get(joinTermNum);
+    if (!startStr) return null;
+    const d = new Date(startStr);
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().slice(0, 10);
+  };
 
   // ---- Commit section_students from the plan's enrollment_inserts. ----
   let enrolmentsInserted = 0;
@@ -3161,8 +3350,9 @@ async function syncEnrolledPersonas(
     section_id: string;
     student_id: string;
     index_number: number;
-    enrollment_status: 'active';
+    enrollment_status: 'active' | 'late_enrollee';
     enrollment_date: string;
+    late_enrollee_term_number: number | null;
   }> = [];
   for (const e of plan.enrollment_inserts) {
     const studentId = idByNumber.get(e.student_number);
@@ -3172,13 +3362,28 @@ async function syncEnrolledPersonas(
       );
       continue;
     }
-    enrolRows.push({
-      section_id: e.section_id,
-      student_id: studentId,
-      index_number: e.index_number,
-      enrollment_status: 'active',
-      enrollment_date: enrollDate,
-    });
+    const joinTermNum = lateJoinByStudentNumber.get(e.student_number);
+    const lateDate =
+      joinTermNum != null ? lateEnrollDateFor(joinTermNum) : null;
+    if (joinTermNum != null && lateDate) {
+      enrolRows.push({
+        section_id: e.section_id,
+        student_id: studentId,
+        index_number: e.index_number,
+        enrollment_status: 'late_enrollee',
+        enrollment_date: lateDate,
+        late_enrollee_term_number: joinTermNum,
+      });
+    } else {
+      enrolRows.push({
+        section_id: e.section_id,
+        student_id: studentId,
+        index_number: e.index_number,
+        enrollment_status: 'active',
+        enrollment_date: enrollDate,
+        late_enrollee_term_number: null,
+      });
+    }
   }
   if (enrolRows.length > 0) {
     const { data, error } = await service
@@ -3192,6 +3397,53 @@ async function syncEnrolledPersonas(
       );
     } else {
       enrolmentsInserted = data?.length ?? 0;
+      // The insert preserves enrolRows order, so the returned ids align 1:1.
+      // For each late enrollee, write ONE idempotent movements audit row so
+      // /records/movements surfaces the late-enrol (it reads
+      // enrolment.metadata.update rows with lateEnrolleeTransition=true).
+      const newIds = (data ?? []) as Array<{ id: string }>;
+      for (let i = 0; i < enrolRows.length; i++) {
+        const row = enrolRows[i];
+        const newId = newIds[i]?.id;
+        if (
+          !newId ||
+          row.enrollment_status !== 'late_enrollee' ||
+          row.late_enrollee_term_number == null
+        )
+          continue;
+        const joinTermNum = row.late_enrollee_term_number;
+        const { count: existingLateAudit } = await service
+          .from('audit_log')
+          .select('id', { count: 'exact', head: true })
+          .eq('action', 'enrolment.metadata.update')
+          .eq('entity_id', newId)
+          .eq('context->>lateEnrolleeTransition', 'true');
+        if ((existingLateAudit ?? 0) === 0) {
+          await service.from('audit_log').insert({
+            action: 'enrolment.metadata.update',
+            actor_email: SEEDER_ACTOR_EMAIL,
+            entity_type: 'section_student',
+            entity_id: newId,
+            context: {
+              section_id: row.section_id,
+              before: {
+                enrollment_status: 'active',
+                bus_no: null,
+                classroom_officer_role: null,
+              },
+              after: {
+                enrollment_status: 'late_enrollee',
+                enrollment_date: row.enrollment_date,
+                late_enrollee_term_number: joinTermNum,
+              },
+              lateEnrolleeTransition: true,
+              lateEnrolleeTransitionAt: new Date().toISOString(),
+              lateEnrolleeTermNumber: joinTermNum,
+              lateEnrolleeTermLabel: `T${joinTermNum}`,
+            },
+          });
+        }
+      }
     }
   }
 

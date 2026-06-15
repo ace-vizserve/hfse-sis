@@ -1,10 +1,11 @@
 'use client';
 
+import { useMutation } from '@tanstack/react-query';
 import { Loader2, Send, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -44,28 +45,31 @@ export function BulkNotifyDialog({
   module = 'p-files',
 }: BulkNotifyDialogProps) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
 
-  async function handleSend() {
-    if (items.length === 0) return;
-    setBusy(true);
-    try {
-      const res = await fetch('/api/p-files/notify/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+  type BulkNotifyResult = {
+    sent: number;
+    requested: number;
+    skippedCooldown?: number;
+    skippedNoRecipients?: number;
+    skippedNotEnrolled?: number;
+    skippedNotActionable?: number;
+  };
+
+  // Tier-2 mutation. The route's bespoke `body.error` surfaces via
+  // ApiError.message, preserving the original 'Bulk reminder failed' fallback.
+  const notifyMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<BulkNotifyResult>(
+        '/api/p-files/notify/bulk',
+        jsonInit('POST', {
           items: items.map((i) => ({
             enroleeNumber: i.enroleeNumber,
             slotKey: i.slotKey,
           })),
           module,
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(body.error ?? 'Bulk reminder failed');
-        return;
-      }
+        })
+      ),
+    onSuccess: (body) => {
       const skipped =
         (body.skippedCooldown ?? 0) +
         (body.skippedNoRecipients ?? 0) +
@@ -78,11 +82,16 @@ export function BulkNotifyDialog({
       onSuccess?.();
       onOpenChange(false);
       router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Bulk reminder failed');
-    } finally {
-      setBusy(false);
-    }
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Bulk reminder failed'),
+  });
+
+  const busy = notifyMutation.isPending;
+
+  function handleSend() {
+    if (items.length === 0) return;
+    notifyMutation.mutate();
   }
 
   return (

@@ -17,8 +17,10 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { AySwitcher } from '@/components/admissions/ay-switcher';
 import {
   AlertDialog,
@@ -80,50 +82,51 @@ export function SyncStudentsClient({
   selectedAy: string;
   currentAyCode: string;
 }) {
-  const [loading, setLoading] = useState(false);
-  const [committing, setCommitting] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [commitConfirmOpen, setCommitConfirmOpen] = useState(false);
 
-  async function loadPreview() {
-    setLoading(true);
-    try {
-      const res = await fetch(
+  // Preview is a button-triggered dry-run read; modelled as a mutation since it
+  // is on-demand (no caching) and mirrors the original try/catch/finally exactly.
+  const previewMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<Preview>(
         `/api/students/sync/stats?ay=${encodeURIComponent(selectedAy)}`
-      );
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? 'preview failed');
+      ),
+    onSuccess: (body) => {
       setPreview(body);
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(
         e instanceof Error ? e.message : 'Failed to load sync preview'
       );
-    } finally {
-      setLoading(false);
-    }
+    },
+  });
+  const loading = previewMutation.isPending;
+  function loadPreview() {
+    previewMutation.mutate();
   }
 
-  async function commit() {
-    setCommitting(true);
-    try {
-      const res = await fetch('/api/students/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ayCode: selectedAy }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? 'commit failed');
+  const commitMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ summary: Record<string, number> }>(
+        '/api/students/sync',
+        jsonInit('POST', { ayCode: selectedAy })
+      ),
+    onSuccess: (body) => {
       const s = body.summary;
       toast.success('Sync complete', {
         description: `${s.enrolled} enrolments · ${s.added} new · ${s.updated} updated · ${s.withdrawn} withdrawn · ${s.reactivated} reactivated`,
         duration: 10000,
       });
       setPreview(null);
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'Failed to apply sync');
-    } finally {
-      setCommitting(false);
-    }
+    },
+  });
+  const committing = commitMutation.isPending;
+  async function commit() {
+    await commitMutation.mutateAsync().catch(() => {});
   }
 
   const stats = preview?.stats;

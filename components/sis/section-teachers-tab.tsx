@@ -3,8 +3,10 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Plus, Trash2, UserCheck, UserCog, Users } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -99,21 +101,24 @@ export function TeacherAssignmentsPanel({
   );
   const [teacherId, setTeacherId] = useState('');
   const [subjectId, setSubjectId] = useState('');
-  const [busy, setBusy] = useState(false);
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
 
+  // Two parallel reads to refresh in-component state. Kept inline (no query
+  // key) but routed through apiFetch so no raw fetch remains; preserves the
+  // original per-response error messages.
   async function load() {
     setLoading(true);
     try {
-      const [tRes, aRes] = await Promise.all([
-        fetch('/api/users/teachers'),
-        fetch(`/api/teacher-assignments?section_id=${sectionId}`),
+      const [tBody, aBody] = await Promise.all([
+        apiFetch<{ teachers?: Teacher[] }>('/api/users/teachers').catch(() => {
+          throw new Error('failed to load teachers');
+        }),
+        apiFetch<{ assignments?: Assignment[] }>(
+          `/api/teacher-assignments?section_id=${sectionId}`
+        ).catch(() => {
+          throw new Error('failed to load assignments');
+        }),
       ]);
-      const tBody = await tRes.json();
-      const aBody = await aRes.json();
-      if (!tRes.ok) throw new Error(tBody.error ?? 'failed to load teachers');
-      if (!aRes.ok)
-        throw new Error(aBody.error ?? 'failed to load assignments');
       setTeachers(tBody.teachers ?? []);
       setAssignments(aBody.assignments ?? []);
     } catch (e) {
@@ -125,7 +130,46 @@ export function TeacherAssignmentsPanel({
     }
   }
 
-  async function createAssignment() {
+  const createMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(
+        '/api/teacher-assignments',
+        jsonInit('POST', {
+          teacher_user_id: teacherId,
+          section_id: sectionId,
+          subject_id: role === 'subject_teacher' ? subjectId : null,
+          role,
+        })
+      ),
+    onSuccess: async () => {
+      setTeacherId('');
+      setSubjectId('');
+      toast.success('Assignment added');
+      await load();
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'Failed to add assignment');
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/teacher-assignments/${id}`, jsonInit('DELETE')),
+    onSuccess: async () => {
+      toast.success('Assignment removed');
+      await load();
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(
+        e instanceof Error ? e.message : 'Failed to remove assignment'
+      );
+    },
+  });
+  const busy = createMutation.isPending || removeMutation.isPending;
+
+  function createAssignment() {
     if (!teacherId) {
       toast.error('Pick a teacher');
       return;
@@ -134,50 +178,11 @@ export function TeacherAssignmentsPanel({
       toast.error('Pick a subject');
       return;
     }
-    setBusy(true);
-    try {
-      const res = await fetch('/api/teacher-assignments', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          teacher_user_id: teacherId,
-          section_id: sectionId,
-          subject_id: role === 'subject_teacher' ? subjectId : null,
-          role,
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? 'failed');
-      setTeacherId('');
-      setSubjectId('');
-      toast.success('Assignment added');
-      await load();
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to add assignment');
-    } finally {
-      setBusy(false);
-    }
+    createMutation.mutate();
   }
 
-  async function removeAssignment(id: string) {
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/teacher-assignments/${id}`, {
-        method: 'DELETE',
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? 'failed');
-      toast.success('Assignment removed');
-      await load();
-      router.refresh();
-    } catch (e) {
-      toast.error(
-        e instanceof Error ? e.message : 'Failed to remove assignment'
-      );
-    } finally {
-      setBusy(false);
-    }
+  function removeAssignment(id: string) {
+    removeMutation.mutate(id);
   }
 
   const teachersById = useMemo(

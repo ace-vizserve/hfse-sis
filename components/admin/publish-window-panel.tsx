@@ -17,6 +17,9 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
+import { useMutation } from '@tanstack/react-query';
+
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -447,10 +450,11 @@ export function PublishWindowPanel({
     let cancelled = false;
     async function load() {
       setLoading(true);
-      const res = await fetch(
+      // Lenient load (matches the original — a failed fetch just yields an
+      // empty list, never throws). Routed through apiFetch for consistency.
+      const body = await apiFetch<{ publications?: Publication[] }>(
         `/api/report-card-publications?section_id=${sectionId}`
-      );
-      const body = await res.json();
+      ).catch(() => ({ publications: [] as Publication[] }));
       if (!cancelled) {
         setPublications((body.publications ?? []) as Publication[]);
         setLoading(false);
@@ -462,52 +466,71 @@ export function PublishWindowPanel({
     };
   }, [sectionId]);
 
+  // Tier-2 publish mutation. The 422 classification is preserved EXACTLY: the
+  // POST throws ApiError on non-2xx, and ApiError.body carries the full parsed
+  // body — so we read `code` / `hardBlockers` / `error` off it and re-throw the
+  // same plain-English messages (comments_incomplete + publish_blocked + the
+  // generic 'publish failed' fallback) the original built from `res.json()`.
+  // The reload-after-success + success toast + router.refresh stay identical.
+  const publishMutation = useMutation({
+    mutationFn: async (termId: string) => {
+      try {
+        await apiFetch('/api/report-card-publications', {
+          ...jsonInit('POST', {
+            section_id: sectionId,
+            term_id: termId,
+            publish_from: from,
+            publish_until: until,
+          }),
+        });
+      } catch (e) {
+        if (e instanceof ApiError) {
+          const body = (e.body ?? {}) as {
+            code?: string;
+            hardBlockers?: { label?: string }[];
+            error?: string;
+          };
+          // The server hard-gates on adviser comments (KD #49/#120). When this
+          // path is reached without the checklist dialog (e.g. the readiness
+          // pre-check fetch failed and we fell through to save), surface a
+          // clear, plain-English message instead of the raw server error.
+          if (body.code === 'comments_incomplete') {
+            throw new Error(
+              "Can't publish yet — some adviser comments aren't submitted. Finish them in Evaluation first."
+            );
+          }
+          // Generalized hard-block (no students / no grading sheets / comments).
+          // Surface the blocker labels rather than the raw server error string.
+          if (body.code === 'publish_blocked') {
+            const summary = Array.isArray(body.hardBlockers)
+              ? body.hardBlockers
+                  .map((b) => b.label)
+                  .filter(Boolean)
+                  .join(' · ')
+              : null;
+            throw new Error(
+              summary
+                ? `Can't publish yet — ${summary}.`
+                : (body.error ?? 'publish failed')
+            );
+          }
+          throw new Error(body.error ?? 'publish failed');
+        }
+        throw e;
+      }
+      // Reload the publications list (lenient — matches the original).
+      const reloadBody = await apiFetch<{ publications?: Publication[] }>(
+        `/api/report-card-publications?section_id=${sectionId}`
+      ).catch(() => ({ publications: [] as Publication[] }));
+      return (reloadBody.publications ?? []) as Publication[];
+    },
+  });
+
   async function save(termId: string) {
     setBusy(true);
     try {
-      const res = await fetch('/api/report-card-publications', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          section_id: sectionId,
-          term_id: termId,
-          publish_from: from,
-          publish_until: until,
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        // The server hard-gates on adviser comments (KD #49/#120). When this
-        // path is reached without the checklist dialog (e.g. the readiness
-        // pre-check fetch failed and we fell through to save), surface a clear,
-        // plain-English message instead of the raw server error string.
-        if (body.code === 'comments_incomplete') {
-          throw new Error(
-            "Can't publish yet — some adviser comments aren't submitted. Finish them in Evaluation first."
-          );
-        }
-        // Generalized hard-block (no students / no grading sheets / comments).
-        // Surface the blocker labels rather than the raw server error string.
-        if (body.code === 'publish_blocked') {
-          const summary = Array.isArray(body.hardBlockers)
-            ? body.hardBlockers
-                .map((b: { label?: string }) => b.label)
-                .filter(Boolean)
-                .join(' · ')
-            : null;
-          throw new Error(
-            summary
-              ? `Can't publish yet — ${summary}.`
-              : (body.error ?? 'publish failed')
-          );
-        }
-        throw new Error(body.error ?? 'publish failed');
-      }
-      const reload = await fetch(
-        `/api/report-card-publications?section_id=${sectionId}`
-      );
-      const reloadBody = await reload.json();
-      setPublications((reloadBody.publications ?? []) as Publication[]);
+      const publications = await publishMutation.mutateAsync(termId);
+      setPublications(publications);
       setEditingTermId(null);
       toast.success('Publication window saved');
       startTransition(() => router.refresh());
@@ -520,21 +543,24 @@ export function PublishWindowPanel({
     }
   }
 
+  const revokeMutation = useMutation({
+    mutationFn: (publicationId: string) =>
+      apiFetch(
+        `/api/report-card-publications/${publicationId}`,
+        jsonInit('DELETE')
+      ),
+  });
+
   async function revoke(publicationId: string) {
     setBusy(true);
     try {
-      const res = await fetch(
-        `/api/report-card-publications/${publicationId}`,
-        {
-          method: 'DELETE',
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'revoke failed');
+      await revokeMutation.mutateAsync(publicationId);
       setPublications((prev) => prev.filter((p) => p.id !== publicationId));
       toast.success('Publication revoked');
       startTransition(() => router.refresh());
     } catch (e) {
+      // ApiError.message already resolves to body.error ('revoke failed'
+      // fallback); any other failure keeps the generic message.
       toast.error(
         e instanceof Error ? e.message : 'Failed to revoke publication'
       );
@@ -546,14 +572,11 @@ export function PublishWindowPanel({
   async function handlePublish(termId: string) {
     setBusy(true);
     try {
-      const res = await fetch(
+      // A failed readiness fetch throws (ApiError) and falls to the catch below,
+      // which proceeds to save() — same fallback as the original !res.ok branch.
+      const data = await apiFetch<ChecklistData>(
         `/api/sections/${sectionId}/publish-readiness?term_id=${termId}`
       );
-      if (!res.ok) {
-        await save(termId);
-        return;
-      }
-      const data = (await res.json()) as ChecklistData;
 
       // The server returns the verdict (hardBlockers / softGaps). Hard blockers
       // (no_students, no_grading_sheets, comments_incomplete) cannot be

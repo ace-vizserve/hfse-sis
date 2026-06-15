@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import { Loader2, PackagePlus } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,18 +30,19 @@ export function BulkCreateSheetsButton({
   ayCode: string;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
 
-  async function run() {
-    setBusy(true);
-    try {
-      const res = await fetch('/api/grading-sheets/bulk-create', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ay_id: ayId }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'bulk create failed');
+  // Tier-2 mutation (Model A): the bulk-create POST runs through useMutation.
+  // The success body carries `inserted` + `reason` (it's a 200 with a result
+  // shape, not an error), so the reason/inserted branching stays in onSuccess;
+  // the 'bulk create failed' fallback is preserved in onError (ApiError.message
+  // already resolves to body.error). router.refresh() fires on success as before.
+  const bulkCreate = useMutation({
+    mutationFn: () =>
+      apiFetch<{ inserted?: number; reason?: string }>(
+        '/api/grading-sheets/bulk-create',
+        jsonInit('POST', { ay_id: ayId })
+      ),
+    onSuccess: (body) => {
       const inserted: number = body.inserted ?? 0;
       const reason: string = body.reason ?? 'already_covered';
 
@@ -68,11 +70,16 @@ export function BulkCreateSheetsButton({
         );
       }
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'bulk create failed');
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+
+  const busy = bulkCreate.isPending;
+
+  function run() {
+    bulkCreate.mutate();
   }
 
   return (

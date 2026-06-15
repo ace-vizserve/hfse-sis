@@ -3,8 +3,10 @@
 import { Loader2, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,25 +33,24 @@ export function ApproverRevokeButton({
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
-  async function onConfirm(e: React.MouseEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/sis/admin/approvers/${assignmentId}`, {
-        method: 'DELETE',
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Failed to revoke approver');
+  const revokeMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/sis/admin/approvers/${assignmentId}`, jsonInit('DELETE')),
+    onSuccess: () => {
       toast.success(`${email} removed from ${flowLabel}`);
       setOpen(false);
       router.refresh();
-    } catch (err) {
+    },
+    onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Failed to revoke');
-    } finally {
-      setSubmitting(false);
-    }
+    },
+  });
+  const submitting = revokeMutation.isPending;
+
+  function onConfirm(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    revokeMutation.mutate();
   }
 
   return (

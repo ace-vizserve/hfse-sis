@@ -5,8 +5,11 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
-    environment: 'node',
-    include: ['__tests__/**/*.test.ts'],
+    // jsdom so React component tests (.test.tsx) can render; the pure-logic
+    // .test.ts suites run fine under jsdom too.
+    environment: 'jsdom',
+    include: ['__tests__/**/*.test.{ts,tsx}'],
+    setupFiles: ['vitest.setup.ts'],
     globals: true,
   },
   resolve: {

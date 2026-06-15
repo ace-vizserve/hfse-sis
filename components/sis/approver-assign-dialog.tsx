@@ -3,8 +3,10 @@
 import { Loader2, UserPlus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -37,19 +39,14 @@ export function ApproverAssignDialog({ flow, flowLabel, candidates }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [userId, setUserId] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
-  async function onSubmit() {
-    if (!userId) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/sis/admin/approvers', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, flow }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Failed to assign approver');
+  const assignMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ alreadyAssigned?: boolean }>(
+        '/api/sis/admin/approvers',
+        jsonInit('POST', { user_id: userId, flow })
+      ),
+    onSuccess: (body) => {
       if (body.alreadyAssigned) {
         toast.info('User is already assigned to this flow');
       } else {
@@ -58,11 +55,16 @@ export function ApproverAssignDialog({ flow, flowLabel, candidates }: Props) {
       setOpen(false);
       setUserId('');
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'Failed to assign approver');
-    } finally {
-      setSubmitting(false);
-    }
+    },
+  });
+  const submitting = assignMutation.isPending;
+
+  function onSubmit() {
+    if (!userId) return;
+    assignMutation.mutate();
   }
 
   const noCandidates = candidates.length === 0;
@@ -74,7 +76,6 @@ export function ApproverAssignDialog({ flow, flowLabel, candidates }: Props) {
         setOpen(next);
         if (!next) {
           setUserId('');
-          setSubmitting(false);
         }
       }}
     >

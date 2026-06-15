@@ -3,8 +3,10 @@
 import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,34 +45,34 @@ export function AySwitchActiveDialog({
     onOpenChange?.(next);
   };
   const [confirm, setConfirm] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
   const canSubmit = confirm.trim().toUpperCase() === targetAyCode;
 
-  async function handleConfirm(e: React.MouseEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    if (!canSubmit) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/sis/ay-setup', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
+  const switchMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(
+        '/api/sis/ay-setup',
+        jsonInit('PATCH', {
           target_ay_code: targetAyCode,
           confirm_code: targetAyCode,
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Failed to switch AY');
+        })
+      ),
+    onSuccess: () => {
       toast.success(`Active AY is now ${targetAyCode}`);
       setOpen(false);
       setConfirm('');
       router.refresh();
-    } catch (err) {
+    },
+    onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Failed to switch AY');
-    } finally {
-      setSubmitting(false);
-    }
+    },
+  });
+  const submitting = switchMutation.isPending;
+
+  function handleConfirm(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    switchMutation.mutate();
   }
 
   return (

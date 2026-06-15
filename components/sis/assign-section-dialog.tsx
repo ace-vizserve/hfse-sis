@@ -3,8 +3,10 @@
 import { GraduationCap, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -53,7 +55,6 @@ export function AssignSectionDialog({
   onOpenChange,
 }: AssignSectionDialogProps) {
   const router = useRouter();
-  const [submitting, setSubmitting] = React.useState(false);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -73,40 +74,43 @@ export function AssignSectionDialog({
     [availableSections]
   );
 
-  async function submit() {
-    if (!selectedId) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch(
+  const assignMutation = useMutation({
+    mutationFn: (sectionId: string) =>
+      apiFetch<{ sectionName?: string }>(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/assign-section?ay=${encodeURIComponent(ayCode)}`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ sectionId: selectedId }),
-        }
-      );
-      const body = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        sectionName?: string;
-      };
-      if (!res.ok) {
-        toast.error(
-          body.error ?? `Couldn't assign the section (${res.status}).`
-        );
-        return;
-      }
+        jsonInit('POST', { sectionId })
+      ),
+    onSuccess: (body) => {
       toast.success(
         `Assigned ${studentName} to ${body.sectionName ?? 'their new section'}. Grading access is now active.`
       );
       onOpenChange(false);
       router.refresh();
-    } catch (err) {
+    },
+    onError: (err) => {
+      // Preserve the original two-tier error copy: prefer the server's
+      // `error` field, else a status-coded fallback; network errors fall back
+      // to the generic message.
+      if (err instanceof ApiError) {
+        const serverError =
+          err.body && typeof err.body === 'object'
+            ? (err.body as { error?: string }).error
+            : undefined;
+        toast.error(
+          serverError ?? `Couldn't assign the section (${err.status}).`
+        );
+        return;
+      }
       toast.error(
         err instanceof Error ? err.message : "Couldn't assign the section."
       );
-    } finally {
-      setSubmitting(false);
-    }
+    },
+  });
+  const submitting = assignMutation.isPending;
+
+  function submit() {
+    if (!selectedId) return;
+    assignMutation.mutate(selectedId);
   }
 
   const hasOptions = sorted.length > 0;

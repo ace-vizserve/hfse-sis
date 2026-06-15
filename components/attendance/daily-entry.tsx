@@ -13,8 +13,10 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import type {
   CalendarEventRow,
   SchoolCalendarRow,
@@ -334,7 +336,27 @@ function DailyPanel({
   const [marks, setMarks] = useState<Map<string, DailyMark>>(
     () => new Map(loaded)
   );
-  const [saving, setSaving] = useState(false);
+
+  // Tier-3 autosave surface: the per-date `marks` stay in local state
+  // (unchanged optimistic UX). The ONLY change is that the bulk PATCH now runs
+  // through useMutation for the shared retry: 0 + apiFetch error handling; on
+  // success we router.refresh() so `initialDaily` re-pulls (the saved stat
+  // cards reflect the new record). The route-specific error copy is preserved
+  // via ApiError.message (body.error).
+  const submitMutation = useMutation({
+    mutationFn: (entries: ReturnType<typeof computeSubmitEntries>) =>
+      apiFetch('/api/attendance/daily', jsonInit('PATCH', { entries })),
+    onSuccess: (_data, entries) => {
+      toast.success(
+        `Saved attendance for ${formatLongDate(date)} (${entries.length} updated).`
+      );
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'Save failed');
+    },
+  });
+  const saving = submitMutation.isPending;
 
   function setMark(enrolmentId: string, m: DailyMark | null) {
     setMarks((cur) => {
@@ -354,7 +376,7 @@ function DailyPanel({
     (m) => m.status === 'EX' && !m.exReason
   );
 
-  async function submit() {
+  function submit() {
     const entries = computeSubmitEntries({
       roster,
       marks,
@@ -366,24 +388,7 @@ function DailyPanel({
       toast.info('No changes to submit.');
       return;
     }
-    setSaving(true);
-    try {
-      const res = await fetch('/api/attendance/daily', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ entries }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'Save failed');
-      toast.success(
-        `Saved attendance for ${formatLongDate(date)} (${entries.length} updated).`
-      );
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Save failed');
-    } finally {
-      setSaving(false);
-    }
+    submitMutation.mutate(entries);
   }
 
   return (

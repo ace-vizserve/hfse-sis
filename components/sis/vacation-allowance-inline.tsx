@@ -1,5 +1,6 @@
 'use client';
 
+import { useMutation } from '@tanstack/react-query';
 import { Loader2, RotateCcw, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -7,6 +8,7 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 // KD #94 — vacation-leave per-term allowance override.
 // `initial = null` means the student is on the school-wide default; we display
@@ -29,26 +31,23 @@ export function VacationAllowanceInline({
   const router = useRouter();
   const effective = initial ?? schoolDefault;
   const [value, setValue] = useState<string>(String(effective));
-  const [saving, setSaving] = useState(false);
 
   const numeric = Number(value);
   const valid = /^\d+$/.test(value) && numeric >= 0 && numeric <= 10;
   const dirty = valid && numeric !== effective;
   const hasOverride = initial !== null;
 
-  async function persist(vlAllowance: number | null) {
-    setSaving(true);
-    try {
-      const res = await fetch(
+  // Tier-2: `value` is the form input (not an optimistic mirror of the server),
+  // so the mutation is a plain save → router.refresh(). `isPending` drives the
+  // disable; the route's `body.error` is preserved via ApiError.message
+  // (fallback 'save failed' unchanged).
+  const saveMutation = useMutation({
+    mutationFn: (vlAllowance: number | null) =>
+      apiFetch(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/vl-allowance`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ vlAllowance }),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'save failed');
+        jsonInit('PATCH', { vlAllowance })
+      ),
+    onSuccess: (_data, vlAllowance) => {
       if (vlAllowance === null) {
         toast.success(
           `Reset — now using school default (${schoolDefault} per term)`
@@ -57,24 +56,25 @@ export function VacationAllowanceInline({
         toast.success(`Vacation leave set to ${vlAllowance} per term`);
       }
       router.refresh();
-    } catch (err) {
+    },
+    onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'save failed');
-    } finally {
-      setSaving(false);
-    }
-  }
+    },
+  });
+
+  const saving = saveMutation.isPending;
 
   function save() {
     if (!valid) {
       toast.error('Enter a whole number between 0 and 10');
       return;
     }
-    persist(numeric);
+    saveMutation.mutate(numeric);
   }
 
   function resetToSchoolDefault() {
     setValue(String(schoolDefault));
-    void persist(null);
+    saveMutation.mutate(null);
   }
 
   return (
