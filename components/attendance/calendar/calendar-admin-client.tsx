@@ -415,8 +415,6 @@ export function CalendarAdminClient({
       <EventEditorDialog
         open={editorOpen}
         termId={editorTerm?.id ?? ''}
-        termStart={editorTerm?.startDate ?? ''}
-        termEnd={editorTerm?.endDate ?? ''}
         defaultStart={editorStart}
         defaultEnd={editorEnd}
         defaultAudience={level}

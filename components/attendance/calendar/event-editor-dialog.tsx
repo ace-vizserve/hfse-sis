@@ -15,6 +15,17 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { sgToday } from '@/lib/dates';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
@@ -153,11 +164,19 @@ function datesInRange(start: string, end: string): string[] {
   return out;
 }
 
+/** yyyy-MM-dd → readable local date (tz-safe). */
+function formatIso(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-SG', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 export function EventEditorDialog({
   open,
   termId,
-  termStart,
-  termEnd,
   defaultStart,
   defaultEnd,
   defaultAudience,
@@ -167,10 +186,7 @@ export function EventEditorDialog({
 }: {
   open: boolean;
   termId: string;
-  /** The term window — validation bounds (dates must fall inside it). */
-  termStart: string;
-  termEnd: string;
-  /** Seed dates for a new entry (e.g. the clicked day). Falls back to the term. */
+  /** Seed dates for a new entry (e.g. the clicked day). Falls back to today. */
   defaultStart?: string;
   defaultEnd?: string;
   defaultAudience: Audience;
@@ -180,13 +196,17 @@ export function EventEditorDialog({
   onCreated: () => void;
 }) {
   const isEdit = editing !== null;
-  const seedStart = defaultStart || termStart;
-  const seedEnd = defaultEnd || termEnd;
+  // A fresh "add" with no clicked day seeds today (not the term start, which is
+  // often already in the past — that's what tripped the old term-window guard).
+  const seedStart = defaultStart || sgToday();
+  const seedEnd = defaultEnd || seedStart;
   const [start, setStart] = useState(seedStart);
   const [end, setEnd] = useState(seedEnd);
   const [label, setLabel] = useState('');
   const [typeKey, setTypeKey] = useState<string>('public_holiday');
   const [eventAudience, setEventAudience] = useState<Audience>(defaultAudience);
+  // Past-date warning confirm (future/today saves directly; a passed date warns).
+  const [pastWarnOpen, setPastWarnOpen] = useState(false);
 
   // Edit mode only offers informational types (day overrides are re-added).
   const typeOptions = isEdit
@@ -248,6 +268,7 @@ export function EventEditorDialog({
                 label: label.trim(),
                 category: selected.category,
                 audience: eventAudience,
+                pastDateOverride: end < sgToday(),
               }
             : {
                 termId,
@@ -256,6 +277,7 @@ export function EventEditorDialog({
                 label: label.trim(),
                 category: selected.category,
                 audience: eventAudience,
+                pastDateOverride: end < sgToday(),
               }
         )
       );
@@ -276,15 +298,17 @@ export function EventEditorDialog({
       toast.error('End date must be on or after the start date');
       return;
     }
-    if (termStart && termEnd && (start < termStart || end > termEnd)) {
-      toast.error(
-        `Dates must fall within the term (${termStart} to ${termEnd}).`
-      );
-      return;
-    }
     // Informational events need a label; day overrides can use the type label.
     if (selected.target === 'event' && !label.trim()) {
       toast.error('Label is required');
+      return;
+    }
+    // A date that has already passed is editable, but warn first (the change
+    // still goes through on confirm, flagged in the audit trail). Today/future
+    // saves directly. "Passed" = the entry's end date is before today, so an
+    // entry currently in progress is treated as not-yet-passed.
+    if (end < sgToday()) {
+      setPastWarnOpen(true);
       return;
     }
 
@@ -292,106 +316,134 @@ export function EventEditorDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
-      <DialogContent className="sm:max-w-[520px]">
-        <DialogHeader>
-          <DialogTitle className="font-serif text-[18px] font-semibold tracking-tight">
-            {isEdit ? 'Edit event' : 'Add to the calendar'}
-          </DialogTitle>
-          <DialogDescription>
-            {isEdit
-              ? "Update the event's dates, label, type, or level."
-              : 'Pick a type and the level it applies to. Holidays / HBL change whether attendance is taken; everything else is just a labelled note.'}
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-[18px] font-semibold tracking-tight">
+              {isEdit ? 'Edit event' : 'Add to the calendar'}
+            </DialogTitle>
+            <DialogDescription>
+              {isEdit
+                ? "Update the event's dates, label, type, or level."
+                : 'Pick a type and the level it applies to. Holidays / HBL change whether attendance is taken; everything else is just a labelled note.'}
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Type</Label>
-              <Select value={typeKey} onValueChange={setTypeKey}>
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Pick a type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {typeOptions.map((t) => (
-                    <SelectItem key={t.key} value={t.key}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Type</Label>
+                <Select value={typeKey} onValueChange={setTypeKey}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Pick a type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {typeOptions.map((t) => (
+                      <SelectItem key={t.key} value={t.key}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Level</Label>
+                <Select
+                  value={eventAudience}
+                  onValueChange={(v) => setEventAudience(v as Audience)}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Pick a level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AUDIENCE_VALUES.map((a) => (
+                      <SelectItem key={a} value={a}>
+                        {a === 'all' ? 'Whole school' : AUDIENCE_LABELS[a]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Level</Label>
-              <Select
-                value={eventAudience}
-                onValueChange={(v) => setEventAudience(v as Audience)}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Pick a level" />
-                </SelectTrigger>
-                <SelectContent>
-                  {AUDIENCE_VALUES.map((a) => (
-                    <SelectItem key={a} value={a}>
-                      {a === 'all' ? 'Whole school' : AUDIENCE_LABELS[a]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Start</Label>
-              <DatePicker value={start} onChange={setStart} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Start</Label>
+                <DatePicker value={start} onChange={setStart} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>End</Label>
+                <DatePicker value={end} onChange={setEnd} />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>End</Label>
-              <DatePicker value={end} onChange={setEnd} />
-            </div>
-          </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="addEventLabel">
-              Label{selected.target === 'day' ? ' (optional)' : ''}
-            </Label>
-            <Input
-              id="addEventLabel"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder={
-                selected.target === 'day'
-                  ? 'e.g. Vesak Day, Marking day'
-                  : "e.g. P5 Mock Exam Week, Founders' Day"
-              }
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !saving) {
-                  e.preventDefault();
-                  save();
+            <div className="space-y-1.5">
+              <Label htmlFor="addEventLabel">
+                Label{selected.target === 'day' ? ' (optional)' : ''}
+              </Label>
+              <Input
+                id="addEventLabel"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder={
+                  selected.target === 'day'
+                    ? 'e.g. Vesak Day, Marking day'
+                    : "e.g. P5 Mock Exam Week, Founders' Day"
                 }
-              }}
-            />
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !saving) {
+                    e.preventDefault();
+                    save();
+                  }
+                }}
+              />
+            </div>
           </div>
-        </div>
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={saving}
-            onClick={onClose}
-          >
-            Cancel
-          </Button>
-          <Button type="button" size="sm" disabled={saving} onClick={save}>
-            {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
-            {isEdit ? 'Update' : 'Save'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={saving}
+              onClick={onClose}
+            >
+              Cancel
+            </Button>
+            <Button type="button" size="sm" disabled={saving} onClick={save}>
+              {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              {isEdit ? 'Update' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={pastWarnOpen} onOpenChange={setPastWarnOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>This date has already passed</AlertDialogTitle>
+            <AlertDialogDescription>
+              {start === end
+                ? `${formatIso(start)} is in the past.`
+                : `${formatIso(start)}–${formatIso(end)} is in the past.`}{' '}
+              You can still save this change — it&rsquo;ll be recorded in the
+              activity log. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setPastWarnOpen(false);
+                saveMutation.mutate();
+              }}
+            >
+              Save anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

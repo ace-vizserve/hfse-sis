@@ -29,6 +29,10 @@ export async function POST(request: NextRequest) {
   }
   const { termId, startDate, endDate, label, category, audience, tentative } =
     parsed.data;
+  // Accountability flag from the client warning (a passed date was changed).
+  // Read from the raw body — it's not part of the row schema.
+  const pastDateOverride =
+    (body as { pastDateOverride?: unknown })?.pastDateOverride === true;
 
   const service = createServiceClient();
   const { data, error } = await service
@@ -66,6 +70,7 @@ export async function POST(request: NextRequest) {
       category,
       audience,
       tentative,
+      ...(pastDateOverride ? { pastDateOverride: true } : {}),
     },
   });
 
@@ -101,6 +106,9 @@ export async function PATCH(request: NextRequest) {
     );
   }
   const { id, ...fields } = parsed.data;
+  // Accountability flag from the client warning (a passed date was changed).
+  const pastDateOverride =
+    (body as { pastDateOverride?: unknown })?.pastDateOverride === true;
 
   // Build the patch payload from only the fields the caller provided.
   const patch: Record<string, unknown> = {};
@@ -130,7 +138,11 @@ export async function PATCH(request: NextRequest) {
     action: 'attendance.event.update',
     entityType: 'calendar_event',
     entityId: id,
-    context: { id, ...fields },
+    context: {
+      id,
+      ...fields,
+      ...(pastDateOverride ? { pastDateOverride: true } : {}),
+    },
   });
 
   // Calendar events are shared infrastructure: attendance reads day-type
