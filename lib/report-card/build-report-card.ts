@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeAnnualGrade } from '@/lib/compute/annual';
+import { isEnrolledForTerm } from '@/lib/report-card/enrolment-coverage';
 import {
   resolveNonExaminableLetter,
   deriveAnnualLetterForNonExam,
@@ -51,6 +52,8 @@ export type Term = {
    * configured a theme (or for T4, which has no comment section).
    */
   virtue_theme: string | null;
+  start_date: string;
+  end_date: string;
 };
 
 export type AttendanceRecord = {
@@ -124,7 +127,7 @@ export async function buildReportCard(
 
   const { data: terms } = await supabase
     .from('terms')
-    .select('id, term_number, label, virtue_theme')
+    .select('id, term_number, label, virtue_theme, start_date, end_date')
     .eq('academic_year_id', ay.id)
     .order('term_number');
   const termList = (terms ?? []) as Term[];
@@ -132,7 +135,7 @@ export async function buildReportCard(
   const { data: enrolments } = await supabase
     .from('section_students')
     .select(
-      `id, enrollment_status, created_at,
+      `id, enrollment_status, created_at, enrollment_date, withdrawal_date,
        section:sections!inner(id, name, form_class_adviser, academic_year_id,
          level:levels(id, code, label, level_type))`
     )
@@ -155,6 +158,8 @@ export async function buildReportCard(
     id: string;
     enrollment_status: string;
     created_at: string | null;
+    enrollment_date: string | null;
+    withdrawal_date: string | null;
     section: SectionLite | SectionLite[] | null;
   };
 
@@ -174,6 +179,8 @@ export async function buildReportCard(
         id: string;
         enrollment_status: string;
         created_at: string | null;
+        enrollment_date: string | null;
+        withdrawal_date: string | null;
         section: SectionLite;
       } => !!e.section && e.section.academic_year_id === ay.id
     );
@@ -182,6 +189,21 @@ export async function buildReportCard(
       ok: false,
       error: { kind: 'not_enrolled_this_ay', ayLabel: ay.label },
     };
+  }
+
+  // Per-term enrolment coverage (KD #67 transfer-safe: union of all rows).
+  // Drives N.A. for terms the student wasn't enrolled in (late enrollee pre-join
+  // / post-withdrawal) on both attendance and grades.
+  const coverage = ayEnrolments.map((e) => ({
+    start: e.enrollment_date,
+    end: e.withdrawal_date,
+  }));
+  const enrolledByTermNumber = new Map<number, boolean>();
+  for (const t of termList) {
+    enrolledByTermNumber.set(
+      t.term_number,
+      isEnrolledForTerm(coverage, t.start_date, t.end_date)
+    );
   }
 
   // Pick the "primary" enrolment for the report header (section name, FCA,
