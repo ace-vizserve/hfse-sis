@@ -1,7 +1,7 @@
 # Report card — N.A. for terms a student wasn't enrolled in (enrolment-coverage proration)
 
 **Date:** 2026-06-15
-**Status:** Design approved, pending implementation plan
+**Status:** Implemented on `feat/report-card-na-non-enrolled-terms` (tsc clean, 176 tests pass, final code-review clean) — pending manual UAT on the running app
 
 ## Context / problem
 
