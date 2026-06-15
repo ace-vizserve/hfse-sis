@@ -128,7 +128,11 @@ export async function seedEdgeCases(
   // Deterministic picks — PRNG-driven so picks stay stable across section-size
   // changes without hardcoding positional indices.
   const rand = mulberry32(hashString(`${testAy.ay_code}:edge-cases`));
-  const gritLate = gritSS[Math.floor(rand() * gritSS.length)] ?? gritSS[0];
+  // NOTE: the first PRNG draw is intentionally consumed (and discarded) here so
+  // the downstream deterministic picks keep their exact prior sequence after the
+  // EC1/EC2 late-enrollee block was removed (late-enrollee designation moved to
+  // syncEnrolledPersonas). gritLate is no longer needed.
+  rand();
   const excellenceLate =
     excellenceSS[Math.floor(rand() * excellenceSS.length)] ?? excellenceSS[0];
   const gritWithdrawn = gritSS[Math.floor(rand() * gritSS.length)] ?? gritSS[0];
@@ -159,119 +163,13 @@ export async function seedEdgeCases(
   const statusTable = `${prefix}_enrolment_status`;
 
   // ── EC1 & EC2 — Late enrollees ─────────────────────────────────────────────
-  try {
-    const t2Start = t2.start_date ?? new Date().toISOString().slice(0, 10);
-    const lateEnrollDate = new Date(t2Start);
-    lateEnrollDate.setDate(lateEnrollDate.getDate() + 7);
-    const t2EnrollDate = lateEnrollDate.toISOString().slice(0, 10);
-    for (const ss of [gritLate, excellenceLate].filter(Boolean)) {
-      if (!ss || ss.enrollment_status === 'late_enrollee') continue;
-      const { error } = await service
-        .from('section_students')
-        .update({
-          enrollment_status: 'late_enrollee',
-          enrollment_date: t2EnrollDate,
-          // Explicit T2 override — surfaces as "T2 (corrected)" badge on the
-          // Records placement section (KD #111 / migration 067).
-          late_enrollee_term_number: 2,
-        })
-        .eq('id', ss.id)
-        .eq('enrollment_status', 'active');
-      if (!error) count++;
-
-      // Audit row — mirrors the real section-students PATCH's
-      // `enrolment.metadata.update` with the lateEnrolleeTransition block
-      // (app/api/sections/[id]/students/[enrolmentId]/route.ts ~491-509).
-      // Without it the late-enrol is invisible on /records/movements, which
-      // reads enrolment.metadata.update rows with lateEnrolleeTransition=true.
-      // Idempotent: guarded on an existing audit row for this entity+transition.
-      const { count: existingLateAudit } = await service
-        .from('audit_log')
-        .select('id', { count: 'exact', head: true })
-        .eq('action', 'enrolment.metadata.update')
-        .eq('entity_id', ss.id)
-        .eq('context->>lateEnrolleeTransition', 'true');
-      if ((existingLateAudit ?? 0) === 0) {
-        await service.from('audit_log').insert({
-          action: 'enrolment.metadata.update',
-          actor_email: SEED_ACTOR_EMAIL,
-          entity_type: 'section_student',
-          entity_id: ss.id,
-          context: {
-            section_id: ss.section_id,
-            before: {
-              bus_no: null,
-              classroom_officer_role: null,
-              enrollment_status: 'active',
-            },
-            after: {
-              enrollment_status: 'late_enrollee',
-              enrollment_date: t2EnrollDate,
-              late_enrollee_term_number: 2,
-            },
-            lateEnrolleeTransition: true,
-            lateEnrolleeTransitionAt: new Date().toISOString(),
-            lateEnrolleeTermNumber: 2,
-            lateEnrolleeTermLabel: 'T2',
-          },
-        });
-      }
-
-      // Null out T1 grade entries so the late-enrollee proration path fires.
-      const { data: t1Sheets } = await service
-        .from('grading_sheets')
-        .select('id')
-        .eq('section_id', ss.section_id)
-        .eq('term_id', t1.id);
-      const t1SheetIds = (t1Sheets ?? []).map((s) => (s as { id: string }).id);
-      for (const sheetId of t1SheetIds) {
-        await service
-          .from('grade_entries')
-          .update({
-            ww_scores: null,
-            pt_scores: null,
-            qa_score: null,
-            // Clear the server-computed columns too. ww_total/pt_total do NOT
-            // exist on grade_entries (they live on grading_sheets) — PostgREST
-            // silently ignores unknown columns, so the stale computed values
-            // would otherwise survive the "nullify" and the proration / missing-
-            // grade paths wouldn't fire. The real computed columns are ww_ps /
-            // pt_ps / qa_ps / initial_grade (per 001_initial_schema.sql).
-            ww_ps: null,
-            pt_ps: null,
-            qa_ps: null,
-            initial_grade: null,
-            quarterly_grade: null,
-          })
-          .eq('grading_sheet_id', sheetId)
-          .eq('section_student_id', ss.id);
-      }
-
-      // Re-run the attendance rollup for T1 + T2 now that enrollment_date is
-      // set. seedAttendanceSummary already inserted attendance_daily rows for
-      // this student across the FULL T1 + early-T2 windows (it ran while the
-      // student was still 'active', enrollment_date NULL — so no proration
-      // applied). Without this recompute the stored attendance_records rollup
-      // keeps counting those pre-enrolment days; recomputing now exercises the
-      // migration-068 `date >= enrollment_date` proration filter genuinely —
-      // T1 (entirely before the late-enrol date) collapses to 0/0/0 and the
-      // early-T2 days before t2EnrollDate drop out of the denominator.
-      for (const term of [t1, t2]) {
-        const { error: rollupErr } = await service.rpc(
-          'recompute_attendance_rollup',
-          { p_term_id: term.id, p_section_student_id: ss.id }
-        );
-        if (rollupErr) {
-          console.error(
-            `[edge-cases] EC1/EC2 rollup recompute failed for T${term.term_number} ${ss.id}:`,
-            rollupErr.message
-          );
-        }
-      }
-    }
-  } catch (err) {
-    console.error('[edge-cases] EC1/EC2 late enrollees failed:', err);
-  }
+  // REMOVED. Late-enrollee designation now happens UP FRONT in
+  // syncEnrolledPersonas (lib/sis/seeder/populated.ts) — BEFORE grade +
+  // attendance seeding — so those seeders never create scored grades or daily
+  // attendance for pre-join terms (correct-by-construction). The old retro-flip
+  // here was not re-run-safe: on a top-up, seedGradeEntries re-filled T1 and
+  // this block skipped already-late students, so it never re-nullified. The
+  // late-enrol movements audit row is also written up front there.
 
   // ── EC3 & EC4 — Withdrawn students ────────────────────────────────────────
   try {
