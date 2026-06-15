@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { ADMISSIONS_MINIMAL_COUNT } from './admissions-minimal';
 import { seedDemoExtras, type DemoExtrasResult } from './demo-extras';
 import { seedMovements } from './movements';
 import { seedEdgeCases, type EdgeCaseResult } from './edge-cases';
@@ -411,23 +412,37 @@ type EnrolledPersona = {
   applicationStatus: ApplicationStatus;
 };
 
+// Persona-quirk index ranges over the post-sort enrolled persona list. Shared
+// by buildEnrolledPersonas (pipeline-status quirks) and seedEnrolledAdmissionsRows
+// (documentStatus + backdate quirks) so the two complementary halves of the same
+// invariant can never silently drift.
+const PERSONA_CONDITIONAL_RANGE = { start: 0, end: 3 } as const;
+const PERSONA_VERIFIED_DOCS_RANGE = { start: 3, end: 8 } as const;
+const PERSONA_WITHDRAWN_RANGE = { start: 8, end: 10 } as const;
+
 // Generates the enrolled personas deterministically from the per-section
-// config — the same global-sequence H270{ayDigits}{seq4} numbering + per-section
-// pickNames as the legacy seedTestAy, so student_numbers are byte-for-byte
-// identical and stable across re-runs. Personas are sorted by student_number so
-// the persona-quirk ranges (Conditional / Withdrawn / Verified-docs) and the
-// enroleeNumber sequence are deterministic regardless of section iteration order.
+// config. IDs mirror the real portal scheme: `E{ay2}{suf4}` / `H{ay2}{suf4}`
+// where ay2 = the AY's last two digits (→ "99" for AY9999) and BOTH the
+// enrolee- and student-number for a given persona share the SAME suf4 (real:
+// E990114 ↔ H990114). The suffix is offset past the admissions-minimal funnel
+// block (ADMISSIONS_MINIMAL_COUNT) so the enrolled cohort starts at the id that
+// block's inserts leave off (E990031 ↔ apps.id 31) — contiguous, no collision,
+// and tracking the apps.id SERIAL the same way real rows do.
+//
+// Personas are sorted by a STABLE name+section key (independent of the final
+// number) BEFORE both numbers are assigned from the same post-sort index, so
+// the enrolee/student suffixes match AND the persona-quirk ranges (Conditional
+// / Withdrawn / Verified-docs) stay deterministic across re-runs regardless of
+// section iteration order.
 function buildEnrolledPersonas(
   testAy: { id: string; ay_code: string },
   config: EnrolledSection[]
 ): EnrolledPersona[] {
-  const ayDigits = testAy.ay_code.replace(/^AY/i, '');
-  const upperPrefix = prefixFor(testAy.ay_code).toUpperCase();
+  const ayPre2 = testAy.ay_code.slice(-2);
 
-  // First pass: mint student_number + names using the SAME global sequence and
-  // per-section pickNames key as seedTestAy in students.ts.
+  // First pass: pick names per-section (same pickNames key as before so the
+  // chosen names are byte-for-byte stable), WITHOUT yet assigning any number.
   type Base = {
-    studentNumber: string;
     firstName: string;
     lastName: string;
     middleName: string | null;
@@ -437,17 +452,13 @@ function buildEnrolledPersonas(
     levelLabel: string;
   };
   const base: Base[] = [];
-  let globalSeq = 0;
   for (const section of config) {
     const names = pickNames(
       `${testAy.ay_code}:${section.sectionId}`,
       section.count
     );
     for (let i = 0; i < section.count; i++) {
-      globalSeq += 1;
-      const seq4 = String(globalSeq).padStart(4, '0');
       base.push({
-        studentNumber: `H270${ayDigits}${seq4}`,
         firstName: names[i].first_name,
         lastName: names[i].last_name,
         middleName: null, // pickNames yields first/last only — same as seedTestAy
@@ -459,8 +470,15 @@ function buildEnrolledPersonas(
     }
   }
 
-  // Sort by student_number for stable persona-range + enroleeNumber assignment.
-  base.sort((a, b) => a.studentNumber.localeCompare(b.studentNumber));
+  // Sort by a STABLE key (lastName, firstName, sectionId) — does NOT depend on
+  // the final number — so both studentNumber and enroleeNumber can be assigned
+  // from the same post-sort index and therefore share the same suffix.
+  base.sort(
+    (a, b) =>
+      a.lastName.localeCompare(b.lastName) ||
+      a.firstName.localeCompare(b.firstName) ||
+      a.sectionId.localeCompare(b.sectionId)
+  );
 
   // Persona quirks layered on the "everything Enrolled" baseline (counted from
   // the start of the sorted array so they're deterministic across re-seeds):
@@ -468,21 +486,28 @@ function buildEnrolledPersonas(
   //   - 2 Withdrawn post-enrollment — exercises the withdrawal timeline. These
   //     are EXCLUDED from the sync roster so they never become active enrolments.
   // (Verified-docs is a documentStatus quirk handled in seedEnrolledAdmissionsRows.)
-  const CONDITIONAL_RANGE = { start: 0, end: 3 };
-  const WITHDRAWN_RANGE = { start: 8, end: 10 };
   const statusFor = (i: number): ApplicationStatus => {
-    if (i >= CONDITIONAL_RANGE.start && i < CONDITIONAL_RANGE.end)
+    if (
+      i >= PERSONA_CONDITIONAL_RANGE.start &&
+      i < PERSONA_CONDITIONAL_RANGE.end
+    )
       return 'Enrolled (Conditional)';
-    if (i >= WITHDRAWN_RANGE.start && i < WITHDRAWN_RANGE.end)
+    if (i >= PERSONA_WITHDRAWN_RANGE.start && i < PERSONA_WITHDRAWN_RANGE.end)
       return 'Withdrawn';
     return 'Enrolled';
   };
 
-  return base.map((b, i) => ({
-    ...b,
-    enroleeNumber: `${upperPrefix}-ENR-${String(i + 1).padStart(4, '0')}`,
-    applicationStatus: statusFor(i),
-  }));
+  return base.map((b, i) => {
+    // Offset past the admissions-minimal funnel block so suffixes are
+    // contiguous with — and track — the apps.id SERIAL (id 31 → suf4 0031).
+    const suf4 = String(ADMISSIONS_MINIMAL_COUNT + i + 1).padStart(4, '0');
+    return {
+      ...b,
+      studentNumber: `H${ayPre2}${suf4}`,
+      enroleeNumber: `E${ayPre2}${suf4}`,
+      applicationStatus: statusFor(i),
+    };
+  });
 }
 
 // For every (grading_sheet × section_student) pair in T1, insert a
@@ -2748,6 +2773,7 @@ async function seedEnrolledAdmissionsRows(
   // shape the original section_students-derived mapping produced (minus the
   // sectionStudentId, which no longer exists at this point).
   const rows = personas.map((p) => ({
+    enroleeNumber: p.enroleeNumber,
     studentNumber: p.studentNumber,
     firstName: p.firstName,
     lastName: p.lastName,
@@ -2760,7 +2786,19 @@ async function seedEnrolledAdmissionsRows(
   if (rows.length === 0) return 0;
 
   const todayIso = new Date().toISOString().slice(0, 10);
-  const upperPrefix = prefix.toUpperCase();
+
+  // "LASTNAME, FIRSTNAME [MIDDLE]" uppercase — matches the real portal-written
+  // enroleeFullName / status.enroleeName (e.g. "GUEVARRA, ACE").
+  const fullNameOf = (
+    first: string,
+    last: string,
+    middle: string | null
+  ): string =>
+    `${last}, ${[first, middle].filter(Boolean).join(' ')}`.toUpperCase();
+
+  // Seeder actor stamped on the per-stage {stage}Updatedby trail, matching
+  // admissions-minimal's SEEDER_ACTOR.
+  const SEEDER_ACTOR = 'seeder@demo.com';
 
   // Persona quirks layered on top of the default "everything Finished, status
   // Enrolled" baseline:
@@ -2771,12 +2809,11 @@ async function seedEnrolledAdmissionsRows(
   //   - 2 are Withdrawn post-enrollment (~30 days back) so the
   //     <StudentLifecycleTimeline> branches into the withdrawal path.
   // The Conditional/Withdrawn split is decided in buildEnrolledPersonas (carried
-  // on persona.applicationStatus); VERIFIED_DOCS stays an index range here
-  // since it's a documentStatus quirk, not a pipeline-status one. Indices align
-  // because both functions iterate the same student_number-sorted persona list.
-  const VERIFIED_DOCS_RANGE = { start: 3, end: 8 };
-  const WITHDRAWN_RANGE = { start: 8, end: 10 };
-
+  // on persona.applicationStatus); the verified-docs quirk stays an index range
+  // here since it's a documentStatus quirk, not a pipeline-status one. Indices
+  // align because this function iterates the same (already name-sorted) persona
+  // list buildEnrolledPersonas returned; the ranges are the shared module-level
+  // PERSONA_* constants so the two halves cannot drift.
   const personaApplicationStatus = (i: number): ApplicationStatus =>
     personas[i].applicationStatus;
 
@@ -2786,7 +2823,8 @@ async function seedEnrolledAdmissionsRows(
   // they enrolled before withdrawing.
   const personaStageFill = (i: number) => {
     const isVerified =
-      i >= VERIFIED_DOCS_RANGE.start && i < VERIFIED_DOCS_RANGE.end;
+      i >= PERSONA_VERIFIED_DOCS_RANGE.start &&
+      i < PERSONA_VERIFIED_DOCS_RANGE.end;
     return {
       registrationStatus: 'Finished',
       documentStatus: isVerified ? 'Verified' : 'Finished',
@@ -2815,7 +2853,7 @@ async function seedEnrolledAdmissionsRows(
   const monthStartDay = 1;
   const monthMaxDay = now.getDate();
   const personaUpdatedDate = (i: number): string => {
-    if (i >= WITHDRAWN_RANGE.start && i < WITHDRAWN_RANGE.end)
+    if (i >= PERSONA_WITHDRAWN_RANGE.start && i < PERSONA_WITHDRAWN_RANGE.end)
       return thirtyDaysAgo;
     if (enrolledRand() < 0.35) {
       const day = monthStartDay + Math.floor(enrolledRand() * monthMaxDay);
@@ -2834,7 +2872,7 @@ async function seedEnrolledAdmissionsRows(
   // averages of healthy enrol times.
   const personaCreatedAtIso = (i: number): string => {
     const daysAgo =
-      i >= WITHDRAWN_RANGE.start && i < WITHDRAWN_RANGE.end
+      i >= PERSONA_WITHDRAWN_RANGE.start && i < PERSONA_WITHDRAWN_RANGE.end
         ? 60 + Math.floor(enrolledRand() * 60) // 60–120d for withdrawn
         : 14 + Math.floor(enrolledRand() * 76); // 14–90d for active
     return new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
@@ -2873,6 +2911,47 @@ async function seedEnrolledAdmissionsRows(
     };
   });
 
+  // Application-experience feedback (KD #102) + pre-course counselling, with
+  // realistic variety so the Admissions feedback page and the pre-course cohort
+  // have data. Uses its own rand stream so the demographic/medical/parent fields
+  // above stay byte-for-byte stable. Each branch is computed unconditionally so
+  // the per-row PRNG consumption is constant (deterministic across re-runs).
+  const fpRand = mulberry32(hashString(`${testAy.ay_code}:feedback-precourse`));
+  const isoBackdate = (days: number): string =>
+    new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const FEEDBACK_COMMENTS = [
+    'The online form was clear and easy to follow.',
+    'Took a while to upload all the documents, but manageable.',
+    'Very intuitive — completed the whole application in one sitting.',
+    'A few questions felt repetitive, otherwise a smooth process.',
+    'Loved the progress indicator; always knew what was left.',
+    'Wished I could save and resume the form more easily.',
+  ];
+  const feedbackPrecourse = rows.map(() => {
+    const hasFeedback = fpRand() < 0.65; // ~65% leave optional feedback
+    const RATING_POOL = [5, 5, 5, 4, 4, 4, 3, 2, 1]; // positive-skewed 1–5
+    const rating = RATING_POOL[Math.floor(fpRand() * RATING_POOL.length)];
+    const wantsComment = fpRand() < 0.45;
+    const comment =
+      FEEDBACK_COMMENTS[Math.floor(fpRand() * FEEDBACK_COMMENTS.length)];
+    const consent = fpRand() < 0.6;
+    const fbAt = isoBackdate(7 + Math.floor(fpRand() * 90));
+    // Pre-course counselling tri-state: ~85% Yes (with counselling + ack dates),
+    // ~10% No, ~5% not-yet (null) — mirrors the pre-course route's model.
+    const pcRoll = fpRand();
+    const pcDays = 10 + Math.floor(fpRand() * 60);
+    const pcYes = pcRoll < 0.85;
+    return {
+      feedbackRating: hasFeedback ? rating : null,
+      feedbackComments: hasFeedback ? (wantsComment ? comment : '') : null,
+      feedbackConsent: hasFeedback ? consent : null,
+      feedbackSubmittedAt: hasFeedback ? fbAt : null,
+      preCourseAnswer: pcYes ? 'Yes' : pcRoll < 0.95 ? 'No' : null,
+      preCourseDate: pcYes ? isoBackdate(pcDays) : null,
+      preCourseAcknowledgedAt: pcYes ? isoBackdate(pcDays - 1) : null,
+    };
+  });
+
   const appInserts = rows.map((r, i) => {
     const m = personaMeta[i];
     const parentFields = buildParentFields(
@@ -2887,15 +2966,13 @@ async function seedEnrolledAdmissionsRows(
     );
     const medical = buildMedicalData(enrolledRand);
     return {
-      enroleeNumber: `${upperPrefix}-ENR-${String(i + 1).padStart(4, '0')}`,
+      enroleeNumber: r.enroleeNumber,
       studentNumber: r.studentNumber,
       category: m.category,
       firstName: r.firstName,
       lastName: r.lastName,
       middleName: r.middleName,
-      enroleeFullName: [r.firstName, r.middleName, r.lastName]
-        .filter(Boolean)
-        .join(' '),
+      enroleeFullName: fullNameOf(r.firstName, r.lastName, r.middleName),
       levelApplied: r.levelLabel,
       classType: m.classType,
       paymentOption: m.paymentOption,
@@ -2917,6 +2994,7 @@ async function seedEnrolledAdmissionsRows(
       residenceHistory: m.isStpApplicant ? STP_RESIDENCE_HISTORY : null,
       socialMediaConsent: m.socialMediaConsent,
       created_at: personaCreatedAtIso(i),
+      ...feedbackPrecourse[i],
       ...demographics,
       ...medical,
       ...parentFields,
@@ -2925,8 +3003,17 @@ async function seedEnrolledAdmissionsRows(
   const statusInserts = rows.map((r, i) => {
     const fill = personaStageFill(i);
     const m = personaMeta[i];
+    // Single backdate for the whole stage trail of this row, so the per-stage
+    // {stage}UpdatedDate values are internally consistent (real rows stamp them
+    // around the enrolment moment). Column casing intentionally mirrors the live
+    // schema's inconsistency (see the real-data dump): registration uses
+    // `registrationUpdateDate`, the rest use `{stage}UpdatedDate`; all use the
+    // lowercase `Updatedby` except `applicationUpdatedBy` (capital B).
+    const stageDate = personaUpdatedDate(i);
     return {
-      enroleeNumber: `${upperPrefix}-ENR-${String(i + 1).padStart(4, '0')}`,
+      enroleeNumber: r.enroleeNumber,
+      enroleeName: fullNameOf(r.firstName, r.lastName, r.middleName),
+      enrolmentDate: stageDate,
       // SIS-side pipeline status — Enrolled / Enrolled (Conditional) / Withdrawn
       // per the persona ranges.
       applicationStatus: personaApplicationStatus(i),
@@ -2936,12 +3023,29 @@ async function seedEnrolledAdmissionsRows(
       classLevel: r.levelLabel,
       classSection: r.sectionName,
       classStatus: 'Finished',
-      applicationUpdatedDate: personaUpdatedDate(i),
+      classUpdatedDate: stageDate,
+      classUpdatedby: SEEDER_ACTOR,
+      applicationUpdatedDate: stageDate,
+      applicationUpdatedBy: SEEDER_ACTOR,
+      // Every completed stage stamps its own updated date + actor. These
+      // personas are all fully enrolled, so every stage below is set.
       registrationStatus: fill.registrationStatus,
+      registrationUpdateDate: stageDate,
+      registrationUpdatedby: SEEDER_ACTOR,
       documentStatus: fill.documentStatus,
+      documentUpdatedDate: stageDate,
+      documentUpdatedby: SEEDER_ACTOR,
       assessmentStatus: fill.assessmentStatus,
+      assessmentUpdatedDate: stageDate,
+      assessmentUpdatedby: SEEDER_ACTOR,
       contractStatus: fill.contractStatus,
+      contractUpdatedDate: stageDate,
+      contractUpdatedby: SEEDER_ACTOR,
       feeStatus: fill.feeStatus,
+      feeUpdatedDate: stageDate,
+      feeUpdatedby: SEEDER_ACTOR,
+      // Post-enrolment stages stay null for a just-enrolled student (real dump
+      // shows supplies/orientation null) — and classAY stays null.
     };
   });
 

@@ -576,12 +576,17 @@ async function wipeOneTestAy(
     );
   }
 
-  // Seeded test students (TEST-% legacy format + H270% realistic format).
+  // Seeded test students (TEST-% legacy + H270% legacy + H99% current realistic
+  // format). H99% mirrors the real portal scheme (H{ay2}{suf4}) the populated
+  // seeder now uses; it is test-only — production AYs use other prefixes — so
+  // there is no risk to real students. Legacy patterns kept for back-compat.
   {
     const { count, error } = await service
       .from('students')
       .delete({ count: 'exact' })
-      .or('student_number.like.TEST-%,student_number.like.H270%');
+      .or(
+        'student_number.like.TEST-%,student_number.like.H270%,student_number.like.H99%'
+      );
     if (error) {
       console.error('[reset] students TEST-% wipe failed:', error.message);
     } else {
