@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeAnnualGrade } from '@/lib/compute/annual';
-import { isEnrolledForTerm } from '@/lib/report-card/enrolment-coverage';
+import {
+  isEnrolledForTerm,
+  termEnrolment,
+} from '@/lib/report-card/enrolment-coverage';
 import {
   resolveNonExaminableLetter,
   deriveAnnualLetterForNonExam,
@@ -460,11 +463,11 @@ export async function buildReportCard(
   // student-recorded count from `attendance_records` so the report card
   // doesn't mis-render as 0 / N during early-term setup.
   const levelType = levelTypeForAudienceLookup(level.code);
-  const calendarSchoolDaysByTerm = new Map<string, number>();
+  const calendarDatesByTerm = new Map<string, string[]>();
   await Promise.all(
     termList.map(async (t) => {
       const dates = await getEncodableDatesForTerm(t.id, levelType);
-      calendarSchoolDaysByTerm.set(t.id, dates.length);
+      calendarDatesByTerm.set(t.id, dates);
     })
   );
 
@@ -490,23 +493,35 @@ export async function buildReportCard(
     );
   }
 
-  const attendance: AttendanceRecord[] = termList.map((t) => {
+  const attendance: AttendanceRecord[] = [];
+  for (const t of termList) {
+    const { enrolled, enrolledSchoolDays } = termEnrolment(
+      coverage,
+      t,
+      calendarDatesByTerm.get(t.id) ?? []
+    );
+    // Not enrolled this term → omit the record. The document renders N.A. for a
+    // missing term record, and computeAttendancePercentage then sums only
+    // enrolled terms (do NOT push a null-school_days record — that nulls the
+    // whole cumulative %).
+    if (!enrolled) continue;
     const studentDays = studentDaysByTerm.get(t.id) ?? {
       days_present: null,
       days_late: null,
     };
-    const calendarCount = calendarSchoolDaysByTerm.get(t.id) ?? 0;
+    // Clamped calendar count; fall back to the recorded (already prorated)
+    // rollup count only when the calendar is unconfigured for the term.
     const schoolDays =
-      calendarCount > 0
-        ? calendarCount
+      enrolledSchoolDays > 0
+        ? enrolledSchoolDays
         : (recordedSchoolDaysByTerm.get(t.id) ?? null);
-    return {
+    attendance.push({
       term_id: t.id,
       school_days: schoolDays,
       days_present: studentDays.days_present,
       days_late: studentDays.days_late,
-    };
-  });
+    });
+  }
 
   // KD #49: FCA comments on T1–T3 report cards come from `evaluation_writeups`.
   // The table is uniquely keyed on `(term_id, student_id)` (migration 018) so
