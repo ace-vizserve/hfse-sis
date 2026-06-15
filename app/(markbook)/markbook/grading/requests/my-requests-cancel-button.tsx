@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 import {
   AlertDialog,
@@ -20,25 +22,29 @@ import { Button } from '@/components/ui/button';
 
 export function MyRequestsCancelButton({ requestId }: { requestId: string }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
 
-  async function cancel() {
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/change-requests/${requestId}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'cancel' }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? 'failed to cancel');
+  // Tier-2 mutation. ApiError.message already resolves to the body's `error`
+  // field, so the original `body.error ?? 'failed to cancel'` copy is preserved
+  // via e.message; the generic fallback covers non-ApiError failures.
+  const cancelMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(
+        `/api/change-requests/${requestId}`,
+        jsonInit('PATCH', { action: 'cancel' })
+      ),
+    onSuccess: () => {
       toast.success('Request cancelled');
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'Failed to cancel');
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+
+  const busy = cancelMutation.isPending;
+
+  function cancel() {
+    cancelMutation.mutate();
   }
 
   return (

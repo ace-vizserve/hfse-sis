@@ -10,8 +10,10 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   Select,
   SelectContent,
@@ -154,8 +156,6 @@ export function EnvironmentCard({
   defaultProdAyCode?: string | null;
 }) {
   const router = useRouter();
-  const [submitting, setSubmitting] = useState<Environment | null>(null);
-  const [resetting, setResetting] = useState(false);
   // Which prod AY the user has selected to switch INTO. Only meaningful when
   // there are 2+ prod AYs; the single-AY case skips the picker and just sends
   // the implicit default. The dropdown is rendered inside the Production
@@ -164,14 +164,13 @@ export function EnvironmentCard({
     defaultProdAyCode
   );
 
-  async function resetTestEnv() {
-    setResetting(true);
-    try {
-      const res = await fetch('/api/sis/admin/environment', {
-        method: 'DELETE',
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Reset failed');
+  const resetMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ deleted?: Record<string, number> }>(
+        '/api/sis/admin/environment',
+        jsonInit('DELETE')
+      ),
+    onSuccess: (body) => {
       const d = body.deleted as Record<string, number> | undefined;
       const totals = d
         ? [
@@ -187,16 +186,19 @@ export function EnvironmentCard({
         `Test environment reset. ${totals.toLocaleString('en-SG')} rows cleared + AY dropped.`
       );
       router.refresh();
-    } catch (err) {
+    },
+    onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Reset failed');
-    } finally {
-      setResetting(false);
-    }
+    },
+  });
+  const resetting = resetMutation.isPending;
+
+  function resetTestEnv() {
+    resetMutation.mutate();
   }
 
-  async function switchTo(target: Environment) {
-    setSubmitting(target);
-    try {
+  const switchMutation = useMutation({
+    mutationFn: (target: Environment) => {
       const payload: { target: Environment; ay_code?: string } = { target };
       // For the production target, send the picked AY when 2+ options exist
       // so the server doesn't fall back to its default-pick heuristic. The
@@ -208,14 +210,13 @@ export function EnvironmentCard({
       ) {
         payload.ay_code = pickedProdAy;
       }
-      const res = await fetch('/api/sis/admin/environment', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Environment switch failed');
-
+      return apiFetch<{
+        structure?: StructureSummary;
+        seed?: SeedSummary;
+        populated?: PopulatedSummary;
+      }>('/api/sis/admin/environment', jsonInit('POST', payload));
+    },
+    onSuccess: (body, target) => {
       if (target === 'test') {
         const structure = (body.structure ?? null) as StructureSummary;
         const seed = (body.seed ?? null) as SeedSummary;
@@ -227,13 +228,20 @@ export function EnvironmentCard({
         toast.success('Switched to Production environment.');
       }
       router.refresh();
-    } catch (err) {
+    },
+    onError: (err) => {
       toast.error(
         err instanceof Error ? err.message : 'Environment switch failed'
       );
-    } finally {
-      setSubmitting(null);
-    }
+    },
+  });
+  // Preserve the per-target `submitting` signal: which environment is mid-switch.
+  const submitting: Environment | null = switchMutation.isPending
+    ? (switchMutation.variables ?? null)
+    : null;
+
+  function switchTo(target: Environment) {
+    switchMutation.mutate(target);
   }
 
   return (

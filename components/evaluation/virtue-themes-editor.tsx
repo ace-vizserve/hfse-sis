@@ -1,5 +1,6 @@
 'use client';
 
+import { useMutation } from '@tanstack/react-query';
 import { Loader2, Sparkle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -7,6 +8,7 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 type TermProp = {
   id: string;
@@ -44,38 +46,40 @@ export function VirtueThemesEditor({ terms }: { terms: TermProp[] }) {
     return (values[id] ?? '').trim() !== (baselines[id] ?? '').trim();
   }
 
-  async function handleSave(term: TermProp) {
-    const value = (values[term.id] ?? '').trim();
-    setSaving((prev) => new Set(prev).add(term.id));
-    try {
-      const res = await fetch('/api/evaluation/virtue-theme', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          termId: term.id,
-          virtueTheme: value || null,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        toast.error(
-          (body as { error?: string }).error ?? 'Failed to save virtue theme'
-        );
-        return;
-      }
+  const saveMutation = useMutation({
+    mutationFn: (term: TermProp) => {
+      const value = (values[term.id] ?? '').trim();
+      return apiFetch(
+        '/api/evaluation/virtue-theme',
+        jsonInit('PATCH', { termId: term.id, virtueTheme: value || null })
+      );
+    },
+    onSuccess: (_data, term) => {
+      const value = (values[term.id] ?? '').trim();
       // Update baseline to current trimmed value
       setBaselines((prev) => ({ ...prev, [term.id]: value }));
       toast.success(`${term.label} virtue theme saved`);
       router.refresh();
-    } catch {
-      toast.error('Network error — please try again');
-    } finally {
+    },
+    onError: (e) => {
+      // ApiError.message already equals the route's `error` body field, so a
+      // route-specific message (not a generic one) is surfaced.
+      toast.error(
+        e instanceof Error ? e.message : 'Failed to save virtue theme'
+      );
+    },
+    onSettled: (_data, _error, term) => {
       setSaving((prev) => {
         const next = new Set(prev);
         next.delete(term.id);
         return next;
       });
-    }
+    },
+  });
+
+  function handleSave(term: TermProp) {
+    setSaving((prev) => new Set(prev).add(term.id));
+    saveMutation.mutate(term);
   }
 
   return (

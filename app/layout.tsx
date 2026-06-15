@@ -7,6 +7,7 @@ import {
   CommandPalette,
   CommandPaletteProvider,
 } from '@/components/sis/command-palette';
+import { QueryProvider } from '@/components/providers/query-provider';
 import { ScreenGuard } from '@/components/ui/screen-guard';
 import { getSessionUser } from '@/lib/supabase/server';
 
@@ -53,24 +54,26 @@ export default async function RootLayout({
       className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} h-full`}
     >
       <body className="min-h-full bg-background text-foreground flex flex-col">
-        <CommandPaletteProvider>
-          {children}
-          {role && <CommandPalette role={role} />}
-        </CommandPaletteProvider>
-        <ScreenGuard />
-        <Toaster
-          theme="light"
-          position="top-center"
-          richColors
-          closeButton
-          options={{
-            fill: 'black',
-            styles: {
-              title: 'text-white!',
-              description: 'text-white/75!',
-            },
-          }}
-        />
+        <QueryProvider>
+          <CommandPaletteProvider>
+            {children}
+            {role && <CommandPalette role={role} />}
+          </CommandPaletteProvider>
+          <ScreenGuard />
+          <Toaster
+            theme="light"
+            position="top-center"
+            richColors
+            closeButton
+            options={{
+              fill: 'black',
+              styles: {
+                title: 'text-white!',
+                description: 'text-white/75!',
+              },
+            }}
+          />
+        </QueryProvider>
       </body>
     </html>
   );

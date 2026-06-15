@@ -14,8 +14,10 @@ import {
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -198,12 +200,15 @@ export function NewSheetForm({
   const wwTotal = (wwSlots || 0) * (wwEach || 0);
   const ptTotal = (ptSlots || 0) * (ptEach || 0);
 
-  async function onSubmit(values: NewSheetInput) {
-    try {
-      const res = await fetch('/api/grading-sheets', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
+  // Tier-2 mutation (Model A): the POST runs through useMutation; onSubmit stays
+  // async + mutateAsync so RHF's isSubmitting still drives the busy state, and
+  // router.push fires on success exactly as before. The 'failed' fallback is
+  // preserved — ApiError.message already resolves to body.error.
+  const createMutation = useMutation({
+    mutationFn: (values: NewSheetInput) =>
+      apiFetch<{ id: string }>(
+        '/api/grading-sheets',
+        jsonInit('POST', {
           term_id: values.term_id,
           section_id: values.section_id,
           subject_id: values.subject_id,
@@ -211,10 +216,13 @@ export function NewSheetForm({
           pt_totals: Array(values.pt_slots).fill(values.pt_each),
           qa_total: values.qa_total,
           teacher_name: values.teacher_name?.trim() || null,
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? 'failed');
+        })
+      ),
+  });
+
+  async function onSubmit(values: NewSheetInput) {
+    try {
+      const body = await createMutation.mutateAsync(values);
       toast.success('Grading sheet created');
       router.push(`/markbook/grading/${body.id}`);
     } catch (e) {

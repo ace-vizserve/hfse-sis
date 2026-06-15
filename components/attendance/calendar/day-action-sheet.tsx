@@ -5,10 +5,12 @@
 // addition is an event (the editor's type decides whether it's a school-status
 // override or an informational event). A plain school day shows the empty state.
 
+import { useMutation } from '@tanstack/react-query';
 import { CalendarPlus, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   DAY_TYPE_LEGEND_COLOR,
   EVENT_CATEGORY_LEGEND_COLOR,
@@ -105,52 +107,52 @@ export function DayActionSheet({
 
   // Revert a school-status override back to a regular school day. Whole-school
   // ('all') is set explicitly to school_day; a level override is dropped so it
-  // follows the school-wide day again.
-  async function removeOverride(audience: Audience) {
-    if (!iso) return;
-    setBusyKey(`day:${audience}`);
-    try {
-      const res =
-        audience === 'all'
-          ? await fetch('/api/attendance/calendar', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                termId,
-                audience: 'all',
-                entries: [
-                  {
-                    date: iso,
-                    dayType: 'school_day',
-                    label: null,
-                    hblOverlay: false,
-                  },
-                ],
-              }),
+  // follows the school-wide day again. Tier-2 mutation (Model A): the network
+  // call routes through useMutation (retry: 0 + consistent error handling),
+  // while `busyKey` still gates the specific row's button. Route-specific error
+  // copy is preserved — ApiError.message resolves the body's `error`/`message`.
+  const removeMutation = useMutation({
+    mutationFn: (audience: Audience) =>
+      audience === 'all'
+        ? apiFetch(
+            '/api/attendance/calendar',
+            jsonInit('POST', {
+              termId,
+              audience: 'all',
+              entries: [
+                {
+                  date: iso,
+                  dayType: 'school_day',
+                  label: null,
+                  hblOverlay: false,
+                },
+              ],
             })
-          : await fetch(
-              `/api/attendance/calendar?${new URLSearchParams({
-                termId,
-                date: iso,
-                audience,
-              }).toString()}`,
-              { method: 'DELETE' }
-            );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(
-          (body as { error?: string; message?: string }).error ??
-            (body as { message?: string }).message ??
-            `Server error ${res.status}`
-        );
-      }
+          )
+        : apiFetch(
+            `/api/attendance/calendar?${new URLSearchParams({
+              termId,
+              date: iso ?? '',
+              audience,
+            }).toString()}`,
+            { method: 'DELETE' }
+          ),
+    onSuccess: () => {
       toast.success('Reverted to a school day');
       onSaved();
-    } catch (err) {
+    },
+    onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Failed to revert');
-    } finally {
+    },
+    onSettled: () => {
       setBusyKey(null);
-    }
+    },
+  });
+
+  function removeOverride(audience: Audience) {
+    if (!iso) return;
+    setBusyKey(`day:${audience}`);
+    removeMutation.mutate(audience);
   }
 
   return (

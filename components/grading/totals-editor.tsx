@@ -2,8 +2,11 @@
 
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import { Loader2, Minus, Pencil, Plus, Save } from 'lucide-react';
 import { toast } from 'sonner';
+
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 import {
   AlertDialog,
@@ -80,7 +83,6 @@ export function TotalsEditor({
   const [ww, setWw] = useState<number[]>(initialWw);
   const [pt, setPt] = useState<number[]>(initialPt);
   const [qa, setQa] = useState<number | null>(initialQa);
-  const [busy, setBusy] = useState(false);
   const [shrinkConfirmOpen, setShrinkConfirmOpen] = useState(false);
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [correctionReason, setCorrectionReason] =
@@ -149,6 +151,27 @@ export function TotalsEditor({
     void doSave();
   }
 
+  // Tier-2 mutation (Model A): useMutation owns the pending/error UX; on
+  // success we still router.refresh() so the server-rendered grade tree
+  // re-pulls. The bespoke error message (422 body.error from the slot-shrink /
+  // validation path) is preserved — ApiError.message already resolves to
+  // body.error, so `e.message` carries the route's specific copy.
+  const saveMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch(
+        `/api/grading-sheets/${sheetId}/totals`,
+        jsonInit('PATCH', payload)
+      ),
+    onSuccess: () => {
+      setOpen(false);
+      toast.success('Totals saved — grades recomputed');
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'Failed to save totals');
+    },
+  });
+
   async function doSave() {
     let lockExtras: Record<string, unknown> = {};
     if (isLocked) {
@@ -160,28 +183,12 @@ export function TotalsEditor({
       };
     }
 
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/grading-sheets/${sheetId}/totals`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          ww_totals: ww,
-          pt_totals: pt,
-          qa_total: qa,
-          ...lockExtras,
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? 'save failed');
-      setOpen(false);
-      toast.success('Totals saved — grades recomputed');
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save totals');
-    } finally {
-      setBusy(false);
-    }
+    saveMutation.mutate({
+      ww_totals: ww,
+      pt_totals: pt,
+      qa_total: qa,
+      ...lockExtras,
+    });
   }
 
   return (
@@ -263,13 +270,13 @@ export function TotalsEditor({
                   Cancel
                 </Button>
               </SheetClose>
-              <Button type="submit" size="sm" disabled={busy}>
-                {busy ? (
+              <Button type="submit" size="sm" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Save className="h-4 w-4" />
                 )}
-                {busy ? 'Saving…' : 'Save totals'}
+                {saveMutation.isPending ? 'Saving…' : 'Save totals'}
               </Button>
             </SheetFooter>
           </form>

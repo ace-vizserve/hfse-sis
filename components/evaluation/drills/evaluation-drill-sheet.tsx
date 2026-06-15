@@ -2,15 +2,21 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
-import { toast } from 'sonner';
+import { AlertTriangle, RotateCcw } from 'lucide-react';
 
 import {
   DrillDownSheet,
   type DrillDownDensity,
   type DrillDownGroupBy,
 } from '@/components/dashboard/drill-down-sheet';
+import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { apiFetch } from '@/lib/query/fetcher';
+import { queryKeys } from '@/lib/query/keys';
+import { cn } from '@/lib/utils';
 import {
   allColumnsForKind,
   defaultColumnsForTarget,
@@ -26,6 +32,10 @@ import {
   type SectionWriteupRow,
   type WriteupRow,
 } from '@/lib/evaluation/drill';
+
+// Stable reference so `rows` doesn't get a fresh [] each render while the query
+// is loading (downstream memos depend on its identity).
+const EMPTY_ROWS: EvaluationDrillRow[] = [];
 
 export type EvaluationDrillSheetProps = {
   target: EvaluationDrillTarget;
@@ -474,7 +484,6 @@ export function EvaluationDrillSheet(props: EvaluationDrillSheetProps) {
     initialAdvisersBehind,
   ]);
 
-  const [rows, setRows] = React.useState<EvaluationDrillRow[]>(seedRows);
   const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>([]);
   const [selectedLevels, setSelectedLevels] = React.useState<string[]>([]);
   const [groupBy, setGroupBy] = React.useState<DrillDownGroupBy>('none');
@@ -483,35 +492,40 @@ export function EvaluationDrillSheet(props: EvaluationDrillSheetProps) {
     DrillColumnKey[]
   >(() => defaultColumnsForTarget(target));
 
-  const skipNextFetchRef = React.useRef(seedRows.length > 0);
+  // Read via TanStack Query. Seed rows (when the parent hydrated us) are passed
+  // as initialData, so a seeded drill renders instantly and — being fresh
+  // within staleTime — skips the network round-trip, matching the old
+  // skipNextFetchRef behaviour. An unseeded drill fetches on open and shows the
+  // skeleton. The queryFn forwards the abort signal so a fast close/reopen
+  // aborts the stale request instead of racing it onto the screen.
+  const drillQuery = useQuery({
+    queryKey: queryKeys.evaluationDrill(target, {
+      ay: ayCode,
+      from: initialFrom ?? null,
+      to: initialTo ?? null,
+      segment: segment ?? null,
+    }),
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams({ ay: ayCode });
+      if (initialFrom) params.set('from', initialFrom);
+      if (initialTo) params.set('to', initialTo);
+      if (segment) params.set('segment', segment);
+      const data = await apiFetch<{ rows?: EvaluationDrillRow[] }>(
+        `/api/evaluation/drill/${target}?${params.toString()}`,
+        { signal }
+      );
+      return Array.isArray(data.rows) ? data.rows : [];
+    },
+    // The seed is the broad (kind-level) row set — per-(target,segment)
+    // narrowing happens server-side in the drill route (KD #82). So it's a
+    // placeholder for instant paint, not authoritative: placeholderData paints
+    // it immediately while the query STILL fetches the narrowed rows and
+    // replaces it. (initialData + a fresh timestamp would skip the fetch and
+    // leave the un-narrowed set showing.)
+    placeholderData: seedRows.length > 0 ? seedRows : undefined,
+  });
 
-  React.useEffect(() => {
-    if (skipNextFetchRef.current) {
-      skipNextFetchRef.current = false;
-      return;
-    }
-    let cancelled = false;
-    const params = new URLSearchParams({ ay: ayCode });
-    if (initialFrom) params.set('from', initialFrom);
-    if (initialTo) params.set('to', initialTo);
-    if (segment) params.set('segment', segment);
-    fetch(`/api/evaluation/drill/${target}?${params.toString()}`)
-      .then((r) => {
-        if (!r.ok) throw new Error('drill_fetch_failed');
-        return r.json();
-      })
-      .then((data: { rows: EvaluationDrillRow[] }) => {
-        if (!cancelled) {
-          setRows(data.rows ?? []);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) toast.error('Failed to load drill data');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [target, segment, ayCode, initialFrom, initialTo]);
+  const rows = drillQuery.data ?? EMPTY_ROWS;
 
   const statusOptions = React.useMemo(() => {
     if (kind !== 'writeup') return undefined;
@@ -606,6 +620,44 @@ export function EvaluationDrillSheet(props: EvaluationDrillSheetProps) {
   if (visibleColumnKeys.length)
     csvParams.set('columns', visibleColumnKeys.join(','));
   const csvHref = `/api/evaluation/drill/${target}?${csvParams.toString()}`;
+
+  if (drillQuery.isLoading && rows.length === 0) {
+    return <DrillSheetSkeleton title={header.title} />;
+  }
+
+  if (
+    drillQuery.isError &&
+    (rows.length === 0 || drillQuery.isPlaceholderData)
+  ) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+        <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive ring-1 ring-inset ring-destructive/20">
+          <AlertTriangle className="size-6" />
+        </div>
+        <div className="space-y-1">
+          <p className="font-serif text-lg font-semibold text-foreground">
+            Couldn’t load {header.title.toLowerCase()}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {drillQuery.error instanceof Error
+              ? drillQuery.error.message
+              : 'Something went wrong while loading this list.'}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void drillQuery.refetch()}
+          disabled={drillQuery.isFetching}
+        >
+          <RotateCcw
+            className={cn('size-4', drillQuery.isFetching && 'animate-spin')}
+          />
+          Try again
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <DrillDownSheet<EvaluationDrillRow>

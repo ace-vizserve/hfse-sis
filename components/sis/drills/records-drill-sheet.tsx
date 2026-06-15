@@ -2,14 +2,15 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
 import {
   AlertCircle,
   AlertTriangle,
   CheckCircle2,
   HelpCircle,
+  RotateCcw,
 } from 'lucide-react';
-import { toast } from 'sonner';
 
 import {
   DrillDownSheet,
@@ -19,6 +20,7 @@ import {
 import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   ALL_DRILL_COLUMNS,
   DRILL_COLUMN_LABELS,
@@ -29,6 +31,12 @@ import {
   type RecordsDrillTarget,
 } from '@/lib/sis/drill';
 import { compareLevelLabels } from '@/lib/sis/levels';
+import { apiFetch } from '@/lib/query/fetcher';
+import { queryKeys } from '@/lib/query/keys';
+import { cn } from '@/lib/utils';
+
+// Stable empty reference so `rows` keeps a steady identity while loading.
+const EMPTY_ROWS: RecordsDrillRow[] = [];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -417,10 +425,6 @@ export function RecordsDrillSheet({
   initialRows,
 }: RecordsDrillSheetProps) {
   // ── State ────────────────────────────────────────────────────────────────
-  const [rows, setRows] = React.useState<RecordsDrillRow[]>(initialRows ?? []);
-  const [loading, setLoading] = React.useState<boolean>(
-    initialRows === undefined
-  );
   const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>([]);
   const [selectedLevels, setSelectedLevels] = React.useState<string[]>([]);
   const [groupBy, setGroupBy] = React.useState<DrillDownGroupBy>('none');
@@ -430,47 +434,42 @@ export function RecordsDrillSheet({
   >(() => defaultColumnsForTarget(target));
 
   // ── Fetch on range change ────────────────────────────────────────────────
-  // Skip the first effect run when initialRows is provided — the parent
-  // already handed us hydrated rows.
-  const skipNextFetchRef = React.useRef<boolean>(initialRows !== undefined);
-
-  React.useEffect(() => {
-    if (skipNextFetchRef.current) {
-      skipNextFetchRef.current = false;
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    const url = buildDrillUrl(
-      target,
-      ayCode,
-      initialFrom,
-      initialTo,
-      segment,
-      'json'
-    );
-    fetch(url, { credentials: 'include' })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const json = (await res.json()) as { rows?: RecordsDrillRow[] };
-        if (cancelled) return;
-        setRows(Array.isArray(json.rows) ? json.rows : []);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        toast.error('Failed to load drill data');
-      })
-      .finally(() => {
-        if (!cancelled) {
-          React.startTransition(() => {
-            setLoading(false);
-          });
-        }
+  // Read via TanStack Query. When the parent hydrated us with initialRows the
+  // drill renders instantly and the first fetch is skipped (matching the
+  // original `skipNextFetchRef = initialRows !== undefined` guard); otherwise
+  // it fetches on open + shows the skeleton. The queryFn forwards the abort
+  // signal so a fast close/reopen aborts the stale request.
+  const drillQuery = useQuery({
+    queryKey: queryKeys.sisRecordsDrill(target, {
+      ay: ayCode,
+      from: initialFrom ?? null,
+      to: initialTo ?? null,
+      segment: segment ?? null,
+    }),
+    queryFn: async ({ signal }) => {
+      const url = buildDrillUrl(
+        target,
+        ayCode,
+        initialFrom,
+        initialTo,
+        segment,
+        'json'
+      );
+      const json = await apiFetch<{ rows?: RecordsDrillRow[] }>(url, {
+        credentials: 'include',
+        signal,
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [target, ayCode, segment, initialFrom, initialTo]);
+      return Array.isArray(json.rows) ? json.rows : [];
+    },
+    // The seed is the broad, un-narrowed row set — per-(target,segment)
+    // narrowing happens server-side in the drill route (KD #82). So it's a
+    // placeholder for instant paint, not authoritative: placeholderData paints
+    // it immediately while the query STILL fetches the narrowed rows and
+    // replaces it.
+    placeholderData: initialRows,
+  });
+
+  const rows = drillQuery.data ?? EMPTY_ROWS;
 
   // ── Pre-filter rows by status + level ───────────────────────────────────
   const preFiltered = React.useMemo<RecordsDrillRow[]>(() => {
@@ -536,8 +535,42 @@ export function RecordsDrillSheet({
   const heading = drillHeaderForTarget(target, segment ?? null);
 
   // Show a skeleton on first load (parent didn't hydrate via initialRows).
-  if (loading && rows.length === 0) {
+  if (drillQuery.isLoading && rows.length === 0) {
     return <DrillSheetSkeleton title={heading.title} />;
+  }
+
+  if (
+    drillQuery.isError &&
+    (rows.length === 0 || drillQuery.isPlaceholderData)
+  ) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+        <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive ring-1 ring-inset ring-destructive/20">
+          <AlertTriangle className="size-6" />
+        </div>
+        <div className="space-y-1">
+          <p className="font-serif text-lg font-semibold text-foreground">
+            Couldn’t load {heading.title.toLowerCase()}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {drillQuery.error instanceof Error
+              ? drillQuery.error.message
+              : 'Something went wrong while loading this list.'}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void drillQuery.refetch()}
+          disabled={drillQuery.isFetching}
+        >
+          <RotateCcw
+            className={cn('size-4', drillQuery.isFetching && 'animate-spin')}
+          />
+          Try again
+        </Button>
+      </div>
+    );
   }
 
   const csvHref = buildDrillUrl(

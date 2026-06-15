@@ -3,8 +3,10 @@
 import { ArrowRightLeft, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -45,44 +47,45 @@ export function SectionTransferDialog({
 }: SectionTransferDialogProps) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
-  const [submitting, setSubmitting] = React.useState(false);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!open) setSelectedId(null);
   }, [open]);
 
-  async function submit() {
-    if (!selectedId) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch(
+  const transferMutation = useMutation({
+    mutationFn: (targetSectionId: string) =>
+      apiFetch(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/transfer-section?ay=${encodeURIComponent(ayCode)}`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ targetSectionId: selectedId }),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(
-          (body as { error?: string }).error ??
-            `Transfer failed (${res.status})`
-        );
-        return;
-      }
-      const target = siblings.find((s) => s.id === selectedId);
+        jsonInit('POST', { targetSectionId })
+      ),
+    onSuccess: (_data, targetSectionId) => {
+      const target = siblings.find((s) => s.id === targetSectionId);
       toast.success(
         `Moved ${studentName} from ${fromSectionName} to ${target?.name ?? 'target'}.`
       );
       setOpen(false);
       router.refresh();
-    } catch (err) {
+    },
+    onError: (err) => {
+      // Preserve the two-tier error copy: prefer the server's `error`, else a
+      // status-coded fallback; network errors → generic 'Transfer failed'.
+      if (err instanceof ApiError) {
+        const serverError =
+          err.body && typeof err.body === 'object'
+            ? (err.body as { error?: string }).error
+            : undefined;
+        toast.error(serverError ?? `Transfer failed (${err.status})`);
+        return;
+      }
       toast.error(err instanceof Error ? err.message : 'Transfer failed');
-    } finally {
-      setSubmitting(false);
-    }
+    },
+  });
+  const submitting = transferMutation.isPending;
+
+  function submit() {
+    if (!selectedId) return;
+    transferMutation.mutate(selectedId);
   }
 
   // Sort siblings by capacity (most-available first), then alphabetically.

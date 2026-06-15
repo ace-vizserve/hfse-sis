@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, Loader2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { apiFetch } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -51,39 +53,19 @@ export function ImportAttendanceForm({
   const [termId, setTermId] = useState(defaultTerm);
   const [dryRun, setDryRun] = useState(true);
   const [file, setFile] = useState<File | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ImportResponse | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!file) {
-      toast.error('Pick a workbook first');
-      return;
-    }
-    if (!termId) {
-      toast.error('Select a term');
-      return;
-    }
-
-    setSubmitting(true);
-    setResult(null);
-    try {
-      const formData = new FormData();
-      formData.set('file', file);
-      formData.set('termId', termId);
-      formData.set('dryRun', String(dryRun));
-
-      const res = await fetch('/api/attendance/import', {
+  // Tier-2 mutation (Model A): a multipart upload — FormData passed straight to
+  // apiFetch (NO jsonInit / content-type header, so the browser sets the
+  // multipart boundary). useMutation owns the pending/error UX; the
+  // route-specific error copy is preserved via ApiError.message (body.error).
+  const importMutation = useMutation({
+    mutationFn: (formData: FormData) =>
+      apiFetch<ImportResponse>('/api/attendance/import', {
         method: 'POST',
         body: formData,
-      });
-      const body: ImportResponse | { error: string } = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          'error' in body ? body.error : `upload failed (${res.status})`
-        );
-      }
-      const ok = body as ImportResponse;
+      }),
+    onSuccess: (ok) => {
       setResult(ok);
       const totalErrors = ok.reports.reduce((n, r) => n + r.errors.length, 0);
       if (totalErrors > 0) {
@@ -99,11 +81,31 @@ export function ImportAttendanceForm({
             : `Imported ${ok.totalDailyWritten.toLocaleString('en-SG')} rows across ${ok.sections} sheet${ok.sections === 1 ? '' : 's'}`
         );
       }
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'import failed');
-    } finally {
-      setSubmitting(false);
+    },
+  });
+
+  const submitting = importMutation.isPending;
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file) {
+      toast.error('Pick a workbook first');
+      return;
     }
+    if (!termId) {
+      toast.error('Select a term');
+      return;
+    }
+
+    setResult(null);
+    const formData = new FormData();
+    formData.set('file', file);
+    formData.set('termId', termId);
+    formData.set('dryRun', String(dryRun));
+    importMutation.mutate(formData);
   }
 
   return (

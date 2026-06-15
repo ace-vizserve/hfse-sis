@@ -19,8 +19,11 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import * as React from 'react';
 
+import { apiFetch } from '@/lib/query/fetcher';
+import { queryKeys } from '@/lib/query/keys';
 import {
   CommandDialog,
   CommandEmpty,
@@ -375,8 +378,12 @@ export function CommandPalette({ role }: { role: Role | null }) {
   const router = useRouter();
   const { open, setOpen } = useCommandPaletteContext();
   const [query, setQuery] = React.useState('');
-  const [students, setStudents] = React.useState<StudentMatch[]>([]);
-  const [loading, setLoading] = React.useState(false);
+  // Debounced query that actually drives the search read — the raw `query`
+  // updates on every keystroke, but only this trailing-edge value (200ms)
+  // feeds the queryKey/enabled so we don't fire a request per character.
+  const [debouncedQuery, setDebouncedQuery] = React.useState('');
+
+  const canSearchStudents = !!role && STUDENT_SEARCH_ROLES.includes(role);
 
   // Cmd+K (or Ctrl+K) toggles the palette globally — second entry point on
   // top of the visible <CommandPaletteTrigger> button rendered in the
@@ -397,54 +404,44 @@ export function CommandPalette({ role }: { role: Role | null }) {
   React.useEffect(() => {
     if (!open) {
       setQuery('');
-      setStudents([]);
-      setLoading(false);
+      setDebouncedQuery('');
     }
   }, [open]);
 
-  // Debounced student search. Skips when role can't access /api/sis/search
-  // (teachers / parents / admissions / p-file users) — palette still works
-  // for navigation, just no Students group.
+  // Debounce the query → debouncedQuery (200ms). Preserves the original
+  // search debounce; the read below keys off debouncedQuery.
   React.useEffect(() => {
-    if (!open) return;
-    if (!role || !STUDENT_SEARCH_ROLES.includes(role)) {
-      setStudents([]);
-      return;
-    }
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setStudents([]);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
     const handle = window.setTimeout(() => {
-      setLoading(true);
-      fetch(`/api/sis/search?q=${encodeURIComponent(trimmed)}`, {
-        credentials: 'include',
-      })
-        .then((res) =>
-          res.ok
-            ? res.json()
-            : Promise.reject(new Error(`status ${res.status}`))
-        )
-        .then((body) => {
-          if (cancelled) return;
-          const matches = Array.isArray(body?.matches) ? body.matches : [];
-          setStudents(matches as StudentMatch[]);
-        })
-        .catch(() => {
-          if (!cancelled) setStudents([]);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
+      setDebouncedQuery(query);
     }, 200);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, [query, role, open]);
+    return () => window.clearTimeout(handle);
+  }, [query]);
+
+  // Debounced student search via TanStack Query. Enabled only when the dialog
+  // is open, the role can access /api/sis/search (teachers / parents /
+  // admissions / p-file users are excluded — palette still works for
+  // navigation, just no Students group), and the trimmed query is ≥ 2 chars.
+  const trimmedQuery = debouncedQuery.trim();
+  const searchEnabled = open && canSearchStudents && trimmedQuery.length >= 2;
+
+  const studentsQuery = useQuery({
+    queryKey: queryKeys.commandPalette(trimmedQuery),
+    queryFn: async ({ signal }) => {
+      const body = await apiFetch<{ matches?: StudentMatch[] }>(
+        `/api/sis/search?q=${encodeURIComponent(trimmedQuery)}`,
+        { credentials: 'include', signal }
+      );
+      return Array.isArray(body.matches) ? body.matches : [];
+    },
+    enabled: searchEnabled,
+  });
+
+  // On error (or while disabled) treat the result set as empty — the original
+  // .catch(() => setStudents([])) behaviour. Students only render when enabled.
+  const students: StudentMatch[] = searchEnabled
+    ? (studentsQuery.data ?? [])
+    : [];
+  const loading = searchEnabled && studentsQuery.isFetching;
 
   // Filter nav entries by role gate. isRouteAllowed lives in lib/auth/roles
   // so the palette uses the SAME gate as the proxy + sidebar.
@@ -464,8 +461,6 @@ export function CommandPalette({ role }: { role: Role | null }) {
     }
     return groups;
   }, [visibleNav]);
-
-  const canSearchStudents = !!role && STUDENT_SEARCH_ROLES.includes(role);
 
   function go(href: string) {
     setOpen(false);

@@ -3,8 +3,10 @@
 import { Loader2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -95,7 +97,6 @@ export function EnrolmentEditSheet({
     initial.late_enrollee_term_number
   );
   const [showTermOverride, setShowTermOverride] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [confirmReEnrol, setConfirmReEnrol] = useState(false);
   const [confirmConvert, setConfirmConvert] = useState(false);
@@ -104,7 +105,6 @@ export function EnrolmentEditSheet({
     null
   );
   const [markAsLate, setMarkAsLate] = useState(true);
-  const [applyingLate, setApplyingLate] = useState(false);
 
   type Position = {
     activeTerm: { termNumber: number } | null;
@@ -127,8 +127,11 @@ export function EnrolmentEditSheet({
       ((status !== 'withdrawn' && initial.enrollment_status === 'withdrawn') ||
         status === 'late_enrollee');
     if (offeringLate && position === null) {
-      fetch(`/api/sis/today-term?ay=${encodeURIComponent(ayCode)}`)
-        .then((r) => r.json())
+      // Read (not a mutation): fetch the joining position. Kept inline (no
+      // query key) — routed through apiFetch so no raw fetch remains.
+      apiFetch<{ position?: Position | null }>(
+        `/api/sis/today-term?ay=${encodeURIComponent(ayCode)}`
+      )
         .then((d) => {
           const pos = (d.position ?? null) as Position | null;
           setPosition(pos);
@@ -158,8 +161,6 @@ export function EnrolmentEditSheet({
       setLateTermOverride(initial.late_enrollee_term_number);
       setShowTermOverride(false);
       setPendingMidTerm(null);
-      setSaving(false);
-      setApplyingLate(false);
       setPosition(null);
     }
   }
@@ -192,67 +193,24 @@ export function EnrolmentEditSheet({
     void doSave();
   }
 
-  async function doSave() {
-    setConfirmWithdraw(false);
-    setConfirmReEnrol(false);
-    setConfirmConvert(false);
-    setSaving(true);
-    try {
-      const body: Record<string, unknown> = {
-        bus_no: busNo,
-        classroom_officer_role: officer,
-        enrollment_status: status,
-      };
-      if (isWithdrawing) {
-        body.withdrawal_reason = withdrawalReason || null;
-        body.withdrawal_notes = withdrawalNotes.trim() || null;
-      }
-      // Correction path: row is already withdrawn — allow the registrar to
-      // update the reason without a status change.
-      if (
-        !isWithdrawing &&
-        initial.enrollment_status === 'withdrawn' &&
-        withdrawalReason
-      ) {
-        body.withdrawal_reason = withdrawalReason || null;
-        body.withdrawal_notes = withdrawalNotes.trim() || null;
-      }
-      // New late-enrollee tag — send the registrar's chosen joining term.
-      if (
-        status === 'late_enrollee' &&
-        initial.enrollment_status !== 'late_enrollee' &&
-        lateTermOverride !== null
-      ) {
-        body.late_enrollee_term_number = lateTermOverride;
-      }
-      // Convert late enrollee → normal — send the required reason (audit-only).
-      if (isConvertingLate) {
-        body.lateRevertReason = revertReason.trim();
-      }
-      const res = await fetch(
+  type SaveResponse = {
+    lateEnrolleeTerm?: { termLabel: string } | null;
+    admissionsCascade?: { enroleeNumber: string; ayCode: string } | null;
+    reEnrolment?: boolean;
+    midTermEnrolment?: MidTermPayload | null;
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      apiFetch<SaveResponse>(
         `/api/sections/${sectionId}/students/${enrolmentId}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        }
-      );
-      const resBody = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(resBody?.error ?? 'save failed');
-
-      const lateTerm = (
-        resBody as { lateEnrolleeTerm?: { termLabel: string } | null }
-      ).lateEnrolleeTerm;
-      const admissionsCascade = (
-        resBody as {
-          admissionsCascade?: { enroleeNumber: string; ayCode: string } | null;
-        }
-      ).admissionsCascade;
-      const reEnrolment = (resBody as { reEnrolment?: boolean }).reEnrolment;
-
-      const midTermPayload =
-        (resBody as { midTermEnrolment?: MidTermPayload | null })
-          .midTermEnrolment ?? null;
+        jsonInit('PATCH', body)
+      ),
+    onSuccess: (resBody) => {
+      const lateTerm = resBody.lateEnrolleeTerm;
+      const admissionsCascade = resBody.admissionsCascade;
+      const reEnrolment = resBody.reEnrolment;
+      const midTermPayload = resBody.midTermEnrolment ?? null;
 
       if (reEnrolment) {
         toast.success(`Restored ${studentName} to active enrolment`);
@@ -280,36 +238,106 @@ export function EnrolmentEditSheet({
 
       setOpen(false);
       router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'save failed');
-    } finally {
-      setSaving(false);
+    },
+    onError: (err) => {
+      // Preserve the original `resBody?.error ?? 'save failed'` fallback.
+      const serverError =
+        err instanceof ApiError && err.body && typeof err.body === 'object'
+          ? (err.body as { error?: string }).error
+          : undefined;
+      toast.error(serverError ?? 'save failed');
+    },
+  });
+
+  function doSave() {
+    setConfirmWithdraw(false);
+    setConfirmReEnrol(false);
+    setConfirmConvert(false);
+    const body: Record<string, unknown> = {
+      bus_no: busNo,
+      classroom_officer_role: officer,
+      enrollment_status: status,
+    };
+    if (isWithdrawing) {
+      body.withdrawal_reason = withdrawalReason || null;
+      body.withdrawal_notes = withdrawalNotes.trim() || null;
     }
+    // Correction path: row is already withdrawn — allow the registrar to
+    // update the reason without a status change.
+    if (
+      !isWithdrawing &&
+      initial.enrollment_status === 'withdrawn' &&
+      withdrawalReason
+    ) {
+      body.withdrawal_reason = withdrawalReason || null;
+      body.withdrawal_notes = withdrawalNotes.trim() || null;
+    }
+    // New late-enrollee tag — send the registrar's chosen joining term.
+    if (
+      status === 'late_enrollee' &&
+      initial.enrollment_status !== 'late_enrollee' &&
+      lateTermOverride !== null
+    ) {
+      body.late_enrollee_term_number = lateTermOverride;
+    }
+    // Convert late enrollee → normal — send the required reason (audit-only).
+    if (isConvertingLate) {
+      body.lateRevertReason = revertReason.trim();
+    }
+    saveMutation.mutate(body);
   }
 
-  async function handleTermOverride(termNumber: number) {
-    setSaving(true);
-    try {
-      const res = await fetch(
+  // Joining-term correction PATCH. The original read `body.error` on failure
+  // and reverted the local override; mirrored here.
+  const termOverrideMutation = useMutation({
+    mutationFn: (termNumber: number) =>
+      apiFetch(
         `/api/sections/${sectionId}/students/${enrolmentId}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ late_enrollee_term_number: termNumber }),
-        }
-      );
-      if (!res.ok) {
-        const e = (await res.json()) as { error?: string };
-        toast.error(e.error ?? 'Failed to update joining term');
-        setLateTermOverride(initial.late_enrollee_term_number);
-      } else {
-        toast.success(`Joining term updated to T${termNumber}`);
-        router.refresh();
-      }
-    } finally {
-      setSaving(false);
-    }
+        jsonInit('PATCH', { late_enrollee_term_number: termNumber })
+      ),
+    onSuccess: (_data, termNumber) => {
+      toast.success(`Joining term updated to T${termNumber}`);
+      router.refresh();
+    },
+    onError: (err) => {
+      const serverError =
+        err instanceof ApiError && err.body && typeof err.body === 'object'
+          ? (err.body as { error?: string }).error
+          : undefined;
+      toast.error(serverError ?? 'Failed to update joining term');
+      setLateTermOverride(initial.late_enrollee_term_number);
+    },
+  });
+
+  function handleTermOverride(termNumber: number) {
+    termOverrideMutation.mutate(termNumber);
   }
+
+  // Mid-term late-enrollee confirm after a successful re-enrolment. The
+  // original threw a bespoke 'Failed to mark as late enrollee' message.
+  const lateMutation = useMutation({
+    mutationFn: (vars: { sectionId: string; sectionStudentId: string }) =>
+      apiFetch(
+        `/api/sections/${vars.sectionId}/students/${vars.sectionStudentId}`,
+        jsonInit('PATCH', { enrollment_status: 'late_enrollee' })
+      ),
+    onSuccess: () => {
+      toast.success(
+        `Marked ${studentName} as late enrollee · ${pendingMidTerm?.termLabel ?? ''}`
+      );
+    },
+    onError: () => {
+      toast.error('Failed to mark as late enrollee');
+    },
+    onSettled: () => {
+      setPendingMidTerm(null);
+      setOpen(false);
+      router.refresh();
+    },
+  });
+
+  const saving = saveMutation.isPending || termOverrideMutation.isPending;
+  const applyingLate = lateMutation.isPending;
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -795,42 +823,17 @@ export function EnrolmentEditSheet({
             </AlertDialogCancel>
             <AlertDialogAction
               disabled={applyingLate}
-              onClick={async () => {
+              onClick={() => {
                 if (!markAsLate || !pendingMidTerm) {
                   setPendingMidTerm(null);
                   setOpen(false);
                   router.refresh();
                   return;
                 }
-                setApplyingLate(true);
-                try {
-                  const res = await fetch(
-                    `/api/sections/${pendingMidTerm.sectionId}/students/${pendingMidTerm.sectionStudentId}`,
-                    {
-                      method: 'PATCH',
-                      headers: { 'content-type': 'application/json' },
-                      body: JSON.stringify({
-                        enrollment_status: 'late_enrollee',
-                      }),
-                    }
-                  );
-                  if (!res.ok)
-                    throw new Error('Failed to mark as late enrollee');
-                  toast.success(
-                    `Marked ${studentName} as late enrollee · ${pendingMidTerm.termLabel}`
-                  );
-                } catch (e) {
-                  toast.error(
-                    e instanceof Error
-                      ? e.message
-                      : 'Could not mark as late enrollee'
-                  );
-                } finally {
-                  setApplyingLate(false);
-                  setPendingMidTerm(null);
-                  setOpen(false);
-                  router.refresh();
-                }
+                lateMutation.mutate({
+                  sectionId: pendingMidTerm.sectionId,
+                  sectionStudentId: pendingMidTerm.sectionStudentId,
+                });
               }}
             >
               {applyingLate && <Loader2 className="size-3.5 animate-spin" />}

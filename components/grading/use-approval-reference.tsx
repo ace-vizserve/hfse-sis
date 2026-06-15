@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
 
+import { apiFetch } from '@/lib/query/fetcher';
+
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -128,15 +130,16 @@ export function useChangeReference() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(
-          `/api/change-requests?status=approved&sheet_id=${encodeURIComponent(target.sheetId)}`
-        );
-        const bodyJson = (await res.json()) as {
+        // Read routed through apiFetch (the client fetch chokepoint). On a
+        // non-2xx it throws ApiError whose message already resolves to the
+        // body's `error` field — same copy as the original
+        // `bodyJson.error ?? 'failed to load requests'` throw.
+        const bodyJson = await apiFetch<{
           requests?: PendingRequest[];
           error?: string;
-        };
-        if (!res.ok)
-          throw new Error(bodyJson.error ?? 'failed to load requests');
+        }>(
+          `/api/change-requests?status=approved&sheet_id=${encodeURIComponent(target.sheetId)}`
+        );
         if (cancelled) return;
         const filtered = (bodyJson.requests ?? []).filter((r) => {
           if (r.field_changed !== target.field) return false;

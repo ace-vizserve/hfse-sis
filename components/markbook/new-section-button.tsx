@@ -4,9 +4,11 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
+import { useMutation } from '@tanstack/react-query';
 import { Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -62,19 +64,26 @@ export function NewSectionButton({
     defaultValues: BLANK,
   });
 
-  async function onSubmit(values: SectionCreateInput) {
-    try {
-      const res = await fetch('/api/sections', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
+  // Tier-2 mutation (Model A): the POST is routed through useMutation; we keep
+  // onSubmit async + mutateAsync so RHF's isSubmitting still drives `busy`, and
+  // router.push/refresh fire on success exactly as before. The bespoke error
+  // fallback ('create failed') is preserved — ApiError.message already resolves
+  // to body.error, so a thrown ApiError carries the route's specific copy.
+  const createMutation = useMutation({
+    mutationFn: (values: SectionCreateInput) =>
+      apiFetch<{ id: string }>(
+        '/api/sections',
+        jsonInit('POST', {
           name: values.name.trim(),
           level_id: values.level_id,
           class_type: values.class_type ?? null,
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'create failed');
+        })
+      ),
+  });
+
+  async function onSubmit(values: SectionCreateInput) {
+    try {
+      const body = await createMutation.mutateAsync(values);
       toast.success(`Created ${values.name}`);
       setOpen(false);
       form.reset(BLANK);

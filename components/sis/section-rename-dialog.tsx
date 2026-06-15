@@ -4,9 +4,11 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
+import { useMutation } from '@tanstack/react-query';
 import { Loader2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -45,26 +47,31 @@ export function SectionRenameDialog({
     defaultValues: { name: currentName },
   });
 
+  const renameMutation = useMutation({
+    mutationFn: (nextName: string) =>
+      apiFetch(
+        `/api/sections/${sectionId}`,
+        jsonInit('PATCH', { name: nextName })
+      ),
+    onSuccess: (_data, nextName) => {
+      toast.success(`Section renamed to ${nextName}`);
+      setOpen(false);
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'update failed');
+    },
+  });
+
   async function onSubmit(values: SectionUpdateInput) {
     const nextName = values.name?.trim() ?? currentName;
     if (nextName === currentName) {
       setOpen(false);
       return;
     }
-    try {
-      const res = await fetch(`/api/sections/${sectionId}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: nextName }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'update failed');
-      toast.success(`Section renamed to ${nextName}`);
-      setOpen(false);
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'update failed');
-    }
+    // Awaited inside RHF's handleSubmit so `formState.isSubmitting` stays the
+    // busy signal.
+    await renameMutation.mutateAsync(nextName).catch(() => {});
   }
 
   const busy = form.formState.isSubmitting;

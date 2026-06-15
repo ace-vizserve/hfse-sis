@@ -5,8 +5,10 @@ import { Loader2, Plus, Tag } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -99,28 +101,33 @@ export function EditDiscountCodeDialog({
     ayCodes && ayCodes.length > 0 ? ayCodes : [ayCode];
   const showPicker = mode === 'create';
 
-  async function onSubmit(values: DiscountCodeInput) {
-    try {
+  const saveMutation = useMutation({
+    mutationFn: (values: DiscountCodeInput) => {
       const isEdit = mode === 'edit';
       const writeAy = isEdit ? ayCode : targetAy;
       const url = isEdit
         ? `/api/sis/discount-codes/${encodeURIComponent(String(id))}?ay=${encodeURIComponent(writeAy)}`
         : `/api/sis/discount-codes?ay=${encodeURIComponent(writeAy)}`;
-      const res = await fetch(url, {
-        method: isEdit ? 'PATCH' : 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(values),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Failed to save');
+      return apiFetch(url, jsonInit(isEdit ? 'PATCH' : 'POST', values));
+    },
+    onSuccess: () => {
+      const isEdit = mode === 'edit';
+      const writeAy = isEdit ? ayCode : targetAy;
       toast.success(
         isEdit ? 'Discount code updated' : `Discount code created in ${writeAy}`
       );
       setOpen(false);
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'Failed to save');
-    }
+    },
+  });
+
+  // Awaited inside RHF's handleSubmit so `formState.isSubmitting` stays the
+  // single busy signal (mirrors the original try/catch behaviour).
+  async function onSubmit(values: DiscountCodeInput) {
+    await saveMutation.mutateAsync(values).catch(() => {});
   }
 
   const busy = form.formState.isSubmitting;

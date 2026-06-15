@@ -1,10 +1,12 @@
 'use client';
 
+import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { DatePicker } from '@/components/ui/date-picker';
+import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 // Inline editable pre-course SESSION DATE on the pre-course cohort tracker.
 // Setting a date records it (the route flips preCourseAnswer→'Yes' → Counselled);
@@ -34,35 +36,50 @@ export function PreCourseDateCell({
 }) {
   const router = useRouter();
   const [date, setDate] = useState<string>(value ?? '');
-  const [pending, setPending] = useState(false);
 
-  async function commit(next: string) {
-    const prev = date;
-    setDate(next); // optimistic
-    setPending(true);
-    try {
-      const res = await fetch(
+  // Tier-1 optimistic: `date` is local display state. onMutate snapshots the
+  // prior value (from the closure) + sets the new value immediately; onError
+  // restores it. The route's `body.error` is preserved via ApiError.body
+  // (fallback 'Could not save the session date' for an absent error, then
+  // 'Save failed' for a non-API error — both unchanged from the original).
+  const commitMutation = useMutation({
+    mutationFn: (next: string) =>
+      apiFetch(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/pre-course?ay=${encodeURIComponent(ayCode)}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionDate: next || null }),
-        }
-      );
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(data?.error ?? 'Could not save the session date');
-      }
+        jsonInit('PATCH', { sessionDate: next || null })
+      ),
+    onMutate: (next) => {
+      const prev = date;
+      setDate(next); // optimistic
+      return { prev };
+    },
+    onSuccess: (_data, next) => {
       toast.success(next ? 'Session date saved' : 'Session date cleared');
       router.refresh();
-    } catch (err) {
-      setDate(prev); // revert
+    },
+    onError: (err, _next, ctx) => {
+      if (ctx) setDate(ctx.prev); // revert
+      if (err instanceof ApiError) {
+        const body = err.body;
+        const errStr =
+          body && typeof body === 'object'
+            ? (body as Record<string, unknown>).error
+            : undefined;
+        toast.error(
+          typeof errStr === 'string' && errStr
+            ? errStr
+            : 'Could not save the session date'
+        );
+        return;
+      }
       toast.error(err instanceof Error ? err.message : 'Save failed');
-    } finally {
-      setPending(false);
-    }
+    },
+  });
+
+  const pending = commitMutation.isPending;
+
+  function commit(next: string) {
+    commitMutation.mutate(next);
   }
 
   return (

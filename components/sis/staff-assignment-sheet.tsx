@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Plus, X } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -82,11 +84,10 @@ export function StaffAssignmentSheet({
   const router = useRouter();
   const [data, setData] = useState<SheetData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [mutating, setMutating] = useState(false);
   const [newSubjectId, setNewSubjectId] = useState('');
   const [newSectionId, setNewSectionId] = useState('');
 
-  // Fetch on open; reset on close.
+  // Fetch on open; reset on close. Read (no query key) routed through apiFetch.
   useEffect(() => {
     if (!open || !teacher) {
       setData(null);
@@ -95,67 +96,90 @@ export function StaffAssignmentSheet({
       return;
     }
     setLoading(true);
-    fetch(
+    apiFetch<SheetData>(
       `/api/teacher-assignments/by-teacher?teacherId=${encodeURIComponent(teacher.userId)}&ayCode=${encodeURIComponent(ayCode)}`
     )
-      .then((r) => r.json())
-      .then((json) => setData(json as SheetData))
+      .then((json) => setData(json))
       .catch(() => toast.error('Failed to load assignments'))
       .finally(() => setLoading(false));
   }, [open, teacher, ayCode]);
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
-  async function handleFcaChange(sectionId: string) {
-    if (!teacher || !data) return;
-    setMutating(true);
-    try {
-      // Remove existing FCA if present.
-      if (data.fcaAssignment) {
-        const res = await fetch(
-          `/api/teacher-assignments/${data.fcaAssignment.id}`,
-          { method: 'DELETE' }
-        );
-        if (!res.ok) {
-          const e = (await res.json()) as { error?: string };
-          toast.error(e.error ?? 'Failed to remove existing FCA');
-          return;
+  // Reads a server `error` field off an ApiError body, else undefined.
+  function apiErrorField(err: unknown): string | undefined {
+    return err instanceof ApiError && err.body && typeof err.body === 'object'
+      ? (err.body as { error?: string }).error
+      : undefined;
+  }
+
+  // FCA change is a DELETE-then-POST sequence (clear existing, then assign the
+  // new section). Sequencing + per-step error copy preserved; the local-state
+  // update + success toast happen on the resolved result.
+  const fcaMutation = useMutation({
+    mutationFn: async (
+      sectionId: string
+    ): Promise<
+      | { kind: 'cleared' }
+      | { kind: 'assigned'; assignmentId: string; sectionId: string }
+    > => {
+      // Remove existing FCA if present. Tag a failure so onError can show the
+      // 'Failed to remove existing FCA' copy distinctly.
+      if (data!.fcaAssignment) {
+        try {
+          await apiFetch(
+            `/api/teacher-assignments/${data!.fcaAssignment.id}`,
+            jsonInit('DELETE')
+          );
+        } catch (err) {
+          throw new ApiError(
+            err instanceof ApiError ? err.status : 0,
+            err instanceof ApiError ? err.body : undefined,
+            apiErrorField(err) ?? 'Failed to remove existing FCA'
+          );
         }
       }
 
       if (sectionId === '__none__') {
+        return { kind: 'cleared' };
+      }
+
+      const json = await apiFetch<{ assignment?: { id: string } }>(
+        '/api/teacher-assignments',
+        jsonInit('POST', {
+          teacher_user_id: teacher!.userId,
+          section_id: sectionId,
+          role: 'form_adviser',
+        })
+      ).catch((err) => {
+        throw new ApiError(
+          err instanceof ApiError ? err.status : 0,
+          err instanceof ApiError ? err.body : undefined,
+          apiErrorField(err) ?? 'Failed to save FCA'
+        );
+      });
+      return {
+        kind: 'assigned',
+        assignmentId: json.assignment!.id,
+        sectionId,
+      };
+    },
+    onSuccess: (result) => {
+      if (result.kind === 'cleared') {
         setData((d) => (d ? { ...d, fcaAssignment: null } : d));
         toast.success('FCA assignment cleared');
         router.refresh();
         return;
       }
-
-      const res = await fetch('/api/teacher-assignments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          teacher_user_id: teacher.userId,
-          section_id: sectionId,
-          role: 'form_adviser',
-        }),
-      });
-      const json = (await res.json()) as {
-        assignment?: { id: string };
-        error?: string;
-      };
-      if (!res.ok) {
-        toast.error(json.error ?? 'Failed to save FCA');
-        return;
-      }
       const sectionName =
-        data.allSections.find((s) => s.id === sectionId)?.name ?? '';
+        data!.allSections.find((s) => s.id === result.sectionId)?.name ?? '';
       setData((d) =>
         d
           ? {
               ...d,
               fcaAssignment: {
-                id: json.assignment!.id,
-                sectionId,
+                id: result.assignmentId,
+                sectionId: result.sectionId,
                 sectionName,
               },
             }
@@ -163,22 +187,22 @@ export function StaffAssignmentSheet({
       );
       toast.success('FCA assignment saved');
       router.refresh();
-    } finally {
-      setMutating(false);
-    }
+    },
+    onError: (err) => {
+      // The mutationFn already normalized the per-step message onto err.message.
+      toast.error(err instanceof Error ? err.message : 'Failed to save FCA');
+    },
+  });
+
+  function handleFcaChange(sectionId: string) {
+    if (!teacher || !data) return;
+    fcaMutation.mutate(sectionId);
   }
 
-  async function handleRemoveSubject(assignmentId: string) {
-    setMutating(true);
-    try {
-      const res = await fetch(`/api/teacher-assignments/${assignmentId}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) {
-        const e = (await res.json()) as { error?: string };
-        toast.error(e.error ?? 'Failed to remove assignment');
-        return;
-      }
+  const removeSubjectMutation = useMutation({
+    mutationFn: (assignmentId: string) =>
+      apiFetch(`/api/teacher-assignments/${assignmentId}`, jsonInit('DELETE')),
+    onSuccess: (_data, assignmentId) => {
       setData((d) =>
         d
           ? {
@@ -190,35 +214,30 @@ export function StaffAssignmentSheet({
           : d
       );
       router.refresh();
-    } finally {
-      setMutating(false);
-    }
+    },
+    onError: (err) => {
+      toast.error(apiErrorField(err) ?? 'Failed to remove assignment');
+    },
+  });
+
+  function handleRemoveSubject(assignmentId: string) {
+    removeSubjectMutation.mutate(assignmentId);
   }
 
-  async function handleAddSubject() {
-    if (!teacher || !data || !newSubjectId || !newSectionId) return;
-    setMutating(true);
-    try {
-      const res = await fetch('/api/teacher-assignments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          teacher_user_id: teacher.userId,
+  const addSubjectMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ assignment?: { id: string } }>(
+        '/api/teacher-assignments',
+        jsonInit('POST', {
+          teacher_user_id: teacher!.userId,
           section_id: newSectionId,
           subject_id: newSubjectId,
           role: 'subject_teacher',
-        }),
-      });
-      const json = (await res.json()) as {
-        assignment?: { id: string };
-        error?: string;
-      };
-      if (!res.ok) {
-        toast.error(json.error ?? 'Failed to add subject');
-        return;
-      }
-      const subject = data.allSubjects.find((s) => s.id === newSubjectId);
-      const section = data.allSections.find((s) => s.id === newSectionId);
+        })
+      ),
+    onSuccess: (json) => {
+      const subject = data!.allSubjects.find((s) => s.id === newSubjectId);
+      const section = data!.allSections.find((s) => s.id === newSectionId);
       setData((d) =>
         d
           ? {
@@ -241,10 +260,21 @@ export function StaffAssignmentSheet({
       setNewSectionId('');
       toast.success('Subject assignment added');
       router.refresh();
-    } finally {
-      setMutating(false);
-    }
+    },
+    onError: (err) => {
+      toast.error(apiErrorField(err) ?? 'Failed to add subject');
+    },
+  });
+
+  function handleAddSubject() {
+    if (!teacher || !data || !newSubjectId || !newSectionId) return;
+    addSubjectMutation.mutate();
   }
+
+  const mutating =
+    fcaMutation.isPending ||
+    removeSubjectMutation.isPending ||
+    addSubjectMutation.isPending;
 
   // ── Render ─────────────────────────────────────────────────────────────────
 

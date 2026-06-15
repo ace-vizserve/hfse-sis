@@ -15,8 +15,10 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
@@ -180,26 +182,26 @@ function buildColumns(
 
 function RoleSelect({ user, isSelf }: { user: AdminUserRow; isSelf: boolean }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
 
-  async function setRole(next: Role) {
-    if (next === user.role) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/sis/admin/users/${user.id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ role: next }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'update failed');
+  const roleMutation = useMutation({
+    mutationFn: (next: Role) =>
+      apiFetch(
+        `/api/sis/admin/users/${user.id}`,
+        jsonInit('PATCH', { role: next })
+      ),
+    onSuccess: (_data, next) => {
       toast.success(`Role updated: ${user.email} → ${ROLE_LABEL[next]}`);
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'update failed');
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+  const busy = roleMutation.isPending;
+
+  function setRole(next: Role) {
+    if (next === user.role) return;
+    roleMutation.mutate(next);
   }
 
   return (
@@ -230,28 +232,27 @@ function ToggleDisabledButton({
   isSelf: boolean;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
 
-  async function toggleDisabled() {
-    const next = !user.disabled;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/sis/admin/users/${user.id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ disabled: next }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'update failed');
+  const toggleMutation = useMutation({
+    mutationFn: (next: boolean) =>
+      apiFetch(
+        `/api/sis/admin/users/${user.id}`,
+        jsonInit('PATCH', { disabled: next })
+      ),
+    onSuccess: (_data, next) => {
       toast.success(
         next ? `Disabled: ${user.email}` : `Enabled: ${user.email}`
       );
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'update failed');
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+  const busy = toggleMutation.isPending;
+
+  function toggleDisabled() {
+    toggleMutation.mutate(!user.disabled);
   }
 
   return (
@@ -324,7 +325,6 @@ function EditUserDialog({
   );
   const [email, setEmail] = useState(user.email);
   const [password, setPassword] = useState('');
-  const [saving, setSaving] = useState(false);
 
   function fillPassword() {
     const p = generatePassword();
@@ -345,7 +345,24 @@ function EditUserDialog({
     }
   }
 
-  async function submit() {
+  const saveMutation = useMutation({
+    mutationFn: (vars: { payload: Record<string, unknown>; email: string }) =>
+      apiFetch(
+        `/api/sis/admin/users/${user.id}`,
+        jsonInit('PATCH', vars.payload)
+      ),
+    onSuccess: (_data, vars) => {
+      toast.success(`Updated: ${vars.email}`);
+      onOpenChange(false);
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'update failed');
+    },
+  });
+  const saving = saveMutation.isPending;
+
+  function submit() {
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
       toast.error('Valid email required');
@@ -368,24 +385,7 @@ function EditUserDialog({
       return;
     }
 
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/sis/admin/users/${user.id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok)
-        throw new Error((body as { error?: string })?.error ?? 'update failed');
-      toast.success(`Updated: ${trimmedEmail}`);
-      onOpenChange(false);
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'update failed');
-    } finally {
-      setSaving(false);
-    }
+    saveMutation.mutate({ payload, email: trimmedEmail });
   }
 
   return (
@@ -597,7 +597,6 @@ function InviteUserDialog({
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState<Role>('teacher');
   const [password, setPassword] = useState('');
-  const [saving, setSaving] = useState(false);
 
   function resetForm() {
     setEmail('');
@@ -625,7 +624,32 @@ function InviteUserDialog({
     }
   }
 
-  async function submit() {
+  const createMutation = useMutation({
+    mutationFn: (vars: { email: string }) =>
+      apiFetch(
+        '/api/sis/admin/users',
+        jsonInit('POST', {
+          email: vars.email,
+          role,
+          displayName: displayName.trim() || undefined,
+          password,
+        })
+      ),
+    onSuccess: (_data, vars) => {
+      toast.success(
+        `Account created for ${vars.email}. Share the password securely.`
+      );
+      onOpenChange(false);
+      resetForm();
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'user creation failed');
+    },
+  });
+  const saving = createMutation.isPending;
+
+  function submit() {
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
       toast.error('Valid email required');
@@ -635,31 +659,7 @@ function InviteUserDialog({
       toast.error('Password must be at least 8 characters');
       return;
     }
-    setSaving(true);
-    try {
-      const res = await fetch('/api/sis/admin/users', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          email: trimmedEmail,
-          role,
-          displayName: displayName.trim() || undefined,
-          password,
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'user creation failed');
-      toast.success(
-        `Account created for ${trimmedEmail}. Share the password securely.`
-      );
-      onOpenChange(false);
-      resetForm();
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'user creation failed');
-    } finally {
-      setSaving(false);
-    }
+    createMutation.mutate({ email: trimmedEmail });
   }
 
   return (

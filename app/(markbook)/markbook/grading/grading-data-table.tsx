@@ -3,9 +3,11 @@
 import { CheckCircle2, Lock, UserCheck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import { type ColumnDef } from '@tanstack/react-table';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -343,30 +345,19 @@ export function GradingDataTable({
   // Sheets queued for bulk lock — non-empty drives the confirm dialog open.
   const [pendingLock, setPendingLock] = useState<GradingSheetRow[]>([]);
   const [clearSelectionToken, setClearSelectionToken] = useState(0);
-  const [isLocking, setIsLocking] = useState(false);
 
-  async function runBulkLock() {
-    const ids = pendingLock.filter((r) => !r.is_locked).map((r) => r.id);
-    if (ids.length === 0) {
-      setPendingLock([]);
-      return;
-    }
-    setIsLocking(true);
-    try {
-      const res = await fetch('/api/grading-sheets/bulk-lock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids }),
-      });
-      const json = (await res.json().catch(() => ({}))) as {
-        locked?: number;
-        skipped?: number;
-        error?: string;
-      };
-      if (!res.ok) {
-        toast.error(json.error ?? 'Could not lock the selected sheets.');
-        return;
-      }
+  // Tier-2 mutation (Model A): the bulk-lock POST runs through useMutation. The
+  // success body carries `locked`/`skipped`, so that toast stays in onSuccess.
+  // The two distinct error voices are preserved: an ApiError (non-2xx) surfaces
+  // the route's message ('Could not lock the selected sheets.' fallback), while
+  // any other failure (network) keeps the 'Could not reach the server.' copy.
+  const lockMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      apiFetch<{ locked?: number; skipped?: number }>(
+        '/api/grading-sheets/bulk-lock',
+        jsonInit('POST', { ids })
+      ),
+    onSuccess: (json) => {
       const locked = json.locked ?? 0;
       const skipped = json.skipped ?? 0;
       toast.success(
@@ -377,11 +368,25 @@ export function GradingDataTable({
       setPendingLock([]);
       setClearSelectionToken((t) => t + 1);
       router.refresh();
-    } catch {
-      toast.error('Could not reach the server. Please try again.');
-    } finally {
-      setIsLocking(false);
+    },
+    onError: (e) => {
+      if (e instanceof ApiError) {
+        toast.error(e.message || 'Could not lock the selected sheets.');
+      } else {
+        toast.error('Could not reach the server. Please try again.');
+      }
+    },
+  });
+
+  const isLocking = lockMutation.isPending;
+
+  function runBulkLock() {
+    const ids = pendingLock.filter((r) => !r.is_locked).map((r) => r.id);
+    if (ids.length === 0) {
+      setPendingLock([]);
+      return;
     }
+    lockMutation.mutate(ids);
   }
   // Compute curated valueOptions for Teacher + Form adviser facets.
   // Include "(unassigned)" when any row has a null value for that column —

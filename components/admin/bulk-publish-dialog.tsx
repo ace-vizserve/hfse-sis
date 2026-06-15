@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import {
   concernsFor,
   type Concern,
@@ -236,15 +237,19 @@ export function BulkPublishDialog({
           chunk.map(async (s) => {
             const key = `${s.id}:${capturedTermId}`;
             try {
-              const res = await fetch(
+              // Approach (b): the chunked/imperative readiness loop is preserved;
+              // each call just routes through apiFetch (a non-2xx throws and is
+              // caught below — same fallback as the original `throw new Error`).
+              const data = await apiFetch<
+                Parameters<typeof classify>[0] &
+                  Parameters<typeof concernsFor>[0]
+              >(
                 `/api/sections/${s.id}/publish-readiness?term_id=${capturedTermId}`
               );
               // `cancelled` is flipped true by this effect's cleanup when the
               // dialog closes or the term changes, so a stale in-flight run
               // never writes to state for the wrong term.
               if (cancelled) return;
-              if (!res.ok) throw new Error(`HTTP ${res.status}`);
-              const data = await res.json();
               const result: SectionReadiness = {
                 ...classify(data),
                 concerns: concernsFor(data),
@@ -372,35 +377,39 @@ export function BulkPublishDialog({
       const results = await Promise.all(
         chunk.map(async (sectionId) => {
           try {
-            const res = await fetch('/api/report-card-publications', {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({
+            await apiFetch(
+              '/api/report-card-publications',
+              jsonInit('POST', {
                 section_id: sectionId,
                 term_id: termId,
                 publish_from: from,
                 publish_until: until,
-              }),
-            });
-            const body = await res.json().catch(() => ({}));
-            if (!res.ok) {
-              // A section that became hard-blocked between the pre-flight check
-              // and publish time returns 422 publish_blocked — count it as
-              // skipped (a deliberate skip), not a failure.
+              })
+            );
+            return { sectionId, ok: true as const, skipped: false };
+          } catch (e) {
+            // The 422 classification is preserved EXACTLY: a section that became
+            // hard-blocked between the pre-flight check and publish time returns
+            // 422 publish_blocked / comments_incomplete — count it as skipped (a
+            // deliberate skip), not a failure. ApiError.status is the code and
+            // ApiError.body the parsed body.
+            if (e instanceof ApiError) {
+              const body = (e.body ?? {}) as {
+                code?: string;
+                error?: string;
+              };
               const isBlocked =
-                res.status === 422 &&
-                (body?.code === 'publish_blocked' ||
-                  body?.code === 'comments_incomplete' ||
-                  body?.error?.includes('comment'));
+                e.status === 422 &&
+                (body.code === 'publish_blocked' ||
+                  body.code === 'comments_incomplete' ||
+                  body.error?.includes('comment') === true);
               return {
                 sectionId,
                 ok: false as const,
                 skipped: isBlocked,
-                message: body?.error ?? `HTTP ${res.status}`,
+                message: body.error ?? `HTTP ${e.status}`,
               };
             }
-            return { sectionId, ok: true as const, skipped: false };
-          } catch (e) {
             return {
               sectionId,
               ok: false as const,

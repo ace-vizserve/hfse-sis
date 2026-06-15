@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import { Loader2, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -87,7 +89,6 @@ export function EnrolmentEditSheet({
     initial.late_enrollee_term_number
   );
   const [showTermOverride, setShowTermOverride] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [confirmConvert, setConfirmConvert] = useState(false);
   const [revertReason, setRevertReason] = useState('');
@@ -112,8 +113,9 @@ export function EnrolmentEditSheet({
       ((status !== 'withdrawn' && initial.enrollment_status === 'withdrawn') ||
         status === 'late_enrollee');
     if (offeringLate && position === null) {
-      fetch(`/api/sis/today-term?ay=${encodeURIComponent(ayCode)}`)
-        .then((r) => r.json())
+      apiFetch<{ position?: Position | null }>(
+        `/api/sis/today-term?ay=${encodeURIComponent(ayCode)}`
+      )
         .then((d) => {
           const pos = (d.position ?? null) as Position | null;
           setPosition(pos);
@@ -143,11 +145,28 @@ export function EnrolmentEditSheet({
       setRevertReason('');
       setLateTermOverride(initial.late_enrollee_term_number);
       setShowTermOverride(false);
-      setSaving(false);
       setConfirmWithdraw(false);
       setPosition(null);
     }
   }
+
+  // Tier-2 mutation (Model A): both PATCH paths (main save + the inline
+  // joining-term override) target the same section-students route, so they
+  // share one mutation. `saving` derives from isPending. The success body
+  // carries lateEnrolleeTerm / admissionsCascade, so the per-path success
+  // toasts stay in the callers; the 'save failed' fallback is preserved
+  // (ApiError.message already resolves to body.error).
+  const patchMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      apiFetch<{
+        lateEnrolleeTerm?: { termLabel: string } | null;
+        admissionsCascade?: { enroleeNumber: string; ayCode: string } | null;
+      }>(
+        `/api/sections/${sectionId}/students/${enrolmentId}`,
+        jsonInit('PATCH', body)
+      ),
+  });
+  const saving = patchMutation.isPending;
 
   // Withdrawing flips both section_students AND admissions applicationStatus
   // to Withdrawn (server-side cascade). Confirm before firing.
@@ -176,51 +195,35 @@ export function EnrolmentEditSheet({
   async function doSave() {
     setConfirmWithdraw(false);
     setConfirmConvert(false);
-    setSaving(true);
+    const requestBody: Record<string, unknown> = {
+      bus_no: busNo,
+      classroom_officer_role: officer,
+      enrollment_status: status,
+    };
+    if (status === 'withdrawn' && initial.enrollment_status !== 'withdrawn') {
+      requestBody.withdrawal_reason = withdrawalReason || null;
+      requestBody.withdrawal_notes = withdrawalNotes.trim() || null;
+    }
+    // New late-enrollee tag — send the registrar's chosen joining term.
+    if (
+      status === 'late_enrollee' &&
+      initial.enrollment_status !== 'late_enrollee' &&
+      lateTermOverride !== null
+    ) {
+      requestBody.late_enrollee_term_number = lateTermOverride;
+    }
+    // Convert late enrollee → normal — send the required reason (audit-only).
+    if (isConvertingLate) {
+      requestBody.lateRevertReason = revertReason.trim();
+    }
     try {
-      const requestBody: Record<string, unknown> = {
-        bus_no: busNo,
-        classroom_officer_role: officer,
-        enrollment_status: status,
-      };
-      if (status === 'withdrawn' && initial.enrollment_status !== 'withdrawn') {
-        requestBody.withdrawal_reason = withdrawalReason || null;
-        requestBody.withdrawal_notes = withdrawalNotes.trim() || null;
-      }
-      // New late-enrollee tag — send the registrar's chosen joining term.
-      if (
-        status === 'late_enrollee' &&
-        initial.enrollment_status !== 'late_enrollee' &&
-        lateTermOverride !== null
-      ) {
-        requestBody.late_enrollee_term_number = lateTermOverride;
-      }
-      // Convert late enrollee → normal — send the required reason (audit-only).
-      if (isConvertingLate) {
-        requestBody.lateRevertReason = revertReason.trim();
-      }
-      const res = await fetch(
-        `/api/sections/${sectionId}/students/${enrolmentId}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(requestBody),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'save failed');
+      const body = await patchMutation.mutateAsync(requestBody);
       // When the registrar just tagged this student as a late enrollee, the
       // server resolves the joining term from `terms` and returns it so the
       // toast can confirm WHICH term they joined ("Late enrollee · T2"). Falls
       // back gracefully when the date sits outside any defined term window.
-      const lateTerm = (
-        body as { lateEnrolleeTerm?: { termLabel: string } | null }
-      ).lateEnrolleeTerm;
-      const admissionsCascade = (
-        body as {
-          admissionsCascade?: { enroleeNumber: string; ayCode: string } | null;
-        }
-      ).admissionsCascade;
+      const lateTerm = body.lateEnrolleeTerm;
+      const admissionsCascade = body.admissionsCascade;
       if (lateTerm?.termLabel) {
         toast.success(
           `Tagged ${studentName} as late enrollee · ${lateTerm.termLabel}`
@@ -240,32 +243,21 @@ export function EnrolmentEditSheet({
       router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'save failed');
-    } finally {
-      setSaving(false);
     }
   }
 
   async function handleTermOverride(termNumber: number) {
-    setSaving(true);
     try {
-      const res = await fetch(
-        `/api/sections/${sectionId}/students/${enrolmentId}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ late_enrollee_term_number: termNumber }),
-        }
+      await patchMutation.mutateAsync({
+        late_enrollee_term_number: termNumber,
+      });
+      toast.success(`Joining term updated to T${termNumber}`);
+      router.refresh();
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : 'Failed to update joining term'
       );
-      if (!res.ok) {
-        const e = (await res.json()) as { error?: string };
-        toast.error(e.error ?? 'Failed to update joining term');
-        setLateTermOverride(initial.late_enrollee_term_number);
-      } else {
-        toast.success(`Joining term updated to T${termNumber}`);
-        router.refresh();
-      }
-    } finally {
-      setSaving(false);
+      setLateTermOverride(initial.late_enrollee_term_number);
     }
   }
 

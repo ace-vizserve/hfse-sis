@@ -2,11 +2,13 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import { CheckCircle2, Loader2, Save, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import type { EvaluationRosterStudent } from '@/lib/evaluation/queries';
 
 type RowState = {
@@ -59,60 +61,69 @@ export function WriteupRosterClient({
     }))
   );
 
-  const save = useCallback(
-    async (studentId: string, text: string, submit: boolean) => {
+  type SaveVars = { studentId: string; text: string; submit: boolean };
+  type SaveResult = { submitted?: boolean; submitted_at?: string | null };
+
+  const saveMutation = useMutation({
+    mutationFn: ({ studentId, text, submit }: SaveVars) =>
+      apiFetch<SaveResult>(
+        '/api/evaluation/writeups',
+        jsonInit('PATCH', {
+          termId,
+          sectionId,
+          studentId,
+          writeup: text,
+          submit,
+        })
+      ),
+    onMutate: ({ studentId }) => {
       setRows((prev) =>
         prev.map((r) =>
           r.student_id === studentId ? { ...r, saving: true, error: null } : r
         )
       );
-      try {
-        const res = await fetch('/api/evaluation/writeups', {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            termId,
-            sectionId,
-            studentId,
-            writeup: text,
-            submit,
-          }),
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body?.error ?? 'save failed');
-
-        setRows((prev) =>
-          prev.map((r) =>
-            r.student_id === studentId
-              ? {
-                  ...r,
-                  saving: false,
-                  error: null,
-                  savedWriteup: text,
-                  submitted: body?.submitted ?? r.submitted,
-                  submittedAt: body?.submitted_at ?? null,
-                }
-              : r
-          )
-        );
-        toast.success(
-          submit ? (body?.submitted ? 'Submitted' : 'Saved') : 'Saved as draft'
-        );
-        // Refresh so the section's "X of Y submitted" header count stays live.
-        router.refresh();
-      } catch (e) {
-        const message = e instanceof Error ? e.message : 'save failed';
-        setRows((prev) =>
-          prev.map((r) =>
-            r.student_id === studentId
-              ? { ...r, saving: false, error: message }
-              : r
-          )
-        );
-        toast.error(message);
-      }
     },
-    [termId, sectionId, router]
+    onSuccess: (body, { studentId, text, submit }) => {
+      setRows((prev) =>
+        prev.map((r) =>
+          r.student_id === studentId
+            ? {
+                ...r,
+                saving: false,
+                error: null,
+                savedWriteup: text,
+                submitted: body?.submitted ?? r.submitted,
+                submittedAt: body?.submitted_at ?? null,
+              }
+            : r
+        )
+      );
+      toast.success(
+        submit ? (body?.submitted ? 'Submitted' : 'Saved') : 'Saved as draft'
+      );
+      // Refresh so the section's "X of Y submitted" header count stays live.
+      router.refresh();
+    },
+    onError: (e, { studentId }) => {
+      // ApiError.message already equals the route's `error` body field, so the
+      // route-specific message (not a generic one) is surfaced + stored on the row.
+      const message = e instanceof Error ? e.message : 'save failed';
+      setRows((prev) =>
+        prev.map((r) =>
+          r.student_id === studentId
+            ? { ...r, saving: false, error: message }
+            : r
+        )
+      );
+      toast.error(message);
+    },
+  });
+
+  const save = useCallback(
+    (studentId: string, text: string, submit: boolean) => {
+      saveMutation.mutate({ studentId, text, submit });
+    },
+    [saveMutation]
   );
 
   const rowCount = rows.length;

@@ -2,10 +2,12 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { ColumnDef } from '@tanstack/react-table';
 import { GalleryHorizontalEndIcon, ListIcon } from 'lucide-react';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
@@ -41,46 +43,58 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
     []
   );
 
-  const patchStatus = React.useCallback(
-    async (
-      row: PFileValidationRow,
-      body:
-        | { status: 'Valid' }
-        | { status: 'Rejected'; rejectionReason: string }
-    ): Promise<boolean> => {
+  type PatchBody =
+    | { status: 'Valid' }
+    | { status: 'Rejected'; rejectionReason: string };
+
+  // Tier-1 optimistic mutation. The list is local state mirrored from the RSC
+  // `initialRows` (not a useQuery cache), so the optimistic target is `rows`:
+  // onMutate snapshots + removes the row immediately, onError restores it.
+  // onSuccess router.refresh()es so the SSR badge count updates (Model A).
+  // The route's bespoke `body.error` message is preserved via ApiError.message.
+  // Per-row `actingKey` keeps the existing per-row disable.
+  const statusMutation = useMutation({
+    mutationFn: ({ row, body }: { row: PFileValidationRow; body: PatchBody }) =>
+      apiFetch(
+        `/api/sis/students/${encodeURIComponent(row.enroleeNumber)}/document/${encodeURIComponent(row.slotKey)}?ay=${encodeURIComponent(ayCode)}`,
+        jsonInit('PATCH', body)
+      ),
+    onMutate: ({ row }) => {
       const key = rowKey(row);
       setActingKey(key);
+      // Snapshot the current rows for rollback. Capture from the closure (the
+      // latest committed value), NOT from inside the setRows updater, which
+      // runs later at commit time and would give a stale snapshot.
+      const prev = rows;
+      setRows((r) => r.filter((x) => rowKey(x) !== key));
+      return { prev };
+    },
+    onError: (e, _vars, ctx) => {
+      if (ctx?.prev) setRows(ctx.prev); // rollback the optimistic removal
+      toast.error(
+        e instanceof Error ? e.message : 'Could not save the change.'
+      );
+    },
+    onSuccess: (_data, { row, body }) => {
+      const verb = body.status === 'Valid' ? 'approved' : 'rejected';
+      toast.success(`${row.slotLabel} ${verb}.`);
+      router.refresh();
+    },
+    onSettled: () => setActingKey(null),
+  });
+
+  // Keeps the `Promise<boolean>` contract TriagePane + RejectDialog depend on
+  // (true → advance / close). Resolves false on error (rollback already done).
+  const patchStatus = React.useCallback(
+    async (row: PFileValidationRow, body: PatchBody): Promise<boolean> => {
       try {
-        const res = await fetch(
-          `/api/sis/students/${encodeURIComponent(row.enroleeNumber)}/document/${encodeURIComponent(row.slotKey)}?ay=${encodeURIComponent(ayCode)}`,
-          {
-            method: 'PATCH',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(body),
-          }
-        );
-        if (!res.ok) {
-          const err = (await res.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          toast.error(err.error ?? 'Could not save the change.');
-          return false;
-        }
-        setRows((prev) => prev.filter((r) => rowKey(r) !== key));
-        const verb = body.status === 'Valid' ? 'approved' : 'rejected';
-        toast.success(`${row.slotLabel} ${verb}.`);
-        router.refresh();
+        await statusMutation.mutateAsync({ row, body });
         return true;
-      } catch (e) {
-        toast.error(
-          e instanceof Error ? e.message : 'Could not save the change.'
-        );
+      } catch {
         return false;
-      } finally {
-        setActingKey(null);
       }
     },
-    [ayCode, router, rowKey]
+    [statusMutation]
   );
 
   const columns = React.useMemo<ColumnDef<PFileValidationRow>[]>(

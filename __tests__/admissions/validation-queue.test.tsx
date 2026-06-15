@@ -1,0 +1,90 @@
+/**
+ * Behavior test for the Tier-1 OPTIMISTIC mutation reference: the admissions
+ * document-validation queue. The list is local state mirrored from RSC props
+ * (not a useQuery cache), so the optimistic target is `rows`:
+ *  - approve → row removed immediately (optimistic), toast.success + refresh
+ *  - error → row is restored (rollback) and the route-specific message shows.
+ */
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { ValidationQueue } from '@/components/admissions/document-validation/validation-queue';
+import type { ValidationQueueRow } from '@/lib/admissions/document-validation';
+import { renderWithClient } from '../_utils/render-with-client';
+import { jsonResponse, stubFetch } from '../_utils/mock-fetch';
+
+const { refreshMock, toastSuccess, toastError } = vi.hoisted(() => ({
+  refreshMock: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: refreshMock, replace: vi.fn(), push: vi.fn() }),
+  usePathname: () => '/admissions/document-validation',
+  useSearchParams: () => new URLSearchParams(),
+}));
+vi.mock('sonner', () => ({
+  toast: { success: toastSuccess, error: toastError },
+}));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+});
+
+const ROW: ValidationQueueRow = {
+  enroleeNumber: 'EN-1',
+  studentNumber: null,
+  fullName: 'Ada Lovelace',
+  applicationStatus: 'Submitted',
+  levelApplied: 'P1',
+  slotKey: 'birthCert',
+  slotLabel: 'Birth certificate',
+  fileUrl: 'https://example.test/file.pdf',
+  isExpirable: false,
+  owner: 'Student',
+  category: 'general',
+};
+
+function approveButton() {
+  // The actions cell renders Approve + Reject; scope to the row.
+  const cell = screen.getByText('Ada Lovelace').closest('tr') as HTMLElement;
+  return within(cell).getByRole('button', { name: /approve/i });
+}
+
+describe('ValidationQueue (Tier-1 optimistic)', () => {
+  it('optimistically removes the row, toasts success, and refreshes', async () => {
+    const user = userEvent.setup();
+    stubFetch(() => Promise.resolve(jsonResponse({ ok: true })));
+    renderWithClient(<ValidationQueue rows={[ROW]} ayCode="AY9999" />);
+
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    await user.click(approveButton());
+
+    // Row gone (optimistic), and the success side-effects fire.
+    await waitFor(() =>
+      expect(screen.queryByText('Ada Lovelace')).not.toBeInTheDocument()
+    );
+    expect(toastSuccess).toHaveBeenCalled();
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+  });
+
+  it('rolls the row back on error and shows the route-specific message', async () => {
+    const user = userEvent.setup();
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: 'document_locked' }, 409))
+    );
+    renderWithClient(<ValidationQueue rows={[ROW]} ayCode="AY9999" />);
+
+    await user.click(approveButton());
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith('document_locked')
+    );
+    // Rolled back — the row is visible again, and no refresh happened.
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
+});

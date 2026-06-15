@@ -3,8 +3,10 @@
 import { Loader2, MapPin, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -141,7 +143,6 @@ export function ResidenceHistoryEditor({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
 
   const initialEntries = useMemo(() => {
     const parsed = parseInitial(initialJson);
@@ -174,7 +175,24 @@ export function ResidenceHistoryEditor({
     });
   }
 
-  async function onSave() {
+  const saveMutation = useMutation({
+    mutationFn: (payload: unknown[]) =>
+      apiFetch(
+        `/api/sis/students/${encodeURIComponent(enroleeNumber)}/residence-history?ay=${encodeURIComponent(ayCode)}`,
+        jsonInit('PATCH', { residenceHistory: payload })
+      ),
+    onSuccess: () => {
+      toast.success('Residence history saved');
+      setOpen(false);
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'Failed to save');
+    },
+  });
+  const busy = saveMutation.isPending;
+
+  function onSave() {
     if (entries.length < 1) {
       toast.error('At least one residence entry is required for ICA');
       return;
@@ -186,28 +204,7 @@ export function ResidenceHistoryEditor({
         return;
       }
     }
-
-    setBusy(true);
-    try {
-      const payload = serializeEntries(entries);
-      const res = await fetch(
-        `/api/sis/students/${encodeURIComponent(enroleeNumber)}/residence-history?ay=${encodeURIComponent(ayCode)}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ residenceHistory: payload }),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'Failed to save');
-      toast.success('Residence history saved');
-      setOpen(false);
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save');
-    } finally {
-      setBusy(false);
-    }
+    saveMutation.mutate(serializeEntries(entries));
   }
 
   // Quick-summary count for the trigger button label.

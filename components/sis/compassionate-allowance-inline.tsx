@@ -1,5 +1,6 @@
 'use client';
 
+import { useMutation } from '@tanstack/react-query';
 import { Loader2, RotateCcw, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -7,6 +8,7 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 const DEFAULT_ALLOWANCE = 5;
 
@@ -24,40 +26,42 @@ export function CompassionateAllowanceInline({
   const router = useRouter();
   const seed = initial ?? DEFAULT_ALLOWANCE;
   const [value, setValue] = useState<string>(String(seed));
-  const [saving, setSaving] = useState(false);
 
   const numeric = Number(value);
   const valid = /^\d+$/.test(value) && numeric >= 0 && numeric <= 30;
   const dirty = valid && numeric !== seed;
 
-  async function save() {
+  // Tier-2: `value` is the form input (not an optimistic mirror of the server),
+  // so the mutation is a plain save → router.refresh(). `isPending` drives the
+  // disable; the route's `body.error` is preserved via ApiError.message
+  // (fallback 'save failed' unchanged).
+  const saveMutation = useMutation({
+    mutationFn: (allowance: number) =>
+      apiFetch(
+        `/api/sis/students/${encodeURIComponent(enroleeNumber)}/allowance`,
+        jsonInit('PATCH', { allowance })
+      ),
+    onSuccess: (_data, allowance) => {
+      toast.success(
+        allowance === DEFAULT_ALLOWANCE
+          ? 'Reset to default (5 days/year)'
+          : `Allowance set to ${allowance} day${allowance === 1 ? '' : 's'}/year`
+      );
+      router.refresh();
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'save failed');
+    },
+  });
+
+  const saving = saveMutation.isPending;
+
+  function save() {
     if (!valid) {
       toast.error('Enter an integer between 0 and 30');
       return;
     }
-    setSaving(true);
-    try {
-      const res = await fetch(
-        `/api/sis/students/${encodeURIComponent(enroleeNumber)}/allowance`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ allowance: numeric }),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'save failed');
-      toast.success(
-        numeric === DEFAULT_ALLOWANCE
-          ? 'Reset to default (5 days/year)'
-          : `Allowance set to ${numeric} day${numeric === 1 ? '' : 's'}/year`
-      );
-      router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'save failed');
-    } finally {
-      setSaving(false);
-    }
+    saveMutation.mutate(numeric);
   }
 
   return (

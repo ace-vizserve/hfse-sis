@@ -1,9 +1,15 @@
 'use client';
 
 import * as React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Activity, CheckCircle2, Sparkles } from 'lucide-react';
-import { toast } from 'sonner';
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  RotateCcw,
+  Sparkles,
+} from 'lucide-react';
 
 import {
   DrillDownSheet,
@@ -11,6 +17,7 @@ import {
 } from '@/components/dashboard/drill-down-sheet';
 import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import type {
   AcademicYearDrillRow,
   ActorActivityDrillRow,
@@ -18,6 +25,19 @@ import type {
   AuditDrillRow,
   SisAdminDrillTarget,
 } from '@/lib/sis/drill';
+import { apiFetch } from '@/lib/query/fetcher';
+import { queryKeys } from '@/lib/query/keys';
+import { cn } from '@/lib/utils';
+
+// Stable empty reference so `rows` keeps a steady identity while loading.
+const EMPTY_ROWS: AnyRow[] = [];
+
+type DrillResponse = {
+  rows: AnyRow[];
+  target: SisAdminDrillTarget;
+  title: string;
+  eyebrow: string;
+};
 
 // ─── Props ──────────────────────────────────────────────────────────────────
 
@@ -273,54 +293,38 @@ export function SisAdminDrillSheet({
   rangeFrom,
   rangeTo,
 }: SisAdminDrillSheetProps) {
-  const [rows, setRows] = React.useState<AnyRow[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [effectiveTarget, setEffectiveTarget] =
-    React.useState<SisAdminDrillTarget>(target);
-  const [title, setTitle] = React.useState('Loading…');
-  const [eyebrow, setEyebrow] = React.useState('Drill');
   const [density, setDensity] = React.useState<DrillDownDensity>('comfortable');
 
-  React.useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (segment) params.set('segment', segment);
-    if (rangeFrom) params.set('from', rangeFrom);
-    if (rangeTo) params.set('to', rangeTo);
-    fetch(`/api/sis-admin/drill/${target}?${params.toString()}`)
-      .then((r) => {
-        if (!r.ok) throw new Error('drill_fetch_failed');
-        return r.json();
-      })
-      .then(
-        (data: {
-          rows: AnyRow[];
-          target: SisAdminDrillTarget;
-          title: string;
-          eyebrow: string;
-        }) => {
-          if (cancelled) return;
-          setRows(data.rows ?? []);
-          setEffectiveTarget(data.target);
-          setTitle(data.title);
-          setEyebrow(data.eyebrow);
-        }
-      )
-      .catch(() => {
-        if (!cancelled) toast.error('Failed to load drill data');
-      })
-      .finally(() => {
-        if (!cancelled) {
-          React.startTransition(() => {
-            setLoading(false);
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [target, segment, rangeFrom, rangeTo]);
+  // Read via TanStack Query. No seed — this drill always fetches on open
+  // (the original had no initialRows prop and always ran the effect). The
+  // response carries the resolved target/title/eyebrow, which we read off the
+  // query data rather than mirroring into local state. The queryFn forwards
+  // the abort signal so a fast close/reopen aborts the stale request.
+  const drillQuery = useQuery({
+    queryKey: queryKeys.sisAdminDrill(target, {
+      ay: '',
+      from: rangeFrom ?? null,
+      to: rangeTo ?? null,
+      segment: segment ?? null,
+    }),
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams();
+      if (segment) params.set('segment', segment);
+      if (rangeFrom) params.set('from', rangeFrom);
+      if (rangeTo) params.set('to', rangeTo);
+      return apiFetch<DrillResponse>(
+        `/api/sis-admin/drill/${target}?${params.toString()}`,
+        { signal }
+      );
+    },
+  });
+
+  const rows = drillQuery.data?.rows ?? EMPTY_ROWS;
+  // Resolve target/title/eyebrow from the response; fall back to the prop
+  // target + the original placeholder copy while loading.
+  const effectiveTarget = drillQuery.data?.target ?? target;
+  const title = drillQuery.data?.title ?? 'Loading…';
+  const eyebrow = drillQuery.data?.eyebrow ?? 'Drill';
 
   const columns = React.useMemo<ColumnDef<AnyRow, unknown>[]>(() => {
     switch (effectiveTarget) {
@@ -335,8 +339,39 @@ export function SisAdminDrillSheet({
     }
   }, [effectiveTarget]);
 
-  if (loading && rows.length === 0) {
+  if (drillQuery.isLoading && rows.length === 0) {
     return <DrillSheetSkeleton title={title} />;
+  }
+
+  if (drillQuery.isError && rows.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+        <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive ring-1 ring-inset ring-destructive/20">
+          <AlertTriangle className="size-6" />
+        </div>
+        <div className="space-y-1">
+          <p className="font-serif text-lg font-semibold text-foreground">
+            Couldn’t load this list
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {drillQuery.error instanceof Error
+              ? drillQuery.error.message
+              : 'Something went wrong while loading this list.'}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void drillQuery.refetch()}
+          disabled={drillQuery.isFetching}
+        >
+          <RotateCcw
+            className={cn('size-4', drillQuery.isFetching && 'animate-spin')}
+          />
+          Try again
+        </Button>
+      </div>
+    );
   }
 
   const csvParams = new URLSearchParams({ format: 'csv' });

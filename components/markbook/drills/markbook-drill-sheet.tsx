@@ -2,9 +2,15 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
-import { CheckCircle2, Lock, Unlock } from 'lucide-react';
-import { toast } from 'sonner';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Lock,
+  RotateCcw,
+  Unlock,
+} from 'lucide-react';
 
 import {
   DrillDownSheet,
@@ -13,6 +19,10 @@ import {
 } from '@/components/dashboard/drill-down-sheet';
 import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { apiFetch } from '@/lib/query/fetcher';
+import { queryKeys } from '@/lib/query/keys';
+import { cn } from '@/lib/utils';
 import {
   allColumnsForKind,
   defaultColumnsForTarget,
@@ -28,6 +38,10 @@ import {
   type SheetRow,
 } from '@/lib/markbook/drill';
 import { applyTargetFilterClient } from '@/lib/markbook/drill-target-filter';
+
+// Stable reference so `rows` doesn't get a fresh [] each render while the query
+// is loading (downstream memos depend on its identity).
+const EMPTY_ROWS: MarkbookDrillRow[] = [];
 
 export type MarkbookDrillSheetProps = {
   target: MarkbookDrillTarget;
@@ -668,8 +682,44 @@ export function MarkbookDrillSheet(props: MarkbookDrillSheetProps) {
     initialChangeRequests,
   ]);
 
-  const [rows, setRows] = React.useState<MarkbookDrillRow[]>(seedRows);
-  const [loading, setLoading] = React.useState(seedRows.length === 0);
+  // Read via TanStack Query. Seed rows (scope-filtered + target-narrowed by the
+  // memo above) are passed as initialData, so a seeded drill renders instantly
+  // and — being fresh within staleTime — skips the network round-trip, matching
+  // the old skipNextFetchRef behaviour. An unseeded drill fetches on open and
+  // shows the skeleton. The queryFn forwards the abort signal, so a fast
+  // close/reopen aborts the stale request instead of racing it onto the screen.
+  const drillQuery = useQuery({
+    queryKey: queryKeys.markbookDrill(target, {
+      ay: ayCode,
+      from: initialFrom ?? null,
+      to: initialTo ?? null,
+      segment: segment ?? null,
+    }),
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams({ ay: ayCode });
+      if (initialFrom) params.set('from', initialFrom);
+      if (initialTo) params.set('to', initialTo);
+      if (segment) params.set('segment', segment);
+      const data = await apiFetch<{ rows: MarkbookDrillRow[] }>(
+        `/api/markbook/drill/${target}?${params.toString()}`,
+        { signal }
+      );
+      return data.rows ?? [];
+    },
+    // NOTE: markbook is the ONE drill that uses initialData (skip the fetch)
+    // rather than placeholderData. That's only valid because `seedRows` is
+    // already narrowed to the exact (target, segment) via applyTargetFilterClient
+    // above — i.e. seed === what the fetch would return (KD #82). The other
+    // drills seed a BROAD/un-narrowed set, so they MUST use placeholderData and
+    // let the server fetch narrow it. Do NOT copy this initialData skip to a
+    // drill whose seed isn't client-narrowed — it would show the full unfiltered
+    // set. initialDataUpdatedAt stamps the seed fresh so the redundant refetch is
+    // skipped.
+    initialData: seedRows.length > 0 ? seedRows : undefined,
+    initialDataUpdatedAt: seedRows.length > 0 ? Date.now() : undefined,
+  });
+
+  const rows = drillQuery.data ?? EMPTY_ROWS;
   const [globalFilter, _setGlobalFilter] = React.useState('');
   void _setGlobalFilter;
   const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>([]);
@@ -679,44 +729,6 @@ export function MarkbookDrillSheet(props: MarkbookDrillSheetProps) {
   const [visibleColumnKeys, setVisibleColumnKeys] = React.useState<
     DrillColumnKey[]
   >(() => defaultColumnsForTarget(target));
-
-  const skipNextFetchRef = React.useRef(seedRows.length > 0);
-
-  React.useEffect(() => {
-    if (skipNextFetchRef.current) {
-      skipNextFetchRef.current = false;
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    const params = new URLSearchParams({ ay: ayCode });
-    if (initialFrom) params.set('from', initialFrom);
-    if (initialTo) params.set('to', initialTo);
-    if (segment) params.set('segment', segment);
-    fetch(`/api/markbook/drill/${target}?${params.toString()}`)
-      .then((r) => {
-        if (!r.ok) throw new Error('drill_fetch_failed');
-        return r.json();
-      })
-      .then((data: { rows: MarkbookDrillRow[] }) => {
-        if (!cancelled) {
-          setRows(data.rows ?? []);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) toast.error('Failed to load drill data');
-      })
-      .finally(() => {
-        if (!cancelled) {
-          React.startTransition(() => {
-            setLoading(false);
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [target, segment, ayCode, initialFrom, initialTo]);
 
   // Status + level options derived from the unfiltered rows.
   const statusOptions = React.useMemo(() => {
@@ -822,8 +834,41 @@ export function MarkbookDrillSheet(props: MarkbookDrillSheetProps) {
 
   const header = drillHeaderForTarget(target, segment ?? null);
 
-  if (loading && rows.length === 0) {
+  if (drillQuery.isLoading && rows.length === 0) {
     return <DrillSheetSkeleton title={header.title} />;
+  }
+
+  // Error state with a manual retry. Only shown when we have nothing to display;
+  // if seed rows are present we keep showing them rather than blanking the sheet.
+  if (drillQuery.isError && rows.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+        <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive ring-1 ring-inset ring-destructive/20">
+          <AlertTriangle className="size-6" />
+        </div>
+        <div className="space-y-1">
+          <p className="font-serif text-lg font-semibold text-foreground">
+            Couldn’t load {header.title.toLowerCase()}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {drillQuery.error instanceof Error
+              ? drillQuery.error.message
+              : 'Something went wrong while loading this list.'}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void drillQuery.refetch()}
+          disabled={drillQuery.isFetching}
+        >
+          <RotateCcw
+            className={cn('size-4', drillQuery.isFetching && 'animate-spin')}
+          />
+          Try again
+        </Button>
+      </div>
+    );
   }
 
   const csvParams = new URLSearchParams({ ay: ayCode, format: 'csv' });

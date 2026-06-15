@@ -2,9 +2,15 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
-import { AlertTriangle, CheckCircle2, Clock, FileX } from 'lucide-react';
-import { toast } from 'sonner';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  FileX,
+  RotateCcw,
+} from 'lucide-react';
 
 import {
   DrillDownSheet,
@@ -13,6 +19,7 @@ import {
 } from '@/components/dashboard/drill-down-sheet';
 import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   ALL_DRILL_COLUMNS,
   DRILL_COLUMN_LABELS,
@@ -22,7 +29,13 @@ import {
   type PFilesDrillRow,
   type PFilesDrillTarget,
 } from '@/lib/p-files/drill';
+import { apiFetch } from '@/lib/query/fetcher';
+import { queryKeys } from '@/lib/query/keys';
+import { cn } from '@/lib/utils';
 import { compareLevelLabels } from '@/lib/sis/levels';
+
+// Stable empty reference so `rows` keeps a steady identity while loading.
+const EMPTY_ROWS: PFilesDrillRow[] = [];
 
 // ─── Props ──────────────────────────────────────────────────────────────────
 
@@ -250,10 +263,6 @@ export function PFilesDrillSheet(props: PFilesDrillSheetProps) {
   const { target, segment, ayCode, initialFrom, initialTo, initialRows } =
     props;
 
-  const seedRows = initialRows ?? [];
-
-  const [rows, setRows] = React.useState<PFilesDrillRow[]>(seedRows);
-  const [loading, setLoading] = React.useState(seedRows.length === 0);
   const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>([]);
   const [selectedLevels, setSelectedLevels] = React.useState<string[]>([]);
   const [groupBy, setGroupBy] = React.useState<DrillDownGroupBy>('none');
@@ -262,43 +271,38 @@ export function PFilesDrillSheet(props: PFilesDrillSheetProps) {
     DrillColumnKey[]
   >(() => defaultColumnsForTarget(target));
 
-  const skipNextFetchRef = React.useRef(seedRows.length > 0);
+  // Read via TanStack Query. initialRows (when the parent hydrated us) are the
+  // initialData, so the drill renders instantly and skips the round-trip within
+  // staleTime; otherwise it fetches on open and shows the skeleton. The queryFn
+  // forwards the abort signal so a fast close/reopen aborts the stale request.
+  const drillQuery = useQuery({
+    queryKey: queryKeys.pfilesDrill(target, {
+      ay: ayCode,
+      from: initialFrom ?? null,
+      to: initialTo ?? null,
+      segment: segment ?? null,
+    }),
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams({ ay: ayCode });
+      if (initialFrom) params.set('from', initialFrom);
+      if (initialTo) params.set('to', initialTo);
+      if (segment) params.set('segment', segment);
+      const json = await apiFetch<{ rows?: PFilesDrillRow[] }>(
+        `/api/p-files/drill/${target}?${params.toString()}`,
+        { signal }
+      );
+      return Array.isArray(json.rows) ? json.rows : [];
+    },
+    // The seed is the broad, un-narrowed row set — per-(target,segment)
+    // narrowing happens server-side in the drill route (KD #82). So it's a
+    // placeholder for instant paint, NOT authoritative: placeholderData paints
+    // it immediately while the query STILL fetches the narrowed rows and
+    // replaces it. (initialData + a fresh timestamp would skip the fetch and
+    // leave the un-narrowed set showing.)
+    placeholderData: initialRows,
+  });
 
-  React.useEffect(() => {
-    if (skipNextFetchRef.current) {
-      skipNextFetchRef.current = false;
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    const params = new URLSearchParams({ ay: ayCode });
-    if (initialFrom) params.set('from', initialFrom);
-    if (initialTo) params.set('to', initialTo);
-    if (segment) params.set('segment', segment);
-    fetch(`/api/p-files/drill/${target}?${params.toString()}`)
-      .then((r) => {
-        if (!r.ok) throw new Error('drill_fetch_failed');
-        return r.json();
-      })
-      .then((data: { rows: PFilesDrillRow[] }) => {
-        if (!cancelled) {
-          setRows(data.rows ?? []);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) toast.error('Failed to load drill data');
-      })
-      .finally(() => {
-        if (!cancelled) {
-          React.startTransition(() => {
-            setLoading(false);
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [target, segment, ayCode, initialFrom, initialTo]);
+  const rows = drillQuery.data ?? EMPTY_ROWS;
 
   // Filter options derived from unfiltered rows
   const statusOptions = React.useMemo(() => {
@@ -356,8 +360,42 @@ export function PFilesDrillSheet(props: PFilesDrillSheetProps) {
 
   const header = drillHeaderForTarget(target, segment ?? null);
 
-  if (loading && rows.length === 0) {
+  if (drillQuery.isLoading && rows.length === 0) {
     return <DrillSheetSkeleton title={header.title} />;
+  }
+
+  if (
+    drillQuery.isError &&
+    (rows.length === 0 || drillQuery.isPlaceholderData)
+  ) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+        <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive ring-1 ring-inset ring-destructive/20">
+          <AlertTriangle className="size-6" />
+        </div>
+        <div className="space-y-1">
+          <p className="font-serif text-lg font-semibold text-foreground">
+            Couldn’t load {header.title.toLowerCase()}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {drillQuery.error instanceof Error
+              ? drillQuery.error.message
+              : 'Failed to load drill data'}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void drillQuery.refetch()}
+          disabled={drillQuery.isFetching}
+        >
+          <RotateCcw
+            className={cn('size-4', drillQuery.isFetching && 'animate-spin')}
+          />
+          Try again
+        </Button>
+      </div>
+    );
   }
 
   const csvParams = new URLSearchParams({ ay: ayCode, format: 'csv' });

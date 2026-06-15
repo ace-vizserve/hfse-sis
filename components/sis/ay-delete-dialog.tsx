@@ -3,8 +3,10 @@
 import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,33 +46,33 @@ export function AyDeleteDialog({
     onOpenChange?.(next);
   };
   const [confirm, setConfirm] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
   const disabledByBlockers = blockers.length > 0;
   const canSubmit =
     !disabledByBlockers && confirm.trim().toUpperCase() === ayCode;
 
-  async function handleConfirm(e: React.MouseEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    if (!canSubmit) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/sis/ay-setup', {
-        method: 'DELETE',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ay_code: ayCode, confirm_code: ayCode }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Failed to delete AY');
+  const deleteMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(
+        '/api/sis/ay-setup',
+        jsonInit('DELETE', { ay_code: ayCode, confirm_code: ayCode })
+      ),
+    onSuccess: () => {
       toast.success(`${ayCode} deleted`);
       setOpen(false);
       setConfirm('');
       router.refresh();
-    } catch (err) {
+    },
+    onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Failed to delete AY');
-    } finally {
-      setSubmitting(false);
-    }
+    },
+  });
+  const submitting = deleteMutation.isPending;
+
+  function handleConfirm(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    deleteMutation.mutate();
   }
 
   return (

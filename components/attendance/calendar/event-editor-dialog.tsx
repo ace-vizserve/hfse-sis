@@ -9,10 +9,12 @@
 //
 // Design system: shadcn Dialog + Field-shaped rows; tokens only.
 
+import { useMutation } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
@@ -185,7 +187,6 @@ export function EventEditorDialog({
   const [label, setLabel] = useState('');
   const [typeKey, setTypeKey] = useState<string>('public_holiday');
   const [eventAudience, setEventAudience] = useState<Audience>(defaultAudience);
-  const [saving, setSaving] = useState(false);
 
   // Edit mode only offers informational types (day overrides are re-added).
   const typeOptions = isEdit
@@ -216,7 +217,61 @@ export function EventEditorDialog({
   }
   if (!open && initKey !== null) setInitKey(null);
 
-  async function save() {
+  // Tier-2 mutation (Model A): useMutation owns the pending/error UX; on success
+  // we toast + call onCreated() (the parent closes + router.refresh()s). The
+  // route-specific error copy is preserved — ApiError.message already resolves
+  // to the body's `error` (then `message`), so `e.message` carries the route's
+  // own wording (e.g. day-type not encodable / term-bound validation / 409).
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      if (selected.target === 'day') {
+        const entries = datesInRange(start, end).map((date) => ({
+          date,
+          dayType: selected.dayType,
+          label: label.trim() || null,
+          hblOverlay: selected.hblOverlay ?? false,
+        }));
+        return apiFetch(
+          '/api/attendance/calendar',
+          jsonInit('POST', { termId, audience: eventAudience, entries })
+        );
+      }
+      return apiFetch(
+        '/api/attendance/calendar/events',
+        jsonInit(
+          isEdit ? 'PATCH' : 'POST',
+          isEdit
+            ? {
+                id: editing.id,
+                startDate: start,
+                endDate: end,
+                label: label.trim(),
+                category: selected.category,
+                audience: eventAudience,
+              }
+            : {
+                termId,
+                startDate: start,
+                endDate: end,
+                label: label.trim(),
+                category: selected.category,
+                audience: eventAudience,
+              }
+        )
+      );
+    },
+    onSuccess: () => {
+      toast.success(isEdit ? 'Event updated' : 'Added to the calendar');
+      onCreated();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'save failed');
+    },
+  });
+
+  const saving = saveMutation.isPending;
+
+  function save() {
     if (end < start) {
       toast.error('End date must be on or after the start date');
       return;
@@ -233,64 +288,7 @@ export function EventEditorDialog({
       return;
     }
 
-    setSaving(true);
-    try {
-      if (selected.target === 'day') {
-        const entries = datesInRange(start, end).map((date) => ({
-          date,
-          dayType: selected.dayType,
-          label: label.trim() || null,
-          hblOverlay: selected.hblOverlay ?? false,
-        }));
-        const res = await fetch('/api/attendance/calendar', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ termId, audience: eventAudience, entries }),
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(
-            (body as { error?: string; message?: string }).error ??
-              (body as { message?: string }).message ??
-              'save failed'
-          );
-        }
-      } else {
-        const res = await fetch('/api/attendance/calendar/events', {
-          method: isEdit ? 'PATCH' : 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(
-            isEdit
-              ? {
-                  id: editing.id,
-                  startDate: start,
-                  endDate: end,
-                  label: label.trim(),
-                  category: selected.category,
-                  audience: eventAudience,
-                }
-              : {
-                  termId,
-                  startDate: start,
-                  endDate: end,
-                  label: label.trim(),
-                  category: selected.category,
-                  audience: eventAudience,
-                }
-          ),
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error((body as { error?: string }).error ?? 'save failed');
-        }
-      }
-      toast.success(isEdit ? 'Event updated' : 'Added to the calendar');
-      onCreated();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'save failed');
-    } finally {
-      setSaving(false);
-    }
+    saveMutation.mutate();
   }
 
   return (

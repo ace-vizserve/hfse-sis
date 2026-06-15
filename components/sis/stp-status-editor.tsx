@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -16,6 +17,7 @@ import {
   STP_APPLICATION_STATUS_OPTIONS,
   type StpApplicationStatus,
 } from '@/lib/sis/queries';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 // Single-Select editor for the new stpApplicationStatus column. Mounts
 // inside <StpApplicationCard>. Patches the column via /api/sis/students/
@@ -36,33 +38,38 @@ export function StpStatusEditor({
   const [status, setStatus] = useState<StpApplicationStatus | null>(
     initialStatus
   );
-  const [saving, setSaving] = useState(false);
 
-  async function handleChange(next: StpApplicationStatus) {
-    if (next === status) return;
-    const prev = status;
-    setStatus(next);
-    setSaving(true);
-    try {
-      const res = await fetch(
+  // Tier-1 optimistic: `status` is local display state. onMutate snapshots the
+  // prior value (from the closure, not a setState updater) + sets the new value
+  // immediately; onError restores it. The route's `body.error` is preserved via
+  // ApiError.message (fallback 'save failed' unchanged).
+  const statusMutation = useMutation({
+    mutationFn: (next: StpApplicationStatus) =>
+      apiFetch(
         `/api/sis/students/${enroleeNumber}/stp-status?ay=${ayCode}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ stpApplicationStatus: next }),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'save failed');
+        jsonInit('PATCH', { stpApplicationStatus: next })
+      ),
+    onMutate: (next) => {
+      const prev = status;
+      setStatus(next);
+      return { prev };
+    },
+    onSuccess: (_data, next) => {
       toast.success(`STP status updated to ${next}`);
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e, _next, ctx) => {
       // Roll back the optimistic update on failure.
-      setStatus(prev);
+      if (ctx) setStatus(ctx.prev);
       toast.error(e instanceof Error ? e.message : 'save failed');
-    } finally {
-      setSaving(false);
-    }
+    },
+  });
+
+  const saving = statusMutation.isPending;
+
+  function handleChange(next: StpApplicationStatus) {
+    if (next === status) return;
+    statusMutation.mutate(next);
   }
 
   return (

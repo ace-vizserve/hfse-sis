@@ -6,7 +6,10 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
 import type { DateRange } from 'react-day-picker';
 import { toast } from 'sonner';
+import { useMutation } from '@tanstack/react-query';
 import { type ColumnDef } from '@tanstack/react-table';
+
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,34 +48,32 @@ import { ChangeRequestDecisionButtons } from './decision-buttons';
 function UndoRejectionMenuItem({ requestId }: { requestId: string }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
 
-  async function handleUndo() {
-    setBusy(true);
-    try {
-      const res = await fetch(
+  // Tier-2 mutation. ApiError.message already resolves to the body's `error`
+  // field, so `e.message` carries the route's plain-English copy; the original
+  // generic fallback is preserved for non-ApiError failures.
+  const undoMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(
         `/api/change-requests/${encodeURIComponent(requestId)}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'undo_rejection' }),
-        }
-      );
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        toast.error(body.error ?? 'Could not undo the decline.');
-        return;
-      }
+        jsonInit('PATCH', { action: 'undo_rejection' })
+      ),
+    onSuccess: () => {
       toast.success('Decline undone — the request is back to Awaiting Review.');
       setOpen(false);
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
       toast.error(
         e instanceof Error ? e.message : 'Could not undo the decline.'
       );
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+
+  const busy = undoMutation.isPending;
+
+  function handleUndo() {
+    undoMutation.mutate();
   }
 
   return (

@@ -19,8 +19,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowDownAZ, Loader2, TriangleAlert } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,29 +58,43 @@ export function GenerateIndexDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
 
-  async function handleGenerate(e: React.MouseEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/sections/${sectionId}/generate-index`, {
-        method: 'POST',
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok)
-        throw new Error(body.error ?? 'Could not generate index numbers');
+  const generateMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ rows_renumbered?: number }>(
+        `/api/sections/${sectionId}/generate-index`,
+        jsonInit('POST')
+      ),
+    onSuccess: (body) => {
       const count: number = body.rows_renumbered ?? 0;
       toast.success(
         `Renumbered ${count} student${count === 1 ? '' : 's'} in ${sectionName}`
       );
       onOpenChange(false);
       router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Something went wrong');
-    } finally {
-      setBusy(false);
-    }
+    },
+    onError: (err) => {
+      // Original threw `body.error ?? 'Could not generate index numbers'`, but
+      // the catch's final fallback was 'Something went wrong' (for non-Error).
+      // With ApiError, `err.message` already carries body.error; reproduce the
+      // route fallback when the body lacks an error field.
+      const serverError =
+        err instanceof ApiError && err.body && typeof err.body === 'object'
+          ? (err.body as { error?: string }).error
+          : undefined;
+      toast.error(
+        serverError ??
+          (err instanceof ApiError
+            ? 'Could not generate index numbers'
+            : 'Something went wrong')
+      );
+    },
+  });
+  const busy = generateMutation.isPending;
+
+  function handleGenerate(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    generateMutation.mutate();
   }
 
   return (
@@ -176,35 +192,38 @@ export function GenerateAllIndexButton({
 }: GenerateAllIndexButtonProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
 
-  async function handleGenerateAll(e: React.MouseEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      // Fan out one POST per section (reuses the per-section route so we need
-      // no new bulk API endpoint). Sequential to avoid hammering the DB with
-      // parallel writes across many sections; fast enough in practice (<200ms
-      // per section).
+  const generateAllMutation = useMutation({
+    // Fan out one POST per section (reuses the per-section route so we need no
+    // new bulk API endpoint). Sequential to avoid hammering the DB with
+    // parallel writes across many sections; fast enough in practice (<200ms
+    // per section). Aggregates per-section outcomes inside the mutationFn so
+    // the partial-success summary is preserved.
+    mutationFn: async () => {
       let successCount = 0;
       const errors: string[] = [];
       for (const section of sections) {
         try {
-          const res = await fetch(
+          await apiFetch(
             `/api/sections/${section.id}/generate-index`,
-            { method: 'POST' }
+            jsonInit('POST')
           );
-          const body = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            errors.push(`${section.name}: ${body.error ?? 'failed'}`);
+          successCount++;
+        } catch (err) {
+          if (err instanceof ApiError) {
+            const serverError =
+              err.body && typeof err.body === 'object'
+                ? (err.body as { error?: string }).error
+                : undefined;
+            errors.push(`${section.name}: ${serverError ?? 'failed'}`);
           } else {
-            successCount++;
+            errors.push(`${section.name}: network error`);
           }
-        } catch {
-          errors.push(`${section.name}: network error`);
         }
       }
-
+      return { successCount, errors };
+    },
+    onSuccess: ({ successCount, errors }) => {
       if (successCount > 0) {
         toast.success(
           `Renumbered ${successCount} section${successCount === 1 ? '' : 's'}`
@@ -223,9 +242,13 @@ export function GenerateAllIndexButton({
       // Only refresh when something actually changed — an all-failure run leaves
       // the page identical, so skip the needless re-render.
       if (successCount > 0) router.refresh();
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+  const busy = generateAllMutation.isPending;
+
+  function handleGenerateAll(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    generateAllMutation.mutate();
   }
 
   const count = sections.length;

@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Loader2, Save } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,7 +50,6 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
   );
   const [peiEnd, setPeiEnd] = useState(current.peiRegistrationEndDate ?? '');
   const [logoUrl, setLogoUrl] = useState(current.logoUrl);
-  const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
 
   const dirty =
@@ -119,44 +120,43 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
       toast.error('Logo URL must start with http:// or https://');
       return;
     }
-    setSaving(true);
-    try {
-      const res = await fetch('/api/sis/admin/school-config', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          principalName: principal.trim(),
-          ceoName: ceo.trim(),
-          defaultPublishWindowDays: days,
-          defaultCompassionateAllowancePerYear: compassionate,
-          defaultVlAllowancePerTerm: vl,
-          subjectAwardBronzeMin: bronze,
-          subjectAwardSilverMin: silver,
-          subjectAwardGoldMin: gold,
-          subjectAwardMax: max,
-          organizationName: orgName.trim(),
-          addressLine1: addr1.trim(),
-          addressLine2: addr2.trim(),
-          phoneNumber: phone.trim(),
-          websiteUrl: website.trim(),
-          contactEmail: email.trim(),
-          peiRegistrationNumber: pei.trim(),
-          peiRegistrationStartDate: peiStart || null,
-          peiRegistrationEndDate: peiEnd || null,
-          logoUrl: logoTrimmed,
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'save failed');
+    saveMutation.mutate({
+      principalName: principal.trim(),
+      ceoName: ceo.trim(),
+      defaultPublishWindowDays: days,
+      defaultCompassionateAllowancePerYear: compassionate,
+      defaultVlAllowancePerTerm: vl,
+      subjectAwardBronzeMin: bronze,
+      subjectAwardSilverMin: silver,
+      subjectAwardGoldMin: gold,
+      subjectAwardMax: max,
+      organizationName: orgName.trim(),
+      addressLine1: addr1.trim(),
+      addressLine2: addr2.trim(),
+      phoneNumber: phone.trim(),
+      websiteUrl: website.trim(),
+      contactEmail: email.trim(),
+      peiRegistrationNumber: pei.trim(),
+      peiRegistrationStartDate: peiStart || null,
+      peiRegistrationEndDate: peiEnd || null,
+      logoUrl: logoTrimmed,
+    });
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch('/api/sis/admin/school-config', jsonInit('PATCH', payload)),
+    onSuccess: () => {
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 1500);
       router.refresh();
-    } catch (e) {
+    },
+    onError: (e) => {
+      // Preserve the original `body?.error ?? 'save failed'` fallback string.
       toast.error(e instanceof Error ? e.message : 'save failed');
-    } finally {
-      setSaving(false);
-    }
-  }
+    },
+  });
+  const saving = saveMutation.isPending;
 
   return (
     <form

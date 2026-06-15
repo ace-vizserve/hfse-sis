@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,6 +10,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -39,51 +42,68 @@ export function ActConfirm({
   appHref,
 }: Props) {
   const [phase, setPhase] = useState<Phase>('confirm');
-  const [submitting, setSubmitting] = useState(false);
   const [note, setNote] = useState('');
   const [noteError, setNoteError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const isReject = action === 'reject';
 
-  async function submit() {
-    if (isReject && note.trim().length === 0) {
-      setNoteError('A reason is required to decline a request.');
-      return;
-    }
-    setNoteError(null);
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/change-requests/act', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+  // Tier-2 mutation. The original distinguished three outcomes, all preserved:
+  //   1. 2xx + body.ok === true            → phase 'done'
+  //   2. 2xx + body.ok falsy, OR non-2xx   → phase 'error' with body.error ??
+  //                                           "Something went wrong…" + toast
+  //   3. network / parse failure           → phase 'error' with the distinct
+  //                                           "could not reach the server" copy
+  // apiFetch only throws on non-2xx, so the (2) 2xx-but-not-ok case is handled
+  // in onSuccess; onError separates ApiError (case 2 non-2xx) from a thrown
+  // network error (case 3).
+  const actMutation = useMutation({
+    mutationFn: (vars: { decision_note?: string }) =>
+      apiFetch<{ ok?: boolean; error?: string }>(
+        '/api/change-requests/act',
+        jsonInit('POST', {
           token,
-          decision_note: isReject ? note.trim() : undefined,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-      };
-      if (res.ok && data.ok) {
+          decision_note: vars.decision_note,
+        })
+      ),
+    onSuccess: (data) => {
+      if (data.ok) {
         setPhase('done');
-      } else {
+        return;
+      }
+      const msg =
+        data.error ?? 'Something went wrong. Please try again from the app.';
+      setErrorMessage(msg);
+      setPhase('error');
+      toast.error(msg);
+    },
+    onError: (e) => {
+      if (e instanceof ApiError) {
+        const body = (e.body ?? {}) as { error?: string };
         const msg =
-          data.error ?? 'Something went wrong. Please try again from the app.';
+          body.error ?? 'Something went wrong. Please try again from the app.';
         setErrorMessage(msg);
         setPhase('error');
         toast.error(msg);
+        return;
       }
-    } catch {
       const msg =
         'We could not reach the server. Please try again from the app.';
       setErrorMessage(msg);
       setPhase('error');
       toast.error(msg);
-    } finally {
-      setSubmitting(false);
+    },
+  });
+
+  const submitting = actMutation.isPending;
+
+  function submit() {
+    if (isReject && note.trim().length === 0) {
+      setNoteError('A reason is required to decline a request.');
+      return;
     }
+    setNoteError(null);
+    actMutation.mutate({ decision_note: isReject ? note.trim() : undefined });
   }
 
   if (phase === 'done') {

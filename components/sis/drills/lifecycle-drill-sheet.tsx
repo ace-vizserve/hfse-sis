@@ -2,14 +2,15 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
 import {
   AlertCircle,
   AlertTriangle,
   CheckCircle2,
   HelpCircle,
+  RotateCcw,
 } from 'lucide-react';
-import { toast } from 'sonner';
 
 import {
   ChartLegendChip,
@@ -21,6 +22,7 @@ import {
 } from '@/components/dashboard/drill-down-sheet';
 import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   ALL_LIFECYCLE_DRILL_COLUMNS,
   defaultColumnsForLifecycleTarget,
@@ -30,6 +32,12 @@ import {
   type LifecycleDrillRow,
   type LifecycleDrillTarget,
 } from '@/lib/sis/drill';
+import { apiFetch } from '@/lib/query/fetcher';
+import { queryKeys } from '@/lib/query/keys';
+import { cn } from '@/lib/utils';
+
+// Stable empty reference so `rows` keeps a steady identity while loading.
+const EMPTY_ROWS: LifecycleDrillRow[] = [];
 
 // ─── Props ──────────────────────────────────────────────────────────────────
 
@@ -493,12 +501,6 @@ export function LifecycleDrillSheet({
   lens,
   initialRows,
 }: LifecycleDrillSheetProps) {
-  const [rows, setRows] = React.useState<LifecycleDrillRow[]>(
-    initialRows ?? []
-  );
-  const [loading, setLoading] = React.useState<boolean>(
-    initialRows === undefined
-  );
   const [selectedLevels, setSelectedLevels] = React.useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>([]);
   const [density, setDensity] = React.useState<DrillDownDensity>('comfortable');
@@ -511,38 +513,33 @@ export function LifecycleDrillSheet({
     setVisibleColumnKeys(defaultColumnsForLifecycleTarget(target));
   }, [target]);
 
-  const skipNextFetchRef = React.useRef<boolean>(initialRows !== undefined);
-
-  React.useEffect(() => {
-    if (skipNextFetchRef.current) {
-      skipNextFetchRef.current = false;
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    const url = buildDrillUrl(target, ayCode, 'json', undefined, lens);
-    fetch(url, { credentials: 'include' })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const json = (await res.json()) as { rows?: LifecycleDrillRow[] };
-        if (cancelled) return;
-        setRows(Array.isArray(json.rows) ? json.rows : []);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        toast.error('Failed to load drill data');
-      })
-      .finally(() => {
-        if (!cancelled) {
-          React.startTransition(() => {
-            setLoading(false);
-          });
-        }
+  // Read via TanStack Query. When the parent hydrated us with initialRows the
+  // drill renders instantly and the first fetch is skipped (matching the
+  // original `skipNextFetchRef = initialRows !== undefined` guard); otherwise
+  // it fetches on open + shows the skeleton. The lens scopes the four
+  // document-chase targets, so it's part of the key.
+  const drillQuery = useQuery({
+    queryKey: queryKeys.sisLifecycleDrill(target, {
+      ay: ayCode,
+      segment: lens ?? null,
+    }),
+    queryFn: async ({ signal }) => {
+      const url = buildDrillUrl(target, ayCode, 'json', undefined, lens);
+      const json = await apiFetch<{ rows?: LifecycleDrillRow[] }>(url, {
+        credentials: 'include',
+        signal,
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [target, ayCode, lens]);
+      return Array.isArray(json.rows) ? json.rows : [];
+    },
+    // The seed is the broad, un-narrowed row set — per-(target,lens) narrowing
+    // happens server-side in the drill route (KD #82). So it's a placeholder
+    // for instant paint, not authoritative: placeholderData paints it
+    // immediately while the query STILL fetches the narrowed rows and replaces
+    // it.
+    placeholderData: initialRows,
+  });
+
+  const rows = drillQuery.data ?? EMPTY_ROWS;
 
   // Pre-filter by status + level (universal toolkit).
   const preFiltered = React.useMemo<LifecycleDrillRow[]>(() => {
@@ -598,8 +595,42 @@ export function LifecycleDrillSheet({
 
   const heading = lifecycleDrillHeaderForTarget(target);
 
-  if (loading && rows.length === 0) {
+  if (drillQuery.isLoading && rows.length === 0) {
     return <DrillSheetSkeleton title={heading.title} />;
+  }
+
+  if (
+    drillQuery.isError &&
+    (rows.length === 0 || drillQuery.isPlaceholderData)
+  ) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+        <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive ring-1 ring-inset ring-destructive/20">
+          <AlertTriangle className="size-6" />
+        </div>
+        <div className="space-y-1">
+          <p className="font-serif text-lg font-semibold text-foreground">
+            Couldn’t load {heading.title.toLowerCase()}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {drillQuery.error instanceof Error
+              ? drillQuery.error.message
+              : 'Something went wrong while loading this list.'}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void drillQuery.refetch()}
+          disabled={drillQuery.isFetching}
+        >
+          <RotateCcw
+            className={cn('size-4', drillQuery.isFetching && 'animate-spin')}
+          />
+          Try again
+        </Button>
+      </div>
+    );
   }
 
   const csvHref = buildDrillUrl(target, ayCode, 'csv', visibleColumnKeys, lens);

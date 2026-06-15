@@ -3,8 +3,10 @@
 import { AlertCircle, CheckCircle2, Loader2, Save, Scale } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -50,7 +52,6 @@ export function SubjectConfigEditDialog({
   const [wwSlots, setWwSlots] = useState('5');
   const [ptSlots, setPtSlots] = useState('5');
   const [qaMax, setQaMax] = useState('30');
-  const [saving, setSaving] = useState(false);
 
   // Re-seed on draft change (i.e., user opened the dialog for a different row).
   useEffect(() => {
@@ -78,31 +79,36 @@ export function SubjectConfigEditDialog({
     qa_max: Number(qaMax) || 0,
   });
 
-  async function save() {
+  const saveMutation = useMutation({
+    mutationFn: (vars: {
+      configId: string;
+      payload: Record<string, unknown>;
+    }) =>
+      apiFetch(
+        `/api/sis/admin/subjects/${vars.configId}`,
+        jsonInit('PATCH', vars.payload)
+      ),
+    onSuccess: () => {
+      // draft is guaranteed non-null at mutate-time (guarded in save()).
+      toast.success(
+        `${draft!.subjectName} · ${draft!.levelCode}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
+      );
+      onOpenChange(false);
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'save failed');
+    },
+  });
+  const saving = saveMutation.isPending;
+
+  function save() {
     if (!draft) return;
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? 'Invalid values');
       return;
     }
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/sis/admin/subjects/${draft.configId}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(parsed.data),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? 'save failed');
-      toast.success(
-        `${draft.subjectName} · ${draft.levelCode}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
-      );
-      onOpenChange(false);
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'save failed');
-    } finally {
-      setSaving(false);
-    }
+    saveMutation.mutate({ configId: draft.configId, payload: parsed.data });
   }
 
   return (

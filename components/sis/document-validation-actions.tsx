@@ -1,12 +1,15 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useMutation } from '@tanstack/react-query';
 import { AlertCircle, Check, Loader2, X, XCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
+
+import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -76,11 +79,23 @@ export function DocumentValidationActions({
 }: Props) {
   const router = useRouter();
   const [rejectOpen, setRejectOpen] = useState(false);
-  const [approving, setApproving] = useState(false);
 
   const form = useForm<RejectFormInput>({
     resolver: zodResolver(RejectFormSchema),
     defaultValues: { rejectionReason: '' },
+  });
+
+  // Tier-2: no local optimistic value — approve/reject just mutate then
+  // router.refresh() so the server re-renders the new status. The original
+  // `send` threw `data.error ?? successMsg + ' failed'`; ApiError.message
+  // already carries the route's `body.error`, and the per-handler onError
+  // preserves the exact `'Approve failed'` / `'Reject failed'` fallback.
+  const validateMutation = useMutation({
+    mutationFn: ({ body }: { body: Record<string, unknown> }) =>
+      apiFetch(
+        `/api/sis/students/${encodeURIComponent(enroleeNumber)}/document/${encodeURIComponent(slotKey)}?ay=${encodeURIComponent(ayCode)}`,
+        jsonInit('PATCH', body)
+      ),
   });
 
   // Enrolled students → document validation is handled in P-Files (KD #147).
@@ -115,44 +130,44 @@ export function DocumentValidationActions({
     );
   }
 
-  async function send(body: Record<string, unknown>, successMsg: string) {
-    const res = await fetch(
-      `/api/sis/students/${encodeURIComponent(enroleeNumber)}/document/${encodeURIComponent(slotKey)}?ay=${encodeURIComponent(ayCode)}`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
+  const approving = validateMutation.isPending;
+
+  // Mirrors the original `data.error ?? '<Action> failed'`: prefer the route's
+  // `body.error` (ApiError surfaces non-string/absent bodies as a generic
+  // message), else the action-specific fallback.
+  function errorMessage(e: unknown, fallback: string): string {
+    if (e instanceof ApiError) {
+      const body = e.body;
+      if (body && typeof body === 'object') {
+        const err = (body as Record<string, unknown>).error;
+        if (typeof err === 'string' && err) return err;
       }
-    );
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error ?? successMsg + ' failed');
+      return fallback;
+    }
+    return e instanceof Error ? e.message : fallback;
   }
 
   async function handleApprove() {
-    setApproving(true);
     try {
-      await send({ status: 'Valid' }, 'Approve');
+      await validateMutation.mutateAsync({ body: { status: 'Valid' } });
       toast.success(`${label} approved`);
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Approve failed');
-    } finally {
-      setApproving(false);
+      toast.error(errorMessage(e, 'Approve failed'));
     }
   }
 
   async function handleReject(values: RejectFormInput) {
     try {
-      await send(
-        { status: 'Rejected', rejectionReason: values.rejectionReason },
-        'Reject'
-      );
+      await validateMutation.mutateAsync({
+        body: { status: 'Rejected', rejectionReason: values.rejectionReason },
+      });
       toast.success(`${label} rejected`);
       setRejectOpen(false);
       form.reset({ rejectionReason: '' });
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Reject failed');
+      toast.error(errorMessage(e, 'Reject failed'));
     }
   }
 
