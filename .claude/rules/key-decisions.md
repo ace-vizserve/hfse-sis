@@ -1,6 +1,6 @@
 ---
 name: key-decisions
-description: Architectural and behavioral decisions, numbered KD #1–#147 globally (gaps at #19/#26/#30/#86 from sprint reshuffles). Full text lives in topic files under `.claude/rules/key-decisions/`. Read this index to find the topic file for a given KD #N or topic, then Read that file. Read whenever a "KD #N" reference is cited in code or docs, when making a cross-cutting architectural choice, or when in doubt about module boundaries, roles, or conventions.
+description: Architectural and behavioral decisions, numbered KD #1–#148 globally (gaps at #19/#26/#30/#86 from sprint reshuffles). Full text lives in topic files under `.claude/rules/key-decisions/`. Read this index to find the topic file for a given KD #N or topic, then Read that file. Read whenever a "KD #N" reference is cited in code or docs, when making a cross-cutting architectural choice, or when in doubt about module boundaries, roles, or conventions.
 load: on-demand
 ---
 
