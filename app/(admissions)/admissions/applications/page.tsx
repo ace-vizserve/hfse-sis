@@ -315,6 +315,7 @@ export default async function AdmissionsApplicationsPage({
             linkBase="/admissions/applications"
             linkQuery={isCurrentAy ? undefined : { ay: selectedAy }}
             showSubmittedColumn
+            showStaleness
             defaultSorting={[{ id: 'submitted', desc: true }]}
             statusBuckets={APPLICATIONS_STATUS_BUCKETS}
           />

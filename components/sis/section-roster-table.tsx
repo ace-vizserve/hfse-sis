@@ -6,6 +6,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import Link from 'next/link';
 
 import { DataTable } from '@/components/ui/data-table';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
 import { Button } from '@/components/ui/button';
 
@@ -66,19 +67,24 @@ export function SectionRosterTable({
       {
         id: 'indexNumber',
         accessorKey: 'indexNumber',
-        header: '#',
+        header: ({ column }) => (
+          <SortableHeader column={column} align="right">
+            #
+          </SortableHeader>
+        ),
         cell: ({ row }) => (
           <span className="font-mono text-xs tabular-nums text-muted-foreground">
             {row.original.indexNumber}
           </span>
         ),
-        enableSorting: true,
         enableHiding: false,
       },
       {
         id: 'studentName',
         accessorKey: 'studentName',
-        header: 'Student',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Student</SortableHeader>
+        ),
         cell: ({ row }) => {
           const r = row.original;
           // Link to records detail page via studentNumber (KD #81).
@@ -127,7 +133,9 @@ export function SectionRosterTable({
         // This is the class-start date (when the student begins attending),
         // NOT the admissions enrolment date — label it honestly for late
         // enrollees (KD #68/#117).
-        header: 'Starts class on',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Starts class on</SortableHeader>
+        ),
         cell: ({ row }) => {
           const d = formatDate(row.original.enrollment_date);
           return d ? (
@@ -138,13 +146,23 @@ export function SectionRosterTable({
             <span className="text-muted-foreground">—</span>
           );
         },
-        enableSorting: true,
+        // Null-safe: nulls sort last regardless of direction.
+        sortingFn: (rowA, rowB, colId) => {
+          const a = rowA.getValue<string | null>(colId);
+          const b = rowB.getValue<string | null>(colId);
+          if (!a && !b) return 0;
+          if (!a) return 1;
+          if (!b) return -1;
+          return a < b ? -1 : a > b ? 1 : 0;
+        },
       },
       {
         // withdrawal_date: hidden-by-default, promoted per spec
         id: 'withdrawal_date',
         accessorKey: 'withdrawal_date',
-        header: 'Withdrawn on',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Withdrawn on</SortableHeader>
+        ),
         cell: ({ row }) => {
           const d = formatDate(row.original.withdrawal_date);
           return d ? (
@@ -155,14 +173,24 @@ export function SectionRosterTable({
             <span className="text-muted-foreground">—</span>
           );
         },
-        enableSorting: true,
+        // Null-safe: nulls sort last regardless of direction.
+        sortingFn: (rowA, rowB, colId) => {
+          const a = rowA.getValue<string | null>(colId);
+          const b = rowB.getValue<string | null>(colId);
+          if (!a && !b) return 0;
+          if (!a) return 1;
+          if (!b) return -1;
+          return a < b ? -1 : a > b ? 1 : 0;
+        },
       },
       {
         // termJoined: hidden-by-default (KD #68 pattern — requires server-side
         // lib/sis/terms.ts::getTermForDate; page passes it once wired)
         id: 'termJoined',
         accessorKey: 'termJoined',
-        header: 'Term joined',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Term joined</SortableHeader>
+        ),
         cell: ({ row }) =>
           row.original.termJoined ? (
             <span className="text-sm text-foreground">
@@ -171,7 +199,15 @@ export function SectionRosterTable({
           ) : (
             <span className="text-muted-foreground">—</span>
           ),
-        enableSorting: true,
+        // Null-safe: nulls sort last regardless of direction.
+        sortingFn: (rowA, rowB, colId) => {
+          const a = rowA.getValue<string | null>(colId);
+          const b = rowB.getValue<string | null>(colId);
+          if (!a && !b) return 0;
+          if (!a) return 1;
+          if (!b) return -1;
+          return a < b ? -1 : a > b ? 1 : 0;
+        },
       },
       {
         id: 'action',

@@ -220,12 +220,8 @@ const STATUS_TABS: StatusTabConfig<AdminRequestRow>[] = [
   },
 ];
 
+// Status is the status-tab dimension (below) — not duplicated as a facet.
 const FACETS: FacetConfig[] = [
-  {
-    columnId: 'cr_status',
-    label: 'Status',
-    valueOptions: ['pending', 'approved', 'applied', 'rejected', 'cancelled'],
-  },
   {
     columnId: 'fieldLabel',
     label: 'Field changed',

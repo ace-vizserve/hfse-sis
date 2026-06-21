@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { TABLE_COPY } from '@/lib/copy/data-table';
@@ -121,7 +122,9 @@ const columns: ColumnDef<ApproverRow>[] = [
   {
     id: 'user',
     accessorFn: (row) => row.display_name ?? row.email,
-    header: 'Approver',
+    header: ({ column }) => (
+      <SortableHeader column={column}>Approver</SortableHeader>
+    ),
     cell: ({ row }) => (
       <div>
         <div className="font-medium text-foreground">
@@ -139,7 +142,9 @@ const columns: ColumnDef<ApproverRow>[] = [
   {
     id: 'flow',
     accessorFn: (row) => row.flowLabel,
-    header: 'Flow',
+    header: ({ column }) => (
+      <SortableHeader column={column}>Flow</SortableHeader>
+    ),
     cell: ({ row }) => (
       <span className="text-sm text-foreground">{row.original.flowLabel}</span>
     ),
@@ -167,7 +172,9 @@ const columns: ColumnDef<ApproverRow>[] = [
   {
     id: 'assigned_at',
     accessorKey: 'assigned_at',
-    header: 'Assigned',
+    header: ({ column }) => (
+      <SortableHeader column={column}>Assigned</SortableHeader>
+    ),
     cell: ({ row }) => (
       <span className="font-mono text-xs tabular-nums text-muted-foreground">
         {new Date(row.original.assigned_at).toLocaleDateString('en-SG', {
@@ -177,7 +184,6 @@ const columns: ColumnDef<ApproverRow>[] = [
         })}
       </span>
     ),
-    enableSorting: true,
   },
   {
     id: 'actions',

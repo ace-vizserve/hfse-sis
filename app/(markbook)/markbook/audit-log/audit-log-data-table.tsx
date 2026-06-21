@@ -11,7 +11,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
-import { type FacetConfig } from '@/components/ui/data-table/types';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -72,7 +78,12 @@ type PaginationInfo = {
 type Props = {
   rows: MergedRow[];
   initialSheetIdFilter?: string | null;
-  initialActionFilter?: string | null;
+  /** Server-side filter state (driven via URL params, not client facets — the
+   *  log is server-paginated so client facets would only filter one page). */
+  currentAction?: string | null;
+  currentActor?: string | null;
+  actionOptions?: string[];
+  actorOptions?: string[];
   canExport?: boolean;
   pagination?: PaginationInfo;
 };
@@ -97,11 +108,6 @@ function endOfDay(d: Date): Date {
   n.setHours(23, 59, 59, 999);
   return n;
 }
-
-const FACETS: FacetConfig[] = [
-  { columnId: 'action', label: 'Action' },
-  { columnId: 'actor', label: 'Actor' },
-];
 
 const COLUMNS: ColumnDef<MergedRow>[] = [
   {
@@ -179,10 +185,29 @@ const COLUMNS: ColumnDef<MergedRow>[] = [
 export function AuditLogDataTable({
   rows,
   initialSheetIdFilter,
-  initialActionFilter,
+  currentAction = null,
+  currentActor = null,
+  actionOptions = [],
+  actorOptions = [],
   canExport = false,
   pagination,
 }: Props) {
+  const router = useRouter();
+
+  // Action + Actor are filtered SERVER-side (the log is server-paginated, so a
+  // client facet would only filter the loaded page). Each Select writes a URL
+  // param and resets to page 1; the page RSC re-queries.
+  const setServerParam = React.useCallback(
+    (key: 'action' | 'actor', value: string) => {
+      const params = new URLSearchParams(window.location.search);
+      if (value && value !== 'all') params.set(key, value);
+      else params.delete(key);
+      params.delete('page');
+      router.push(`?${params.toString()}`);
+    },
+    [router]
+  );
+
   const [exportRange, setExportRange] = React.useState<DateRange | undefined>(
     undefined
   );
@@ -215,9 +240,45 @@ export function AuditLogDataTable({
     return data;
   }, [rows, sheetIdFilter, dateRange]);
 
-  // Toolbar leading: date-range picker + sheet ID chip
+  // Toolbar leading: server-side Action + Actor filters, date-range, sheet chip
   const toolbarLeading = (
     <>
+      {/* Action filter (server-side) */}
+      <Select
+        value={currentAction ?? 'all'}
+        onValueChange={(v) => setServerParam('action', v)}
+      >
+        <SelectTrigger className="h-8 w-[180px]">
+          <SelectValue placeholder="All actions" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All actions</SelectItem>
+          {actionOptions.map((a) => (
+            <SelectItem key={a} value={a}>
+              {auditActionLabel(a)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* Actor filter (server-side) */}
+      <Select
+        value={currentActor ?? 'all'}
+        onValueChange={(v) => setServerParam('actor', v)}
+      >
+        <SelectTrigger className="h-8 w-[180px]">
+          <SelectValue placeholder="All actors" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All actors</SelectItem>
+          {actorOptions.map((a) => (
+            <SelectItem key={a} value={a}>
+              {a}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
       {/* Date range filter */}
       <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>
         <PopoverTrigger asChild>
@@ -413,23 +474,11 @@ export function AuditLogDataTable({
     </Dialog>
   ) : null;
 
-  // Seed the action facet from URL params on first render
-  const initialColumnFilters = React.useMemo(
-    () =>
-      initialActionFilter
-        ? [{ id: 'action', value: [initialActionFilter] }]
-        : [],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
-
   return (
     <_AuditLogTable
       filteredRows={filteredRows}
-      facets={FACETS}
       toolbarLeading={toolbarLeading}
       toolbarTrailing={toolbarTrailing}
-      initialColumnFilters={initialColumnFilters}
       pagination={pagination}
     />
   );
@@ -439,17 +488,13 @@ export function AuditLogDataTable({
 // correctly even when the outer wrapper's state changes.
 function _AuditLogTable({
   filteredRows,
-  facets,
   toolbarLeading,
   toolbarTrailing,
-  initialColumnFilters,
   pagination,
 }: {
   filteredRows: MergedRow[];
-  facets: FacetConfig[];
   toolbarLeading: React.ReactNode;
   toolbarTrailing: React.ReactNode;
-  initialColumnFilters: Array<{ id: string; value: string[] }>;
   pagination?: PaginationInfo;
 }) {
   const router = useRouter();
@@ -471,7 +516,6 @@ function _AuditLogTable({
         getRowId={(row) => row.id}
         searchKeys={['actor', 'action', 'entity_type']}
         searchPlaceholder="Search actor, action, details…"
-        facets={facets}
         toolbarLeading={toolbarLeading}
         toolbarTrailing={toolbarTrailing}
         initialSort={[{ id: 'at', desc: true }]}

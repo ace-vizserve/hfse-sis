@@ -22,6 +22,7 @@ import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import {
   Dialog,
   DialogContent,
@@ -65,7 +66,9 @@ function buildColumns(
     {
       id: 'user',
       accessorFn: (row) => row.display_name,
-      header: 'User',
+      header: ({ column }) => (
+        <SortableHeader column={column}>User</SortableHeader>
+      ),
       // No identifier link — no canonical user-detail page
       cell: ({ row }) => (
         <div>
@@ -123,7 +126,9 @@ function buildColumns(
       // created_at: hidden-by-default "Member since" column
       id: 'created_at',
       accessorKey: 'created_at',
-      header: 'Member since',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Member since</SortableHeader>
+      ),
       cell: ({ row }) => (
         <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
           {new Date(row.original.created_at).toLocaleDateString('en-SG', {
@@ -138,7 +143,18 @@ function buildColumns(
     {
       id: 'lastSignIn',
       accessorKey: 'last_sign_in_at',
-      header: 'Last sign-in',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Last sign-in</SortableHeader>
+      ),
+      // Nulls sort last regardless of direction (never-signed-in rows sink).
+      sortingFn: (a, b) => {
+        const aVal = a.original.last_sign_in_at;
+        const bVal = b.original.last_sign_in_at;
+        if (!aVal && !bVal) return 0;
+        if (!aVal) return 1; // a has no sign-in → push down
+        if (!bVal) return -1; // b has no sign-in → push down
+        return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+      },
       cell: ({ row }) => (
         <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
           {row.original.last_sign_in_at
@@ -523,16 +539,29 @@ export function UsersAdminClient({
       getRowId={(row) => row.id}
       searchKeys={['email', 'display_name', (row) => row.role ?? '']}
       searchPlaceholder="Search email, name, or role…"
+      statusTabs={[
+        {
+          value: 'all',
+          label: 'All',
+          predicate: () => true,
+          isDefault: true,
+        },
+        {
+          value: 'active',
+          label: 'Active',
+          predicate: (r: AdminUserRow) => !r.disabled,
+        },
+        {
+          value: 'disabled',
+          label: 'Disabled',
+          predicate: (r: AdminUserRow) => Boolean(r.disabled),
+        },
+      ]}
       facets={[
         {
           columnId: 'role',
           label: 'Role',
           valueOptions: ROLES.map((r) => r),
-        },
-        {
-          columnId: 'user_status',
-          label: 'Status',
-          valueOptions: ['Active', 'Disabled'],
         },
       ]}
       toolbarTrailing={toolbarTrailing}

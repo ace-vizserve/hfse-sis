@@ -12,6 +12,7 @@ import {
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
+import { type StatusTabConfig } from '@/components/ui/data-table/types';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import type {
   UnsyncedGapReason,
@@ -46,6 +47,30 @@ const GAP_COPY: Record<UnsyncedGapReason, string> = {
   no_student_number: 'No student number yet',
   not_synced: 'Not yet synced to grading',
 };
+
+const STATUS_TABS: StatusTabConfig<UnsyncedStudentRow>[] = [
+  {
+    value: 'all',
+    label: 'All',
+    predicate: () => true,
+    isDefault: true,
+  },
+  {
+    value: 'no_class_section',
+    label: 'No class section assigned',
+    predicate: (r) => r.gapReason === 'no_class_section',
+  },
+  {
+    value: 'no_student_number',
+    label: 'No student number yet',
+    predicate: (r) => r.gapReason === 'no_student_number',
+  },
+  {
+    value: 'not_synced',
+    label: 'Not yet synced to grading',
+    predicate: (r) => r.gapReason === 'not_synced',
+  },
+];
 
 function fullNameOf(row: UnsyncedStudentRow): string {
   if (row.enroleeFullName && row.enroleeFullName.trim().length > 0) {
@@ -103,6 +128,13 @@ export function UnsyncedStudentsQueue({
         accessorKey: 'levelApplied',
         header: 'Level',
         cell: ({ row }) => row.original.levelApplied ?? '—',
+        filterFn: (row, id, value) => {
+          if (!value || (Array.isArray(value) && value.length === 0))
+            return true;
+          return Array.isArray(value)
+            ? value.includes(row.getValue(id))
+            : row.getValue(id) === value;
+        },
       },
       {
         accessorKey: 'applicationStatus',
@@ -168,6 +200,9 @@ export function UnsyncedStudentsQueue({
           (r) => r.levelApplied ?? '',
         ]}
         searchPlaceholder="Search by name, student number, or level…"
+        statusTabs={STATUS_TABS}
+        facets={[{ columnId: 'levelApplied', label: 'Level' }]}
+        url={{ enabled: true, namespace: 'unsynced' }}
         initialSort={[{ id: 'enroleeFullName', desc: false }]}
         emptyState={{
           icon: UserX,

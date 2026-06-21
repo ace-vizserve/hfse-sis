@@ -3,11 +3,14 @@
 import * as React from 'react';
 import Link from 'next/link';
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  ChevronsUpDown,
   Mail,
   Search,
   X,
@@ -260,6 +263,46 @@ type PFilesProps = {
 
 type Props = AdmissionsProps | PFilesProps;
 
+// ─── Sort state ───────────────────────────────────────────────────────────────
+
+type SortKey = 'name' | 'level' | 'pct' | 'status4' | null;
+type SortDir = 'asc' | 'desc';
+
+// ─── Sortable column header button ───────────────────────────────────────────
+
+function SortButton({
+  label,
+  sortKey,
+  currentKey,
+  currentDir,
+  onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  currentKey: SortKey;
+  currentDir: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  const isActive = currentKey === sortKey;
+  const Icon = isActive
+    ? currentDir === 'asc'
+      ? ArrowUp
+      : ArrowDown
+    : ChevronsUpDown;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      className="inline-flex cursor-pointer items-center gap-1 font-mono text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
+    >
+      {label}
+      <Icon
+        className={`size-3 ${isActive ? 'text-foreground' : 'text-muted-foreground/60'}`}
+      />
+    </button>
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function DocumentCompletenessTable(props: Props) {
@@ -281,6 +324,8 @@ export function DocumentCompletenessTable(props: Props) {
   const [pageSize, setPageSize] = React.useState(25);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = React.useState(false);
+  const [sortKey, setSortKey] = React.useState<SortKey>(null);
+  const [sortDir, setSortDir] = React.useState<SortDir>('asc');
 
   const querySuffix = ayCode ? `?ay=${encodeURIComponent(ayCode)}` : '';
 
@@ -340,10 +385,10 @@ export function DocumentCompletenessTable(props: Props) {
     });
   }, [students, search, levelFilter, sectionFilter, module, statusFilter]);
 
-  // Reset to page 0 when filters change
+  // Reset to page 0 when filters or sort change
   React.useEffect(() => {
     setPageIndex(0);
-  }, [search, levelFilter, sectionFilter, statusFilter]);
+  }, [search, levelFilter, sectionFilter, statusFilter, sortKey, sortDir]);
 
   // Drop selections that no longer match the visible filtered set
   React.useEffect(() => {
@@ -355,11 +400,48 @@ export function DocumentCompletenessTable(props: Props) {
     });
   }, [filtered]);
 
-  const pageCount = Math.max(Math.ceil(filtered.length / pageSize), 1);
-  const paged = filtered.slice(
-    pageIndex * pageSize,
-    (pageIndex + 1) * pageSize
-  );
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  }
+
+  const sorted = React.useMemo(() => {
+    if (sortKey === null) return filtered;
+    return [...filtered].sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'name') {
+        cmp = a.fullName.localeCompare(b.fullName, undefined, {
+          sensitivity: 'base',
+        });
+      } else if (sortKey === 'level') {
+        const al = a.level ?? '';
+        const bl = b.level ?? '';
+        cmp = al.localeCompare(bl, undefined, { sensitivity: 'base' });
+      } else if (sortKey === 'pct') {
+        // pct helper guards divide-by-zero (returns 0 when total===0)
+        cmp = pct(a.total, a.complete) - pct(b.total, b.complete);
+      } else if (sortKey === 'status4') {
+        // 4th col: applicationStatus (admissions) or section (p-files)
+        const av =
+          module === 'admissions'
+            ? ((a as AdmissionsCompleteness).applicationStatus ?? '')
+            : ((a as StudentCompleteness).section ?? '');
+        const bv =
+          module === 'admissions'
+            ? ((b as AdmissionsCompleteness).applicationStatus ?? '')
+            : ((b as StudentCompleteness).section ?? '');
+        cmp = av.localeCompare(bv, undefined, { sensitivity: 'base' });
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [filtered, sortKey, sortDir, module]);
+
+  const pageCount = Math.max(Math.ceil(sorted.length / pageSize), 1);
+  const paged = sorted.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
 
   const pageIds = React.useMemo(
     () => paged.map((s) => s.enroleeNumber),
@@ -578,18 +660,44 @@ export function DocumentCompletenessTable(props: Props) {
                   </TableHead>
                 )}
                 <TableHead className="sticky left-0 bg-muted/40 px-4">
-                  {identifierLabel}
+                  <SortButton
+                    label={identifierLabel}
+                    sortKey="name"
+                    currentKey={sortKey}
+                    currentDir={sortDir}
+                    onSort={handleSort}
+                  />
                 </TableHead>
-                <TableHead className="whitespace-nowrap px-2">Level</TableHead>
+                <TableHead className="whitespace-nowrap px-2">
+                  <SortButton
+                    label="Level"
+                    sortKey="level"
+                    currentKey={sortKey}
+                    currentDir={sortDir}
+                    onSort={handleSort}
+                  />
+                </TableHead>
 
                 {/* 4th column: applicationStatus (admissions) vs Section (p-files) */}
                 {module === 'admissions' ? (
                   <TableHead className="whitespace-nowrap px-2">
-                    Status
+                    <SortButton
+                      label="Status"
+                      sortKey="status4"
+                      currentKey={sortKey}
+                      currentDir={sortDir}
+                      onSort={handleSort}
+                    />
                   </TableHead>
                 ) : (
                   <TableHead className="whitespace-nowrap px-2">
-                    Section
+                    <SortButton
+                      label="Section"
+                      sortKey="status4"
+                      currentKey={sortKey}
+                      currentDir={sortDir}
+                      onSort={handleSort}
+                    />
                   </TableHead>
                 )}
 
@@ -604,7 +712,15 @@ export function DocumentCompletenessTable(props: Props) {
                     </span>
                   </TableHead>
                 ))}
-                <TableHead className="px-2 text-center">%</TableHead>
+                <TableHead className="px-2 text-center">
+                  <SortButton
+                    label="%"
+                    sortKey="pct"
+                    currentKey={sortKey}
+                    currentDir={sortDir}
+                    onSort={handleSort}
+                  />
+                </TableHead>
                 <TableHead className="px-2 text-right">Action</TableHead>
               </TableRow>
             </TableHeader>

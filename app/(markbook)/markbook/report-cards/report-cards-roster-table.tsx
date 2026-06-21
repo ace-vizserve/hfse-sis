@@ -127,6 +127,11 @@ const STATUS_TABS: StatusTabConfig<ReportCardsRosterRow>[] = [
     predicate: (r) =>
       r.publication_status === 'none' || r.publication_status === 'scheduled',
   },
+  {
+    value: 'closed',
+    label: 'Closed',
+    predicate: (r) => r.publication_status === 'closed',
+  },
 ];
 
 export function ReportCardsRosterTable({

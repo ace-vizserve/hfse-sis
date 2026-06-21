@@ -9,6 +9,7 @@ import { PreCourseDateCell } from '@/components/sis/cohorts/pre-course-date-cell
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import {
   ChartLegendChip,
   type ChartLegendChipColor,
@@ -96,7 +97,9 @@ function buildStpColumns(
     {
       id: 'student',
       accessorFn: (r) => r.enroleeFullName ?? r.enroleeNumber,
-      header: 'Student',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Student</SortableHeader>
+      ),
       cell: ({ row }) => (
         <Link
           href={stpDetailHref(row.original, scope, ayCode)}
@@ -283,7 +286,9 @@ function buildPromisedColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
     {
       id: 'student',
       accessorFn: (r) => r.enroleeFullName ?? r.enroleeNumber,
-      header: 'Student',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Student</SortableHeader>
+      ),
       cell: ({ row }) => (
         <Link
           href={promisedDetailHref(row.original.enroleeNumber, ayCode)}
@@ -325,13 +330,20 @@ function buildPromisedColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
     {
       id: 'toFollowCount',
       accessorFn: (r) => r.toFollowCount ?? 0,
-      header: 'To follow',
+      header: ({ column }) => (
+        <SortableHeader column={column} className="justify-end">
+          To follow
+        </SortableHeader>
+      ),
       cell: ({ row }) => (
         <Badge variant="muted" className="font-mono tabular-nums">
           {row.original.toFollowCount ?? 0}
         </Badge>
       ),
       enableSorting: true,
+      sortingFn: (a, b) =>
+        (a.getValue<number>('toFollowCount') ?? 0) -
+        (b.getValue<number>('toFollowCount') ?? 0),
     },
     {
       id: 'promisedSlots',
@@ -345,13 +357,24 @@ function buildPromisedColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
     {
       id: 'earliestDate',
       accessorFn: (r) => r.earliestPromisedUntil ?? '',
-      header: 'Earliest promised',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Earliest promised</SortableHeader>
+      ),
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-foreground">
           {formatDate(row.original.earliestPromisedUntil)}
         </span>
       ),
       enableSorting: true,
+      // ISO date strings sort correctly as strings; empty string (null) sorts last.
+      sortingFn: (a, b, dir) => {
+        const va = a.getValue<string>('earliestDate');
+        const vb = b.getValue<string>('earliestDate');
+        if (!va && !vb) return 0;
+        if (!va) return dir === 'asc' ? 1 : -1;
+        if (!vb) return dir === 'asc' ? -1 : 1;
+        return va < vb ? -1 : va > vb ? 1 : 0;
+      },
     },
     {
       id: 'daysUntil',
@@ -360,11 +383,17 @@ function buildPromisedColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
         r.daysUntilEarliestPromise === undefined
           ? Number.POSITIVE_INFINITY
           : r.daysUntilEarliestPromise,
-      header: 'Days until',
+      header: ({ column }) => (
+        <SortableHeader column={column} className="justify-end">
+          Days until
+        </SortableHeader>
+      ),
       cell: ({ row }) => (
         <PromisedDaysPill days={row.original.daysUntilEarliestPromise} />
       ),
       enableSorting: true,
+      // accessorFn already maps null → +Infinity so nulls naturally sort last.
+      sortingFn: 'basic',
     },
   ];
 }
@@ -494,7 +523,9 @@ function buildPassExpiryColumns(
     {
       id: 'student',
       accessorFn: (r) => r.enroleeFullName ?? r.enroleeNumber,
-      header: 'Student',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Student</SortableHeader>
+      ),
       cell: ({ row }) => (
         <Link
           href={passExpiryDetailHref(row.original, scope, ayCode)}
@@ -527,7 +558,9 @@ function buildPassExpiryColumns(
     {
       id: 'earliestKind',
       accessorFn: (r) => r.studentPassExpiryKind ?? '',
-      header: 'Earliest kind',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Earliest kind</SortableHeader>
+      ),
       cell: ({ row }) => (
         <StudentKindChip kind={row.original.studentPassExpiryKind} />
       ),
@@ -536,22 +569,39 @@ function buildPassExpiryColumns(
     {
       id: 'earliestDate',
       accessorFn: (r) => r.earliestExpiry ?? '',
-      header: 'Earliest expiry',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Earliest expiry</SortableHeader>
+      ),
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-foreground">
           {formatDate(row.original.earliestExpiry)}
         </span>
       ),
       enableSorting: true,
+      // ISO date strings sort correctly as strings; empty string (null) sorts last.
+      sortingFn: (a, b, dir) => {
+        const va = a.getValue<string>('earliestDate');
+        const vb = b.getValue<string>('earliestDate');
+        if (!va && !vb) return 0;
+        if (!va) return dir === 'asc' ? 1 : -1;
+        if (!vb) return dir === 'asc' ? -1 : 1;
+        return va < vb ? -1 : va > vb ? 1 : 0;
+      },
     },
     {
       id: 'daysUntil',
       accessorFn: (r) => r.daysUntilEarliestExpiry ?? Number.POSITIVE_INFINITY,
-      header: 'Days until',
+      header: ({ column }) => (
+        <SortableHeader column={column} className="justify-end">
+          Days until
+        </SortableHeader>
+      ),
       cell: ({ row }) => (
         <PassExpiryDaysPill days={row.original.daysUntilEarliestExpiry} />
       ),
       enableSorting: true,
+      // accessorFn already maps null → +Infinity so nulls naturally sort last.
+      sortingFn: 'basic',
     },
     {
       id: 'parentExpiries',
@@ -698,7 +748,9 @@ function buildMedicalColumns(
     {
       id: 'student',
       accessorFn: (r) => r.enroleeFullName ?? r.enroleeNumber,
-      header: 'Student',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Student</SortableHeader>
+      ),
       cell: ({ row }) => (
         <Link
           href={medicalDetailHref(row.original, scope, ayCode)}
@@ -731,9 +783,16 @@ function buildMedicalColumns(
     {
       id: 'medicalFlags',
       accessorFn: (r) => r.medicalFlags?.length ?? 0,
-      header: 'Flags',
+      header: ({ column }) => (
+        <SortableHeader column={column} className="justify-end">
+          Flags
+        </SortableHeader>
+      ),
       cell: ({ row }) => <FlagChips flags={row.original.medicalFlags} />,
       enableSorting: true,
+      sortingFn: (a, b) =>
+        (a.getValue<number>('medicalFlags') ?? 0) -
+        (b.getValue<number>('medicalFlags') ?? 0),
     },
     {
       id: 'allergyDetails',
@@ -886,7 +945,9 @@ function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
     {
       id: 'student',
       accessorFn: (r) => r.enroleeFullName ?? r.enroleeNumber,
-      header: 'Student',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Student</SortableHeader>
+      ),
       cell: ({ row }) => (
         <Link
           href={preCourseDetailHref(row.original.enroleeNumber, ayCode)}
@@ -937,7 +998,9 @@ function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
     {
       id: 'preCourseDate',
       accessorFn: (r) => r.preCourseDate ?? '',
-      header: 'Session date',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Session date</SortableHeader>
+      ),
       cell: ({ row }) => (
         <PreCourseDateCell
           enroleeNumber={row.original.enroleeNumber}
@@ -946,6 +1009,15 @@ function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
         />
       ),
       enableSorting: true,
+      // ISO date strings sort correctly as strings; empty string (null) sorts last.
+      sortingFn: (a, b, dir) => {
+        const va = a.getValue<string>('preCourseDate');
+        const vb = b.getValue<string>('preCourseDate');
+        if (!va && !vb) return 0;
+        if (!va) return dir === 'asc' ? 1 : -1;
+        if (!vb) return dir === 'asc' ? -1 : 1;
+        return va < vb ? -1 : va > vb ? 1 : 0;
+      },
     },
     {
       id: 'preCourseAnswer',
@@ -959,13 +1031,24 @@ function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
     {
       id: 'preCourseAcknowledgedAt',
       accessorFn: (r) => r.preCourseAcknowledgedAt ?? '',
-      header: 'Acknowledged',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Acknowledged</SortableHeader>
+      ),
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-foreground">
           {formatDate(row.original.preCourseAcknowledgedAt)}
         </span>
       ),
       enableSorting: true,
+      // ISO date strings (or ISO timestamps) sort correctly as strings; empty string sorts last.
+      sortingFn: (a, b, dir) => {
+        const va = a.getValue<string>('preCourseAcknowledgedAt');
+        const vb = b.getValue<string>('preCourseAcknowledgedAt');
+        if (!va && !vb) return 0;
+        if (!va) return dir === 'asc' ? 1 : -1;
+        if (!vb) return dir === 'asc' ? -1 : 1;
+        return va < vb ? -1 : va > vb ? 1 : 0;
+      },
     },
   ];
 }
@@ -1062,6 +1145,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
           pageSize={25}
           csv={{ filename: `promised-cohort-${ayCode}.csv` }}
           url={{ enabled: true, namespace: 'cohort' }}
+          initialSort={[{ id: 'daysUntil', desc: false }]}
           emptyState={PROMISED_EMPTY_STATE}
           emptyFilteredState={{ title: 'No matches for current filters.' }}
           selection={{
@@ -1102,6 +1186,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
           pageSize={25}
           csv={{ filename: `pass-expiry-cohort-${ayCode}.csv` }}
           url={{ enabled: true, namespace: 'cohort' }}
+          initialSort={[{ id: 'daysUntil', desc: false }]}
           emptyState={PASS_EXPIRY_EMPTY_STATE}
           emptyFilteredState={{ title: 'No matches for current filters.' }}
           selection={{

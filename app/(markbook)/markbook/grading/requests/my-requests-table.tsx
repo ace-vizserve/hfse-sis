@@ -50,14 +50,6 @@ export type MyRequestRow = {
 // so the identifier link can deep-link to the student or grading sheet.
 // Deferred until the loader join lands.
 
-const STATUS_OPTIONS: ChangeRequestStatus[] = [
-  'pending',
-  'approved',
-  'applied',
-  'rejected',
-  'cancelled',
-];
-
 const FIELD_LABELS: Record<string, string> = {
   ww_scores: 'Written work',
   pt_scores: 'Performance task',
@@ -261,13 +253,9 @@ function ReviewerLine({ row }: { row: MyRequestRow }) {
 }
 
 export function MyRequestsTable({ data }: { data: MyRequestRow[] }) {
+  // Status is the status-tab dimension (below) — not duplicated as a facet.
   const facets = useMemo<FacetConfig[]>(
     () => [
-      {
-        columnId: 'req_status',
-        label: 'Status',
-        valueOptions: STATUS_OPTIONS,
-      },
       {
         columnId: 'field_changed',
         label: 'Field changed',

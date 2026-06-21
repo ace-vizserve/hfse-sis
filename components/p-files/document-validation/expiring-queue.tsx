@@ -160,9 +160,9 @@ export function ExpiringQueue({ rows }: Props) {
   );
 
   const facets: FacetConfig[] = React.useMemo(
+    // Owner is the status-tab dimension (below) — not duplicated as a facet.
     () => [
       { columnId: 'slotLabel', label: 'Document' },
-      { columnId: 'owner', label: 'Owner' },
       { columnId: 'levelApplied', label: 'Level' },
     ],
     []

@@ -5,11 +5,20 @@ import { Users } from 'lucide-react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 
 import { DataTable } from '@/components/ui/data-table';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
+import { StalenessBadge } from '@/components/admissions/staleness-badge';
 import type { EnrollmentStatus } from '@/components/ui/enrollment-status-badge';
 import type { StudentListRow } from '@/lib/sis/queries';
+import {
+  STALENESS_ORDER,
+  daysSinceUpdate,
+  stalenessLabel,
+  stalenessRank,
+  type StalenessLabel,
+} from '@/lib/admissions/staleness';
 import {
   APPLICATION_TERMINAL_REASON_LABELS,
   type ApplicationTerminalReason,
@@ -103,6 +112,7 @@ export function StudentDataTable({
   showSubmittedColumn = false,
   showReasonColumn = false,
   showIndex = false,
+  showStaleness = false,
   statusBuckets = DEFAULT_STATUS_BUCKETS,
 }: {
   data: StudentListRow[];
@@ -118,6 +128,11 @@ export function StudentDataTable({
    *  from the Records student directory — Admissions callers omit it so
    *  applicants without section assignments don't see an empty column. */
   showIndex?: boolean;
+  /** When true, adds a "Staleness" badge column + facet derived from
+   *  applicationUpdatedDate (Fresh / Warning / Critical / Never updated). Only
+   *  pass from the active Admissions applications list — staleness is a
+   *  pre-enrolment follow-up signal, not meaningful for enrolled/closed rows. */
+  showStaleness?: boolean;
   statusBuckets?: StatusBucketDef[];
 }) {
   const querySuffix = React.useMemo(() => {
@@ -152,7 +167,9 @@ export function StudentDataTable({
       {
         accessorFn: (row) => studentDisplayName(row),
         id: 'name',
-        header: 'Name',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Name</SortableHeader>
+        ),
         cell: ({ row }) => {
           const linkId =
             linkAttribute === 'studentNumber'
@@ -252,13 +269,51 @@ export function StudentDataTable({
         ),
         enableHiding: false,
       },
+      ...(showStaleness
+        ? [
+            {
+              // Derived tier label (used as the facet vocabulary + sort key);
+              // the cell renders the day-count badge from the same source.
+              id: 'staleness',
+              accessorFn: (row: StudentListRow) =>
+                stalenessLabel(daysSinceUpdate(row.applicationUpdatedDate)),
+              header: ({ column }) => (
+                <SortableHeader column={column}>Staleness</SortableHeader>
+              ),
+              cell: ({ row }: { row: { original: StudentListRow } }) => (
+                <StalenessBadge
+                  days={daysSinceUpdate(row.original.applicationUpdatedDate)}
+                />
+              ),
+              filterFn: (
+                row: { getValue: (id: string) => unknown },
+                id: string,
+                value: unknown
+              ) => {
+                if (!value || (Array.isArray(value) && value.length === 0))
+                  return true;
+                return Array.isArray(value)
+                  ? value.includes(row.getValue(id))
+                  : row.getValue(id) === value;
+              },
+              sortingFn: (
+                a: { getValue: (id: string) => unknown },
+                b: { getValue: (id: string) => unknown }
+              ) =>
+                stalenessRank(a.getValue('staleness') as StalenessLabel) -
+                stalenessRank(b.getValue('staleness') as StalenessLabel),
+            } satisfies ColumnDef<StudentListRow>,
+          ]
+        : []),
       ...(showSubmittedColumn
         ? [
             {
               accessorKey: 'created_at',
               id: 'submitted',
               sortingFn: 'datetime',
-              header: 'Submitted',
+              header: ({ column }) => (
+                <SortableHeader column={column}>Submitted</SortableHeader>
+              ),
               cell: ({ row }) => {
                 const formatted = formatDate(row.original.created_at);
                 return formatted ? (
@@ -309,10 +364,20 @@ export function StudentDataTable({
           ]
         : []),
       {
-        // Last updated — hidden-by-default, sortable
+        // Last updated — hidden-by-default, now sortable (nulls sort last)
         accessorKey: 'applicationUpdatedDate',
         id: 'lastUpdated',
-        header: 'Last updated',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Last updated</SortableHeader>
+        ),
+        sortingFn: (a, b) => {
+          const av = a.original.applicationUpdatedDate ?? null;
+          const bv = b.original.applicationUpdatedDate ?? null;
+          if (av === null && bv === null) return 0;
+          if (av === null) return 1;
+          if (bv === null) return -1;
+          return av < bv ? -1 : av > bv ? 1 : 0;
+        },
         cell: ({ row }) => {
           const formatted = formatDate(
             row.original.applicationUpdatedDate ?? null
@@ -334,6 +399,7 @@ export function StudentDataTable({
       showSubmittedColumn,
       showReasonColumn,
       showIndex,
+      showStaleness,
     ]
   );
 
@@ -373,6 +439,15 @@ export function StudentDataTable({
       facets={[
         { columnId: 'level', label: 'Level' },
         { columnId: 'section', label: 'Section' },
+        ...(showStaleness
+          ? [
+              {
+                columnId: 'staleness',
+                label: 'Staleness',
+                valueOptions: [...STALENESS_ORDER],
+              },
+            ]
+          : []),
       ]}
       statusTabs={statusTabs}
       // Namespaced so filters/search/tab persist + are shareable. 'students.*'

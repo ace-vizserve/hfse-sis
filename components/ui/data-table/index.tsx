@@ -140,8 +140,29 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
       const valueArr = Array.isArray(value) ? value : [value];
       if (valueArr.length === 0) continue;
       const valueSet = new Set(valueArr.map((v) => String(v)));
-      rows = rows.filter((r) => {
-        const raw = (r as unknown as Record<string, unknown>)[f.id];
+      // Resolve the facet value through the column's accessor — NOT a raw
+      // `row[f.id]` lookup, which is undefined for accessorFn-backed columns
+      // (or columns whose id differs from their accessorKey) and would silently
+      // zero out every tab count whenever such a facet is active.
+      const col = columns.find(
+        (c) =>
+          c.id === f.id ||
+          ('accessorKey' in c &&
+            (c as { accessorKey?: string }).accessorKey === f.id)
+      ) as
+        | {
+            accessorFn?: (row: TRow, index: number) => unknown;
+            accessorKey?: string;
+          }
+        | undefined;
+      const getValue = (r: TRow, i: number): unknown => {
+        if (col && typeof col.accessorFn === 'function')
+          return col.accessorFn(r, i);
+        const key = col?.accessorKey ?? f.id;
+        return (r as unknown as Record<string, unknown>)[key];
+      };
+      rows = rows.filter((r, i) => {
+        const raw = getValue(r, i);
         const cell = raw == null || raw === '' ? '(unassigned)' : String(raw);
         return valueSet.has(cell);
       });
@@ -169,6 +190,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     meScope,
     meScopeEnabled,
     columnFilters,
+    columns,
     search,
     searchKeys,
   ]);

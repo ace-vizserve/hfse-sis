@@ -73,7 +73,10 @@ function buildColumns(
       filterFn: facetFilterFn,
     },
     {
-      accessorKey: 'schedule',
+      // accessorFn returns the human label so it's both the facet vocabulary
+      // and the sort key (the cell still renders from the raw enum).
+      accessorFn: (row) => (row.schedule ? SCHEDULE_LABELS[row.schedule] : '—'),
+      id: 'schedule',
       header: ({ column }) => (
         <SortableHeader column={column}>Schedule</SortableHeader>
       ),
@@ -88,6 +91,7 @@ function buildColumns(
         ) : (
           <span className="text-muted-foreground/50">—</span>
         ),
+      filterFn: facetFilterFn,
     },
     {
       accessorKey: 'active',
@@ -146,8 +150,8 @@ export function SisSectionsDataTable({
 }) {
   const columns = buildColumns(role, termStarted);
 
-  const facets: FacetConfig[] =
-    levels.length > 1
+  const facets: FacetConfig[] = [
+    ...(levels.length > 1
       ? [
           {
             columnId: 'levelLabel',
@@ -155,7 +159,13 @@ export function SisSectionsDataTable({
             valueOptions: levels.map((l) => l.label),
           },
         ]
-      : [];
+      : []),
+    {
+      columnId: 'schedule',
+      label: 'Schedule',
+      valueOptions: Object.values(SCHEDULE_LABELS),
+    },
+  ];
 
   const isRegistrarPlus =
     role === 'registrar' || role === 'school_admin' || role === 'superadmin';

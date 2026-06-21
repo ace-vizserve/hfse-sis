@@ -23,7 +23,7 @@ import { PageShell } from '@/components/ui/page-shell';
 import { MovementsTable } from '@/components/sis/movements-table';
 import { getMovementEvents } from '@/lib/sis/movements';
 
-type SearchParams = Promise<{ scope?: string; reasonSearch?: string }>;
+type SearchParams = Promise<{ scope?: string }>;
 
 export default async function MovementsPage({
   searchParams,
@@ -42,7 +42,6 @@ export default async function MovementsPage({
 
   const params = await searchParams;
   const includeAllAYs = params.scope === 'all';
-  const reasonSearch = params.reasonSearch?.trim() ?? '';
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
@@ -50,26 +49,14 @@ export default async function MovementsPage({
     redirect('/');
   }
 
-  const allEvents = await getMovementEvents(currentAy.ay_code, {
+  // Reason filtering is now a client-side facet on the table (KD #84); the page
+  // loads the full event set and the KPI cards count over it.
+  const events = await getMovementEvents(currentAy.ay_code, {
     includeAllAYs,
   });
 
-  // When a reason search is active, narrow to withdrawn events matching the
-  // substring (case-insensitive) against the human-readable label. Falling
-  // back to the raw reason code keeps old audit rows (no reasonLabel) searchable.
-  // KPI counts derive from the same filtered array so the cards always match
-  // the table (KD #83).
-  const q = reasonSearch.toLowerCase();
-  const events = reasonSearch
-    ? allEvents.filter((e) => {
-        if (e.kind !== 'withdrawn') return false;
-        const w = e as Extract<typeof e, { kind: 'withdrawn' }>;
-        return (w.reasonLabel ?? w.reason ?? '').toLowerCase().includes(q);
-      })
-    : allEvents;
-
-  // Counts derived from the same (possibly-filtered) array so the cards
-  // always match the table (whether scope is current-year or all-time).
+  // Counts derived from the same array so the cards always match the table
+  // (whether scope is current-year or all-time).
   const counts = {
     transfer: events.filter((e) => e.kind === 'section-transfer').length,
     withdrawn: events.filter((e) => e.kind === 'withdrawn').length,
@@ -138,7 +125,6 @@ export default async function MovementsPage({
         events={events}
         ayCode={currentAy.ay_code}
         includeAllAYs={includeAllAYs}
-        reasonSearch={reasonSearch || undefined}
       />
     </PageShell>
   );

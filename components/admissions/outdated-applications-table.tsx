@@ -1,48 +1,36 @@
 'use client';
 
-import {
-  AlertCircle,
-  AlertTriangle,
-  CheckCircle2,
-  HelpCircle,
-} from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import * as React from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 
 import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
+import { StalenessBadge } from '@/components/admissions/staleness-badge';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
-import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { type FacetConfig } from '@/components/ui/data-table/types';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import { STALENESS_LABELS, stalenessLabel } from '@/lib/admissions/staleness';
 import type { OutdatedRow } from '@/lib/admissions/dashboard';
 
 // ─── Staleness helpers ────────────────────────────────────────────────────────
 
-type StaleTier = 'unknown' | 'green' | 'amber' | 'red';
-
-function tierFor(days: number | null): StaleTier {
-  if (days === null) return 'unknown';
-  if (days >= 14) return 'red';
-  if (days >= 7) return 'amber';
-  return 'green';
-}
-
-// Lightweight RAG indicator for the "In pipeline" column.
+// Lightweight RAG indicator for the "In pipeline" column — reuses the shared
+// staleness tiers keyed off the pipeline-age day count.
 function PipelineAgeCell({ days }: { days: number }) {
-  const tier = tierFor(days);
+  const tier = stalenessLabel(days);
   const dotClass =
-    tier === 'red'
+    tier === STALENESS_LABELS.critical
       ? 'bg-destructive'
-      : tier === 'amber'
+      : tier === STALENESS_LABELS.warning
         ? 'bg-chart-4'
         : 'bg-brand-mint';
   const textClass =
-    tier === 'red'
+    tier === STALENESS_LABELS.critical
       ? 'text-destructive'
-      : tier === 'amber'
+      : tier === STALENESS_LABELS.warning
         ? 'text-ink'
         : 'text-ink-3';
   return (
@@ -52,55 +40,6 @@ function PipelineAgeCell({ days }: { days: number }) {
         {days}d
       </span>
     </span>
-  );
-}
-
-const BADGE_BASE =
-  'h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]';
-
-function StalenessBadge({ days }: { days: number | null }) {
-  const tier = tierFor(days);
-  if (tier === 'unknown') {
-    return (
-      <Badge
-        variant="outline"
-        className={`${BADGE_BASE} border-hairline bg-muted text-ink-3`}
-      >
-        <HelpCircle className="h-3 w-3" aria-hidden />
-        Never updated
-      </Badge>
-    );
-  }
-  if (tier === 'red') {
-    return (
-      <Badge
-        variant="outline"
-        className={`${BADGE_BASE} border-destructive/40 bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive`}
-      >
-        <AlertTriangle className="h-3 w-3" aria-hidden />
-        {days}d stale
-      </Badge>
-    );
-  }
-  if (tier === 'amber') {
-    return (
-      <Badge
-        variant="outline"
-        className={`${BADGE_BASE} border-chart-4/50 bg-chart-4/15 text-ink`}
-      >
-        <AlertCircle className="h-3 w-3" aria-hidden />
-        {days}d stale
-      </Badge>
-    );
-  }
-  return (
-    <Badge
-      variant="outline"
-      className={`${BADGE_BASE} border-brand-mint bg-brand-mint/30 text-ink`}
-    >
-      <CheckCircle2 className="h-3 w-3" aria-hidden />
-      Fresh · {days}d
-    </Badge>
   );
 }
 
@@ -130,19 +69,22 @@ const STATUS_TABS = [
     value: 'red' as StaleTierFilter,
     label: 'Critical',
     isDefault: false,
-    predicate: (row: OutdatedRow) => tierFor(row.daysSinceUpdate) === 'red',
+    predicate: (row: OutdatedRow) =>
+      stalenessLabel(row.daysSinceUpdate) === STALENESS_LABELS.critical,
   },
   {
     value: 'amber' as StaleTierFilter,
     label: 'Warning',
     isDefault: false,
-    predicate: (row: OutdatedRow) => tierFor(row.daysSinceUpdate) === 'amber',
+    predicate: (row: OutdatedRow) =>
+      stalenessLabel(row.daysSinceUpdate) === STALENESS_LABELS.warning,
   },
   {
     value: 'unknown' as StaleTierFilter,
     label: 'Never updated',
     isDefault: false,
-    predicate: (row: OutdatedRow) => tierFor(row.daysSinceUpdate) === 'unknown',
+    predicate: (row: OutdatedRow) =>
+      stalenessLabel(row.daysSinceUpdate) === STALENESS_LABELS.unknown,
   },
 ];
 
@@ -150,7 +92,7 @@ const STATUS_TABS = [
 
 const FACETS: FacetConfig[] = [
   { columnId: 'levelApplied', label: 'Level' },
-  { columnId: 'status', label: 'Application status' },
+  { columnId: 'app_status', label: 'Application status' },
 ];
 
 // ─── Columns ─────────────────────────────────────────────────────────────────
@@ -203,6 +145,10 @@ function buildColumns(ayCode?: string): ColumnDef<OutdatedRow>[] {
       },
     },
     {
+      // Distinct id from the reserved status-tab URL key (KD #84 collision):
+      // the staleness tier tabs own `?<ns>.status`, so this facet column uses
+      // its own id while keeping accessorKey 'status'.
+      id: 'app_status',
       accessorKey: 'status',
       header: ({ column }) => (
         <SortableHeader column={column}>Status</SortableHeader>
@@ -218,7 +164,7 @@ function buildColumns(ayCode?: string): ColumnDef<OutdatedRow>[] {
     },
     {
       id: 'tier',
-      accessorFn: (row) => tierFor(row.daysSinceUpdate),
+      accessorFn: (row) => stalenessLabel(row.daysSinceUpdate),
       header: ({ column }) => (
         <SortableHeader column={column}>Staleness</SortableHeader>
       ),
@@ -234,12 +180,22 @@ function buildColumns(ayCode?: string): ColumnDef<OutdatedRow>[] {
     },
     {
       accessorKey: 'lastUpdated',
-      header: 'Last updated',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Last updated</SortableHeader>
+      ),
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground tabular-nums">
           {formatDate(row.original.lastUpdated)}
         </span>
       ),
+      sortingFn: (a, b) => {
+        const av = a.original.lastUpdated ?? null;
+        const bv = b.original.lastUpdated ?? null;
+        if (av === null && bv === null) return 0;
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        return av < bv ? -1 : av > bv ? 1 : 0;
+      },
     },
     {
       accessorKey: 'daysInPipeline',
