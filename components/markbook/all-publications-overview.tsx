@@ -1,11 +1,13 @@
 'use client';
 
 import * as React from 'react';
-import { FileText } from 'lucide-react';
+import { FileText, Users } from 'lucide-react';
 import { type ColumnDef } from '@tanstack/react-table';
+import Link from 'next/link';
 
 import { Card, CardContent } from '@/components/ui/card';
-import { DataTable } from '@/components/ui/data-table';
+import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import {
   type FacetConfig,
   type StatusTabConfig,
@@ -119,6 +121,10 @@ const COLUMNS: ColumnDef<PublicationOverviewRow>[] = [
     enableSorting: false,
   },
   {
+    // Distinct id from the reserved `<ns>.status` status-tab key (KD #84
+    // collision) — the term-based status tabs own that param; this facet uses
+    // its own id while keeping accessorKey 'status'.
+    id: 'pub_status',
     accessorKey: 'status',
     header: ({ column }) => (
       <SortableHeader column={column}>Status</SortableHeader>
@@ -160,12 +166,33 @@ const COLUMNS: ColumnDef<PublicationOverviewRow>[] = [
       </span>
     ),
   },
+  {
+    id: 'actions',
+    header: () => <span className="sr-only">Actions</span>,
+    enableSorting: false,
+    enableHiding: false,
+    cell: ({ row }) => {
+      const { section_id } = row.original;
+      // section_id is always present on a valid publication row, but guard defensively.
+      if (!section_id) return null;
+      return (
+        <RowActionsMenu>
+          <DropdownMenuItem asChild>
+            <Link href={`/markbook/sections/${section_id}`}>
+              <Users className="size-3.5" />
+              Open roster
+            </Link>
+          </DropdownMenuItem>
+        </RowActionsMenu>
+      );
+    },
+  },
 ];
 
 const FACETS: FacetConfig[] = [
   { columnId: 'level_code', label: 'Level' },
   {
-    columnId: 'status',
+    columnId: 'pub_status',
     label: 'Status',
     valueOptions: ['active', 'scheduled', 'expired', 'revoked'],
   },
@@ -235,7 +262,7 @@ export function AllPublicationsOverview({
       facets={FACETS}
       statusTabs={statusTabs.length > 0 ? statusTabs : undefined}
       initialSort={[
-        { id: 'status', desc: false },
+        { id: 'pub_status', desc: false },
         { id: 'level_code', desc: false },
         { id: 'section_name', desc: false },
       ]}

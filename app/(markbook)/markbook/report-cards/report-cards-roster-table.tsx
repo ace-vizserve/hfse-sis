@@ -1,13 +1,22 @@
 'use client';
 
 import { type ColumnDef } from '@tanstack/react-table';
+import Link from 'next/link';
+import {
+  CalendarClock,
+  CheckCircle2,
+  Clock,
+  Lock,
+  BookOpen,
+  Activity,
+} from 'lucide-react';
 
-import { DataTable } from '@/components/ui/data-table';
+import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { type StatusTabConfig } from '@/components/ui/data-table/types';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { CalendarClock, CheckCircle2, Clock, Lock } from 'lucide-react';
 
 export type ReportCardsRosterRow = {
   enrolment_id: string;
@@ -105,6 +114,33 @@ const COLUMNS: ColumnDef<ReportCardsRosterRow>[] = [
       return Array.isArray(value)
         ? value.includes(row.getValue(id))
         : row.getValue(id) === value;
+    },
+  },
+  {
+    id: 'actions',
+    header: () => <span className="sr-only">Actions</span>,
+    enableSorting: false,
+    enableHiding: false,
+    cell: ({ row }) => {
+      const { student_number, withdrawn } = row.original;
+      // Withdrawn rows have no useful cross-module destinations; omit the menu.
+      if (withdrawn || !student_number) return null;
+      return (
+        <RowActionsMenu>
+          <DropdownMenuItem asChild>
+            <Link href={`/records/students/${student_number}`}>
+              <BookOpen className="size-3.5" />
+              Open in Records
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href={`/attendance/students/${student_number}`}>
+              <Activity className="size-3.5" />
+              Open attendance
+            </Link>
+          </DropdownMenuItem>
+        </RowActionsMenu>
+      );
     },
   },
 ];

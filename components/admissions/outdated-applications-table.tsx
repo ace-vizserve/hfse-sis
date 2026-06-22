@@ -207,21 +207,37 @@ function buildColumns(ayCode?: string): ColumnDef<OutdatedRow>[] {
     {
       accessorKey: 'motherEmail',
       header: 'Mother email',
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
-          {row.original.motherEmail ?? '—'}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const email = row.original.motherEmail;
+        return email ? (
+          <a
+            href={`mailto:${email}`}
+            className="text-xs text-muted-foreground hover:underline"
+          >
+            {email}
+          </a>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        );
+      },
       enableHiding: true,
     },
     {
       accessorKey: 'fatherEmail',
       header: 'Father email',
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
-          {row.original.fatherEmail ?? '—'}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const email = row.original.fatherEmail;
+        return email ? (
+          <a
+            href={`mailto:${email}`}
+            className="text-xs text-muted-foreground hover:underline"
+          >
+            {email}
+          </a>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        );
+      },
       enableHiding: true,
     },
   ];

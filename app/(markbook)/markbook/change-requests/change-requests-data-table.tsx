@@ -562,7 +562,7 @@ export function ChangeRequestsDataTable({
             r.primary_reviewed_at != null &&
             Date.now() - Date.parse(r.primary_reviewed_at) < 2 * 60 * 60 * 1000;
 
-          const hasSecondaryActions = r.status === 'approved' || undoVisible;
+          const hasSecondaryActions = !!r.grading_sheet_id || undoVisible;
 
           return (
             <div
@@ -578,7 +578,7 @@ export function ChangeRequestsDataTable({
               )}
               {hasSecondaryActions && (
                 <RowActionsMenu>
-                  {r.status === 'approved' && (
+                  {r.grading_sheet_id && (
                     <DropdownMenuItem asChild>
                       <Link href={`/markbook/grading/${r.grading_sheet_id}`}>
                         <ExternalLink className="size-3.5" />

@@ -3,7 +3,12 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import Link from 'next/link';
+import { useMutation } from '@tanstack/react-query';
+import { Loader2, Mail } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 
+import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
@@ -19,6 +24,82 @@ import { cn } from '@/lib/utils';
 type Props = {
   rows: PFileValidationRow[];
 };
+
+// Inline notify button for the expiring-queue row.
+// Mirrors the useMutation in NotifyDialog: same route, same body shape, same
+// error-handling (including the no_recipients kind check and 24h cooldown
+// message surfaced verbatim from ApiError.message).
+// Recipients are resolved server-side by the route — the row type doesn't
+// carry email addresses, so we skip the pre-send recipient preview.
+type NotifyResult = { sent: number; recipients: number };
+
+function NotifyButton({
+  enroleeNumber,
+  slotKey,
+  fullName,
+}: {
+  enroleeNumber: string;
+  slotKey: string;
+  fullName: string;
+}) {
+  const router = useRouter();
+
+  const mutation = useMutation<NotifyResult, Error>({
+    mutationFn: () =>
+      apiFetch<NotifyResult>(
+        `/api/p-files/${encodeURIComponent(enroleeNumber)}/notify`,
+        jsonInit('POST', { slotKey, module: 'p-files' })
+      ),
+    onSuccess: (body) => {
+      toast.success(
+        `Reminder sent to ${body.sent} of ${body.recipients} recipient${body.recipients === 1 ? '' : 's'}`
+      );
+      router.refresh();
+    },
+    onError: (e) => {
+      const kind =
+        e instanceof ApiError &&
+        e.body &&
+        typeof e.body === 'object' &&
+        (e.body as { kind?: string }).kind;
+      if (kind === 'no_recipients') {
+        toast.error(
+          'No parent or guardian email on file — update the contact record in Admissions to send a reminder.',
+          {
+            action: {
+              label: 'Open in Admissions',
+              onClick: () =>
+                window.open(
+                  `/admissions/applications/${encodeURIComponent(enroleeNumber)}?tab=family`,
+                  '_blank'
+                ),
+            },
+          }
+        );
+        return;
+      }
+      toast.error(e instanceof Error ? e.message : 'Failed to send reminder');
+    },
+  });
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-8 gap-1.5 text-xs"
+      aria-label={`Notify parent for ${fullName}`}
+      disabled={mutation.isPending}
+      onClick={() => mutation.mutate()}
+    >
+      {mutation.isPending ? (
+        <Loader2 className="size-3 animate-spin" />
+      ) : (
+        <Mail className="size-3" />
+      )}
+      Notify
+    </Button>
+  );
+}
 
 function expiryTone(days: number | null): string {
   if (days === null) return 'text-muted-foreground';
@@ -146,13 +227,20 @@ export function ExpiringQueue({ rows }: Props) {
         id: 'actions',
         header: '',
         cell: ({ row }) => (
-          <Button size="sm" variant="outline" asChild>
-            <Link
-              href={`/p-files/${encodeURIComponent(row.original.enroleeNumber)}`}
-            >
-              View profile
-            </Link>
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <NotifyButton
+              enroleeNumber={row.original.enroleeNumber}
+              slotKey={row.original.slotKey}
+              fullName={row.original.fullName}
+            />
+            <Button size="sm" variant="outline" asChild>
+              <Link
+                href={`/p-files/${encodeURIComponent(row.original.enroleeNumber)}`}
+              >
+                View profile
+              </Link>
+            </Button>
+          </div>
         ),
       },
     ],

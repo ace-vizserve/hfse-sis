@@ -1,13 +1,13 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, ArrowRightLeft } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
+import { IdentifierLink } from '@/components/ui/identifier-link';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -45,12 +45,9 @@ function buildColumns(
       ),
       cell: ({ row }) => (
         <div className="space-y-0.5">
-          <Link
-            href={studentHref(row.original)}
-            className="font-medium text-foreground transition-colors hover:text-primary hover:underline underline-offset-4"
-          >
+          <IdentifierLink href={studentHref(row.original)}>
             {row.original.studentName}
-          </Link>
+          </IdentifierLink>
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {row.original.studentNumber ?? row.original.enroleeNumber}
           </div>
@@ -196,11 +193,21 @@ function buildColumns(
         <SortableHeader column={column}>Recorded by</SortableHeader>
       ),
       // actor_email rendered as-is — see TODO above for displayName resolution
-      cell: ({ row }) => (
-        <span className="inline-block max-w-[14rem] truncate font-mono text-sm text-muted-foreground">
-          {row.original.actorEmail ?? '—'}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const email = row.original.actorEmail;
+        return email ? (
+          <a
+            href={`mailto:${email}`}
+            className="inline-block max-w-[14rem] truncate font-mono text-sm text-muted-foreground hover:underline"
+          >
+            {email}
+          </a>
+        ) : (
+          <span className="inline-block max-w-[14rem] truncate font-mono text-sm text-muted-foreground">
+            —
+          </span>
+        );
+      },
       enableSorting: true,
     },
   ];

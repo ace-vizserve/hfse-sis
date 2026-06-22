@@ -2,8 +2,11 @@
 
 import * as React from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
+import Link from 'next/link';
+import { BookOpen } from 'lucide-react';
 
-import { DataTable } from '@/components/ui/data-table';
+import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { type StatusTabConfig } from '@/components/ui/data-table/types';
 import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
 import { IdentifierLink } from '@/components/ui/identifier-link';
@@ -198,6 +201,27 @@ const COLUMNS: ColumnDef<AugmentedRow>[] = [
       ),
     sortingFn: (a, b) =>
       (a.original.attendancePct ?? -1) - (b.original.attendancePct ?? -1),
+  },
+  {
+    id: 'actions',
+    header: () => <span className="sr-only">Actions</span>,
+    enableSorting: false,
+    enableHiding: false,
+    cell: ({ row }) => {
+      const { studentNumber, withdrawn } = row.original;
+      // Withdrawn rows and rows without a studentNumber have no cross-module destination.
+      if (withdrawn || !studentNumber) return null;
+      return (
+        <RowActionsMenu>
+          <DropdownMenuItem asChild>
+            <Link href={`/records/students/${studentNumber}`}>
+              <BookOpen className="size-3.5" />
+              Open in Records
+            </Link>
+          </DropdownMenuItem>
+        </RowActionsMenu>
+      );
+    },
   },
 ];
 

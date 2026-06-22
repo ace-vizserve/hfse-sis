@@ -3,11 +3,11 @@
 import * as React from 'react';
 import { ArrowRightLeft, Pencil, Users } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
-import Link from 'next/link';
 
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
+import { IdentifierLink } from '@/components/ui/identifier-link';
 import { Button } from '@/components/ui/button';
 
 import { EnrolmentEditSheet } from '@/components/sis/enrolment-edit-sheet';
@@ -95,12 +95,11 @@ export function SectionRosterTable({
                   {r.studentName}
                 </span>
               ) : (
-                <Link
+                <IdentifierLink
                   href={`/records/students/${encodeURIComponent(r.studentNumber)}`}
-                  className="font-medium text-foreground transition-colors hover:text-primary hover:underline underline-offset-4"
                 >
                   {r.studentName}
-                </Link>
+                </IdentifierLink>
               )}
               <span className="font-mono text-[10px] text-muted-foreground">
                 {r.studentNumber}

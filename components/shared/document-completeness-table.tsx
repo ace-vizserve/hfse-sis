@@ -16,6 +16,8 @@ import {
   X,
 } from 'lucide-react';
 
+import { IdentifierLink } from '@/components/ui/identifier-link';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -324,6 +326,9 @@ export function DocumentCompletenessTable(props: Props) {
   const [pageSize, setPageSize] = React.useState(25);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = React.useState(false);
+  // Per-row "Send reminder" — opens BulkNotifyDialog seeded for a single row.
+  const [perRowOpen, setPerRowOpen] = React.useState(false);
+  const [perRowItems, setPerRowItems] = React.useState<BulkNotifyItem[]>([]);
   const [sortKey, setSortKey] = React.useState<SortKey>(null);
   const [sortDir, setSortDir] = React.useState<SortDir>('asc');
 
@@ -764,12 +769,9 @@ export function DocumentCompletenessTable(props: Props) {
 
                       {/* Linkified primary identifier (KD #81) */}
                       <TableCell className="sticky left-0 bg-background px-4">
-                        <Link
-                          href={href}
-                          className="font-medium text-foreground transition-colors hover:text-primary hover:underline underline-offset-4"
-                        >
-                          <div className="text-sm">{s.fullName}</div>
-                        </Link>
+                        <IdentifierLink href={href} className="text-sm">
+                          {s.fullName}
+                        </IdentifierLink>
                         <div className="font-mono text-[10px] text-muted-foreground">
                           {s.studentNumber ?? s.enroleeNumber}
                         </div>
@@ -810,17 +812,48 @@ export function DocumentCompletenessTable(props: Props) {
                         <CompletePct pct={rowPct} />
                       </TableCell>
 
-                      {/* Trailing action link preserved for quick navigation without
-                          needing to click the name — the name is now also linkified
-                          per KD #81 so both paths work. */}
+                      {/* Trailing action cell: optional per-row reminder + view link */}
                       <TableCell className="px-2 text-right">
-                        <Link
-                          href={href}
-                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                        >
-                          View
-                          <ArrowUpRight className="size-3" />
-                        </Link>
+                        <div className="inline-flex items-center justify-end gap-2">
+                          {bulkRemindEnabled &&
+                            (() => {
+                              // Compute the reminder targets once; only show the
+                              // button when there's actually something to send
+                              // (a fully-complete row has zero targets).
+                              const items =
+                                module === 'admissions'
+                                  ? admissionsBulkTargets(
+                                      s as AdmissionsCompleteness
+                                    )
+                                  : pfilesBulkTargets(
+                                      s as StudentCompleteness,
+                                      bulkRemindWindowDays
+                                    );
+                              if (items.length === 0) return null;
+                              return (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                  aria-label={`Send reminder to ${s.fullName}`}
+                                  onClick={() => {
+                                    setPerRowItems(items);
+                                    setPerRowOpen(true);
+                                  }}
+                                >
+                                  <Mail className="size-3" />
+                                  Remind
+                                </Button>
+                              );
+                            })()}
+                          <Link
+                            href={href}
+                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            View
+                            <ArrowUpRight className="size-3" />
+                          </Link>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -951,6 +984,19 @@ export function DocumentCompletenessTable(props: Props) {
           open={bulkOpen}
           onOpenChange={setBulkOpen}
           onSuccess={() => setSelected(new Set())}
+        />
+      )}
+
+      {/* Per-row reminder dialog — seeded for a single student */}
+      {bulkRemindEnabled && (
+        <BulkNotifyDialog
+          items={perRowItems}
+          module={module}
+          open={perRowOpen}
+          onOpenChange={(open) => {
+            setPerRowOpen(open);
+            if (!open) setPerRowItems([]);
+          }}
         />
       )}
     </Card>

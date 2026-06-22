@@ -1,10 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import { type ColumnDef } from '@tanstack/react-table';
 
 import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
+import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import type { StatusTabConfig } from '@/components/ui/data-table/types';
 import type { FeedbackRow } from '@/lib/admissions/feedback';
@@ -80,17 +80,17 @@ function buildColumns(ayCode: string): ColumnDef<FeedbackRow>[] {
         const params = new URLSearchParams({ ay: ayCode, tab: 'profile' });
         const href = `/admissions/applications/${encodeURIComponent(row.original.enroleeNumber)}?${params.toString()}`;
         return (
-          <Link href={href} className="block space-y-0.5 hover:underline">
-            <div className="font-medium text-foreground">
+          <div className="space-y-0.5">
+            <IdentifierLink href={href}>
               {row.original.enroleeFullName ?? '—'}
-            </div>
+            </IdentifierLink>
             <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
               {row.original.enroleeNumber}
               {row.original.studentNumber
                 ? ` · ${row.original.studentNumber}`
                 : ''}
             </div>
-          </Link>
+          </div>
         );
       },
     },

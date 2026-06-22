@@ -2,14 +2,16 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Mail } from 'lucide-react';
+import { Bell, Mail } from 'lucide-react';
 import { type ColumnDef } from '@tanstack/react-table';
 
 import { PreCourseDateCell } from '@/components/sis/cohorts/pre-course-date-cell';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { Badge } from '@/components/ui/badge';
-import { DataTable } from '@/components/ui/data-table';
+import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { IdentifierLink } from '@/components/ui/identifier-link';
 import {
   ChartLegendChip,
   type ChartLegendChipColor,
@@ -101,20 +103,17 @@ function buildStpColumns(
         <SortableHeader column={column}>Student</SortableHeader>
       ),
       cell: ({ row }) => (
-        <Link
-          href={stpDetailHref(row.original, scope, ayCode)}
-          className="block space-y-0.5 hover:underline"
-        >
-          <div className="font-medium text-foreground">
+        <div className="space-y-0.5">
+          <IdentifierLink href={stpDetailHref(row.original, scope, ayCode)}>
             {row.original.enroleeFullName ?? '—'}
-          </div>
+          </IdentifierLink>
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {row.original.enroleeNumber}
             {row.original.studentNumber
               ? ` · ${row.original.studentNumber}`
               : ''}
           </div>
-        </Link>
+        </div>
       ),
       enableSorting: true,
     },
@@ -192,6 +191,7 @@ function buildStpColumns(
       ),
       enableSorting: true,
     },
+    buildCrossModuleActionsColumn(scope, ayCode),
   ];
 }
 
@@ -281,7 +281,10 @@ function PromisedDaysPill({ days }: { days: number | null | undefined }) {
 
 // ─── Promised column builder ──────────────────────────────────────────────────
 
-function buildPromisedColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
+function buildPromisedColumns(
+  ayCode: string,
+  openBulkNotify: (rows: CohortStudentRow[]) => void
+): ColumnDef<CohortStudentRow>[] {
   return [
     {
       id: 'student',
@@ -290,20 +293,19 @@ function buildPromisedColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
         <SortableHeader column={column}>Student</SortableHeader>
       ),
       cell: ({ row }) => (
-        <Link
-          href={promisedDetailHref(row.original.enroleeNumber, ayCode)}
-          className="block space-y-0.5 hover:underline"
-        >
-          <div className="font-medium text-foreground">
+        <div className="space-y-0.5">
+          <IdentifierLink
+            href={promisedDetailHref(row.original.enroleeNumber, ayCode)}
+          >
             {row.original.enroleeFullName ?? '—'}
-          </div>
+          </IdentifierLink>
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {row.original.enroleeNumber}
             {row.original.studentNumber
               ? ` · ${row.original.studentNumber}`
               : ''}
           </div>
-        </Link>
+        </div>
       ),
       enableSorting: true,
     },
@@ -394,6 +396,19 @@ function buildPromisedColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
       enableSorting: true,
       // accessorFn already maps null → +Infinity so nulls naturally sort last.
       sortingFn: 'basic',
+    },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => (
+        <RowActionsMenu>
+          <DropdownMenuItem onSelect={() => openBulkNotify([row.original])}>
+            <Bell className="size-3.5" />
+            Send reminder
+          </DropdownMenuItem>
+        </RowActionsMenu>
+      ),
+      enableSorting: false,
     },
   ];
 }
@@ -527,20 +542,19 @@ function buildPassExpiryColumns(
         <SortableHeader column={column}>Student</SortableHeader>
       ),
       cell: ({ row }) => (
-        <Link
-          href={passExpiryDetailHref(row.original, scope, ayCode)}
-          className="block space-y-0.5 hover:underline"
-        >
-          <div className="font-medium text-foreground">
+        <div className="space-y-0.5">
+          <IdentifierLink
+            href={passExpiryDetailHref(row.original, scope, ayCode)}
+          >
             {row.original.enroleeFullName ?? '—'}
-          </div>
+          </IdentifierLink>
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {row.original.enroleeNumber}
             {row.original.studentNumber
               ? ` · ${row.original.studentNumber}`
               : ''}
           </div>
-        </Link>
+        </div>
       ),
       enableSorting: true,
     },
@@ -621,6 +635,10 @@ function buildPassExpiryColumns(
       ),
       enableSorting: true,
     },
+    // Pass-expiry rows carry no document `toFollowSlots`, so the BulkNotify
+    // pipeline can't build reminder items for them — surface cross-module nav
+    // instead (renewal chasing lives in the P-Files expiring queue).
+    buildCrossModuleActionsColumn(scope, ayCode),
   ];
 }
 
@@ -752,20 +770,17 @@ function buildMedicalColumns(
         <SortableHeader column={column}>Student</SortableHeader>
       ),
       cell: ({ row }) => (
-        <Link
-          href={medicalDetailHref(row.original, scope, ayCode)}
-          className="block space-y-0.5 hover:underline"
-        >
-          <div className="font-medium text-foreground">
+        <div className="space-y-0.5">
+          <IdentifierLink href={medicalDetailHref(row.original, scope, ayCode)}>
             {row.original.enroleeFullName ?? '—'}
-          </div>
+          </IdentifierLink>
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {row.original.enroleeNumber}
             {row.original.studentNumber
               ? ` · ${row.original.studentNumber}`
               : ''}
           </div>
-        </Link>
+        </div>
       ),
       enableSorting: true,
     },
@@ -857,6 +872,7 @@ function buildMedicalColumns(
       ),
       enableSorting: true,
     },
+    buildCrossModuleActionsColumn(scope, ayCode),
   ];
 }
 
@@ -940,7 +956,10 @@ function PreCourseAnswerBadge({
 
 // ─── Pre-course column builder ────────────────────────────────────────────────
 
-function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
+function buildPreCourseColumns(
+  ayCode: string,
+  scope: CohortScope
+): ColumnDef<CohortStudentRow>[] {
   return [
     {
       id: 'student',
@@ -949,20 +968,19 @@ function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
         <SortableHeader column={column}>Student</SortableHeader>
       ),
       cell: ({ row }) => (
-        <Link
-          href={preCourseDetailHref(row.original.enroleeNumber, ayCode)}
-          className="block space-y-0.5 hover:underline"
-        >
-          <div className="font-medium text-foreground">
+        <div className="space-y-0.5">
+          <IdentifierLink
+            href={preCourseDetailHref(row.original.enroleeNumber, ayCode)}
+          >
             {row.original.enroleeFullName ?? '—'}
-          </div>
+          </IdentifierLink>
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {row.original.enroleeNumber}
             {row.original.studentNumber
               ? ` · ${row.original.studentNumber}`
               : ''}
           </div>
-        </Link>
+        </div>
       ),
       enableSorting: true,
     },
@@ -1050,6 +1068,7 @@ function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
         return va < vb ? -1 : va > vb ? 1 : 0;
       },
     },
+    buildCrossModuleActionsColumn(scope, ayCode),
   ];
 }
 
@@ -1084,6 +1103,48 @@ const PRE_COURSE_EMPTY_STATE = {
   title: 'No applicants in this view.',
   body: 'Pre-Course Counselling acknowledgement status will appear here once parents complete the counselling session.',
 };
+
+// ─── Shared cross-module nav actions column ───────────────────────────────────
+//
+// Used by stp / medical / pre-course — kinds that have no bulk action today
+// but should let the registrar jump to the relevant module surface.
+// Gate: "Open in Records" only when enrolled (scope==='enrolled') AND
+// studentNumber is present; "Open in Admissions" always (enroleeNumber exists).
+
+function buildCrossModuleActionsColumn(
+  scope: CohortScope,
+  ayCode: string
+): ColumnDef<CohortStudentRow> {
+  return {
+    id: 'actions',
+    header: '',
+    cell: ({ row }) => {
+      const r = row.original;
+      const showRecords = scope === 'enrolled' && !!r.studentNumber;
+      const admissionsHref = `/admissions/applications/${encodeURIComponent(r.enroleeNumber)}?ay=${ayCode}`;
+      const recordsHref = showRecords
+        ? `/records/students/${encodeURIComponent(r.studentNumber!)}`
+        : null;
+
+      // Render nothing if there are genuinely no items.
+      if (!showRecords && !r.enroleeNumber) return null;
+
+      return (
+        <RowActionsMenu>
+          {recordsHref && (
+            <DropdownMenuItem asChild>
+              <Link href={recordsHref}>Open in Records</Link>
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem asChild>
+            <Link href={admissionsHref}>Open in Admissions</Link>
+          </DropdownMenuItem>
+        </RowActionsMenu>
+      );
+    },
+    enableSorting: false,
+  };
+}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -1136,7 +1197,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
       <>
         <DataTable<CohortStudentRow>
           data={promisedRows}
-          columns={buildPromisedColumns(ayCode)}
+          columns={buildPromisedColumns(ayCode, openBulkNotify)}
           getRowId={(r) => r.enroleeNumber}
           searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
           searchPlaceholder="Search students…"
@@ -1174,41 +1235,21 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
   if (kind === 'pass-expiry') {
     const passRows = rows as CohortStudentRow[];
     return (
-      <>
-        <DataTable<CohortStudentRow>
-          data={passRows}
-          columns={buildPassExpiryColumns(scope, ayCode)}
-          getRowId={(r) => r.enroleeNumber}
-          searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
-          searchPlaceholder="Search students…"
-          facets={PASS_EXPIRY_FACETS}
-          statusTabs={PASS_EXPIRY_STATUS_TABS}
-          pageSize={25}
-          csv={{ filename: `pass-expiry-cohort-${ayCode}.csv` }}
-          url={{ enabled: true, namespace: 'cohort' }}
-          initialSort={[{ id: 'daysUntil', desc: false }]}
-          emptyState={PASS_EXPIRY_EMPTY_STATE}
-          emptyFilteredState={{ title: 'No matches for current filters.' }}
-          selection={{
-            enabled: true,
-            bulkActions: [
-              {
-                key: 'notify',
-                label: 'Send reminders',
-                icon: Mail,
-                onTrigger: (selectedRows) => openBulkNotify(selectedRows),
-              },
-            ],
-          }}
-        />
-        <BulkNotifyDialog
-          items={bulkItems}
-          module="admissions"
-          open={bulkOpen}
-          onOpenChange={setBulkOpen}
-          onSuccess={() => setBulkItems([])}
-        />
-      </>
+      <DataTable<CohortStudentRow>
+        data={passRows}
+        columns={buildPassExpiryColumns(scope, ayCode)}
+        getRowId={(r) => r.enroleeNumber}
+        searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
+        searchPlaceholder="Search students…"
+        facets={PASS_EXPIRY_FACETS}
+        statusTabs={PASS_EXPIRY_STATUS_TABS}
+        pageSize={25}
+        csv={{ filename: `pass-expiry-cohort-${ayCode}.csv` }}
+        url={{ enabled: true, namespace: 'cohort' }}
+        initialSort={[{ id: 'daysUntil', desc: false }]}
+        emptyState={PASS_EXPIRY_EMPTY_STATE}
+        emptyFilteredState={{ title: 'No matches for current filters.' }}
+      />
     );
   }
 
@@ -1217,7 +1258,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
     return (
       <DataTable<CohortStudentRow>
         data={preCourseRows}
-        columns={buildPreCourseColumns(ayCode)}
+        columns={buildPreCourseColumns(ayCode, scope)}
         getRowId={(r) => r.enroleeNumber}
         searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
         searchPlaceholder="Search students…"

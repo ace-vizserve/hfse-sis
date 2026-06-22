@@ -2,6 +2,7 @@
 
 import type { ColumnDef } from '@tanstack/react-table';
 import { ChevronRight } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 
 import {
@@ -70,7 +71,15 @@ export function StaffTable({
         const fca = row.original.fcaSection;
         if (!fca)
           return <span className="text-sm text-muted-foreground">—</span>;
-        return <Badge variant="secondary">{fca.name}</Badge>;
+        return (
+          <Link
+            href={`/sis/sections/${fca.id}`}
+            className="transition-opacity hover:opacity-80"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Badge variant="secondary">{fca.name}</Badge>
+          </Link>
+        );
       },
     },
     {
@@ -85,12 +94,14 @@ export function StaffTable({
         return (
           <div className="flex flex-wrap gap-1">
             {visible.map((a) => (
-              <span
+              <Link
                 key={a.assignmentId}
-                className="inline-flex items-center rounded-md border border-hairline bg-muted px-2 py-0.5 font-mono text-[11px]"
+                href={`/sis/sections/${a.sectionId}`}
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center rounded-md border border-hairline bg-muted px-2 py-0.5 font-mono text-[11px] transition-opacity hover:opacity-80"
               >
                 {a.subjectCode}&thinsp;·&thinsp;{a.sectionName}
-              </span>
+              </Link>
             ))}
             {extra > 0 && (
               <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">

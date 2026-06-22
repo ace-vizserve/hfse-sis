@@ -1,15 +1,17 @@
 'use client';
 
 import * as React from 'react';
-import { Users } from 'lucide-react';
+import { BookOpen, ClipboardList, Users } from 'lucide-react';
+import Link from 'next/link';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 
-import { DataTable } from '@/components/ui/data-table';
+import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { StalenessBadge } from '@/components/admissions/staleness-badge';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import type { EnrollmentStatus } from '@/components/ui/enrollment-status-badge';
 import type { StudentListRow } from '@/lib/sis/queries';
 import {
@@ -391,11 +393,51 @@ export function StudentDataTable({
           );
         },
       },
+      {
+        id: 'actions',
+        header: () => <span className="sr-only">Actions</span>,
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => {
+          const { studentNumber, enroleeNumber } = row.original;
+          // Admissions link: always include ?ay= when the ayCode prop is set,
+          // matching how callers thread historical AYs through linkQuery.
+          const admissionsHref = `/admissions/applications/${enroleeNumber}${ayCode ? `?ay=${ayCode}` : ''}`;
+          const hasStudentNumber = Boolean(studentNumber);
+          return (
+            <RowActionsMenu>
+              <DropdownMenuItem asChild>
+                <Link href={admissionsHref}>
+                  <BookOpen className="size-3.5" />
+                  Open in Admissions
+                </Link>
+              </DropdownMenuItem>
+              {hasStudentNumber && (
+                <DropdownMenuItem asChild>
+                  <Link href={`/records/students/${studentNumber}`}>
+                    <ClipboardList className="size-3.5" />
+                    Open in Records
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              {hasStudentNumber && (
+                <DropdownMenuItem asChild>
+                  <Link href={`/attendance/students/${studentNumber}`}>
+                    <Users className="size-3.5" />
+                    View attendance
+                  </Link>
+                </DropdownMenuItem>
+              )}
+            </RowActionsMenu>
+          );
+        },
+      },
     ],
     [
       linkBase,
       linkAttribute,
       querySuffix,
+      ayCode,
       showSubmittedColumn,
       showReasonColumn,
       showIndex,
