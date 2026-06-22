@@ -1,18 +1,19 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, ArrowRightLeft, Search } from 'lucide-react';
+import { ArrowRight, ArrowRightLeft } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { IdentifierLink } from '@/components/ui/identifier-link';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { MovementKindPill } from '@/components/sis/movement-kind-pill';
 import type { MovementEvent, MovementKind } from '@/lib/sis/movements';
+import { WITHDRAWAL_REASON_LABELS } from '@/lib/schemas/enrolment';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -39,15 +40,14 @@ function buildColumns(
     {
       id: 'student',
       accessorFn: (r) => r.studentName,
-      header: 'Student',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Student</SortableHeader>
+      ),
       cell: ({ row }) => (
         <div className="space-y-0.5">
-          <Link
-            href={studentHref(row.original)}
-            className="font-medium text-foreground transition-colors hover:text-primary hover:underline underline-offset-4"
-          >
+          <IdentifierLink href={studentHref(row.original)}>
             {row.original.studentName}
-          </Link>
+          </IdentifierLink>
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {row.original.studentNumber ?? row.original.enroleeNumber}
           </div>
@@ -71,7 +71,9 @@ function buildColumns(
     {
       id: 'term',
       accessorFn: (r) => r.termLabel ?? '',
-      header: 'Term',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Term</SortableHeader>
+      ),
       cell: ({ row }) =>
         row.original.termLabel ? (
           <Badge variant="outline">{row.original.termLabel}</Badge>
@@ -79,6 +81,13 @@ function buildColumns(
           <span className="text-muted-foreground">—</span>
         ),
       enableSorting: true,
+      filterFn: (row, _id, value) => {
+        if (!value || (Array.isArray(value) && value.length === 0)) return true;
+        const termLabel = row.original.termLabel ?? '';
+        return Array.isArray(value)
+          ? value.includes(termLabel)
+          : termLabel === value;
+      },
     },
     {
       id: 'kind',
@@ -89,6 +98,13 @@ function buildColumns(
     },
     {
       id: 'reason',
+      // Expose the human-readable reason label for facet filtering.
+      // Non-withdrawn rows expose '' so the facet's showUnassigned bucket catches them.
+      accessorFn: (r) => {
+        if (r.kind !== 'withdrawn') return '';
+        const w = r as Extract<MovementEvent, { kind: 'withdrawn' }>;
+        return w.reasonLabel ?? '';
+      },
       header: 'Reason',
       cell: ({ row }) => {
         if (row.original.kind !== 'withdrawn') {
@@ -104,11 +120,24 @@ function buildColumns(
         return <span className="text-sm">{label}</span>;
       },
       enableSorting: false,
+      filterFn: (row, _id, value) => {
+        if (!value || (Array.isArray(value) && value.length === 0)) return true;
+        const reasonLabel =
+          row.original.kind === 'withdrawn'
+            ? ((row.original as Extract<MovementEvent, { kind: 'withdrawn' }>)
+                .reasonLabel ?? '')
+            : '';
+        return Array.isArray(value)
+          ? value.includes(reasonLabel)
+          : reasonLabel === value;
+      },
     },
     {
       id: 'level',
       accessorKey: 'level',
-      header: 'Level',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Level</SortableHeader>
+      ),
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
           {row.original.level || '—'}
@@ -142,7 +171,9 @@ function buildColumns(
     {
       id: 'date',
       accessorKey: 'date',
-      header: 'Date',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Date</SortableHeader>
+      ),
       cell: ({ row }) => (
         <span className="text-sm text-foreground">
           {/* Force local-time parse — bare ISO 'yyyy-mm-dd' strings are
@@ -158,13 +189,25 @@ function buildColumns(
     {
       id: 'actor',
       accessorFn: (r) => r.actorEmail ?? '',
-      header: 'Recorded by',
-      // actor_email rendered as-is — see TODO above for displayName resolution
-      cell: ({ row }) => (
-        <span className="inline-block max-w-[14rem] truncate font-mono text-sm text-muted-foreground">
-          {row.original.actorEmail ?? '—'}
-        </span>
+      header: ({ column }) => (
+        <SortableHeader column={column}>Recorded by</SortableHeader>
       ),
+      // actor_email rendered as-is — see TODO above for displayName resolution
+      cell: ({ row }) => {
+        const email = row.original.actorEmail;
+        return email ? (
+          <a
+            href={`mailto:${email}`}
+            className="inline-block max-w-[14rem] truncate font-mono text-sm text-muted-foreground hover:underline"
+          >
+            {email}
+          </a>
+        ) : (
+          <span className="inline-block max-w-[14rem] truncate font-mono text-sm text-muted-foreground">
+            —
+          </span>
+        );
+      },
       enableSorting: true,
     },
   ];
@@ -176,7 +219,6 @@ type Props = {
   events: MovementEvent[];
   ayCode: string;
   includeAllAYs: boolean;
-  reasonSearch?: string;
 };
 
 const KIND_TABS: Array<{ value: string; label: string; kind?: MovementKind }> =
@@ -188,39 +230,17 @@ const KIND_TABS: Array<{ value: string; label: string; kind?: MovementKind }> =
     { value: 're-enrolled', label: 'Re-enrolled', kind: 're-enrolled' },
   ];
 
-export function MovementsTable({
-  events,
-  ayCode,
-  includeAllAYs,
-  reasonSearch,
-}: Props) {
+export function MovementsTable({ events, ayCode, includeAllAYs }: Props) {
   const router = useRouter();
   const [, startTransition] = React.useTransition();
-  const [localReason, setLocalReason] = React.useState(reasonSearch ?? '');
-  const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleScopeToggle = (next: boolean) => {
     const params = new URLSearchParams();
     if (next) params.set('scope', 'all');
-    if (localReason) params.set('reasonSearch', localReason);
     const qs = params.toString();
     startTransition(() => {
       router.push(`/records/movements${qs ? `?${qs}` : ''}`);
     });
-  };
-
-  const handleReasonInput = (value: string) => {
-    setLocalReason(value);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      const params = new URLSearchParams();
-      if (includeAllAYs) params.set('scope', 'all');
-      if (value) params.set('reasonSearch', value);
-      const qs = params.toString();
-      startTransition(() => {
-        router.push(`/records/movements${qs ? `?${qs}` : ''}`);
-      });
-    }, 300);
   };
 
   const columns = React.useMemo(
@@ -236,8 +256,19 @@ export function MovementsTable({
   }));
 
   const facets = React.useMemo(() => {
-    const f: Array<{ columnId: string; label: string }> = [
+    const f: Array<{
+      columnId: string;
+      label: string;
+      valueOptions?: string[];
+      showUnassigned?: boolean;
+    }> = [
       { columnId: 'level', label: 'Level' },
+      { columnId: 'term', label: 'Term' },
+      {
+        columnId: 'reason',
+        label: 'Reason',
+        valueOptions: Object.values(WITHDRAWAL_REASON_LABELS),
+      },
     ];
     if (includeAllAYs) {
       f.push({ columnId: 'ay', label: 'Year' });
@@ -246,29 +277,18 @@ export function MovementsTable({
   }, [includeAllAYs]);
 
   const toolbarLeading = (
-    <div className="flex flex-wrap items-center gap-3">
-      <div className="flex items-center gap-2">
-        <Switch
-          id="include-all-ays"
-          checked={includeAllAYs}
-          onCheckedChange={(v) => handleScopeToggle(v)}
-        />
-        <Label
-          htmlFor="include-all-ays"
-          className="cursor-pointer text-sm text-muted-foreground"
-        >
-          Include prior years
-        </Label>
-      </div>
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={localReason}
-          onChange={(e) => handleReasonInput(e.target.value)}
-          placeholder="Filter by withdrawal reason…"
-          className="h-8 w-52 pl-8 text-sm"
-        />
-      </div>
+    <div className="flex items-center gap-2">
+      <Switch
+        id="include-all-ays"
+        checked={includeAllAYs}
+        onCheckedChange={(v) => handleScopeToggle(v)}
+      />
+      <Label
+        htmlFor="include-all-ays"
+        className="cursor-pointer text-sm text-muted-foreground"
+      >
+        Include prior years
+      </Label>
     </div>
   );
 

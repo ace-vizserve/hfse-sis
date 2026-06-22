@@ -23,6 +23,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { TABLE_COPY } from '@/lib/copy/data-table';
 import type { AcademicYearListItem, TermRow } from '@/lib/sis/ay-setup/queries';
 
@@ -50,7 +51,9 @@ const columns: ColumnDef<AyTableRow>[] = [
   {
     id: 'ay_code',
     accessorKey: 'ay_code',
-    header: 'AY code',
+    header: ({ column }) => (
+      <SortableHeader column={column}>AY code</SortableHeader>
+    ),
     cell: ({ row }) => (
       <span className="font-mono text-xs font-semibold uppercase tracking-wider text-foreground">
         {row.original.ay_code}
@@ -91,7 +94,11 @@ const columns: ColumnDef<AyTableRow>[] = [
   {
     id: 'terms',
     accessorFn: (row) => row.counts.terms,
-    header: 'Terms',
+    header: ({ column }) => (
+      <SortableHeader column={column} align="right">
+        Terms
+      </SortableHeader>
+    ),
     cell: ({ row }) => (
       <span className="font-mono text-xs tabular-nums text-right block">
         {row.original.counts.terms}
@@ -101,7 +108,11 @@ const columns: ColumnDef<AyTableRow>[] = [
   {
     id: 'sections',
     accessorFn: (row) => row.counts.sections,
-    header: 'Sections',
+    header: ({ column }) => (
+      <SortableHeader column={column} align="right">
+        Sections
+      </SortableHeader>
+    ),
     cell: ({ row }) => (
       <span className="font-mono text-xs tabular-nums text-right block">
         {row.original.counts.sections}
@@ -111,7 +122,11 @@ const columns: ColumnDef<AyTableRow>[] = [
   {
     id: 'subject_configs',
     accessorFn: (row) => row.counts.subject_configs,
-    header: 'Subject configs',
+    header: ({ column }) => (
+      <SortableHeader column={column} align="right">
+        Subject configs
+      </SortableHeader>
+    ),
     cell: ({ row }) => (
       <span className="font-mono text-xs tabular-nums text-right block">
         {row.original.counts.subject_configs}
@@ -121,7 +136,11 @@ const columns: ColumnDef<AyTableRow>[] = [
   {
     id: 'section_students',
     accessorFn: (row) => row.counts.section_students,
-    header: 'Students rostered',
+    header: ({ column }) => (
+      <SortableHeader column={column} align="right">
+        Students rostered
+      </SortableHeader>
+    ),
     cell: ({ row }) => (
       <span className="font-mono text-xs tabular-nums text-right block">
         {row.original.counts.section_students}
@@ -131,7 +150,9 @@ const columns: ColumnDef<AyTableRow>[] = [
   {
     id: 'created_at',
     accessorKey: 'created_at',
-    header: 'Created',
+    header: ({ column }) => (
+      <SortableHeader column={column}>Created</SortableHeader>
+    ),
     cell: ({ row }) => (
       <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
         {new Date(row.original.created_at).toLocaleDateString('en-SG', {
@@ -141,7 +162,6 @@ const columns: ColumnDef<AyTableRow>[] = [
         })}
       </span>
     ),
-    enableSorting: true,
   },
   {
     id: 'actions',

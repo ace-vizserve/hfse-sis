@@ -56,6 +56,10 @@ export type AdmissionsInsightInput = {
   /** Undefined when the user hasn't opted into a comparison. */
   appsDelta?: Delta;
   outdatedCount: number;
+  /** Destination for the "needs follow-up" insight CTA. When omitted, falls
+   *  back to the applications list. The dashboard passes a staleness-filtered
+   *  deep-link so the CTA lands on the stale rows directly. */
+  outdatedHref?: string;
   topReferral?: { source: string; count: number; totalCount: number };
   funnelDropOff?: { stage: string; dropOffPct: number };
 };
@@ -114,7 +118,10 @@ export function admissionsInsights(input: AdmissionsInsightInput): Insight[] {
       title: `${pluralize(input.outdatedCount, 'applicant', 'applicants')} need follow-up`,
       detail:
         'Stages not updated in >7 days — outside Enrolled/Cancelled/Withdrawn',
-      cta: { label: 'Review list', href: '#outdated-applications' },
+      cta: {
+        label: 'Review applicants',
+        href: input.outdatedHref ?? '/admissions/applications',
+      },
     });
   }
 

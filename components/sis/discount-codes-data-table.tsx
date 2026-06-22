@@ -5,6 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 
 import { DiscountCodeRowActions } from '@/components/sis/discount-code-row-actions';
 import { DataTable } from '@/components/ui/data-table';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import {
   DiscountCodeStatusBadge,
   classifyCodeStatus,
@@ -39,7 +40,9 @@ const columns: ColumnDef<DiscountCodeRow>[] = [
   {
     id: 'discountCode',
     accessorKey: 'discountCode',
-    header: 'Code',
+    header: ({ column }) => (
+      <SortableHeader column={column}>Code</SortableHeader>
+    ),
     cell: ({ row }) => (
       <span className="font-mono text-xs font-semibold uppercase tracking-wider text-foreground">
         {row.original.discountCode}
@@ -153,6 +156,34 @@ export function DiscountCodesDataTable({
       getRowId={(row) => String(row.id)}
       searchKeys={['discountCode', 'details', (row) => row.enroleeType ?? '']}
       searchPlaceholder="Search codes, details, or type…"
+      statusTabs={[
+        {
+          value: 'all',
+          label: 'All',
+          predicate: () => true,
+          isDefault: true,
+        },
+        {
+          value: 'active',
+          label: 'Active',
+          predicate: (r: DiscountCodeRow) => r.status === 'active',
+        },
+        {
+          value: 'scheduled',
+          label: 'Scheduled',
+          predicate: (r: DiscountCodeRow) => r.status === 'scheduled',
+        },
+        {
+          value: 'expired',
+          label: 'Expired',
+          predicate: (r: DiscountCodeRow) => r.status === 'expired',
+        },
+        {
+          value: 'inactive',
+          label: 'Inactive',
+          predicate: (r: DiscountCodeRow) => r.status === 'inactive',
+        },
+      ]}
       facets={[
         ...(enroleeTypes.length > 0
           ? [
@@ -163,11 +194,6 @@ export function DiscountCodesDataTable({
               },
             ]
           : []),
-        {
-          columnId: 'dc_status',
-          label: 'Status',
-          valueOptions: ['Active', 'Scheduled', 'Expired', 'Inactive'],
-        },
       ]}
       toolbarTrailing={toolbarTrailing}
       // Namespaced so filters/search persist + are shareable; leaves the page's

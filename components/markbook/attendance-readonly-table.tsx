@@ -2,12 +2,12 @@
 
 import * as React from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
+import Link from 'next/link';
+import { BookOpen } from 'lucide-react';
 
-import { DataTable } from '@/components/ui/data-table';
-import {
-  type FacetConfig,
-  type StatusTabConfig,
-} from '@/components/ui/data-table/types';
+import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { type StatusTabConfig } from '@/components/ui/data-table/types';
 import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -35,15 +35,22 @@ function fmt(n: number | null): string {
   return n == null ? '—' : n.toLocaleString('en-SG');
 }
 
-const FACETS: FacetConfig[] = [
+// Enrollment status as the primary tab dimension (consistent with the sibling
+// roster tables) — was previously a hidden facet column.
+const STATUS_TABS: StatusTabConfig<AugmentedRow>[] = [
+  { value: 'all', label: 'All', isDefault: true, predicate: () => true },
   {
-    columnId: '_status',
-    label: 'Status',
-    valueOptions: ['active', 'late', 'withdrawn'],
+    value: 'active',
+    label: 'Active',
+    predicate: (r) => r._status === 'active',
+  },
+  { value: 'late', label: 'Late', predicate: (r) => r._status === 'late' },
+  {
+    value: 'withdrawn',
+    label: 'Withdrawn',
+    predicate: (r) => r._status === 'withdrawn',
   },
 ];
-
-const STATUS_TABS: StatusTabConfig<AugmentedRow>[] = [];
 
 const COLUMNS: ColumnDef<AugmentedRow>[] = [
   {
@@ -195,19 +202,26 @@ const COLUMNS: ColumnDef<AugmentedRow>[] = [
     sortingFn: (a, b) =>
       (a.original.attendancePct ?? -1) - (b.original.attendancePct ?? -1),
   },
-  // Hidden column for faceting — never shown
   {
-    id: '_status',
-    accessorKey: '_status',
-    header: 'Status',
-    cell: () => null,
-    filterFn: (row, id, value) => {
-      if (!value || (Array.isArray(value) && value.length === 0)) return true;
-      return Array.isArray(value)
-        ? value.includes(row.getValue(id))
-        : row.getValue(id) === value;
-    },
+    id: 'actions',
+    header: () => <span className="sr-only">Actions</span>,
     enableSorting: false,
+    enableHiding: false,
+    cell: ({ row }) => {
+      const { studentNumber, withdrawn } = row.original;
+      // Withdrawn rows and rows without a studentNumber have no cross-module destination.
+      if (withdrawn || !studentNumber) return null;
+      return (
+        <RowActionsMenu>
+          <DropdownMenuItem asChild>
+            <Link href={`/records/students/${studentNumber}`}>
+              <BookOpen className="size-3.5" />
+              Open in Records
+            </Link>
+          </DropdownMenuItem>
+        </RowActionsMenu>
+      );
+    },
   },
 ];
 
@@ -233,12 +247,10 @@ export function AttendanceReadOnlyTable({ rows }: { rows: ReadOnlyRow[] }) {
       getRowId={(row) => row.enrolmentId}
       searchKeys={['studentName', 'studentNumber']}
       searchPlaceholder="Search student…"
-      facets={FACETS}
-      statusTabs={STATUS_TABS.length > 0 ? STATUS_TABS : undefined}
+      statusTabs={STATUS_TABS}
       // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
       url={{ enabled: true, namespace: 'attn' }}
       initialSort={[{ id: 'indexNumber', desc: false }]}
-      initialColumnVisibility={{ _status: false }}
       pageSize={50}
       hidePagination
       emptyState={{

@@ -2,13 +2,16 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Mail } from 'lucide-react';
+import { Bell, Mail } from 'lucide-react';
 import { type ColumnDef } from '@tanstack/react-table';
 
 import { PreCourseDateCell } from '@/components/sis/cohorts/pre-course-date-cell';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { Badge } from '@/components/ui/badge';
-import { DataTable } from '@/components/ui/data-table';
+import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { IdentifierLink } from '@/components/ui/identifier-link';
 import {
   ChartLegendChip,
   type ChartLegendChipColor,
@@ -96,22 +99,21 @@ function buildStpColumns(
     {
       id: 'student',
       accessorFn: (r) => r.enroleeFullName ?? r.enroleeNumber,
-      header: 'Student',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Student</SortableHeader>
+      ),
       cell: ({ row }) => (
-        <Link
-          href={stpDetailHref(row.original, scope, ayCode)}
-          className="block space-y-0.5 hover:underline"
-        >
-          <div className="font-medium text-foreground">
+        <div className="space-y-0.5">
+          <IdentifierLink href={stpDetailHref(row.original, scope, ayCode)}>
             {row.original.enroleeFullName ?? '—'}
-          </div>
+          </IdentifierLink>
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {row.original.enroleeNumber}
             {row.original.studentNumber
               ? ` · ${row.original.studentNumber}`
               : ''}
           </div>
-        </Link>
+        </div>
       ),
       enableSorting: true,
     },
@@ -189,6 +191,7 @@ function buildStpColumns(
       ),
       enableSorting: true,
     },
+    buildCrossModuleActionsColumn(scope, ayCode),
   ];
 }
 
@@ -278,27 +281,31 @@ function PromisedDaysPill({ days }: { days: number | null | undefined }) {
 
 // ─── Promised column builder ──────────────────────────────────────────────────
 
-function buildPromisedColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
+function buildPromisedColumns(
+  ayCode: string,
+  openBulkNotify: (rows: CohortStudentRow[]) => void
+): ColumnDef<CohortStudentRow>[] {
   return [
     {
       id: 'student',
       accessorFn: (r) => r.enroleeFullName ?? r.enroleeNumber,
-      header: 'Student',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Student</SortableHeader>
+      ),
       cell: ({ row }) => (
-        <Link
-          href={promisedDetailHref(row.original.enroleeNumber, ayCode)}
-          className="block space-y-0.5 hover:underline"
-        >
-          <div className="font-medium text-foreground">
+        <div className="space-y-0.5">
+          <IdentifierLink
+            href={promisedDetailHref(row.original.enroleeNumber, ayCode)}
+          >
             {row.original.enroleeFullName ?? '—'}
-          </div>
+          </IdentifierLink>
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {row.original.enroleeNumber}
             {row.original.studentNumber
               ? ` · ${row.original.studentNumber}`
               : ''}
           </div>
-        </Link>
+        </div>
       ),
       enableSorting: true,
     },
@@ -325,13 +332,20 @@ function buildPromisedColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
     {
       id: 'toFollowCount',
       accessorFn: (r) => r.toFollowCount ?? 0,
-      header: 'To follow',
+      header: ({ column }) => (
+        <SortableHeader column={column} className="justify-end">
+          To follow
+        </SortableHeader>
+      ),
       cell: ({ row }) => (
         <Badge variant="muted" className="font-mono tabular-nums">
           {row.original.toFollowCount ?? 0}
         </Badge>
       ),
       enableSorting: true,
+      sortingFn: (a, b) =>
+        (a.getValue<number>('toFollowCount') ?? 0) -
+        (b.getValue<number>('toFollowCount') ?? 0),
     },
     {
       id: 'promisedSlots',
@@ -345,13 +359,24 @@ function buildPromisedColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
     {
       id: 'earliestDate',
       accessorFn: (r) => r.earliestPromisedUntil ?? '',
-      header: 'Earliest promised',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Earliest promised</SortableHeader>
+      ),
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-foreground">
           {formatDate(row.original.earliestPromisedUntil)}
         </span>
       ),
       enableSorting: true,
+      // ISO date strings sort correctly as strings; empty string (null) sorts last.
+      sortingFn: (a, b, dir) => {
+        const va = a.getValue<string>('earliestDate');
+        const vb = b.getValue<string>('earliestDate');
+        if (!va && !vb) return 0;
+        if (!va) return dir === 'asc' ? 1 : -1;
+        if (!vb) return dir === 'asc' ? -1 : 1;
+        return va < vb ? -1 : va > vb ? 1 : 0;
+      },
     },
     {
       id: 'daysUntil',
@@ -360,11 +385,30 @@ function buildPromisedColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
         r.daysUntilEarliestPromise === undefined
           ? Number.POSITIVE_INFINITY
           : r.daysUntilEarliestPromise,
-      header: 'Days until',
+      header: ({ column }) => (
+        <SortableHeader column={column} className="justify-end">
+          Days until
+        </SortableHeader>
+      ),
       cell: ({ row }) => (
         <PromisedDaysPill days={row.original.daysUntilEarliestPromise} />
       ),
       enableSorting: true,
+      // accessorFn already maps null → +Infinity so nulls naturally sort last.
+      sortingFn: 'basic',
+    },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => (
+        <RowActionsMenu>
+          <DropdownMenuItem onSelect={() => openBulkNotify([row.original])}>
+            <Bell className="size-3.5" />
+            Send reminder
+          </DropdownMenuItem>
+        </RowActionsMenu>
+      ),
+      enableSorting: false,
     },
   ];
 }
@@ -494,22 +538,23 @@ function buildPassExpiryColumns(
     {
       id: 'student',
       accessorFn: (r) => r.enroleeFullName ?? r.enroleeNumber,
-      header: 'Student',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Student</SortableHeader>
+      ),
       cell: ({ row }) => (
-        <Link
-          href={passExpiryDetailHref(row.original, scope, ayCode)}
-          className="block space-y-0.5 hover:underline"
-        >
-          <div className="font-medium text-foreground">
+        <div className="space-y-0.5">
+          <IdentifierLink
+            href={passExpiryDetailHref(row.original, scope, ayCode)}
+          >
             {row.original.enroleeFullName ?? '—'}
-          </div>
+          </IdentifierLink>
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {row.original.enroleeNumber}
             {row.original.studentNumber
               ? ` · ${row.original.studentNumber}`
               : ''}
           </div>
-        </Link>
+        </div>
       ),
       enableSorting: true,
     },
@@ -527,7 +572,9 @@ function buildPassExpiryColumns(
     {
       id: 'earliestKind',
       accessorFn: (r) => r.studentPassExpiryKind ?? '',
-      header: 'Earliest kind',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Earliest kind</SortableHeader>
+      ),
       cell: ({ row }) => (
         <StudentKindChip kind={row.original.studentPassExpiryKind} />
       ),
@@ -536,22 +583,39 @@ function buildPassExpiryColumns(
     {
       id: 'earliestDate',
       accessorFn: (r) => r.earliestExpiry ?? '',
-      header: 'Earliest expiry',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Earliest expiry</SortableHeader>
+      ),
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-foreground">
           {formatDate(row.original.earliestExpiry)}
         </span>
       ),
       enableSorting: true,
+      // ISO date strings sort correctly as strings; empty string (null) sorts last.
+      sortingFn: (a, b, dir) => {
+        const va = a.getValue<string>('earliestDate');
+        const vb = b.getValue<string>('earliestDate');
+        if (!va && !vb) return 0;
+        if (!va) return dir === 'asc' ? 1 : -1;
+        if (!vb) return dir === 'asc' ? -1 : 1;
+        return va < vb ? -1 : va > vb ? 1 : 0;
+      },
     },
     {
       id: 'daysUntil',
       accessorFn: (r) => r.daysUntilEarliestExpiry ?? Number.POSITIVE_INFINITY,
-      header: 'Days until',
+      header: ({ column }) => (
+        <SortableHeader column={column} className="justify-end">
+          Days until
+        </SortableHeader>
+      ),
       cell: ({ row }) => (
         <PassExpiryDaysPill days={row.original.daysUntilEarliestExpiry} />
       ),
       enableSorting: true,
+      // accessorFn already maps null → +Infinity so nulls naturally sort last.
+      sortingFn: 'basic',
     },
     {
       id: 'parentExpiries',
@@ -571,6 +635,10 @@ function buildPassExpiryColumns(
       ),
       enableSorting: true,
     },
+    // Pass-expiry rows carry no document `toFollowSlots`, so the BulkNotify
+    // pipeline can't build reminder items for them — surface cross-module nav
+    // instead (renewal chasing lives in the P-Files expiring queue).
+    buildCrossModuleActionsColumn(scope, ayCode),
   ];
 }
 
@@ -698,22 +766,21 @@ function buildMedicalColumns(
     {
       id: 'student',
       accessorFn: (r) => r.enroleeFullName ?? r.enroleeNumber,
-      header: 'Student',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Student</SortableHeader>
+      ),
       cell: ({ row }) => (
-        <Link
-          href={medicalDetailHref(row.original, scope, ayCode)}
-          className="block space-y-0.5 hover:underline"
-        >
-          <div className="font-medium text-foreground">
+        <div className="space-y-0.5">
+          <IdentifierLink href={medicalDetailHref(row.original, scope, ayCode)}>
             {row.original.enroleeFullName ?? '—'}
-          </div>
+          </IdentifierLink>
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {row.original.enroleeNumber}
             {row.original.studentNumber
               ? ` · ${row.original.studentNumber}`
               : ''}
           </div>
-        </Link>
+        </div>
       ),
       enableSorting: true,
     },
@@ -731,9 +798,16 @@ function buildMedicalColumns(
     {
       id: 'medicalFlags',
       accessorFn: (r) => r.medicalFlags?.length ?? 0,
-      header: 'Flags',
+      header: ({ column }) => (
+        <SortableHeader column={column} className="justify-end">
+          Flags
+        </SortableHeader>
+      ),
       cell: ({ row }) => <FlagChips flags={row.original.medicalFlags} />,
       enableSorting: true,
+      sortingFn: (a, b) =>
+        (a.getValue<number>('medicalFlags') ?? 0) -
+        (b.getValue<number>('medicalFlags') ?? 0),
     },
     {
       id: 'allergyDetails',
@@ -798,6 +872,7 @@ function buildMedicalColumns(
       ),
       enableSorting: true,
     },
+    buildCrossModuleActionsColumn(scope, ayCode),
   ];
 }
 
@@ -881,27 +956,31 @@ function PreCourseAnswerBadge({
 
 // ─── Pre-course column builder ────────────────────────────────────────────────
 
-function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
+function buildPreCourseColumns(
+  ayCode: string,
+  scope: CohortScope
+): ColumnDef<CohortStudentRow>[] {
   return [
     {
       id: 'student',
       accessorFn: (r) => r.enroleeFullName ?? r.enroleeNumber,
-      header: 'Student',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Student</SortableHeader>
+      ),
       cell: ({ row }) => (
-        <Link
-          href={preCourseDetailHref(row.original.enroleeNumber, ayCode)}
-          className="block space-y-0.5 hover:underline"
-        >
-          <div className="font-medium text-foreground">
+        <div className="space-y-0.5">
+          <IdentifierLink
+            href={preCourseDetailHref(row.original.enroleeNumber, ayCode)}
+          >
             {row.original.enroleeFullName ?? '—'}
-          </div>
+          </IdentifierLink>
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {row.original.enroleeNumber}
             {row.original.studentNumber
               ? ` · ${row.original.studentNumber}`
               : ''}
           </div>
-        </Link>
+        </div>
       ),
       enableSorting: true,
     },
@@ -937,7 +1016,9 @@ function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
     {
       id: 'preCourseDate',
       accessorFn: (r) => r.preCourseDate ?? '',
-      header: 'Session date',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Session date</SortableHeader>
+      ),
       cell: ({ row }) => (
         <PreCourseDateCell
           enroleeNumber={row.original.enroleeNumber}
@@ -946,6 +1027,15 @@ function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
         />
       ),
       enableSorting: true,
+      // ISO date strings sort correctly as strings; empty string (null) sorts last.
+      sortingFn: (a, b, dir) => {
+        const va = a.getValue<string>('preCourseDate');
+        const vb = b.getValue<string>('preCourseDate');
+        if (!va && !vb) return 0;
+        if (!va) return dir === 'asc' ? 1 : -1;
+        if (!vb) return dir === 'asc' ? -1 : 1;
+        return va < vb ? -1 : va > vb ? 1 : 0;
+      },
     },
     {
       id: 'preCourseAnswer',
@@ -959,14 +1049,26 @@ function buildPreCourseColumns(ayCode: string): ColumnDef<CohortStudentRow>[] {
     {
       id: 'preCourseAcknowledgedAt',
       accessorFn: (r) => r.preCourseAcknowledgedAt ?? '',
-      header: 'Acknowledged',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Acknowledged</SortableHeader>
+      ),
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-foreground">
           {formatDate(row.original.preCourseAcknowledgedAt)}
         </span>
       ),
       enableSorting: true,
+      // ISO date strings (or ISO timestamps) sort correctly as strings; empty string sorts last.
+      sortingFn: (a, b, dir) => {
+        const va = a.getValue<string>('preCourseAcknowledgedAt');
+        const vb = b.getValue<string>('preCourseAcknowledgedAt');
+        if (!va && !vb) return 0;
+        if (!va) return dir === 'asc' ? 1 : -1;
+        if (!vb) return dir === 'asc' ? -1 : 1;
+        return va < vb ? -1 : va > vb ? 1 : 0;
+      },
     },
+    buildCrossModuleActionsColumn(scope, ayCode),
   ];
 }
 
@@ -1001,6 +1103,48 @@ const PRE_COURSE_EMPTY_STATE = {
   title: 'No applicants in this view.',
   body: 'Pre-Course Counselling acknowledgement status will appear here once parents complete the counselling session.',
 };
+
+// ─── Shared cross-module nav actions column ───────────────────────────────────
+//
+// Used by stp / medical / pre-course — kinds that have no bulk action today
+// but should let the registrar jump to the relevant module surface.
+// Gate: "Open in Records" only when enrolled (scope==='enrolled') AND
+// studentNumber is present; "Open in Admissions" always (enroleeNumber exists).
+
+function buildCrossModuleActionsColumn(
+  scope: CohortScope,
+  ayCode: string
+): ColumnDef<CohortStudentRow> {
+  return {
+    id: 'actions',
+    header: '',
+    cell: ({ row }) => {
+      const r = row.original;
+      const showRecords = scope === 'enrolled' && !!r.studentNumber;
+      const admissionsHref = `/admissions/applications/${encodeURIComponent(r.enroleeNumber)}?ay=${ayCode}`;
+      const recordsHref = showRecords
+        ? `/records/students/${encodeURIComponent(r.studentNumber!)}`
+        : null;
+
+      // Render nothing if there are genuinely no items.
+      if (!showRecords && !r.enroleeNumber) return null;
+
+      return (
+        <RowActionsMenu>
+          {recordsHref && (
+            <DropdownMenuItem asChild>
+              <Link href={recordsHref}>Open in Records</Link>
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem asChild>
+            <Link href={admissionsHref}>Open in Admissions</Link>
+          </DropdownMenuItem>
+        </RowActionsMenu>
+      );
+    },
+    enableSorting: false,
+  };
+}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -1053,7 +1197,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
       <>
         <DataTable<CohortStudentRow>
           data={promisedRows}
-          columns={buildPromisedColumns(ayCode)}
+          columns={buildPromisedColumns(ayCode, openBulkNotify)}
           getRowId={(r) => r.enroleeNumber}
           searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
           searchPlaceholder="Search students…"
@@ -1062,6 +1206,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
           pageSize={25}
           csv={{ filename: `promised-cohort-${ayCode}.csv` }}
           url={{ enabled: true, namespace: 'cohort' }}
+          initialSort={[{ id: 'daysUntil', desc: false }]}
           emptyState={PROMISED_EMPTY_STATE}
           emptyFilteredState={{ title: 'No matches for current filters.' }}
           selection={{
@@ -1090,40 +1235,21 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
   if (kind === 'pass-expiry') {
     const passRows = rows as CohortStudentRow[];
     return (
-      <>
-        <DataTable<CohortStudentRow>
-          data={passRows}
-          columns={buildPassExpiryColumns(scope, ayCode)}
-          getRowId={(r) => r.enroleeNumber}
-          searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
-          searchPlaceholder="Search students…"
-          facets={PASS_EXPIRY_FACETS}
-          statusTabs={PASS_EXPIRY_STATUS_TABS}
-          pageSize={25}
-          csv={{ filename: `pass-expiry-cohort-${ayCode}.csv` }}
-          url={{ enabled: true, namespace: 'cohort' }}
-          emptyState={PASS_EXPIRY_EMPTY_STATE}
-          emptyFilteredState={{ title: 'No matches for current filters.' }}
-          selection={{
-            enabled: true,
-            bulkActions: [
-              {
-                key: 'notify',
-                label: 'Send reminders',
-                icon: Mail,
-                onTrigger: (selectedRows) => openBulkNotify(selectedRows),
-              },
-            ],
-          }}
-        />
-        <BulkNotifyDialog
-          items={bulkItems}
-          module="admissions"
-          open={bulkOpen}
-          onOpenChange={setBulkOpen}
-          onSuccess={() => setBulkItems([])}
-        />
-      </>
+      <DataTable<CohortStudentRow>
+        data={passRows}
+        columns={buildPassExpiryColumns(scope, ayCode)}
+        getRowId={(r) => r.enroleeNumber}
+        searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
+        searchPlaceholder="Search students…"
+        facets={PASS_EXPIRY_FACETS}
+        statusTabs={PASS_EXPIRY_STATUS_TABS}
+        pageSize={25}
+        csv={{ filename: `pass-expiry-cohort-${ayCode}.csv` }}
+        url={{ enabled: true, namespace: 'cohort' }}
+        initialSort={[{ id: 'daysUntil', desc: false }]}
+        emptyState={PASS_EXPIRY_EMPTY_STATE}
+        emptyFilteredState={{ title: 'No matches for current filters.' }}
+      />
     );
   }
 
@@ -1132,7 +1258,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
     return (
       <DataTable<CohortStudentRow>
         data={preCourseRows}
-        columns={buildPreCourseColumns(ayCode)}
+        columns={buildPreCourseColumns(ayCode, scope)}
         getRowId={(r) => r.enroleeNumber}
         searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
         searchPlaceholder="Search students…"

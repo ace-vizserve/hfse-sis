@@ -1,10 +1,11 @@
 'use client';
 
-import Link from 'next/link';
 import { type ColumnDef } from '@tanstack/react-table';
 
 import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
+import { IdentifierLink } from '@/components/ui/identifier-link';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import type { StatusTabConfig } from '@/components/ui/data-table/types';
 import type { FeedbackRow } from '@/lib/admissions/feedback';
 
@@ -72,36 +73,38 @@ function buildColumns(ayCode: string): ColumnDef<FeedbackRow>[] {
     {
       id: 'student',
       accessorFn: (r) => r.enroleeFullName ?? r.enroleeNumber,
-      header: 'Applicant',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Applicant</SortableHeader>
+      ),
       cell: ({ row }) => {
         const params = new URLSearchParams({ ay: ayCode, tab: 'profile' });
         const href = `/admissions/applications/${encodeURIComponent(row.original.enroleeNumber)}?${params.toString()}`;
         return (
-          <Link href={href} className="block space-y-0.5 hover:underline">
-            <div className="font-medium text-foreground">
+          <div className="space-y-0.5">
+            <IdentifierLink href={href}>
               {row.original.enroleeFullName ?? '—'}
-            </div>
+            </IdentifierLink>
             <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
               {row.original.enroleeNumber}
               {row.original.studentNumber
                 ? ` · ${row.original.studentNumber}`
                 : ''}
             </div>
-          </Link>
+          </div>
         );
       },
-      enableSorting: true,
     },
     {
       id: 'levelApplied',
       accessorKey: 'levelApplied',
-      header: 'Level',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Level</SortableHeader>
+      ),
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
           {row.original.levelApplied ?? '—'}
         </span>
       ),
-      enableSorting: true,
     },
     {
       id: 'applicationStatus',
@@ -115,9 +118,12 @@ function buildColumns(ayCode: string): ColumnDef<FeedbackRow>[] {
     {
       id: 'feedbackRating',
       accessorFn: (r) => r.feedbackRating ?? -1,
-      header: 'Rating',
+      header: ({ column }) => (
+        <SortableHeader column={column} align="right">
+          Rating
+        </SortableHeader>
+      ),
       cell: ({ row }) => <RatingBadge rating={row.original.feedbackRating} />,
-      enableSorting: true,
     },
     {
       id: 'feedbackComments',
@@ -144,14 +150,23 @@ function buildColumns(ayCode: string): ColumnDef<FeedbackRow>[] {
     },
     {
       id: 'feedbackSubmittedAt',
-      accessorFn: (r) => r.feedbackSubmittedAt ?? '',
-      header: 'Submitted',
+      accessorFn: (r) => r.feedbackSubmittedAt ?? null,
+      header: ({ column }) => (
+        <SortableHeader column={column}>Submitted</SortableHeader>
+      ),
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-foreground">
           {formatDate(row.original.feedbackSubmittedAt)}
         </span>
       ),
-      enableSorting: true,
+      sortingFn: (a, b) => {
+        const av = a.original.feedbackSubmittedAt ?? null;
+        const bv = b.original.feedbackSubmittedAt ?? null;
+        if (av === null && bv === null) return 0;
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        return av < bv ? -1 : av > bv ? 1 : 0;
+      },
     },
   ];
 }
@@ -189,7 +204,8 @@ const STATUS_TABS: StatusTabConfig<FeedbackRow>[] = [
 const FACETS = [
   { columnId: 'levelApplied', label: 'Level' },
   { columnId: 'applicationStatus', label: 'App status' },
-  { columnId: 'feedbackConsent', label: 'May contact' },
+  // Consent is covered by the "May contact" status tab; a facet on the numeric
+  // accessor renders no options, so it's intentionally omitted.
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -211,6 +227,7 @@ export function FeedbackTable({
       facets={FACETS}
       statusTabs={STATUS_TABS}
       pageSize={25}
+      initialSort={[{ id: 'feedbackSubmittedAt', desc: true }]}
       csv={{ filename: `feedback-${ayCode}.csv` }}
       url={{ enabled: true, namespace: 'feedback' }}
       emptyState={{

@@ -1,7 +1,8 @@
 'use client';
 
-import { CheckCircle2, Lock, UserCheck } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Lock, UserCheck } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { type ColumnDef } from '@tanstack/react-table';
@@ -20,15 +21,92 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { DataTable } from '@/components/ui/data-table';
+import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
 import {
   type FacetConfig,
   type StatusTabConfig,
   type MeScopeConfig,
   type SelectionConfig,
 } from '@/components/ui/data-table/types';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+
+// Self-contained per-row "Lock sheet" menu item. Owns its own AlertDialog +
+// useMutation so it doesn't couple to the parent's bulk-lock state machine.
+// Mirrors the existing bulk-lock mutation pattern exactly (same endpoint, same
+// error voices, same router.refresh() on success).
+function LockSheetMenuItem({ sheetId }: { sheetId: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+
+  const lockMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ locked?: number; skipped?: number }>(
+        '/api/grading-sheets/bulk-lock',
+        jsonInit('POST', { ids: [sheetId] })
+      ),
+    onSuccess: () => {
+      toast.success('Sheet locked.');
+      setOpen(false);
+      router.refresh();
+    },
+    onError: (e) => {
+      if (e instanceof ApiError) {
+        toast.error(e.message || 'Could not lock the sheet.');
+      } else {
+        toast.error('Could not reach the server. Please try again.');
+      }
+    },
+  });
+
+  const busy = lockMutation.isPending;
+
+  return (
+    <>
+      <DropdownMenuItem
+        onSelect={(e) => {
+          e.preventDefault();
+          setOpen(true);
+        }}
+      >
+        <Lock className="size-3.5" />
+        Lock sheet
+      </DropdownMenuItem>
+      <AlertDialog
+        open={open}
+        onOpenChange={(v) => {
+          if (!busy) setOpen(v);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Lock this sheet?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Locking stops teachers from editing scores on this sheet. After
+              locking, any further change has to go through the grade
+              change-request flow for approval. You can unlock a sheet later if
+              needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                lockMutation.mutate();
+              }}
+              disabled={busy}
+            >
+              <Lock className="mr-1 h-4 w-4" />
+              {busy ? 'Locking…' : 'Lock sheet'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
 
 export type GradingSheetRow = {
   id: string;
@@ -472,9 +550,35 @@ export function GradingDataTable({
     };
   }, [currentUserId]);
 
-  const columns = useMemo<ColumnDef<GradingSheetRow>[]>(
-    () => (canLock ? [SELECT_COLUMN, ...COLUMNS] : COLUMNS),
+  const actionsColumn = useMemo<ColumnDef<GradingSheetRow>>(
+    () => ({
+      id: 'actions',
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => (
+        <RowActionsMenu>
+          <DropdownMenuItem asChild>
+            <Link href={`/markbook/grading/${row.original.id}`}>
+              <ExternalLink className="size-3.5" />
+              Open sheet
+            </Link>
+          </DropdownMenuItem>
+          {canLock && !row.original.is_locked && (
+            <LockSheetMenuItem sheetId={row.original.id} />
+          )}
+        </RowActionsMenu>
+      ),
+      enableSorting: false,
+      enableHiding: false,
+    }),
     [canLock]
+  );
+
+  const columns = useMemo<ColumnDef<GradingSheetRow>[]>(
+    () =>
+      canLock
+        ? [SELECT_COLUMN, ...COLUMNS, actionsColumn]
+        : [...COLUMNS, actionsColumn],
+    [canLock, actionsColumn]
   );
 
   const selection = useMemo<

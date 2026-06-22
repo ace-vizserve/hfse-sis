@@ -32,10 +32,6 @@ import {
   ReferralDrillCard,
   TimeToEnrollDrillCard,
 } from '@/components/admissions/drills/chart-drill-cards';
-import {
-  ActionList,
-  type ActionItem,
-} from '@/components/dashboard/action-list';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
@@ -74,6 +70,7 @@ import {
 } from '@/lib/admissions/dashboard';
 import { getAdmissionsPriority } from '@/lib/admissions/priority';
 import { buildDrillRows } from '@/lib/admissions/drill';
+import { STALENESS_FOLLOW_UP_VALUES } from '@/lib/admissions/staleness';
 import {
   getAdmissionsFeedback,
   getPreCourseStats,
@@ -411,6 +408,10 @@ export default async function AdmissionsDashboard({
     (acc, stage) => (stage.dropOffPct > (acc?.dropOffPct ?? 0) ? stage : acc),
     funnel[0] ?? null
   );
+  // The "needs follow-up" insight deep-links straight into the applications
+  // table pre-filtered to the stale rows (Warning + Critical) — there's no
+  // separate follow-up card anymore; the insight IS the entry point.
+  const outdatedHref = `/admissions/applications?ay=${selectedAy}&students.staleness=${STALENESS_FOLLOW_UP_VALUES.join(',')}`;
   const insights = admissionsInsights({
     applications: kpisResult.current.applicationsInRange,
     enrolled: kpisResult.current.enrolledInRange,
@@ -420,6 +421,7 @@ export default async function AdmissionsDashboard({
     avgDaysToEnrollPrior: kpisResult.comparison?.avgDaysToEnroll,
     appsDelta: kpisResult.delta ?? undefined,
     outdatedCount: outdated.length,
+    outdatedHref,
     topReferral: topRef
       ? { source: topRef.source, count: topRef.count, totalCount: totalRef }
       : undefined,
@@ -427,21 +429,6 @@ export default async function AdmissionsDashboard({
       ? { stage: biggestDrop.stage, dropOffPct: biggestDrop.dropOffPct }
       : undefined,
   });
-
-  // Build action list — top 6 stalled applicants.
-  const actionItems: ActionItem[] = outdated.slice(0, 6).map((row) => ({
-    label: row.fullName,
-    sublabel: `${row.status} · ${row.levelApplied ?? '—'}`,
-    meta:
-      row.daysSinceUpdate === null
-        ? 'Never updated'
-        : `${row.daysSinceUpdate}d without update`,
-    severity:
-      row.daysSinceUpdate === null || row.daysSinceUpdate >= 30
-        ? 'bad'
-        : 'warn',
-    href: `/admissions/applications/${row.enroleeNumber}`,
-  }));
 
   return (
     <PageShell>
@@ -606,38 +593,28 @@ export default async function AdmissionsDashboard({
 
       {/* ───────────────── ANALYTICS ─────────────────
           Trend, distribution, and breakdown charts grouped under one zone.
-          Bento row 1: intake velocity (wide) + follow-up action list (narrow). */}
-      <section className="grid gap-4 lg:grid-cols-3">
-        {velocity.current.length > 1 && (
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Applications per day
-              </CardDescription>
-              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Intake velocity
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <TrendChart
-                label="Applications"
-                current={velocity.current}
-                comparison={velocity.comparison}
-              />
-            </CardContent>
-          </Card>
-        )}
-        <div className="lg:col-span-1">
-          <ActionList
-            id="outdated-applications"
-            title="Follow up today"
-            description="Stages not moved in ≥ 7 days."
-            items={actionItems}
-            emptyLabel="Everyone has been touched recently."
-            viewAllHref={`/admissions/applications?ay=${selectedAy}`}
-          />
-        </div>
-      </section>
+          Bento row 1: intake velocity (full width). Follow-up is no longer a
+          standalone card — the "needs follow-up" insight above deep-links into
+          the staleness-filtered applications table instead. */}
+      {velocity.current.length > 1 && (
+        <Card>
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Applications per day
+            </CardDescription>
+            <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Intake velocity
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TrendChart
+              label="Applications"
+              current={velocity.current}
+              comparison={velocity.comparison}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Bento row 2: pipeline stage (wide, current-state breakdown — the
           glance-level "where is our intake right now") + time-to-enroll

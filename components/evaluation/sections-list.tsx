@@ -1,9 +1,11 @@
 'use client';
 
 import { type ColumnDef } from '@tanstack/react-table';
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, BookOpen, Users } from 'lucide-react';
+import Link from 'next/link';
 
-import { DataTable } from '@/components/ui/data-table';
+import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import {
   type FacetConfig,
@@ -154,6 +156,33 @@ function buildColumns(selectedTermId: string): ColumnDef<EvalSectionRow>[] {
         );
       },
       filterFn: facetFilterFn,
+    },
+    {
+      id: 'actions',
+      header: () => <span className="sr-only">Actions</span>,
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => {
+        const { id, name } = row.original;
+        return (
+          <RowActionsMenu>
+            <DropdownMenuItem asChild>
+              <Link
+                href={`/markbook/grading?grading.section=${encodeURIComponent(name)}`}
+              >
+                <BookOpen className="size-3.5" />
+                Open grading
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href={`/sis/sections/${id}`}>
+                <Users className="size-3.5" />
+                Open roster
+              </Link>
+            </DropdownMenuItem>
+          </RowActionsMenu>
+        );
+      },
     },
   ];
 }

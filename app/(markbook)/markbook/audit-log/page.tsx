@@ -23,7 +23,8 @@ import { AuditLogDataTable, type MergedRow } from './audit-log-data-table';
 // (the prior negative filter only excluded pfile.* and sis.*).
 // grade_audit_log (pre-migration-006 rows) is no longer unioned here;
 // the table stays in Postgres but is off-screen (Hard Rule #6).
-const MARKBOOK_AUDIT_ALLOWLIST = [
+// Exported so the data-table can build its Action Select options.
+export const MARKBOOK_AUDIT_ALLOWLIST = [
   'sheet.create',
   'sheet.bulk_create',
   'sheet.lock',
@@ -53,6 +54,7 @@ export default async function AuditLogPage({
   searchParams: Promise<{
     sheet_id?: string;
     action?: string;
+    actor?: string;
     page?: string;
     pageSize?: string;
   }>;
@@ -68,6 +70,15 @@ export default async function AuditLogPage({
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
+  // Validate action filter against allowlist to prevent injection
+  const actionFilter =
+    params.action &&
+    (MARKBOOK_AUDIT_ALLOWLIST as readonly string[]).includes(params.action)
+      ? params.action
+      : null;
+  const actorFilter =
+    params.actor && params.actor.trim().length > 0 ? params.actor.trim() : null;
+
   let q = supabase
     .from('audit_log')
     .select(
@@ -76,13 +87,29 @@ export default async function AuditLogPage({
     )
     .in('action', MARKBOOK_AUDIT_ALLOWLIST);
 
-  if (params.action) q = q.eq('action', params.action);
+  if (actionFilter) q = q.eq('action', actionFilter);
+  if (actorFilter) q = q.eq('actor_email', actorFilter);
   if (params.sheet_id)
     q = q.contains('context', { grading_sheet_id: params.sheet_id });
 
-  const { data, count, error } = await q
-    .order('created_at', { ascending: false })
-    .range(from, to);
+  const [{ data, count, error }, actorEmailsResult] = await Promise.all([
+    q.order('created_at', { ascending: false }).range(from, to),
+    // Fetch distinct actor emails across the whole allowlist (unfiltered by page)
+    supabase
+      .from('audit_log')
+      .select('actor_email')
+      .in('action', MARKBOOK_AUDIT_ALLOWLIST)
+      .order('actor_email')
+      .limit(200),
+  ]);
+
+  const actorOptions = Array.from(
+    new Set(
+      (actorEmailsResult.data ?? [])
+        .map((r: { actor_email: string }) => r.actor_email)
+        .filter(Boolean)
+    )
+  ).sort();
 
   const totalPages = count ? Math.ceil(count / PAGE_SIZE) : 1;
 
@@ -202,7 +229,10 @@ export default async function AuditLogPage({
       <AuditLogDataTable
         rows={rows}
         initialSheetIdFilter={params.sheet_id ?? null}
-        initialActionFilter={params.action ?? null}
+        currentAction={actionFilter}
+        currentActor={actorFilter}
+        actionOptions={[...MARKBOOK_AUDIT_ALLOWLIST]}
+        actorOptions={actorOptions}
         canExport={canExport}
         pagination={{
           page,

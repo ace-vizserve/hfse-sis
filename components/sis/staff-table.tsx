@@ -1,8 +1,9 @@
 'use client';
 
 import type { ColumnDef } from '@tanstack/react-table';
-import { ChevronRight, Search, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
+import Link from 'next/link';
+import { useState } from 'react';
 
 import {
   StaffAssignmentSheet,
@@ -11,10 +12,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
-import { Input } from '@/components/ui/input';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import type { StatusTabConfig } from '@/components/ui/data-table/types';
 import type { StaffRow } from '@/lib/sis/staff';
-
-type AssignmentFilter = 'all' | 'adviser' | 'subject-only' | 'unassigned';
 
 export function StaffTable({
   rows,
@@ -23,9 +23,6 @@ export function StaffTable({
   rows: StaffRow[];
   ayCode: string;
 }) {
-  const [nameSearch, setNameSearch] = useState('');
-  const [assignmentFilter, setAssignmentFilter] =
-    useState<AssignmentFilter>('all');
   const [showDisabled, setShowDisabled] = useState(false);
   const [selectedTeacher, setSelectedTeacher] =
     useState<StaffSheetTeacher | null>(null);
@@ -41,51 +38,17 @@ export function StaffTable({
     setSheetOpen(true);
   }
 
-  // Counts computed from active (non-disabled) teachers only.
-  const chipCounts = useMemo(() => {
-    const active = rows.filter((r) => !r.disabled);
-    return {
-      all: active.length,
-      // Has a form class — may also have subject assignments.
-      adviser: active.filter((r) => r.fcaSection !== null).length,
-      // Has subject assignments but no form class.
-      subjectOnly: active.filter(
-        (r) => r.fcaSection === null && r.subjectAssignments.length > 0
-      ).length,
-      // No assignments of any kind — the actionable gap.
-      unassigned: active.filter(
-        (r) => r.fcaSection === null && r.subjectAssignments.length === 0
-      ).length,
-    };
-  }, [rows]);
-
-  const filteredRows = useMemo(() => {
-    let r = showDisabled ? rows : rows.filter((row) => !row.disabled);
-    if (nameSearch) {
-      const q = nameSearch.toLowerCase();
-      r = r.filter(
-        (row) =>
-          row.name.toLowerCase().includes(q) ||
-          row.email.toLowerCase().includes(q)
-      );
-    }
-    if (assignmentFilter === 'adviser')
-      r = r.filter((row) => row.fcaSection !== null);
-    if (assignmentFilter === 'subject-only')
-      r = r.filter(
-        (row) => row.fcaSection === null && row.subjectAssignments.length > 0
-      );
-    if (assignmentFilter === 'unassigned')
-      r = r.filter(
-        (row) => row.fcaSection === null && row.subjectAssignments.length === 0
-      );
-    return r;
-  }, [rows, nameSearch, assignmentFilter, showDisabled]);
+  // Pre-filter data by the show-disabled toggle; status-tab counts always
+  // re-apply !disabled over the (possibly disabled-inclusive) visible set so
+  // they stay consistent with the old chipCounts behaviour.
+  const data = showDisabled ? rows : rows.filter((r) => !r.disabled);
 
   const columns: ColumnDef<StaffRow>[] = [
     {
       accessorKey: 'name',
-      header: 'Teacher',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Teacher</SortableHeader>
+      ),
       cell: ({ row }) => (
         <div>
           <p
@@ -108,7 +71,15 @@ export function StaffTable({
         const fca = row.original.fcaSection;
         if (!fca)
           return <span className="text-sm text-muted-foreground">—</span>;
-        return <Badge variant="secondary">{fca.name}</Badge>;
+        return (
+          <Link
+            href={`/sis/sections/${fca.id}`}
+            className="transition-opacity hover:opacity-80"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Badge variant="secondary">{fca.name}</Badge>
+          </Link>
+        );
       },
     },
     {
@@ -123,12 +94,14 @@ export function StaffTable({
         return (
           <div className="flex flex-wrap gap-1">
             {visible.map((a) => (
-              <span
+              <Link
                 key={a.assignmentId}
-                className="inline-flex items-center rounded-md border border-hairline bg-muted px-2 py-0.5 font-mono text-[11px]"
+                href={`/sis/sections/${a.sectionId}`}
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center rounded-md border border-hairline bg-muted px-2 py-0.5 font-mono text-[11px] transition-opacity hover:opacity-80"
               >
                 {a.subjectCode}&thinsp;·&thinsp;{a.sectionName}
-              </span>
+              </Link>
             ))}
             {extra > 0 && (
               <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
@@ -141,7 +114,11 @@ export function StaffTable({
     },
     {
       id: 'load',
-      header: 'Load',
+      // accessorFn lets TanStack sort numerically by total assignment count.
+      accessorFn: (r) => (r.fcaSection ? 1 : 0) + r.subjectAssignments.length,
+      header: ({ column }) => (
+        <SortableHeader column={column}>Load</SortableHeader>
+      ),
       cell: ({ row }) => {
         const fca = row.original.fcaSection ? '1 FCA' : null;
         const n = row.original.subjectAssignments.length;
@@ -157,6 +134,8 @@ export function StaffTable({
     {
       id: 'actions',
       header: '',
+      enableSorting: false,
+      enableHiding: false,
       cell: ({ row }) => (
         <Button
           variant="ghost"
@@ -172,103 +151,87 @@ export function StaffTable({
     },
   ];
 
-  const chipDefs: {
-    key: AssignmentFilter;
-    label: string;
-    count: number;
-    warn?: boolean;
-  }[] = [
-    { key: 'all', label: 'All', count: chipCounts.all },
-    { key: 'adviser', label: 'Form Adviser', count: chipCounts.adviser },
+  // countOverride always gates on !disabled regardless of whether showDisabled
+  // is on — so the counts on the tabs reflect active-only, matching the old
+  // chipCounts behaviour.
+  const statusTabs: StatusTabConfig<StaffRow>[] = [
     {
-      key: 'subject-only',
-      label: 'Subject Only',
-      count: chipCounts.subjectOnly,
+      value: 'all',
+      label: 'All',
+      isDefault: true,
+      predicate: () => true,
+      countOverride: (r) => r.filter((row) => !row.disabled).length,
     },
     {
-      key: 'unassigned',
+      value: 'adviser',
+      label: 'Form Adviser',
+      predicate: (r) => r.fcaSection !== null,
+      countOverride: (r) =>
+        r.filter((row) => !row.disabled && row.fcaSection !== null).length,
+    },
+    {
+      value: 'subject-only',
+      label: 'Subject Only',
+      predicate: (r) =>
+        r.fcaSection === null && r.subjectAssignments.length > 0,
+      countOverride: (r) =>
+        r.filter(
+          (row) =>
+            !row.disabled &&
+            row.fcaSection === null &&
+            row.subjectAssignments.length > 0
+        ).length,
+    },
+    {
+      value: 'unassigned',
       label: 'Unassigned',
-      count: chipCounts.unassigned,
-      warn: chipCounts.unassigned > 0,
+      predicate: (r) =>
+        r.fcaSection === null && r.subjectAssignments.length === 0,
+      countOverride: (r) =>
+        r.filter(
+          (row) =>
+            !row.disabled &&
+            row.fcaSection === null &&
+            row.subjectAssignments.length === 0
+        ).length,
     },
   ];
 
+  const showDisabledToggle = (
+    <button
+      type="button"
+      onClick={() => setShowDisabled((v) => !v)}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[11px] font-semibold transition-colors ${
+        showDisabled
+          ? 'border-brand-indigo/40 bg-gradient-to-b from-brand-indigo/15 to-brand-indigo/5 text-brand-indigo'
+          : 'border-border bg-card text-muted-foreground hover:border-brand-indigo/40 hover:text-foreground'
+      }`}
+    >
+      {showDisabled ? 'Hide disabled' : 'Show disabled'}
+    </button>
+  );
+
   return (
     <>
-      <div className="space-y-3">
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search by name or email…"
-              value={nameSearch}
-              onChange={(e) => setNameSearch(e.target.value)}
-              className="h-8 w-64 pl-8 text-sm"
-            />
-            {nameSearch && (
-              <button
-                type="button"
-                onClick={() => setNameSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                aria-label="Clear search"
-              >
-                <X className="size-3.5" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            {chipDefs.map(({ key, label, count, warn }) => {
-              const active = assignmentFilter === key;
-              const warnActive = warn && active;
-              const warnInactive = warn && !active;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setAssignmentFilter(key)}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[11px] font-semibold transition-colors ${
-                    warnActive
-                      ? 'border-brand-amber/50 bg-gradient-to-b from-brand-amber/20 to-brand-amber/8 text-brand-amber'
-                      : warnInactive
-                        ? 'border-brand-amber/30 bg-gradient-to-b from-brand-amber/10 to-brand-amber/4 text-brand-amber hover:border-brand-amber/50'
-                        : active
-                          ? 'border-brand-indigo/40 bg-gradient-to-b from-brand-indigo/15 to-brand-indigo/5 text-brand-indigo'
-                          : 'border-border bg-card text-muted-foreground hover:border-brand-indigo/40 hover:text-foreground'
-                  }`}
-                >
-                  {label}
-                  <span className="tabular-nums opacity-70">{count}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowDisabled((v) => !v)}
-            className={`ml-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[11px] font-semibold transition-colors ${
-              showDisabled
-                ? 'border-brand-indigo/40 bg-gradient-to-b from-brand-indigo/15 to-brand-indigo/5 text-brand-indigo'
-                : 'border-border bg-card text-muted-foreground hover:border-brand-indigo/40 hover:text-foreground'
-            }`}
-          >
-            {showDisabled ? 'Hide disabled' : 'Show disabled'}
-          </button>
-        </div>
-
-        <DataTable
-          columns={columns}
-          data={filteredRows}
-          getRowId={(row) => row.userId}
-          hidePagination={filteredRows.length <= 20}
-          emptyState={{
-            title: 'No teachers found',
-            body: 'Add staff accounts via Users.',
-          }}
-        />
-      </div>
+      <DataTable<StaffRow>
+        data={data}
+        columns={columns}
+        getRowId={(r) => r.userId}
+        searchKeys={['name', 'email']}
+        searchPlaceholder="Search by name or email…"
+        statusTabs={statusTabs}
+        toolbarTrailing={showDisabledToggle}
+        url={{ enabled: true, namespace: 'staff' }}
+        hidePagination={rows.length <= 20}
+        emptyState={{
+          title: 'No teachers found',
+          body: 'Add staff accounts via Users.',
+        }}
+        emptyFilteredState={{
+          title: 'No teachers match.',
+          body: 'Try a different tab or clear the search.',
+        }}
+      />
 
       <StaffAssignmentSheet
         teacher={selectedTeacher}
