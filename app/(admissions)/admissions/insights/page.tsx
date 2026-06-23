@@ -235,7 +235,7 @@ export default async function AdmissionsInsightsPage({
     appsDelta: kpisResult.delta ?? undefined,
     // BUG 2 fix: real stalled-applicant count instead of hardcoded 0.
     outdatedCount: outdatedRows.length,
-    outdatedHref: `/admissions/applications?al.staleness=Warning,Critical`,
+    outdatedHref: `/admissions/applications?students.staleness=Warning,Critical`,
     topReferral: topRef
       ? { source: topRef.source, count: topRef.count, totalCount: totalRef }
       : undefined,
