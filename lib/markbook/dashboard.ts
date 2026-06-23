@@ -106,11 +106,17 @@ async function loadGradeDistributionUncached(
 
   if (!effectiveTermId) return emptyGradeBuckets();
 
-  // Sheet IDs for the target term → entries for those sheets.
+  // Sheet IDs for the target term — examinable subjects only (KD #95/#115).
+  // Non-examinable subjects (Music, Arts, PE, HE, CL, CA, PEH, PMPD) write a
+  // transmuted numeric quarterly_grade through the same WW/PT/QA pipeline per
+  // KD #104, so without an is_examinable filter their grades would pollute the
+  // numeric histogram. Mirror the subject-performance trend filter in compare.ts.
+  type SheetRow = { id: string };
   const { data: sheetRows, error: sheetErr } = await service
     .from('grading_sheets')
-    .select('id')
-    .eq('term_id', effectiveTermId);
+    .select('id, subject:subjects!inner(is_examinable)')
+    .eq('term_id', effectiveTermId)
+    .eq('subjects.is_examinable', true);
   if (sheetErr) {
     console.error(
       '[markbook] getGradeDistribution sheets fetch failed:',
@@ -118,21 +124,45 @@ async function loadGradeDistributionUncached(
     );
     return emptyGradeBuckets();
   }
-  const sheetIds = (sheetRows ?? []).map((r) => r.id as string);
+  // Belt-and-suspenders JS check (mirrors compare.ts pattern): the !inner join
+  // + dot-notation filter already restricts server-side, but re-check in JS to
+  // be safe against any PostgREST version quirk.
+  const sheetIds = (
+    (sheetRows ?? []) as Array<
+      SheetRow & {
+        subject:
+          | { is_examinable: boolean }
+          | { is_examinable: boolean }[]
+          | null;
+      }
+    >
+  )
+    .filter((r) => {
+      const subj = Array.isArray(r.subject) ? r.subject[0] : r.subject;
+      return subj?.is_examinable === true;
+    })
+    .map((r) => r.id);
   if (sheetIds.length === 0) return emptyGradeBuckets();
 
   // Paginate around PostgREST's 1000-row response cap — at HFSE scale
-  // grade_entries can hit 14K+ rows per term.
-  let entryRows: Array<{ quarterly_grade: number | null }> = [];
+  // grade_entries can hit 14K+ rows per term. Select is_na so we can exclude
+  // N.A. terms (Hard Rule #3: is_na=true rows carry a quarterly_grade computed
+  // from placeholder zeros — they should not pollute the numeric histogram).
+  let entryRows: Array<{
+    quarterly_grade: number | null;
+    is_na: boolean | null;
+  }> = [];
   try {
-    entryRows = await fetchAllPages<{ quarterly_grade: number | null }>(
-      (from, to) =>
-        service
-          .from('grade_entries')
-          .select('quarterly_grade')
-          .in('grading_sheet_id', sheetIds)
-          .not('quarterly_grade', 'is', null)
-          .range(from, to)
+    entryRows = await fetchAllPages<{
+      quarterly_grade: number | null;
+      is_na: boolean | null;
+    }>((from, to) =>
+      service
+        .from('grade_entries')
+        .select('quarterly_grade, is_na')
+        .in('grading_sheet_id', sheetIds)
+        .not('quarterly_grade', 'is', null)
+        .range(from, to)
     );
   } catch (entryErr) {
     console.error(
@@ -149,6 +179,9 @@ async function loadGradeDistributionUncached(
   }));
 
   for (const row of entryRows ?? []) {
+    // Skip N.A. rows — is_na=true means the student was not enrolled for this
+    // term; the quarterly_grade is a placeholder, not a real grade.
+    if (row.is_na === true) continue;
     const g = row.quarterly_grade as number | null;
     if (g == null) continue;
     const idx = GRADE_BANDS.findIndex((b) => g >= b.lo && g <= b.hi);

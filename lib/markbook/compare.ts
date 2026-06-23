@@ -111,13 +111,19 @@ async function loadSubjectPerformanceTrendUncached(
   // request URL stays under PostgREST's length cap: a two-AY comparison spans
   // ~2× the sheets of a single AY, which overflowed the limit and surfaced as
   // a bare 400 "Bad Request" (sibling pattern: loadEntriesRollup in
-  // markbook/drill.ts).
-  type EntryRow = { grading_sheet_id: string; quarterly_grade: number | null };
+  // markbook/drill.ts). Select is_na so we can exclude N.A. terms — a student
+  // not enrolled for a term carries is_na=true with a placeholder quarterly_grade
+  // that should not pollute the subject average (Hard Rule #3 + KD #148).
+  type EntryRow = {
+    grading_sheet_id: string;
+    quarterly_grade: number | null;
+    is_na: boolean | null;
+  };
   const entries = await fetchInChunks<EntryRow>(sheetIds, (slice) =>
     fetchAllPages<EntryRow>((from, to) =>
       service
         .from('grade_entries')
-        .select('grading_sheet_id, quarterly_grade')
+        .select('grading_sheet_id, quarterly_grade, is_na')
         .in('grading_sheet_id', slice)
         .not('quarterly_grade', 'is', null)
         .range(from, to)
@@ -127,6 +133,9 @@ async function loadSubjectPerformanceTrendUncached(
   // Step C: sum per (termId, subjectName).
   const sums = new Map<string, { sum: number; count: number }>();
   for (const entry of entries) {
+    // Skip N.A. rows — is_na=true means the student was not enrolled for this
+    // term; the quarterly_grade is a placeholder, not a real grade (KD #148).
+    if (entry.is_na === true) continue;
     if (entry.quarterly_grade === null) continue;
     const meta = sheetMeta.get(entry.grading_sheet_id);
     if (!meta) continue;
