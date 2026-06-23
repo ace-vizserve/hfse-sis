@@ -54,6 +54,11 @@ next-env.d.ts
 *.xls
 *.xlsm
 
+# HFSE reference data exports (real student PII — admissions metadata,
+# reconciliation worklists). Root-level only; stay local, never committed.
+/AY*.csv
+/*Metada*.csv
+
 # Claude Code — local-only + agent tooling artifacts (dev-only, never used in
 # prod). Project config under .claude/rules/ and .claude/commands/ stays tracked.
 .claude/settings.local.json
