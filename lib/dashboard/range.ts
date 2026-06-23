@@ -404,6 +404,7 @@ export type DashboardSearchParams = {
   to?: string | string[];
   cmpFrom?: string | string[];
   cmpTo?: string | string[];
+  compareAy?: string | string[];
 };
 
 function pickString(v: string | string[] | undefined): string | undefined {
