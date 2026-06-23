@@ -30,6 +30,7 @@ import {
   getAdmissionsKpisRange,
   getAverageTimeToEnrollment,
   getConversionFunnel,
+  getOutdatedApplications,
   getReferralSourceBreakdown,
 } from '@/lib/admissions/dashboard';
 import {
@@ -134,6 +135,7 @@ export default async function AdmissionsInsightsPage({
     referral,
     kpisResult,
     intakeTrendPoints,
+    outdatedRows,
   ] = await Promise.all([
     getConversionFunnel(selectedAy),
     compareAy ? getConversionFunnel(compareAy) : Promise.resolve(null),
@@ -142,6 +144,8 @@ export default async function AdmissionsInsightsPage({
     getReferralSourceBreakdown(selectedAy),
     getAdmissionsKpisRange(rangeInput),
     getIntakeTrendByAy(trendAys),
+    // BUG 2 fix: load real stalled-applicant count for the takeaways panel.
+    getOutdatedApplications(selectedAy),
   ]);
 
   // AY-wide funnel figures (whole-year, not the picker-windowed range count).
@@ -207,16 +211,31 @@ export default async function AdmissionsInsightsPage({
     value: r.count,
   }));
 
-  // Takeaways — built exactly like the operational dashboard's narrative.
+  // Takeaways — fed AY-wide funnel figures (same period as §1/§3 charts) so
+  // the narrative describes the same window the user is looking at. Previously
+  // this used the range-windowed kpisResult (defaultPreset: 'thisMonth'), which
+  // made the "conversion dropping" takeaway irreconcilable with the AY conversion
+  // rate displayed above it (BUG 3 fix).
+  //
+  // `avgDaysToEnrollPrior` is left as undefined — the prior-AY time-to-enrol
+  // is not computed here (the compare-AY funnel is not a RangeInput load), so
+  // the time-to-enrol drift insight only fires when kpisResult has comparison
+  // data (i.e. the operational dashboard path that uses the range comparison).
   const insights = admissionsInsights({
-    applications: kpisResult.current.applicationsInRange,
-    enrolled: kpisResult.current.enrolledInRange,
-    conversionPct: kpisResult.current.conversionPct,
-    conversionPctPrior: kpisResult.comparison?.conversionPct,
-    avgDaysToEnroll: kpisResult.current.avgDaysToEnroll,
-    avgDaysToEnrollPrior: kpisResult.comparison?.avgDaysToEnroll,
+    // AY-wide figures (match §1 headline cards and §3 funnel).
+    applications: applicationsCount,
+    enrolled: enrolledCount,
+    conversionPct,
+    conversionPctPrior: priorConversionPct ?? undefined,
+    // Time-to-enrol: AY-wide average (§5 card). Prior-AY comparison not
+    // available on this page (no prior-AY RangeInput), so drift insight
+    // is suppressed — that's honest given the data available.
+    avgDaysToEnroll: timeToEnroll.avgDays,
+    avgDaysToEnrollPrior: undefined,
     appsDelta: kpisResult.delta ?? undefined,
-    outdatedCount: 0,
+    // BUG 2 fix: real stalled-applicant count instead of hardcoded 0.
+    outdatedCount: outdatedRows.length,
+    outdatedHref: `/admissions/applications?al.staleness=Warning,Critical`,
     topReferral: topRef
       ? { source: topRef.source, count: topRef.count, totalCount: totalRef }
       : undefined,

@@ -89,7 +89,14 @@ type AppLite = {
 
 type JoinedRow = AppLite & {
   applicationStatus: string | null;
+  /** Fallback-substituted staleness timestamp: `s.applicationUpdatedDate ?? a.created_at`.
+   *  Used for the pipeline-age / RAG-tier logic. Do NOT use for "time to enrol"
+   *  — use `enrolledAt` (the raw status-table value) for that. */
   applicationUpdatedDate: string | null;
+  /** Raw `applicationUpdatedDate` from the status table — null when the admissions
+   *  team never stamped it (the common case). Only non-null rows represent a
+   *  confirmed enrolment timestamp suitable for time-to-enrol arithmetic. */
+  enrolledAt: string | null;
   statusLevel: string | null;
   assessmentGradeMath: string | number | null;
   assessmentGradeEnglish: string | number | null;
@@ -154,7 +161,13 @@ async function loadJoinedRowsUncached(ayCode: string): Promise<JoinedRow[]> {
     out.push({
       ...a,
       applicationStatus: s?.applicationStatus ?? null,
+      // Fallback for pipeline-age / RAG tiers — keeps staleness meaningful
+      // even for rows where the team never stamped the status-table column.
       applicationUpdatedDate: s?.applicationUpdatedDate ?? a.created_at,
+      // Raw status-table value — null when never stamped (common). Used
+      // exclusively for time-to-enrol arithmetic so we never compute 0-day
+      // durations from the created_at fallback.
+      enrolledAt: s?.applicationUpdatedDate ?? null,
       statusLevel: s?.classLevel ?? s?.levelApplied ?? null,
       assessmentGradeMath: s?.assessmentGradeMath ?? null,
       assessmentGradeEnglish: s?.assessmentGradeEnglish ?? null,
@@ -212,15 +225,20 @@ export async function getAverageTimeToEnrollment(
   let total = 0;
   let n = 0;
   for (const r of rows) {
-    if (!r.created_at || !r.applicationUpdatedDate) continue;
     if (
       r.applicationStatus !== 'Enrolled' &&
       r.applicationStatus !== 'Enrolled (Conditional)'
     ) {
       continue;
     }
+    // Only count rows where the admissions team actually stamped an enrolment
+    // timestamp. `enrolledAt` is the raw status-table value (null when never
+    // stamped), distinct from `applicationUpdatedDate` which falls back to
+    // `created_at`. Using the fallback here produced 0-day durations for
+    // every un-stamped row and made the average meaningless.
+    if (!r.created_at || !r.enrolledAt) continue;
     const start = Date.parse(r.created_at);
-    const end = Date.parse(r.applicationUpdatedDate);
+    const end = Date.parse(r.enrolledAt);
     if (Number.isNaN(start) || Number.isNaN(end)) continue;
     const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
     if (days < 0) continue;
@@ -499,9 +517,11 @@ function computeRangeKpis(
       r.applicationStatus === 'Enrolled (Conditional)';
     if (isEnrolled) {
       enrolled += 1;
-      if (r.created_at && r.applicationUpdatedDate) {
+      // Use `enrolledAt` (raw status-table value) for time-to-enrol, not the
+      // fallback-substituted `applicationUpdatedDate`, to avoid 0-day counts.
+      if (r.created_at && r.enrolledAt) {
         const start = Date.parse(r.created_at);
-        const end = Date.parse(r.applicationUpdatedDate);
+        const end = Date.parse(r.enrolledAt);
         if (!Number.isNaN(start) && !Number.isNaN(end) && end >= start) {
           totalDays += Math.round((end - start) / 86_400_000);
           samples += 1;
@@ -678,9 +698,11 @@ async function loadTimeToEnrollHistogramUncached(
       r.applicationStatus === 'Enrolled' ||
       r.applicationStatus === 'Enrolled (Conditional)';
     if (!isEnrolled) continue;
-    if (!r.created_at || !r.applicationUpdatedDate) continue;
+    // Use `enrolledAt` (raw status-table value) — not the fallback-substituted
+    // `applicationUpdatedDate` — so un-stamped rows don't collapse into 0–7d.
+    if (!r.created_at || !r.enrolledAt) continue;
     const start = Date.parse(r.created_at);
-    const end = Date.parse(r.applicationUpdatedDate);
+    const end = Date.parse(r.enrolledAt);
     if (Number.isNaN(start) || Number.isNaN(end) || end < start) continue;
     const days = Math.round((end - start) / 86_400_000);
     const idx = buckets.findIndex(

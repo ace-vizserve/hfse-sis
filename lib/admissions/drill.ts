@@ -247,20 +247,28 @@ async function loadDrillRowsUncached(input: {
     const s = statusByEnrolee.get(a.enroleeNumber);
 
     const status = (s?.applicationStatus ?? '').trim();
+    // `updated` keeps the created_at fallback for staleness/pipeline-age columns
+    // (same as dashboard.ts JoinedRow.applicationUpdatedDate).
     const updated = s?.applicationUpdatedDate ?? a.created_at ?? null;
+    // `enrolledAt` is the raw status-table value — null when never stamped.
+    // Used for daysToEnroll / enrollmentDate so un-stamped rows don't produce
+    // spurious 0-day durations.
+    const enrolledAt = s?.applicationUpdatedDate ?? null;
 
     const createdMs = a.created_at ? Date.parse(a.created_at) : NaN;
     const updatedMs = updated ? Date.parse(updated) : NaN;
+    const enrolledMs = enrolledAt ? Date.parse(enrolledAt) : NaN;
 
     const isEnrolled = ENROLLED_STATUSES.has(status);
-    const enrollmentDate = isEnrolled ? updated : null;
+    // enrollmentDate: only set when we have a real (non-fallback) timestamp.
+    const enrollmentDate = isEnrolled && enrolledAt ? enrolledAt : null;
 
     const daysToEnroll =
       isEnrolled &&
       !Number.isNaN(createdMs) &&
-      !Number.isNaN(updatedMs) &&
-      updatedMs >= createdMs
-        ? Math.round((updatedMs - createdMs) / 86_400_000)
+      !Number.isNaN(enrolledMs) &&
+      enrolledMs >= createdMs
+        ? Math.round((enrolledMs - createdMs) / 86_400_000)
         : null;
     const daysSinceUpdate = !Number.isNaN(updatedMs)
       ? Math.floor((today - updatedMs) / 86_400_000)
