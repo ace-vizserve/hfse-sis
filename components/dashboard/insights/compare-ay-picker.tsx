@@ -11,9 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { COMPARE_NONE } from '@/lib/dashboard/comparison';
 
-/** Sentinel used for the "no comparison" option. Radix Select forbids empty-string values. */
-const NONE_SENTINEL = '__none__';
+/** Sentinel used for the "no comparison" option. Radix Select forbids empty-string values.
+ *  We reuse COMPARE_NONE ('none') so the URL param value is stable. */
+const NONE_SENTINEL = COMPARE_NONE;
 
 export type CompareAyPickerProps = {
   /** The AY currently being viewed — excluded from the options list. */
@@ -43,11 +45,9 @@ export function CompareAyPicker({
 
   function handleChange(value: string) {
     const params = new URLSearchParams(searchParams.toString());
-    if (value === NONE_SENTINEL) {
-      params.delete('compareAy');
-    } else {
-      params.set('compareAy', value);
-    }
+    // Always set the param (even for None) so the RSC can distinguish
+    // "user explicitly turned it off" from "param absent → infer prior".
+    params.set('compareAy', value);
     startTransition(() => {
       router.push(`?${params.toString()}`, { scroll: false });
     });

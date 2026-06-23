@@ -114,7 +114,7 @@ describe('CompareAyPicker', () => {
     expect(pushed.get('ay')).toBe('AY2026');
   });
 
-  it('calls router.push with NO compareAy param when the sentinel "None" option is chosen', async () => {
+  it('calls router.push with compareAy=none when the sentinel "None" option is chosen', async () => {
     const user = userEvent.setup();
     // Start with a compareAy already set
     renderPicker('AY2025');
@@ -135,7 +135,8 @@ describe('CompareAyPicker', () => {
 
     const pushedUrl: string = pushMock.mock.calls[0][0];
     const pushed = new URLSearchParams(pushedUrl.replace(/^\?/, ''));
-    expect(pushed.has('compareAy')).toBe(false);
+    // The 'none' sentinel is written to the param so it persists across navigation.
+    expect(pushed.get('compareAy')).toBe('none');
     // ay= param is still preserved
     expect(pushed.get('ay')).toBe('AY2026');
   });

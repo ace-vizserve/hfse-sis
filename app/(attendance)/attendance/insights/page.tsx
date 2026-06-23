@@ -13,6 +13,7 @@ import { DonutChart } from '@/components/dashboard/charts/donut-chart';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
+import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import {
@@ -33,6 +34,10 @@ import {
 } from '@/lib/attendance/dashboard';
 import { buildAllRowSets } from '@/lib/attendance/drill';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+import {
+  comparisonCardState,
+  resolveCompareAy,
+} from '@/lib/dashboard/comparison';
 import {
   resolveRange,
   type DashboardSearchParams,
@@ -78,13 +83,12 @@ export default async function AttendanceInsightsPage({
     ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
   const isCurrentAy = selectedAy === currentAy.ay_code;
 
-  // Prior AY = the code directly below the selected one in the sorted list.
-  // listAyCodes returns newest-first, so the prior year is the next index.
-  const selectedIndex = ayCodes.indexOf(selectedAy);
-  const priorAy =
-    selectedIndex >= 0 && selectedIndex + 1 < ayCodes.length
-      ? ayCodes[selectedIndex + 1]
-      : null;
+  // Resolve the comparison AY: explicit pick > inferred prior > null.
+  const compareAy = resolveCompareAy(
+    resolvedSearch.compareAy,
+    ayCodes,
+    selectedAy
+  );
 
   const windows = await getDashboardWindows(selectedAy);
   // Attendance is term-scoped (KD #79) — mirror the operational dashboard,
@@ -114,12 +118,18 @@ export default async function AttendanceInsightsPage({
 
   const schoolConfig = await getSchoolConfig();
 
-  // Prior-AY full-range rate, when a prior year exists — for the headline
-  // comparison. Resolved over the prior AY's whole calendar year.
-  const priorRangeInput = priorAy
-    ? resolveRange({}, await getDashboardWindows(priorAy), priorAy, undefined, {
-        defaultPreset: 'thisAY',
-      })
+  // Comparison-AY full-range rate, when a comparison year is set — for the
+  // headline rate comparison. Resolved over that AY's whole calendar year.
+  const priorRangeInput = compareAy
+    ? resolveRange(
+        {},
+        await getDashboardWindows(compareAy),
+        compareAy,
+        undefined,
+        {
+          defaultPreset: 'thisAY',
+        }
+      )
     : null;
 
   const [kpis, dailySeries, exMix, topAbsent, quotaRows, priorKpis] =
@@ -146,13 +156,18 @@ export default async function AttendanceInsightsPage({
       ? Math.round(priorKpis.current.attendancePct * 10) / 10
       : null;
 
+  // Rate comparison card state — encodedDays > 0 means that AY has
+  // actual attendance marks, so we can show a meaningful comparison.
+  const hasRateData = (priorKpis?.current.encodedDays ?? 0) > 0;
+  const rateState = comparisonCardState(compareAy, hasRateData);
+
   // Rate is itself a %, so we do a plain vs-prior comparison rather than a
   // percent-of-growth badge. growthDelta is reserved for count-based metrics.
   const growthBadge =
     priorRate === null
       ? { label: 'Building history', tone: 'muted' as const }
       : {
-          label: `${rate}% vs ${priorRate}% in ${priorAy}`,
+          label: `${rate}% vs ${priorRate}% in ${compareAy}`,
           tone: (rate >= priorRate ? 'mint' : 'amber') as 'mint' | 'amber',
         };
 
@@ -191,44 +206,66 @@ export default async function AttendanceInsightsPage({
         ]}
       />
 
-      {/* 1 — Rate headline: this period vs prior AY. */}
+      <div className="flex justify-end">
+        <CompareAyPicker
+          primaryAy={selectedAy}
+          ayCodes={ayCodes}
+          compareAy={compareAy}
+        />
+      </div>
+
+      {/* 1 — Rate headline: this period vs comparison AY. */}
       <InsightsSection
         eyebrow="Health"
         title="How steady is attendance?"
         description={
-          priorRate === null
-            ? 'Year-over-year comparison unlocks once a prior academic year is on record. Until then, this is the attendance rate for the selected period.'
-            : `Attendance rate for the selected period, compared with ${priorAy}.`
+          rateState === 'ok'
+            ? `Attendance rate for the selected period, compared with ${compareAy}.`
+            : compareAy === null
+              ? 'Pick a comparison year above to see year-over-year attendance. Until then, this is the rate for the selected period.'
+              : `No attendance data found for ${compareAy}. Try a different comparison year.`
         }
       >
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <MetricCard
-            label="Attendance rate"
-            value={rate}
-            format="percent"
-            icon={CalendarCheck}
-            intent={rate >= 95 ? 'good' : rate >= 90 ? 'default' : 'warning'}
-            subtext={
-              priorRate !== null
-                ? `${priorRate}% in ${priorAy}`
-                : 'present, late, or excused of days encoded'
-            }
+        {rateState === 'building' ? (
+          <BuildingHistoryCard
+            label="Year-over-year attendance rate"
+            detail="Pick a comparison year above to see how the attendance rate compares to a prior year. It fills in automatically each year."
           />
-          <MetricCard
-            label="Late incidents"
-            value={kpis.current.late}
-            icon={Clock}
-            intent={kpis.current.late > 0 ? 'warning' : 'default'}
-            subtext="arrived after the start of the day"
+        ) : rateState === 'no-data' ? (
+          <BuildingHistoryCard
+            variant="no-data"
+            label={`No attendance data for ${compareAy}`}
           />
-          <MetricCard
-            label="Absences"
-            value={kpis.current.absent}
-            icon={UserX}
-            intent={kpis.current.absent > 0 ? 'warning' : 'default'}
-            subtext="full days missed without an excuse"
-          />
-        </section>
+        ) : (
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <MetricCard
+              label="Attendance rate"
+              value={rate}
+              format="percent"
+              icon={CalendarCheck}
+              intent={rate >= 95 ? 'good' : rate >= 90 ? 'default' : 'warning'}
+              subtext={
+                priorRate !== null
+                  ? `${priorRate}% in ${compareAy}`
+                  : 'present, late, or excused of days encoded'
+              }
+            />
+            <MetricCard
+              label="Late incidents"
+              value={kpis.current.late}
+              icon={Clock}
+              intent={kpis.current.late > 0 ? 'warning' : 'default'}
+              subtext="arrived after the start of the day"
+            />
+            <MetricCard
+              label="Absences"
+              value={kpis.current.absent}
+              icon={UserX}
+              intent={kpis.current.absent > 0 ? 'warning' : 'default'}
+              subtext="full days missed without an excuse"
+            />
+          </section>
+        )}
       </InsightsSection>
 
       {/* 2 — Rate trend across the period. */}
