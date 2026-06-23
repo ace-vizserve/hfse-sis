@@ -12,6 +12,7 @@ import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
 import { getMarkbookKpisRange, type MarkbookRangeKpis } from './dashboard';
+import type { SubjectLevelRawPoint } from './insights-level';
 
 export type MarkbookCompareKpis = MarkbookRangeKpis;
 
@@ -193,6 +194,166 @@ export function getSubjectPerformanceTrend(
   return unstable_cache(
     loadSubjectPerformanceTrendUncached,
     ['markbook', 'subject-performance', ...termIds],
+    { tags: ayTags, revalidate: 60 }
+  )(termIds, cellMeta);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Subject × Level performance trend — average quarterly grade per
+// (subject × level × term) for examinable subjects. Extends
+// getSubjectPerformanceTrend by adding the grading_sheet → section → level
+// join so the Insights page can identify whether a weak subject is a
+// curriculum-wide problem or confined to one level.
+//
+// Produces SubjectLevelRawPoint[] (sums + counts + failingCount) so the
+// client-side pure helpers in insights-level.ts can derive averages and deltas
+// without a second DB round-trip.
+// ──────────────────────────────────────────────────────────────────────────
+
+async function loadSubjectLevelTrendUncached(
+  termIds: string[],
+  cellMeta: CellMeta[]
+): Promise<SubjectLevelRawPoint[]> {
+  const service = createServiceClient();
+
+  // Step A: examinable grading sheets for the selected terms, with section→level.
+  // grading_sheets.section_id → sections.level_id → levels.code
+  // We join sections + levels inline using the nested PostgREST syntax.
+  type LevelSheetRow = {
+    id: string;
+    term_id: string;
+    subject:
+      | { name: string; is_examinable: boolean }
+      | { name: string; is_examinable: boolean }[]
+      | null;
+    section:
+      | { level: { code: string } | { code: string }[] | null }
+      | { level: { code: string } | { code: string }[] | null }[]
+      | null;
+  };
+  const { data: sheets, error: sheetsErr } = await service
+    .from('grading_sheets')
+    .select(
+      'id, term_id, subject:subjects!inner(name, is_examinable), section:sections!inner(level:levels!inner(code))'
+    )
+    .in('term_id', termIds)
+    .eq('subjects.is_examinable', true);
+
+  if (sheetsErr || !sheets || sheets.length === 0) return [];
+
+  // Build sheet-level metadata map: sheetId → { termId, subjectName, levelCode }
+  type SheetMeta = { termId: string; subjectName: string; levelCode: string };
+  const sheetMeta = new Map<string, SheetMeta>();
+  for (const s of sheets as LevelSheetRow[]) {
+    const subject = Array.isArray(s.subject) ? s.subject[0] : s.subject;
+    if (!subject?.is_examinable) continue;
+    const section = Array.isArray(s.section) ? s.section[0] : s.section;
+    const levelRaw = section?.level;
+    const level = Array.isArray(levelRaw) ? levelRaw[0] : levelRaw;
+    if (!level?.code) continue;
+    sheetMeta.set(s.id, {
+      termId: s.term_id,
+      subjectName: subject.name,
+      levelCode: level.code,
+    });
+  }
+
+  const sheetIds = Array.from(sheetMeta.keys());
+  if (sheetIds.length === 0) return [];
+
+  // Step B: grade entries for these sheets — same chunked + paginated pattern
+  // as loadSubjectPerformanceTrendUncached. Include is_na to exclude N.A. terms
+  // (KD #148), and quarterly_grade for sums + failing-band counts.
+  type EntryRow = {
+    grading_sheet_id: string;
+    quarterly_grade: number | null;
+    is_na: boolean | null;
+  };
+  const entries = await fetchInChunks<EntryRow>(sheetIds, (slice) =>
+    fetchAllPages<EntryRow>((from, to) =>
+      service
+        .from('grade_entries')
+        .select('grading_sheet_id, quarterly_grade, is_na')
+        .in('grading_sheet_id', slice)
+        .not('quarterly_grade', 'is', null)
+        .range(from, to)
+    )
+  );
+
+  // Step C: accumulate sums + counts + failing counts per (termId, subjectName, levelCode).
+  // Failing bands: DNM (< 75) + FS (75–79) — keys 'dnm' and 'fs'.
+  const FAILING_LO = 0;
+  const FAILING_HI = 79; // inclusive upper bound of the two failing bands
+
+  const sums = new Map<
+    string,
+    { sum: number; count: number; failingCount: number }
+  >();
+  for (const entry of entries) {
+    if (entry.is_na === true) continue;
+    if (entry.quarterly_grade === null) continue;
+    const meta = sheetMeta.get(entry.grading_sheet_id);
+    if (!meta) continue;
+    const key = `${meta.termId}\x00${meta.subjectName}\x00${meta.levelCode}`;
+    const slot = sums.get(key) ?? { sum: 0, count: 0, failingCount: 0 };
+    slot.sum += entry.quarterly_grade;
+    slot.count += 1;
+    if (
+      entry.quarterly_grade >= FAILING_LO &&
+      entry.quarterly_grade <= FAILING_HI
+    ) {
+      slot.failingCount += 1;
+    }
+    sums.set(key, slot);
+  }
+
+  // Step D: assemble using cellMeta for period labels.
+  const cellByTermId = new Map<string, CellMeta>(
+    cellMeta.map((c) => [c.termId, c])
+  );
+
+  const points: SubjectLevelRawPoint[] = [];
+  for (const [key, { sum, count, failingCount }] of sums) {
+    const parts = key.split('\x00');
+    const [termId, subjectName, levelCode] = parts;
+    const cell = cellByTermId.get(termId);
+    if (!cell) continue;
+    points.push({
+      periodLabel: cell.periodLabel,
+      ayCode: cell.ayCode,
+      termId,
+      subjectName,
+      levelCode,
+      sum,
+      count,
+      failingCount,
+    });
+  }
+
+  return points;
+}
+
+export function getSubjectLevelTrend(
+  cells: CompareCellResult<MarkbookCompareKpis>[]
+): Promise<SubjectLevelRawPoint[]> {
+  const cellMeta: CellMeta[] = cells
+    .filter((c) => !!c.cell.termId)
+    .map((c) => ({
+      termId: c.cell.termId!,
+      periodLabel: `T${c.cell.termNumber ?? '?'}`,
+      ayCode: c.cell.ayCode,
+    }));
+
+  if (cellMeta.length === 0) return Promise.resolve([]);
+
+  const termIds = [...new Set(cellMeta.map((c) => c.termId))].sort();
+  const ayTags = [...new Set(cellMeta.map((c) => c.ayCode))].map(
+    (ay) => `markbook-drill:${ay}`
+  );
+
+  return unstable_cache(
+    loadSubjectLevelTrendUncached,
+    ['markbook', 'subject-level-trend', ...termIds],
     { tags: ayTags, revalidate: 60 }
   )(termIds, cellMeta);
 }

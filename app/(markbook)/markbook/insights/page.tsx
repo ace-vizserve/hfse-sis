@@ -1,11 +1,15 @@
 import {
   ArrowLeft,
+  ArrowDown,
+  ArrowUp,
   BarChart3,
   ClipboardCheck,
   FileCheck2,
   GitPullRequestArrow,
   Lock,
+  Minus,
   Timer,
+  TrendingDown,
 } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
@@ -44,6 +48,7 @@ import {
   GRADE_BANDS,
 } from '@/lib/markbook/dashboard';
 import {
+  getSubjectLevelTrend,
   getSubjectPerformanceTrend,
   type MarkbookCompareKpis,
   type SubjectTrendPoint,
@@ -52,6 +57,13 @@ import {
   buildMultiAyTrend,
   topBandBadge,
 } from '@/lib/markbook/insights-compare';
+import {
+  buildSubjectLevelPoints,
+  computeFailingTailBySubject,
+  computeTermDelta,
+  getWatchRowsByLevel,
+  type SubjectLevelTrendPoint,
+} from '@/lib/markbook/insights-level';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -133,12 +145,26 @@ export default async function MarkbookInsightsPage({
   // comparison AY is selected we include both AYs so the trend chart can show
   // two lines per subject. getSubjectPerformanceTrend reads only
   // cell.{termId,termNumber,ayCode} — the `data` payload is irrelevant.
-  const trendCells = await buildCompareCells({
-    kind: 'term',
-    ays: compareAy ? [selectedAy, compareAy] : [selectedAy],
-    terms: [1, 2, 3, 4],
-  });
+  const [trendCells, levelTrendCells] = await Promise.all([
+    buildCompareCells({
+      kind: 'term',
+      ays: compareAy ? [selectedAy, compareAy] : [selectedAy],
+      terms: [1, 2, 3, 4],
+    }),
+    // Level breakdown always uses the primary AY only — comparison AY context
+    // is for the school-wide trend chart; the level watchlist is diagnostic,
+    // so mixing AYs would obscure the signal.
+    buildCompareCells({
+      kind: 'term',
+      ays: [selectedAy],
+      terms: [1, 2, 3, 4],
+    }),
+  ]);
   const trendCellResults = trendCells.map((cell) => ({
+    cell,
+    data: null as unknown as MarkbookCompareKpis,
+  }));
+  const levelTrendCellResults = levelTrendCells.map((cell) => ({
     cell,
     data: null as unknown as MarkbookCompareKpis,
   }));
