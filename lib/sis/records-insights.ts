@@ -4,6 +4,11 @@ import { unstable_cache } from 'next/cache';
 
 import { growthDelta, type Growth } from '@/lib/dashboard/growth';
 import type { AyTrendPoint } from '@/lib/dashboard/insights-trend';
+import {
+  WITHDRAWAL_REASON_LABELS,
+  WITHDRAWAL_REASON_VALUES,
+  type WithdrawalReason,
+} from '@/lib/schemas/enrolment';
 import { getLevelDistribution, type LevelCount } from '@/lib/sis/dashboard';
 import { getMovementEvents, type MovementEvent } from '@/lib/sis/movements';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -27,6 +32,70 @@ export { growthDelta, type Growth };
 export type LabelCount = { reason: string; count: number };
 export type LevelCountRow = { level: string; count: number };
 export type TermCountRow = { termNumber: number; count: number };
+
+/**
+ * One row of the reason×level attrition matrix:
+ * the level, plus a count per withdrawal-reason key.
+ * Reason keys are the human-readable labels (reasonLabel values),
+ * not the raw enum values, to mirror what withdrawalsByReason uses.
+ */
+export type WithdrawalByReasonAndLevel = {
+  level: string;
+  /** key = humanized reason label (or 'Unspecified'), value = count */
+  reasonCounts: Record<string, number>;
+  total: number;
+};
+
+/**
+ * Controllability classification for withdrawal reasons.
+ * controllable = school can realistically act on it;
+ * structural   = largely external, school cannot prevent.
+ */
+export type WithdrawalControllability = 'controllable' | 'structural';
+
+/**
+ * Maps every WITHDRAWAL_REASON_VALUES member to controllable or structural.
+ * Classification:
+ *   financial       → controllable (payment plans, fee concessions)
+ *   disciplinary    → controllable (behavioural intervention, mediation)
+ *   academic_fit    → controllable (academic support, parental engagement)
+ *   transferred_other_school → structural (family choice; departure already done)
+ *   family_relocation        → structural (geography; out of school's hands)
+ *   health          → structural (medical — school can support but rarely change)
+ *   other           → structural (catch-all; unknown cause ≠ actionable)
+ *
+ * NOTE: 'other' and null/Unspecified are treated as structural so the
+ * "controllable %" is always conservative (never inflated by unknowns).
+ */
+export const WITHDRAWAL_CONTROLLABILITY: Record<
+  WithdrawalReason,
+  WithdrawalControllability
+> = {
+  financial: 'controllable',
+  disciplinary: 'controllable',
+  academic_fit: 'controllable',
+  transferred_other_school: 'structural',
+  family_relocation: 'structural',
+  health: 'structural',
+  other: 'structural',
+} satisfies Record<WithdrawalReason, WithdrawalControllability>;
+
+// Compile-time exhaustiveness guard — if WITHDRAWAL_REASON_VALUES ever gains a
+// new member, the satisfies above will produce a type error until we classify it.
+const _exhaustive: typeof WITHDRAWAL_CONTROLLABILITY =
+  WITHDRAWAL_CONTROLLABILITY;
+void _exhaustive;
+
+export type ControllabilityBreakdown = {
+  controllableCount: number;
+  structuralCount: number;
+  unspecifiedCount: number;
+  total: number;
+  controllablePct: number | null;
+  /** Top controllable reason by label + its level concentration, or null */
+  topControllableTakeaway: string | null;
+};
+
 export type MovementRollup = {
   counts: {
     withdrawn: number;
@@ -36,6 +105,12 @@ export type MovementRollup = {
   };
   withdrawalsByReason: LabelCount[];
   withdrawalsByLevel: LevelCountRow[];
+  /** Reason×level matrix — for the stacked-bar attrition chart */
+  withdrawalsByReasonAndLevel: WithdrawalByReasonAndLevel[];
+  /** All reason labels that appear in at least one withdrawal */
+  withdrawalReasonKeys: string[];
+  /** Controllability summary + prescriptive takeaway */
+  controllability: ControllabilityBreakdown;
   lateByLevel: LevelCountRow[];
   lateByTerm: TermCountRow[];
 };
@@ -66,15 +141,57 @@ export function rollupMovements(events: MovementEvent[]): MovementRollup {
   const wLevel = new Map<string, number>();
   const lLevel = new Map<string, number>();
   const lTerm = new Map<number, number>();
+
+  // reason×level matrix: level → (reasonLabel → count)
+  const wReasonByLevel = new Map<string, Map<string, number>>();
+
+  // Controllability tallies: keyed on raw WithdrawalReason enum value
+  let controllableCount = 0;
+  let structuralCount = 0;
+  let unspecifiedCount = 0;
+
+  // Track "top controllable reason" by (reasonLabel, levelLabel, count) for the
+  // prescriptive takeaway string.
+  const controllableByLabel = new Map<string, number>();
+  // Per (reasonLabel × level) count — for concentration analysis.
+  const controllableByLabelAndLevel = new Map<string, number>(); // key = `${label}::${level}`
+
   for (const e of events) {
     const level = (e.level ?? '').trim() || 'Unknown';
     if (e.kind === 'withdrawn') {
       counts.withdrawn += 1;
-      const reason =
+      const reasonLabel =
         ((e as { reasonLabel?: string | null }).reasonLabel ?? '').trim() ||
         UNSPECIFIED;
-      bump(wReason, reason);
+      const rawReason = (
+        (e as { reason?: string | null }).reason ?? ''
+      ).trim() as WithdrawalReason | '';
+
+      bump(wReason, reasonLabel);
       bump(wLevel, level);
+
+      // Reason×level matrix
+      if (!wReasonByLevel.has(level)) wReasonByLevel.set(level, new Map());
+      bump(wReasonByLevel.get(level)!, reasonLabel);
+
+      // Controllability classification using raw enum key.
+      if (
+        rawReason &&
+        (WITHDRAWAL_REASON_VALUES as readonly string[]).includes(rawReason)
+      ) {
+        const controllability =
+          WITHDRAWAL_CONTROLLABILITY[rawReason as WithdrawalReason];
+        if (controllability === 'controllable') {
+          controllableCount += 1;
+          bump(controllableByLabel, reasonLabel);
+          bump(controllableByLabelAndLevel, `${reasonLabel}::${level}`);
+        } else {
+          structuralCount += 1;
+        }
+      } else {
+        // No raw reason (null or unrecognized) → unspecified → structural bucket
+        unspecifiedCount += 1;
+      }
     } else if (e.kind === 'late-enrolled') {
       counts.lateEnrolled += 1;
       bump(lLevel, level);
@@ -85,10 +202,69 @@ export function rollupMovements(events: MovementEvent[]): MovementRollup {
       counts.reEnrolled += 1;
     }
   }
+
+  // Build reason×level rows — one row per level, sorted by total withdrawals desc.
+  const allReasonKeys = [...wReason.keys()].sort(
+    (a, b) => (wReason.get(b) ?? 0) - (wReason.get(a) ?? 0)
+  );
+  const withdrawalsByReasonAndLevel: WithdrawalByReasonAndLevel[] = [
+    ...wReasonByLevel.entries(),
+  ]
+    .map(([level, reasonMap]) => {
+      const reasonCounts: Record<string, number> = {};
+      for (const key of allReasonKeys) {
+        reasonCounts[key] = reasonMap.get(key) ?? 0;
+      }
+      const total = [...reasonMap.values()].reduce((s, n) => s + n, 0);
+      return { level, reasonCounts, total };
+    })
+    .sort((a, b) => b.total - a.total || a.level.localeCompare(b.level));
+
+  // Prescriptive controllable takeaway.
+  const total = counts.withdrawn;
+  const controllablePct =
+    total === 0 ? null : Math.round((controllableCount / total) * 1000) / 10;
+
+  let topControllableTakeaway: string | null = null;
+  if (controllableCount > 0) {
+    // Find the top controllable reason label.
+    let topLabel = '';
+    let topLabelCount = 0;
+    for (const [label, n] of controllableByLabel) {
+      if (n > topLabelCount) {
+        topLabelCount = n;
+        topLabel = label;
+      }
+    }
+    // Find the level where that reason is most concentrated.
+    let topLevel = '';
+    let topLevelCount = 0;
+    for (const [key, n] of controllableByLabelAndLevel) {
+      if (!key.startsWith(`${topLabel}::`)) continue;
+      if (n > topLevelCount) {
+        topLevelCount = n;
+        topLevel = key.slice(topLabel.length + 2); // strip 'reason::'
+      }
+    }
+    topControllableTakeaway = topLevel
+      ? `${topLabel} is the leading actionable loss — concentrated in ${topLevel} (${topLevelCount} student${topLevelCount === 1 ? '' : 's'}).`
+      : `${topLabel} is the leading actionable loss (${topLabelCount} student${topLabelCount === 1 ? '' : 's'}).`;
+  }
+
   return {
     counts,
     withdrawalsByReason: sortedLabels(wReason),
     withdrawalsByLevel: sortedLevels(wLevel),
+    withdrawalsByReasonAndLevel,
+    withdrawalReasonKeys: allReasonKeys,
+    controllability: {
+      controllableCount,
+      structuralCount,
+      unspecifiedCount,
+      total,
+      controllablePct,
+      topControllableTakeaway,
+    },
     lateByLevel: sortedLevels(lLevel),
     lateByTerm: [...lTerm.entries()]
       .map(([termNumber, count]) => ({ termNumber, count }))
@@ -100,46 +276,91 @@ export function rollupMovements(events: MovementEvent[]): MovementRollup {
 // Cross-AY retention
 // ──────────────────────────────────────────────────────────────────────────
 
-async function loadEnrolledStudentNumbers(
-  ayCode: string
-): Promise<Set<string>> {
+/**
+ * Returns both a flat Set of student_numbers AND a map of
+ * student_number → level label for per-level retention bucketing.
+ * The level label is the canonical word-form from `levels.label`
+ * (e.g. "Primary 1"), falling back to `levels.code` ("P1") if missing.
+ * When a student appears in multiple sections in the same AY (mid-year
+ * transfer), the first non-null level encountered is used — level is
+ * stable within an AY in practice.
+ */
+async function loadEnrolledStudentData(ayCode: string): Promise<{
+  studentNumbers: Set<string>;
+  levelByStudentNumber: Map<string, string>;
+}> {
   const service = createServiceClient();
-  // Resolve the AY id, then active section_students -> student_number.
-  // section_students has no academic_year_id column — AY-scope via a
-  // sections!inner join (mirrors lib/sis/dashboard.ts range loaders).
   const { data: ay } = await service
     .from('academic_years')
     .select('id')
     .eq('ay_code', ayCode)
     .maybeSingle();
   const ayId = (ay as { id: string } | null)?.id;
-  if (!ayId) return new Set();
+  if (!ayId)
+    return { studentNumbers: new Set(), levelByStudentNumber: new Map() };
+
   // Walk past the PostgREST 1000-row cap — a growing school's roster (esp. the
   // prior AY's) can exceed it, and a silent truncation would undercount
-  // retention (the exact metric where that goes unnoticed). Mirrors the
-  // fetchAllPages pattern used across cross-AY bulk reads.
+  // retention (the exact metric where that goes unnoticed).
   type EnrolRow = {
     student:
       | { student_number: string | null }
       | { student_number: string | null }[]
+      | null;
+    section:
+      | {
+          levels:
+            | { label: string | null; code: string }
+            | { label: string | null; code: string }[]
+            | null;
+        }
+      | {
+          levels:
+            | { label: string | null; code: string }
+            | { label: string | null; code: string }[]
+            | null;
+        }[]
       | null;
   };
   const rows = await fetchAllPages<EnrolRow>((from, to) =>
     service
       .from('section_students')
       .select(
-        'student:students(student_number), section:sections!inner(academic_year_id)'
+        'student:students(student_number), section:sections!inner(academic_year_id, levels!inner(label, code))'
       )
       .eq('section.academic_year_id', ayId)
       .neq('enrollment_status', 'withdrawn')
       .range(from, to)
   );
-  const out = new Set<string>();
+
+  const studentNumbers = new Set<string>();
+  const levelByStudentNumber = new Map<string, string>();
   for (const r of rows) {
     const s = Array.isArray(r.student) ? r.student[0] : r.student;
-    if (s?.student_number) out.add(s.student_number);
+    if (!s?.student_number) continue;
+    const sn = s.student_number;
+    studentNumbers.add(sn);
+    if (!levelByStudentNumber.has(sn)) {
+      const sec = Array.isArray(r.section) ? r.section[0] : r.section;
+      if (sec) {
+        const lvl = Array.isArray(sec.levels) ? sec.levels[0] : sec.levels;
+        const label = lvl?.label?.trim() || lvl?.code?.trim() || 'Unknown';
+        levelByStudentNumber.set(sn, label);
+      }
+    }
   }
-  return out;
+  return { studentNumbers, levelByStudentNumber };
+}
+
+/**
+ * @deprecated Use `loadEnrolledStudentData` for new callers.
+ * Kept as a thin wrapper to avoid breaking `loadRecordsRetention`.
+ */
+async function loadEnrolledStudentNumbers(
+  ayCode: string
+): Promise<Set<string>> {
+  const { studentNumbers } = await loadEnrolledStudentData(ayCode);
+  return studentNumbers;
 }
 
 export type Retention = {
@@ -147,6 +368,15 @@ export type Retention = {
   returned: number;
   didNotReturn: number;
   priorTotal: number;
+  pct: number | null;
+};
+
+/** Per-level retention row: how many from priorAy's cohort at this level returned. */
+export type LevelRetentionRow = {
+  level: string;
+  priorTotal: number;
+  returned: number;
+  didNotReturn: number;
   pct: number | null;
 };
 
@@ -181,6 +411,51 @@ async function loadRecordsRetention(
   };
 }
 
+/**
+ * Per-level retention: of each level's cohort in priorAy, how many
+ * returned in currentAy (regardless of whether they stayed at the same level).
+ * A P6 student who returns as S1 counts as "returned".
+ *
+ * Hard Rule #4: keyed on student_number throughout — never enroleeNumber.
+ */
+async function loadRecordsRetentionByLevel(
+  currentAy: string,
+  priorAy: string | null
+): Promise<LevelRetentionRow[]> {
+  if (!priorAy) return [];
+  const [currentData, priorData] = await Promise.all([
+    loadEnrolledStudentData(currentAy),
+    loadEnrolledStudentData(priorAy),
+  ]);
+  const currentNumbers = currentData.studentNumbers;
+  const priorLevelMap = priorData.levelByStudentNumber;
+
+  // Bucket prior-year students by their prior-year level.
+  const byLevel = new Map<string, { total: number; returned: number }>();
+  for (const [sn, level] of priorLevelMap) {
+    if (!byLevel.has(level)) byLevel.set(level, { total: 0, returned: 0 });
+    const bucket = byLevel.get(level)!;
+    bucket.total += 1;
+    if (currentNumbers.has(sn)) bucket.returned += 1;
+  }
+
+  return [...byLevel.entries()]
+    .map(([level, { total, returned }]) => ({
+      level,
+      priorTotal: total,
+      returned,
+      didNotReturn: total - returned,
+      pct: total === 0 ? null : Math.round((returned / total) * 1000) / 10,
+    }))
+    .sort((a, b) => {
+      // Sort by retention rate ascending (worst first — the levels losing most
+      // students are the most diagnostically interesting).
+      const aRate = a.pct ?? 100;
+      const bRate = b.pct ?? 100;
+      return aRate - bRate || a.level.localeCompare(b.level);
+    });
+}
+
 const CACHE_TTL_SECONDS = 60;
 
 export function getRecordsRetention(
@@ -190,6 +465,17 @@ export function getRecordsRetention(
   return unstable_cache(
     () => loadRecordsRetention(currentAy, priorAy),
     ['sis', 'records-retention', currentAy, priorAy ?? ''],
+    { tags: ['sis', `sis:${currentAy}`], revalidate: CACHE_TTL_SECONDS }
+  )();
+}
+
+export function getRecordsRetentionByLevel(
+  currentAy: string,
+  priorAy: string | null
+): Promise<LevelRetentionRow[]> {
+  return unstable_cache(
+    () => loadRecordsRetentionByLevel(currentAy, priorAy),
+    ['sis', 'records-retention-by-level', currentAy, priorAy ?? ''],
     { tags: ['sis', `sis:${currentAy}`], revalidate: CACHE_TTL_SECONDS }
   )();
 }
