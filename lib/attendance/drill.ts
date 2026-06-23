@@ -244,10 +244,10 @@ async function resolveAyContext(ayCode: string) {
       new Set(sectionStudents.map((s) => s.student_id))
     );
     if (studentIds.length > 0) {
-      // chunk to avoid URL length limits
+      // chunk to avoid URL length limits (100 UUIDs ≈ 3.7 KB; ~400+ ids overflow ~8 KB)
       const chunks: string[][] = [];
-      for (let i = 0; i < studentIds.length; i += 500) {
-        chunks.push(studentIds.slice(i, i + 500));
+      for (let i = 0; i < studentIds.length; i += 100) {
+        chunks.push(studentIds.slice(i, i + 100));
       }
       for (const chunk of chunks) {
         const { data: studs } = await service
@@ -316,7 +316,7 @@ async function loadEntryRowsUncached(
     status: string;
     ex_reason: string | null;
   };
-  const CHUNK = 500;
+  const CHUNK = 100; // UUIDs per IN-clause — keep URL < ~8 KB (100 ≈ 3.7 KB)
   const all = (
     await Promise.all(
       Array.from({ length: Math.ceil(ssIds.length / CHUNK) }, (_, i) =>

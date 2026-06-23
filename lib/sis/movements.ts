@@ -559,8 +559,8 @@ async function enrichWithStudents(
   const studentById = new Map<string, StudentRow>();
   if (studentIds.length > 0) {
     // Chunk to keep .in() lists tractable (mirrors lib/sis/drill.ts:185).
-    for (let i = 0; i < studentIds.length; i += 500) {
-      const chunk = studentIds.slice(i, i + 500);
+    for (let i = 0; i < studentIds.length; i += 100) {
+      const chunk = studentIds.slice(i, i + 100);
       const { data, error } = await service
         .from('students')
         .select('id, student_number, first_name, last_name')

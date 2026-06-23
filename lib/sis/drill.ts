@@ -216,8 +216,8 @@ async function loadRecordsRowsUncached(
   const studentMap = new Map<string, StudentLite>();
   if (studentIds.length > 0) {
     const chunks: string[][] = [];
-    for (let i = 0; i < studentIds.length; i += 500)
-      chunks.push(studentIds.slice(i, i + 500));
+    for (let i = 0; i < studentIds.length; i += 100)
+      chunks.push(studentIds.slice(i, i + 100));
     for (const chunk of chunks) {
       const { data } = await service
         .from('students')

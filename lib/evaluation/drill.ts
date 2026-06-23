@@ -234,8 +234,8 @@ async function loadWriteupRowsUncached(ayCode: string): Promise<WriteupRow[]> {
   const studentMap = new Map<string, StudentLite>();
   if (studentIds.length > 0) {
     const chunks: string[][] = [];
-    for (let i = 0; i < studentIds.length; i += 500)
-      chunks.push(studentIds.slice(i, i + 500));
+    for (let i = 0; i < studentIds.length; i += 100)
+      chunks.push(studentIds.slice(i, i + 100));
     for (const chunk of chunks) {
       const { data: studs } = await service
         .from('students')
@@ -445,8 +445,8 @@ async function loadChaseStateUncached(
   const submittedStudentIds = new Set<string>();
   if (studentIds.length > 0) {
     const chunks: string[][] = [];
-    for (let i = 0; i < studentIds.length; i += 500)
-      chunks.push(studentIds.slice(i, i + 500));
+    for (let i = 0; i < studentIds.length; i += 100)
+      chunks.push(studentIds.slice(i, i + 100));
     for (const chunk of chunks) {
       const { data: wRows } = await service
         .from('evaluation_writeups')
@@ -475,8 +475,8 @@ async function loadChaseStateUncached(
   const studentMap = new Map<string, StudentLite>();
   if (outstandingStudentIds.length > 0) {
     const chunks: string[][] = [];
-    for (let i = 0; i < outstandingStudentIds.length; i += 500)
-      chunks.push(outstandingStudentIds.slice(i, i + 500));
+    for (let i = 0; i < outstandingStudentIds.length; i += 100)
+      chunks.push(outstandingStudentIds.slice(i, i + 100));
     for (const chunk of chunks) {
       const { data: studs } = await service
         .from('students')
