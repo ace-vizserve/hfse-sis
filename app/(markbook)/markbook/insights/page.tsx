@@ -30,6 +30,7 @@ import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { buildCompareCells } from '@/lib/dashboard/compare';
 import { resolveCompareAy } from '@/lib/dashboard/comparison';
 import {
+  computeDelta,
   resolveRange,
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
@@ -185,6 +186,14 @@ export default async function MarkbookInsightsPage({
   const compareTopBandPct = computeTopBandPct(compareGradeDist);
   const growthBadge = topBandBadge(topBandPct, compareTopBandPct, compareAy);
 
+  // Delta for the §1 "In the top bands" headline card — shown only when we have
+  // both a current reading AND a comparison AY with data. Expressed in percentage
+  // points (pp) so +3pp means 3 percentage-point improvement, not 3% more.
+  const topBandDelta =
+    topBandPct !== null && compareTopBandPct !== null && compareAy !== null
+      ? computeDelta(topBandPct, compareTopBandPct)
+      : null;
+
   // ── Performance trend chart ───────────────────────────────────────────────
   // One line per examinable subject (× AY when comparison is set); X axis =
   // terms in order. buildMultiAyTrend handles namespacing so each
@@ -301,7 +310,16 @@ export default async function MarkbookInsightsPage({
                   ? 'good'
                   : 'default'
             }
-            subtext="scoring 85 and above"
+            subtext={topBandDelta ? undefined : 'scoring 85 and above'}
+            delta={topBandDelta ?? undefined}
+            deltaGoodWhen="up"
+            deltaFormat="absolute"
+            deltaUnit="pp"
+            comparisonLabel={
+              topBandDelta && compareAy
+                ? `vs ${compareAy} · ${compareTopBandPct}%`
+                : undefined
+            }
           />
         </section>
       </InsightsSection>
