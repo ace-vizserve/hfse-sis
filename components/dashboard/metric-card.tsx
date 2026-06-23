@@ -40,6 +40,8 @@ export type MetricCardProps = {
   currencySuffix?: string;
   delta?: Delta;
   deltaGoodWhen?: 'up' | 'down';
+  deltaFormat?: 'percent' | 'absolute';
+  deltaUnit?: string;
   comparisonLabel?: string;
   icon?: LucideIcon;
   intent?: MetricIntent;
@@ -102,9 +104,13 @@ function deltaChipClass(
 function DeltaChip({
   delta,
   goodWhen,
+  format,
+  unit,
 }: {
   delta: Delta;
   goodWhen: 'up' | 'down';
+  format?: 'percent' | 'absolute';
+  unit?: string;
 }) {
   const Icon =
     delta.direction === 'up'
@@ -120,7 +126,7 @@ function DeltaChip({
       )}
     >
       <Icon className="size-3" strokeWidth={2.5} />
-      {formatDeltaLabel(delta)}
+      {formatDeltaLabel(delta, { format, unit })}
     </span>
   );
 }
@@ -132,6 +138,8 @@ function MetricCardImpl({
   currencySuffix,
   delta,
   deltaGoodWhen = 'up',
+  deltaFormat,
+  deltaUnit,
   comparisonLabel,
   icon: Icon,
   intent: _intent,
@@ -177,7 +185,14 @@ function MetricCardImpl({
       </CardHeader>
       <CardFooter className="flex-col items-start gap-2 text-sm">
         <div className="flex items-center gap-2">
-          {delta && <DeltaChip delta={delta} goodWhen={deltaGoodWhen} />}
+          {delta && (
+            <DeltaChip
+              delta={delta}
+              goodWhen={deltaGoodWhen}
+              format={deltaFormat}
+              unit={deltaUnit}
+            />
+          )}
           {comparisonLabel && (
             <span className="text-xs text-muted-foreground">
               {comparisonLabel}
