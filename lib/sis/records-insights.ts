@@ -203,11 +203,87 @@ export type RecordsHeadcount = {
   byLevel: LevelCount[];
 };
 
-/** Thin sum over getLevelDistribution — total enrolled + the per-level array. */
+/**
+ * Thin sum over getLevelDistribution — total enrolled + the per-level array.
+ *
+ * NOTE: This reads from `ay{YY}_enrolment_status` (admissions-side). It is
+ * used by the Records *dashboard* and kept unchanged to avoid blast radius.
+ * The Records *Insights* page uses `getInsightsHeadcount` (section_students)
+ * so that §1 headcount and §4 retention share the same enrolled source
+ * (KD #90: these two tables drift when admissions rows land Enrolled without a
+ * section_students row). Do NOT call this function from the Insights page.
+ */
 export async function getRecordsHeadcount(
   ayCode: string
 ): Promise<RecordsHeadcount> {
   const byLevel = await getLevelDistribution(ayCode);
+  const total = byLevel.reduce((s, l) => s + l.count, 0);
+  return { total, byLevel };
+}
+
+/**
+ * Insights-scoped headcount — reads `section_students` so that §1 enrolled
+ * count and §4 retention (which also reads section_students via
+ * `loadEnrolledStudentNumbers`) share the same source and are always
+ * internally consistent. Returns per-level counts using the canonical word-form
+ * level label (e.g. "Primary 1") for display in the Insights page.
+ *
+ * Never call this from the Records *dashboard* — use `getRecordsHeadcount`
+ * there to preserve backward-compatible behaviour.
+ */
+export async function getInsightsHeadcount(
+  ayCode: string
+): Promise<RecordsHeadcount> {
+  const service = createServiceClient();
+  const { data: ay } = await service
+    .from('academic_years')
+    .select('id')
+    .eq('ay_code', ayCode)
+    .maybeSingle();
+  const ayId = (ay as { id: string } | null)?.id;
+  if (!ayId) return { total: 0, byLevel: [] };
+
+  type SsRow = {
+    section:
+      | {
+          levels:
+            | { label: string | null; code: string }
+            | { label: string | null; code: string }[]
+            | null;
+        }
+      | {
+          levels:
+            | { label: string | null; code: string }
+            | { label: string | null; code: string }[]
+            | null;
+        }[]
+      | null;
+  };
+
+  const rows = await fetchAllPages<SsRow>((from, to) =>
+    service
+      .from('section_students')
+      .select(
+        'section:sections!inner(academic_year_id, levels!inner(label, code))'
+      )
+      .eq('section.academic_year_id', ayId)
+      .neq('enrollment_status', 'withdrawn')
+      .range(from, to)
+  );
+
+  const levelCounts = new Map<string, number>();
+  for (const r of rows) {
+    const sec = Array.isArray(r.section) ? r.section[0] : r.section;
+    if (!sec) continue;
+    const lvl = Array.isArray(sec.levels) ? sec.levels[0] : sec.levels;
+    const label = lvl?.label?.trim() || lvl?.code?.trim() || 'Unknown';
+    levelCounts.set(label, (levelCounts.get(label) ?? 0) + 1);
+  }
+
+  const byLevel: LevelCount[] = [...levelCounts.entries()]
+    .map(([level, count]) => ({ level, count }))
+    .sort((a, b) => a.level.localeCompare(b.level));
+
   const total = byLevel.reduce((s, l) => s + l.count, 0);
   return { total, byLevel };
 }

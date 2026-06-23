@@ -39,8 +39,8 @@ import {
 import { sgToday } from '@/lib/dates';
 import { getMovementEvents } from '@/lib/sis/movements';
 import {
+  getInsightsHeadcount,
   getMovementTrendByAy,
-  getRecordsHeadcount,
   getRecordsRetention,
   growthDelta,
   MONTH_LABELS,
@@ -109,8 +109,8 @@ export default async function RecordsInsightsPage({
     movementEvents,
     movementTrendPoints,
   ] = await Promise.all([
-    getRecordsHeadcount(selectedAy),
-    compareAy ? getRecordsHeadcount(compareAy) : Promise.resolve(null),
+    getInsightsHeadcount(selectedAy),
+    compareAy ? getInsightsHeadcount(compareAy) : Promise.resolve(null),
     getRecordsRetention(selectedAy, compareAy),
     getMovementEvents(selectedAy),
     getMovementTrendByAy(movementAys, today),
