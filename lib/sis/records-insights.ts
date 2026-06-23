@@ -3,8 +3,9 @@ import 'server-only';
 import { unstable_cache } from 'next/cache';
 
 import { growthDelta, type Growth } from '@/lib/dashboard/growth';
+import type { AyTrendPoint } from '@/lib/dashboard/insights-trend';
 import { getLevelDistribution, type LevelCount } from '@/lib/sis/dashboard';
-import type { MovementEvent } from '@/lib/sis/movements';
+import { getMovementEvents, type MovementEvent } from '@/lib/sis/movements';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -209,4 +210,82 @@ export async function getRecordsHeadcount(
   const byLevel = await getLevelDistribution(ayCode);
   const total = byLevel.reduce((s, l) => s + l.count, 0);
   return { total, byLevel };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Net-movement trend — one AyTrendPoint per (AY, month-of-year).
+//
+// Net movement = enrolments(+) − withdrawals(−) for each calendar month.
+// "Enrolment" events: late-enrolled + re-enrolled (first-time enrolments are
+// handled by the headcount loaders; what we track here is mid-year movement).
+// "Withdrawal" events: withdrawn.
+// Section-transfers are excluded (not a population change).
+//
+// Month label is the abbreviated 3-letter month name derived from the event
+// date (yyyy-mm-dd), locale-independent.
+// ──────────────────────────────────────────────────────────────────────────
+
+export const MONTH_LABELS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+/**
+ * Pure: compute per-month net movement from a pre-fetched events array for
+ * one AY. Returns 12 points (Jan–Dec), value = net (can be 0 or negative),
+ * or null for future months relative to `today` (yyyy-mm-dd string).
+ */
+export function netMovementByMonth(
+  events: MovementEvent[],
+  ayCode: string,
+  today: string
+): AyTrendPoint[] {
+  const net = new Array<number>(12).fill(0);
+  for (const e of events) {
+    const monthIdx = Number(e.date.slice(5, 7)) - 1; // 0-based
+    if (monthIdx < 0 || monthIdx > 11) continue;
+    if (e.kind === 'late-enrolled' || e.kind === 're-enrolled') {
+      net[monthIdx] += 1;
+    } else if (e.kind === 'withdrawn') {
+      net[monthIdx] -= 1;
+    }
+    // section-transfer: no population change → skip
+  }
+  return MONTH_LABELS.map((label, i) => {
+    // Month string for this AY: AY2026 + i=0 → "2026-01"
+    const year = ayCode.replace(/^AY/i, '');
+    const month = String(i + 1).padStart(2, '0');
+    const monthStart = `${year}-${month}-01`;
+    // Null for future months (beyond today) — renders as a gap in the chart.
+    const value = monthStart > today ? null : net[i];
+    return { periodLabel: label, ayCode, value };
+  });
+}
+
+/**
+ * Async loader: fetches movement events for each AY and returns the combined
+ * array of AyTrendPoints for use with buildAyTrend + MultiSeriesTrendChart.
+ */
+export async function getMovementTrendByAy(
+  ays: string[],
+  today: string
+): Promise<AyTrendPoint[]> {
+  if (ays.length === 0) return [];
+  const eventsByAy = await Promise.all(ays.map((ay) => getMovementEvents(ay)));
+  const points: AyTrendPoint[] = [];
+  for (let i = 0; i < ays.length; i++) {
+    const monthPoints = netMovementByMonth(eventsByAy[i], ays[i], today);
+    points.push(...monthPoints);
+  }
+  return points;
 }

@@ -11,7 +11,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { DonutChart } from '@/components/dashboard/charts/donut-chart';
-import { TrendChart } from '@/components/dashboard/charts/trend-chart';
+import { MultiSeriesTrendChart } from '@/components/dashboard/charts/multi-series-trend-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
@@ -31,20 +31,19 @@ import {
   comparisonCardState,
   resolveCompareAy,
 } from '@/lib/dashboard/comparison';
+import { buildAyTrend } from '@/lib/dashboard/insights-trend';
 import {
-  resolveRange,
+  computeDelta,
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
-import { getDashboardWindows } from '@/lib/dashboard/windows';
-import {
-  getEnrollmentVelocityRange,
-  getWithdrawalVelocityRange,
-} from '@/lib/sis/dashboard';
+import { sgToday } from '@/lib/dates';
 import { getMovementEvents } from '@/lib/sis/movements';
 import {
+  getMovementTrendByAy,
   getRecordsHeadcount,
   getRecordsRetention,
   growthDelta,
+  MONTH_LABELS,
   rollupMovements,
 } from '@/lib/sis/records-insights';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -100,35 +99,42 @@ export default async function RecordsInsightsPage({
     selectedAy
   );
 
-  const windows = await getDashboardWindows(selectedAy);
-  const rangeInput = resolveRange(
-    resolvedSearch,
-    windows,
-    selectedAy,
-    undefined,
-    { defaultPreset: 'thisMonth' }
-  );
+  const today = sgToday();
+  const movementAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
 
   const [
     headcount,
     priorHeadcount,
     retention,
     movementEvents,
-    enrollVelocity,
-    withdrawalVelocity,
+    movementTrendPoints,
   ] = await Promise.all([
     getRecordsHeadcount(selectedAy),
     compareAy ? getRecordsHeadcount(compareAy) : Promise.resolve(null),
     getRecordsRetention(selectedAy, compareAy),
     getMovementEvents(selectedAy),
-    getEnrollmentVelocityRange(rangeInput),
-    getWithdrawalVelocityRange(rangeInput),
+    getMovementTrendByAy(movementAys, today),
   ]);
 
   const priorTotal = priorHeadcount ? priorHeadcount.total : null;
   const growth = growthDelta(headcount.total, priorTotal);
 
   const rollup = rollupMovements(movementEvents);
+
+  // Net-movement trend: two-AY overlaid line chart.
+  const movementTrend = buildAyTrend(
+    movementTrendPoints,
+    MONTH_LABELS as unknown as string[],
+    movementAys
+  );
+  // Show the trend chart when there are any non-null, non-zero data points.
+  const haveMovementTrend = movementTrend.data.some((row) =>
+    movementAys.some((ay) => row[ay] !== null && row[ay] !== 0)
+  );
+
+  // §1 enrolled card: delta chip when prior headcount is available.
+  const enrolledDelta =
+    priorTotal !== null ? computeDelta(headcount.total, priorTotal) : undefined;
 
   // Retention comparison card state.
   const hasRetentionData = compareAy !== null && retention.priorTotal > 0;
@@ -156,10 +162,6 @@ export default async function RecordsInsightsPage({
   const haveLate =
     rollup.lateByLevel.length > 0 || rollup.lateByTerm.length > 0;
   const haveWithdrawals = rollup.counts.withdrawn > 0;
-
-  // Velocity overlay: enrollment (current) vs withdrawal (comparison).
-  const haveVelocity =
-    enrollVelocity.current.length > 1 || withdrawalVelocity.current.length > 1;
 
   return (
     <PageShell>
@@ -211,9 +213,11 @@ export default async function RecordsInsightsPage({
             value={headcount.total}
             icon={Users}
             intent="good"
-            subtext={
+            delta={enrolledDelta}
+            deltaGoodWhen="up"
+            comparisonLabel={
               priorTotal !== null
-                ? `${priorTotal.toLocaleString('en-SG')} in ${compareAy}`
+                ? `vs ${compareAy} · ${priorTotal.toLocaleString('en-SG')}`
                 : compareAy === null
                   ? 'Pick a comparison year above'
                   : `No data for ${compareAy}`
@@ -331,29 +335,29 @@ export default async function RecordsInsightsPage({
           />
         </section>
 
-        {haveVelocity ? (
+        {haveMovementTrend ? (
           <Card>
             <CardHeader>
               <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Joins vs departures per day
+                Net enrolment movement per month
+                {compareAy ? ` · ${selectedAy} vs ${compareAy}` : ''}
               </CardDescription>
               <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Movement velocity
+                Movement by month
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <TrendChart
-                label="Enrolments"
-                current={enrollVelocity.current}
-                comparison={withdrawalVelocity.current}
-                alignComparison
+              <MultiSeriesTrendChart
+                series={movementTrend.series}
+                data={movementTrend.data}
+                yFormat="number"
               />
             </CardContent>
           </Card>
         ) : (
           <Card className="border-dashed">
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              Not enough movement in this period to plot a trend yet.
+              No mid-year movement recorded this year yet.
             </CardContent>
           </Card>
         )}
