@@ -8,7 +8,7 @@ import {
   type CompareInput,
   type CompareResult,
 } from '@/lib/dashboard/compare';
-import { fetchAllPages } from '@/lib/supabase/paginate';
+import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
 import { getMarkbookKpisRange, type MarkbookRangeKpis } from './dashboard';
@@ -107,15 +107,21 @@ async function loadSubjectPerformanceTrendUncached(
 
   // Step B: all grade entries for these sheets (paginated past the 1000-row
   // cap — at HFSE scale grade_entries can hit 14K+ rows per term per
-  // dashboard.ts comment).
+  // dashboard.ts comment). The grading_sheet_id IN-clause is chunked so the
+  // request URL stays under PostgREST's length cap: a two-AY comparison spans
+  // ~2× the sheets of a single AY, which overflowed the limit and surfaced as
+  // a bare 400 "Bad Request" (sibling pattern: loadEntriesRollup in
+  // markbook/drill.ts).
   type EntryRow = { grading_sheet_id: string; quarterly_grade: number | null };
-  const entries = await fetchAllPages<EntryRow>((from, to) =>
-    service
-      .from('grade_entries')
-      .select('grading_sheet_id, quarterly_grade')
-      .in('grading_sheet_id', sheetIds)
-      .not('quarterly_grade', 'is', null)
-      .range(from, to)
+  const entries = await fetchInChunks<EntryRow>(sheetIds, (slice) =>
+    fetchAllPages<EntryRow>((from, to) =>
+      service
+        .from('grade_entries')
+        .select('grading_sheet_id, quarterly_grade')
+        .in('grading_sheet_id', slice)
+        .not('quarterly_grade', 'is', null)
+        .range(from, to)
+    )
   );
 
   // Step C: sum per (termId, subjectName).

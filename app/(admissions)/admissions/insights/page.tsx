@@ -12,6 +12,7 @@ import { DonutChart } from '@/components/dashboard/charts/donut-chart';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
+import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
@@ -36,6 +37,10 @@ import {
   getAdmissionsTerminalReasons,
   growthDelta,
 } from '@/lib/admissions/insights';
+import {
+  comparisonCardState,
+  resolveCompareAy,
+} from '@/lib/dashboard/comparison';
 import { admissionsInsights } from '@/lib/dashboard/insights';
 import {
   resolveRange,
@@ -94,13 +99,12 @@ export default async function AdmissionsInsightsPage({
     ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
   const isCurrentAy = selectedAy === currentAy.ay_code;
 
-  // Prior AY = the code directly below the selected one in the sorted list.
-  // listAyCodes returns newest-first, so the prior year is the next index.
-  const selectedIndex = ayCodes.indexOf(selectedAy);
-  const priorAy =
-    selectedIndex >= 0 && selectedIndex + 1 < ayCodes.length
-      ? ayCodes[selectedIndex + 1]
-      : null;
+  // Resolve the comparison AY: explicit pick > inferred prior > null.
+  const compareAy = resolveCompareAy(
+    resolvedSearch.compareAy,
+    ayCodes,
+    selectedAy
+  );
 
   const windows = await getDashboardWindows(selectedAy);
   const rangeInput = resolveRange(
@@ -123,7 +127,7 @@ export default async function AdmissionsInsightsPage({
     kpisResult,
   ] = await Promise.all([
     getConversionFunnel(selectedAy),
-    priorAy ? getConversionFunnel(priorAy) : Promise.resolve(null),
+    compareAy ? getConversionFunnel(compareAy) : Promise.resolve(null),
     getAdmissionsTerminalReasons(selectedAy),
     getApplicationsVelocityRange(rangeInput),
     getAverageTimeToEnrollment(selectedAy),
@@ -141,6 +145,10 @@ export default async function AdmissionsInsightsPage({
   const priorApplications = priorFunnel ? (priorAppsStage?.count ?? 0) : null;
   // Year-over-year growth is measured on application DEMAND.
   const growth = growthDelta(applicationsCount, priorApplications);
+
+  // Demand comparison card state.
+  const hasComparisonData = priorApplications !== null && priorApplications > 0;
+  const demandState = comparisonCardState(compareAy, hasComparisonData);
 
   const enrolledStage = funnel.find((s) => s.stage === 'Enrolled');
   const enrolledCount = enrolledStage?.count ?? 0;
@@ -189,8 +197,8 @@ export default async function AdmissionsInsightsPage({
       : {
           label:
             growth.pct >= 0
-              ? `▲ ${growth.pct}% vs ${priorAy}`
-              : `▼ ${Math.abs(growth.pct)}% vs ${priorAy}`,
+              ? `▲ ${growth.pct}% vs ${compareAy}`
+              : `▼ ${Math.abs(growth.pct)}% vs ${compareAy}`,
           tone: (growth.pct >= 0 ? 'mint' : 'amber') as 'mint' | 'amber',
         };
 
@@ -218,15 +226,28 @@ export default async function AdmissionsInsightsPage({
         ]}
       />
 
+      <div className="flex justify-end">
+        <CompareAyPicker
+          primaryAy={selectedAy}
+          ayCodes={ayCodes}
+          compareAy={compareAy}
+        />
+      </div>
+
       {/* 1 — Funnel headline: application demand + conversion (NOT enrolled
-          headcount — that's the enrolled body, owned by Records Insights). */}
+          headcount — that's the enrolled body, owned by Records Insights).
+          Primary-AY metrics (Conversion rate, Applications cancelled) always
+          render. Only the demand-comparison subtext reacts to `demandState`
+          (FIX 2 — matches Records' Section-1 pattern). */}
       <InsightsSection
         eyebrow="Demand & conversion"
         title="Is the funnel healthy?"
         description={
-          growth.pct === null
-            ? 'Year-over-year demand unlocks once a prior academic year is on record. Until then, this is the current cycle.'
-            : `Application demand this year compared with ${priorAy}.`
+          demandState === 'ok'
+            ? `Application demand this year compared with ${compareAy}.`
+            : compareAy === null
+              ? 'Pick a comparison year above to see year-over-year demand. Until then, this is the current cycle.'
+              : `No application data found for ${compareAy}. Try a different comparison year.`
         }
       >
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -236,9 +257,11 @@ export default async function AdmissionsInsightsPage({
             icon={FileStack}
             intent="default"
             subtext={
-              priorApplications !== null
-                ? `${priorApplications.toLocaleString('en-SG')} in ${priorAy}`
-                : 'No prior year on record'
+              demandState === 'ok' && priorApplications !== null
+                ? `${priorApplications.toLocaleString('en-SG')} in ${compareAy}`
+                : demandState === 'no-data'
+                  ? `No data for ${compareAy}`
+                  : 'Pick a comparison year above'
             }
           />
           <MetricCard

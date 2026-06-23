@@ -44,14 +44,7 @@ export type SidebarBadges = Partial<Record<SidebarBadgeKey, number>>;
 
 const PFILES_NAV: NavSection[] = [
   {
-    items: [
-      { href: '/p-files', label: 'Dashboard' },
-      {
-        href: '/p-files/compare',
-        label: 'Compare',
-        requiresRoles: ['p-file', 'school_admin', 'superadmin'],
-      },
-    ],
+    items: [{ href: '/p-files', label: 'Dashboard' }],
   },
   {
     // Quick filters land on the dashboard with a `?status=` preset so the
@@ -369,14 +362,7 @@ const ADMISSIONS_NAV: NavSection[] = [
 // T1-T3 report cards — grades/attendance come from their own modules.
 const EVALUATION_NAV: NavSection[] = [
   {
-    items: [
-      { href: '/evaluation', label: 'Dashboard' },
-      {
-        href: '/evaluation/compare',
-        label: 'Compare',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
-      },
-    ],
+    items: [{ href: '/evaluation', label: 'Dashboard' }],
   },
   {
     label: 'Write-ups',

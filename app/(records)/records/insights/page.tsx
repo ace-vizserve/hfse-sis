@@ -14,6 +14,7 @@ import { DonutChart } from '@/components/dashboard/charts/donut-chart';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
+import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import {
@@ -26,6 +27,10 @@ import {
 import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+import {
+  comparisonCardState,
+  resolveCompareAy,
+} from '@/lib/dashboard/comparison';
 import {
   resolveRange,
   type DashboardSearchParams,
@@ -88,13 +93,12 @@ export default async function RecordsInsightsPage({
     ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
   const isCurrentAy = selectedAy === currentAy.ay_code;
 
-  // Prior AY = the code directly below the selected one in the sorted list.
-  // listAyCodes returns newest-first, so the prior year is the next index.
-  const selectedIndex = ayCodes.indexOf(selectedAy);
-  const priorAy =
-    selectedIndex >= 0 && selectedIndex + 1 < ayCodes.length
-      ? ayCodes[selectedIndex + 1]
-      : null;
+  // Resolve the comparison AY: explicit pick > inferred prior > null.
+  const compareAy = resolveCompareAy(
+    resolvedSearch.compareAy,
+    ayCodes,
+    selectedAy
+  );
 
   const windows = await getDashboardWindows(selectedAy);
   const rangeInput = resolveRange(
@@ -114,8 +118,8 @@ export default async function RecordsInsightsPage({
     withdrawalVelocity,
   ] = await Promise.all([
     getRecordsHeadcount(selectedAy),
-    priorAy ? getRecordsHeadcount(priorAy) : Promise.resolve(null),
-    getRecordsRetention(selectedAy, priorAy),
+    compareAy ? getRecordsHeadcount(compareAy) : Promise.resolve(null),
+    getRecordsRetention(selectedAy, compareAy),
     getMovementEvents(selectedAy),
     getEnrollmentVelocityRange(rangeInput),
     getWithdrawalVelocityRange(rangeInput),
@@ -126,14 +130,18 @@ export default async function RecordsInsightsPage({
 
   const rollup = rollupMovements(movementEvents);
 
+  // Retention comparison card state.
+  const hasRetentionData = compareAy !== null && retention.priorTotal > 0;
+  const retentionState = comparisonCardState(compareAy, hasRetentionData);
+
   const growthBadge =
     growth.pct === null
       ? { label: 'Building history', tone: 'muted' as const }
       : {
           label:
             growth.pct >= 0
-              ? `▲ ${growth.pct}% vs ${priorAy}`
-              : `▼ ${Math.abs(growth.pct)}% vs ${priorAy}`,
+              ? `▲ ${growth.pct}% vs ${compareAy}`
+              : `▼ ${Math.abs(growth.pct)}% vs ${compareAy}`,
           tone: (growth.pct >= 0 ? 'mint' : 'amber') as 'mint' | 'amber',
         };
 
@@ -177,14 +185,24 @@ export default async function RecordsInsightsPage({
         ]}
       />
 
+      <div className="flex justify-end">
+        <CompareAyPicker
+          primaryAy={selectedAy}
+          ayCodes={ayCodes}
+          compareAy={compareAy}
+        />
+      </div>
+
       {/* 1 — Growth headline: enrolled this year vs prior AY. */}
       <InsightsSection
         eyebrow="Population"
         title="How big is the school?"
         description={
           growth.pct === null
-            ? 'Year-over-year growth unlocks once a prior academic year is on record. Until then, this is the current enrolled headcount.'
-            : `Enrolled students this year compared with ${priorAy}.`
+            ? compareAy === null
+              ? 'Pick a comparison year above to see year-over-year growth. Until then, this is the current enrolled headcount.'
+              : `No enrolment data found for ${compareAy}. Try a different comparison year.`
+            : `Enrolled students this year compared with ${compareAy}.`
         }
       >
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -195,8 +213,10 @@ export default async function RecordsInsightsPage({
             intent="good"
             subtext={
               priorTotal !== null
-                ? `${priorTotal.toLocaleString('en-SG')} in ${priorAy}`
-                : 'No prior year on record'
+                ? `${priorTotal.toLocaleString('en-SG')} in ${compareAy}`
+                : compareAy === null
+                  ? 'Pick a comparison year above'
+                  : `No data for ${compareAy}`
             }
           />
           <MetricCard
@@ -222,7 +242,7 @@ export default async function RecordsInsightsPage({
         title="Where are the students?"
         description={
           priorTotal !== null
-            ? `Enrolled headcount per level. ${headcount.total.toLocaleString('en-SG')} this year vs ${priorTotal.toLocaleString('en-SG')} in ${priorAy}.`
+            ? `Enrolled headcount per level. ${headcount.total.toLocaleString('en-SG')} this year vs ${priorTotal.toLocaleString('en-SG')} in ${compareAy}.`
             : 'Enrolled headcount per level for the selected year.'
         }
       >
@@ -344,15 +364,20 @@ export default async function RecordsInsightsPage({
         eyebrow="Retention"
         title="Do students come back?"
         description={
-          priorAy === null
-            ? 'Retention compares this year against the one before it.'
-            : `Of the students enrolled in ${priorAy}, how many returned this year.`
+          compareAy === null
+            ? "Pick a comparison year above to see how many of that year's students returned."
+            : `Of the students enrolled in ${compareAy}, how many returned this year.`
         }
       >
-        {priorAy === null ? (
+        {retentionState === 'building' ? (
           <BuildingHistoryCard
             label="Retention"
-            detail="Once a prior academic year is on record, this will show how many of last year's students returned — the clearest single measure of how well the school holds on to families. It fills in automatically each year."
+            detail="Pick a comparison year above to see how many of last year's students returned — the clearest single measure of how well the school holds on to families."
+          />
+        ) : retentionState === 'no-data' ? (
+          <BuildingHistoryCard
+            variant="no-data"
+            label={`No data for ${compareAy}`}
           />
         ) : (
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -361,14 +386,14 @@ export default async function RecordsInsightsPage({
               value={retention.returned}
               icon={UserPlus}
               intent="good"
-              subtext={`of ${retention.priorTotal.toLocaleString('en-SG')} from ${priorAy}`}
+              subtext={`of ${retention.priorTotal.toLocaleString('en-SG')} from ${compareAy}`}
             />
             <MetricCard
               label="Did not return"
               value={retention.didNotReturn}
               icon={UserMinus}
               intent={retention.didNotReturn > 0 ? 'warning' : 'default'}
-              subtext={`enrolled in ${priorAy}, not this year`}
+              subtext={`enrolled in ${compareAy}, not this year`}
             />
             <MetricCard
               label="Retention rate"
