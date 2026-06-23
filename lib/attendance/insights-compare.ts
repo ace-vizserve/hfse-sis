@@ -1,9 +1,12 @@
+import 'server-only';
+
 /**
  * Pure helpers for the Attendance Insights page comparison logic.
  *
  * Extracted so the hero badge and Section-1 card use the identical signal,
- * and the decision is independently unit-testable (no Next.js / Supabase
- * imports — safe in any environment).
+ * and the decision is independently unit-testable. Pure helpers like
+ * `rateBadge` and `shapeRateTrendPoints` have no server-only imports and are
+ * unit-tested directly.
  */
 
 import { getDashboardWindows } from '@/lib/dashboard/windows';

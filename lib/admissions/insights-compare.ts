@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * Pure + async helpers for the Admissions Insights page comparison logic.
  *
