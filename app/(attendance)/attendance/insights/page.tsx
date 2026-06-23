@@ -1,8 +1,12 @@
 import {
+  AlertTriangle,
   ArrowLeft,
   CalendarCheck,
   Clock,
   HeartHandshake,
+  School,
+  ShieldAlert,
+  ShieldCheck,
   Umbrella,
   UserX,
 } from 'lucide-react';
@@ -29,9 +33,13 @@ import { PageShell } from '@/components/ui/page-shell';
 import {
   getAttendanceKpisRange,
   getExReasonMixRange,
-  getTopAbsentRange,
 } from '@/lib/attendance/dashboard';
 import { buildAllRowSets } from '@/lib/attendance/drill';
+import {
+  computeAbsenceMix,
+  isApproachingVlQuota,
+  splitWatchlist,
+} from '@/lib/attendance/insights-watchlist';
 import {
   getAttendanceRateTrendByAy,
   rateBadge,
@@ -139,11 +147,10 @@ export default async function AttendanceInsightsPage({
 
   const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
 
-  const [kpis, exMix, topAbsent, quotaRows, priorKpis, rateTrendPoints] =
+  const [kpis, exMix, allRowSets, priorKpis, rateTrendPoints] =
     await Promise.all([
       getAttendanceKpisRange(rangeInput),
       getExReasonMixRange(rangeInput),
-      getTopAbsentRange(rangeInput, 10),
       buildAllRowSets({
         ayCode: selectedAy,
         from: rangeInput.from,
@@ -156,6 +163,42 @@ export default async function AttendanceInsightsPage({
         : Promise.resolve(null),
       getAttendanceRateTrendByAy(trendAys),
     ]);
+
+  // ── Derived row sets (already computed — no extra DB work) ─────────────────
+
+  // Full topAbsent array from buildAllRowSets (carries absences + excused +
+  // attendancePct). The old getTopAbsentRange call is replaced by this; all
+  // students with ≥1 absence are eligible for the watchlist.
+  const allTopAbsent = allRowSets.topAbsent.filter((r) => r.absences > 0);
+
+  // Split into intervene (truancy signal) vs monitor (health narrative).
+  // Cap at 8 per bucket — beyond that the list becomes unactionable.
+  const watchlist = splitWatchlist(allTopAbsent, 8);
+
+  // Section-level rollup — worst-attending classes first (already sorted by
+  // rollupBySection ascending attendancePct).
+  const sectionRows = allRowSets.sectionAttendance;
+
+  // A-vs-EX mix for the school-wide split card.
+  const absenceMix = computeAbsenceMix(
+    kpis.current.absent,
+    kpis.current.excused
+  );
+
+  // Quota rows — over quota and approaching (used allowance but not breached).
+  const compassionateOver = allRowSets.compassionate.filter(
+    (r) => r.isOverQuota
+  );
+  const vacationOver = allRowSets.vacationLeave.filter(
+    (r) => r.isOverTermQuota
+  );
+  const vacationApproaching = allRowSets.vacationLeave.filter((r) =>
+    isApproachingVlQuota(r.remainingThisTerm, r.isOverTermQuota)
+  );
+  const haveQuotaRisk =
+    compassionateOver.length > 0 ||
+    vacationOver.length > 0 ||
+    vacationApproaching.length > 0;
 
   const rate = Math.round(kpis.current.attendancePct * 10) / 10;
   const priorRate =
@@ -174,15 +217,6 @@ export default async function AttendanceInsightsPage({
   // the section card always agree — prevents a misleading "X% vs 0%" when the
   // comparison AY exists but has no encoded attendance days (FIX 1).
   const growthBadge = rateBadge(rate, priorRate, hasRateData, compareAy);
-
-  const chronic = topAbsent.filter((r) => r.absences > 0);
-  const maxAbsences = chronic.reduce((m, r) => Math.max(m, r.absences), 0);
-
-  const compassionateOver = quotaRows.compassionate.filter(
-    (r) => r.isOverQuota
-  );
-  const vacationOver = quotaRows.vacationLeave.filter((r) => r.isOverTermQuota);
-  const haveQuotaRisk = compassionateOver.length > 0 || vacationOver.length > 0;
 
   // Build the per-term two-AY trend. `buildAyTrend` is pure — safe to call on
   // the server. Only show the chart when at least one AY has a non-null value.
@@ -326,13 +360,15 @@ export default async function AttendanceInsightsPage({
         )}
       </InsightsSection>
 
-      {/* 3 — Chronic absentees. */}
+      {/* 3 — Chronic absentees — split into Intervene (truancy) vs Monitor
+          (health). Switched from getTopAbsentRange → buildAllRowSets.topAbsent
+          which carries `excused` + `attendancePct` so we can do the split. */}
       <InsightsSection
         eyebrow="Watchlist"
-        title="Who is chronically absent?"
-        description="The students with the most full-day absences over the selected period — the first place to look when attendance dips."
+        title="Who needs attention?"
+        description="Students with unexplained absences are split by cause — those away mostly without excuse warrant a follow-up call; those away mostly with excuse are worth monitoring but are likely unwell."
       >
-        {chronic.length === 0 ? (
+        {allTopAbsent.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
               No absences recorded in this period — every student has been
@@ -340,111 +376,356 @@ export default async function AttendanceInsightsPage({
             </CardContent>
           </Card>
         ) : (
-          <Card>
-            <CardHeader>
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Most absences
-              </CardDescription>
-              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Top absentees
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-3">
-                {chronic.map((r) => {
-                  const widthPct =
-                    maxAbsences > 0
-                      ? Math.max(
-                          4,
-                          Math.round((r.absences / maxAbsences) * 100)
-                        )
-                      : 0;
-                  return (
-                    <li key={r.sectionStudentId} className="space-y-1.5">
-                      <div className="flex items-baseline justify-between gap-3 text-sm">
-                        <span className="flex items-baseline gap-2">
-                          <span className="font-medium text-foreground">
-                            {r.studentName}
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Intervene bucket */}
+            <Card>
+              <CardHeader>
+                <CardDescription className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-destructive">
+                  <ShieldAlert className="size-3" strokeWidth={2.25} />
+                  Follow up · mostly unexplained
+                </CardDescription>
+                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                  Intervene
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {watchlist.intervene.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">
+                    No students with a truancy pattern right now.
+                  </p>
+                ) : (
+                  <ul className="space-y-4">
+                    {watchlist.intervene.map((r) => (
+                      <li key={r.studentSectionId} className="space-y-1.5">
+                        <div className="flex items-baseline justify-between gap-3 text-sm">
+                          <span className="flex items-baseline gap-2">
+                            <IdentifierLink
+                              href={`/attendance/students/${r.studentNumber}`}
+                            >
+                              {r.studentName}
+                            </IdentifierLink>
+                            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                              {r.sectionName}
+                            </span>
                           </span>
-                          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-                            {r.sectionName}
+                          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                            {r.attendancePct}%
                           </span>
-                        </span>
-                        <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                          {r.absences.toLocaleString('en-SG')} absences
-                          {r.lates > 0 ? ` · ${r.lates} late` : ''}
-                        </span>
-                      </div>
-                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-destructive to-brand-amber"
-                          style={{ width: `${widthPct}%` }}
-                        />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </CardContent>
-          </Card>
+                        </div>
+                        {/* A/EX split bar */}
+                        <div className="flex h-2 w-full overflow-hidden rounded-full">
+                          <div
+                            className="h-full bg-gradient-to-r from-destructive to-destructive/80"
+                            style={{ width: `${r.unexplainedPct}%` }}
+                            title={`${r.absences} unexplained`}
+                          />
+                          <div
+                            className="h-full bg-muted"
+                            style={{ width: `${100 - r.unexplainedPct}%` }}
+                            title={`${r.excused} excused`}
+                          />
+                        </div>
+                        <div className="flex gap-3 font-mono text-[10px] tabular-nums text-muted-foreground">
+                          <span className="text-destructive">
+                            {r.absences}A unexplained
+                          </span>
+                          <span>·</span>
+                          <span>{r.excused}EX excused</span>
+                          {r.lates > 0 && (
+                            <>
+                              <span>·</span>
+                              <span>{r.lates} late</span>
+                            </>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Monitor bucket */}
+            <Card>
+              <CardHeader>
+                <CardDescription className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-amber">
+                  <ShieldCheck className="size-3" strokeWidth={2.25} />
+                  Health streak · mostly excused
+                </CardDescription>
+                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                  Monitor
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {watchlist.monitor.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">
+                    No students with a prolonged health absence pattern.
+                  </p>
+                ) : (
+                  <ul className="space-y-4">
+                    {watchlist.monitor.map((r) => (
+                      <li key={r.studentSectionId} className="space-y-1.5">
+                        <div className="flex items-baseline justify-between gap-3 text-sm">
+                          <span className="flex items-baseline gap-2">
+                            <IdentifierLink
+                              href={`/attendance/students/${r.studentNumber}`}
+                            >
+                              {r.studentName}
+                            </IdentifierLink>
+                            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                              {r.sectionName}
+                            </span>
+                          </span>
+                          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                            {r.attendancePct}%
+                          </span>
+                        </div>
+                        {/* A/EX split bar */}
+                        <div className="flex h-2 w-full overflow-hidden rounded-full">
+                          <div
+                            className="h-full bg-gradient-to-r from-brand-amber to-brand-amber/70"
+                            style={{ width: `${r.unexplainedPct}%` }}
+                            title={`${r.absences} unexplained`}
+                          />
+                          <div
+                            className="h-full bg-muted"
+                            style={{ width: `${100 - r.unexplainedPct}%` }}
+                            title={`${r.excused} excused`}
+                          />
+                        </div>
+                        <div className="flex gap-3 font-mono text-[10px] tabular-nums text-muted-foreground">
+                          <span>{r.absences}A unexplained</span>
+                          <span>·</span>
+                          <span className="text-brand-amber">
+                            {r.excused}EX excused
+                          </span>
+                          {r.lates > 0 && (
+                            <>
+                              <span>·</span>
+                              <span>{r.lates} late</span>
+                            </>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         )}
       </InsightsSection>
 
-      {/* 4 — The diagnostic: why are students absent? */}
+      {/* 4 — Sections to watch: per-section attendance table. Uses the already-
+          computed sectionAttendance from buildAllRowSets (sorted worst-first). */}
+      {sectionRows.length > 0 && (
+        <InsightsSection
+          eyebrow="By class"
+          title="Which classes are below average?"
+          description="Sections sorted by attendance rate — lowest first. A class consistently near the bottom may need a check-in with the form adviser."
+        >
+          <Card>
+            <CardHeader>
+              <CardDescription className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                <School className="size-3" strokeWidth={2.25} />
+                Sections · lowest attendance first
+              </CardDescription>
+              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                Sections to watch
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-hairline">
+                      <th className="px-4 py-2.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Section
+                      </th>
+                      <th className="px-4 py-2.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Level
+                      </th>
+                      <th className="px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Rate
+                      </th>
+                      <th className="hidden px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground sm:table-cell">
+                        Absences
+                      </th>
+                      <th className="hidden px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground lg:table-cell">
+                        Days encoded
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-hairline">
+                    {sectionRows.map((s, idx) => {
+                      const isLow = s.attendancePct < 90;
+                      const isMid = !isLow && s.attendancePct < 95;
+                      return (
+                        <tr
+                          key={s.sectionId}
+                          className={idx % 2 === 0 ? 'bg-card' : 'bg-muted/30'}
+                        >
+                          <td className="px-4 py-2.5 font-medium text-foreground">
+                            <Link
+                              href={`/attendance/${s.sectionId}`}
+                              className="transition-colors hover:text-primary hover:underline underline-offset-4"
+                            >
+                              {s.sectionName}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
+                            {s.level ?? '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-right">
+                            <span
+                              className={[
+                                'font-mono text-xs font-semibold tabular-nums',
+                                isLow
+                                  ? 'text-destructive'
+                                  : isMid
+                                    ? 'text-brand-amber'
+                                    : 'text-foreground',
+                              ].join(' ')}
+                            >
+                              {s.attendancePct}%
+                            </span>
+                          </td>
+                          <td className="hidden px-4 py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground sm:table-cell">
+                            {s.absentCount.toLocaleString('en-SG')}
+                          </td>
+                          <td className="hidden px-4 py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground lg:table-cell">
+                            {s.encodedDays.toLocaleString('en-SG')}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </InsightsSection>
+      )}
+
+      {/* 5 — The diagnostic: why are students absent?
+          Now prefixed with the school-wide A-vs-EX mix split so the registrar
+          can see the truancy vs health signal at a glance before drilling into
+          the EX-reason donut. */}
       <InsightsSection
         eyebrow="Diagnosis"
         title="Why are they absent?"
-        description="The mix of recorded excuse reasons across the period — and how often students simply arrived late."
+        description="The split between unexplained absences (follow up) and excused ones (monitor), then the breakdown of excuse reasons."
       >
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Excused-leave reasons
-              </CardDescription>
-              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Reasons for absence
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {exMix.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No excused-leave days recorded in this period.
+        <div className="space-y-4">
+          {/* A/EX mix signal — school-wide split */}
+          {absenceMix.awayDays > 0 && (
+            <Card>
+              <CardHeader>
+                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  Away-day mix
+                </CardDescription>
+                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                  Unexplained vs excused
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Split bar */}
+                <div className="flex h-3 w-full overflow-hidden rounded-full">
+                  <div
+                    className="h-full bg-gradient-to-r from-destructive to-destructive/70 transition-all"
+                    style={{ width: `${absenceMix.unexplainedPct}%` }}
+                    title={`${absenceMix.unexplained} unexplained A days`}
+                  />
+                  <div
+                    className="h-full bg-gradient-to-r from-brand-mint to-brand-mint/60"
+                    style={{ width: `${absenceMix.excusedPct}%` }}
+                    title={`${absenceMix.excused} excused EX days`}
+                  />
+                </div>
+                {/* Legend row */}
+                <div className="flex flex-wrap gap-x-6 gap-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-destructive" />
+                    <span className="font-mono text-xs tabular-nums text-foreground">
+                      {absenceMix.unexplainedPct}%
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Unexplained ({absenceMix.unexplained} days)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-brand-mint" />
+                    <span className="font-mono text-xs tabular-nums text-foreground">
+                      {absenceMix.excusedPct}%
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Excused ({absenceMix.excused} days)
+                    </span>
+                  </div>
+                </div>
+                {/* Interpretive copy */}
+                <p className="text-xs text-muted-foreground">
+                  {absenceMix.unexplainedPct > 50
+                    ? 'Unexplained absences are the majority of away-days this period — the watchlist above is the place to act.'
+                    : absenceMix.unexplainedPct > 25
+                      ? 'Most away-days are covered by an excuse, but there is a meaningful unexplained minority worth monitoring.'
+                      : 'Almost all away-days are excused — attendance is largely health-driven this period.'}
                 </p>
-              ) : (
-                <DonutChart
-                  data={exMix}
-                  centerLabel="Excused"
-                  centerValue={kpis.current.excused}
-                />
-              )}
-            </CardContent>
-          </Card>
-          <MetricCard
-            label="Late incidents"
-            value={kpis.current.late}
-            icon={Clock}
-            intent={kpis.current.late > 0 ? 'warning' : 'default'}
-            subtext="not absent, but not on time either"
-          />
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  Excused-leave reasons
+                </CardDescription>
+                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                  Reasons for excused absence
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {exMix.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    No excused-leave days recorded in this period.
+                  </p>
+                ) : (
+                  <DonutChart
+                    data={exMix}
+                    centerLabel="Excused"
+                    centerValue={kpis.current.excused}
+                  />
+                )}
+              </CardContent>
+            </Card>
+            <MetricCard
+              label="Late incidents"
+              value={kpis.current.late}
+              icon={Clock}
+              intent={kpis.current.late > 0 ? 'warning' : 'default'}
+              subtext="not absent, but not on time either"
+            />
+          </div>
         </div>
       </InsightsSection>
 
-      {/* 5 — Leave-quota risk: compassionate + vacation over/near quota. */}
+      {/* 6 — Leave-quota risk: over quota + approaching (vacation-leave only). */}
       <InsightsSection
         eyebrow="Quotas"
-        title="Is anyone over their leave quota?"
-        description="Students who have used up — or gone past — their compassionate (per year) or vacation (per term) leave allowance."
+        title="Is anyone over — or about to exceed — their leave quota?"
+        description="Students who have used up their full allowance or gone past it. Vacation leave is tracked per term; compassionate leave runs across the year."
       >
         {!haveQuotaRisk ? (
           <Card className="border-dashed">
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              No student is over a leave quota this period. Everyone is within
-              their allowance.
+              No student is over or approaching a leave quota this period.
+              Everyone is within their allowance.
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
+            {/* Compassionate — over quota only (per-year, at-quota is fine mid-year) */}
             <Card>
               <CardHeader>
                 <CardDescription className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
@@ -492,6 +773,8 @@ export default async function AttendanceInsightsPage({
                 )}
               </CardContent>
             </Card>
+
+            {/* Vacation leave — over quota + approaching tier */}
             <Card>
               <CardHeader>
                 <CardDescription className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
@@ -500,18 +783,25 @@ export default async function AttendanceInsightsPage({
                 </CardDescription>
                 <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
                   Over quota
+                  {vacationApproaching.length > 0 && (
+                    <span className="ml-2 font-mono text-xs font-normal text-brand-amber">
+                      +{vacationApproaching.length} approaching
+                    </span>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {vacationOver.length === 0 ? (
+                {vacationOver.length === 0 &&
+                vacationApproaching.length === 0 ? (
                   <p className="py-6 text-center text-sm text-muted-foreground">
                     No one over the vacation-leave allowance this term.
                   </p>
                 ) : (
                   <ul className="divide-y divide-hairline">
+                    {/* Over quota — destructive signal */}
                     {vacationOver.map((r) => (
                       <li
-                        key={r.studentSectionId}
+                        key={`over-${r.studentSectionId}`}
                         className="flex items-baseline justify-between gap-3 py-2.5 text-sm"
                       >
                         <span className="flex items-baseline gap-2">
@@ -535,6 +825,52 @@ export default async function AttendanceInsightsPage({
                         </span>
                       </li>
                     ))}
+                    {/* Approaching separator */}
+                    {vacationApproaching.length > 0 && (
+                      <>
+                        {vacationOver.length > 0 && (
+                          <li className="py-1.5">
+                            <div className="flex items-center gap-2">
+                              <div className="h-px flex-1 bg-hairline" />
+                              <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] text-brand-amber">
+                                <AlertTriangle
+                                  className="size-2.5"
+                                  strokeWidth={2.25}
+                                />
+                                Approaching limit
+                              </span>
+                              <div className="h-px flex-1 bg-hairline" />
+                            </div>
+                          </li>
+                        )}
+                        {vacationApproaching.map((r) => (
+                          <li
+                            key={`approaching-${r.studentSectionId}`}
+                            className="flex items-baseline justify-between gap-3 py-2.5 text-sm"
+                          >
+                            <span className="flex items-baseline gap-2">
+                              {r.studentNumber ? (
+                                <IdentifierLink
+                                  href={`/attendance/students/${r.studentNumber}`}
+                                >
+                                  {r.studentName}
+                                </IdentifierLink>
+                              ) : (
+                                <span className="font-medium text-foreground">
+                                  {r.studentName}
+                                </span>
+                              )}
+                              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                                {r.sectionName}
+                              </span>
+                            </span>
+                            <span className="font-mono text-xs tabular-nums text-brand-amber">
+                              {r.usedThisTerm} / {r.allowance} used
+                            </span>
+                          </li>
+                        ))}
+                      </>
+                    )}
                   </ul>
                 )}
               </CardContent>
@@ -543,7 +879,7 @@ export default async function AttendanceInsightsPage({
         )}
       </InsightsSection>
 
-      {/* 6 — Seasonal patterns: building history. */}
+      {/* 7 — Seasonal patterns: building history. */}
       <InsightsSection
         eyebrow="Seasonal"
         title="When does attendance dip?"
