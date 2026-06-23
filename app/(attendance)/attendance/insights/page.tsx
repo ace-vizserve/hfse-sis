@@ -10,7 +10,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { DonutChart } from '@/components/dashboard/charts/donut-chart';
-import { TrendChart } from '@/components/dashboard/charts/trend-chart';
+import { MultiSeriesTrendChart } from '@/components/dashboard/charts/multi-series-trend-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
@@ -28,21 +28,25 @@ import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
 import {
   getAttendanceKpisRange,
-  getDailyAttendanceRange,
   getExReasonMixRange,
   getTopAbsentRange,
 } from '@/lib/attendance/dashboard';
 import { buildAllRowSets } from '@/lib/attendance/drill';
-import { rateBadge } from '@/lib/attendance/insights-compare';
+import {
+  getAttendanceRateTrendByAy,
+  rateBadge,
+} from '@/lib/attendance/insights-compare';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   comparisonCardState,
   resolveCompareAy,
 } from '@/lib/dashboard/comparison';
 import {
+  computeDelta,
   resolveRange,
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
+import { buildAyTrend } from '@/lib/dashboard/insights-trend';
 import { getDashboardWindows } from '@/lib/dashboard/windows';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -133,10 +137,11 @@ export default async function AttendanceInsightsPage({
       )
     : null;
 
-  const [kpis, dailySeries, exMix, topAbsent, quotaRows, priorKpis] =
+  const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
+
+  const [kpis, exMix, topAbsent, quotaRows, priorKpis, rateTrendPoints] =
     await Promise.all([
       getAttendanceKpisRange(rangeInput),
-      getDailyAttendanceRange(rangeInput),
       getExReasonMixRange(rangeInput),
       getTopAbsentRange(rangeInput, 10),
       buildAllRowSets({
@@ -149,6 +154,7 @@ export default async function AttendanceInsightsPage({
       priorRangeInput
         ? getAttendanceKpisRange(priorRangeInput)
         : Promise.resolve(null),
+      getAttendanceRateTrendByAy(trendAys),
     ]);
 
   const rate = Math.round(kpis.current.attendancePct * 10) / 10;
@@ -178,7 +184,20 @@ export default async function AttendanceInsightsPage({
   const vacationOver = quotaRows.vacationLeave.filter((r) => r.isOverTermQuota);
   const haveQuotaRisk = compassionateOver.length > 0 || vacationOver.length > 0;
 
-  const haveTrend = dailySeries.current.length > 1;
+  // Build the per-term two-AY trend. `buildAyTrend` is pure — safe to call on
+  // the server. Only show the chart when at least one AY has a non-null value.
+  const rateTrend = buildAyTrend(
+    rateTrendPoints,
+    ['T1', 'T2', 'T3', 'T4'],
+    trendAys
+  );
+  const haveTrend = rateTrendPoints.some((p) => p.value !== null);
+
+  // Delta between current and prior AY headline rates (percentage points).
+  const rateDelta =
+    rateState === 'ok' && priorRate !== null
+      ? computeDelta(rate, priorRate)
+      : undefined;
 
   return (
     <PageShell>
@@ -234,12 +253,21 @@ export default async function AttendanceInsightsPage({
             format="percent"
             icon={CalendarCheck}
             intent={rate >= 95 ? 'good' : rate >= 90 ? 'default' : 'warning'}
-            subtext={
+            delta={rateDelta}
+            deltaGoodWhen="up"
+            deltaFormat="absolute"
+            deltaUnit="pp"
+            comparisonLabel={
               rateState === 'ok' && priorRate !== null
-                ? `${priorRate}% in ${compareAy}`
+                ? `vs ${compareAy} · ${priorRate.toFixed(1)}%`
                 : rateState === 'no-data'
                   ? `No data for ${compareAy}`
-                  : 'present, late, or excused of days encoded'
+                  : undefined
+            }
+            subtext={
+              rateState === 'ok' || rateState === 'no-data'
+                ? undefined
+                : 'present, late, or excused of days encoded'
             }
           />
           <MetricCard
@@ -259,33 +287,39 @@ export default async function AttendanceInsightsPage({
         </section>
       </InsightsSection>
 
-      {/* 2 — Rate trend across the period. */}
+      {/* 2 — Rate trend per term, optionally overlaid with comparison AY. */}
       <InsightsSection
         eyebrow="Trend"
-        title="How does attendance move day to day?"
-        description="The daily attendance rate across the selected period — the rhythm behind the headline number."
+        title="How does attendance move term to term?"
+        description={
+          compareAy
+            ? `Attendance rate per term — ${selectedAy} (solid) alongside ${compareAy} (dashed).`
+            : 'Attendance rate per term across the academic year.'
+        }
       >
         {!haveTrend ? (
           <Card className="border-dashed">
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              Not enough days encoded in this period to plot a trend yet.
+              No attendance data encoded yet — the chart will appear once terms
+              have marks.
             </CardContent>
           </Card>
         ) : (
           <Card>
             <CardHeader>
               <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Attendance rate per day
+                Attendance rate per term
               </CardDescription>
               <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Daily attendance
+                Term-by-term attendance
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <TrendChart
-                label="Attendance %"
-                current={dailySeries.current}
+              <MultiSeriesTrendChart
+                series={rateTrend.series}
+                data={rateTrend.data}
                 yFormat="percent"
+                yDomain={[80, 100]}
               />
             </CardContent>
           </Card>

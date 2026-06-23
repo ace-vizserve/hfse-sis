@@ -24,7 +24,7 @@ function tag(ayCode: string): string[] {
   return ['attendance-dashboard', `attendance-dashboard:${ayCode}`];
 }
 
-type DailyRow = {
+export type DailyRow = {
   date: string;
   status: string; // P | L | EX | A | NC
   ex_reason: string | null;
@@ -91,7 +91,7 @@ async function loadDailyRowsUncached(ayCode: string): Promise<DailyRow[]> {
   return all;
 }
 
-function loadDailyRows(ayCode: string): Promise<DailyRow[]> {
+export function loadDailyRows(ayCode: string): Promise<DailyRow[]> {
   return unstable_cache(
     () => loadDailyRowsUncached(ayCode),
     ['attendance', 'daily-raw', ayCode],
@@ -113,11 +113,20 @@ export type AttendanceKpis = {
   nc: number;
 };
 
-function slice(rows: DailyRow[], from: string, to: string): DailyRow[] {
+export function sliceDailyRows(
+  rows: DailyRow[],
+  from: string,
+  to: string
+): DailyRow[] {
   return rows.filter((r) => r.date >= from && r.date <= to);
 }
 
-function kpisFor(rows: DailyRow[]): AttendanceKpis {
+// Internal alias used by the functions below (backwards compat).
+function slice(rows: DailyRow[], from: string, to: string): DailyRow[] {
+  return sliceDailyRows(rows, from, to);
+}
+
+export function kpisFor(rows: DailyRow[]): AttendanceKpis {
   let present = 0,
     late = 0,
     excused = 0,
