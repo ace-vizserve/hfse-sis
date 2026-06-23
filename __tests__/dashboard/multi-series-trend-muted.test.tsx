@@ -5,7 +5,7 @@
  * and emits no SVG children. We mock it to pass a fixed 400×240 to its child
  * so recharts renders the full `<LineChart>` + `<Line>` elements including
  * stroke attributes. The test then asserts that the muted series produces at
- * least one SVG `<path>` with `stroke-dasharray="5 4"`, while the non-muted
+ * least one SVG `<path>` with `stroke-dasharray="6 4"`, while the non-muted
  * series produces none.
  */
 import * as React from 'react';
@@ -57,7 +57,7 @@ describe('MultiSeriesTrendChart — muted series', () => {
     );
 
     const dashed = Array.from(container.querySelectorAll('path')).filter(
-      (p) => p.getAttribute('stroke-dasharray') === '5 4'
+      (p) => p.getAttribute('stroke-dasharray') === '6 4'
     );
     expect(dashed.length).toBeGreaterThan(0);
   });
@@ -75,7 +75,7 @@ describe('MultiSeriesTrendChart — muted series', () => {
     );
 
     const dashed = Array.from(container.querySelectorAll('path')).filter(
-      (p) => p.getAttribute('stroke-dasharray') === '5 4'
+      (p) => p.getAttribute('stroke-dasharray') === '6 4'
     );
     expect(dashed.length).toBe(0);
   });

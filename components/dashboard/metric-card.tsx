@@ -121,7 +121,7 @@ function DeltaChip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider',
+        'inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider',
         deltaChipClass(delta, goodWhen)
       )}
     >
@@ -194,7 +194,7 @@ function MetricCardImpl({
             />
           )}
           {comparisonLabel && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs font-medium text-foreground/75">
               {comparisonLabel}
             </span>
           )}

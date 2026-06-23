@@ -122,13 +122,10 @@ function MultiSeriesTrendChartImpl({
             type="monotone"
             dataKey={s.key}
             name={s.label}
-            stroke={
-              s.muted
-                ? 'var(--color-muted-foreground)'
-                : SERIES_COLORS[i % SERIES_COLORS.length]
-            }
+            stroke={SERIES_COLORS[i % SERIES_COLORS.length]}
             strokeWidth={s.muted ? 2 : 2.5}
-            strokeDasharray={s.muted ? '5 4' : undefined}
+            strokeDasharray={s.muted ? '6 4' : undefined}
+            strokeOpacity={s.muted ? 0.9 : 1}
             dot={false}
             activeDot={{
               r: 4,
