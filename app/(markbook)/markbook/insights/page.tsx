@@ -14,6 +14,7 @@ import { MultiSeriesTrendChart } from '@/components/dashboard/charts/multi-serie
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
+import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import {
@@ -27,6 +28,7 @@ import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { buildCompareCells } from '@/lib/dashboard/compare';
+import { resolveCompareAy } from '@/lib/dashboard/comparison';
 import {
   resolveRange,
   type DashboardSearchParams,
@@ -45,6 +47,10 @@ import {
   type MarkbookCompareKpis,
   type SubjectTrendPoint,
 } from '@/lib/markbook/compare';
+import {
+  buildMultiAyTrend,
+  topBandBadge,
+} from '@/lib/markbook/insights-compare';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -90,34 +96,45 @@ export default async function MarkbookInsightsPage({
     ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
   const isCurrentAy = selectedAy === currentAy.ay_code;
 
-  // Prior AY = the code directly below the selected one in the sorted list.
-  // listAyCodes returns newest-first, so the prior year is the next index.
-  const selectedIndex = ayCodes.indexOf(selectedAy);
-  const priorAy =
-    selectedIndex >= 0 && selectedIndex + 1 < ayCodes.length
-      ? ayCodes[selectedIndex + 1]
-      : null;
+  // Resolve the comparison AY: explicit pick > inferred prior > null.
+  const compareAy = resolveCompareAy(
+    resolvedSearch.compareAy,
+    ayCodes,
+    selectedAy
+  );
 
   // Resolve the selected AY's UUID — getGradeDistribution is keyed by id
   // (uuid), the rest by code. Mirrors the markbook dashboard page.
-  const { data: ayRow } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('ay_code', selectedAy)
-    .maybeSingle();
+  // Also resolve the comparison AY's UUID when one is set.
+  const [{ data: ayRow }, { data: compareAyRow }] = await Promise.all([
+    service
+      .from('academic_years')
+      .select('id')
+      .eq('ay_code', selectedAy)
+      .maybeSingle(),
+    compareAy
+      ? service
+          .from('academic_years')
+          .select('id')
+          .eq('ay_code', compareAy)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
   const ayId = (ayRow as { id: string } | null)?.id ?? null;
+  const compareAyId = (compareAyRow as { id: string } | null)?.id ?? null;
 
   const windows = await getDashboardWindows(selectedAy);
   // Markbook is term-scoped (KD #79) — mirror the operational dashboard, which
   // resolves the default range via the thisTerm cascade (no preset).
   const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
 
-  // Subject-performance trend needs term cells (termId + termNumber). Build a
-  // single-AY cell set across all four terms — getSubjectPerformanceTrend reads
-  // only cell.{termId,termNumber,ayCode}, so the `data` payload is irrelevant.
+  // Subject-performance trend needs term cells (termId + termNumber). When a
+  // comparison AY is selected we include both AYs so the trend chart can show
+  // two lines per subject. getSubjectPerformanceTrend reads only
+  // cell.{termId,termNumber,ayCode} — the `data` payload is irrelevant.
   const trendCells = await buildCompareCells({
     kind: 'term',
-    ays: [selectedAy],
+    ays: compareAy ? [selectedAy, compareAy] : [selectedAy],
     terms: [1, 2, 3, 4],
   });
   const trendCellResults = trendCells.map((cell) => ({
@@ -127,6 +144,7 @@ export default async function MarkbookInsightsPage({
 
   const [
     gradeDist,
+    compareGradeDist,
     trendPoints,
     changeRequests,
     lockProgress,
@@ -134,6 +152,9 @@ export default async function MarkbookInsightsPage({
     velocity,
   ] = await Promise.all([
     ayId ? getGradeDistribution(ayId) : Promise.resolve(null),
+    compareAy && compareAyId
+      ? getGradeDistribution(compareAyId)
+      : Promise.resolve(null),
     getSubjectPerformanceTrend(trendCellResults),
     getChangeRequestSummary(selectedAy, 30),
     ayId ? getSheetLockProgressByTerm(ayId) : Promise.resolve([]),
@@ -150,12 +171,24 @@ export default async function MarkbookInsightsPage({
   const topBandPct =
     totalGraded > 0 ? Math.round((topBandCount / totalGraded) * 100) : null;
 
-  const growthBadge = { label: 'Building history', tone: 'muted' as const };
+  // Comparison AY top-band share (null when no comparison dist or it's empty).
+  function computeTopBandPct(dist: typeof gradeDist): number | null {
+    if (!dist) return null;
+    const total = dist.reduce((s, b) => s + b.count, 0);
+    if (total === 0) return null;
+    const topCount = dist
+      .filter((b) => TOP_BAND_KEYS.has(b.key))
+      .reduce((s, b) => s + b.count, 0);
+    return Math.round((topCount / total) * 100);
+  }
+
+  const compareTopBandPct = computeTopBandPct(compareGradeDist);
+  const growthBadge = topBandBadge(topBandPct, compareTopBandPct, compareAy);
 
   // ── Performance trend chart ───────────────────────────────────────────────
-  // One line per examinable subject; X axis = terms in order. Built exactly as
-  // the compare page builds it, but scoped to the single selected AY.
-  const ayTrendPoints = trendPoints.filter((p) => p.ayCode === selectedAy);
+  // One line per examinable subject (× AY when comparison is set); X axis =
+  // terms in order. buildMultiAyTrend handles namespacing so each
+  // (subject × AY) becomes its own series key with no collision.
   const periods = [
     ...new Set(
       trendCells
@@ -163,29 +196,24 @@ export default async function MarkbookInsightsPage({
         .filter((p): p is string => p !== null)
     ),
   ].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
-  const trendSubjects = [
-    ...new Set(ayTrendPoints.map((p) => p.subjectName)),
-  ].sort();
-  const haveTrend = ayTrendPoints.length > 0 && trendSubjects.length > 0;
-  const trendData = periods.map((period) => {
-    const row: Record<string, string | number | null> = { x: period };
-    for (const subject of trendSubjects) {
-      const pt = ayTrendPoints.find(
-        (p) => p.periodLabel === period && p.subjectName === subject
-      );
-      row[subject] = pt?.avgGrade ?? null;
-    }
-    return row;
-  });
-  const trendSeries = trendSubjects.map((s) => ({ key: s, label: s }));
+  const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
+  const { data: trendData, series: trendSeries } = buildMultiAyTrend(
+    trendPoints,
+    periods,
+    trendAys
+  );
+  const haveTrend = trendPoints.length > 0 && trendSeries.length > 0;
 
   // ── Subjects to watch ─────────────────────────────────────────────────────
-  // From the LATEST term that has any trend data, the lowest-averaging subjects.
+  // From the LATEST term that has any trend data in the PRIMARY AY, the lowest-
+  // averaging subjects. Always primary-AY only — comparison is context, not the
+  // target of the watchlist.
+  const primaryTrendPoints = trendPoints.filter((p) => p.ayCode === selectedAy);
   const latestPeriodWithData = [...periods]
     .reverse()
-    .find((p) => ayTrendPoints.some((pt) => pt.periodLabel === p));
+    .find((p) => primaryTrendPoints.some((pt) => pt.periodLabel === p));
   const watchRows: SubjectTrendPoint[] = latestPeriodWithData
-    ? ayTrendPoints
+    ? primaryTrendPoints
         .filter(
           (p) => p.periodLabel === latestPeriodWithData && p.avgGrade !== null
         )
@@ -195,6 +223,14 @@ export default async function MarkbookInsightsPage({
 
   // ── Grade distribution token-bar ─────────────────────────────────────────
   const maxBand = (gradeDist ?? []).reduce((m, b) => Math.max(m, b.count), 0);
+  const compareMaxBand = (compareGradeDist ?? []).reduce(
+    (m, b) => Math.max(m, b.count),
+    0
+  );
+  const hasCompareDistData =
+    compareAy !== null &&
+    compareGradeDist !== null &&
+    compareGradeDist.some((b) => b.count > 0);
 
   // ── Throughput ────────────────────────────────────────────────────────────
   const crs = changeRequests;
@@ -223,6 +259,14 @@ export default async function MarkbookInsightsPage({
           growthBadge,
         ]}
       />
+
+      <div className="flex justify-end">
+        <CompareAyPicker
+          primaryAy={selectedAy}
+          ayCodes={ayCodes}
+          compareAy={compareAy}
+        />
+      </div>
 
       {/* 1 — Performance headline: total graded + top-band share. */}
       <InsightsSection
@@ -275,7 +319,8 @@ export default async function MarkbookInsightsPage({
                 Average quarterly grade
               </CardDescription>
               <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Subject performance — {selectedAy}
+                Subject performance —{' '}
+                {compareAy ? `${selectedAy} vs ${compareAy}` : selectedAy}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -314,7 +359,8 @@ export default async function MarkbookInsightsPage({
                 Grade distribution
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-5">
+              {/* Primary AY distribution */}
               <ul className="space-y-3">
                 {(gradeDist ?? []).map((band) => {
                   const widthPct =
@@ -350,6 +396,55 @@ export default async function MarkbookInsightsPage({
                   );
                 })}
               </ul>
+
+              {/* Comparison AY distribution — subordinated, shown only when data exists */}
+              {compareAy && !hasCompareDistData ? (
+                <BuildingHistoryCard
+                  variant="no-data"
+                  label={`No data for ${compareAy}`}
+                />
+              ) : hasCompareDistData ? (
+                <div className="border-t border-border pt-4">
+                  <p className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    {compareAy} distribution
+                  </p>
+                  <ul className="space-y-3 opacity-70">
+                    {(compareGradeDist ?? []).map((band) => {
+                      const widthPct =
+                        compareMaxBand > 0
+                          ? Math.max(
+                              band.count > 0 ? 4 : 0,
+                              Math.round((band.count / compareMaxBand) * 100)
+                            )
+                          : 0;
+                      const isTop = TOP_BAND_KEYS.has(band.key);
+                      return (
+                        <li key={band.key} className="space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-3 text-sm">
+                            <span className="font-medium text-muted-foreground">
+                              {band.label}
+                            </span>
+                            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                              {band.count.toLocaleString('en-SG')}
+                            </span>
+                          </div>
+                          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                            <div
+                              className={
+                                'h-full rounded-full bg-gradient-to-r opacity-60 ' +
+                                (isTop
+                                  ? 'from-brand-mint to-brand-sky'
+                                  : 'from-brand-indigo to-brand-navy')
+                              }
+                              style={{ width: `${widthPct}%` }}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         )}
@@ -589,10 +684,10 @@ export default async function MarkbookInsightsPage({
         <span>Academic performance</span>
         <span className="text-border">·</span>
         <span>Refreshes every minute</span>
-        {priorAy ? (
+        {compareAy ? (
           <>
             <span className="text-border">·</span>
-            <span>Prior year {priorAy} on record</span>
+            <span>Comparing with {compareAy}</span>
           </>
         ) : null}
       </div>
