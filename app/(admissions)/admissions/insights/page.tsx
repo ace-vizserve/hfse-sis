@@ -9,7 +9,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { DonutChart } from '@/components/dashboard/charts/donut-chart';
-import { TrendChart } from '@/components/dashboard/charts/trend-chart';
+import { MultiSeriesTrendChart } from '@/components/dashboard/charts/multi-series-trend-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
@@ -28,7 +28,6 @@ import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   getAdmissionsKpisRange,
-  getApplicationsVelocityRange,
   getAverageTimeToEnrollment,
   getConversionFunnel,
   getReferralSourceBreakdown,
@@ -38,11 +37,17 @@ import {
   growthDelta,
 } from '@/lib/admissions/insights';
 import {
+  AY_MONTH_LABELS,
+  getIntakeTrendByAy,
+} from '@/lib/admissions/insights-compare';
+import {
   comparisonCardState,
   resolveCompareAy,
 } from '@/lib/dashboard/comparison';
+import { buildAyTrend } from '@/lib/dashboard/insights-trend';
 import { admissionsInsights } from '@/lib/dashboard/insights';
 import {
+  computeDelta,
   resolveRange,
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
@@ -117,22 +122,26 @@ export default async function AdmissionsInsightsPage({
     }
   );
 
+  // Build the AY list for the two-AY overlay: selected AY first (solid),
+  // comparison AY second (muted/dashed), or just the selected AY alone.
+  const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
+
   const [
     funnel,
     priorFunnel,
     terminal,
-    velocity,
     timeToEnroll,
     referral,
     kpisResult,
+    intakeTrendPoints,
   ] = await Promise.all([
     getConversionFunnel(selectedAy),
     compareAy ? getConversionFunnel(compareAy) : Promise.resolve(null),
     getAdmissionsTerminalReasons(selectedAy),
-    getApplicationsVelocityRange(rangeInput),
     getAverageTimeToEnrollment(selectedAy),
     getReferralSourceBreakdown(selectedAy),
     getAdmissionsKpisRange(rangeInput),
+    getIntakeTrendByAy(trendAys),
   ]);
 
   // AY-wide funnel figures (whole-year, not the picker-windowed range count).
@@ -156,6 +165,31 @@ export default async function AdmissionsInsightsPage({
     applicationsCount > 0
       ? Math.round((enrolledCount / applicationsCount) * 1000) / 10
       : 0;
+
+  // Prior-AY conversion rate (for delta chip on the conversion-rate card).
+  const priorEnrolledStage = priorFunnel?.find((s) => s.stage === 'Enrolled');
+  const priorEnrolledCount = priorEnrolledStage?.count ?? 0;
+  const priorConversionPct =
+    priorApplications !== null && priorApplications > 0
+      ? Math.round((priorEnrolledCount / priorApplications) * 1000) / 10
+      : null;
+
+  // Delta chips for §1 headline cards.
+  const applicationsDelta =
+    demandState === 'ok' && priorApplications !== null
+      ? computeDelta(applicationsCount, priorApplications)
+      : null;
+  const conversionDelta =
+    demandState === 'ok' && priorConversionPct !== null
+      ? computeDelta(conversionPct, priorConversionPct)
+      : null;
+
+  // §2 per-month two-AY overlay chart.
+  const intakeTrend = buildAyTrend(
+    intakeTrendPoints,
+    [...AY_MONTH_LABELS],
+    trendAys
+  );
 
   // Biggest drop-off stage — the single point where the funnel leaks most.
   const biggestDrop = funnel.reduce<(typeof funnel)[number] | null>(
@@ -256,13 +290,20 @@ export default async function AdmissionsInsightsPage({
             value={applicationsCount}
             icon={FileStack}
             intent="default"
-            subtext={
-              demandState === 'ok' && priorApplications !== null
-                ? `${priorApplications.toLocaleString('en-SG')} in ${compareAy}`
-                : demandState === 'no-data'
-                  ? `No data for ${compareAy}`
-                  : 'Pick a comparison year above'
-            }
+            {...(applicationsDelta
+              ? {
+                  delta: applicationsDelta,
+                  deltaGoodWhen: 'up' as const,
+                  comparisonLabel: `${priorApplications?.toLocaleString('en-SG')} in ${compareAy}`,
+                }
+              : {
+                  subtext:
+                    demandState === 'no-data'
+                      ? `No data for ${compareAy}`
+                      : compareAy === null
+                        ? 'Pick a comparison year above'
+                        : undefined,
+                })}
           />
           <MetricCard
             label="Conversion rate"
@@ -270,7 +311,17 @@ export default async function AdmissionsInsightsPage({
             format="percent"
             icon={Percent}
             intent="good"
-            subtext={`${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`}
+            {...(conversionDelta
+              ? {
+                  delta: conversionDelta,
+                  deltaGoodWhen: 'up' as const,
+                  deltaFormat: 'absolute' as const,
+                  deltaUnit: 'pp',
+                  comparisonLabel: `${priorConversionPct?.toFixed(1)}% in ${compareAy}`,
+                }
+              : {
+                  subtext: `${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`,
+                })}
           />
           <MetricCard
             label="Applications cancelled"
@@ -282,34 +333,45 @@ export default async function AdmissionsInsightsPage({
         </section>
       </InsightsSection>
 
-      {/* 2 — Intake trend. Mirrors the dashboard's velocity card. */}
+      {/* 2 — Intake trend: per-month, two-AY overlay.
+          Shows applications received per month across the full Jan–Nov HFSE
+          AY window. When a comparison AY is selected, it overlays as a muted
+          dashed line so the registrar can read seasonal patterns at a glance.
+          Future months in the current AY render as gaps (null) so the line
+          doesn't misleadingly flatline to zero. */}
       <InsightsSection
         eyebrow="Demand"
         title="How is intake trending?"
-        description="Applications received per day across the selected period."
+        description={
+          compareAy
+            ? `Applications received per month — ${selectedAy} (solid) vs ${compareAy} (dashed).`
+            : 'Applications received per month across the academic year.'
+        }
       >
-        {velocity.current.length > 1 ? (
+        {intakeTrend.data.some((d) =>
+          intakeTrend.series.some((s) => d[s.key] !== null)
+        ) ? (
           <Card>
             <CardHeader>
               <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Applications per day
+                Applications per month
               </CardDescription>
               <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Intake velocity
+                Intake trend
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <TrendChart
-                label="Applications"
-                current={velocity.current}
-                comparison={velocity.comparison}
+              <MultiSeriesTrendChart
+                series={intakeTrend.series}
+                data={intakeTrend.data}
+                yFormat="number"
               />
             </CardContent>
           </Card>
         ) : (
           <Card className="border-dashed">
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              Not enough activity in this period to plot a trend yet.
+              No applications recorded yet for this academic year.
             </CardContent>
           </Card>
         )}
