@@ -235,7 +235,10 @@ export default async function AdmissionsInsightsPage({
       </div>
 
       {/* 1 — Funnel headline: application demand + conversion (NOT enrolled
-          headcount — that's the enrolled body, owned by Records Insights). */}
+          headcount — that's the enrolled body, owned by Records Insights).
+          Primary-AY metrics (Conversion rate, Applications cancelled) always
+          render. Only the demand-comparison subtext reacts to `demandState`
+          (FIX 2 — matches Records' Section-1 pattern). */}
       <InsightsSection
         eyebrow="Demand & conversion"
         title="Is the funnel healthy?"
@@ -247,48 +250,36 @@ export default async function AdmissionsInsightsPage({
               : `No application data found for ${compareAy}. Try a different comparison year.`
         }
       >
-        {demandState !== 'ok' ? (
-          demandState === 'building' ? (
-            <BuildingHistoryCard
-              label="Year-over-year demand"
-              detail="Pick a comparison year above to see how application volume compares. It fills in once another year's data is on record."
-            />
-          ) : (
-            <BuildingHistoryCard
-              variant="no-data"
-              label={`No data for ${compareAy}`}
-            />
-          )
-        ) : (
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <MetricCard
-              label="Applications received"
-              value={applicationsCount}
-              icon={FileStack}
-              intent="default"
-              subtext={
-                priorApplications !== null
-                  ? `${priorApplications.toLocaleString('en-SG')} in ${compareAy}`
-                  : 'No prior year on record'
-              }
-            />
-            <MetricCard
-              label="Conversion rate"
-              value={conversionPct}
-              format="percent"
-              icon={Percent}
-              intent="good"
-              subtext={`${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`}
-            />
-            <MetricCard
-              label="Applications cancelled"
-              value={terminal.total}
-              icon={UserMinus}
-              intent={terminal.total > 0 ? 'warning' : 'default'}
-              subtext="withdrawn or cancelled before enrolling"
-            />
-          </section>
-        )}
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <MetricCard
+            label="Applications received"
+            value={applicationsCount}
+            icon={FileStack}
+            intent="default"
+            subtext={
+              demandState === 'ok' && priorApplications !== null
+                ? `${priorApplications.toLocaleString('en-SG')} in ${compareAy}`
+                : demandState === 'no-data'
+                  ? `No data for ${compareAy}`
+                  : 'Pick a comparison year above'
+            }
+          />
+          <MetricCard
+            label="Conversion rate"
+            value={conversionPct}
+            format="percent"
+            icon={Percent}
+            intent="good"
+            subtext={`${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`}
+          />
+          <MetricCard
+            label="Applications cancelled"
+            value={terminal.total}
+            icon={UserMinus}
+            intent={terminal.total > 0 ? 'warning' : 'default'}
+            subtext="withdrawn or cancelled before enrolling"
+          />
+        </section>
       </InsightsSection>
 
       {/* 2 — Intake trend. Mirrors the dashboard's velocity card. */}

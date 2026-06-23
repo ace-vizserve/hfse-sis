@@ -33,6 +33,7 @@ import {
   getTopAbsentRange,
 } from '@/lib/attendance/dashboard';
 import { buildAllRowSets } from '@/lib/attendance/drill';
+import { rateBadge } from '@/lib/attendance/insights-compare';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   comparisonCardState,
@@ -163,13 +164,10 @@ export default async function AttendanceInsightsPage({
 
   // Rate is itself a %, so we do a plain vs-prior comparison rather than a
   // percent-of-growth badge. growthDelta is reserved for count-based metrics.
-  const growthBadge =
-    priorRate === null
-      ? { label: 'Building history', tone: 'muted' as const }
-      : {
-          label: `${rate}% vs ${priorRate}% in ${compareAy}`,
-          tone: (rate >= priorRate ? 'mint' : 'amber') as 'mint' | 'amber',
-        };
+  // Gate on `hasRateData` (same signal as Section 1) so the hero badge and
+  // the section card always agree — prevents a misleading "X% vs 0%" when the
+  // comparison AY exists but has no encoded attendance days (FIX 1).
+  const growthBadge = rateBadge(rate, priorRate, hasRateData, compareAy);
 
   const chronic = topAbsent.filter((r) => r.absences > 0);
   const maxAbsences = chronic.reduce((m, r) => Math.max(m, r.absences), 0);
@@ -214,7 +212,10 @@ export default async function AttendanceInsightsPage({
         />
       </div>
 
-      {/* 1 — Rate headline: this period vs comparison AY. */}
+      {/* 1 — Rate headline: this period vs comparison AY.
+          Primary-AY metrics (Late incidents, Absences) always render so the
+          registrar always has actionable data. Only the comparison-bearing rate
+          card reacts to `rateState` (FIX 2 — matches Records' Section-1 pattern). */}
       <InsightsSection
         eyebrow="Health"
         title="How steady is attendance?"
@@ -226,46 +227,36 @@ export default async function AttendanceInsightsPage({
               : `No attendance data found for ${compareAy}. Try a different comparison year.`
         }
       >
-        {rateState === 'building' ? (
-          <BuildingHistoryCard
-            label="Year-over-year attendance rate"
-            detail="Pick a comparison year above to see how the attendance rate compares to a prior year. It fills in automatically each year."
-          />
-        ) : rateState === 'no-data' ? (
-          <BuildingHistoryCard
-            variant="no-data"
-            label={`No attendance data for ${compareAy}`}
-          />
-        ) : (
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <MetricCard
-              label="Attendance rate"
-              value={rate}
-              format="percent"
-              icon={CalendarCheck}
-              intent={rate >= 95 ? 'good' : rate >= 90 ? 'default' : 'warning'}
-              subtext={
-                priorRate !== null
-                  ? `${priorRate}% in ${compareAy}`
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <MetricCard
+            label="Attendance rate"
+            value={rate}
+            format="percent"
+            icon={CalendarCheck}
+            intent={rate >= 95 ? 'good' : rate >= 90 ? 'default' : 'warning'}
+            subtext={
+              rateState === 'ok' && priorRate !== null
+                ? `${priorRate}% in ${compareAy}`
+                : rateState === 'no-data'
+                  ? `No data for ${compareAy}`
                   : 'present, late, or excused of days encoded'
-              }
-            />
-            <MetricCard
-              label="Late incidents"
-              value={kpis.current.late}
-              icon={Clock}
-              intent={kpis.current.late > 0 ? 'warning' : 'default'}
-              subtext="arrived after the start of the day"
-            />
-            <MetricCard
-              label="Absences"
-              value={kpis.current.absent}
-              icon={UserX}
-              intent={kpis.current.absent > 0 ? 'warning' : 'default'}
-              subtext="full days missed without an excuse"
-            />
-          </section>
-        )}
+            }
+          />
+          <MetricCard
+            label="Late incidents"
+            value={kpis.current.late}
+            icon={Clock}
+            intent={kpis.current.late > 0 ? 'warning' : 'default'}
+            subtext="arrived after the start of the day"
+          />
+          <MetricCard
+            label="Absences"
+            value={kpis.current.absent}
+            icon={UserX}
+            intent={kpis.current.absent > 0 ? 'warning' : 'default'}
+            subtext="full days missed without an excuse"
+          />
+        </section>
       </InsightsSection>
 
       {/* 2 — Rate trend across the period. */}
