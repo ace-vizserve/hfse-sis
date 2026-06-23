@@ -15,6 +15,7 @@ import {
 export type MultiSeriesTrendSeries = {
   key: string;
   label: string;
+  muted?: boolean;
 };
 
 export type YFormat = 'number' | 'percent' | 'days';
@@ -121,8 +122,13 @@ function MultiSeriesTrendChartImpl({
             type="monotone"
             dataKey={s.key}
             name={s.label}
-            stroke={SERIES_COLORS[i % SERIES_COLORS.length]}
-            strokeWidth={2}
+            stroke={
+              s.muted
+                ? 'var(--color-muted-foreground)'
+                : SERIES_COLORS[i % SERIES_COLORS.length]
+            }
+            strokeWidth={s.muted ? 2 : 2.5}
+            strokeDasharray={s.muted ? '5 4' : undefined}
             dot={false}
             activeDot={{
               r: 4,
