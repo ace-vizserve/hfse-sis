@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
+import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
@@ -249,12 +250,38 @@ export default async function MarkbookHome({
       : Promise.resolve(null),
   ]);
 
+  // ── Role-aware lede: derived from live priority data, neutral when clear ──
+  // Teacher: surface the open-sheets signal from their priority panel.
+  // Registrar: surface pending change requests first, then open sheets.
+  // Neutral fallback when all caught up or no priority data yet.
+  const heroDescription: string = (() => {
+    if (isTeacher) {
+      const total = teacherPriority?.headline.value ?? 0;
+      if (total > 0) {
+        return `You have ${total} open grading ${total === 1 ? 'sheet' : 'sheets'} across your sections. Enter grades now to keep your records current.`;
+      }
+      return 'All your grading sheets are up to date. Check your sections below or review recent activity.';
+    }
+    if (canSeeAdmin && registrarPriority) {
+      const pending = kpisResult?.current.changeRequestsPending ?? 0;
+      const openSheets = registrarPriority.headline.value ?? 0;
+      if (pending > 0) {
+        return `${pending} grade change ${pending === 1 ? 'request needs' : 'requests need'} your decision. Grading sheets, publications, and recent activity are below.`;
+      }
+      if (openSheets > 0) {
+        return `${openSheets} grading ${openSheets === 1 ? 'sheet is' : 'sheets are'} still open. Lock them once teachers are done to close out the term.`;
+      }
+      return 'No outstanding actions right now. Grading sheets, publications, and recent activity are below.';
+    }
+    return 'Grading sheets, change requests, publications, and recent module activity.';
+  })();
+
   return (
     <PageShell>
       <DashboardHero
         eyebrow="Markbook · Dashboard"
         title={`Welcome back${email ? `, ${email.split('@')[0]}` : ''}`}
-        description="Grading sheets, change requests, publications, and recent module activity."
+        description={heroDescription}
         badges={
           currentAy
             ? [{ label: currentAy.ay_code }, { label: 'Current', tone: 'mint' }]
@@ -263,6 +290,17 @@ export default async function MarkbookHome({
       />
 
       {teacherPriority && <PriorityPanel payload={teacherPriority} />}
+
+      {/* Teacher callout: nudge to act when open sheets exist. Omitted when
+          all caught up so it never fires as a false alarm. */}
+      {isTeacher &&
+        teacherPriority &&
+        (teacherPriority.headline.value ?? 0) > 0 && (
+          <RecommendationCallout tone="watch">
+            Your open sheets need grades before the term locks. Head to grading
+            to fill them in.
+          </RecommendationCallout>
+        )}
 
       {canSeeAdmin && ayCode && windows.activeTermFallback && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-900 dark:text-amber-100">
@@ -289,6 +327,36 @@ export default async function MarkbookHome({
       )}
 
       {registrarPriority && <PriorityPanel payload={registrarPriority} />}
+
+      {/* Registrar callout: one directive sentence from the top signal.
+          'act' fires only when change requests are pending (approver-gated
+          inside registrarPriority itself). 'watch' fires when sheets are
+          open. Omitted when the panel is clear so it never adds noise. */}
+      {canSeeAdmin &&
+        registrarPriority &&
+        (() => {
+          const pending = kpisResult?.current.changeRequestsPending ?? 0;
+          const openSheets = registrarPriority.headline.value ?? 0;
+          if (pending > 0 && registrarPriority.iconKey === 'warning') {
+            return (
+              <RecommendationCallout tone="act">
+                {pending === 1
+                  ? 'A change request is waiting on your decision — approve or reject to unblock the teacher.'
+                  : `${pending} change requests are waiting on your decision — approve or reject to unblock teachers.`}
+              </RecommendationCallout>
+            );
+          }
+          if (openSheets > 0 && registrarPriority.iconKey !== 'warning') {
+            return (
+              <RecommendationCallout tone="watch">
+                {openSheets === 1
+                  ? '1 grading sheet is still open. Lock it once the teacher is done to close out the term.'
+                  : `${openSheets} grading sheets are still open. Lock them once teachers are done to close out the term.`}
+              </RecommendationCallout>
+            );
+          }
+          return null;
+        })()}
 
       {/* Range-aware KPIs — new MetricCards driven by ComparisonToolbar */}
       {canSeeAdmin && kpisResult && ayCode && (
@@ -420,10 +488,10 @@ export default async function MarkbookHome({
         <section className="space-y-4">
           <div className="space-y-2">
             <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Tools
+              Admin
             </p>
             <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
-              School admin tools
+              Manage rosters, sync &amp; audit
             </h2>
           </div>
           <div className="@container/main">
