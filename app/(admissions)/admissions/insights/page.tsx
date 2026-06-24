@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  Clock,
   FileStack,
   Percent,
   TrendingUp,
@@ -31,6 +32,7 @@ import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   getAdmissionsKpisRange,
+  getAverageTimeToEnrollment,
   getConversionFunnel,
   getOutdatedApplications,
 } from '@/lib/admissions/dashboard';
@@ -143,6 +145,7 @@ export default async function AdmissionsInsightsPage({
     conversionByLevel,
     referralConversion,
     enroleeTypeConversion,
+    timeToEnroll,
   ] = await Promise.all([
     getConversionFunnel(selectedAy),
     compareAy ? getConversionFunnel(compareAy) : Promise.resolve(null),
@@ -155,6 +158,9 @@ export default async function AdmissionsInsightsPage({
     getConversionByLevel(selectedAy),
     getReferralConversion(selectedAy),
     getEnroleeTypeConversion(selectedAy),
+    // Time to enrol — real enrolledAt timestamp (migration 075). sampleSize=0
+    // is expected on existing data; the UI shows a "building" neutral state.
+    getAverageTimeToEnrollment(selectedAy),
   ]);
 
   // AY-wide funnel figures (whole-year, not the picker-windowed range count).
@@ -235,9 +241,9 @@ export default async function AdmissionsInsightsPage({
   // made the "conversion dropping" takeaway irreconcilable with the AY conversion
   // rate displayed above it (BUG 3 fix).
   //
-  // Time-to-enrol is NOT passed: there is no enrolment timestamp in the data
-  // (applicationUpdatedDate 0/490 populated), so the average would be a phantom.
-  // Omitting the field suppresses the time-to-enrol drift insight honestly.
+  // Time-to-enrol is not passed into the takeaways panel — it is displayed as
+  // its own InsightsSection in Chapter 1 with an honest sample-size label and a
+  // BuildingHistoryCard when sampleSize=0 (historical rows have no enrolledAt).
   const insights = admissionsInsights({
     // AY-wide figures (match §1 headline cards and §3 funnel).
     applications: applicationsCount,
@@ -593,6 +599,63 @@ export default async function AdmissionsInsightsPage({
               )}
             </CardContent>
           </Card>
+        </InsightsSection>
+
+        {/* 4 — Time to enrol: how long does conversion take?
+            Stamped by migration 075 (write-once enrolledAt on status table).
+            Historical rows have no timestamp (sampleSize=0) so we show a
+            "building" neutral state that self-heals as enrolments accumulate. */}
+        <InsightsSection
+          eyebrow="Speed"
+          title="How long does enrolment take?"
+          description={
+            timeToEnroll.sampleSize > 0
+              ? `Average number of days from application submission to enrolment — from ${timeToEnroll.sampleSize.toLocaleString('en-SG')} ${timeToEnroll.sampleSize === 1 ? 'enrolment' : 'enrolments'} since tracking began.`
+              : 'Time from application to enrolment — captured on every new enrolment going forward.'
+          }
+        >
+          {timeToEnroll.sampleSize === 0 ? (
+            <BuildingHistoryCard
+              label="Time to enrol"
+              detail="The average number of days from application to enrolment will appear here once new enrolments are recorded. It fills in automatically — nothing to configure."
+            />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  Application to enrolment ·{' '}
+                  {timeToEnroll.sampleSize.toLocaleString('en-SG')}{' '}
+                  {timeToEnroll.sampleSize === 1 ? 'enrolment' : 'enrolments'}{' '}
+                  since tracking began
+                </CardDescription>
+                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                  Average {timeToEnroll.avgDays} days to enrol
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-4">
+                  <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-b from-brand-indigo/15 to-brand-navy/10 text-brand-indigo">
+                    <Clock className="size-6" strokeWidth={1.75} />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="font-mono text-3xl font-bold tabular-nums text-foreground">
+                      {timeToEnroll.avgDays}
+                      <span className="ml-1.5 text-base font-normal text-muted-foreground">
+                        days
+                      </span>
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      from submission to enrolment, averaged across{' '}
+                      {timeToEnroll.sampleSize.toLocaleString('en-SG')}{' '}
+                      {timeToEnroll.sampleSize === 1
+                        ? 'enrolment'
+                        : 'enrolments'}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </InsightsSection>
       </div>
       {/* ═══ end Chapter 1 ═══ */}

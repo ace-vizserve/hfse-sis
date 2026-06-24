@@ -53,6 +53,9 @@ type StatusLite = {
   enroleeNumber: string | null;
   applicationStatus: string | null;
   applicationUpdatedDate: string | null;
+  /** Write-once enrolment timestamp added by migration 075. NULL for all
+   *  historical rows — only populated from go-live onwards. */
+  enrolledAt: string | null;
   classLevel: string | null;
   levelApplied: string | null;
   assessmentGradeMath: string | number | null;
@@ -132,7 +135,7 @@ async function loadJoinedRowsUncached(ayCode: string): Promise<JoinedRow[]> {
           supabase
             .from(statusTable)
             .select(
-              'enroleeNumber, applicationStatus, applicationUpdatedDate, classLevel, levelApplied, assessmentGradeMath, assessmentGradeEnglish'
+              'enroleeNumber, applicationStatus, applicationUpdatedDate, enrolledAt, classLevel, levelApplied, assessmentGradeMath, assessmentGradeEnglish'
             )
             .range(from, to) as unknown as P<StatusLite>
       ),
@@ -164,10 +167,11 @@ async function loadJoinedRowsUncached(ayCode: string): Promise<JoinedRow[]> {
       // Fallback for pipeline-age / RAG tiers — keeps staleness meaningful
       // even for rows where the team never stamped the status-table column.
       applicationUpdatedDate: s?.applicationUpdatedDate ?? a.created_at,
-      // Raw status-table value — null when never stamped (common). Used
-      // exclusively for time-to-enrol arithmetic so we never compute 0-day
-      // durations from the created_at fallback.
-      enrolledAt: s?.applicationUpdatedDate ?? null,
+      // Real write-once timestamp from the status table (migration 075).
+      // NULL for all historical rows; only populated from go-live onwards.
+      // Used exclusively for time-to-enrol arithmetic — never the fallback-
+      // substituted `applicationUpdatedDate` (which would produce 0-day counts).
+      enrolledAt: s?.enrolledAt ?? null,
       statusLevel: s?.classLevel ?? s?.levelApplied ?? null,
       assessmentGradeMath: s?.assessmentGradeMath ?? null,
       assessmentGradeEnglish: s?.assessmentGradeEnglish ?? null,
@@ -218,11 +222,64 @@ export type TimeToEnrollment = {
   sampleSize: number;
 };
 
-// `getAverageTimeToEnrollment` was removed: there is no enrolment timestamp in
-// the data (applicationUpdatedDate is 0/490 populated in prod), so the average
-// was a phantom. The Admissions Insights "Time to enrol" KPI it fed was deleted
-// — see app/(admissions)/admissions/insights/page.tsx. The `TimeToEnrollment`
-// type is retained for the (currently unmounted) TimeToEnrollmentCard.
+// ──────────────────────────────────────────────────────────────────────────
+// Average time to enrolment (migration 075 — real enrolledAt timestamp).
+//
+// Previously deleted because applicationUpdatedDate was 0/490 populated so
+// every average was a phantom. Revived now that migration 075 adds a real
+// write-once `enrolledAt` timestamptz to ay{YY}_enrolment_status, stamped the
+// moment a student first reaches Enrolled / Enrolled (Conditional).
+//
+// Arithmetic: days = round((enrolledAt − created_at) / ms_per_day). Only rows
+// with both timestamps and a non-negative delta are counted. Historical rows
+// (NULL enrolledAt) are silently skipped — the UI handles sampleSize=0 with
+// a "building" neutral state so the metric self-heals as enrolments accumulate
+// from go-live.
+//
+// SGT note (KD #32): both are timestamptz; a duration in whole days is
+// timezone-agnostic so plain UTC arithmetic is correct here.
+// ──────────────────────────────────────────────────────────────────────────
+
+/** Pure helper — testable without the cache layer. */
+export function computeAverageTimeToEnrollment(
+  rows: Pick<JoinedRow, 'applicationStatus' | 'created_at' | 'enrolledAt'>[]
+): TimeToEnrollment {
+  let total = 0;
+  let n = 0;
+  for (const r of rows) {
+    if (
+      r.applicationStatus !== 'Enrolled' &&
+      r.applicationStatus !== 'Enrolled (Conditional)'
+    )
+      continue;
+    if (!r.created_at || !r.enrolledAt) continue;
+    const start = Date.parse(r.created_at);
+    const end = Date.parse(r.enrolledAt);
+    if (Number.isNaN(start) || Number.isNaN(end)) continue;
+    const days = Math.round((end - start) / 86_400_000);
+    if (days < 0) continue; // guard against bad data
+    total += days;
+    n += 1;
+  }
+  return { avgDays: n > 0 ? Math.round(total / n) : 0, sampleSize: n };
+}
+
+async function loadAverageTimeToEnrollmentUncached(
+  ayCode: string
+): Promise<TimeToEnrollment> {
+  const rows = await loadJoinedRows(ayCode);
+  return computeAverageTimeToEnrollment(rows);
+}
+
+export function getAverageTimeToEnrollment(
+  ayCode: string
+): Promise<TimeToEnrollment> {
+  return unstable_cache(
+    () => loadAverageTimeToEnrollmentUncached(ayCode),
+    ['admissions', 'avg-time-to-enroll', ayCode],
+    { revalidate: CACHE_TTL_SECONDS, tags: tag(ayCode) }
+  )();
+}
 
 export type FunnelStage = {
   stage: string;
