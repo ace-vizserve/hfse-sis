@@ -13,6 +13,8 @@ import {
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
+
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { MetricCard } from '@/components/dashboard/metric-card';
@@ -155,12 +157,94 @@ export default async function EvaluationHub({
   // on the hub so neither role discovers it on a closed dialog.
   const termsMissingVirtue = terms.filter((t) => !t.virtue_theme);
 
+  // ── Lede derivation ────────────────────────────────────────────────────────
+  // The DashboardHero description states what needs attention RIGHT NOW.
+  // Every string is computed from a live loader value; neutral fallback fires
+  // when the data is absent (e.g. T4 has no FCA comments).
+  //
+  // Registrar path: chase state (outstandingWriteups + advisersBehind) is the
+  // most action-relevant signal (KD #126). Clear state gets quiet affirmation.
+  // T4 / no-term path: neutral factual note.
+  //
+  // Teacher path: their own pending count from the PriorityPanel payload, so
+  // the lede matches the panel headline above it.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  let heroDescription: string;
+  if (canToggle) {
+    if (!chaseKpis || !chaseKpis.available) {
+      // T4 or no term configured.
+      heroDescription =
+        'No form-class comments are due in Term 4. Write-ups open again in T1.';
+    } else if (
+      chaseKpis.outstandingWriteups === 0 &&
+      chaseKpis.advisersBehind === 0
+    ) {
+      // All caught up.
+      heroDescription =
+        'All write-ups are in for this term. Nothing outstanding.';
+    } else {
+      // Build a sentence that names both signals, but only when non-zero.
+      const parts: string[] = [];
+      if (chaseKpis.outstandingWriteups > 0) {
+        parts.push(
+          `${chaseKpis.outstandingWriteups} write-up${chaseKpis.outstandingWriteups === 1 ? '' : 's'} still outstanding`
+        );
+      }
+      if (chaseKpis.advisersBehind > 0) {
+        parts.push(
+          `${chaseKpis.advisersBehind} adviser${chaseKpis.advisersBehind === 1 ? '' : 's'} behind`
+        );
+      }
+      heroDescription = parts.join(' · ') + ' this term.';
+    }
+  } else if (isTeacher) {
+    // Teacher: reflect their own pending count (from the PriorityPanel data).
+    const teacherPending = teacherPriority?.headline?.value;
+    if (typeof teacherPending === 'number' && teacherPending > 0) {
+      heroDescription = `You still have ${teacherPending} write-up${teacherPending === 1 ? '' : 's'} to submit this term.`;
+    } else if (typeof teacherPending === 'number' && teacherPending === 0) {
+      heroDescription =
+        'Your write-ups are all submitted. Nothing left for this term.';
+    } else {
+      heroDescription =
+        'Submit write-ups for each student in your advisory section. Guided by the virtue theme.';
+    }
+  } else {
+    // Fallback (e.g. no AY configured).
+    heroDescription =
+      'Form-class-adviser write-ups for T1–T3 — the sole source of report-card comments.';
+  }
+
+  // ── RecommendationCallout decision ────────────────────────────────────────
+  // One callout per role, rendered after the PriorityPanel.
+  // Registrar: "act" when advisers are behind; "positive" when clear.
+  // Teacher: "act" when they have pending write-ups; omit when clear.
+  // Both omit on T4 / no-term (chaseKpis not available).
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const showRegistrarCallout = canToggle && chaseKpis?.available;
+  const registrarCalloutTone: 'act' | 'positive' =
+    (chaseKpis?.advisersBehind ?? 0) > 0 ? 'act' : 'positive';
+  const registrarCalloutText =
+    chaseKpis?.available === true
+      ? chaseKpis.advisersBehind > 0
+        ? `${chaseKpis.advisersBehind} adviser${chaseKpis.advisersBehind === 1 ? '' : 's'} still need${chaseKpis.advisersBehind === 1 ? 's' : ''} to submit — open the roster to see who’s behind.`
+        : 'Every adviser has submitted. Nothing to chase this term.'
+      : null;
+
+  const teacherPending = isTeacher
+    ? (teacherPriority?.headline?.value ?? null)
+    : null;
+  const showTeacherCallout =
+    isTeacher && typeof teacherPending === 'number' && teacherPending > 0;
+
   return (
     <PageShell>
       <DashboardHero
         eyebrow="Student Evaluation · Hub"
         title="Form class adviser write-ups"
-        description="Form-class-adviser write-ups and virtue themes — one term at a time. Sole source for T1–T3 report card comments. T4 is FCA-inactive."
+        description={heroDescription}
         badges={ayCode ? [{ label: ayCode }] : []}
       />
 
@@ -195,7 +279,20 @@ export default async function EvaluationHub({
       )}
 
       {teacherPriority && <PriorityPanel payload={teacherPriority} />}
+      {showTeacherCallout && (
+        <RecommendationCallout tone="act" className="w-full">
+          {teacherPending === 1
+            ? '1 write-up still needs your input — open your section to submit it.'
+            : `${teacherPending} write-ups still need your input — open your sections to work through them.`}
+        </RecommendationCallout>
+      )}
+
       {registrarPriority && <PriorityPanel payload={registrarPriority} />}
+      {showRegistrarCallout && registrarCalloutText && (
+        <RecommendationCallout tone={registrarCalloutTone} className="w-full">
+          {registrarCalloutText}
+        </RecommendationCallout>
+      )}
 
       {canToggle && rangeInput && kpisResult && velocity && (
         <>
