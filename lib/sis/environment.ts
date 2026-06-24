@@ -496,6 +496,25 @@ async function wipeOneTestAy(
     deleted[key] = total;
   }
 
+  // ---- Collect section_student IDs for direct-FK child wipes ----
+  // grade_entries and attendance_* have a direct FK on section_student_id.
+  // The sheet-scoped / term-scoped deletes below cover most rows, but if any
+  // wipe() call silently swallows an error the child rows survive, the
+  // section_students delete FK-fails (also swallowed), and delete_academic_year
+  // then trips its emptiness guard. Belt-and-suspenders: also delete these
+  // tables by section_student_id so we're guaranteed to clear them before
+  // touching section_students itself.
+  let sectionStudentIds: string[] = [];
+  if (sectionIds.length > 0) {
+    const { data: ssRows } = await service
+      .from('section_students')
+      .select('id')
+      .in('section_id', sectionIds);
+    sectionStudentIds = ((ssRows ?? []) as Array<{ id: string }>).map(
+      (r) => r.id
+    );
+  }
+
   // ---- Delete in reverse-dependency order ----
   // Sheet-scoped children first.
   if (sheetIds.length > 0) {
@@ -512,6 +531,31 @@ async function wipeOneTestAy(
       sheetIds
     );
     await wipe('grade_entries', 'grade_entries', 'grading_sheet_id', sheetIds);
+  }
+
+  // Belt-and-suspenders: also wipe grade_entries and attendance tables by
+  // section_student_id directly. This catches any entries whose grading_sheet
+  // or term scoping was missed above (e.g. FK-blocked sheet delete that was
+  // silently swallowed). Must run before section_students is deleted.
+  if (sectionStudentIds.length > 0) {
+    await wipe(
+      'grade_entries',
+      'grade_entries',
+      'section_student_id',
+      sectionStudentIds
+    );
+    await wipe(
+      'attendance_daily',
+      'attendance_daily',
+      'section_student_id',
+      sectionStudentIds
+    );
+    await wipe(
+      'attendance_records',
+      'attendance_records',
+      'section_student_id',
+      sectionStudentIds
+    );
   }
 
   // Term-scoped children.
@@ -560,7 +604,11 @@ async function wipeOneTestAy(
     await wipe('grading_sheets', 'grading_sheets', 'term_id', termIds);
   }
 
-  // Section-scoped children.
+  // Section-scoped children — section_students last, after all FK children
+  // have been cleared. After deletion, verify the count is zero so that
+  // delete_academic_year's emptiness guard cannot trip on a silently-swallowed
+  // child-FK failure. Throw loudly here (with the real FK error context) rather
+  // than letting the RPC raise an opaque "Cannot delete AY9998: N rows" message.
   if (sectionIds.length > 0) {
     await wipe(
       'teacher_assignments',
@@ -574,6 +622,26 @@ async function wipeOneTestAy(
       'section_id',
       sectionIds
     );
+
+    // Verify — if any section_students rows remain, a FK-blocked child wipe
+    // was silently swallowed above. Throw now with a clear diagnostic so the
+    // bug surfaces immediately rather than manifesting as an opaque RPC guard.
+    const { count: remainingSS, error: ssCheckErr } = await service
+      .from('section_students')
+      .select('*', { count: 'exact', head: true })
+      .in('section_id', sectionIds);
+    if (ssCheckErr) {
+      throw new Error(
+        `[reset] section_students post-wipe count failed for ${ayCode}: ${ssCheckErr.message}`
+      );
+    }
+    if ((remainingSS ?? 0) > 0) {
+      throw new Error(
+        `[reset] ${remainingSS} section_students rows remain after wipe for ${ayCode}. ` +
+          `A FK-child delete was silently swallowed — check console logs above for the real error. ` +
+          `Run the recovery SQL in the teardown-fix report to unblock manually.`
+      );
+    }
   }
 
   // Seeded test students (TEST-% legacy + H270% legacy + H99% current realistic
