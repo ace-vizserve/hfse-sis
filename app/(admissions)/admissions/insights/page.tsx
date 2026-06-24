@@ -15,6 +15,8 @@ import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
+import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
+import { pickExtreme, meetsThreshold } from '@/lib/dashboard/narrative';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import {
@@ -257,6 +259,70 @@ export default async function AdmissionsInsightsPage({
       : undefined,
   });
 
+  // ────────────────────────────────────────────────────────────────────────
+  // Derived narrative — every finding-title + RecommendationCallout below is
+  // templated from these live values, each with a tie/empty/threshold neutral
+  // fallback. No hardcoded stage names, level codes, channel names, or "most"
+  // claims in literals. (Storytelling pass.)
+  // ────────────────────────────────────────────────────────────────────────
+
+  // 3a — Deep funnel: biggest leak (uses the loader's own isBiggestLeak flag,
+  // which already encodes the single-leak / no-leak rule). Title states the
+  // finding; callout (act) quantifies the drop. Neutral when no leak.
+  const funnelTitle =
+    biggestLeakStage && biggestLeakStage.dropOffPct > 0
+      ? `Applicants drop most at ${biggestLeakStage.label}`
+      : 'Application pipeline';
+
+  // 3b — Conversion by level: worst-converting level, but only claim it when
+  // the gap below the overall conversion rate is meaningful (≥ 10pp) and there
+  // is no tie. Otherwise stay neutral.
+  const worstLevel = pickExtreme(
+    conversionByLevel,
+    (r) => r.conversionPct,
+    'min'
+  );
+  const levelGap =
+    worstLevel.value !== null ? conversionPct - worstLevel.value : null;
+  const LEVEL_GAP_PP = 10;
+  const showWorstLevel =
+    !worstLevel.isTie &&
+    worstLevel.item !== null &&
+    meetsThreshold(levelGap, LEVEL_GAP_PP);
+  const levelTitle = showWorstLevel
+    ? `${worstLevel.item!.level} converts the least`
+    : 'Conversion by level';
+
+  // 5c — Referral channels: best + worst converting source, each guarded by a
+  // minimum sample so a 1-of-1 channel can't masquerade as the "best". Title
+  // names both ends when both clear the guard; neutral otherwise.
+  const REFERRAL_MIN_SAMPLE = 5;
+  const eligibleRefs = referralConversion.filter(
+    (r) => r.applied >= REFERRAL_MIN_SAMPLE
+  );
+  const bestRef = pickExtreme(eligibleRefs, (r) => r.conversionPct, 'max');
+  const worstRef = pickExtreme(eligibleRefs, (r) => r.conversionPct, 'min');
+  const showBestRef = !bestRef.isTie && bestRef.item !== null;
+  const referralTitle = showBestRef
+    ? `${bestRef.item!.source} converts best`
+    : 'Referral sources: conversion';
+
+  // 4 — Terminal reasons: top cancellation cause (terminal.overall is already
+  // sorted desc). Title names it; callout quantifies its share. Neutral when
+  // nothing is recorded or the top two tie.
+  const topReason = terminal.overall[0];
+  const reasonTie =
+    terminal.overall.length > 1 &&
+    terminal.overall[1].count === topReason?.count;
+  const showTopReason = !!topReason && topReason.count > 0 && !reasonTie;
+  const reasonTitle = showTopReason
+    ? `Most cancel due to ${reasonLabel(topReason.reason)}`
+    : 'Cancellation reasons';
+  const topReasonPct =
+    showTopReason && terminal.total > 0
+      ? Math.round((topReason.count / terminal.total) * 100)
+      : null;
+
   const growthBadge =
     growth.pct === null
       ? { label: 'Building history', tone: 'muted' as const }
@@ -281,7 +347,13 @@ export default async function AdmissionsInsightsPage({
       <DashboardHero
         eyebrow="Admissions · Insights"
         title="Enrollment Health"
-        description="The story behind the funnel — how application demand is trending, how well we convert applicants, and where they fall away before enrolling."
+        description={
+          applicationsCount > 0
+            ? biggestLeakStage && biggestLeakStage.dropOffPct > 0
+              ? `${conversionPct}% of applicants enrol — most who don't fall away at ${biggestLeakStage.label}.`
+              : `${conversionPct}% of applicants enrol. This is the story behind the funnel: where demand comes from, and where applicants fall away.`
+            : 'The story behind the funnel — how application demand is trending, how well we convert applicants, and where they fall away before enrolling.'
+        }
         badges={[
           { label: selectedAy },
           {
@@ -300,126 +372,137 @@ export default async function AdmissionsInsightsPage({
         />
       </div>
 
-      {/* 1 — Funnel headline: application demand + conversion (NOT enrolled
+      {/* ═══ Chapter 1 — Demand & conversion ═══
+          How much demand the funnel takes in, and how well it converts. */}
+      <div className="space-y-8 border-t-2 border-brand-indigo/25 pt-7">
+        <div className="space-y-1">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-indigo">
+            Chapter 1
+          </p>
+          <h2 className="font-serif text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+            Demand &amp; conversion
+          </h2>
+        </div>
+
+        {/* 1 — Funnel headline: application demand + conversion (NOT enrolled
           headcount — that's the enrolled body, owned by Records Insights).
           Primary-AY metrics (Conversion rate, Applications cancelled) always
           render. Only the demand-comparison subtext reacts to `demandState`
           (FIX 2 — matches Records' Section-1 pattern). */}
-      <InsightsSection
-        eyebrow="Demand & conversion"
-        title="Is the funnel healthy?"
-        description={
-          demandState === 'ok'
-            ? `Application demand this year compared with ${compareAy}.`
-            : compareAy === null
-              ? 'Pick a comparison year above to see year-over-year demand. Until then, this is the current cycle.'
-              : `No application data found for ${compareAy}. Try a different comparison year.`
-        }
-      >
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <MetricCard
-            label="Applications received"
-            value={applicationsCount}
-            icon={FileStack}
-            intent="default"
-            {...(applicationsDelta
-              ? {
-                  delta: applicationsDelta,
-                  deltaGoodWhen: 'up' as const,
-                  comparisonLabel: `${priorApplications?.toLocaleString('en-SG')} in ${compareAy}`,
-                }
-              : {
-                  subtext:
-                    demandState === 'no-data'
-                      ? `No data for ${compareAy}`
-                      : compareAy === null
-                        ? 'Pick a comparison year above'
-                        : undefined,
-                })}
-          />
-          <MetricCard
-            label="Conversion rate"
-            value={conversionPct}
-            format="percent"
-            icon={Percent}
-            intent="good"
-            {...(conversionDelta
-              ? {
-                  delta: conversionDelta,
-                  deltaGoodWhen: 'up' as const,
-                  deltaFormat: 'absolute' as const,
-                  deltaUnit: 'pp',
-                  comparisonLabel: `${priorConversionPct?.toFixed(1)}% in ${compareAy}`,
-                }
-              : {
-                  subtext: `${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`,
-                })}
-          />
-          <MetricCard
-            label="Applications cancelled"
-            value={terminal.total}
-            icon={UserMinus}
-            intent={terminal.total > 0 ? 'warning' : 'default'}
-            subtext="withdrawn or cancelled before enrolling"
-          />
-        </section>
-      </InsightsSection>
+        <InsightsSection
+          eyebrow="Headline"
+          title="Is the funnel healthy?"
+          description={
+            demandState === 'ok'
+              ? `Application demand this year compared with ${compareAy}.`
+              : compareAy === null
+                ? 'Pick a comparison year above to see year-over-year demand. Until then, this is the current cycle.'
+                : `No application data found for ${compareAy}. Try a different comparison year.`
+          }
+        >
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <MetricCard
+              label="Applications received"
+              value={applicationsCount}
+              icon={FileStack}
+              intent="default"
+              {...(applicationsDelta
+                ? {
+                    delta: applicationsDelta,
+                    deltaGoodWhen: 'up' as const,
+                    comparisonLabel: `${priorApplications?.toLocaleString('en-SG')} in ${compareAy}`,
+                  }
+                : {
+                    subtext:
+                      demandState === 'no-data'
+                        ? `No data for ${compareAy}`
+                        : compareAy === null
+                          ? 'Pick a comparison year above'
+                          : undefined,
+                  })}
+            />
+            <MetricCard
+              label="Conversion rate"
+              value={conversionPct}
+              format="percent"
+              icon={Percent}
+              intent="good"
+              {...(conversionDelta
+                ? {
+                    delta: conversionDelta,
+                    deltaGoodWhen: 'up' as const,
+                    deltaFormat: 'absolute' as const,
+                    deltaUnit: 'pp',
+                    comparisonLabel: `${priorConversionPct?.toFixed(1)}% in ${compareAy}`,
+                  }
+                : {
+                    subtext: `${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`,
+                  })}
+            />
+            <MetricCard
+              label="Applications cancelled"
+              value={terminal.total}
+              icon={UserMinus}
+              intent={terminal.total > 0 ? 'warning' : 'default'}
+              subtext="withdrawn or cancelled before enrolling"
+            />
+          </section>
+        </InsightsSection>
 
-      {/* 2 — Intake trend: per-month, two-AY overlay.
+        {/* 2 — Intake trend: per-month, two-AY overlay.
           Shows applications received per month across the full Jan–Nov HFSE
           AY window. When a comparison AY is selected, it overlays as a muted
           dashed line so the registrar can read seasonal patterns at a glance.
           Future months in the current AY render as gaps (null) so the line
           doesn't misleadingly flatline to zero. */}
-      <InsightsSection
-        eyebrow="Demand"
-        title="How is intake trending?"
-        description={
-          compareAy
-            ? `Applications received per month — ${selectedAy} (solid) vs ${compareAy} (dashed).`
-            : 'Applications received per month across the academic year.'
-        }
-      >
-        {intakeTrend.data.some((d) =>
-          intakeTrend.series.some((s) => d[s.key] !== null)
-        ) ? (
-          <Card>
-            <CardHeader>
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Applications per month
-              </CardDescription>
-              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Intake trend
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <MultiSeriesTrendChart
-                series={intakeTrend.series}
-                data={intakeTrend.data}
-                yFormat="number"
-              />
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="border-dashed">
-            <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              No applications recorded yet for this academic year.
-            </CardContent>
-          </Card>
-        )}
-      </InsightsSection>
+        <InsightsSection
+          eyebrow="Demand"
+          title="How is intake trending?"
+          description={
+            compareAy
+              ? `Applications received per month — ${selectedAy} (solid) vs ${compareAy} (dashed).`
+              : 'Applications received per month across the academic year.'
+          }
+        >
+          {intakeTrend.data.some((d) =>
+            intakeTrend.series.some((s) => d[s.key] !== null)
+          ) ? (
+            <Card>
+              <CardHeader>
+                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  Applications per month
+                </CardDescription>
+                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                  Intake trend
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MultiSeriesTrendChart
+                  series={intakeTrend.series}
+                  data={intakeTrend.data}
+                  yFormat="number"
+                />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center text-sm text-muted-foreground">
+                No applications recorded yet for this academic year.
+              </CardContent>
+            </Card>
+          )}
+        </InsightsSection>
 
-      {/* 3 — Deep funnel + conversion by level, side-by-side on large screens. */}
-      <InsightsSection
-        eyebrow="Funnel"
-        title="Where do applicants stall?"
-        description={
-          biggestLeakStage && biggestLeakStage.dropOffPct > 0
-            ? `Biggest leak: at ${biggestLeakStage.label} — ${biggestLeakStage.dropOffPct}% of applicants who reached the prior step fall away here.`
-            : 'Each bar shows how many applicants reached that stage. A non-null stage date means the admissions team worked that row — the funnel is cumulative.'
-        }
-      >
-        <div className="grid gap-4 xl:grid-cols-2">
+        {/* 3 — Deep funnel: where applicants stall (Chapter 1 closes after). */}
+        <InsightsSection
+          eyebrow="Funnel"
+          title="Where do applicants stall?"
+          description={
+            biggestLeakStage && biggestLeakStage.dropOffPct > 0
+              ? `Biggest leak: at ${biggestLeakStage.label} — ${biggestLeakStage.dropOffPct}% of applicants who reached the prior step fall away here.`
+              : 'Each bar shows how many applicants reached that stage. A non-null stage date means the admissions team worked that row — the funnel is cumulative.'
+          }
+        >
           {/* 3a — Deep funnel (registration → class assignment) */}
           <Card>
             <CardHeader>
@@ -428,351 +511,453 @@ export default async function AdmissionsInsightsPage({
                 total applications
               </CardDescription>
               <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Deep funnel
+                {funnelTitle}
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {deepFunnel.stages.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
                   No stage data available yet.
                 </p>
               ) : (
-                <ul className="space-y-3">
-                  {deepFunnel.stages.map((stage) => {
-                    const widthPct =
-                      deepFunnel.totalPool > 0
-                        ? Math.max(
-                            4,
-                            Math.round(
-                              (stage.count / deepFunnel.totalPool) * 100
+                <>
+                  <ul className="space-y-3">
+                    {deepFunnel.stages.map((stage) => {
+                      const widthPct =
+                        deepFunnel.totalPool > 0
+                          ? Math.max(
+                              4,
+                              Math.round(
+                                (stage.count / deepFunnel.totalPool) * 100
+                              )
                             )
-                          )
-                        : 0;
-                    return (
-                      <li key={stage.key} className="space-y-1.5">
-                        <div className="flex items-baseline justify-between gap-3 text-sm">
-                          <span className="font-medium text-foreground">
-                            {stage.label}
-                          </span>
-                          <span className="flex items-center gap-2 font-mono text-xs tabular-nums text-muted-foreground">
-                            {stage.count.toLocaleString('en-SG')}
-                            {stage.dropOffPct > 0 && (
-                              <>
-                                <span className="text-destructive">
-                                  −{stage.dropOffPct}%
-                                </span>
-                                {stage.isBiggestLeak && (
-                                  <Badge
-                                    variant="destructive"
-                                    className="px-1.5 py-0 text-[10px] font-semibold"
-                                  >
-                                    Biggest leak
-                                  </Badge>
-                                )}
-                              </>
-                            )}
-                          </span>
-                        </div>
-                        <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                          <div
-                            className={
-                              stage.isBiggestLeak
-                                ? 'h-full rounded-full bg-gradient-to-r from-destructive/70 to-destructive/40'
-                                : 'h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy'
-                            }
-                            style={{ width: `${widthPct}%` }}
-                          />
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+                          : 0;
+                      return (
+                        <li key={stage.key} className="space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-3 text-sm">
+                            <span className="font-medium text-foreground">
+                              {stage.label}
+                            </span>
+                            <span className="flex items-center gap-2 font-mono text-xs tabular-nums text-muted-foreground">
+                              {stage.count.toLocaleString('en-SG')}
+                              {stage.dropOffPct > 0 && (
+                                <>
+                                  <span className="text-destructive">
+                                    −{stage.dropOffPct}%
+                                  </span>
+                                  {stage.isBiggestLeak && (
+                                    <Badge
+                                      variant="destructive"
+                                      className="px-1.5 py-0 text-[10px] font-semibold"
+                                    >
+                                      Biggest leak
+                                    </Badge>
+                                  )}
+                                </>
+                              )}
+                            </span>
+                          </div>
+                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                            <div
+                              className={
+                                stage.isBiggestLeak
+                                  ? 'h-full rounded-full bg-gradient-to-r from-destructive/70 to-destructive/40'
+                                  : 'h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy'
+                              }
+                              style={{ width: `${widthPct}%` }}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {/* Callout (act): the biggest leak, quantified. Renders only
+                      when the loader flagged a real leak; otherwise omitted. */}
+                  {biggestLeakStage && biggestLeakStage.dropOffPct > 0 ? (
+                    <RecommendationCallout tone="act">
+                      {biggestLeakStage.dropOffPct}% of applicants fall away at{' '}
+                      {biggestLeakStage.label} — focus follow-up there to
+                      recover the most.
+                    </RecommendationCallout>
+                  ) : null}
+                </>
               )}
             </CardContent>
           </Card>
+        </InsightsSection>
+      </div>
+      {/* ═══ end Chapter 1 ═══ */}
 
-          {/* 3b — Conversion by level */}
+      {/* ═══ Chapter 2 — Who & why we lose ═══
+          Which levels convert worst, and the reasons applicants give for
+          dropping out before enrolling. */}
+      <div className="space-y-8 border-t-2 border-brand-amber/30 pt-7">
+        <div className="space-y-1">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-amber">
+            Chapter 2
+          </p>
+          <h2 className="font-serif text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+            Who &amp; why we lose
+          </h2>
+        </div>
+
+        {/* 2.1 — Conversion by level */}
+        <InsightsSection
+          eyebrow="Conversion gaps"
+          title="Which levels convert worst?"
+          description="How many applicants at each level go on to enrol — terminal statuses excluded so this reflects the active pipeline."
+        >
           <Card>
             <CardHeader>
               <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
                 Active pipeline only — terminal statuses excluded
               </CardDescription>
               <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Conversion by level
+                {levelTitle}
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {conversionByLevel.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
                   No level data available.
                 </p>
               ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                      <th className="pb-2 pr-3 font-semibold">Level</th>
-                      <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
-                        Applied
-                      </th>
-                      <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
-                        Enrolled
-                      </th>
-                      <th className="pb-2 text-right font-semibold tabular-nums">
-                        Rate
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-hairline">
-                    {conversionByLevel.map((row) => (
-                      <tr key={row.level}>
-                        <td className="py-2 pr-3 font-medium text-foreground">
-                          {row.level}
-                        </td>
-                        <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">
-                          {row.applied.toLocaleString('en-SG')}
-                        </td>
-                        <td className="py-2 pr-3 text-right font-mono tabular-nums text-foreground">
-                          {row.enrolled.toLocaleString('en-SG')}
-                        </td>
-                        <td className="py-2 text-right font-mono text-xs tabular-nums text-muted-foreground">
-                          {row.conversionPct}%
-                        </td>
+                <>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                        <th className="pb-2 pr-3 font-semibold">Level</th>
+                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
+                          Applied
+                        </th>
+                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
+                          Enrolled
+                        </th>
+                        <th className="pb-2 text-right font-semibold tabular-nums">
+                          Rate
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-hairline">
+                      {conversionByLevel.map((row) => {
+                        const isWorst =
+                          showWorstLevel &&
+                          row.level === worstLevel.item!.level;
+                        return (
+                          <tr key={row.level}>
+                            <td className="py-2 pr-3 font-medium text-foreground">
+                              {row.level}
+                            </td>
+                            <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">
+                              {row.applied.toLocaleString('en-SG')}
+                            </td>
+                            <td className="py-2 pr-3 text-right font-mono tabular-nums text-foreground">
+                              {row.enrolled.toLocaleString('en-SG')}
+                            </td>
+                            <td
+                              className={
+                                isWorst
+                                  ? 'py-2 text-right font-mono text-xs font-semibold tabular-nums text-brand-amber'
+                                  : 'py-2 text-right font-mono text-xs tabular-nums text-muted-foreground'
+                              }
+                            >
+                              {row.conversionPct}%
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {/* Callout (watch): the worst-converting level, but only when
+                      its gap below the overall rate is meaningful and unambiguous. */}
+                  {showWorstLevel ? (
+                    <RecommendationCallout tone="watch">
+                      {worstLevel.item!.level} converts at{' '}
+                      {worstLevel.item!.conversionPct}% — {levelGap}pp below the{' '}
+                      {conversionPct}% overall rate. Worth a closer look at this
+                      level&rsquo;s pipeline.
+                    </RecommendationCallout>
+                  ) : null}
+                </>
               )}
             </CardContent>
           </Card>
-        </div>
-      </InsightsSection>
+        </InsightsSection>
 
-      {/* 4 — Why applicants are lost (pre-enrolment; distinct from Records'
-          enrolled-student withdrawals). */}
-      <InsightsSection
-        eyebrow="Lost applicants"
-        title="Why don't they enroll?"
-        description="Reasons recorded when an application is withdrawn or cancelled before enrolling — overall and per level. (Students who leave after enrolling are in Records → Insights.)"
-      >
-        {terminal.total === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              No cancelled or withdrawn applications recorded this year —
-              nothing to break down. That&rsquo;s a good sign.
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  Cancellation reasons
-                </CardDescription>
-                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  Overall
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <DonutChart
-                  data={reasonSlices}
-                  centerLabel="Cancelled"
-                  centerValue={terminal.total}
-                />
+        {/* 2.2 — Why applicants are lost (pre-enrolment; distinct from Records'
+            enrolled-student withdrawals). */}
+        <InsightsSection
+          eyebrow="Lost applicants"
+          title="Why don't they enroll?"
+          description="Reasons recorded when an application is withdrawn or cancelled before enrolling — overall and per level. (Students who leave after enrolling are in Records → Insights.)"
+        >
+          {terminal.total === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center text-sm text-muted-foreground">
+                No cancelled or withdrawn applications recorded this year —
+                nothing to break down. That&rsquo;s a good sign.
               </CardContent>
             </Card>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                    Cancellation reasons
+                  </CardDescription>
+                  <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                    {reasonTitle}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <DonutChart
+                    data={reasonSlices}
+                    centerLabel="Cancelled"
+                    centerValue={terminal.total}
+                  />
+                  {/* Callout (watch): the top cancellation cause + its share.
+                      Suppressed on an empty set or a tie for first. */}
+                  {showTopReason ? (
+                    <RecommendationCallout tone="watch">
+                      {reasonLabel(topReason.reason)} accounts for{' '}
+                      {topReason.count} of {terminal.total} cancellations
+                      {topReasonPct !== null ? ` (${topReasonPct}%)` : ''} — the
+                      clearest place to address drop-out.
+                    </RecommendationCallout>
+                  ) : null}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                    Top reason per level
+                  </CardDescription>
+                  <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                    By level
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="divide-y divide-hairline">
+                    {terminal.byLevel.map((lvl) => {
+                      const lvlTopReason = lvl.reasons[0];
+                      return (
+                        <li
+                          key={lvl.level}
+                          className="flex items-baseline justify-between gap-3 py-2.5 text-sm"
+                        >
+                          <span className="font-medium text-foreground">
+                            {lvl.level}
+                          </span>
+                          <span className="min-w-0 truncate text-right text-muted-foreground">
+                            {lvlTopReason
+                              ? reasonLabel(lvlTopReason.reason)
+                              : '—'}
+                            <span className="ml-2 font-mono text-xs tabular-nums text-foreground">
+                              {lvl.count.toLocaleString('en-SG')}
+                            </span>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </InsightsSection>
+      </div>
+      {/* ═══ end Chapter 2 ═══ */}
+
+      {/* ═══ Chapter 3 — Channels & segments ═══
+          Where applicants come from, which channels convert, how long they
+          take, and how applicant segments differ. */}
+      <div className="space-y-8 border-t-2 border-brand-mint/40 pt-7">
+        <div className="space-y-1">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground">
+            Chapter 3
+          </p>
+          <h2 className="font-serif text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+            Channels &amp; segments
+          </h2>
+        </div>
+
+        <InsightsSection
+          eyebrow="Sources & speed"
+          title="How fast, and from where?"
+          description="How long applicants take to convert, which channels send them, and how New vs Current students differ."
+        >
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* 3.1a — Time to enroll */}
             <Card>
               <CardHeader>
                 <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  Top reason per level
+                  Average across the year
                 </CardDescription>
                 <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  By level
+                  Time to enroll
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <p className="font-serif text-[40px] font-semibold leading-none tabular-nums text-foreground">
+                  {timeToEnroll.avgDays}
+                  <span className="ml-1 text-lg font-normal text-muted-foreground">
+                    days
+                  </span>
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Mean days from application to enrolment, over{' '}
+                  {timeToEnroll.sampleSize.toLocaleString('en-SG')} completed
+                  enrolment{timeToEnroll.sampleSize === 1 ? '' : 's'}.
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* 3.1b — Enrolee type conversion */}
+            <Card>
+              <CardHeader>
+                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  New vs returning applicants
+                </CardDescription>
+                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                  Conversion by applicant type
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <ul className="divide-y divide-hairline">
-                  {terminal.byLevel.map((lvl) => {
-                    const topReason = lvl.reasons[0];
-                    return (
-                      <li
-                        key={lvl.level}
-                        className="flex items-baseline justify-between gap-3 py-2.5 text-sm"
-                      >
-                        <span className="font-medium text-foreground">
-                          {lvl.level}
-                        </span>
-                        <span className="min-w-0 truncate text-right text-muted-foreground">
-                          {topReason ? reasonLabel(topReason.reason) : '—'}
-                          <span className="ml-2 font-mono text-xs tabular-nums text-foreground">
-                            {lvl.count.toLocaleString('en-SG')}
-                          </span>
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
+                {enroleeTypeConversion.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    No applicant type data available.
+                  </p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                        <th className="pb-2 pr-3 font-semibold">Type</th>
+                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
+                          Applied
+                        </th>
+                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
+                          Enrolled
+                        </th>
+                        <th className="pb-2 text-right font-semibold tabular-nums">
+                          Rate
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-hairline">
+                      {enroleeTypeConversion.map((row) => (
+                        <tr key={row.type}>
+                          <td className="py-2 pr-3 font-medium text-foreground">
+                            {row.type}
+                          </td>
+                          <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">
+                            {row.applied.toLocaleString('en-SG')}
+                          </td>
+                          <td className="py-2 pr-3 text-right font-mono tabular-nums text-foreground">
+                            {row.enrolled.toLocaleString('en-SG')}
+                          </td>
+                          <td className="py-2 text-right font-mono text-xs tabular-nums text-muted-foreground">
+                            {row.conversionPct}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </CardContent>
             </Card>
           </div>
-        )}
-      </InsightsSection>
 
-      {/* 5 — Time to enroll + referral conversion + enrolee type. */}
-      <InsightsSection
-        eyebrow="Sources & speed"
-        title="How fast, and from where?"
-        description="How long applicants take to convert, which channels send them, and how New vs Current students differ."
-      >
-        <div className="grid gap-4 lg:grid-cols-2">
-          {/* 5a — Time to enroll */}
+          {/* 3.1c — Referral conversion table (full width) */}
           <Card>
             <CardHeader>
               <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Average across the year
+                All applicants (including cancelled/withdrawn) — true conversion
+                rate
               </CardDescription>
               <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Time to enroll
+                {referralTitle}
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <p className="font-serif text-[40px] font-semibold leading-none tabular-nums text-foreground">
-                {timeToEnroll.avgDays}
-                <span className="ml-1 text-lg font-normal text-muted-foreground">
-                  days
-                </span>
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Mean days from application to enrolment, over{' '}
-                {timeToEnroll.sampleSize.toLocaleString('en-SG')} completed
-                enrolment{timeToEnroll.sampleSize === 1 ? '' : 's'}.
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* 5b — Enrolee type conversion */}
-          <Card>
-            <CardHeader>
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                New vs returning applicants
-              </CardDescription>
-              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Conversion by applicant type
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {enroleeTypeConversion.length === 0 ? (
+            <CardContent className="space-y-4">
+              {referralConversion.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  No applicant type data available.
+                  No referral sources recorded yet.
                 </p>
               ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                      <th className="pb-2 pr-3 font-semibold">Type</th>
-                      <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
-                        Applied
-                      </th>
-                      <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
-                        Enrolled
-                      </th>
-                      <th className="pb-2 text-right font-semibold tabular-nums">
-                        Rate
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-hairline">
-                    {enroleeTypeConversion.map((row) => (
-                      <tr key={row.type}>
-                        <td className="py-2 pr-3 font-medium text-foreground">
-                          {row.type}
-                        </td>
-                        <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">
-                          {row.applied.toLocaleString('en-SG')}
-                        </td>
-                        <td className="py-2 pr-3 text-right font-mono tabular-nums text-foreground">
-                          {row.enrolled.toLocaleString('en-SG')}
-                        </td>
-                        <td className="py-2 text-right font-mono text-xs tabular-nums text-muted-foreground">
-                          {row.conversionPct}%
-                        </td>
+                <>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                        <th className="pb-2 pr-3 font-semibold">Source</th>
+                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
+                          Applied
+                        </th>
+                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
+                          Enrolled
+                        </th>
+                        <th className="pb-2 text-right font-semibold">Rate</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-hairline">
+                      {referralConversion.map((r) => {
+                        const barWidth =
+                          totalRef > 0
+                            ? Math.max(
+                                2,
+                                Math.round((r.applied / totalRef) * 100)
+                              )
+                            : 0;
+                        return (
+                          <tr key={r.source}>
+                            <td className="py-2.5 pr-3">
+                              <div className="space-y-1">
+                                <span className="font-medium text-foreground">
+                                  {r.source}
+                                </span>
+                                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                                  <div
+                                    className="h-full rounded-full bg-gradient-to-r from-brand-mint to-brand-sky"
+                                    style={{ width: `${barWidth}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-muted-foreground">
+                              {r.applied.toLocaleString('en-SG')}
+                            </td>
+                            <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-foreground">
+                              {r.enrolled.toLocaleString('en-SG')}
+                            </td>
+                            <td className="py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground">
+                              {r.conversionPct}%
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {/* Callout (positive): the best-converting channel, guarded by
+                      a minimum sample so a tiny channel can't win on noise.
+                      Names the worst end too when it also clears the guard. */}
+                  {showBestRef ? (
+                    <RecommendationCallout tone="positive">
+                      {bestRef.item!.source} converts best at{' '}
+                      {bestRef.item!.conversionPct}%
+                      {!worstRef.isTie &&
+                      worstRef.item !== null &&
+                      worstRef.item.source !== bestRef.item!.source
+                        ? `, ${worstRef.item.source} the lowest at ${worstRef.item.conversionPct}%`
+                        : ''}{' '}
+                      — lean into what&rsquo;s working.
+                    </RecommendationCallout>
+                  ) : null}
+                </>
               )}
             </CardContent>
           </Card>
-        </div>
-
-        {/* 5c — Referral conversion table (full width) */}
-        <Card>
-          <CardHeader>
-            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-              All applicants (including cancelled/withdrawn) — true conversion
-              rate
-            </CardDescription>
-            <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-              Referral sources: conversion
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {referralConversion.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                No referral sources recorded yet.
-              </p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                    <th className="pb-2 pr-3 font-semibold">Source</th>
-                    <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
-                      Applied
-                    </th>
-                    <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
-                      Enrolled
-                    </th>
-                    <th className="pb-2 text-right font-semibold">Rate</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-hairline">
-                  {referralConversion.map((r) => {
-                    const barWidth =
-                      totalRef > 0
-                        ? Math.max(2, Math.round((r.applied / totalRef) * 100))
-                        : 0;
-                    return (
-                      <tr key={r.source}>
-                        <td className="py-2.5 pr-3">
-                          <div className="space-y-1">
-                            <span className="font-medium text-foreground">
-                              {r.source}
-                            </span>
-                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                              <div
-                                className="h-full rounded-full bg-gradient-to-r from-brand-mint to-brand-sky"
-                                style={{ width: `${barWidth}%` }}
-                              />
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-muted-foreground">
-                          {r.applied.toLocaleString('en-SG')}
-                        </td>
-                        <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-foreground">
-                          {r.enrolled.toLocaleString('en-SG')}
-                        </td>
-                        <td className="py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground">
-                          {r.conversionPct}%
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
-      </InsightsSection>
+        </InsightsSection>
+      </div>
+      {/* ═══ end Chapter 3 ═══ */}
 
       {/* 6 — Takeaways narrative. */}
       <InsightsSection
