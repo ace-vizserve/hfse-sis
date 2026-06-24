@@ -174,6 +174,10 @@ type Persona = {
     | 'Cancelled'
     | 'Withdrawn';
   applicationRemarks?: string | null;
+  // Terminal reason — required on Cancelled/Withdrawn rows since commit 9b1a29b
+  // made the stage route 422 without one. Feeds cancellation-causes donut.
+  applicationTerminalReason?: string | null;
+  applicationTerminalNotes?: string | null;
   enrolmentDateOffset: number; // days from today (negative = past)
   applicationUpdateDateOffset?: number | null; // for Cancelled/Withdrawn terminal update
   // Stage tracking (offsets from today, negative = past; null = stage not reached)
@@ -2012,6 +2016,9 @@ const PERSONAS: Persona[] = [
     applicationStatus: 'Cancelled',
     applicationRemarks:
       'Family relocated to overseas posting prior to start of academic year. Parent requested withdrawal on 2026-04-21.',
+    applicationTerminalReason: 'family_relocation',
+    applicationTerminalNotes:
+      'Family is relocating to the Philippines due to a corporate posting. Unable to start at HFSE this academic year.',
     enrolmentDateOffset: -50,
     applicationUpdateDateOffset: -25,
     registrationStatus: 'Finished',
@@ -2109,6 +2116,9 @@ const PERSONAS: Persona[] = [
     applicationStatus: 'Withdrawn',
     applicationRemarks:
       'Student has decided to continue at current school and will not be transferring to HFSE for AY2027.',
+    applicationTerminalReason: 'chose_another_school',
+    applicationTerminalNotes:
+      'Family decided to remain at current school after re-evaluating options.',
     enrolmentDateOffset: -75,
     applicationUpdateDateOffset: -45,
     registrationStatus: 'Finished',
@@ -2208,6 +2218,9 @@ const PERSONAS: Persona[] = [
     applicationStatus: 'Withdrawn',
     applicationRemarks:
       'Family unable to proceed with enrolment due to financial constraints. Registration fee refund requested.',
+    applicationTerminalReason: 'financial',
+    applicationTerminalNotes:
+      'Family cited financial constraints and requested a refund of the registration fee.',
     enrolmentDateOffset: -90,
     applicationUpdateDateOffset: -60,
     registrationStatus: 'Finished',
@@ -3126,6 +3139,9 @@ const PERSONAS: Persona[] = [
     applicationStatus: 'Cancelled',
     applicationRemarks:
       'Family decided to remain at current school. Parent notified admissions team on 2026-03-15.',
+    applicationTerminalReason: 'chose_another_school',
+    applicationTerminalNotes:
+      'Parent confirmed the family has decided to remain at their current school.',
     enrolmentDateOffset: -42,
     applicationUpdateDateOffset: -20,
     registrationStatus: 'Finished',
@@ -3226,6 +3242,9 @@ const PERSONAS: Persona[] = [
     applicationStatus: 'Withdrawn',
     applicationRemarks:
       'Student admitted to sibling school abroad. Parent withdrew application prior to contract stage.',
+    applicationTerminalReason: 'chose_another_school',
+    applicationTerminalNotes:
+      'Student was offered a place at a sibling school. Family withdrew the HFSE application.',
     enrolmentDateOffset: -36,
     applicationUpdateDateOffset: -18,
     registrationStatus: 'Finished',
@@ -3539,6 +3558,10 @@ function buildStatusRow(p: Persona): Record<string, unknown> {
     // SIS-side 7-value enum (KD #59)
     applicationStatus: p.applicationStatus,
     applicationRemarks: p.applicationRemarks ?? null,
+    // Terminal reason — required on Cancelled/Withdrawn (stage route 422s without
+    // one since commit 9b1a29b). Feeds the cancellation-causes donut on Insights.
+    applicationTerminalReason: p.applicationTerminalReason ?? null,
+    applicationTerminalNotes: p.applicationTerminalNotes ?? null,
     // Stage update dates are 0/490 populated in prod — omitted per KD #125.
     registrationStatus: p.registrationStatus ?? null,
     registrationRemarks: null,

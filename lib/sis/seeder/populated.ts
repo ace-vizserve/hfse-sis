@@ -27,6 +27,7 @@ import { DOCUMENT_SLOTS, OPTIONAL_DOCUMENT_SLOT_KEYS } from '@/lib/sis/queries';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 
 import { pickNames } from './names';
+import { APPLICATION_TERMINAL_REASON_VALUES } from '@/lib/schemas/sis';
 
 // Seed actor for synthetic audit rows (movements feed, late-enrol transitions).
 // Matches the literal in lib/sis/seeder/edge-cases.ts (SEED_ACTOR_EMAIL) so the
@@ -2216,6 +2217,33 @@ async function seedAdmissionsFunnel(
           .toISOString()
           .slice(0, 10);
       }
+      // Terminal reason for Cancelled / Withdrawn rows (migration 067 / KD #111).
+      // These are now unavoidable (the stage route 422s without a reason — KD #149
+      // follow-on from commit 9b1a29b), so the seeder must populate them so the test
+      // AY matches the as-used system. Feeds the cancellation-causes donut on
+      // /admissions/insights and the reason column on /admissions/applications/closed.
+      // Excludes 'other' (which requires non-empty notes) to keep the seeder simple.
+      if (
+        applicationStatus === 'Cancelled' ||
+        applicationStatus === 'Withdrawn'
+      ) {
+        const SEEDABLE_REASONS = APPLICATION_TERMINAL_REASON_VALUES.filter(
+          (r) => r !== 'other'
+        ) as readonly string[];
+        const TERMINAL_NOTES: Record<string, string> = {
+          chose_another_school: 'Family decided to enrol at another school.',
+          visa_denied: 'Student Pass application was not approved by ICA.',
+          lost_interest: 'Applicant stopped responding after initial inquiry.',
+          financial: 'Family cited financial constraints.',
+          family_relocation: 'Family is relocating overseas.',
+          health: 'Health and personal reasons cited by parent.',
+        };
+        const reason =
+          SEEDABLE_REASONS[Math.floor(rand() * SEEDABLE_REASONS.length)] ??
+          'chose_another_school';
+        statusRow.applicationTerminalReason = reason;
+        statusRow.applicationTerminalNotes = TERMINAL_NOTES[reason] ?? null;
+      }
       statusRows.push(statusRow);
     }
   }
@@ -2865,6 +2893,18 @@ async function seedEnrolledAdmissionsRows(
     return new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
   };
 
+  // `enrolledAt` — write-once enrolment timestamp (migration 075). Stamped 7–45
+  // days after the row's created_at, giving a realistic application→enrolment
+  // processing lag. Only set for Enrolled / Enrolled (Conditional) rows —
+  // Withdrawn personas never completed enrolment.
+  const personaEnrolledAt = (i: number): string | null => {
+    if (i >= PERSONA_WITHDRAWN_RANGE.start && i < PERSONA_WITHDRAWN_RANGE.end)
+      return null;
+    const createdAt = Date.parse(personaCreatedAtIso(i));
+    const lagDays = 7 + Math.floor(enrolledRand() * 39); // 7–45 days
+    return new Date(createdAt + lagDays * 24 * 60 * 60 * 1000).toISOString();
+  };
+
   // Per-row metadata computed once, then shared between appInserts and
   // statusInserts so apps.category + status.enroleeType always agree (they
   // mirror each other in production).
@@ -3010,6 +3050,11 @@ async function seedEnrolledAdmissionsRows(
       assessmentStatus: fill.assessmentStatus,
       contractStatus: fill.contractStatus,
       feeStatus: fill.feeStatus,
+      // Write-once enrolment timestamp (migration 075). Stamped 7–45 days after
+      // created_at to give a realistic application→enrolment processing lag.
+      // Withdrawn personas never completed enrolment → null. This feeds the
+      // time-to-enrol KPI + histogram on /admissions and /admissions/insights.
+      enrolledAt: personaEnrolledAt(i),
       // Post-enrolment stages stay null for a just-enrolled student (real dump
       // shows supplies/orientation null) — and classAY stays null.
     };
