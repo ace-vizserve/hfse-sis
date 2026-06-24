@@ -65,8 +65,10 @@ type JoinedFunnelRow = {
   enroleeType: string | null;
   levelApplied: string | null;
   howDidYouKnowAboutHFSEIS: string | null;
-  /** Whether this row has a non-null date for each deep-funnel stage. */
-  reachedStages: Set<DeepFunnelStageKey>;
+  /** Which deep-funnel stages this row reached (non-null stage date). Array,
+   *  not a Set — this crosses the unstable_cache JSON boundary (a Set
+   *  serializes to {} and loses .has). */
+  reachedStages: DeepFunnelStageKey[];
 };
 
 // Map each deep-funnel stage key to its actual DB column name.
@@ -143,11 +145,11 @@ async function loadFunnelRowsUncached(
     if (!s.enroleeNumber) continue;
     const app = appByEnrolee.get(s.enroleeNumber);
 
-    const reachedStages = new Set<DeepFunnelStageKey>();
+    const reachedStages: DeepFunnelStageKey[] = [];
     for (const key of DEEP_FUNNEL_STAGE_KEYS) {
       const col = STAGE_DATE_COL[key];
       if (s[col] !== null && s[col] !== undefined) {
-        reachedStages.add(key);
+        reachedStages.push(key);
       }
     }
 
@@ -479,7 +481,7 @@ export async function getDeepFunnelStats(
   // Count rows that reached each stage (have a non-null stage date).
   const stageCounts = new Map<string, number>();
   for (const key of DEEP_FUNNEL_STAGE_KEYS) {
-    const count = rows.filter((r) => r.reachedStages.has(key)).length;
+    const count = rows.filter((r) => r.reachedStages.includes(key)).length;
     stageCounts.set(key, count);
   }
 
