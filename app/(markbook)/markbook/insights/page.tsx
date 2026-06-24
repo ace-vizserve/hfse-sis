@@ -309,9 +309,7 @@ export default async function MarkbookInsightsPage({
 
   const ledeDescription = showRegression
     ? `${biggestRegression.subjectName} (${biggestRegression.levelCode}) fell ${Math.abs(biggestRegression.delta).toFixed(1)} pts from ${biggestRegression.fromPeriod} to ${biggestRegression.toPeriod} — the biggest drop across all subjects and levels.`
-    : totalGraded > 0
-      ? 'How students are performing in graded subjects, which subjects need attention, and how steadily grades are moving across the year.'
-      : 'How students are performing in graded subjects, which subjects need attention, and how steadily grades are moving across the year.';
+    : 'How students are performing in graded subjects, which subjects need attention, and how steadily grades are moving across the year.';
 
   // Ch1 — §1 grade-distribution title: names the dominant lower band when it
   // accounts for a notable share, neutral otherwise.
