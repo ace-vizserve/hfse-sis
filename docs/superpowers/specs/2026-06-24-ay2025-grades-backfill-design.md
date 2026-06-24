@@ -4,7 +4,7 @@
 **Status:** Design (decisions approved in brainstorming; pending spec review)
 **Target:** AY2025 grades in **production** — so Markbook report cards (T1–T3) and the Academic Summary render complete, faithful, _issued_ grades, with WW/PT/QA component detail where available. This is the last piece of the AY2025 historical backfill (sections, roster, attendance, movements, form advisers, FCA comments, calendar, virtue themes already in prod).
 
-**Scope:** **T1–T3 only** — the grades folder contains Term 1/2/3 grading workbooks. T4 (final/annual) component files were not provided; T4 is deferred (see Out of Scope).
+**Scope:** **T1–T4.** The grades folder has T1–T3 component workbooks; **T4 has no component files**, so T4 grades come entirely from the masterfile (masterfile-only, like primary Social Studies). The masterfile carries T1–T4 + Overall + Award per examinable subject and T1–T4 letters for non-examinable, so the annual/Overall grade + Subject/Overall Awards **derive** from the four terms and **cross-check** against the masterfile's Overall + Award columns.
 
 ---
 
@@ -30,7 +30,7 @@
 3. **`Adjusted` > plain; skip `DO NOT USE`.**
 4. **Non-examinable included** — components + the issued letter.
 5. **Architecture: masterfile = spine, grading files = enrichment** (below).
-6. **Fileless subjects** (primary `SS`, any uncovered secondary level/subject) — store the masterfile grade with **no WW/PT/QA breakdown** (complete card; "view scores" empty for those; honest — the components genuinely weren't provided).
+6. **Fileless subjects** (primary `SS`, any uncovered secondary level/subject) — store the masterfile grade with **no WW/PT/QA breakdown** (complete card; "view scores" empty for those; honest — the components genuinely weren't provided). **This also covers all of T4** — no T4 component files exist, so every T4 grade is masterfile-only, and the annual/Overall + awards derive from T1–T4.
 7. **Mechanism: one-off importer script** — `dry-run → verification report → apply`. Loads `.env.local` itself; writes nothing until the dry-run is approved.
 
 ## 3. Architecture — masterfile spine + file enrichment
@@ -77,7 +77,6 @@ masterfile spine  ──►  for each (student × subject × term):
 
 ## 8. Out of scope
 
-- **T4 grades** — no T4 component files provided; the masterfile has T4 issued grades but importing them (masterfile-only) + the annual/GA recompute is a separate follow-up.
 - Building an **in-app grades-import feature** (this is a one-off historical backfill — YAGNI).
 - Provisioning the **missing AY2026 subject_configs** (separate go-live concern, flagged).
 - The **52 held DIFF_SN dups** (not in roster; skip, as in the FCA pass — pending Joann's canonical picks).
@@ -89,3 +88,5 @@ masterfile spine  ──►  for each (student × subject × term):
 - Settle the MT Filipino↔Mandarin per-section assignment from which file actually contains each section (don't assume from section name alone).
 - Pick the primary student-match key (sheet name vs (section, index)) by testing match coverage in the dry-run.
 - Confirm the secondary streaming (which levels take History vs Humanities vs Economics vs Literature) from the file sheet coverage, not assumption.
+- T4 + all non-examinable grades have no numeric components, so settle how a masterfile-only letter/number is stored so the report card + Academic Summary render the issued value (e.g. `grade_entries.letter_grade` / `annual_letter_grade` per KD #100/#104 for letters; a stored quarterly for examinable T4) — and where the per-term derived letter (KD #104) suffices vs needs storing.
+- Verify the **derived** annual/Overall + Subject/Overall Awards (KD #95, via `school_config` thresholds) match the masterfile's Overall + Award columns — same cross-check as the per-term quarterly; investigate any mismatch before apply.
