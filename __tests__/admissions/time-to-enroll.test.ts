@@ -1,16 +1,14 @@
 /**
- * Regression tests for BUG 1 — "Time to enrol" was structurally ~0 days.
+ * Historical regression tests for the time-to-enrol arithmetic.
  *
- * Root cause: `JoinedRow.applicationUpdatedDate` falls back to `created_at`
- * when the status table's column is null (common — 0/471 populated in AY2026).
- * Using the fallback for time-to-enrol arithmetic produced `end - start = 0`
- * for every un-stamped row.
- *
- * Fix: expose `enrolledAt` (raw status-table value, null when un-stamped) on
- * `JoinedRow`, and use only that field in time-to-enrol computations.
- *
- * These tests verify the pure arithmetic that the functions depend on so the
- * fix is regression-safe without requiring DB mocks.
+ * NOTE: the Admissions Insights "Time to enrol" KPI and the
+ * `getAverageTimeToEnrollment` loader it fed were REMOVED — there is no
+ * enrolment timestamp in the data (applicationUpdatedDate is 0/490 populated in
+ * prod), so the average was a phantom regardless of the arithmetic. These tests
+ * are retained as documentation of the (still-correct) day-delta logic, which is
+ * mirrored locally below and does not import the deleted loader; they exercise
+ * the same `enrolledAt`-only discipline used by the dashboard's
+ * range-KPI/histogram computations, which still read it.
  */
 
 import { describe, expect, it } from 'vitest';

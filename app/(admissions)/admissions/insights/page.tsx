@@ -31,12 +31,10 @@ import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   getAdmissionsKpisRange,
-  getAverageTimeToEnrollment,
   getConversionFunnel,
   getOutdatedApplications,
 } from '@/lib/admissions/dashboard';
 import {
-  getDeepFunnelStats,
   getConversionByLevel,
   getReferralConversion,
   getEnroleeTypeConversion,
@@ -139,11 +137,9 @@ export default async function AdmissionsInsightsPage({
     funnel,
     priorFunnel,
     terminal,
-    timeToEnroll,
     kpisResult,
     intakeTrendPoints,
     outdatedRows,
-    deepFunnel,
     conversionByLevel,
     referralConversion,
     enroleeTypeConversion,
@@ -151,13 +147,11 @@ export default async function AdmissionsInsightsPage({
     getConversionFunnel(selectedAy),
     compareAy ? getConversionFunnel(compareAy) : Promise.resolve(null),
     getAdmissionsTerminalReasons(selectedAy),
-    getAverageTimeToEnrollment(selectedAy),
     getAdmissionsKpisRange(rangeInput),
     getIntakeTrendByAy(trendAys),
     // BUG 2 fix: load real stalled-applicant count for the takeaways panel.
     getOutdatedApplications(selectedAy),
-    // Deep funnel + conversion breakdowns.
-    getDeepFunnelStats(selectedAy),
+    // Conversion breakdowns (by level / referral / applicant type).
     getConversionByLevel(selectedAy),
     getReferralConversion(selectedAy),
     getEnroleeTypeConversion(selectedAy),
@@ -210,8 +204,20 @@ export default async function AdmissionsInsightsPage({
     trendAys
   );
 
-  // Deep funnel: find the biggest leak stage (for section description + takeaways).
-  const biggestLeakStage = deepFunnel.stages.find((s) => s.isBiggestLeak);
+  // Funnel: find the biggest stage-to-stage leak from the REAL applicationStatus
+  // pipeline (Submitted → Ongoing Verification → Processing → Enrolled, 490/490
+  // populated). The deep stage-date funnel was hollow (0/490 stage dates), so it
+  // always reported a false "drops at Registration ~99.8%" artifact — replaced.
+  // `dropOffPct` is the % drop from the prior stage; stage[0] (Submitted) is
+  // always 0. Pick the largest positive drop; neutral when none.
+  const biggestLeak = pickExtreme(funnel, (s) => s.dropOffPct, 'max');
+  const biggestLeakStage =
+    biggestLeak.item && biggestLeak.item.dropOffPct > 0
+      ? {
+          label: biggestLeak.item.stage,
+          dropOffPct: biggestLeak.item.dropOffPct,
+        }
+      : null;
 
   // Referral inputs for the takeaways panel — derived from the conversion data.
   const topRef = referralConversion[0];
@@ -229,21 +235,19 @@ export default async function AdmissionsInsightsPage({
   // made the "conversion dropping" takeaway irreconcilable with the AY conversion
   // rate displayed above it (BUG 3 fix).
   //
-  // `avgDaysToEnrollPrior` is left as undefined — the prior-AY time-to-enrol
-  // is not computed here (the compare-AY funnel is not a RangeInput load), so
-  // the time-to-enrol drift insight only fires when kpisResult has comparison
-  // data (i.e. the operational dashboard path that uses the range comparison).
+  // Time-to-enrol is NOT passed: there is no enrolment timestamp in the data
+  // (applicationUpdatedDate 0/490 populated), so the average would be a phantom.
+  // Omitting the field suppresses the time-to-enrol drift insight honestly.
   const insights = admissionsInsights({
     // AY-wide figures (match §1 headline cards and §3 funnel).
     applications: applicationsCount,
     enrolled: enrolledCount,
     conversionPct,
     conversionPctPrior: priorConversionPct ?? undefined,
-    // Time-to-enrol: AY-wide average (§5 card). Prior-AY comparison not
-    // available on this page (no prior-AY RangeInput), so drift insight
-    // is suppressed — that's honest given the data available.
-    avgDaysToEnroll: timeToEnroll.avgDays,
-    avgDaysToEnrollPrior: undefined,
+    // No enrolment timestamp exists in the data, so there is no real
+    // time-to-enrol. 0 + no prior keeps the drift insight permanently
+    // suppressed (it gates on avgDaysToEnrollPrior, which we never pass).
+    avgDaysToEnroll: 0,
     appsDelta: kpisResult.delta ?? undefined,
     // BUG 2 fix: real stalled-applicant count instead of hardcoded 0.
     outdatedCount: outdatedRows.length,
@@ -266,13 +270,12 @@ export default async function AdmissionsInsightsPage({
   // claims in literals. (Storytelling pass.)
   // ────────────────────────────────────────────────────────────────────────
 
-  // 3a — Deep funnel: biggest leak (uses the loader's own isBiggestLeak flag,
-  // which already encodes the single-leak / no-leak rule). Title states the
+  // 3a — Funnel: biggest leak, derived above from the real applicationStatus
+  // pipeline (largest stage-to-stage drop, or null when none). Title states the
   // finding; callout (act) quantifies the drop. Neutral when no leak.
-  const funnelTitle =
-    biggestLeakStage && biggestLeakStage.dropOffPct > 0
-      ? `Applicants drop most at ${biggestLeakStage.label}`
-      : 'Application pipeline';
+  const funnelTitle = biggestLeakStage
+    ? `Applicants drop most at ${biggestLeakStage.label}`
+    : 'Application pipeline';
 
   // 3b — Conversion by level: worst-converting level, but only claim it when
   // the gap below the overall conversion rate is meaningful (≥ 10pp) and there
@@ -440,11 +443,15 @@ export default async function AdmissionsInsightsPage({
                   })}
             />
             <MetricCard
-              label="Applications cancelled"
+              label="Cancellations with a reason"
               value={terminal.total}
               icon={UserMinus}
               intent={terminal.total > 0 ? 'warning' : 'default'}
-              subtext="withdrawn or cancelled before enrolling"
+              subtext={
+                terminal.total > 0
+                  ? 'closed applications with a reason logged'
+                  : 'no reasons logged on closed applications yet'
+              }
             />
           </section>
         </InsightsSection>
@@ -493,50 +500,56 @@ export default async function AdmissionsInsightsPage({
           )}
         </InsightsSection>
 
-        {/* 3 — Deep funnel: where applicants stall (Chapter 1 closes after). */}
+        {/* 3 — Funnel: where applicants stall, on the REAL applicationStatus
+            pipeline (490/490 populated). Submitted → Ongoing Verification →
+            Processing → Enrolled, counted cumulatively. */}
         <InsightsSection
           eyebrow="Funnel"
           title="Where do applicants stall?"
           description={
-            biggestLeakStage && biggestLeakStage.dropOffPct > 0
-              ? `Biggest leak: at ${biggestLeakStage.label} — ${biggestLeakStage.dropOffPct}% of applicants who reached the prior step fall away here.`
-              : 'Each bar shows how many applicants reached that stage. A non-null stage date means the admissions team worked that row — the funnel is cumulative.'
+            biggestLeakStage
+              ? `Biggest leak: at ${biggestLeakStage.label} — ${biggestLeakStage.dropOffPct}% of applicants who reached the prior step don't move on.`
+              : 'Each bar shows how many applicants reached that stage of the application pipeline. The funnel is cumulative — every enrolled applicant also passed verification and processing.'
           }
         >
-          {/* 3a — Deep funnel (registration → class assignment) */}
+          {/* 3a — Application-status pipeline funnel */}
           <Card>
             <CardHeader>
               <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Stage reach — {deepFunnel.totalPool.toLocaleString('en-SG')}{' '}
-                total applications
+                Stage reach — {applicationsCount.toLocaleString('en-SG')} total
+                applications
               </CardDescription>
               <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
                 {funnelTitle}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {deepFunnel.stages.length === 0 ? (
+              {applicationsCount === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  No stage data available yet.
+                  No applications recorded yet for this academic year.
                 </p>
               ) : (
                 <>
                   <ul className="space-y-3">
-                    {deepFunnel.stages.map((stage) => {
+                    {funnel.map((stage) => {
                       const widthPct =
-                        deepFunnel.totalPool > 0
+                        applicationsCount > 0
                           ? Math.max(
                               4,
                               Math.round(
-                                (stage.count / deepFunnel.totalPool) * 100
+                                (stage.count / applicationsCount) * 100
                               )
                             )
                           : 0;
+                      const isBiggestLeak =
+                        biggestLeakStage !== null &&
+                        stage.stage === biggestLeakStage.label &&
+                        stage.dropOffPct === biggestLeakStage.dropOffPct;
                       return (
-                        <li key={stage.key} className="space-y-1.5">
+                        <li key={stage.stage} className="space-y-1.5">
                           <div className="flex items-baseline justify-between gap-3 text-sm">
                             <span className="font-medium text-foreground">
-                              {stage.label}
+                              {stage.stage}
                             </span>
                             <span className="flex items-center gap-2 font-mono text-xs tabular-nums text-muted-foreground">
                               {stage.count.toLocaleString('en-SG')}
@@ -545,7 +558,7 @@ export default async function AdmissionsInsightsPage({
                                   <span className="text-destructive">
                                     −{stage.dropOffPct}%
                                   </span>
-                                  {stage.isBiggestLeak && (
+                                  {isBiggestLeak && (
                                     <Badge
                                       variant="destructive"
                                       className="px-1.5 py-0 text-[10px] font-semibold"
@@ -560,7 +573,7 @@ export default async function AdmissionsInsightsPage({
                           <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
                             <div
                               className={
-                                stage.isBiggestLeak
+                                isBiggestLeak
                                   ? 'h-full rounded-full bg-gradient-to-r from-destructive/70 to-destructive/40'
                                   : 'h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy'
                               }
@@ -693,9 +706,16 @@ export default async function AdmissionsInsightsPage({
         >
           {terminal.total === 0 ? (
             <Card className="border-dashed">
-              <CardContent className="p-8 text-center text-sm text-muted-foreground">
-                No cancelled or withdrawn applications recorded this year —
-                nothing to break down. That&rsquo;s a good sign.
+              <CardContent className="space-y-1.5 p-8 text-center">
+                <p className="text-sm font-medium text-foreground">
+                  Cancellation reasons aren&rsquo;t being recorded yet
+                </p>
+                <p className="mx-auto max-w-md text-sm text-muted-foreground">
+                  No reason is captured when an application is withdrawn or
+                  cancelled, so there&rsquo;s nothing to break down here. Once
+                  the team starts logging a reason on closed applications, the
+                  causes will appear automatically.
+                </p>
               </CardContent>
             </Card>
           ) : (
@@ -782,37 +802,12 @@ export default async function AdmissionsInsightsPage({
         </div>
 
         <InsightsSection
-          eyebrow="Sources & speed"
-          title="How fast, and from where?"
-          description="How long applicants take to convert, which channels send them, and how New vs Current students differ."
+          eyebrow="Sources & segments"
+          title="From where, and from whom?"
+          description="Which channels send applicants, and how New vs Current students differ in conversion."
         >
-          <div className="grid gap-4 lg:grid-cols-2">
-            {/* 3.1a — Time to enroll */}
-            <Card>
-              <CardHeader>
-                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  Average across the year
-                </CardDescription>
-                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  Time to enroll
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <p className="font-serif text-[40px] font-semibold leading-none tabular-nums text-foreground">
-                  {timeToEnroll.avgDays}
-                  <span className="ml-1 text-lg font-normal text-muted-foreground">
-                    days
-                  </span>
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Mean days from application to enrolment, over{' '}
-                  {timeToEnroll.sampleSize.toLocaleString('en-SG')} completed
-                  enrolment{timeToEnroll.sampleSize === 1 ? '' : 's'}.
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* 3.1b — Enrolee type conversion */}
+          <div className="grid gap-4">
+            {/* 3.1 — Enrolee type conversion */}
             <Card>
               <CardHeader>
                 <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">

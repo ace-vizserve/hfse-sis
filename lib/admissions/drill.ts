@@ -2,12 +2,7 @@ import { unstable_cache } from 'next/cache';
 
 import { applyDateRangeFilter } from '@/lib/dashboard/drill-range';
 import { prefixFor } from '@/lib/admissions/_shared';
-import {
-  STAGE_COLUMN_MAP,
-  STAGE_KEYS,
-  STAGE_LABELS,
-  type StageKey,
-} from '@/lib/schemas/sis';
+import { STAGE_COLUMN_MAP, STAGE_KEYS } from '@/lib/schemas/sis';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 
@@ -51,12 +46,11 @@ export type DrillRow = {
   level: string | null;
   stage: string | null;
   /**
-   * Pipeline stage label derived from the rightmost-set `*UpdatedDate`
-   * column on the status row — matches the bucket the
-   * `getPipelineStageBreakdown` chart computes. The drill filter for
-   * `pipeline-stage` uses this so segment clicks (e.g. "Assessment") align
-   * with chart segments instead of relying on `applicationStatus` (which
-   * the chart doesn't read).
+   * Pipeline stage label = the applicant's `applicationStatus`. The
+   * `getPipelineStageBreakdown` chart now buckets by `applicationStatus`
+   * (the deep `*UpdatedDate` stage columns are unstamped in prod — 0/490 —
+   * so a stage-date breakdown was hollow). Keeping `pipelineStage` aligned to
+   * the same column means `pipeline-stage` segment clicks land on real rows.
    */
   pipelineStage: string;
   referralSource: string | null;
@@ -218,18 +212,14 @@ async function loadDrillRowsUncached(input: {
     return [];
   }
 
-  // Compute the pipeline stage label the same way `loadPipelineStageBreakdown`
-  // does: rightmost stage in `STAGE_KEYS` whose `*UpdatedDate` is non-null.
-  // No stages touched → 'Not started'. The chart and the drill must agree
-  // on this value or segment clicks miss every row.
+  // Pipeline stage label = the applicant's `applicationStatus` — the same
+  // column `loadPipelineStageBreakdown` now buckets by (the deep `*UpdatedDate`
+  // stage columns are unstamped in prod, so a stage-date breakdown was hollow).
+  // The chart and the drill must agree on this value or segment clicks miss
+  // every row.
   function derivePipelineStage(s: StatusLite | undefined): string {
-    if (!s) return 'Not started';
-    let current: StageKey | null = null;
-    for (const k of STAGE_KEYS) {
-      const col = STAGE_COLUMN_MAP[k].updatedDateCol;
-      if (s[col]) current = k;
-    }
-    return current ? STAGE_LABELS[current] : 'Not started';
+    const status = (s?.applicationStatus ?? '').trim();
+    return status || 'No status';
   }
 
   const statusByEnrolee = new Map<string, StatusLite>();
@@ -504,11 +494,10 @@ export function applyTargetFilter(
     }
     case 'pipeline-stage':
       if (!segment) return rows;
-      // The chart's segments are STAGE_LABELS values (e.g. "Assessment",
-      // "Documents") plus "Not started". Filter on the derived
-      // `pipelineStage` so the drill matches the chart bucket exactly.
-      // Legacy fallback to `r.status === segment` preserved in case any
-      // caller still passes an applicationStatus value.
+      // The chart's segments are now `applicationStatus` values (Submitted,
+      // Processing, Enrolled, …). `pipelineStage` mirrors `status`, so both
+      // branches match the same rows; the `r.status` branch also catches any
+      // legacy caller passing an applicationStatus value directly.
       return rows.filter(
         (r) => r.pipelineStage === segment || r.status === segment
       );

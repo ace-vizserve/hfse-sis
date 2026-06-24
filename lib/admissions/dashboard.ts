@@ -218,35 +218,11 @@ export type TimeToEnrollment = {
   sampleSize: number;
 };
 
-export async function getAverageTimeToEnrollment(
-  ayCode: string
-): Promise<TimeToEnrollment> {
-  const rows = await loadJoinedRows(ayCode);
-  let total = 0;
-  let n = 0;
-  for (const r of rows) {
-    if (
-      r.applicationStatus !== 'Enrolled' &&
-      r.applicationStatus !== 'Enrolled (Conditional)'
-    ) {
-      continue;
-    }
-    // Only count rows where the admissions team actually stamped an enrolment
-    // timestamp. `enrolledAt` is the raw status-table value (null when never
-    // stamped), distinct from `applicationUpdatedDate` which falls back to
-    // `created_at`. Using the fallback here produced 0-day durations for
-    // every un-stamped row and made the average meaningless.
-    if (!r.created_at || !r.enrolledAt) continue;
-    const start = Date.parse(r.created_at);
-    const end = Date.parse(r.enrolledAt);
-    if (Number.isNaN(start) || Number.isNaN(end)) continue;
-    const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
-    if (days < 0) continue;
-    total += days;
-    n += 1;
-  }
-  return { avgDays: n > 0 ? Math.round(total / n) : 0, sampleSize: n };
-}
+// `getAverageTimeToEnrollment` was removed: there is no enrolment timestamp in
+// the data (applicationUpdatedDate is 0/490 populated in prod), so the average
+// was a phantom. The Admissions Insights "Time to enrol" KPI it fed was deleted
+// — see app/(admissions)/admissions/insights/page.tsx. The `TimeToEnrollment`
+// type is retained for the (currently unmounted) TimeToEnrollmentCard.
 
 export type FunnelStage = {
   stage: string;

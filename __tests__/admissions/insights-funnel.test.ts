@@ -1,89 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildDeepFunnel,
   computeConversionByLevel,
   computeReferralConversion,
   computeEnroleeTypeConversion,
-  DEEP_FUNNEL_STAGE_KEYS,
 } from '@/lib/admissions/insights-funnel';
 
-// ──────────────────────────────────────────────────────────────────────────
-// buildDeepFunnel
-// ──────────────────────────────────────────────────────────────────────────
-describe('buildDeepFunnel', () => {
-  const stageKeys = DEEP_FUNNEL_STAGE_KEYS as unknown as readonly string[];
-
-  it('returns empty array for zero pool', () => {
-    const counts = new Map<string, number>();
-    expect(buildDeepFunnel(counts, 0, stageKeys)).toEqual([]);
-  });
-
-  it('returns empty array for empty stageKeys', () => {
-    const counts = new Map([['registration', 50]]);
-    expect(buildDeepFunnel(counts, 100, [])).toEqual([]);
-  });
-
-  it('computes drop-off and marks the biggest leak', () => {
-    // pool=100, registration=80 (-20%), documents=70 (-12.5%), assessment=50 (-28%)
-    // => assessment is biggest leak
-    const counts = new Map([
-      ['registration', 80],
-      ['documents', 70],
-      ['assessment', 50],
-      ['contract', 45],
-      ['fees', 40],
-      ['class', 38],
-    ]);
-    const stages = buildDeepFunnel(counts, 100, stageKeys);
-
-    expect(stages).toHaveLength(6);
-
-    const reg = stages[0];
-    expect(reg.key).toBe('registration');
-    expect(reg.count).toBe(80);
-    expect(reg.dropOffFromPrev).toBe(20); // 100 - 80
-    expect(reg.dropOffPct).toBe(20); // 20/100 = 20%
-    expect(reg.isBiggestLeak).toBe(false);
-
-    const doc = stages[1];
-    expect(doc.key).toBe('documents');
-    expect(doc.count).toBe(70);
-    expect(doc.dropOffFromPrev).toBe(10); // 80 - 70
-    expect(doc.dropOffPct).toBe(13); // round(10/80*100) = 13%
-
-    const assess = stages[2];
-    expect(assess.key).toBe('assessment');
-    expect(assess.count).toBe(50);
-    expect(assess.dropOffFromPrev).toBe(20); // 70 - 50
-    expect(assess.dropOffPct).toBe(29); // round(20/70*100) = 29%
-    expect(assess.isBiggestLeak).toBe(true);
-  });
-
-  it('handles missing stage counts as zero', () => {
-    const counts = new Map([['registration', 50]]);
-    const stages = buildDeepFunnel(counts, 100, ['registration', 'documents']);
-    expect(stages[1].count).toBe(0); // documents missing from map → 0
-    expect(stages[1].dropOffFromPrev).toBe(50);
-    expect(stages[1].dropOffPct).toBe(100);
-    expect(stages[1].isBiggestLeak).toBe(true);
-  });
-
-  it('marks no stage as biggest leak when all drop-offs are 0', () => {
-    const counts = new Map([
-      ['registration', 100],
-      ['documents', 100],
-    ]);
-    const stages = buildDeepFunnel(counts, 100, ['registration', 'documents']);
-    expect(stages.every((s) => !s.isBiggestLeak)).toBe(true);
-  });
-
-  it('dropOffPct is 0 for the first stage when pool == stage count', () => {
-    const counts = new Map([['registration', 100]]);
-    const stages = buildDeepFunnel(counts, 100, ['registration']);
-    expect(stages[0].dropOffPct).toBe(0);
-    expect(stages[0].dropOffFromPrev).toBe(0);
-  });
-});
+// NOTE: the deep stage-date funnel (buildDeepFunnel / DEEP_FUNNEL_STAGE_KEYS /
+// getDeepFunnelStats) was removed — those columns are 0/490 populated in prod,
+// so the funnel was hollow. The Admissions Insights funnel is now built from the
+// real `applicationStatus` pipeline via getConversionFunnel (covered elsewhere).
+// The conversion-breakdown helpers below are unchanged and still drive the page.
 
 // ──────────────────────────────────────────────────────────────────────────
 // computeConversionByLevel

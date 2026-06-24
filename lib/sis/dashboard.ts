@@ -11,12 +11,6 @@ import {
   resolveStatus,
   type DocumentGroup,
 } from '@/lib/p-files/document-config';
-import {
-  STAGE_COLUMN_MAP,
-  STAGE_KEYS,
-  STAGE_LABELS,
-  type StageKey,
-} from '@/lib/schemas/sis';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -59,29 +53,37 @@ function tag(ayCode: string): string[] {
 // ──────────────────────────────────────────────────────────────────────────
 
 export type PipelineStage = {
-  key: StageKey | 'not_started';
+  key: string;
   label: string;
   count: number;
 };
 
-// Canonical stage order: STAGE_KEYS from lib/schemas/sis.ts.
-// "Current stage" = the rightmost stage in that order whose *UpdatedDate
-// is non-null on the student's enrolment_status row. No stages touched →
-// 'not_started'. Matches how Records staff mentally track position.
+// The deep 9-stage pipeline (registration → orientation) is driven by per-stage
+// `*UpdatedDate` columns that the admissions team does not stamp in practice
+// (0/490 populated in prod AY2026), so a stage-date breakdown collapses every
+// applicant into "Not started" and is a hollow metric. The breakdown is now
+// driven by `applicationStatus` — populated for every row (490/490) — so the
+// chart reflects the real distribution. Labels are the canonical statuses; the
+// admissions drill's `pipeline-stage` filter matches on these via `r.status`.
+const PIPELINE_STATUS_ORDER = [
+  'Submitted',
+  'Ongoing Verification',
+  'Processing',
+  'Enrolled',
+  'Enrolled (Conditional)',
+  'Withdrawn',
+  'Cancelled',
+] as const;
+
 async function loadPipelineStageBreakdownUncached(
   ayCode: string
 ): Promise<PipelineStage[]> {
   const prefix = prefixFor(ayCode);
   const supabase = createAdmissionsClient();
 
-  const updatedDateCols = STAGE_KEYS.map(
-    (k) => STAGE_COLUMN_MAP[k].updatedDateCol
-  );
-  const selectCols = ['enroleeNumber', ...updatedDateCols].join(', ');
-
   const { data, error } = await supabase
     .from(`${prefix}_enrolment_status`)
-    .select(selectCols);
+    .select('enroleeNumber, applicationStatus');
 
   if (error) {
     console.error(
@@ -91,32 +93,31 @@ async function loadPipelineStageBreakdownUncached(
     return emptyPipelineBuckets();
   }
 
-  const rows = (data ?? []) as unknown as Array<Record<string, string | null>>;
-  const counts = new Map<StageKey | 'not_started', number>();
-  for (const k of STAGE_KEYS) counts.set(k, 0);
-  counts.set('not_started', 0);
+  const rows = (data ?? []) as unknown as Array<{
+    applicationStatus: string | null;
+  }>;
+  const counts = new Map<string, number>();
+  for (const s of PIPELINE_STATUS_ORDER) counts.set(s, 0);
 
   for (const row of rows) {
-    let current: StageKey | 'not_started' = 'not_started';
-    for (const k of STAGE_KEYS) {
-      const col = STAGE_COLUMN_MAP[k].updatedDateCol;
-      if (row[col]) current = k;
+    const s = (row.applicationStatus ?? '').trim();
+    if (counts.has(s)) {
+      counts.set(s, (counts.get(s) ?? 0) + 1);
+    } else if (s) {
+      // Any non-canonical status folds into an "Other" bucket rather than
+      // being silently dropped.
+      counts.set('Other', (counts.get('Other') ?? 0) + 1);
     }
-    counts.set(current, (counts.get(current) ?? 0) + 1);
   }
 
-  const out: PipelineStage[] = [
-    {
-      key: 'not_started',
-      label: 'Not started',
-      count: counts.get('not_started') ?? 0,
-    },
-    ...STAGE_KEYS.map((k) => ({
-      key: k,
-      label: STAGE_LABELS[k],
-      count: counts.get(k) ?? 0,
-    })),
-  ];
+  const out: PipelineStage[] = PIPELINE_STATUS_ORDER.map((s) => ({
+    key: s,
+    label: s,
+    count: counts.get(s) ?? 0,
+  }));
+  if ((counts.get('Other') ?? 0) > 0) {
+    out.push({ key: 'Other', label: 'Other', count: counts.get('Other')! });
+  }
   return out;
 }
 
@@ -131,10 +132,7 @@ export function getPipelineStageBreakdown(
 }
 
 function emptyPipelineBuckets(): PipelineStage[] {
-  return [
-    { key: 'not_started', label: 'Not started', count: 0 },
-    ...STAGE_KEYS.map((k) => ({ key: k, label: STAGE_LABELS[k], count: 0 })),
-  ];
+  return PIPELINE_STATUS_ORDER.map((s) => ({ key: s, label: s, count: 0 }));
 }
 
 // ──────────────────────────────────────────────────────────────────────────

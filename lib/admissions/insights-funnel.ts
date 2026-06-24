@@ -5,14 +5,17 @@ import { unstable_cache } from 'next/cache';
 import { prefixFor } from '@/lib/admissions/_shared';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
-import { STAGE_COLUMN_MAP, STAGE_LABELS } from '@/lib/schemas/sis';
 
 // ──────────────────────────────────────────────────────────────────────────
-// Deep funnel + conversion breakdowns for the Admissions Insights page.
+// Conversion breakdowns for the Admissions Insights page — by level, by
+// referral source, and by applicant type. All driven by `applicationStatus`
+// (populated 490/490 in prod) + `levelApplied` / `enroleeType` /
+// `howDidYouKnowAboutHFSEIS`, never the per-stage `*UpdatedDate` columns
+// (unstamped in prod — the deep stage-date funnel was hollow and was removed).
 //
-// This module provides a PARALLEL loader that fetches stage-date columns +
-// enroleeType from the status table (not available on dashboard.ts's
-// loadJoinedRows). It does NOT modify dashboard.ts.
+// This module provides a PARALLEL loader that fetches enroleeType from the
+// status table (not available on dashboard.ts's loadJoinedRows). It does NOT
+// modify dashboard.ts.
 //
 // Cache tag: `admissions-dashboard:${ayCode}` — same invalidation as the
 // operational dashboard so any write that flushes admissions data also
@@ -20,20 +23,6 @@ import { STAGE_COLUMN_MAP, STAGE_LABELS } from '@/lib/schemas/sis';
 // ──────────────────────────────────────────────────────────────────────────
 
 const CACHE_TTL_SECONDS = 60;
-
-// The 6 deep-funnel stages we display (registration → class assignment).
-// Excludes application (= total pool), supplies + orientation (post-enrolment,
-// no meaningful drop-off to show).
-export const DEEP_FUNNEL_STAGE_KEYS = [
-  'registration',
-  'documents',
-  'assessment',
-  'contract',
-  'fees',
-  'class',
-] as const;
-
-export type DeepFunnelStageKey = (typeof DEEP_FUNNEL_STAGE_KEYS)[number];
 
 // ──────────────────────────────────────────────────────────────────────────
 // Internal row shapes fetched from the DB
@@ -43,14 +32,6 @@ type StatusFunnelRow = {
   enroleeNumber: string | null;
   applicationStatus: string | null;
   enroleeType: string | null;
-  // Stage date columns — null means the applicant has NOT reached that stage.
-  // Column names come directly from STAGE_COLUMN_MAP[key].updatedDateCol.
-  registrationUpdateDate: string | null;
-  documentUpdatedDate: string | null;
-  assessmentUpdatedDate: string | null;
-  contractUpdatedDate: string | null;
-  feeUpdatedDate: string | null;
-  classUpdatedDate: string | null;
 };
 
 type AppFunnelRow = {
@@ -65,20 +46,6 @@ type JoinedFunnelRow = {
   enroleeType: string | null;
   levelApplied: string | null;
   howDidYouKnowAboutHFSEIS: string | null;
-  /** Which deep-funnel stages this row reached (non-null stage date). Array,
-   *  not a Set — this crosses the unstable_cache JSON boundary (a Set
-   *  serializes to {} and loses .has). */
-  reachedStages: DeepFunnelStageKey[];
-};
-
-// Map each deep-funnel stage key to its actual DB column name.
-const STAGE_DATE_COL: Record<DeepFunnelStageKey, keyof StatusFunnelRow> = {
-  registration: 'registrationUpdateDate',
-  documents: 'documentUpdatedDate',
-  assessment: 'assessmentUpdatedDate',
-  contract: 'contractUpdatedDate',
-  fees: 'feeUpdatedDate',
-  class: 'classUpdatedDate',
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -105,21 +72,7 @@ async function loadFunnelRowsUncached(
         (from, to) =>
           supabase
             .from(`${prefix}_enrolment_status`)
-            .select(
-              // Exact production column names from STAGE_COLUMN_MAP + DDL.
-              // registrationUpdateDate — note: no "d" in "Updated" (production quirk).
-              [
-                'enroleeNumber',
-                'applicationStatus',
-                'enroleeType',
-                STAGE_DATE_COL.registration,
-                STAGE_DATE_COL.documents,
-                STAGE_DATE_COL.assessment,
-                STAGE_DATE_COL.contract,
-                STAGE_DATE_COL.fees,
-                STAGE_DATE_COL.class,
-              ].join(', ')
-            )
+            .select('enroleeNumber, applicationStatus, enroleeType')
             .range(from, to) as unknown as P<StatusFunnelRow>
       ),
       fetchAllPages<AppFunnelRow>(
@@ -144,22 +97,12 @@ async function loadFunnelRowsUncached(
   for (const s of statusRows) {
     if (!s.enroleeNumber) continue;
     const app = appByEnrolee.get(s.enroleeNumber);
-
-    const reachedStages: DeepFunnelStageKey[] = [];
-    for (const key of DEEP_FUNNEL_STAGE_KEYS) {
-      const col = STAGE_DATE_COL[key];
-      if (s[col] !== null && s[col] !== undefined) {
-        reachedStages.push(key);
-      }
-    }
-
     out.push({
       enroleeNumber: s.enroleeNumber,
       applicationStatus: s.applicationStatus ?? null,
       enroleeType: s.enroleeType ?? null,
       levelApplied: app?.levelApplied ?? null,
       howDidYouKnowAboutHFSEIS: app?.howDidYouKnowAboutHFSEIS ?? null,
-      reachedStages,
     });
   }
   return out;
@@ -179,72 +122,6 @@ function loadFunnelRows(ayCode: string): Promise<JoinedFunnelRow[]> {
 // ──────────────────────────────────────────────────────────────────────────
 // Pure functions (exported for unit tests)
 // ──────────────────────────────────────────────────────────────────────────
-
-export type DeepFunnelStage = {
-  key: string;
-  label: string;
-  count: number;
-  dropOffFromPrev: number; // absolute drop from previous
-  dropOffPct: number; // % of previous stage that didn't reach this one
-  isBiggestLeak: boolean;
-};
-
-/**
- * Build the deep funnel from a pre-computed stage count map.
- *
- * @param stageCounts  Map of stage key → # of rows that reached it.
- * @param totalPool    The total number of applications (all statuses).
- * @param stageKeys    Ordered stage keys to display (registration → class).
- */
-export function buildDeepFunnel(
-  stageCounts: Map<string, number>,
-  totalPool: number,
-  stageKeys: readonly string[]
-): DeepFunnelStage[] {
-  if (stageKeys.length === 0 || totalPool === 0) return [];
-
-  const stages: Array<{ key: string; label: string; count: number }> = [
-    { key: 'pool', label: 'Applications', count: totalPool },
-    ...stageKeys.map((k) => ({
-      key: k,
-      label:
-        (STAGE_LABELS as Record<string, string>)[k] ??
-        k.charAt(0).toUpperCase() + k.slice(1),
-      count: stageCounts.get(k) ?? 0,
-    })),
-  ];
-
-  // First pass: compute dropOff for each displayed stage (skip the pool row).
-  const withDrop = stages.slice(1).map((stage, i) => {
-    const prevCount = stages[i].count; // stages[i] is the item before (pool or prior stage)
-    const dropOff = Math.max(0, prevCount - stage.count);
-    const dropOffPct =
-      prevCount > 0 ? Math.round((dropOff / prevCount) * 100) : 0;
-    return {
-      key: stage.key,
-      label: stage.label,
-      count: stage.count,
-      dropOffFromPrev: dropOff,
-      dropOffPct,
-      isBiggestLeak: false,
-    };
-  });
-
-  // Second pass: mark the single biggest leak.
-  let maxPct = 0;
-  let maxIdx = -1;
-  for (let i = 0; i < withDrop.length; i++) {
-    if (withDrop[i].dropOffPct > maxPct) {
-      maxPct = withDrop[i].dropOffPct;
-      maxIdx = i;
-    }
-  }
-  if (maxIdx >= 0 && maxPct > 0) {
-    withDrop[maxIdx] = { ...withDrop[maxIdx], isBiggestLeak: true };
-  }
-
-  return withDrop;
-}
 
 // Terminal statuses excluded from "applied" counts in conversion metrics.
 const TERMINAL_STATUSES = new Set(['Cancelled', 'Withdrawn']);
@@ -467,32 +344,6 @@ export function computeEnroleeTypeConversion(
 // Cached public API
 // ──────────────────────────────────────────────────────────────────────────
 
-export type DeepFunnelStats = {
-  stages: DeepFunnelStage[];
-  totalPool: number;
-};
-
-export async function getDeepFunnelStats(
-  ayCode: string
-): Promise<DeepFunnelStats> {
-  const rows = await loadFunnelRows(ayCode);
-  const totalPool = rows.length;
-
-  // Count rows that reached each stage (have a non-null stage date).
-  const stageCounts = new Map<string, number>();
-  for (const key of DEEP_FUNNEL_STAGE_KEYS) {
-    const count = rows.filter((r) => r.reachedStages.includes(key)).length;
-    stageCounts.set(key, count);
-  }
-
-  const stages = buildDeepFunnel(
-    stageCounts,
-    totalPool,
-    DEEP_FUNNEL_STAGE_KEYS
-  );
-  return { stages, totalPool };
-}
-
 export async function getConversionByLevel(
   ayCode: string
 ): Promise<LevelConversionRow[]> {
@@ -519,15 +370,3 @@ export async function getEnroleeTypeConversion(
   const rows = await loadFunnelRows(ayCode);
   return computeEnroleeTypeConversion(rows);
 }
-
-// Verify STAGE_COLUMN_MAP wiring is consistent (dev-time check).
-// This will surface a type error at import if the column map changes.
-const _stageDateColCheck: Record<DeepFunnelStageKey, string> = {
-  registration: STAGE_COLUMN_MAP.registration.updatedDateCol,
-  documents: STAGE_COLUMN_MAP.documents.updatedDateCol,
-  assessment: STAGE_COLUMN_MAP.assessment.updatedDateCol,
-  contract: STAGE_COLUMN_MAP.contract.updatedDateCol,
-  fees: STAGE_COLUMN_MAP.fees.updatedDateCol,
-  class: STAGE_COLUMN_MAP.class.updatedDateCol,
-};
-void _stageDateColCheck;
