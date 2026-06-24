@@ -773,7 +773,7 @@ export default async function AdmissionsInsightsPage({
           take, and how applicant segments differ. */}
       <div className="space-y-8 border-t-2 border-brand-mint/40 pt-7">
         <div className="space-y-1">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-mint">
             Chapter 3
           </p>
           <h2 className="font-serif text-[28px] font-semibold leading-tight tracking-tight text-foreground">
