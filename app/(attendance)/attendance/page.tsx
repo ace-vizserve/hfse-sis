@@ -8,6 +8,8 @@ import {
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
+
 import { AttendanceBySectionCard } from '@/components/attendance/drills/attendance-by-section-card';
 import { AttendanceDrillSheet } from '@/components/attendance/drills/attendance-drill-sheet';
 import {
@@ -148,12 +150,63 @@ export default async function AttendanceDashboard({
     encodedDays: kpisResult.current.encodedDays,
   });
 
+  // Derive the lede sentence from the priority payload — the single most
+  // actionable fact right now. Neutral when everything is in.
+  const unmarkedCount = priority.headline.value;
+
+  // Over-quota compassionate students — counts students who have exceeded the
+  // annual limit; surfaced in the lede on non-school days so the panel is
+  // still useful when attendance can’t be marked.
+  const overQuotaCount = drillRowSets.compassionate.filter(
+    (r) => r.isOverQuota
+  ).length;
+
+  const ledeSentence: string = (() => {
+    // School day with unmarked sections — the most urgent operational signal.
+    if (unmarkedCount > 0) {
+      return unmarkedCount === 1
+        ? '1 section hasn’t marked attendance yet today — open the section picker to record it.'
+        : `${unmarkedCount} sections haven’t marked attendance yet today — open the section picker to record them.`;
+    }
+    // All sections in on a school day: surface the attendance rate.
+    if (
+      priority.headline.severity === 'good' &&
+      kpisResult.current.encodedDays > 0
+    ) {
+      return kpisResult.current.attendancePct >= 95
+        ? `${kpisResult.current.attendancePct.toFixed(1)}% attendance rate — all sections marked today. Everything looks healthy.`
+        : `${kpisResult.current.attendancePct.toFixed(1)}% attendance rate — all sections marked today. Review the absence patterns below.`;
+    }
+    // Non-school day with over-quota students: name the signal.
+    if (overQuotaCount > 0) {
+      return overQuotaCount === 1
+        ? '1 student has exceeded the compassionate-leave quota — no school today, but worth reviewing before the next school day.'
+        : `${overQuotaCount} students have exceeded the compassionate-leave quota — no school today, but worth reviewing before the next school day.`;
+    }
+    // All clear — no school, no quota issues.
+    if (priority.headline.severity === 'good') {
+      return 'No school today. Use the range picker to review attendance trends for the selected period.';
+    }
+    // Fallback: data loaded but nothing specific to surface yet.
+    return 'Daily attendance rate, absence patterns, leave quotas, and top-absent students for the selected period.';
+  })();
+
+  // Surface a watch callout for a notably low attendance rate, but only when
+  // today’s sections are all in (unmarked sections take priority). The 90%
+  // threshold marks a meaningful concern — below 95% is warning-level, below
+  // 90% is a real story that warrants a callout.
+  const ATTENDANCE_CONCERN_THRESHOLD = 90;
+  const showLowRateCallout =
+    unmarkedCount === 0 &&
+    kpisResult.current.encodedDays > 0 &&
+    kpisResult.current.attendancePct < ATTENDANCE_CONCERN_THRESHOLD;
+
   return (
     <PageShell>
       <DashboardHero
         eyebrow="Attendance · Dashboard"
         title="Attendance at a glance"
-        description="Daily attendance, absence patterns, day-type mix, top-absent students. Section picker for marking today's attendance is one click away."
+        description={ledeSentence}
         badges={[{ label: selectedAy }]}
         actions={
           <Button asChild size="sm">
@@ -170,6 +223,28 @@ export default async function AttendanceDashboard({
           near the compassionate-quota threshold), not "monitor school health
           across this range." Range-aware analytics live below the fold. */}
       <PriorityPanel payload={priority} />
+
+      {/* Directive callout when sections are still unmarked on a school day.
+          Omitted on non-school days or when all sections are in. */}
+      {unmarkedCount > 0 && (
+        <RecommendationCallout tone="act">
+          {unmarkedCount === 1
+            ? '1 section still needs to mark attendance today.'
+            : `${unmarkedCount} sections still need to mark attendance today.`}{' '}
+          Open the section picker to record them.
+        </RecommendationCallout>
+      )}
+
+      {/* Watch callout for a notably low attendance rate (below 90%).
+          Only shown when today's marking is complete — so the act callout above
+          (unmarked sections) takes priority and these two never compete. */}
+      {showLowRateCallout && (
+        <RecommendationCallout tone="watch">
+          {kpisResult.current.attendancePct.toFixed(1)}% attendance rate for the
+          selected period is below 90% — check the section breakdown and
+          top-absent list below for patterns.
+        </RecommendationCallout>
+      )}
 
       {windows.activeTermFallback && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-900 dark:text-amber-100">
