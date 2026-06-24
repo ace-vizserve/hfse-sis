@@ -14,9 +14,11 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
+import { ComparisonBarChart } from '@/components/dashboard/charts/comparison-bar-chart';
 import type {
   AssessmentOutcomes,
   ReferralSource,
+  TimeToEnrollBucket,
 } from '@/lib/admissions/dashboard';
 import type { DrillRow } from '@/lib/admissions/drill';
 import type { PipelineStage as PipelineStageRow } from '@/lib/sis/dashboard';
@@ -124,4 +126,58 @@ export function ReferralDrillCard({
   );
 }
 
-// `TimeToEnrollDrillCard` removed (2026-06-24) — see dashboard.ts tombstone.
+// ─── Time to enrol ───────────────────────────────────────────────────────────
+// Revived (2026-06-24) on real `enrolledAt` column (migration 075).
+// When all bucket counts are 0 (no enrolments stamped yet) a neutral
+// "building" state is rendered instead of an empty chart.
+
+export function TimeToEnrollDrillCard({
+  data,
+  ayCode,
+  drillRows,
+}: CommonDrillProps & { data: TimeToEnrollBucket[] }) {
+  const [segment, setSegment] = React.useState<string | null>(null);
+  const hasData = data.some((b) => b.count > 0);
+
+  return (
+    <Sheet open={!!segment} onOpenChange={(o) => !o && setSegment(null)}>
+      <Card className="h-full">
+        <CardHeader>
+          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+            Time to enrolment
+          </CardDescription>
+          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+            {hasData ? 'Days to close' : 'Days to close'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {hasData ? (
+            <ComparisonBarChart
+              data={data.map((b) => ({ category: b.label, current: b.count }))}
+              height={240}
+              onSegmentClick={setSegment}
+            />
+          ) : (
+            <div className="flex h-[240px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-6 text-center">
+              <p className="font-serif text-base font-medium text-foreground">
+                No enrolments tracked yet
+              </p>
+              <p className="max-w-[22ch] text-sm leading-relaxed text-muted-foreground">
+                Days from application to enrolment will appear here once new
+                enrolments are recorded.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      {segment && (
+        <AdmissionsDrillSheet
+          target="time-to-enroll-bucket"
+          segment={segment}
+          ayCode={ayCode}
+          initialRows={drillRows}
+        />
+      )}
+    </Sheet>
+  );
+}

@@ -8,6 +8,7 @@ import {
   FileStack,
   Handshake,
   History,
+  Hourglass,
   Plane,
   Stethoscope,
   TrendingUp,
@@ -30,6 +31,7 @@ import {
   AssessmentDrillCard,
   PipelineDrillCard,
   ReferralDrillCard,
+  TimeToEnrollDrillCard,
 } from '@/components/admissions/drills/chart-drill-cards';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
@@ -65,6 +67,7 @@ import {
   getDocumentCompletionByLevel,
   getOutdatedApplications,
   getReferralSourceBreakdown,
+  getTimeToEnrollHistogram,
 } from '@/lib/admissions/dashboard';
 import { getAdmissionsPriority } from '@/lib/admissions/priority';
 import { buildDrillRows } from '@/lib/admissions/drill';
@@ -307,6 +310,7 @@ export default async function AdmissionsDashboard({
     admissionsChasePriority,
     feedbackResult,
     preCourseStats,
+    histogram,
   ] = await Promise.all([
     getPipelineStageBreakdown(selectedAy),
     getConversionFunnel(selectedAy),
@@ -335,6 +339,10 @@ export default async function AdmissionsDashboard({
     getAdmissionsPriority({ ayCode: selectedAy }),
     getAdmissionsFeedback(selectedAy),
     getPreCourseStats(selectedAy),
+    // Time-to-enrol histogram — reads real enrolledAt (migration 075).
+    // Empty when no enrolments have been stamped yet; the component renders
+    // a neutral "building" state in that case.
+    getTimeToEnrollHistogram(selectedAy),
   ]);
 
   // Freshen runs in parallel with the data fetches above; awaited here so
@@ -640,6 +648,37 @@ export default async function AdmissionsDashboard({
             />
           )}
         />
+        {/* Avg time to enrol — reads real enrolledAt (migration 075). Shows
+            a neutral em-dash with a "starts filling" subtext when sampleSize=0
+            so we never display "0d" on a metric that has no data yet. */}
+        <MetricCard
+          label="Avg time to enrol"
+          value={
+            kpisResult.current.sampleSize > 0
+              ? kpisResult.current.avgDaysToEnroll
+              : '—'
+          }
+          format={kpisResult.current.sampleSize > 0 ? 'days' : 'raw'}
+          icon={Hourglass}
+          intent="default"
+          subtext={
+            kpisResult.current.sampleSize > 0
+              ? kpisResult.comparison
+                ? `n=${kpisResult.current.sampleSize} · ${kpisResult.comparison.avgDaysToEnroll}d prior`
+                : `n=${kpisResult.current.sampleSize}`
+              : 'Starts filling as enrolments are recorded'
+          }
+          deltaGoodWhen="down"
+          drillSheet={() => (
+            <AdmissionsDrillSheet
+              target="avg-time"
+              ayCode={selectedAy}
+              initialFrom={rangeInput.from}
+              initialTo={rangeInput.to}
+              initialRows={drillRows}
+            />
+          )}
+        />
       </section>
 
       <InsightsPanel insights={insights} />
@@ -675,13 +714,26 @@ export default async function AdmissionsDashboard({
         </Card>
       )}
 
-      {/* Bento row 2: pipeline stage — current-state breakdown of where
-          the intake sits right now across the 7 funnel stages. */}
-      <PipelineDrillCard
-        data={pipelineStages}
-        ayCode={selectedAy}
-        drillRows={drillRows}
-      />
+      {/* Bento row 2: pipeline stage (wide — current-state breakdown of where
+          the intake sits right now) + time-to-enrol histogram (narrow).
+          The histogram shows a neutral "building" state when enrolledAt has
+          no data yet; it self-heals as enrolments accumulate. */}
+      <section className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <PipelineDrillCard
+            data={pipelineStages}
+            ayCode={selectedAy}
+            drillRows={drillRows}
+          />
+        </div>
+        <div className="lg:col-span-1">
+          <TimeToEnrollDrillCard
+            data={histogram}
+            ayCode={selectedAy}
+            drillRows={drillRows}
+          />
+        </div>
+      </section>
 
       {/* Bento row 3: assessment outcomes (full width — Pipeline graduated to
           row 2's wide slot above). */}

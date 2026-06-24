@@ -697,10 +697,76 @@ export function getApplicationsVelocityRange(
   )(input);
 }
 
-// `getTimeToEnrollHistogram` and `TimeToEnrollBucket` were removed (2026-06-24).
-// `applicationUpdatedDate` (= enrolledAt raw) is 0/490 populated in prod —
-// the histogram was always empty on the live system. The `TimeToEnrollDrillCard`
-// on the dashboard and the `avg-time` drill target are deleted alongside it.
+// ──────────────────────────────────────────────────────────────────────────
+// Time-to-enrol histogram — days from submission to enrolment, bucketed.
+//
+// Revived (2026-06-24) now that migration 075 provides a real write-once
+// `enrolledAt` timestamptz. Reads `enrolledAt` only — never the fallback-
+// substituted `applicationUpdatedDate` — so un-stamped historical rows are
+// simply omitted and the histogram is correctly empty (not 0-day phantom).
+// The UI renders a neutral "building" card when every bucket count is 0.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type TimeToEnrollBucket = {
+  label: string;
+  loDays: number;
+  hiDays: number | null;
+  count: number;
+};
+
+const HISTOGRAM_BUCKETS: ReadonlyArray<{
+  label: string;
+  lo: number;
+  hi: number | null;
+}> = [
+  { label: '0-7d', lo: 0, hi: 7 },
+  { label: '8-14d', lo: 8, hi: 14 },
+  { label: '15-30d', lo: 15, hi: 30 },
+  { label: '31-60d', lo: 31, hi: 60 },
+  { label: '61-90d', lo: 61, hi: 90 },
+  { label: '91-180d', lo: 91, hi: 180 },
+  { label: '>180d', lo: 181, hi: null },
+];
+
+async function loadTimeToEnrollHistogramUncached(
+  ayCode: string
+): Promise<TimeToEnrollBucket[]> {
+  const rows = await loadJoinedRows(ayCode);
+  const buckets: TimeToEnrollBucket[] = HISTOGRAM_BUCKETS.map((b) => ({
+    label: b.label,
+    loDays: b.lo,
+    hiDays: b.hi,
+    count: 0,
+  }));
+  for (const r of rows) {
+    const isEnrolled =
+      r.applicationStatus === 'Enrolled' ||
+      r.applicationStatus === 'Enrolled (Conditional)';
+    if (!isEnrolled) continue;
+    // Use `enrolledAt` (real status-table value) not the fallback-substituted
+    // `applicationUpdatedDate` — un-stamped rows must NOT collapse into 0-7d.
+    if (!r.created_at || !r.enrolledAt) continue;
+    const start = Date.parse(r.created_at);
+    const end = Date.parse(r.enrolledAt);
+    if (Number.isNaN(start) || Number.isNaN(end) || end < start) continue;
+    const days = Math.round((end - start) / 86_400_000);
+    const idx = buckets.findIndex(
+      (b) => days >= b.loDays && (b.hiDays === null || days <= b.hiDays)
+    );
+    if (idx >= 0) buckets[idx].count += 1;
+  }
+  return buckets;
+}
+
+export function getTimeToEnrollHistogram(
+  ayCode: string
+): Promise<TimeToEnrollBucket[]> {
+  return unstable_cache(
+    () => loadTimeToEnrollHistogramUncached(ayCode),
+    ['admissions', 'time-to-enroll-histogram', ayCode],
+    { revalidate: CACHE_TTL_SECONDS, tags: tag(ayCode) }
+  )();
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Canonical level ordering — primary then secondary, then any other value
