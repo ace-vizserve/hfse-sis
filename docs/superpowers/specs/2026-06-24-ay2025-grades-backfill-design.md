@@ -1,92 +1,93 @@
-# AY2025 Grades Backfill — Design
+# AY2025 Grades Backfill — Design (masterfile-only)
 
 **Date:** 2026-06-24
 **Status:** Design (decisions approved in brainstorming; pending spec review)
-**Target:** AY2025 grades in **production** — so Markbook report cards (T1–T3) and the Academic Summary render complete, faithful, _issued_ grades, with WW/PT/QA component detail where available. This is the last piece of the AY2025 historical backfill (sections, roster, attendance, movements, form advisers, FCA comments, calendar, virtue themes already in prod).
+**Target:** AY2025 **report cards (T1–T4) + Academic Summary** in production — the last piece of the AY2025 historical backfill. Goal is the _issued_ historical grades families received, not operational re-grading.
 
-**Scope:** **T1–T4.** The grades folder has T1–T3 component workbooks; **T4 has no component files**, so T4 grades come entirely from the masterfile (masterfile-only, like primary Social Studies). The masterfile carries T1–T4 + Overall + Award per examinable subject and T1–T4 letters for non-examinable, so the annual/Overall grade + Subject/Overall Awards **derive** from the four terms and **cross-check** against the masterfile's Overall + Award columns.
+**Scope:** **T1–T4, all subjects, sourced entirely from the masterfile.** No grading-file (component) import.
 
 ---
 
-## 1. Data reality (discovered in brainstorming — drives the whole design)
+## 1. Why masterfile-only (the pivotal finding)
 
-- **39 grading workbooks** (13 subjects × 3 terms), each ~24 per-section sheets, carrying raw **WW / PT / QA** components per student plus already-computed `Initial Grade` + `Quarterly Grade` (and a derived `Final Grade Equivalent` letter for non-examinable).
-- **Per-sheet variation, never assumable from defaults:**
-  - Weights differ **by subject**: English `30/50/20`, MAPEH `20/60/20`.
-  - Max scores + slot counts differ **by level**: Primary English = 3×WW(max 10) + 5×PT(max 10) + QA(max 30); Secondary English = 3×WW(max 20) + 3×PT(max 30/30/25) + QA(max 65).
-  - (AY2026 has **no** `subject_configs` either — weights aren't configured anywhere, so AY2025's are derived purely from the files.)
-- **The grading files are incomplete and many-to-one vs the masterfile:**
-  - **`MAPEH (PrI)` = one grade → 4 subjects** (`MUSIC`/`ARTS`/`PE`/`HE`), replicated **identically** (verified: masterfile MUSIC=ARTS=PE=HE per student).
-  - **`MT` split by section:** `Mandarin` file covers only the 4 **Global** primary sections; `Filipino` covers everyone else + secondary.
-  - **Secondary is streamed:** `History`→`HIST` = S1/S2; `SS & Geo`→`HUM` = S3/S4; `Economics`/`Literature` = upper secondary.
-  - **Primary Social Studies (`SS`)** has masterfile grades but **no component file**.
-  - **`Adjusted <section>`** = a manual **final-grade override** (raw scores unchanged, full roster — verified: only the Quarterly changed, e.g. 80→92); **`DO NOT USE <section>`** = scrapped draft.
-- **The masterfile is the complete, authoritative spine:** it carries a grade for **every** (student × subject × term) — numeric for examinable, letter for non-examinable — already reflecting the Adjusted overrides. It is the same masterfile already used for the FCA-comment backfill.
+The report card renderer reads the **stored** grade, not the components. Verified in `lib/report-card/build-report-card.ts`: it selects `quarterly_grade, letter_grade, is_na, annual_letter_grade` and uses `entry.quarterly_grade` directly (lines 297/324/347) — it never reads or recomputes from `ww_scores`/`pt_scores`. The annual/Overall + GA + Subject/Overall awards all **derive** from the four term grades (`lib/compute/annual.ts` + `awards.ts`), again from the quarterlies, not components.
+
+Therefore the **masterfile is sufficient** for historical report cards + Academic Summary:
+
+- **Grades:** masterfile has the per-subject per-term quarterly (numeric, examinable) / letter (non-examinable), T1–T4, already reflecting the issued/Adjusted values → stored as `grade_entries.quarterly_grade` / derived letter.
+- **Attendance:** already done (daily marks + rollups loaded; the card reads the rollup).
+- **Comments / virtue themes / form advisers / letterhead:** already loaded.
+- **Annual / Overall / GA / awards:** derive from the four stored term grades.
+
+The WW/PT/QA **component import (the 39 grading workbooks) is deliberately out of scope** — it only feeds Markbook's operational "view scores" grid, which a closed year never uses, and all of its complexity (MAPEH→4 split, MT Filipino/Mandarin split, Adjusted overrides, secondary streaming, per-sheet weights) lives in the _files_, not the masterfile. The masterfile already carries every grade in clean DB-subject granularity (MUSIC/ARTS/PE/HE separate, one MT grade, the issued value), and a **blank cell already encodes "student doesn't take this subject"** — so per-level subject sets + streaming fall out for free.
 
 ## 2. Locked decisions
 
-1. **Full detail** — store raw WW/PT/QA components.
-2. **Issued grade authoritative** — the **masterfile** quarterly/letter is the _stored_ grade. Recompute from raw is a **verification signal only**; on divergence (the Adjusted overrides) the masterfile wins and the case is **flagged** for review, never silently shown.
-3. **`Adjusted` > plain; skip `DO NOT USE`.**
-4. **Non-examinable included** — components + the issued letter.
-5. **Architecture: masterfile = spine, grading files = enrichment** (below).
-6. **Fileless subjects** (primary `SS`, any uncovered secondary level/subject) — store the masterfile grade with **no WW/PT/QA breakdown** (complete card; "view scores" empty for those; honest — the components genuinely weren't provided). **This also covers all of T4** — no T4 component files exist, so every T4 grade is masterfile-only, and the annual/Overall + awards derive from T1–T4.
-7. **Mechanism: one-off importer script** — `dry-run → verification report → apply`. Loads `.env.local` itself; writes nothing until the dry-run is approved.
+1. **Masterfile-only** — no component files; store the issued grade per (student × subject × term), T1–T4.
+2. **Issued grade is authoritative** — the masterfile value is stored verbatim; nothing is recomputed against components.
+3. **Import a `grade_entry` only where the masterfile cell is non-empty** — blank = not taken (handles level/streaming).
+4. **Examinable** → store the masterfile numeric as `quarterly_grade`. **Non-examinable** → store a **band-representative numeric** so `numericToLetter` renders the masterfile letter (A≥90 / B≥85 / C≥80 / IP<80); the numeric is never displayed (the card shows the derived letter). `N.A.` → `is_na=true`.
+5. **Annual/Overall/GA/awards derive** from the four terms and **cross-check** against the masterfile's Overall + Award columns (verification, not stored).
+6. **Mechanism: one-off importer script** (`dry-run → report → apply`), reusing the masterfile parser + FCA student-matcher. Loads `.env.local` itself; no writes until the dry-run is approved.
 
-## 3. Architecture — masterfile spine + file enrichment
-
-The masterfile defines _what grades exist_; the files _enrich with components where present_. Flow:
+## 3. Architecture
 
 ```
-masterfile spine  ──►  for each (student × subject × term):
-  (authoritative          • look up matching grading-file entry (subject-map + section + student)
-   grade, all subjects)    • if found: attach raw WW/PT/QA + derive subject_config (weights/slots/maxes)
-                           • compute Initial/Quarterly via lib/compute/quarterly.ts  → VERIFY vs masterfile
-                           • store grade_entry: raw components + computed ps/ws/initial
-                             + quarterly/letter = MASTERFILE (authoritative)
-                           • if no file: store grade_entry with masterfile grade only (no components)
+masterfile  ──►  for each (student × subject-column × term) with a non-empty cell:
+                   • map masterfile subject column → DB subject code (clean 1:1)
+                   • match student → roster (reuse FCA matcher: name → canonical enrolee → section_students)
+                   • ensure grading_sheet (section × subject × term) exists  [+ minimal subject_config if FK requires]
+                   • write grade_entry:
+                       examinable     → quarterly_grade = masterfile numeric
+                       non-examinable → quarterly_grade = band-representative numeric (renders masterfile letter)
+                       N.A.           → is_na = true
+                   • is_locked = true (historical)
+                 then: derive annual/Overall/GA/awards → cross-check vs masterfile Overall + Award; report mismatches.
 ```
 
-## 4. Components (all under `lib/sis/backfill/`, pure + unit-tested where logic-bearing)
+## 4. Subject mapping (clean 1:1, masterfile column → DB code)
 
-- **`grades-masterfile-spine.ts`** — reuse the existing masterfile loader/parser to yield the authoritative `(enrolee, subjectCode, term, grade, isLetter)` for **all** subjects (the spine). Reconciliation name→canonical-enrolee reused from the FCA pass.
-- **`grades-file-parser.ts`** — pure: workbook → per real sheet `{ subjectFile, level, sectionName, term, weights{ww,pt,qa}, wwMaxes[], ptMaxes[], qaMax, students:[{ index, name, ww[], pt[], qa, sheetQuarterly }] }`. Resolves `Adjusted` > plain and skips `DO NOT USE` per (subject, section). Auto-detects the header band (handles the primary "TERM 3" caps + the varying column layouts).
-- **`grades-subject-map.ts`** — `(subjectFile, level, sectionName) → DB subject code(s)`: `MAPEH→[MUSIC,ARTS,PE,HE]`; `MT` via section (Global→Mandarin, else Filipino); `SS & Geo`→`SS`(primary)/`HUM`(secondary); `PE (Sec)`→`PEH`; `History`→`HIST`; etc. **Flags any file/sheet that doesn't map** (no silent drops).
-- **`subject_configs` derivation** — per (subject × level) from the parsed weights/slots/maxes. One config per (subject, level, AY2025).
-- **student matching** — reuse the FCA matcher (sheet name → reconciliation → canonical enrolee → roster `section_students`). Held-52 dups skip (not in roster). Cross-check against (section, index) where available.
-- **compute** — `lib/compute/quarterly.ts` (canonical, Hard Rule #1 = 93) for the recompute used in verification + for storing `ps/ws/initial`.
-- **writer** — `subject_configs` → `grading_sheets` (per section×subject×term, `is_locked=true`, slot maxes from the file) → `grade_entries` (raw components + computed ps/ws/initial + **masterfile** quarterly/letter). Idempotent upserts on natural keys.
-- **verification** — per entry compare **recompute vs masterfile** (and vs the sheet's own quarterly). Emit a divergence report: every `recompute ≠ masterfile` (expected = the Adjusted overrides) for Joann to eyeball.
+- **Primary:** ENGLISH→`ENG`, MATH→`MATH`, MOTHER TONGUE→`MT`, SCIENCE→`SCI`, Social Studies→`SS`, MUSIC EDUCATION→`MUSIC`, ARTS EDUCATION→`ARTS`, PHYSICAL EDUCATION→`PE`, HEALTH EDUCATION→`HE`.
+- **Secondary:** +HISTORY→`HIST`, LITERATURE→`LIT`, HUMANITIES→`HUM`, ECONOMICS→`ECON`, CONTEMPORARY ART→`CA`, PHYSICAL EDUCATION AND HEALTH→`PEH`; MATHEMATICS→`MATH`.
+- Any unmapped column is **flagged** in the dry-run, never silently dropped.
 
-## 5. Modes
+## 5. Components (all under `lib/sis/backfill/`, pure where logic-bearing)
 
-- **`dry-run`** — parse + map + match + compute + verify, then write a **report only** (per subject/term entry counts, unmatched students, **unmapped files/sheets**, the full divergence list). **Zero DB writes.**
-- **`apply`** — after the dry-run is reviewed, perform the writes (subject_configs → grading_sheets → grade_entries) idempotently, then re-emit the verification summary.
+- **masterfile parser** — reuse/extend the loader already used for the FCA pass: yields `(canonicalEnrolee, subjectCode, term, value, kind: numeric|letter|na, overall, award)` for every non-empty cell, both workbooks, T1–T4.
+- **subject-map** — the §4 table; unit-tested, flags unmapped.
+- **student matcher** — reuse the FCA matcher (sheet/masterfile name → reconciliation → canonical enrolee → `section_students`). Held-52 dups skip (not in roster); listed in the report.
+- **scaffolding writer** — create/ensure `grading_sheets` per (section, subject, term) with empty slot config + `is_locked=true`; create minimal `subject_configs` per (subject×level) **only if** the schema requires the FK (placeholder weights — irrelevant with no components).
+- **entry writer** — `grade_entries` per (section_student × grading_sheet): examinable numeric / non-exam band-representative numeric / `is_na`. Idempotent upsert on the natural key.
+- **verification** — derive annual/Overall/GA + Subject/Overall awards from the stored terms; compare to the masterfile's Overall + Award columns; emit the mismatch list.
 
-## 6. Verification & error handling
+## 6. Modes
 
-- **Divergence rule:** masterfile wins; the recompute never overwrites an issued grade. Divergences are surfaced, not suppressed.
-- **Confidence gate:** for examinable subjects with a component file, recompute should equal the masterfile for the **non-override** majority (target ≥ ~98%); the remainder should be the known Adjusted set — anything else is investigated before apply.
-- **Sheets locked** (`is_locked=true`) — historical, immutable (Hard Rule #5 / KD #25 still apply to any future edit).
-- **No silent caps:** unmapped subjects/sheets, unmatched students, and divergences are all listed in the dry-run report.
+- **`dry-run`** — parse + map + match + scaffold-plan + verify; write a **report only** (entries per subject/term, unmatched students, unmapped columns, derived-vs-masterfile Overall/Award mismatches). **Zero DB writes.**
+- **`apply`** — after review, write `subject_configs?` → `grading_sheets` → `grade_entries` idempotently; re-emit the verification summary.
 
-## 7. Testing
+## 7. Verification & error handling
 
-- **Unit:** `grades-file-parser` against real fixtures (primary examinable, secondary examinable, non-exam MAPEH, an Adjusted sheet); `grades-subject-map` (every file→code, incl. MAPEH→4, MT split, SS&Geo level split); the canonical `lib/compute/quarterly.ts` self-test (Hard Rule #1 = 93).
-- **Integration (dry-run on prod-copy or read-only):** computed-quarterly == masterfile for the non-override majority; divergence set == the Adjusted overrides; every roster student resolved or explicitly listed.
+- The stored grade is the masterfile value verbatim — no divergence possible at the term level.
+- **Cross-check:** the _derived_ annual/Overall + awards must match the masterfile's Overall + Award columns; mismatches indicate a mapping/parse error → investigate before apply.
+- **No silent caps:** unmapped columns, unmatched students, and award mismatches are all listed in the dry-run report.
+- Sheets `is_locked=true` (historical).
 
-## 8. Out of scope
+## 8. Testing
 
-- Building an **in-app grades-import feature** (this is a one-off historical backfill — YAGNI).
+- **Unit:** masterfile parser (examinable numeric, non-exam letter, N.A., T4/Overall/Award columns); subject-map (every column → code, flags unmapped); the band-representative-numeric → `numericToLetter` round-trip (A/B/C/IP); `annual.ts`/`awards.ts` self-tests.
+- **Integration (dry-run):** derived Overall/Award == masterfile for the roster; every non-empty cell either written or explicitly reported as unmatched/unmapped.
+
+## 9. Out of scope
+
+- The **WW/PT/QA component import** (the 39 grading workbooks) — operational "view scores" detail only; AY2025 "view scores" will show the grade with no breakdown. Can be layered later if ever needed.
+- **In-app grades-import feature** (one-off backfill — YAGNI).
 - Provisioning the **missing AY2026 subject_configs** (separate go-live concern, flagged).
-- The **52 held DIFF_SN dups** (not in roster; skip, as in the FCA pass — pending Joann's canonical picks).
+- The **52 held DIFF_SN dups** (not in roster; skip, as in the FCA pass).
 
-## 9. Open items (resolve during writing-plans / build — not blocking the design)
+## 10. Open items (resolve during writing-plans / build — not blocking the design)
 
-- Verify exact column names + the canonical write path for `subject_configs` / `grading_sheets` / `grade_entries` (mirror the entries-PATCH compute path so stored `ps/ws/initial/quarterly` match the app's own writes).
-- Confirm whether a fileless-subject `grade_entry` needs a placeholder `grading_sheet` + minimal `subject_config`, or a lighter representation.
-- Settle the MT Filipino↔Mandarin per-section assignment from which file actually contains each section (don't assume from section name alone).
-- Pick the primary student-match key (sheet name vs (section, index)) by testing match coverage in the dry-run.
-- Confirm the secondary streaming (which levels take History vs Humanities vs Economics vs Literature) from the file sheet coverage, not assumption.
-- T4 + all non-examinable grades have no numeric components, so settle how a masterfile-only letter/number is stored so the report card + Academic Summary render the issued value (e.g. `grade_entries.letter_grade` / `annual_letter_grade` per KD #100/#104 for letters; a stored quarterly for examinable T4) — and where the per-term derived letter (KD #104) suffices vs needs storing.
-- Verify the **derived** annual/Overall + Subject/Overall Awards (KD #95, via `school_config` thresholds) match the masterfile's Overall + Award columns — same cross-check as the per-term quarterly; investigate any mismatch before apply.
+- Verify the `grade_entries` / `grading_sheets` / `subject_configs` schema: NOT-NULL columns (do `ww_scores`/`pt_scores` need `[]`?), whether `grading_sheets` requires a `subject_config` FK (→ whether minimal configs are needed), and the exact natural keys for idempotent upserts.
+- Confirm the non-exam **band-representative numeric** approach is acceptable vs pulling real numerics from the ~4 non-exam component files (MAPEH/CCA/PE/Contemporary Arts) — default is representative (file-free; only the letter is shown).
+- Confirm masterfile **column offsets per term** (examinable: 6 cols = T1–T4/Overall/Remarks; non-exam: 4 cols = T1–T4) hold across both workbooks for every subject.
+- Pick the student-match key (name via reconciliation vs (section, index)) by measuring coverage in the dry-run.
+- Decide whether T4 non-exam should also set `annual_letter_grade` (KD #100) or rely solely on the derived annual letter from the four representative numerics.
