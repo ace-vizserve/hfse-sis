@@ -3530,7 +3530,6 @@ function buildAppsRow(p: Persona): Record<string, unknown> {
 }
 
 function buildStatusRow(p: Persona): Record<string, unknown> {
-  const updateOffset = p.applicationUpdateDateOffset ?? p.enrolmentDateOffset;
   return {
     enroleeNumber: p.enroleeNumber,
     enroleeName: p.fullName,
@@ -3540,54 +3539,23 @@ function buildStatusRow(p: Persona): Record<string, unknown> {
     // SIS-side 7-value enum (KD #59)
     applicationStatus: p.applicationStatus,
     applicationRemarks: p.applicationRemarks ?? null,
-    applicationUpdatedDate: isoDateOffset(updateOffset),
-    applicationUpdatedBy: SEEDER_ACTOR,
-    // Registration — NOTE: column is registrationUpdateDate (no trailing 'd')
+    // Stage update dates are 0/490 populated in prod — omitted per KD #125.
     registrationStatus: p.registrationStatus ?? null,
-    registrationUpdateDate:
-      p.registrationUpdateDateOffset != null
-        ? isoDateOffset(p.registrationUpdateDateOffset)
-        : null,
-    registrationUpdatedby: p.registrationStatus ? SEEDER_ACTOR : null,
     registrationRemarks: null,
     // Documents
     documentStatus: p.documentStatus ?? null,
-    documentUpdatedDate:
-      p.documentUpdateDateOffset != null
-        ? isoDateOffset(p.documentUpdateDateOffset)
-        : null,
-    documentUpdatedby: p.documentStatus ? SEEDER_ACTOR : null,
     documentRemarks: null,
     // Assessment
     assessmentStatus: p.assessmentStatus ?? null,
-    assessmentUpdatedDate:
-      p.assessmentUpdateDateOffset != null
-        ? isoDateOffset(p.assessmentUpdateDateOffset)
-        : null,
-    assessmentUpdatedby: p.assessmentStatus ? SEEDER_ACTOR : null,
     assessmentGradeMath: p.assessmentGradeMath ?? null,
     assessmentGradeEnglish: p.assessmentGradeEnglish ?? null,
     assessmentRemarks: null,
     assessmentMedical: null,
-    assessmentSchedule:
-      p.assessmentStatus === 'Finished' && p.assessmentUpdateDateOffset != null
-        ? isoDateOffset(p.assessmentUpdateDateOffset)
-        : null,
     // Contract
     contractStatus: p.contractStatus ?? null,
-    contractUpdatedDate:
-      p.contractUpdateDateOffset != null
-        ? isoDateOffset(p.contractUpdateDateOffset)
-        : null,
-    contractUpdatedby: p.contractStatus ? SEEDER_ACTOR : null,
     contractRemarks: null,
     // Fee
     feeStatus: p.feeStatus ?? null,
-    feeUpdatedDate:
-      p.feeUpdateDateOffset != null
-        ? isoDateOffset(p.feeUpdateDateOffset)
-        : null,
-    feeUpdatedby: p.feeStatus ? SEEDER_ACTOR : null,
     feeRemarks: null,
     feeInvoice: p.feeInvoiceRef ?? null,
     feePaymentDate:
@@ -3601,8 +3569,6 @@ function buildStatusRow(p: Persona): Record<string, unknown> {
     classLevel: null,
     classSection: null,
     classRemarks: null,
-    classUpdatedDate: null,
-    classUpdatedby: null,
   };
 }
 

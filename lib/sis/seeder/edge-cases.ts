@@ -266,15 +266,12 @@ export async function seedEdgeCases(
           appsTable
         );
         if (identity.enroleeNumber) {
-          const nowIso = new Date().toISOString();
           const { error: admErr } = await service
             .from(statusTable)
             .update({
               applicationStatus: 'Withdrawn',
               applicationTerminalReason: wMeta.reason,
               applicationTerminalNotes: wMeta.notes,
-              applicationUpdatedDate: nowIso,
-              applicationUpdatedBy: SEED_ACTOR_EMAIL,
             })
             .eq('enroleeNumber', identity.enroleeNumber);
           if (admErr) {

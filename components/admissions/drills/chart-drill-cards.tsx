@@ -5,7 +5,6 @@ import * as React from 'react';
 import { AdmissionsDrillSheet } from '@/components/admissions/drills/admissions-drill-sheet';
 import { AssessmentOutcomesChart } from '@/components/admissions/assessment-outcomes-chart';
 import { ReferralSourceChart } from '@/components/admissions/referral-source-chart';
-import { ComparisonBarChart } from '@/components/dashboard/charts/comparison-bar-chart';
 import { PipelineStageChart } from '@/components/sis/pipeline-stage-chart';
 import {
   Card,
@@ -18,7 +17,6 @@ import { Sheet } from '@/components/ui/sheet';
 import type {
   AssessmentOutcomes,
   ReferralSource,
-  TimeToEnrollBucket,
 } from '@/lib/admissions/dashboard';
 import type { DrillRow } from '@/lib/admissions/drill';
 import type { PipelineStage as PipelineStageRow } from '@/lib/sis/dashboard';
@@ -126,41 +124,4 @@ export function ReferralDrillCard({
   );
 }
 
-// ─── Time-to-enroll histogram ────────────────────────────────────────────────
-
-export function TimeToEnrollDrillCard({
-  data,
-  ayCode,
-  drillRows,
-}: CommonDrillProps & { data: TimeToEnrollBucket[] }) {
-  const [segment, setSegment] = React.useState<string | null>(null);
-  return (
-    <Sheet open={!!segment} onOpenChange={(o) => !o && setSegment(null)}>
-      <Card className="h-full">
-        <CardHeader>
-          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-            Time to enrollment
-          </CardDescription>
-          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            Days to close
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ComparisonBarChart
-            data={data.map((b) => ({ category: b.label, current: b.count }))}
-            height={240}
-            onSegmentClick={setSegment}
-          />
-        </CardContent>
-      </Card>
-      {segment && (
-        <AdmissionsDrillSheet
-          target="time-to-enroll-bucket"
-          segment={segment}
-          ayCode={ayCode}
-          initialRows={drillRows}
-        />
-      )}
-    </Sheet>
-  );
-}
+// `TimeToEnrollDrillCard` removed (2026-06-24) — see dashboard.ts tombstone.

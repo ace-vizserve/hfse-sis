@@ -8,7 +8,6 @@ import {
   FileStack,
   Handshake,
   History,
-  Hourglass,
   Plane,
   Stethoscope,
   TrendingUp,
@@ -31,7 +30,6 @@ import {
   AssessmentDrillCard,
   PipelineDrillCard,
   ReferralDrillCard,
-  TimeToEnrollDrillCard,
 } from '@/components/admissions/drills/chart-drill-cards';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
@@ -67,7 +65,6 @@ import {
   getDocumentCompletionByLevel,
   getOutdatedApplications,
   getReferralSourceBreakdown,
-  getTimeToEnrollHistogram,
 } from '@/lib/admissions/dashboard';
 import { getAdmissionsPriority } from '@/lib/admissions/priority';
 import { buildDrillRows } from '@/lib/admissions/drill';
@@ -303,7 +300,6 @@ export default async function AdmissionsDashboard({
     referral,
     kpisResult,
     velocity,
-    histogram,
     appsByLevel,
     docCompletion,
     drillRows,
@@ -319,7 +315,6 @@ export default async function AdmissionsDashboard({
     getReferralSourceBreakdown(selectedAy),
     getAdmissionsKpisRange(rangeInput),
     getApplicationsVelocityRange(rangeInput),
-    getTimeToEnrollHistogram(selectedAy),
     getApplicationsByLevelRange(rangeInput),
     getDocumentCompletionByLevel(selectedAy),
     // withDocs:true here because the page-level pre-fetch seeds initialRows
@@ -498,8 +493,6 @@ export default async function AdmissionsDashboard({
     enrolled: kpisResult.current.enrolledInRange,
     conversionPct: kpisResult.current.conversionPct,
     conversionPctPrior: kpisResult.comparison?.conversionPct,
-    avgDaysToEnroll: kpisResult.current.avgDaysToEnroll,
-    avgDaysToEnrollPrior: kpisResult.comparison?.avgDaysToEnroll,
     appsDelta: kpisResult.delta ?? undefined,
     outdatedCount: outdated.length,
     outdatedHref,
@@ -647,28 +640,6 @@ export default async function AdmissionsDashboard({
             />
           )}
         />
-        <MetricCard
-          label="Avg time to enroll"
-          value={kpisResult.current.avgDaysToEnroll}
-          format="days"
-          icon={Hourglass}
-          intent="default"
-          subtext={
-            kpisResult.comparison
-              ? `n=${kpisResult.current.sampleSize} · ${kpisResult.comparison.avgDaysToEnroll}d prior`
-              : `n=${kpisResult.current.sampleSize}`
-          }
-          deltaGoodWhen="down"
-          drillSheet={() => (
-            <AdmissionsDrillSheet
-              target="avg-time"
-              ayCode={selectedAy}
-              initialFrom={rangeInput.from}
-              initialTo={rangeInput.to}
-              initialRows={drillRows}
-            />
-          )}
-        />
       </section>
 
       <InsightsPanel insights={insights} />
@@ -704,28 +675,13 @@ export default async function AdmissionsDashboard({
         </Card>
       )}
 
-      {/* Bento row 2: pipeline stage (wide, current-state breakdown — the
-          glance-level "where is our intake right now") + time-to-enroll
-          histogram (narrow). The conversion-funnel cumulative chart was
-          dropped because its cumulative-counting interpretation contradicted
-          the at-a-glance "current status" purpose; the biggest drop-off
-          survives as an `admissionsInsights` narrative below. */}
-      <section className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <PipelineDrillCard
-            data={pipelineStages}
-            ayCode={selectedAy}
-            drillRows={drillRows}
-          />
-        </div>
-        <div className="lg:col-span-1">
-          <TimeToEnrollDrillCard
-            data={histogram}
-            ayCode={selectedAy}
-            drillRows={drillRows}
-          />
-        </div>
-      </section>
+      {/* Bento row 2: pipeline stage — current-state breakdown of where
+          the intake sits right now across the 7 funnel stages. */}
+      <PipelineDrillCard
+        data={pipelineStages}
+        ayCode={selectedAy}
+        drillRows={drillRows}
+      />
 
       {/* Bento row 3: assessment outcomes (full width — Pipeline graduated to
           row 2's wide slot above). */}

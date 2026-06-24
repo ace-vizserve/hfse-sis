@@ -244,10 +244,6 @@ export default async function AdmissionsInsightsPage({
     enrolled: enrolledCount,
     conversionPct,
     conversionPctPrior: priorConversionPct ?? undefined,
-    // No enrolment timestamp exists in the data, so there is no real
-    // time-to-enrol. 0 + no prior keeps the drift insight permanently
-    // suppressed (it gates on avgDaysToEnrollPrior, which we never pass).
-    avgDaysToEnroll: 0,
     appsDelta: kpisResult.delta ?? undefined,
     // BUG 2 fix: real stalled-applicant count instead of hardcoded 0.
     outdatedCount: outdatedRows.length,
