@@ -212,7 +212,7 @@ export default async function AdmissionsInsightsPage({
   // always 0. Pick the largest positive drop; neutral when none.
   const biggestLeak = pickExtreme(funnel, (s) => s.dropOffPct, 'max');
   const biggestLeakStage =
-    biggestLeak.item && biggestLeak.item.dropOffPct > 0
+    biggestLeak.item && biggestLeak.item.dropOffPct > 0 && !biggestLeak.isTie
       ? {
           label: biggestLeak.item.stage,
           dropOffPct: biggestLeak.item.dropOffPct,
