@@ -730,6 +730,25 @@ export function EditStageDialog({
                         rows={2}
                       />
                     </div>
+
+                    {!terminalReason ? (
+                      <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+                        <AlertTriangle className="size-3.5 shrink-0" />
+                        Pick a reason before you can{' '}
+                        {effectiveStatus === 'Cancelled'
+                          ? 'cancel'
+                          : 'withdraw'}{' '}
+                        this application.
+                      </p>
+                    ) : (
+                      terminalReason === 'other' &&
+                      !terminalNotes.trim() && (
+                        <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+                          <AlertTriangle className="size-3.5 shrink-0" />
+                          Add a note explaining the “Other” reason.
+                        </p>
+                      )
+                    )}
                   </div>
                 )}
 

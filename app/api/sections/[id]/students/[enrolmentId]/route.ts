@@ -11,6 +11,7 @@ import {
   getTermForDate,
   loadTermsForAY,
 } from '@/lib/sis/terms';
+import { stampEnrolledAtIfNull } from '@/lib/sis/enrolled-at';
 import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
 
 // Shape of the joined student node when name columns are selected, used by both
@@ -510,6 +511,16 @@ export async function PATCH(
           reErr.message
         );
       } else {
+        // Capture the enrolment moment (write-once, migration 075). Only
+        // stamps when enrolledAt is still NULL, so a student who was already
+        // enrolled before keeps their original moment; a legacy/pre-075
+        // enrolment with no captured moment gets stamped here (best available
+        // signal). Best-effort — never blocks the re-enrolment.
+        await stampEnrolledAtIfNull(
+          reAdmissions,
+          `${rePrefix}_enrolment_status`,
+          reEnroleeNumber
+        );
         reEnrolmentCascade = {
           enroleeNumber: reEnroleeNumber,
           ayCode: reAyCode,
