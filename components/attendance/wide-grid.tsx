@@ -74,6 +74,7 @@ import {
   resolveColumnTag,
   type ColumnTagCode,
 } from '@/lib/attendance/sheet-columns';
+import { summarizeByMonth, type Mark } from '@/lib/attendance/sheet-summary';
 import type { DailyEntryRow } from '@/lib/attendance/queries';
 import {
   ATTENDANCE_STATUS_LABELS,
@@ -444,6 +445,21 @@ export function AttendanceWideGrid({
     }
     return groups;
   }, [columns]);
+
+  // Per-student marks (from the live cells Map) → summary rows. Recomputes on
+  // edit so the panel stays live. Withdrawn rows excluded (match the roster).
+  const summaryRows = useMemo(() => {
+    if (!showSummary) return [];
+    return enrolments
+      .filter((e) => !e.withdrawn)
+      .map((e) => {
+        const marks: Mark[] = columns.map((c) => ({
+          date: c.iso,
+          status: cells.get(keyFor(e.enrolmentId, c.iso))?.status ?? null,
+        }));
+        return { enrolment: e, ...summarizeByMonth(marks) };
+      });
+  }, [showSummary, enrolments, columns, cells]);
 
   const topOptions = canWriteNc ? REGISTRAR_TOP_OPTIONS : TEACHER_TOP_OPTIONS;
 
@@ -888,6 +904,38 @@ export function AttendanceWideGrid({
         )}
       </Card>
 
+      {/* Summary panel — per-month + term totals per student */}
+      {showSummary && (
+        <Card className="overflow-x-auto p-0">
+          <Table noWrapper className="text-[12px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="px-3 py-2 text-left">Student</TableHead>
+                <TableHead className="px-2 py-2 text-left">Period</TableHead>
+                <TableHead className="px-2 py-2 text-right">Days</TableHead>
+                <TableHead className="px-2 py-2 text-right">P</TableHead>
+                <TableHead className="px-2 py-2 text-right">L</TableHead>
+                <TableHead className="px-2 py-2 text-right">EX</TableHead>
+                <TableHead className="px-2 py-2 text-right">A</TableHead>
+                <TableHead className="px-2 py-2 text-right">
+                  Attendance %
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {summaryRows.map(({ enrolment, months, term }) => (
+                <SummaryStudentRows
+                  key={enrolment.enrolmentId}
+                  name={enrolment.studentName}
+                  months={months}
+                  term={term}
+                />
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
       {/* Legend */}
       <Card className="p-4 text-xs text-muted-foreground">
         <p className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
@@ -1012,5 +1060,77 @@ function DayTypeLegendChip({
         {description}
       </span>
     </span>
+  );
+}
+
+// Per-student rows in the summary panel: one <TableRow> per month block +
+// one term-total <TableRow>. The student name spans all rows via rowSpan.
+function SummaryStudentRows({
+  name,
+  months,
+  term,
+}: {
+  name: string;
+  months: import('@/lib/attendance/sheet-summary').MonthlySummary[];
+  term: import('@/lib/attendance/sheet-summary').SummaryStat;
+}) {
+  const pct = (p: number | null) => (p == null ? '—' : `${p.toFixed(1)}%`);
+  return (
+    <>
+      {months.map((m, i) => (
+        <TableRow key={m.month}>
+          {i === 0 ? (
+            <TableCell
+              rowSpan={months.length + 1}
+              className="px-3 py-2 align-top font-medium text-foreground"
+            >
+              {name}
+            </TableCell>
+          ) : null}
+          <TableCell className="px-2 py-2 text-muted-foreground">
+            {m.label}
+          </TableCell>
+          <TableCell className="px-2 py-2 text-right tabular-nums">
+            {m.stat.totalDays}
+          </TableCell>
+          <TableCell className="px-2 py-2 text-right tabular-nums">
+            {m.stat.present}
+          </TableCell>
+          <TableCell className="px-2 py-2 text-right tabular-nums">
+            {m.stat.late}
+          </TableCell>
+          <TableCell className="px-2 py-2 text-right tabular-nums">
+            {m.stat.excused}
+          </TableCell>
+          <TableCell className="px-2 py-2 text-right tabular-nums">
+            {m.stat.absent}
+          </TableCell>
+          <TableCell className="px-2 py-2 text-right tabular-nums">
+            {pct(m.stat.attendancePct)}
+          </TableCell>
+        </TableRow>
+      ))}
+      <TableRow className="bg-muted/30 font-semibold">
+        <TableCell className="px-2 py-2">Term total</TableCell>
+        <TableCell className="px-2 py-2 text-right tabular-nums">
+          {term.totalDays}
+        </TableCell>
+        <TableCell className="px-2 py-2 text-right tabular-nums">
+          {term.present}
+        </TableCell>
+        <TableCell className="px-2 py-2 text-right tabular-nums">
+          {term.late}
+        </TableCell>
+        <TableCell className="px-2 py-2 text-right tabular-nums">
+          {term.excused}
+        </TableCell>
+        <TableCell className="px-2 py-2 text-right tabular-nums">
+          {term.absent}
+        </TableCell>
+        <TableCell className="px-2 py-2 text-right tabular-nums">
+          {pct(term.attendancePct)}
+        </TableCell>
+      </TableRow>
+    </>
   );
 }
