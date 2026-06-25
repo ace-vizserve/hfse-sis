@@ -26,6 +26,7 @@ import {
   getDedupedSchoolCalendarForTerm,
 } from '@/lib/attendance/calendar';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
+import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import {
   getCompassionateUsageForSection,
   getDailyForSection,
@@ -51,6 +52,7 @@ type SectionRow = {
   id: string;
   name: string;
   academic_year_id: string;
+  schedule: string | null;
   level: LevelLite | LevelLite[] | null;
 };
 
@@ -74,7 +76,7 @@ export default async function SectionAttendancePage({
 
   const { data: sectionRaw } = await supabase
     .from('sections')
-    .select('id, name, academic_year_id, level:levels(code, label)')
+    .select('id, name, academic_year_id, schedule, level:levels(code, label)')
     .eq('id', sectionId)
     .maybeSingle();
   if (!sectionRaw) notFound();
@@ -387,7 +389,11 @@ export default async function SectionAttendancePage({
           courseLabel={level?.label ?? ''}
           sectionName={section.name}
           formAdviser={adviserName}
-          scheduleLabel={null}
+          scheduleLabel={
+            section.schedule
+              ? SCHEDULE_LABELS[section.schedule as Schedule]
+              : null
+          }
           calendar={calendar}
           events={events}
         />

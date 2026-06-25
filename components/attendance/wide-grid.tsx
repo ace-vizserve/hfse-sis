@@ -272,7 +272,7 @@ export function AttendanceWideGrid({
   );
 
   const [showDetails, setShowDetails] = useState(false);
-  const [showSummary, setShowSummary] = useState(false); // used in Task 7
+  const [showSummary, setShowSummary] = useState(false);
 
   function busCareLabel(e: WideGridEnrolment): string {
     return [e.busNo, e.classroomOfficerRole].filter(Boolean).join(' / ') || '—';
@@ -448,6 +448,11 @@ export function AttendanceWideGrid({
 
   // Per-student marks (from the live cells Map) → summary rows. Recomputes on
   // edit so the panel stays live. Withdrawn rows excluded (match the roster).
+  //
+  // NOTE: this summary iterates calendar-configured `columns` (school days for
+  // the selected term); the export builder iterates the full term date window.
+  // Both feed the same `summarizeMarks` helper, so totals match for normal
+  // data. The difference is intentional — don't try to "align" them.
   const summaryRows = useMemo(() => {
     if (!showSummary) return [];
     return enrolments

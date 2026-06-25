@@ -9,6 +9,7 @@ import {
 } from '@/lib/attendance/calendar';
 import { getDailyForSection } from '@/lib/attendance/queries';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
+import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
 import {
@@ -66,7 +67,7 @@ export async function GET(
   // Section + level + AY.
   const { data: sectionRaw } = await service
     .from('sections')
-    .select('id, name, academic_year_id, level:levels(code, label)')
+    .select('id, name, academic_year_id, schedule, level:levels(code, label)')
     .eq('id', sectionId)
     .maybeSingle();
   if (!sectionRaw) return new Response('Section not found.', { status: 404 });
@@ -74,6 +75,7 @@ export async function GET(
     id: string;
     name: string;
     academic_year_id: string;
+    schedule: string | null;
     level:
       | { code: string; label: string }
       | { code: string; label: string }[]
@@ -209,7 +211,9 @@ export async function GET(
     courseLabel: level?.label ?? '',
     sectionName: section.name,
     formAdviser,
-    scheduleLabel: null,
+    scheduleLabel: section.schedule
+      ? SCHEDULE_LABELS[section.schedule as Schedule]
+      : null,
     calendarByDate,
     events,
     students,
