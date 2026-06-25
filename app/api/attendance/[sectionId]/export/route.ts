@@ -1,0 +1,230 @@
+import { type NextRequest } from 'next/server';
+
+import { requireRole } from '@/lib/auth/require-role';
+import { getSessionUser } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
+import {
+  getCalendarEventsForTerm,
+  getDedupedSchoolCalendarForTerm,
+} from '@/lib/attendance/calendar';
+import { getDailyForSection } from '@/lib/attendance/queries';
+import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
+import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
+import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
+import {
+  buildAttendanceSheetWorkbook,
+  type AttendanceSheetExportInput,
+} from '@/lib/attendance/sheet-export';
+import type { AttendanceStatus, DayType } from '@/lib/schemas/attendance';
+
+// GET /api/attendance/[sectionId]/export?term_id=…
+//
+// Streams the section attendance register as a .xlsx workbook.
+//
+// Access:
+// - registrar | school_admin | superadmin: any section
+// - teacher: only sections they are assigned to (any role in teacher_assignments)
+// - non-assigned teachers → 403
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ sectionId: string }> }
+) {
+  const { sectionId } = await params;
+  const termId = new URL(req.url).searchParams.get('term_id');
+  if (!termId)
+    return new Response('Missing required ?term_id= parameter.', {
+      status: 400,
+    });
+
+  // Gate: registrar+ OR a teacher assigned to this section.
+  // requireRole returns { user: { id, email }, role } on success,
+  // or { error: NextResponse } on failure — so role lives at auth.role.
+  const auth = await requireRole([
+    'registrar',
+    'school_admin',
+    'superadmin',
+    'teacher',
+  ]);
+  if ('error' in auth) return auth.error;
+
+  const service = createServiceClient();
+
+  if (auth.role === 'teacher') {
+    const session = await getSessionUser();
+    const { data: assigned } = await service
+      .from('teacher_assignments')
+      .select('id')
+      .eq('section_id', sectionId)
+      .eq('teacher_user_id', session?.id ?? '')
+      .limit(1);
+    if (!assigned || assigned.length === 0) {
+      return new Response('Not assigned to this section.', { status: 403 });
+    }
+  }
+
+  // Section + level + AY.
+  const { data: sectionRaw } = await service
+    .from('sections')
+    .select('id, name, academic_year_id, level:levels(code, label)')
+    .eq('id', sectionId)
+    .maybeSingle();
+  if (!sectionRaw) return new Response('Section not found.', { status: 404 });
+  const section = sectionRaw as {
+    id: string;
+    name: string;
+    academic_year_id: string;
+    level:
+      | { code: string; label: string }
+      | { code: string; label: string }[]
+      | null;
+  };
+  const level = Array.isArray(section.level) ? section.level[0] : section.level;
+
+  // Term.
+  const { data: termRaw } = await service
+    .from('terms')
+    .select('id, label, term_number, start_date, end_date')
+    .eq('id', termId)
+    .maybeSingle();
+  if (!termRaw) return new Response('Term not found.', { status: 404 });
+  const term = termRaw as {
+    id: string;
+    label: string;
+    term_number: number;
+    start_date: string | null;
+    end_date: string | null;
+  };
+  if (!term.start_date || !term.end_date) {
+    return new Response('Term has no start/end dates configured.', {
+      status: 400,
+    });
+  }
+
+  // Form adviser name.
+  const { data: advisers } = await service
+    .from('teacher_assignments')
+    .select('teacher_user_id')
+    .eq('section_id', sectionId)
+    .eq('role', 'form_adviser')
+    .limit(1);
+  const adviserUserId = advisers?.[0]?.teacher_user_id ?? null;
+  const [emailEntries, nameEntries] = await Promise.all([
+    getTeacherEmailMap(),
+    getStaffDisplayEntries(),
+  ]);
+  const adviserEmail = adviserUserId
+    ? (new Map(emailEntries).get(adviserUserId) ?? null)
+    : null;
+  const formAdviser = adviserEmail
+    ? (new Map(nameEntries).get(adviserEmail) ?? adviserEmail)
+    : null;
+
+  // Roster.
+  const { data: enrolmentsRaw } = await service
+    .from('section_students')
+    .select(
+      'id, index_number, enrollment_status, bus_no, classroom_officer_role, student:students(student_number, last_name, first_name, middle_name)'
+    )
+    .eq('section_id', sectionId)
+    .order('index_number');
+
+  // Calendar + events + daily in parallel.
+  const levelType = levelTypeForAudienceLookup(level?.code ?? null);
+  const [calendar, events, daily] = await Promise.all([
+    getDedupedSchoolCalendarForTerm(termId, levelType),
+    getCalendarEventsForTerm(termId, levelType ?? 'all'),
+    getDailyForSection(sectionId, termId),
+  ]);
+
+  const calendarByDate = new Map<
+    string,
+    { dayType: DayType; label: string | null }
+  >();
+  for (const c of calendar)
+    calendarByDate.set(c.date, { dayType: c.dayType, label: c.label });
+
+  // Group daily marks by section_student_id.
+  const marksByEnrolment = new Map<string, Map<string, AttendanceStatus>>();
+  for (const d of daily) {
+    const m =
+      marksByEnrolment.get(d.sectionStudentId) ??
+      new Map<string, AttendanceStatus>();
+    m.set(d.date, d.status);
+    marksByEnrolment.set(d.sectionStudentId, m);
+  }
+
+  type EnrRow = {
+    id: string;
+    index_number: number;
+    enrollment_status: string;
+    bus_no: string | null;
+    classroom_officer_role: string | null;
+    student:
+      | {
+          student_number: string;
+          last_name: string;
+          first_name: string;
+          middle_name: string | null;
+        }
+      | Array<{
+          student_number: string;
+          last_name: string;
+          first_name: string;
+          middle_name: string | null;
+        }>
+      | null;
+  };
+
+  const students: AttendanceSheetExportInput['students'] = (
+    (enrolmentsRaw ?? []) as EnrRow[]
+  ).map((e) => {
+    const s = Array.isArray(e.student) ? e.student[0] : e.student;
+    const fullName = s
+      ? `${s.last_name}, ${s.first_name}${s.middle_name ? ' ' + s.middle_name : ''}`
+      : '';
+    return {
+      indexNumber: e.index_number,
+      fullName,
+      busCare:
+        [e.bus_no, e.classroom_officer_role].filter(Boolean).join(' / ') ||
+        null,
+      withdrawn: e.enrollment_status === 'withdrawn',
+      marksByDate: marksByEnrolment.get(e.id) ?? new Map(),
+    };
+  });
+
+  const isYoungstarters = (level?.code ?? '').toUpperCase().startsWith('YS');
+  const input: AttendanceSheetExportInput = {
+    schoolName: isYoungstarters
+      ? 'HFSE YOUNGSTARTERS'
+      : 'HFSE INTERNATIONAL SCHOOL',
+    sheetName: section.name,
+    term: {
+      label: term.label,
+      termNumber: term.term_number,
+      startDate: term.start_date,
+      endDate: term.end_date,
+    },
+    courseLabel: level?.label ?? '',
+    sectionName: section.name,
+    formAdviser,
+    scheduleLabel: null,
+    calendarByDate,
+    events,
+    students,
+  };
+
+  const buffer = buildAttendanceSheetWorkbook(input);
+  const sanitize = (s: string) => s.replace(/[^A-Za-z0-9._-]+/g, '_');
+  const filename = `Attendance_${sanitize(section.name)}_${sanitize(term.label)}.xlsx`;
+  return new Response(new Uint8Array(buffer), {
+    status: 200,
+    headers: {
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Cache-Control': 'no-store',
+    },
+  });
+}

@@ -44,6 +44,7 @@ import { DailyEntry } from '@/components/attendance/daily-entry';
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
 import SheetContextCard from '@/components/attendance/sheet-context';
+import { ExportSheetButton } from '@/components/attendance/export-sheet-button';
 
 type LevelLite = { code: string; label: string };
 type SectionRow = {
@@ -297,6 +298,9 @@ export default async function SectionAttendancePage({
             enrolments={enrolments}
             termLabel={selectedTerm?.label ?? ''}
           />
+          {view === 'sheet' && (
+            <ExportSheetButton sectionId={sectionId} termId={selectedTermId} />
+          )}
           {canWriteNc && (
             <Button asChild variant="outline" size="sm" className="gap-1.5">
               <Link href={`/sis/calendar?term_id=${selectedTermId}`}>
