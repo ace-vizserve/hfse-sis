@@ -17,7 +17,7 @@ import type {
 // Groups the four dated lists that the HFSE sheet shows as header boxes.
 // Public/School holidays come from school_calendar day_type; School Events
 // (SE) and Examinations (EX) come from calendar_events category.
-type DatedItem = { date: string; label: string };
+type DatedItem = { start: string; end: string; label: string };
 
 function formatRange(start: string, end: string): string {
   const fmt = (iso: string) =>
@@ -51,16 +51,24 @@ export default function SheetContextCard({
   const lists = useMemo(() => {
     const publicHolidays: DatedItem[] = calendar
       .filter((c) => c.dayType === 'public_holiday')
-      .map((c) => ({ date: c.date, label: c.label ?? 'Public holiday' }));
+      .map((c) => ({
+        start: c.date,
+        end: c.date,
+        label: c.label ?? 'Public holiday',
+      }));
     const schoolHolidays: DatedItem[] = calendar
       .filter((c) => c.dayType === 'school_holiday')
-      .map((c) => ({ date: c.date, label: c.label ?? 'School holiday' }));
+      .map((c) => ({
+        start: c.date,
+        end: c.date,
+        label: c.label ?? 'School holiday',
+      }));
     const examinations: DatedItem[] = events
       .filter((e) => e.category === 'term_exam')
-      .map((e) => ({ date: e.startDate, label: e.label }));
+      .map((e) => ({ start: e.startDate, end: e.endDate, label: e.label }));
     const schoolEvents: DatedItem[] = events
       .filter((e) => e.category !== 'term_exam')
-      .map((e) => ({ date: e.startDate, label: e.label }));
+      .map((e) => ({ start: e.startDate, end: e.endDate, label: e.label }));
     return { publicHolidays, schoolHolidays, examinations, schoolEvents };
   }, [calendar, events]);
 
@@ -138,9 +146,9 @@ function DateList({ title, items }: { title: string; items: DatedItem[] }) {
       ) : (
         <ul className="space-y-1 text-xs text-foreground">
           {items.map((it, i) => (
-            <li key={`${it.date}-${i}`} className="flex gap-2">
+            <li key={`${it.start}-${i}`} className="flex gap-2">
               <span className="shrink-0 font-mono text-muted-foreground">
-                {formatRange(it.date, it.date)}
+                {formatRange(it.start, it.end)}
               </span>
               <span className="truncate" title={it.label}>
                 {it.label}
