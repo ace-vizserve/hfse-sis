@@ -21,10 +21,32 @@ export type AdmissionsRow = {
   enrolee_number: string | null; // admissions key, stamped onto section_students
 };
 
+// Pure helper — removes any roster row whose enrolee_number is in
+// `withdrawnEnroleeNumbers`. Extracted so callers (tests, etc.) can exercise
+// the filter logic without a live DB connection.
+export function filterWithdrawnFromRoster(
+  roster: AdmissionsRow[],
+  withdrawnEnroleeNumbers: Set<string>,
+): AdmissionsRow[] {
+  if (withdrawnEnroleeNumbers.size === 0) return roster;
+  return roster.filter(
+    (r) => !r.enrolee_number || !withdrawnEnroleeNumbers.has(r.enrolee_number),
+  );
+}
+
 // Fetch the full active roster for a given academic year from admissions.
 // Filter rules (from docs/context/06-admissions-integration.md):
 //   * classSection IS NOT NULL  (primary liveness signal — applicationStatus is unreliable)
 //   * applicationStatus NOT IN ('Cancelled', 'Withdrawn')
+//
+// Post-enrolment withdrawal guard (Task 1 / KD #147):
+//   After Task 1 a student who enrolled then withdrew keeps
+//   applicationStatus='Enrolled' (the OUTCOME is append-only). The operational
+//   withdrawal lives on section_students.enrollment_status='withdrawn'. Without
+//   this guard, a bulk "Sync from Admissions" would see the student as active
+//   in admissions and reactivate their withdrawn section_students row.
+//   Fix: after building the roster from admissions tables, cross-reference
+//   section_students and exclude any row whose enrollment_status='withdrawn'.
 export async function fetchAdmissionsRoster(ayCode: string): Promise<AdmissionsRow[]> {
   const year = ayCode.replace(/^AY/i, '').toLowerCase(); // "AY2026" → "2026"
   const appsTable = `ay${year}_enrolment_applications`;
@@ -86,6 +108,42 @@ export async function fetchAdmissionsRoster(ayCode: string): Promise<AdmissionsR
       enrolee_number: s.enroleeNumber,
     });
   }
+
+  // Guard: exclude students who have been post-enrolment withdrawn via Records.
+  // These students keep applicationStatus='Enrolled' (the outcome is preserved,
+  // KD #147) but their section_students.enrollment_status='withdrawn' is the
+  // authoritative current-state. If we included them here, buildSyncPlan would
+  // see the withdrawn row and plan a reactivation — silently undoing the
+  // registrar's withdrawal. Both callers (bulk sync + stats preview) benefit.
+  const enroleeNumbers = out
+    .map((r) => r.enrolee_number)
+    .filter((n): n is string => !!n);
+
+  if (enroleeNumbers.length > 0) {
+    const { data: withdrawnRows, error: withdrawnErr } = await supabase
+      .from('section_students')
+      .select('enrolee_number')
+      .eq('enrollment_status', 'withdrawn')
+      .in('enrolee_number', enroleeNumbers);
+
+    if (withdrawnErr) {
+      // Non-fatal: log and continue — it is safer to surface a student for
+      // review than to silently skip them. The reactivation risk still exists
+      // on error, but the alternative (hard-fail the sync) is worse.
+      console.warn(
+        '[fetchAdmissionsRoster] section_students withdrawal check failed:',
+        withdrawnErr.message,
+      );
+    } else {
+      const withdrawnSet = new Set(
+        (withdrawnRows ?? [])
+          .map((r: { enrolee_number: string | null }) => r.enrolee_number)
+          .filter((n): n is string => !!n),
+      );
+      return filterWithdrawnFromRoster(out, withdrawnSet);
+    }
+  }
+
   return out;
 }
 
