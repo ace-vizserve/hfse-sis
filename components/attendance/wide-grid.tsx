@@ -270,6 +270,13 @@ export function AttendanceWideGrid({
     () => new Map(seed)
   );
 
+  const [showDetails, setShowDetails] = useState(false);
+  const [showSummary, setShowSummary] = useState(false); // used in Task 7
+
+  function busCareLabel(e: WideGridEnrolment): string {
+    return [e.busNo, e.classroomOfficerRole].filter(Boolean).join(' / ') || '—';
+  }
+
   function updateCell(k: GridKey, patch: Partial<CellState>) {
     setCells((current) => {
       const next = new Map(current);
@@ -469,6 +476,24 @@ export function AttendanceWideGrid({
 
   return (
     <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant={showDetails ? 'secondary' : 'outline'}
+          size="sm"
+          onClick={() => setShowDetails((v) => !v)}
+        >
+          {showDetails ? 'Hide details' : 'Show details'}
+        </Button>
+        <Button
+          type="button"
+          variant={showSummary ? 'secondary' : 'outline'}
+          size="sm"
+          onClick={() => setShowSummary((v) => !v)}
+        >
+          {showSummary ? 'Hide summary' : 'Show summary'}
+        </Button>
+      </div>
       <Card className="p-0 overflow-hidden">
         {enrolments.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center">
@@ -497,6 +522,9 @@ export function AttendanceWideGrid({
                 <colgroup>
                   <col style={{ width: 40 }} />
                   <col style={{ width: 180 }} />
+                  {showDetails && <col style={{ width: 120 }} />}
+                  {showDetails && <col style={{ width: 90 }} />}
+                  {showDetails && <col style={{ width: 90 }} />}
                 </colgroup>
                 <TableHeader>
                   <TableRow
@@ -504,7 +532,7 @@ export function AttendanceWideGrid({
                     className="hover:bg-transparent"
                   >
                     <TableHead
-                      colSpan={2}
+                      colSpan={showDetails ? 5 : 2}
                       className="h-auto border-b border-border bg-muted/60 px-2 py-1.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                     >
                       Roster
@@ -520,6 +548,19 @@ export function AttendanceWideGrid({
                     <TableHead className="h-auto border-b border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
                       Student
                     </TableHead>
+                    {showDetails && (
+                      <>
+                        <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
+                          Bus / Student Care
+                        </TableHead>
+                        <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
+                          Academics
+                        </TableHead>
+                        <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
+                          Admin
+                        </TableHead>
+                      </>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -576,6 +617,19 @@ export function AttendanceWideGrid({
                           )}
                         </div>
                       </TableCell>
+                      {showDetails && (
+                        <>
+                          <TableCell className="overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground">
+                            {busCareLabel(e)}
+                          </TableCell>
+                          <TableCell className="border-l border-border px-2 py-1 text-center text-[11px] text-muted-foreground">
+                            —
+                          </TableCell>
+                          <TableCell className="border-l border-border px-2 py-1 text-center text-[11px] text-muted-foreground">
+                            —
+                          </TableCell>
+                        </>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
