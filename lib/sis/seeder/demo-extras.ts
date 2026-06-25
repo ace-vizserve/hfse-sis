@@ -18,6 +18,8 @@ export type DemoExtrasResult = {
   calendar_events_extra: number;
   school_calendar_audience_overrides: number;
   vacation_leave_entries: number;
+  change_requests: number;
+  p_file_outreach: number;
 };
 
 export async function seedDemoExtras(
@@ -28,20 +30,36 @@ export async function seedDemoExtras(
     calendar_events_extra: 0,
     school_calendar_audience_overrides: 0,
     vacation_leave_entries: 0,
+    change_requests: 0,
+    p_file_outreach: 0,
   };
 
   const cal = await seedCalendarEnhancements(service, testAy);
   result.calendar_events_extra = cal.events;
   result.school_calendar_audience_overrides = cal.audienceOverrides;
 
-  // Vacation-leave entries — fills the attendance dashboard's
-  // VacationLeaveQuotaCard, which is otherwise empty in test (KD #94). The other
-  // dormant demo-extras helpers (change-requests, enrollment-status-mix) overlap
-  // the EC1–EC7 edge cases and are deliberately left unwired to avoid double-seeding.
+  // Vacation-leave entries + over-quota variety — fills the attendance
+  // dashboard's VacationLeaveQuotaCard with "at limit" + "over limit" rows
+  // so the registrar can see both states (KD #94).
   result.vacation_leave_entries = await seedVacationLeaveEntries(
     service,
     testAy
   );
+
+  // Change-request spread (Gap 2) — 12 CRs across pending/approved/applied/
+  // rejected/cancelled on locked T1 sheets; auto-bootstraps approver_assignments
+  // when empty so the inbox is non-empty after seeding. Skips if any CRs
+  // already exist against the locked sheets (idempotent). Does NOT overlap
+  // EC5–EC7 (those target specific section/student pairs; this targets a
+  // different sheet pool).
+  result.change_requests = await seedChangeRequests(service, testAy);
+
+  // P-File outreach lifecycle (Gap 4) — reminder + promise rows on enrolled
+  // students with expiring docs. Skips if any outreach rows already exist
+  // for this AY (idempotent). Surfaces the chase-strip + outreach history
+  // that would otherwise be empty in test.
+  const pfileResult = await seedPFileLifecycle(service, testAy);
+  result.p_file_outreach = pfileResult.outreach;
 
   return result;
 }
@@ -1151,6 +1169,7 @@ async function seedVacationLeaveEntries(
   // total stays the same — mirrors how Joann reclassifies entries
   // after seeing a parent leave request.
   let flipped = 0;
+  const flippedSsIds: string[] = [];
   for (const ssId of ssIds) {
     const { data: candidate } = await service
       .from('attendance_daily')
@@ -1168,12 +1187,131 @@ async function seedVacationLeaveEntries(
       .eq('id', (candidate as { id: string }).id);
     if (!error) {
       flipped += 1;
+      flippedSsIds.push(ssId);
       await service.rpc('recompute_attendance_rollup', {
         p_term_id: targetTermId,
         p_section_student_id: ssId,
       });
     }
   }
+
+  // Over-quota sub-pass (Gap 5a): push the first 2-3 students to a 2nd VL
+  // in the same term (over the 1/term limit). This exercises the dashboard
+  // amber "over limit" row in VacationLeaveQuotaCard. Skip-guarded per
+  // student: only flips students that currently have exactly 1 VL entry
+  // (the ones this pass just created above) so re-runs are safe.
+  const overQuotaCandidates = flippedSsIds.slice(0, 3);
+  for (const ssId of overQuotaCandidates) {
+    // Guard: must have exactly 1 VL already (ours from above).
+    const { count: vlCount } = await service
+      .from('attendance_daily')
+      .select('id', { count: 'exact', head: true })
+      .eq('section_student_id', ssId)
+      .eq('term_id', targetTermId)
+      .eq('ex_reason', 'vacation');
+    if ((vlCount ?? 0) !== 1) continue; // already >1 or somehow 0 — skip
+
+    // Pick a different P entry to flip (not the one we just used — date order
+    // gives us the 2nd school day in the term).
+    const { data: second } = await service
+      .from('attendance_daily')
+      .select('id')
+      .eq('section_student_id', ssId)
+      .eq('term_id', targetTermId)
+      .eq('status', 'P')
+      .order('date')
+      .limit(1)
+      .maybeSingle();
+    if (!second) continue;
+    const { error } = await service
+      .from('attendance_daily')
+      .update({ status: 'EX', ex_reason: 'vacation' })
+      .eq('id', (second as { id: string }).id);
+    if (!error) {
+      flipped += 1;
+      await service.rpc('recompute_attendance_rollup', {
+        p_term_id: targetTermId,
+        p_section_student_id: ssId,
+      });
+    }
+  }
+
+  // Over-quota sub-pass (Gap 5b): seed 1 student with 6 compassionate-leave
+  // days across T1+T2 (over the 5/year threshold). Uses the 4th student from
+  // the flipped set (distinct from the 3 VL-over-quota students above) so the
+  // two over-quota signals are on different students. Skip-guarded on T1
+  // compassionate count ≥ 3 for this student (idempotent re-run detection).
+  const compassionateTarget = flippedSsIds[3] ?? flippedSsIds[0];
+  if (compassionateTarget) {
+    const t1Term = terms.find((t) => t.term_number === 1);
+    const t2Term = terms.find((t) => t.term_number === 2);
+
+    // Guard: skip if this student already has ≥3 compassionate in T1.
+    const { count: existingComp } = t1Term
+      ? await service
+          .from('attendance_daily')
+          .select('id', { count: 'exact', head: true })
+          .eq('section_student_id', compassionateTarget)
+          .eq('term_id', t1Term.id)
+          .eq('ex_reason', 'compassionate')
+      : { count: 3 }; // dummy — skip if no T1
+    if ((existingComp ?? 0) < 3) {
+      // T1: 3 compassionate days
+      for (const term of [t1Term, t2Term].filter(Boolean) as Array<{
+        id: string;
+        term_number: number;
+        start_date: string | null;
+        end_date: string | null;
+      }>) {
+        const daysNeeded = term.term_number === 1 ? 3 : 3; // 3+3 = 6 total
+        const { data: calRows } = await service
+          .from('school_calendar')
+          .select('date')
+          .eq('term_id', term.id)
+          .in('day_type', ['school_day', 'hbl'])
+          .order('date')
+          .limit(daysNeeded);
+        const dates = (calRows ?? []).map((r) => (r as { date: string }).date);
+        for (const date of dates) {
+          const { count: existingDay } = await service
+            .from('attendance_daily')
+            .select('id', { count: 'exact', head: true })
+            .eq('section_student_id', compassionateTarget)
+            .eq('date', date)
+            .eq('ex_reason', 'compassionate');
+          if ((existingDay ?? 0) > 0) continue;
+          // Flip an existing P entry on this date if possible; otherwise insert.
+          const { data: existingEntry } = await service
+            .from('attendance_daily')
+            .select('id, status')
+            .eq('section_student_id', compassionateTarget)
+            .eq('date', date)
+            .maybeSingle();
+          if (existingEntry) {
+            await service
+              .from('attendance_daily')
+              .update({ status: 'EX', ex_reason: 'compassionate' })
+              .eq('id', (existingEntry as { id: string }).id);
+          } else {
+            await service.from('attendance_daily').insert({
+              section_student_id: compassionateTarget,
+              date,
+              term_id: term.id,
+              status: 'EX',
+              ex_reason: 'compassionate',
+              recorded_by: 'registrar.seed@hfse.test',
+            });
+          }
+          flipped += 1;
+        }
+        await service.rpc('recompute_attendance_rollup', {
+          p_term_id: term.id,
+          p_section_student_id: compassionateTarget,
+        });
+      }
+    }
+  }
+
   return flipped;
 }
 

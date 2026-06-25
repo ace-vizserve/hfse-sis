@@ -1344,14 +1344,28 @@ async function seedEvaluationWriteups(
       });
     }
 
-    // T3 (closed-AY only) — all enrolled students' submitted writeups (mirrors T1).
+    // T3 (closed-AY only) — realistic in-progress mix: ~70% submitted, ~20%
+    // draft, ~10% missing (no row). Mirrors a T3 period that closed recently
+    // where most advisers have filed but a few are still outstanding. The mix
+    // exercises the comment hard-gate (KD #129) + the evaluation chase metrics
+    // (KD #126) in the AY9998 closed AY without blocking all publications.
     if (allTermsFull && t3) {
       const { data: enrolments } = await service
         .from('section_students')
         .select('student_id')
         .eq('section_id', sectionId);
       const students = (enrolments ?? []) as Array<{ student_id: string }>;
-      for (const s of students) pushWriteup(t3, sectionId, s.student_id, true);
+      for (const s of students) {
+        const r = rand();
+        if (r < 0.7) {
+          // 70% — submitted
+          pushWriteup(t3, sectionId, s.student_id, true);
+        } else if (r < 0.9) {
+          // 20% — draft (saved but not submitted)
+          pushWriteup(t3, sectionId, s.student_id, false);
+        }
+        // 10% — missing: skip (no row inserted)
+      }
     }
   }
 
@@ -2440,6 +2454,7 @@ async function seedPublication(
     publish_from: string;
     publish_until: string;
     published_by: string;
+    published_with_gaps: { gaps: string[]; by: string; at: string } | null;
   }> = [];
 
   // Real registrars publish SELECTIVELY with VARIED windows — not every
@@ -2488,12 +2503,27 @@ async function seedPublication(
     const publishUntil = new Date(
       baseDate.getTime() + windowDays * 24 * 60 * 60 * 1000
     );
+    // Mark the 1st and 3rd published windows with a soft-gap override snapshot
+    // (KD #139 / migration 073). This exercises the `published_with_gaps`
+    // accountability path on the PublishWindowPanel without blocking the card
+    // (soft gaps are publishable with "publish anyway"). Positions 0 and 2 are
+    // chosen so there's always at least one clean window between them.
+    const publishedIdx = windowCursor - 1; // after the increment above
+    const gapSnapshot =
+      publishedIdx === 0 || publishedIdx === 2
+        ? {
+            gaps: ['attendance_incomplete'],
+            by: 'test-seeder@hfse.edu.sg',
+            at: publishUntil.toISOString(),
+          }
+        : null;
     publications.push({
       section_id: c.sectionId,
       term_id: c.term.id,
       publish_from: baseDate.toISOString(),
       publish_until: publishUntil.toISOString(),
       published_by: 'test-seeder@hfse.edu.sg',
+      published_with_gaps: gapSnapshot,
     });
   });
   if (publications.length === 0) return 0;
