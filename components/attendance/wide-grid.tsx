@@ -70,6 +70,10 @@ import type {
   CalendarEventRow,
   SchoolCalendarRow,
 } from '@/lib/attendance/calendar';
+import {
+  resolveColumnTag,
+  type ColumnTagCode,
+} from '@/lib/attendance/sheet-columns';
 import type { DailyEntryRow } from '@/lib/attendance/queries';
 import {
   ATTENDANCE_STATUS_LABELS,
@@ -93,15 +97,17 @@ const DAY_TYPE_CHIP_COLOR: Record<DayType, ChartLegendChipColor> = {
   no_class: 'neutral',
 };
 
-// Short labels for column-header chips (1-3 chars to fit the dense
-// 36px-wide column). 'school_day' renders no chip — it's the default
-// state and a chip on every column would be visual noise.
-const DAY_TYPE_HEADER_CHIP_LABEL: Record<DayType, string | null> = {
-  school_day: null,
-  public_holiday: 'PH',
-  school_holiday: 'SH',
-  hbl: 'HBL',
-  no_class: 'NC',
+// Tag → ChartLegendChip color. PH/SH/HBL/NC keep their existing day-type
+// colors; EX (examination) reuses the notable 'primary' wash, SE (school
+// event) reuses 'fresh'. Letter + tooltip always present — color is never
+// the only signal.
+const COLUMN_TAG_COLOR: Record<ColumnTagCode, ChartLegendChipColor> = {
+  PH: 'very-stale',
+  SH: 'stale',
+  HBL: 'primary',
+  NC: 'neutral',
+  EX: 'primary',
+  SE: 'fresh',
 };
 
 // Status → marking-cell wash. HFSE paper-sheet palette (KD A3): solid light
@@ -399,6 +405,7 @@ export function AttendanceWideGrid({
         label: c.label,
         events: evBy(c.date),
         drawMonthBoundary: isMonthStart && idx > 0,
+        tag: resolveColumnTag({ dayType: c.dayType, events: evBy(c.date) }),
       };
     });
   }, [calendar, events]);
@@ -620,8 +627,6 @@ export function AttendanceWideGrid({
                         c.label ? ` · ${c.label}` : ''
                       }${eventLabel ? ` · ${eventLabel}` : ''}`;
                       const isToday = c.iso === todayIso;
-                      const headerChipLabel =
-                        DAY_TYPE_HEADER_CHIP_LABEL[c.dayType];
                       return (
                         <TableHead
                           key={c.iso}
@@ -643,21 +648,20 @@ export function AttendanceWideGrid({
                           <div className="text-[9px] font-normal opacity-70">
                             {weekday.slice(0, 3)}
                           </div>
-                          {/* Day-type pill — same ChartLegendChip rendered in
-                              the legend below, so the column header and the
-                              legend chip read as the same affordance per §10. */}
-                          {headerChipLabel && (
+                          {/* Column tag — resolveColumnTag picks the single
+                              most-informative tag: PH/SH/NC from day_type,
+                              EX for exam events, SE for other events, HBL
+                              for HBL days; plain school days are untagged.
+                              Same ChartLegendChip rendered in the legend below
+                              so the column header and legend chip read as the
+                              same affordance per §10. */}
+                          {c.tag && (
                             <div className="mt-0.5 flex justify-center">
                               <ChartLegendChip
-                                color={DAY_TYPE_CHIP_COLOR[c.dayType]}
-                                label={headerChipLabel}
+                                color={COLUMN_TAG_COLOR[c.tag]}
+                                label={c.tag}
                                 className="px-1 py-px text-[9px] tracking-[0.1em]"
                               />
-                            </div>
-                          )}
-                          {c.events.length > 0 && (
-                            <div className="mt-0.5 truncate text-[9px] font-normal text-primary">
-                              ★
                             </div>
                           )}
                         </TableHead>
@@ -885,10 +889,19 @@ export function AttendanceWideGrid({
             letter="NC"
             description="No class"
           />
+          <span className="inline-flex items-center gap-2">
+            <ChartLegendChip color={COLUMN_TAG_COLOR.SE} label="SE" />
+            <span className="text-[12px] font-medium text-foreground">
+              School event
+            </span>
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <ChartLegendChip color={COLUMN_TAG_COLOR.EX} label="EX" />
+            <span className="text-[12px] font-medium text-foreground">
+              Examination
+            </span>
+          </span>
         </div>
-        <p className="mt-3 text-[10px] text-muted-foreground">
-          ★ marks dates with a calendar event.
-        </p>
       </Card>
     </div>
   );
