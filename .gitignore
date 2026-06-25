@@ -50,7 +50,7 @@ next-env.d.ts
 # HFSE reference workbooks — Excel files dropped at the repo root for
 # canonical-spec verification (report books, attendance workbooks,
 # evaluation checklists, etc.). Stay local; never committed.
-*.xlsx
+
 *.xls
 *.xlsm
 
@@ -68,3 +68,7 @@ next-env.d.ts
 /presentations
 # AY2025 backfill artifacts (PII — never commit)
 ay2025_fca_writeups.sql
+ay2025_calendar.sql
+
+# Untracked student-data spreadsheets at repo root (PII — never commit)
+/*.xlsx
