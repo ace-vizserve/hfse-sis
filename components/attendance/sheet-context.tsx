@@ -1,32 +1,61 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CalendarDays, ChevronDown, GraduationCap, User } from 'lucide-react';
+import { CalendarDays, ChevronDown, ClipboardCheck } from 'lucide-react';
 
+import { COLUMN_TAG_COLOR } from '@/components/attendance/column-tags';
+import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
+import { Badge } from '@/components/ui/badge';
+import {
+  Card,
+  CardAction,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Card } from '@/components/ui/card';
 import type {
   CalendarEventRow,
   SchoolCalendarRow,
 } from '@/lib/attendance/calendar';
+import type { ColumnTagCode } from '@/lib/attendance/sheet-columns';
 
-// Groups the four dated lists that the HFSE sheet shows as header boxes.
-// Public/School holidays come from school_calendar day_type; School Events
-// (SE) and Examinations (EX) come from calendar_events category.
+// The masthead of a section's attendance register: a letterhead lockup
+// (gradient tile + serif virtue name under a course·term eyebrow), a muted meta
+// strip (form adviser / schedule), and a tucked-away "Term calendar" key whose
+// four list headers carry the SAME SH/SE/PH/EX chips as the grid's date columns
+// (a true legend tie — §10). Dated lists: Public/School holidays from
+// school_calendar.day_type; School events (SE) + examinations (EX) from
+// calendar_events.category.
+
 type DatedItem = { start: string; end: string; label: string };
 
+// Locale-independent date formatting (matches the export; avoids ICU drift).
+const MONTH_ABBR = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+function fmtDate(iso: string): string {
+  return `${Number(iso.slice(8, 10))} ${MONTH_ABBR[Number(iso.slice(5, 7)) - 1]}`;
+}
+
 function formatRange(start: string, end: string): string {
-  const fmt = (iso: string) =>
-    new Date(
-      Number(iso.slice(0, 4)),
-      Number(iso.slice(5, 7)) - 1,
-      Number(iso.slice(8, 10))
-    ).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' });
-  return start === end ? fmt(start) : `${fmt(start)} – ${fmt(end)}`;
+  return start === end ? fmtDate(start) : `${fmtDate(start)} – ${fmtDate(end)}`;
 }
 
 export default function SheetContextCard({
@@ -78,81 +107,150 @@ export default function SheetContextCard({
     lists.examinations.length +
     lists.schoolEvents.length;
 
+  const eyebrow = [courseLabel, term.label].filter(Boolean).join(' · ');
+
   return (
-    <Card className="p-4">
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-        <Meta icon={GraduationCap} label="Course" value={courseLabel} />
-        <Meta label="Section" value={sectionName} />
-        <Meta label="Term" value={term.label} />
-        {scheduleLabel && <Meta label="Schedule" value={scheduleLabel} />}
-        <Meta
-          icon={User}
+    <Card className="@container/card gap-0 overflow-hidden py-0">
+      {/* Masthead lockup */}
+      <CardHeader className="gap-1 border-b border-border py-5">
+        {eyebrow && (
+          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+            {eyebrow}
+          </CardDescription>
+        )}
+        <CardTitle className="font-serif text-[22px] font-semibold tracking-tight text-foreground">
+          {sectionName}
+        </CardTitle>
+        <CardAction>
+          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <ClipboardCheck className="size-4" aria-hidden />
+          </div>
+        </CardAction>
+      </CardHeader>
+
+      {/* Meta strip */}
+      <div className="flex flex-wrap gap-x-10 gap-y-3 border-b border-border bg-muted/30 px-6 py-3">
+        <MetaBlock
           label="Form Class Adviser"
           value={formAdviser ?? 'Unassigned'}
+          muted={!formAdviser}
         />
+        {scheduleLabel && <MetaBlock label="Schedule" value={scheduleLabel} />}
       </div>
 
-      <Collapsible open={open} onOpenChange={setOpen} className="mt-3">
-        <CollapsibleTrigger className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:text-foreground">
-          <CalendarDays className="size-3.5" aria-hidden />
-          Term calendar
-          <span className="text-muted-foreground/70">({totalDated})</span>
-          <ChevronDown
-            className={
-              'size-3.5 transition-transform ' + (open ? 'rotate-180' : '')
-            }
-            aria-hidden
-          />
-        </CollapsibleTrigger>
-        <CollapsibleContent className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <DateList title="School Events" items={lists.schoolEvents} />
-          <DateList title="School Holidays" items={lists.schoolHolidays} />
-          <DateList title="Public Holidays" items={lists.publicHolidays} />
-          <DateList title="Examinations" items={lists.examinations} />
-        </CollapsibleContent>
-      </Collapsible>
+      {/* Term calendar — a quiet, expandable key (hidden when the term has none) */}
+      {totalDated > 0 && (
+        <Collapsible open={open} onOpenChange={setOpen}>
+          <CollapsibleTrigger className="flex w-full items-center gap-2 px-6 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+            <CalendarDays
+              className="size-3.5 text-muted-foreground"
+              aria-hidden
+            />
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Term calendar
+            </span>
+            <Badge
+              variant="secondary"
+              className="h-5 px-1.5 font-mono text-[10px] tabular-nums"
+            >
+              {totalDated}
+            </Badge>
+            <ChevronDown
+              className={
+                'ml-auto size-4 text-muted-foreground transition-transform ' +
+                (open ? 'rotate-180' : '')
+              }
+              aria-hidden
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            {/* gap-px over bg-border draws hairline rules between the four cells */}
+            <div className="grid grid-cols-1 gap-px border-t border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+              <DateList
+                tag="SE"
+                title="School events"
+                items={lists.schoolEvents}
+              />
+              <DateList
+                tag="SH"
+                title="School holidays"
+                items={lists.schoolHolidays}
+              />
+              <DateList
+                tag="PH"
+                title="Public holidays"
+                items={lists.publicHolidays}
+              />
+              <DateList
+                tag="EX"
+                title="Examinations"
+                items={lists.examinations}
+              />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
     </Card>
   );
 }
 
-function Meta({
-  icon: Icon,
+function MetaBlock({
   label,
   value,
+  muted,
 }: {
-  icon?: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
+  muted?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      {Icon && <Icon className="size-4 text-muted-foreground" aria-hidden />}
+    <div className="flex flex-col gap-0.5">
       <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         {label}
       </span>
-      <span className="font-medium text-foreground">{value}</span>
+      <span
+        className={
+          'text-sm font-medium ' +
+          (muted ? 'italic text-muted-foreground' : 'text-foreground')
+        }
+      >
+        {value}
+      </span>
     </div>
   );
 }
 
-function DateList({ title, items }: { title: string; items: DatedItem[] }) {
+function DateList({
+  tag,
+  title,
+  items,
+}: {
+  tag: ColumnTagCode;
+  title: string;
+  items: DatedItem[];
+}) {
   return (
-    <div>
-      <p className="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-indigo-deep">
-        {title}
-      </p>
+    <div className="bg-card px-5 py-4">
+      <div className="mb-2 flex items-center gap-2">
+        <ChartLegendChip
+          color={COLUMN_TAG_COLOR[tag]}
+          label={tag}
+          className="px-1 py-px text-[9px] tracking-[0.1em]"
+        />
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground">
+          {title}
+        </p>
+      </div>
       {items.length === 0 ? (
-        <p className="text-xs text-muted-foreground">None</p>
+        <p className="text-xs text-muted-foreground">None this term</p>
       ) : (
-        <ul className="space-y-1 text-xs text-foreground">
+        <ul className="space-y-1.5">
           {items.map((it, i) => (
-            <li key={`${it.start}-${i}`} className="flex gap-2">
-              <span className="shrink-0 font-mono text-muted-foreground">
+            <li key={`${it.start}-${i}`} className="flex gap-2 text-xs">
+              <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
                 {formatRange(it.start, it.end)}
               </span>
-              <span className="truncate" title={it.label}>
-                {it.label}
-              </span>
+              <span className="leading-snug text-foreground">{it.label}</span>
             </li>
           ))}
         </ul>

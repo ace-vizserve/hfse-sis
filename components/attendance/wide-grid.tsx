@@ -70,10 +70,8 @@ import type {
   CalendarEventRow,
   SchoolCalendarRow,
 } from '@/lib/attendance/calendar';
-import {
-  resolveColumnTag,
-  type ColumnTagCode,
-} from '@/lib/attendance/sheet-columns';
+import { resolveColumnTag } from '@/lib/attendance/sheet-columns';
+import { COLUMN_TAG_COLOR } from '@/components/attendance/column-tags';
 import { summarizeByMonth, type Mark } from '@/lib/attendance/sheet-summary';
 import type { DailyEntryRow } from '@/lib/attendance/queries';
 import {
@@ -98,18 +96,8 @@ const DAY_TYPE_CHIP_COLOR: Record<DayType, ChartLegendChipColor> = {
   no_class: 'neutral',
 };
 
-// Tag → ChartLegendChip color. PH/SH/HBL/NC keep their existing day-type
-// colors; EX (examination) reuses the notable 'primary' wash, SE (school
-// event) reuses 'fresh'. Letter + tooltip always present — color is never
-// the only signal.
-const COLUMN_TAG_COLOR: Record<ColumnTagCode, ChartLegendChipColor> = {
-  PH: 'very-stale',
-  SH: 'stale',
-  HBL: 'primary',
-  NC: 'neutral',
-  EX: 'primary',
-  SE: 'fresh',
-};
+// COLUMN_TAG_COLOR (date-column tag → ChartLegendChip color) is shared with the
+// sheet-context card's term-calendar key — see components/attendance/column-tags.ts (§10.2).
 
 // Status → marking-cell wash. HFSE paper-sheet palette (KD A3): solid light
 // fills matching the old paper register — P light blue, A yellow, EX cyan,
