@@ -41,6 +41,9 @@ import {
 } from '@/components/attendance/wide-grid';
 import { StudentLookupSheet } from '@/components/attendance/student-lookup-sheet';
 import { DailyEntry } from '@/components/attendance/daily-entry';
+import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
+import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
+import SheetContextCard from '@/components/attendance/sheet-context';
 
 type LevelLite = { code: string; label: string };
 type SectionRow = {
@@ -119,7 +122,7 @@ export default async function SectionAttendancePage({
     );
   }
 
-  // Form adviser display (for header).
+  // Form adviser display (for the context card).
   const { data: advisers } = await supabase
     .from('teacher_assignments')
     .select('teacher_user_id, role')
@@ -127,8 +130,19 @@ export default async function SectionAttendancePage({
     .eq('role', 'form_adviser')
     .limit(1);
   const adviserUserId = advisers?.[0]?.teacher_user_id ?? null;
-  // We don't have a user-names table; email is looked up via auth but we
-  // skip that here — the section.name + level is enough for the header.
+
+  const [emailEntries, nameEntries] = await Promise.all([
+    getTeacherEmailMap(),
+    getStaffDisplayEntries(),
+  ]);
+  const emailByUserId = new Map(emailEntries);
+  const nameByEmail = new Map(nameEntries);
+  const adviserEmail = adviserUserId
+    ? (emailByUserId.get(adviserUserId) ?? null)
+    : null;
+  const adviserName = adviserEmail
+    ? (nameByEmail.get(adviserEmail) ?? adviserEmail)
+    : null;
 
   // Enrolment roster — include new metadata fields from migration 015 +
   // vacation_leave_allowance_per_term from migration 048 (KD #94).
@@ -361,6 +375,18 @@ export default async function SectionAttendancePage({
             />
           </div>
         </div>
+      )}
+
+      {view === 'sheet' && (
+        <SheetContextCard
+          term={{ label: selectedTerm?.label ?? '' }}
+          courseLabel={level?.label ?? ''}
+          sectionName={section.name}
+          formAdviser={adviserName}
+          scheduleLabel={null}
+          calendar={calendar}
+          events={events}
+        />
       )}
 
       {/* key forces a remount on section/term change so the grid re-seeds its
