@@ -51,12 +51,25 @@ const SUMMARY_SUBCOLS = [
   'Attendance %',
 ] as const;
 
+const MONTH_ABBR = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
 function shortDate(iso: string): string {
-  return new Date(
-    Number(iso.slice(0, 4)),
-    Number(iso.slice(5, 7)) - 1,
-    Number(iso.slice(8, 10))
-  ).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' });
+  const month = Number(iso.slice(5, 7));
+  const day = Number(iso.slice(8, 10));
+  return `${day} ${MONTH_ABBR[month - 1]}`;
 }
 
 export function buildAttendanceSheetWorkbook(
