@@ -16,6 +16,7 @@
 - **No behavior change** to term-date saving, the accepting-applications toggle, AY create/switch/delete, or the readiness computation. This is consolidation + surfacing only.
 - **Plain-English copy** for school admins — no dev jargon in any visible string.
 - **No new API route, no migration.**
+- **Full test coverage of new testable units.** Every new pure helper has unit tests (Task 1); every new client/presentational component has an RTL behavior test (Tasks 2, 3); the pill change is locked in by a test (Task 5). The async server page (Task 4) is not unit-tested directly — its only branching logic is the extracted, fully-tested `resolveSelectedAyCode`; the page itself is verified by `npx next build` + the manual smoke checklist. Tests follow the house patterns in `__tests__/_utils/` + `__tests__/dashboard/compare-ay-picker.test.tsx`.
 
 ---
 
@@ -198,17 +199,70 @@ export function AyPicker({ ays, selected }: AyPickerProps) {
 }
 ```
 
-- [ ] **Step 2: Verify it compiles**
+- [ ] **Step 2: Write the behavior test**
 
-Run: `npx tsc --noEmit -p tsconfig.json`
-Expected: no new type errors referencing `ay-picker.tsx`.
-(If the project's `tsc` is slow/strict, instead defer compile verification to the build in Task 4 — but prefer this targeted check.)
+Mirror the house pattern in `__tests__/dashboard/compare-ay-picker.test.tsx` (Radix Select interaction, polyfilled in `vitest.setup.ts`).
 
-- [ ] **Step 3: Commit**
+```tsx
+// __tests__/sis/year-setup-ay-picker.test.tsx
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { AyPicker } from '@/components/sis/year-setup/ay-picker';
+
+const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: pushMock, replace: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => '/sis/ay-setup',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+afterEach(() => vi.clearAllMocks());
+
+const AYS = [
+  { ayCode: 'AY2026', label: 'Academic Year 2026', isCurrent: true },
+  { ayCode: 'AY2027', label: 'Academic Year 2027', isCurrent: false },
+];
+
+describe('AyPicker', () => {
+  it('shows the selected AY in the trigger', () => {
+    render(<AyPicker ays={AYS} selected="AY2026" />);
+    const matches = screen.getAllByText(/Academic Year 2026/);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('navigates to /sis/ay-setup?ay=<code> when another AY is chosen', async () => {
+    const user = userEvent.setup();
+    render(<AyPicker ays={AYS} selected="AY2026" />);
+
+    await user.click(screen.getByRole('combobox'));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('option', { name: /Academic Year 2027/ })
+      ).toBeInTheDocument()
+    );
+    await user.click(
+      screen.getByRole('option', { name: /Academic Year 2027/ })
+    );
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1));
+    expect(pushMock).toHaveBeenCalledWith('/sis/ay-setup?ay=AY2027');
+  });
+});
+```
+
+- [ ] **Step 3: Run the test to verify it passes**
+
+Run: `npx vitest run __tests__/sis/year-setup-ay-picker.test.tsx`
+Expected: PASS (2 tests). If the component is missing/mis-imported, the suite fails to resolve the module — fix and re-run.
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add components/sis/year-setup/ay-picker.tsx
-git commit -m "feat(sis): year-setup AY picker (navigates ?ay=)"
+git add components/sis/year-setup/ay-picker.tsx __tests__/sis/year-setup-ay-picker.test.tsx
+git commit -m "feat(sis): year-setup AY picker (navigates ?ay=) + tests"
 ```
 
 ---
@@ -556,16 +610,193 @@ export function YearSetupControlCenter({
 }
 ```
 
-- [ ] **Step 2: Verify it compiles**
+- [ ] **Step 2: Write the render/behavior test**
 
-Run: `npx tsc --noEmit -p tsconfig.json`
-Expected: no new type errors referencing `year-setup-control-center.tsx`. In particular confirm `AcademicYearListItem.counts`, `selectedAy.accepting_applications`, and `ReadinessStep.fraction` all type-check (they exist per the queries/readiness types).
+`YearSetupControlCenter` is a synchronous (non-async) server component — RTL renders it directly. Its child widgets call `useRouter` (mock `next/navigation`) and `useMutation` (wrap in `renderWithClient`). Type-only imports of the `server-only` queries module are erased, so they don't throw under jsdom.
 
-- [ ] **Step 3: Commit**
+```tsx
+// __tests__/sis/year-setup-control-center.test.tsx
+import { screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { YearSetupControlCenter } from '@/components/sis/year-setup/year-setup-control-center';
+import { renderWithClient } from '../_utils/render-with-client';
+import type { AyReadiness } from '@/lib/sis/readiness';
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => '/sis/ay-setup',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+const READINESS: AyReadiness = {
+  ayCode: 'AY2026',
+  complete: 2,
+  total: 4,
+  steps: [
+    {
+      id: 'ay-setup',
+      step: 1,
+      label: 'AY Setup',
+      description: 'Academic year active with dated terms',
+      href: '/sis/ay-setup',
+      status: 'done',
+    },
+    {
+      id: 'calendar',
+      step: 2,
+      label: 'School Calendar',
+      description: 'All terms have calendar coverage',
+      href: '/sis/calendar',
+      status: 'done',
+    },
+    {
+      id: 'sections',
+      step: 3,
+      label: 'Sections',
+      description: 'No sections created for this AY',
+      href: '/sis/sections',
+      status: 'not_started',
+    },
+    {
+      id: 'grading-sheets',
+      step: 4,
+      label: 'Grading Sheets',
+      description: '1 of 3 sections have grading sheets',
+      href: '/markbook/sections',
+      status: 'partial',
+      fraction: { done: 1, total: 3 },
+    },
+  ],
+};
+
+const PICKER_AYS = [
+  { ayCode: 'AY2026', label: 'Academic Year 2026', isCurrent: true },
+];
+
+function makeAy(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'ay-id',
+    ay_code: 'AY2026',
+    label: 'Academic Year 2026',
+    is_current: true,
+    accepting_applications: false,
+    created_at: '2026-01-01',
+    counts: {
+      terms: 4,
+      sections: 3,
+      subject_configs: 10,
+      section_students: 50,
+    },
+    has_children: true,
+    ...overrides,
+  } as never;
+}
+
+describe('YearSetupControlCenter', () => {
+  it('shows the empty state when there is no selected AY', () => {
+    renderWithClient(
+      <YearSetupControlCenter
+        ays={[]}
+        selectedAy={null}
+        selectedTerms={[]}
+        readiness={null}
+      />
+    );
+    expect(screen.getByText('No academic year yet')).toBeInTheDocument();
+  });
+
+  it('renders all four readiness steps with their status and the grading fraction', () => {
+    renderWithClient(
+      <YearSetupControlCenter
+        ays={PICKER_AYS}
+        selectedAy={makeAy()}
+        selectedTerms={[]}
+        readiness={READINESS}
+      />
+    );
+    expect(screen.getByText('AY Setup')).toBeInTheDocument();
+    expect(screen.getByText('School Calendar')).toBeInTheDocument();
+    expect(screen.getByText('Sections')).toBeInTheDocument();
+    expect(screen.getByText('Grading Sheets')).toBeInTheDocument();
+    expect(screen.getAllByText('Ready').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Not started')).toBeInTheDocument();
+    expect(screen.getByText('In progress')).toBeInTheDocument();
+    expect(screen.getByText('1/3 sections')).toBeInTheDocument();
+  });
+
+  it('inline-edits the AY Setup step and deep-links every other surface', () => {
+    renderWithClient(
+      <YearSetupControlCenter
+        ays={PICKER_AYS}
+        selectedAy={makeAy()}
+        selectedTerms={[]}
+        readiness={READINESS}
+      />
+    );
+    expect(
+      screen.getByRole('button', { name: 'Edit term dates' })
+    ).toBeInTheDocument();
+    const hrefs = screen
+      .getAllByRole('link', { name: /Open/ })
+      .map((l) => l.getAttribute('href'));
+    expect(hrefs).toEqual(
+      expect.arrayContaining([
+        '/sis/calendar',
+        '/sis/sections',
+        '/markbook/sections',
+        '/evaluation/virtue-themes',
+        '/sis/admin/template',
+        '/sis/admin/school-config',
+      ])
+    );
+  });
+
+  it('renders the application-window toggle for the selected AY', () => {
+    renderWithClient(
+      <YearSetupControlCenter
+        ays={PICKER_AYS}
+        selectedAy={makeAy()}
+        selectedTerms={[]}
+        readiness={READINESS}
+      />
+    );
+    expect(screen.getByRole('switch')).toBeInTheDocument();
+  });
+
+  it('emphasizes the class-template link when the AY has no sections or subjects', () => {
+    renderWithClient(
+      <YearSetupControlCenter
+        ays={PICKER_AYS}
+        selectedAy={makeAy({
+          counts: {
+            terms: 4,
+            sections: 0,
+            subject_configs: 0,
+            section_students: 0,
+          },
+        })}
+        selectedTerms={[]}
+        readiness={READINESS}
+      />
+    );
+    expect(
+      screen.getByText(/no sections or subjects yet/i)
+    ).toBeInTheDocument();
+  });
+});
+```
+
+- [ ] **Step 3: Run the test to verify it passes**
+
+Run: `npx vitest run __tests__/sis/year-setup-control-center.test.tsx`
+Expected: PASS (5 tests).
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add components/sis/year-setup/year-setup-control-center.tsx
-git commit -m "feat(sis): Year Setup control center component"
+git add components/sis/year-setup/year-setup-control-center.tsx __tests__/sis/year-setup-control-center.test.tsx
+git commit -m "feat(sis): Year Setup control center component + tests"
 ```
 
 ---
@@ -774,20 +1005,105 @@ Replace `href={step.href}` with `href="/sis/ay-setup"`:
 
 Leave everything else (per-step status, icons, the `step.href` value still computed in `readiness.ts`) untouched.
 
-- [ ] **Step 2: Verify the build compiles**
+- [ ] **Step 2: Write the behavior test locking in the new target**
 
-Run: `npx next build`
-Expected: clean compile.
+The pill is presentational (readiness passed as a prop, no fetch), so a plain `render` works; opening its dialog uses the Radix polyfills already in `vitest.setup.ts`. If a test like this already exists for the pill, extend it rather than duplicating.
 
-- [ ] **Step 3: Manual smoke test**
+```tsx
+// __tests__/sis/ay-readiness-pill.test.tsx
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+
+import { AyReadinessPill } from '@/components/sis/ay-readiness-pill';
+import type { AyReadiness } from '@/lib/sis/readiness';
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => '/sis',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+const READINESS: AyReadiness = {
+  ayCode: 'AY2026',
+  complete: 2,
+  total: 4,
+  steps: [
+    {
+      id: 'ay-setup',
+      step: 1,
+      label: 'AY Setup',
+      description: 'd',
+      href: '/sis/ay-setup',
+      status: 'done',
+    },
+    {
+      id: 'calendar',
+      step: 2,
+      label: 'School Calendar',
+      description: 'd',
+      href: '/sis/calendar',
+      status: 'done',
+    },
+    {
+      id: 'sections',
+      step: 3,
+      label: 'Sections',
+      description: 'd',
+      href: '/sis/sections',
+      status: 'not_started',
+    },
+    {
+      id: 'grading-sheets',
+      step: 4,
+      label: 'Grading Sheets',
+      description: 'd',
+      href: '/markbook/sections',
+      status: 'partial',
+      fraction: { done: 1, total: 3 },
+    },
+  ],
+};
+
+describe('AyReadinessPill', () => {
+  it('renders nothing for non-admin roles', () => {
+    const { container } = render(
+      <AyReadinessPill readiness={READINESS} role="teacher" />
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('points every step Open button at the Year Setup control center', async () => {
+    const user = userEvent.setup();
+    render(<AyReadinessPill readiness={READINESS} role="superadmin" />);
+
+    await user.click(screen.getByRole('button', { name: /Year Setup/i }));
+
+    const openLinks = await screen.findAllByRole('link', { name: /Open/ });
+    expect(openLinks.length).toBe(4);
+    for (const link of openLinks) {
+      expect(link.getAttribute('href')).toBe('/sis/ay-setup');
+    }
+  });
+});
+```
+
+(If the pill's floating trigger has a different accessible name than `/Year Setup/i`, use whatever the trigger actually renders — confirm against the component before finalizing.)
+
+- [ ] **Step 3: Run the test + build**
+
+Run: `npx vitest run __tests__/sis/ay-readiness-pill.test.tsx` then `npx next build`
+Expected: PASS (2 tests); clean compile.
+
+- [ ] **Step 4: Manual smoke test**
 
 Open any `/sis/*` page as school_admin/superadmin, open the floating readiness pill, click any step's "Open" — it should land on `/sis/ay-setup` (the control center).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add components/sis/ay-readiness-pill.tsx
-git commit -m "feat(sis): readiness pill Open buttons land on the Year Setup control center"
+git add components/sis/ay-readiness-pill.tsx __tests__/sis/ay-readiness-pill.test.tsx
+git commit -m "feat(sis): readiness pill Open buttons land on the Year Setup control center + test"
 ```
 
 ---
@@ -801,12 +1117,12 @@ git commit -m "feat(sis): readiness pill Open buttons land on the Year Setup con
 - [ ] **Step 1: Full test suite + build**
 
 Run: `npx vitest run` then `npx next build`
-Expected: all tests pass (including the new `__tests__/sis/year-setup.test.ts`); build is clean.
+Expected: all tests pass — including the four new suites: `__tests__/sis/year-setup.test.ts`, `__tests__/sis/year-setup-ay-picker.test.tsx`, `__tests__/sis/year-setup-control-center.test.tsx`, `__tests__/sis/ay-readiness-pill.test.tsx`; build is clean.
 
 - [ ] **Step 2: Design-system grep (Hard Rule #7)**
 
-Run: `git diff --name-only HEAD~5 | grep -E '\.(tsx|css)$'` then grep each changed component for banned tokens:
-`rg -n "#[0-9a-fA-F]{6}|oklch\(|slate-|zinc-|gray-|bg-white|bg-black" components/sis/year-setup/ app/(sis)/sis/ay-setup/page.tsx components/sis/ay-readiness-pill.tsx`
+Grep the new/changed components for banned tokens:
+`rg -n "#[0-9a-fA-F]{6}|oklch\(|slate-|zinc-|gray-|bg-white|bg-black" components/sis/year-setup/ "app/(sis)/sis/ay-setup/page.tsx" components/sis/ay-readiness-pill.tsx`
 Expected: no matches.
 
 - [ ] **Step 3: Update the dev-plan status snapshot**
