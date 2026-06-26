@@ -23,6 +23,7 @@ const READINESS: AyReadiness = {
       description: 'd',
       href: '/sis/ay-setup',
       status: 'done',
+      required: true,
     },
     {
       id: 'calendar',
@@ -31,14 +32,16 @@ const READINESS: AyReadiness = {
       description: 'd',
       href: '/sis/calendar',
       status: 'done',
+      required: true,
     },
     {
-      id: 'sections',
+      id: 'classes',
       step: 3,
-      label: 'Sections',
+      label: 'Classes',
       description: 'd',
       href: '/sis/sections',
       status: 'not_started',
+      required: true,
     },
     {
       id: 'grading-sheets',
@@ -48,6 +51,7 @@ const READINESS: AyReadiness = {
       href: '/markbook/sections',
       status: 'partial',
       fraction: { done: 1, total: 3 },
+      required: true,
     },
   ],
 };
