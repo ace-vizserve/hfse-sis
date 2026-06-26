@@ -1,5 +1,3 @@
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
 import {
   ArrowLeft,
   CalendarCheck,
@@ -7,8 +5,17 @@ import {
   Percent,
   Users,
 } from 'lucide-react';
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
 
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { DailyEntry } from '@/components/attendance/daily-entry';
+import { ExportSheetButton } from '@/components/attendance/export-sheet-button';
+import SheetContextCard from '@/components/attendance/sheet-context';
+import { StudentLookupSheet } from '@/components/attendance/student-lookup-sheet';
+import {
+  AttendanceWideGrid,
+  type WideGridEnrolment,
+} from '@/components/attendance/wide-grid';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,27 +32,20 @@ import {
   getCalendarEventsForTerm,
   getDedupedSchoolCalendarForTerm,
 } from '@/lib/attendance/calendar';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
-import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import {
   getCompassionateUsageForSection,
   getDailyForSection,
   getSectionAttendanceSummary,
   getVacationLeaveUsageForSection,
 } from '@/lib/attendance/queries';
-import { getSchoolConfig } from '@/lib/sis/school-config';
-import { sgToday } from '@/lib/dates';
-import { resolveCurrentTermId } from '@/lib/sis/current-term';
-import {
-  AttendanceWideGrid,
-  type WideGridEnrolment,
-} from '@/components/attendance/wide-grid';
-import { StudentLookupSheet } from '@/components/attendance/student-lookup-sheet';
-import { DailyEntry } from '@/components/attendance/daily-entry';
-import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
-import SheetContextCard from '@/components/attendance/sheet-context';
-import { ExportSheetButton } from '@/components/attendance/export-sheet-button';
+import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
+import { sgToday } from '@/lib/dates';
+import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
+import { resolveCurrentTermId } from '@/lib/sis/current-term';
+import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
+import { getSchoolConfig } from '@/lib/sis/school-config';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type LevelLite = { code: string; label: string };
 type SectionRow = {
@@ -300,9 +300,6 @@ export default async function SectionAttendancePage({
             enrolments={enrolments}
             termLabel={selectedTerm?.label ?? ''}
           />
-          {view === 'sheet' && (
-            <ExportSheetButton sectionId={sectionId} termId={selectedTermId} />
-          )}
           {canWriteNc && (
             <Button asChild variant="outline" size="sm" className="gap-1.5">
               <Link href={`/sis/calendar?term_id=${selectedTermId}`}>
@@ -316,22 +313,26 @@ export default async function SectionAttendancePage({
 
       {/* Term switcher — sheet view only; daily is locked to the current term. */}
       {view === 'sheet' && terms.length > 1 && (
-        <Tabs value={selectedTermId} aria-label="Term">
-          <TabsList>
-            {terms.map((t) => (
-              <TabsTrigger key={t.id} value={t.id} asChild>
-                <Link href={`/attendance/${sectionId}?term_id=${t.id}`}>
-                  {t.label}
-                  {t.is_current && (
-                    <span className="ml-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
-                      current
-                    </span>
-                  )}
-                </Link>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center justify-between w-full">
+          <Tabs value={selectedTermId} aria-label="Term">
+            <TabsList>
+              {terms.map((t) => (
+                <TabsTrigger key={t.id} value={t.id} asChild>
+                  <Link href={`/attendance/${sectionId}?term_id=${t.id}`}>
+                    {t.label}
+                    {t.is_current && (
+                      <span className="ml-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                        current
+                      </span>
+                    )}
+                  </Link>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+
+          <ExportSheetButton sectionId={sectionId} termId={selectedTermId} />
+        </div>
       )}
 
       {/* Term-level stats — sheet view only. The daily view renders its own

@@ -47,6 +47,9 @@ next-env.d.ts
 
 /reports/fallow/
 
+/AY 2025*
+
+
 # HFSE reference workbooks — Excel files dropped at the repo root for
 # canonical-spec verification (report books, attendance workbooks,
 # evaluation checklists, etc.). Stay local; never committed.
