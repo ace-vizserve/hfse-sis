@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { existsSync } from 'node:fs';
 import { parseMasterfileGrades } from '@/lib/sis/backfill/grades/masterfile-grades';
 
@@ -6,7 +6,14 @@ const PRIMARY = 'AY2025 Final Report Book_Primary.xlsx';
 const d = existsSync(PRIMARY) ? describe : describe.skip; // fixture is local/gitignored
 
 d('parseMasterfileGrades (primary)', () => {
-  const cells = parseMasterfileGrades(PRIMARY);
+  // Read inside beforeAll, not at describe-body top level: Vitest executes a
+  // describe body during collection even for describe.skip, but it never runs
+  // hooks of a skipped suite — so the gitignored fixture is only opened locally.
+  let cells: ReturnType<typeof parseMasterfileGrades>;
+  beforeAll(() => {
+    cells = parseMasterfileGrades(PRIMARY);
+  });
+
   it('emits examinable + non-exam cells with the right kinds', () => {
     const david = cells.filter((c) => c.name.startsWith('ASPIRAS, David'));
     const engT1 = david.find((c) => c.subjectCode === 'ENG' && c.term === 1);
