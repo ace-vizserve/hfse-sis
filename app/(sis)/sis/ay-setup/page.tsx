@@ -133,8 +133,8 @@ export default async function AySetupPage({
               <li>
                 <strong>Create the new AY</strong> here — sets up terms,
                 sections, subjects, and admissions data all at once. The new AY
-                shows up in the switcher right away across every page. (admin +
-                superadmin)
+                shows up in the switcher right away across every page. (school
+                admin + superadmin)
               </li>
               <li>
                 <strong>Verify the parent-portal team</strong> is ready to write
@@ -145,8 +145,8 @@ export default async function AySetupPage({
                 .
               </li>
               <li>
-                <strong>Switch active</strong> on the new AY when ready. (admin
-                + superadmin)
+                <strong>Switch active</strong> on the new AY when ready. (school
+                admin + superadmin)
               </li>
               <li>
                 <strong>Optional:</strong> delete a mis-created AY if it&apos;s

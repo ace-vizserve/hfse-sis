@@ -256,7 +256,7 @@ export function YearSetupControlCenter({
         <CardHeader className="border-b border-border py-5">
           <CardDescription>More setup</CardDescription>
           <CardTitle className="font-serif text-[22px]">
-            Admissions &amp; school-wide
+            Admissions & school-wide
           </CardTitle>
         </CardHeader>
         <ul className="divide-y divide-border">
@@ -282,7 +282,7 @@ export function YearSetupControlCenter({
           </li>
           <LinkRow
             icon={LayoutGrid}
-            title="Class template &amp; subjects"
+            title="Class template & subjects"
             description={
               needsTemplate
                 ? 'This year has no sections or subjects yet — set up the class template first.'
@@ -299,7 +299,7 @@ export function YearSetupControlCenter({
           />
           <LinkRow
             icon={Stamp}
-            title="Letterhead &amp; school details"
+            title="Letterhead & school details"
             description="Organization name, address, and the report-card letterhead."
             href="/sis/admin/school-config"
           />

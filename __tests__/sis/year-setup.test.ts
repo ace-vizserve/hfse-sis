@@ -46,4 +46,10 @@ describe('ayStatusTone', () => {
       ayStatusTone({ is_current: false, accepting_applications: false })
     ).toBe('inactive');
   });
+
+  it('prefers active over early-bird when the AY is both current and accepting', () => {
+    expect(
+      ayStatusTone({ is_current: true, accepting_applications: true })
+    ).toBe('active');
+  });
 });
