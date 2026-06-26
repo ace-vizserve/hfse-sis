@@ -1,4 +1,5 @@
 import { unstable_cache } from 'next/cache';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export type ReadinessStepId =
@@ -293,8 +294,8 @@ export function nextIncompleteStepId(steps: ReadinessStep[]): ReadinessStepId {
 
 // DB fetchers (private async functions)
 
-async function fetchAySetup(db: any, ayId: string): Promise<number> {
-  const { data, error } = await db
+async function fetchAySetup(db: SupabaseClient, ayId: string): Promise<number> {
+  const { count, error } = await db
     .from('terms')
     .select('id', { count: 'exact', head: true })
     .eq('academic_year_id', ayId)
@@ -302,11 +303,11 @@ async function fetchAySetup(db: any, ayId: string): Promise<number> {
     .not('end_date', 'is', null);
 
   if (error) throw error;
-  return data?.length ?? 0;
+  return count ?? 0;
 }
 
 async function fetchCalendar(
-  db: any,
+  db: SupabaseClient,
   ayId: string
 ): Promise<{ totalTerms: number; coveredTerms: number }> {
   // Get all term IDs for this AY
@@ -322,13 +323,12 @@ async function fetchCalendar(
     return { totalTerms: 0, coveredTerms: 0 };
   }
 
-  // Count distinct term_ids in school_calendar that match
+  // Get distinct term_ids in school_calendar that match
   const termIds = terms!.map((t: any) => t.id);
   const { data: covered, error: coveredError } = await db
     .from('school_calendar')
-    .select('term_id', { count: 'exact', head: true })
-    .in('term_id', termIds)
-    .is('day_type', 'school_day');
+    .select('term_id')
+    .in('term_id', termIds);
 
   if (coveredError) throw coveredError;
   const coveredTerms = new Set((covered as any[])?.map((c: any) => c.term_id))
@@ -338,31 +338,32 @@ async function fetchCalendar(
 }
 
 async function fetchClasses(
-  db: any,
+  db: SupabaseClient,
   ayId: string
 ): Promise<{ sectionCount: number; subjectConfigCount: number }> {
-  const { data: sections, error: sectionsError } = await db
+  const { count: sectionCount, error: sectionsError } = await db
     .from('sections')
     .select('id', { count: 'exact', head: true })
     .not('level_id', 'is', null)
     .eq('academic_year_id', ayId);
 
   if (sectionsError) throw sectionsError;
-  const sectionCount = sections?.length ?? 0;
 
-  const { data: configs, error: configsError } = await db
+  const { count: subjectConfigCount, error: configsError } = await db
     .from('subject_configs')
     .select('id', { count: 'exact', head: true })
     .eq('academic_year_id', ayId);
 
   if (configsError) throw configsError;
-  const subjectConfigCount = configs?.length ?? 0;
 
-  return { sectionCount, subjectConfigCount };
+  return {
+    sectionCount: sectionCount ?? 0,
+    subjectConfigCount: subjectConfigCount ?? 0,
+  };
 }
 
 async function fetchAdvisers(
-  db: any,
+  db: SupabaseClient,
   ayId: string
 ): Promise<{ sectionCount: number; advisedSectionCount: number }> {
   const { data: sections, error: sectionsError } = await db
@@ -393,7 +394,7 @@ async function fetchAdvisers(
 }
 
 async function fetchGradingSheets(
-  db: any,
+  db: SupabaseClient,
   ayId: string
 ): Promise<{ totalSections: number; sectionsWithSheets: number }> {
   const { data: sections, error: sectionsError } = await db
@@ -423,7 +424,7 @@ async function fetchGradingSheets(
 }
 
 async function fetchVirtueThemes(
-  db: any,
+  db: SupabaseClient,
   ayId: string
 ): Promise<{ termsRequiringTheme: number; termsWithTheme: number }> {
   const { data: terms, error: termsError } = await db
@@ -448,7 +449,7 @@ async function fetchVirtueThemes(
 }
 
 async function fetchLetterhead(
-  db: any
+  db: SupabaseClient
 ): Promise<{ hasOrgName: boolean; hasAddress: boolean }> {
   const { data, error } = await db
     .from('school_config')
