@@ -1,4 +1,5 @@
 import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { YearSetupStepper } from '@/components/sis/year-setup/year-setup-stepper';
@@ -154,14 +155,30 @@ describe('YearSetupStepper', () => {
         readiness={READINESS}
       />
     );
-    expect(screen.getByText('Term Dates')).toBeInTheDocument();
-    expect(screen.getByText('School Calendar')).toBeInTheDocument();
-    expect(screen.getByText('Classes')).toBeInTheDocument();
-    expect(screen.getByText('Form Advisers')).toBeInTheDocument();
-    expect(screen.getByText('Grading Sheets')).toBeInTheDocument();
-    expect(screen.getByText('Virtue Themes')).toBeInTheDocument();
-    expect(screen.getByText('Report Card Letterhead')).toBeInTheDocument();
-    expect(screen.getByText('Application Window')).toBeInTheDocument();
+    // Rail buttons have accessible names matching step labels; use getByRole to
+    // avoid false-duplicate matches from the active step's panel CardTitle.
+    expect(
+      screen.getByRole('button', { name: 'Term Dates' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'School Calendar' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Classes' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Form Advisers' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Grading Sheets' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Virtue Themes' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Report Card Letterhead' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Application Window' })
+    ).toBeInTheDocument();
   });
 
   it('opens on the first incomplete required step (classes)', () => {
@@ -173,10 +190,11 @@ describe('YearSetupStepper', () => {
         readiness={READINESS}
       />
     );
-    // The active panel header shows the step label
-    expect(
-      screen.getByRole('heading', { name: 'Classes' })
-    ).toBeInTheDocument();
+    // The active rail button carries aria-current="step"
+    expect(screen.getByRole('button', { name: 'Classes' })).toHaveAttribute(
+      'aria-current',
+      'step'
+    );
   });
 
   it('shows the resume button when not all required steps are done', () => {
@@ -212,7 +230,8 @@ describe('YearSetupStepper', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows "Optional" status badge for the app-window step', () => {
+  it('shows "Optional" status badge for the app-window step', async () => {
+    const user = userEvent.setup();
     const appWindowActive: AyReadiness = {
       ...READINESS,
       steps: READINESS.steps.map((s) =>
@@ -228,7 +247,11 @@ describe('YearSetupStepper', () => {
         readiness={appWindowActive}
       />
     );
-    // app-window is the only remaining step and it's optional
+    // When all required steps are done nextIncompleteStepId falls back to step 1.
+    // Click into the app-window rail entry to open its panel, then check the badge.
+    await user.click(
+      screen.getByRole('button', { name: 'Application Window' })
+    );
     expect(screen.getByText('Optional')).toBeInTheDocument();
   });
 
