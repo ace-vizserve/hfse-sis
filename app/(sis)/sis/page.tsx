@@ -3,9 +3,6 @@ import {
   ArrowUpRight,
   BookOpen,
   Building2,
-  CalendarCog,
-  CalendarDays,
-  ClipboardList,
   Database,
   FolderCog,
   GitBranch,
@@ -24,6 +21,7 @@ import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { ActivityByActorCard } from '@/components/sis/activity-by-actor-card';
+import { HubYearSetupCard } from '@/components/sis/year-setup/hub-year-setup-card';
 import { AuditAuthEventsCard } from '@/components/sis/audit-auth-events-card';
 import { AuditDailyTrendCard } from '@/components/sis/audit-daily-trend-card';
 import { AuditTopActionsCard } from '@/components/sis/audit-top-actions-card';
@@ -70,6 +68,7 @@ import {
 } from '@/lib/sis/dashboard';
 import { getSystemHealth } from '@/lib/sis/health';
 import { getLifecycleAggregate } from '@/lib/sis/process';
+import { getAyReadiness } from '@/lib/sis/readiness';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -94,6 +93,9 @@ export default async function SisAdminHub({
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
   const ayCode = currentAy?.ay_code ?? '';
+  const ayReadiness = currentAy
+    ? await getAyReadiness(currentAy.ay_code)
+    : null;
 
   // System-health strip is superadmin-only (approver counts are sensitive to
   // their operational awareness). school_admin/admin see the hub without it.
@@ -327,56 +329,13 @@ export default async function SisAdminHub({
             />
           )}
 
-          {/* Year Setup — the 4-step sequence for a new academic year. */}
+          {/* Year Setup — single guided entry point (the steps live in /sis/ay-setup). */}
           <section className="space-y-3">
             <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               Year Setup
             </h2>
             <div className="grid gap-4 md:grid-cols-2">
-              <AdminCard
-                step={1}
-                href="/sis/ay-setup"
-                icon={CalendarCog}
-                eyebrow="Structural"
-                title="AY Setup"
-                description="Create a new academic year, switch the active AY, or retire an empty one. Sets up everything the new year needs — terms, sections, subjects, admissions data."
-                cta="Open AY Setup"
-                role={role}
-                allowedRoles={['school_admin', 'superadmin']}
-              />
-              <AdminCard
-                step={2}
-                href="/sis/calendar"
-                icon={CalendarDays}
-                eyebrow="Academic calendar"
-                title="School Calendar"
-                description="Define school days, holidays, and important dates per term. Every weekday is a school day by default; mark holidays and HBL overlays here. Attendance and the parent portal consume this."
-                cta="Open school calendar"
-                role={role}
-                allowedRoles={['school_admin', 'superadmin']}
-              />
-              <AdminCard
-                step={3}
-                href="/sis/sections"
-                icon={LayoutGrid}
-                eyebrow="Organisation"
-                title="Sections"
-                description="Create sections from the master template and assign form advisers and subject teachers. Sections gate grading sheet creation in Markbook."
-                cta="Manage sections"
-                role={role}
-                allowedRoles={['school_admin', 'superadmin']}
-              />
-              <AdminCard
-                step={4}
-                href="/markbook/sections"
-                icon={ClipboardList}
-                eyebrow="Markbook"
-                title="Grading Sheets"
-                description="Bulk-create grading sheets per section from Markbook → Sections. Complete once sections are set up."
-                cta="Open Markbook sections"
-                role={role}
-                allowedRoles={['registrar', 'school_admin', 'superadmin']}
-              />
+              <HubYearSetupCard readiness={ayReadiness} />
             </div>
           </section>
 
