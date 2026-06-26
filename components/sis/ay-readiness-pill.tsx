@@ -278,7 +278,7 @@ function ReadinessRow({
           className="mt-0.5 shrink-0 gap-1"
           asChild
         >
-          <Link href={step.href} onClick={onNavigate}>
+          <Link href="/sis/ay-setup" onClick={onNavigate}>
             Open
             <ArrowUpRight className="size-3.5" />
           </Link>
