@@ -45,10 +45,9 @@ type Props = {
   role: Role | null;
 };
 
-const STEP_ICONS: Record<ReadinessStepId, LucideIcon> = {
+const STEP_ICONS: Partial<Record<ReadinessStepId, LucideIcon>> = {
   'ay-setup': CalendarCog,
   calendar: CalendarDays,
-  sections: LayoutGrid,
   'grading-sheets': TableProperties,
 };
 
@@ -146,7 +145,7 @@ export function AyReadinessPill({ readiness, role }: Props) {
                 <ReadinessRow
                   key={step.id}
                   step={step}
-                  icon={STEP_ICONS[step.id]}
+                  icon={STEP_ICONS[step.id] ?? CalendarCog}
                   onNavigate={() => setOpen(false)}
                 />
               ))}

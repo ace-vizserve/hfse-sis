@@ -37,10 +37,9 @@ import type {
   ReadinessStepId,
 } from '@/lib/sis/readiness';
 
-const STEP_ICONS: Record<ReadinessStepId, LucideIcon> = {
+const STEP_ICONS: Partial<Record<ReadinessStepId, LucideIcon>> = {
   'ay-setup': CalendarCog,
   calendar: CalendarDays,
-  sections: LayoutGrid,
   'grading-sheets': ClipboardList,
 };
 
@@ -200,7 +199,7 @@ export function YearSetupControlCenter({
         </CardHeader>
         <ul className="divide-y divide-border">
           {readiness.steps.map((step) => {
-            const Icon = STEP_ICONS[step.id];
+            const Icon = STEP_ICONS[step.id] ?? CalendarCog;
             return (
               <li key={step.id} className="flex items-start gap-4 px-6 py-4">
                 <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
