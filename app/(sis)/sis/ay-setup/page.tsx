@@ -7,7 +7,7 @@ import {
   AySetupDataTable,
   type AyTableRow,
 } from '@/components/sis/ay-setup-data-table';
-import { YearSetupControlCenter } from '@/components/sis/year-setup/year-setup-control-center';
+import { YearSetupStepper } from '@/components/sis/year-setup/year-setup-stepper';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -114,7 +114,7 @@ export default async function AySetupPage({
         </TabsList>
 
         <TabsContent value="setup" className="mt-6">
-          <YearSetupControlCenter
+          <YearSetupStepper
             ays={pickerAys}
             selectedAy={selectedAy}
             selectedTerms={selectedTerms}

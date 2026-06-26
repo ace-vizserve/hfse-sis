@@ -1,13 +1,18 @@
-// lib/sis/readiness.ts
 import { unstable_cache } from 'next/cache';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export type ReadinessStepId =
   | 'ay-setup'
   | 'calendar'
-  | 'sections'
-  | 'grading-sheets';
+  | 'classes'
+  | 'advisers'
+  | 'grading-sheets'
+  | 'virtue-themes'
+  | 'letterhead'
+  | 'app-window';
+
+export type ReadinessStatus = 'done' | 'partial' | 'not_started';
 
 export type ReadinessStep = {
   id: ReadinessStepId;
@@ -15,7 +20,8 @@ export type ReadinessStep = {
   label: string;
   description: string;
   href: string;
-  status: 'done' | 'partial' | 'not_started';
+  status: ReadinessStatus;
+  required: boolean;
   fraction?: { done: number; total: number };
 };
 
@@ -23,239 +29,519 @@ export type AyReadiness = {
   ayCode: string;
   steps: ReadinessStep[];
   complete: number;
-  total: 4;
+  total: number;
 };
 
-async function checkAySetup(
-  db: SupabaseClient,
-  ayId: string
-): Promise<ReadinessStep> {
-  const base: Omit<ReadinessStep, 'status' | 'description'> = {
+// STEP_META table (drives all step metadata)
+const STEP_META: Record<
+  ReadinessStepId,
+  Omit<ReadinessStep, 'status' | 'fraction'>
+> = {
+  'ay-setup': {
     id: 'ay-setup',
     step: 1,
-    label: 'AY Setup',
+    label: 'Academic year & term dates',
+    description: 'Set up the academic year with term start/end dates',
     href: '/sis/ay-setup',
-  };
+    required: true,
+  },
+  calendar: {
+    id: 'calendar',
+    step: 2,
+    label: 'School calendar',
+    description: 'Add school calendar events and day types',
+    href: '/sis/calendar',
+    required: true,
+  },
+  classes: {
+    id: 'classes',
+    step: 3,
+    label: 'Classes & subjects',
+    description: 'Create classes and subject assignments',
+    href: '/sis/admin/template',
+    required: true,
+  },
+  advisers: {
+    id: 'advisers',
+    step: 4,
+    label: 'Form advisers',
+    description: 'Assign form class advisers',
+    href: '/sis/sections',
+    required: true,
+  },
+  'grading-sheets': {
+    id: 'grading-sheets',
+    step: 5,
+    label: 'Grading sheets',
+    description: 'Create grading sheets for all sections',
+    href: '/markbook/sections',
+    required: true,
+  },
+  'virtue-themes': {
+    id: 'virtue-themes',
+    step: 6,
+    label: 'Virtue themes',
+    description: 'Set virtue themes for each term',
+    href: '/evaluation/virtue-themes',
+    required: true,
+  },
+  letterhead: {
+    id: 'letterhead',
+    step: 7,
+    label: 'Report-card letterhead',
+    description: 'Configure school letterhead and branding',
+    href: '/sis/admin/school-config',
+    required: true,
+  },
+  'app-window': {
+    id: 'app-window',
+    step: 8,
+    label: 'Application window',
+    description: 'Open early-bird application window (optional)',
+    href: '/sis/ay-setup',
+    required: false,
+  },
+};
 
-  const { count } = await db
+// Pure resolvers
+
+export function resolveAySetupStep(input: {
+  datedTermCount: number;
+}): ReadinessStep {
+  const status = input.datedTermCount > 0 ? 'done' : 'not_started';
+  return {
+    ...STEP_META['ay-setup'],
+    status,
+  };
+}
+
+export function resolveCalendarStep(input: {
+  totalTerms: number;
+  coveredTerms: number;
+}): ReadinessStep {
+  const { totalTerms, coveredTerms } = input;
+  let status: ReadinessStatus;
+  let fraction: { done: number; total: number } | undefined;
+
+  if (totalTerms === 0) {
+    status = 'not_started';
+  } else if (coveredTerms === totalTerms) {
+    status = 'done';
+    fraction = { done: coveredTerms, total: totalTerms };
+  } else if (coveredTerms > 0) {
+    status = 'partial';
+    fraction = { done: coveredTerms, total: totalTerms };
+  } else {
+    status = 'not_started';
+    fraction = { done: 0, total: totalTerms };
+  }
+
+  return {
+    ...STEP_META['calendar'],
+    status,
+    fraction,
+  };
+}
+
+export function resolveClassesStep(input: {
+  sectionCount: number;
+  subjectConfigCount: number;
+}): ReadinessStep {
+  const status =
+    input.sectionCount > 0 && input.subjectConfigCount > 0
+      ? 'done'
+      : 'not_started';
+  return {
+    ...STEP_META['classes'],
+    status,
+  };
+}
+
+export function resolveAdvisersStep(input: {
+  sectionCount: number;
+  advisedSectionCount: number;
+}): ReadinessStep {
+  const { sectionCount, advisedSectionCount } = input;
+  let status: ReadinessStatus;
+  let fraction: { done: number; total: number } | undefined;
+
+  if (sectionCount === 0) {
+    status = 'not_started';
+  } else if (advisedSectionCount === sectionCount) {
+    status = 'done';
+    fraction = { done: advisedSectionCount, total: sectionCount };
+  } else if (advisedSectionCount > 0) {
+    status = 'partial';
+    fraction = { done: advisedSectionCount, total: sectionCount };
+  } else {
+    status = 'not_started';
+    fraction = { done: 0, total: sectionCount };
+  }
+
+  return {
+    ...STEP_META['advisers'],
+    status,
+    fraction,
+  };
+}
+
+export function resolveGradingSheetsStep(input: {
+  totalSections: number;
+  sectionsWithSheets: number;
+}): ReadinessStep {
+  const { totalSections, sectionsWithSheets } = input;
+  let status: ReadinessStatus;
+  const fraction = { done: sectionsWithSheets, total: totalSections };
+
+  if (totalSections === 0) {
+    status = 'not_started';
+  } else if (sectionsWithSheets === totalSections) {
+    status = 'done';
+  } else if (sectionsWithSheets > 0) {
+    status = 'partial';
+  } else {
+    status = 'not_started';
+  }
+
+  return {
+    ...STEP_META['grading-sheets'],
+    status,
+    fraction,
+  };
+}
+
+export function resolveVirtueThemesStep(input: {
+  termsRequiringTheme: number;
+  termsWithTheme: number;
+}): ReadinessStep {
+  const { termsRequiringTheme, termsWithTheme } = input;
+  let status: ReadinessStatus;
+  let fraction: { done: number; total: number } | undefined;
+
+  if (termsRequiringTheme === 0) {
+    status = 'not_started';
+  } else if (termsWithTheme >= termsRequiringTheme) {
+    status = 'done';
+    fraction = { done: termsWithTheme, total: termsRequiringTheme };
+  } else if (termsWithTheme > 0) {
+    status = 'partial';
+    fraction = { done: termsWithTheme, total: termsRequiringTheme };
+  } else {
+    status = 'not_started';
+    fraction = { done: 0, total: termsRequiringTheme };
+  }
+
+  return {
+    ...STEP_META['virtue-themes'],
+    status,
+    fraction,
+  };
+}
+
+export function resolveLetterheadStep(input: {
+  hasOrgName: boolean;
+  hasAddress: boolean;
+}): ReadinessStep {
+  const { hasOrgName, hasAddress } = input;
+  let status: ReadinessStatus;
+
+  if (hasOrgName && hasAddress) {
+    status = 'done';
+  } else if (hasOrgName || hasAddress) {
+    status = 'partial';
+  } else {
+    status = 'not_started';
+  }
+
+  return {
+    ...STEP_META['letterhead'],
+    status,
+  };
+}
+
+export function resolveAppWindowStep(input: {
+  accepting: boolean;
+}): ReadinessStep {
+  const status = input.accepting ? 'done' : 'not_started';
+  return {
+    ...STEP_META['app-window'],
+    status,
+  };
+}
+
+// Aggregation helpers
+
+export function buildReadiness(
+  ayCode: string,
+  steps: ReadinessStep[]
+): AyReadiness {
+  const required = steps.filter((s) => s.required);
+  const complete = required.filter((s) => s.status === 'done').length;
+  const total = required.length;
+
+  return {
+    ayCode,
+    steps,
+    complete,
+    total,
+  };
+}
+
+export function nextIncompleteStepId(steps: ReadinessStep[]): ReadinessStepId {
+  const incomplete = steps.find((s) => s.required && s.status !== 'done');
+  return incomplete?.id ?? steps[0].id;
+}
+
+// DB fetchers (private async functions)
+
+async function fetchAySetup(db: SupabaseClient, ayId: string): Promise<number> {
+  const { count, error } = await db
     .from('terms')
     .select('id', { count: 'exact', head: true })
     .eq('academic_year_id', ayId)
     .not('start_date', 'is', null)
     .not('end_date', 'is', null);
 
-  const done = (count ?? 0) > 0;
-  return {
-    ...base,
-    status: done ? 'done' : 'not_started',
-    description: done
-      ? 'Academic year active with dated terms'
-      : 'Create the academic year and define term dates',
-  };
+  if (error) throw error;
+  return count ?? 0;
 }
 
-async function checkCalendar(
+async function fetchCalendar(
   db: SupabaseClient,
   ayId: string
-): Promise<ReadinessStep> {
-  const base: Omit<ReadinessStep, 'status' | 'description'> = {
-    id: 'calendar',
-    step: 2,
-    label: 'School Calendar',
-    href: '/sis/calendar',
-  };
-
-  const { count: totalTerms } = await db
-    .from('terms')
-    .select('id', { count: 'exact', head: true })
-    .eq('academic_year_id', ayId);
-
-  if (!totalTerms || totalTerms === 0) {
-    return {
-      ...base,
-      status: 'not_started',
-      description: 'Define AY terms first',
-    };
-  }
-
-  const { data: termIds } = await db
+): Promise<{ totalTerms: number; coveredTerms: number }> {
+  // Get all term IDs for this AY
+  const { data: terms, error: termsError } = await db
     .from('terms')
     .select('id')
     .eq('academic_year_id', ayId);
 
-  const ids = (termIds ?? []).map((t) => t.id);
+  if (termsError) throw termsError;
+  const totalTerms = terms?.length ?? 0;
 
-  const { data: coveredRows } = await db
+  if (totalTerms === 0) {
+    return { totalTerms: 0, coveredTerms: 0 };
+  }
+
+  // Get distinct term_ids in school_calendar that match
+  const termIds = terms!.map((t: any) => t.id);
+  const { data: covered, error: coveredError } = await db
     .from('school_calendar')
     .select('term_id')
-    .in('term_id', ids);
+    .in('term_id', termIds);
 
-  const coveredTerms = new Set((coveredRows ?? []).map((r) => r.term_id)).size;
-  const done = coveredTerms === totalTerms;
+  if (coveredError) throw coveredError;
+  const coveredTerms = new Set((covered as any[])?.map((c: any) => c.term_id))
+    .size;
+
+  return { totalTerms, coveredTerms };
+}
+
+async function fetchClasses(
+  db: SupabaseClient,
+  ayId: string
+): Promise<{ sectionCount: number; subjectConfigCount: number }> {
+  const { count: sectionCount, error: sectionsError } = await db
+    .from('sections')
+    .select('id', { count: 'exact', head: true })
+    .not('level_id', 'is', null)
+    .eq('academic_year_id', ayId);
+
+  if (sectionsError) throw sectionsError;
+
+  const { count: subjectConfigCount, error: configsError } = await db
+    .from('subject_configs')
+    .select('id', { count: 'exact', head: true })
+    .eq('academic_year_id', ayId);
+
+  if (configsError) throw configsError;
 
   return {
-    ...base,
-    status: done ? 'done' : coveredTerms > 0 ? 'partial' : 'not_started',
-    description: done
-      ? 'All terms have calendar coverage'
-      : `${coveredTerms} of ${totalTerms} terms have calendar entries`,
+    sectionCount: sectionCount ?? 0,
+    subjectConfigCount: subjectConfigCount ?? 0,
   };
 }
 
-async function checkSections(
+async function fetchAdvisers(
   db: SupabaseClient,
   ayId: string
-): Promise<ReadinessStep> {
-  const base: Omit<ReadinessStep, 'status' | 'description'> = {
-    id: 'sections',
-    step: 3,
-    label: 'Sections',
-    href: '/sis/sections',
-  };
-
-  const { data: sectionIds } = await db
+): Promise<{ sectionCount: number; advisedSectionCount: number }> {
+  const { data: sections, error: sectionsError } = await db
     .from('sections')
     .select('id')
     .eq('academic_year_id', ayId)
     .not('level_id', 'is', null);
 
-  if (!sectionIds || sectionIds.length === 0) {
-    return {
-      ...base,
-      status: 'not_started',
-      description: 'No sections created for this AY',
-    };
+  if (sectionsError) throw sectionsError;
+  const sectionCount = sections?.length ?? 0;
+
+  if (sectionCount === 0) {
+    return { sectionCount: 0, advisedSectionCount: 0 };
   }
 
-  const ids = sectionIds.map((s) => s.id);
-
-  const { count: advisedCount } = await db
+  const sectionIds = sections!.map((s: any) => s.id);
+  const { data: advised, error: advisedError } = await db
     .from('teacher_assignments')
-    .select('id', { count: 'exact', head: true })
-    .in('section_id', ids)
+    .select('section_id')
+    .in('section_id', sectionIds)
     .eq('role', 'form_adviser');
 
-  const done = (advisedCount ?? 0) > 0;
-  return {
-    ...base,
-    status: done ? 'done' : 'partial',
-    description: done
-      ? `${sectionIds.length} sections created with form advisers assigned`
-      : `${sectionIds.length} sections created — assign form advisers`,
-  };
+  if (advisedError) throw advisedError;
+  const advisedSectionCount = new Set(
+    (advised as any[])?.map((a: any) => a.section_id)
+  ).size;
+
+  return { sectionCount, advisedSectionCount };
 }
 
-async function checkGradingSheets(
+async function fetchGradingSheets(
   db: SupabaseClient,
   ayId: string
-): Promise<ReadinessStep> {
-  const base: Omit<ReadinessStep, 'status' | 'description' | 'fraction'> = {
-    id: 'grading-sheets',
-    step: 4,
-    label: 'Grading Sheets',
-    href: '/markbook/sections',
-  };
-
-  const { data: allSections } = await db
+): Promise<{ totalSections: number; sectionsWithSheets: number }> {
+  const { data: sections, error: sectionsError } = await db
     .from('sections')
     .select('id')
     .eq('academic_year_id', ayId);
 
-  const totalSections = (allSections ?? []).length;
+  if (sectionsError) throw sectionsError;
+  const totalSections = sections?.length ?? 0;
 
   if (totalSections === 0) {
-    return {
-      ...base,
-      status: 'not_started',
-      description: 'Create sections first',
-      fraction: { done: 0, total: 0 },
-    };
+    return { totalSections: 0, sectionsWithSheets: 0 };
   }
 
-  const sectionIds = allSections!.map((s) => s.id);
-
-  const { data: sheetRows } = await db
+  const sectionIds = sections!.map((s: any) => s.id);
+  const { data: sheets, error: sheetsError } = await db
     .from('grading_sheets')
     .select('section_id')
     .in('section_id', sectionIds);
 
-  const sectionsWithSheets = new Set((sheetRows ?? []).map((r) => r.section_id))
-    .size;
-  const done = sectionsWithSheets === totalSections;
+  if (sheetsError) throw sheetsError;
+  const sectionsWithSheets = new Set(
+    (sheets as any[])?.map((s: any) => s.section_id)
+  ).size;
 
-  return {
-    ...base,
-    status: done ? 'done' : sectionsWithSheets > 0 ? 'partial' : 'not_started',
-    description: done
-      ? 'Grading sheets created for all sections'
-      : sectionsWithSheets > 0
-        ? `${sectionsWithSheets} of ${totalSections} sections have grading sheets`
-        : 'Bulk-create grading sheets in Markbook → Sections',
-    fraction: { done: sectionsWithSheets, total: totalSections },
-  };
+  return { totalSections, sectionsWithSheets };
 }
 
-function buildAllNotStarted(ayCode: string): AyReadiness {
-  const steps: ReadinessStep[] = [
-    {
-      id: 'ay-setup',
-      step: 1,
-      label: 'AY Setup',
-      href: '/sis/ay-setup',
-      status: 'not_started',
-      description: 'Create the academic year and define term dates',
-    },
-    {
-      id: 'calendar',
-      step: 2,
-      label: 'School Calendar',
-      href: '/sis/calendar',
-      status: 'not_started',
-      description: 'Generate school days for all terms',
-    },
-    {
-      id: 'sections',
-      step: 3,
-      label: 'Sections',
-      href: '/sis/sections',
-      status: 'not_started',
-      description: 'Create sections and assign form advisers',
-    },
-    {
-      id: 'grading-sheets',
-      step: 4,
-      label: 'Grading Sheets',
-      href: '/markbook/sections',
-      status: 'not_started',
-      description: 'Bulk-create grading sheets in Markbook → Sections',
-      fraction: { done: 0, total: 0 },
-    },
-  ];
-  return { ayCode, steps, complete: 0, total: 4 };
+async function fetchVirtueThemes(
+  db: SupabaseClient,
+  ayId: string
+): Promise<{ termsRequiringTheme: number; termsWithTheme: number }> {
+  const { data: terms, error: termsError } = await db
+    .from('terms')
+    .select('id, virtue_theme')
+    .eq('academic_year_id', ayId)
+    .lte('term_number', 3);
+
+  if (termsError) throw termsError;
+  const termsRequiringTheme = terms?.length ?? 0;
+
+  if (termsRequiringTheme === 0) {
+    return { termsRequiringTheme: 0, termsWithTheme: 0 };
+  }
+
+  const termsWithTheme =
+    (terms as any[])?.filter(
+      (t) => t.virtue_theme && t.virtue_theme.trim().length > 0
+    ).length ?? 0;
+
+  return { termsRequiringTheme, termsWithTheme };
 }
+
+async function fetchLetterhead(
+  db: SupabaseClient
+): Promise<{ hasOrgName: boolean; hasAddress: boolean }> {
+  const { data, error } = await db
+    .from('school_config')
+    .select('organization_name, address_line_1')
+    .eq('id', 1)
+    .single();
+
+  if (error) throw error;
+  const row = data as any;
+
+  const hasOrgName = !!(
+    row?.organization_name && row.organization_name.trim().length > 0
+  );
+  const hasAddress = !!(
+    row?.address_line_1 && row.address_line_1.trim().length > 0
+  );
+
+  return { hasOrgName, hasAddress };
+}
+
+// Main uncached function
 
 async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   const db = createServiceClient();
 
-  const { data: ay } = await db
+  // Fetch AY row
+  const { data: ayRow, error: ayError } = await db
     .from('academic_years')
-    .select('id')
+    .select('id, accepting_applications')
     .eq('ay_code', ayCode)
-    .maybeSingle();
+    .single();
 
-  if (!ay) return buildAllNotStarted(ayCode);
+  if (ayError || !ayRow) {
+    // Return all not-started if AY not found
+    return buildReadiness(ayCode, [
+      resolveAySetupStep({ datedTermCount: 0 }),
+      resolveCalendarStep({ totalTerms: 0, coveredTerms: 0 }),
+      resolveClassesStep({ sectionCount: 0, subjectConfigCount: 0 }),
+      resolveAdvisersStep({ sectionCount: 0, advisedSectionCount: 0 }),
+      resolveGradingSheetsStep({ totalSections: 0, sectionsWithSheets: 0 }),
+      resolveVirtueThemesStep({ termsRequiringTheme: 0, termsWithTheme: 0 }),
+      resolveLetterheadStep({ hasOrgName: false, hasAddress: false }),
+      resolveAppWindowStep({ accepting: false }),
+    ]);
+  }
 
-  const [step1, step2, step3, step4] = await Promise.all([
-    checkAySetup(db, ay.id),
-    checkCalendar(db, ay.id),
-    checkSections(db, ay.id),
-    checkGradingSheets(db, ay.id),
+  const ayId = (ayRow as any).id;
+  const accepting = (ayRow as any).accepting_applications ?? false;
+
+  // Fan out 7 fetchers
+  const [
+    aySetup,
+    calendar,
+    classes,
+    advisers,
+    gradingSheets,
+    virtueThemes,
+    letterhead,
+  ] = await Promise.all([
+    fetchAySetup(db, ayId),
+    fetchCalendar(db, ayId),
+    fetchClasses(db, ayId),
+    fetchAdvisers(db, ayId),
+    fetchGradingSheets(db, ayId),
+    fetchVirtueThemes(db, ayId),
+    fetchLetterhead(db),
   ]);
 
-  const steps = [step1, step2, step3, step4];
-  const complete = steps.filter((s) => s.status === 'done').length;
-  return { ayCode, steps, complete, total: 4 };
+  // Build steps
+  const step1 = resolveAySetupStep({ datedTermCount: aySetup });
+  const step2 = resolveCalendarStep(calendar);
+  const step3 = resolveClassesStep(classes);
+  const step4 = resolveAdvisersStep(advisers);
+  const step5 = resolveGradingSheetsStep(gradingSheets);
+  const step6 = resolveVirtueThemesStep(virtueThemes);
+  const step7 = resolveLetterheadStep(letterhead);
+  const step8 = resolveAppWindowStep({ accepting });
+
+  return buildReadiness(ayCode, [
+    step1,
+    step2,
+    step3,
+    step4,
+    step5,
+    step6,
+    step7,
+    step8,
+  ]);
 }
+
+// Cached wrapper
 
 export const getAyReadiness = (ayCode: string) =>
   unstable_cache(

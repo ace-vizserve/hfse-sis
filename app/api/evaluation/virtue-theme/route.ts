@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
@@ -60,6 +61,15 @@ export async function PATCH(request: NextRequest) {
         after: { virtue_theme: virtueTheme },
       },
     });
+
+    // Bust the sis: readiness cache — the AY readiness check reads term data.
+    const { data: ay } = await service
+      .from('academic_years')
+      .select('ay_code')
+      .eq('id', before.academic_year_id)
+      .maybeSingle();
+    const ayCode = (ay as { ay_code: string } | null)?.ay_code ?? null;
+    if (ayCode) revalidateTag(`sis:${ayCode}`, 'max');
   }
 
   return NextResponse.json({ ok: true, changed });
