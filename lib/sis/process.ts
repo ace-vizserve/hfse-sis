@@ -266,8 +266,15 @@ export function resolveIsWithdrawn(
   applicationStatus: string | null,
   ssEnrollmentStatuses: string[]
 ): boolean {
+  // Pre-enrolment exit — applicationStatus is the only signal here.
   if ((applicationStatus ?? '').trim() === 'Withdrawn') return true;
-  return ssEnrollmentStatuses.includes('withdrawn');
+  // Post-enrolment: withdrawn ONLY if no active/late row coexists (a transfer
+  // leaves an old 'withdrawn' row beside a new 'active' one — KD #67 — that is
+  // a section change, not a school withdrawal).
+  const currentlyWithdrawn =
+    ssEnrollmentStatuses.includes('withdrawn') &&
+    !ssEnrollmentStatuses.some((s) => s === 'active' || s === 'late_enrollee');
+  return currentlyWithdrawn;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -363,7 +370,9 @@ async function loadStudentLifecycleUncached(
   // Use the aliased `application_updatedAt` field for the "withdrawn on" date.
   const applicationStatus =
     (status?.['applicationStatus'] as string | null) ?? null;
-  let isWithdrawn = resolveIsWithdrawn(applicationStatus, []); // ss statuses appended below
+  // isWithdrawn is resolved after section_students is loaded below — only the
+  // post-load call to resolveIsWithdrawn is authoritative.
+  let isWithdrawn = false;
   const withdrawnDate =
     (status?.['application_updatedAt'] as string | null) ?? null;
   const withdrawnReason =

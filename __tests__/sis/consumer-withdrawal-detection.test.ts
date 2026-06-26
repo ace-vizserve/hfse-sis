@@ -47,10 +47,25 @@ describe('resolveIsWithdrawn — dual-signal withdrawal detection', () => {
     expect(resolveIsWithdrawn(null, ['withdrawn'])).toBe(true);
   });
 
-  it('returns true when ss has multiple rows and at least one is "withdrawn"', () => {
-    // A transfer creates two ss rows; the old (withdrawn) row and the new (active).
-    // We should still detect the withdrawal even if another row is active.
-    expect(resolveIsWithdrawn('Enrolled', ['active', 'withdrawn'])).toBe(true);
+  it('returns false when ss has a "withdrawn" row alongside an "active" row (transfer, not withdrawal — KD #67)', () => {
+    // A section transfer (KD #67) leaves the old section_students row as
+    // 'withdrawn' and inserts a new 'active' row. The student is NOT withdrawn
+    // from the school — only moved to a different section. Previously this
+    // returned true (the bug); the fix requires no active/late row to coexist.
+    expect(resolveIsWithdrawn('Enrolled', ['active', 'withdrawn'])).toBe(false);
+  });
+
+  it('returns false when ss has a "withdrawn" row alongside a "late_enrollee" row (transfer of late enrollee — KD #67)', () => {
+    // A late enrollee who transfers sections also leaves an old 'withdrawn' row
+    // beside the new 'late_enrollee' row. Must not be flagged as withdrawn.
+    expect(resolveIsWithdrawn('Enrolled', ['late_enrollee', 'withdrawn'])).toBe(
+      false
+    );
+  });
+
+  it('returns true when ss has ONLY a "withdrawn" row (genuine school withdrawal)', () => {
+    // No active or late_enrollee row coexists — this is a real withdrawal.
+    expect(resolveIsWithdrawn('Enrolled', ['withdrawn'])).toBe(true);
   });
 
   it('returns true when BOTH signals are present (belt-and-suspenders)', () => {
