@@ -6,8 +6,11 @@ import Link from 'next/link';
 // (~47). Cell count at HFSE scale: ~1,410 per render.
 //
 // Render-perf invariants — do not regress:
-//   1. Each cell uses a NATIVE <select>, not shadcn/Radix Select. Radix
-//      Select mounts a Portal per instance; 1,410 portals is catastrophic.
+//   1. Each cell is a plain <button> (CellButton), NOT a per-cell Radix
+//      Select/Popover. There is exactly ONE shared marking popover for the
+//      whole grid, anchored to the active cell (state: `activeCell`). 1,410
+//      portals would be catastrophic — one is fine. Don't give cells their own
+//      portal-mounting picker.
 //   2. State lives in a single `cells` Map keyed by `${enrolmentId}|${date}`.
 //      Avoid prop-drilling per-cell state — a parent re-render on unrelated
 //      state (a new useState added to the parent page, say) cascades into
@@ -72,6 +75,16 @@ import type {
 } from '@/lib/attendance/calendar';
 import { resolveColumnTag } from '@/lib/attendance/sheet-columns';
 import { COLUMN_TAG_COLOR } from '@/components/attendance/column-tags';
+import { CellMarkPalette } from '@/components/attendance/cell-mark-popover';
+import {
+  STATUS_CELL_WASH,
+  statusCellWash,
+} from '@/components/attendance/status-wash';
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from '@/components/ui/popover';
 import { summarizeByMonth, type Mark } from '@/lib/attendance/sheet-summary';
 import type { DailyEntryRow } from '@/lib/attendance/queries';
 import {
@@ -99,26 +112,9 @@ const DAY_TYPE_CHIP_COLOR: Record<DayType, ChartLegendChipColor> = {
 // COLUMN_TAG_COLOR (date-column tag → ChartLegendChip color) is shared with the
 // sheet-context card's term-calendar key — see components/attendance/column-tags.ts (§10.2).
 
-// Status → marking-cell wash. HFSE paper-sheet palette (KD A3): solid light
-// fills matching the old paper register — P light blue, A yellow, EX cyan,
-// L pink — each with dark mark-ink so the letter stays legible (≥4.5:1).
-// SINGLE SOURCE OF TRUTH: the cell wash AND the legend swatch both read this
-// map (per §10.2), so they can never drift. EX shares one fill regardless of
-// subtype — the cell shows just "EX" (the subtype is chosen in the dropdown +
-// shown on the tooltip), and colour is never the only signal. NC is no-class
-// chrome, not a paper-sheet mark, so it
-// keeps the neutral ink wash.
-const STATUS_CELL_WASH: Record<AttendanceStatus, string> = {
-  P: 'bg-attendance-present text-attendance-mark-ink',
-  L: 'bg-attendance-late text-attendance-mark-ink',
-  EX: 'bg-attendance-excused text-attendance-mark-ink',
-  A: 'bg-attendance-absent text-attendance-mark-ink',
-  NC: 'bg-ink-4 text-white',
-};
-
-function statusCellWash(status: AttendanceStatus | null): string {
-  return status ? STATUS_CELL_WASH[status] : 'text-foreground';
-}
+// STATUS_CELL_WASH (status → HFSE paper-palette wash) + statusCellWash now live
+// in components/attendance/status-wash.ts — shared single source (§10.2) for the
+// grid cells, the legend, AND the cell-mark popover chips.
 
 // Faint per-day-type cell tint, kept under the gradient pill so non-
 // school-day columns read as a vertical band even when no status is set.
@@ -151,63 +147,9 @@ export type WideGridEnrolment = {
   enrollmentDate: string | null;
 };
 
-// Dropdown option value shape: "P" | "L" | "EX:mc" | "EX:compassionate" |
-// "EX:vacation" | "A" | "NC" | "" (unmarked)
-type OptionValue =
-  | ''
-  | 'P'
-  | 'L'
-  | 'EX:mc'
-  | 'EX:vacation'
-  | 'EX:compassionate'
-  | 'A'
-  | 'NC';
-
-type Option = { value: OptionValue; label: string };
-
-// Top-level options. The three EX subtypes are nested under their own
-// <optgroup> (EX_GROUP_OPTIONS) so the open dropdown reads as EX → its
-// categories. The collapsed cell still shows the canonical "EX" letter via
-// the pointer-events-none overlay span — the optgroup only affects the open
-// list, not the cell.
-const TEACHER_TOP_OPTIONS: Option[] = [
-  { value: '', label: '—' },
-  { value: 'P', label: 'P · Present' },
-  { value: 'A', label: 'A · Absent' },
-  { value: 'L', label: 'L · Late' },
-];
-
-// EX subtypes grouped under "Excused (EX)". Order + labels mirror
-// EX_REASON_LABELS (HFSE legend).
-const EX_GROUP_OPTIONS: Option[] = [
-  { value: 'EX:mc', label: 'MC / Excuse leave' },
-  { value: 'EX:compassionate', label: 'Urgent / compassionate' },
-  { value: 'EX:vacation', label: 'Vacation leave' },
-];
-
-const REGISTRAR_TOP_OPTIONS: Option[] = [
-  ...TEACHER_TOP_OPTIONS,
-  { value: 'NC', label: 'NC · No class' },
-];
-
-function decodeOption(
-  value: OptionValue
-): { status: AttendanceStatus; exReason: ExReason | null } | null {
-  if (!value) return null;
-  if (value.startsWith('EX:')) {
-    return { status: 'EX', exReason: value.slice(3) as ExReason };
-  }
-  return { status: value as AttendanceStatus, exReason: null };
-}
-
-function encodeOption(
-  status: AttendanceStatus | null,
-  exReason: ExReason | null
-): OptionValue {
-  if (status == null) return '';
-  if (status === 'EX') return `EX:${exReason ?? 'mc'}` as OptionValue;
-  return status;
-}
+// The per-cell native <select> + <optgroup> was replaced by a single shared
+// "marking palette" popover (components/attendance/cell-mark-popover.tsx)
+// anchored to the active cell — see the cell render + <Popover> below.
 
 type CellState = {
   status: AttendanceStatus | null;
@@ -220,6 +162,15 @@ type GridKey = string; // `${enrolmentId}|${date}`
 
 function keyFor(enrolmentId: string, date: string): GridKey {
   return `${enrolmentId}|${date}`;
+}
+
+// "14 Jul" label for the popover header (on-screen only — browser ICU).
+function cellDateLabel(iso: string): string {
+  return new Date(
+    Number(iso.slice(0, 4)),
+    Number(iso.slice(5, 7)) - 1,
+    Number(iso.slice(8, 10))
+  ).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' });
 }
 
 export function AttendanceWideGrid({
@@ -261,6 +212,12 @@ export function AttendanceWideGrid({
 
   const [showDetails, setShowDetails] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
+  // The one open cell-mark popover (single portal — see the marking-palette note
+  // above and the perf invariants in the file header). null = closed.
+  const [activeCell, setActiveCell] = useState<{
+    enrolmentId: string;
+    iso: string;
+  } | null>(null);
 
   function busCareLabel(e: WideGridEnrolment): string {
     return [e.busNo, e.classroomOfficerRole].filter(Boolean).join(' / ') || '—';
@@ -454,8 +411,6 @@ export function AttendanceWideGrid({
       });
   }, [showSummary, enrolments, columns, cells]);
 
-  const topOptions = canWriteNc ? REGISTRAR_TOP_OPTIONS : TEACHER_TOP_OPTIONS;
-
   if (columns.length === 0) {
     return (
       <Card>
@@ -483,6 +438,14 @@ export function AttendanceWideGrid({
   // vertically. Both panes use identical <tr style={{height}}> values.
   const ROW_HEIGHT = { monthBanner: 28, dateRow: 48, body: 40 };
 
+  // Resolve the active cell → its student + current mark, for the shared popover.
+  const activeEnrolment = activeCell
+    ? (enrolments.find((e) => e.enrolmentId === activeCell.enrolmentId) ?? null)
+    : null;
+  const activeCellState = activeCell
+    ? (cells.get(keyFor(activeCell.enrolmentId, activeCell.iso)) ?? null)
+    : null;
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -503,399 +466,368 @@ export function AttendanceWideGrid({
           {showSummary ? 'Hide summary' : 'Show summary'}
         </Button>
       </div>
-      <Card className="p-0 overflow-hidden">
-        {enrolments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center">
-            <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Users className="size-5" aria-hidden />
+      {/* One shared cell-mark popover — anchored to the active cell (single
+          portal; the per-cell control is a plain button). */}
+      <Popover
+        open={activeCell != null}
+        onOpenChange={(o) => {
+          if (!o) setActiveCell(null);
+        }}
+      >
+        <Card className="p-0 overflow-hidden">
+          {enrolments.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center">
+              <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <Users className="size-5" aria-hidden />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                No students enrolled in this section yet.
+              </p>
             </div>
-            <p className="text-sm text-muted-foreground">
-              No students enrolled in this section yet.
-            </p>
-          </div>
-        ) : (
-          // Two-pane flex layout — roster on the left (fixed width, no
-          // horizontal scroll), calendar on the right (scrolls horizontally
-          // independently). Replaces the legacy single-table sticky-column
-          // design which had browser bugs with position: sticky inside
-          // border-collapse tables, causing the first date to be covered
-          // by the last sticky roster column. Two tables, row heights
-          // locked, alignment is deterministic.
-          <div className="flex">
-            {/* ─── Roster pane — fixed width, no horizontal scroll ─── */}
-            <div className="shrink-0 border-r border-border">
-              <Table
-                noWrapper
-                className="border-separate border-spacing-0 text-[11px]"
-              >
-                <colgroup>
-                  <col style={{ width: 40 }} />
-                  <col style={{ width: 180 }} />
-                  {showDetails && <col style={{ width: 120 }} />}
-                  {showDetails && <col style={{ width: 90 }} />}
-                  {showDetails && <col style={{ width: 90 }} />}
-                </colgroup>
-                <TableHeader>
-                  <TableRow
-                    style={{ height: ROW_HEIGHT.monthBanner }}
-                    className="hover:bg-transparent"
-                  >
-                    <TableHead
-                      colSpan={showDetails ? 5 : 2}
-                      className="h-auto border-b border-border bg-muted/60 px-2 py-1.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-                    >
-                      Roster
-                    </TableHead>
-                  </TableRow>
-                  <TableRow
-                    style={{ height: ROW_HEIGHT.dateRow }}
-                    className="hover:bg-transparent"
-                  >
-                    <TableHead className="h-auto border-b border-r border-border bg-muted/60 px-1 py-1 text-right font-mono text-[10px] font-semibold text-muted-foreground">
-                      #
-                    </TableHead>
-                    <TableHead className="h-auto border-b border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
-                      Student
-                    </TableHead>
-                    {showDetails && (
-                      <>
-                        <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
-                          Bus / Student Care
-                        </TableHead>
-                        <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
-                          Academics
-                        </TableHead>
-                        <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
-                          Admin
-                        </TableHead>
-                      </>
-                    )}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {enrolments.map((e) => (
+          ) : (
+            // Two-pane flex layout — roster on the left (fixed width, no
+            // horizontal scroll), calendar on the right (scrolls horizontally
+            // independently). Replaces the legacy single-table sticky-column
+            // design which had browser bugs with position: sticky inside
+            // border-collapse tables, causing the first date to be covered
+            // by the last sticky roster column. Two tables, row heights
+            // locked, alignment is deterministic.
+            <div className="flex">
+              {/* ─── Roster pane — fixed width, no horizontal scroll ─── */}
+              <div className="shrink-0 border-r border-border">
+                <Table
+                  noWrapper
+                  className="border-separate border-spacing-0 text-[11px]"
+                >
+                  <colgroup>
+                    <col style={{ width: 40 }} />
+                    <col style={{ width: 180 }} />
+                    {showDetails && <col style={{ width: 120 }} />}
+                    {showDetails && <col style={{ width: 90 }} />}
+                    {showDetails && <col style={{ width: 90 }} />}
+                  </colgroup>
+                  <TableHeader>
                     <TableRow
-                      key={e.enrolmentId}
-                      style={{ height: ROW_HEIGHT.body }}
-                      className={
-                        e.withdrawn
-                          ? 'bg-muted/10 text-muted-foreground hover:bg-muted/10'
-                          : 'odd:bg-muted/[0.04] hover:bg-muted/20'
-                      }
+                      style={{ height: ROW_HEIGHT.monthBanner }}
+                      className="hover:bg-transparent"
                     >
-                      <TableCell className="overflow-hidden border-r border-border px-1 py-1 text-right font-mono tabular-nums text-muted-foreground">
-                        {e.indexNumber}
-                      </TableCell>
-                      <TableCell className="overflow-hidden px-2 py-1">
-                        <div
-                          className={
-                            'truncate text-[12px] font-medium text-foreground ' +
-                            (e.withdrawn ? 'opacity-60 italic' : '')
-                          }
-                          title={e.studentName}
-                        >
-                          {e.studentName}
-                        </div>
-                        <div className="flex items-center gap-1.5 truncate font-mono text-[10px] text-muted-foreground">
-                          <span>{e.studentNumber}</span>
-                          {e.withdrawn && (
-                            <Badge
-                              variant="secondary"
-                              className="border-0 px-1.5 py-0 font-mono text-[10px] font-normal shadow-none"
-                            >
-                              Withdrawn
-                            </Badge>
-                          )}
-                          {e.busNo && (
-                            <Badge
-                              variant="secondary"
-                              className="gap-0.5 border-0 px-1.5 py-0 text-[10px] font-normal shadow-none"
-                              title="Bus number"
-                            >
-                              <Bus aria-hidden /> {e.busNo}
-                            </Badge>
-                          )}
-                          {e.classroomOfficerRole && (
-                            <Badge
-                              variant="secondary"
-                              className="gap-0.5 border-0 px-1.5 py-0 text-[10px] font-normal shadow-none"
-                              title="Classroom officer"
-                            >
-                              <Star aria-hidden /> {e.classroomOfficerRole}
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
+                      <TableHead
+                        colSpan={showDetails ? 5 : 2}
+                        className="h-auto border-b border-border bg-muted/60 px-2 py-1.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                      >
+                        Roster
+                      </TableHead>
+                    </TableRow>
+                    <TableRow
+                      style={{ height: ROW_HEIGHT.dateRow }}
+                      className="hover:bg-transparent"
+                    >
+                      <TableHead className="h-auto border-b border-r border-border bg-muted/60 px-1 py-1 text-right font-mono text-[10px] font-semibold text-muted-foreground">
+                        #
+                      </TableHead>
+                      <TableHead className="h-auto border-b border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
+                        Student
+                      </TableHead>
                       {showDetails && (
                         <>
-                          <TableCell className="overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground">
-                            {busCareLabel(e)}
-                          </TableCell>
-                          <TableCell className="border-l border-border px-2 py-1 text-center text-[11px] text-muted-foreground">
-                            —
-                          </TableCell>
-                          <TableCell className="border-l border-border px-2 py-1 text-center text-[11px] text-muted-foreground">
-                            —
-                          </TableCell>
+                          <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
+                            Bus / Student Care
+                          </TableHead>
+                          <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
+                            Academics
+                          </TableHead>
+                          <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
+                            Admin
+                          </TableHead>
                         </>
                       )}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* ─── Calendar pane — scrolls horizontally ─── */}
-            <div className="flex-1 overflow-x-auto">
-              <Table
-                noWrapper
-                className="border-separate border-spacing-0 table-fixed text-[11px]"
-              >
-                <colgroup>
-                  {columns.map((c) => (
-                    <col key={c.iso} style={{ width: 36 }} />
-                  ))}
-                  <col style={{ width: 40 }} />
-                </colgroup>
-                <TableHeader>
-                  <TableRow
-                    style={{ height: ROW_HEIGHT.monthBanner }}
-                    className="hover:bg-transparent"
-                  >
-                    {monthGroups.map((g) => (
-                      <TableHead
-                        key={g.month}
-                        colSpan={g.dates.length}
-                        className="h-auto border-b border-r border-border bg-muted/60 px-2 py-1.5 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                  </TableHeader>
+                  <TableBody>
+                    {enrolments.map((e) => (
+                      <TableRow
+                        key={e.enrolmentId}
+                        style={{ height: ROW_HEIGHT.body }}
+                        className={
+                          e.withdrawn
+                            ? 'bg-muted/10 text-muted-foreground hover:bg-muted/10'
+                            : 'odd:bg-muted/[0.04] hover:bg-muted/20'
+                        }
                       >
-                        {g.label}
-                      </TableHead>
-                    ))}
-                    <TableHead className="h-auto border-b border-border bg-muted/60 p-0" />
-                  </TableRow>
-                  <TableRow
-                    style={{ height: ROW_HEIGHT.dateRow }}
-                    className="hover:bg-transparent"
-                  >
-                    {columns.map((c) => {
-                      const weekday = new Date(
-                        Number(c.iso.slice(0, 4)),
-                        Number(c.iso.slice(5, 7)) - 1,
-                        Number(c.iso.slice(8, 10))
-                      ).toLocaleDateString('en-SG', { weekday: 'short' });
-                      const eventLabel = c.events
-                        .map((e) => e.label)
-                        .join(' · ');
-                      const dayTypeTitle = `${DAY_TYPE_LABELS[c.dayType]}${
-                        c.label ? ` · ${c.label}` : ''
-                      }${eventLabel ? ` · ${eventLabel}` : ''}`;
-                      const isToday = c.iso === todayIso;
-                      return (
-                        <TableHead
-                          key={c.iso}
-                          ref={isToday ? todayHeaderRef : undefined}
-                          title={
-                            isToday ? `Today · ${dayTypeTitle}` : dayTypeTitle
-                          }
-                          className={
-                            'h-auto overflow-hidden border-b border-border bg-muted/40 px-1 py-1 text-center font-mono text-[10px] font-semibold text-foreground ' +
-                            (c.drawMonthBoundary
-                              ? ' border-l-2 border-l-border'
-                              : '') +
-                            (isToday
-                              ? ' relative ring-2 ring-inset ring-brand-indigo'
-                              : '')
-                          }
-                        >
-                          <div className="leading-tight">{c.iso.slice(-2)}</div>
-                          <div className="text-[9px] font-normal opacity-70">
-                            {weekday.slice(0, 3)}
+                        <TableCell className="overflow-hidden border-r border-border px-1 py-1 text-right font-mono tabular-nums text-muted-foreground">
+                          {e.indexNumber}
+                        </TableCell>
+                        <TableCell className="overflow-hidden px-2 py-1">
+                          <div
+                            className={
+                              'truncate text-[12px] font-medium text-foreground ' +
+                              (e.withdrawn ? 'opacity-60 italic' : '')
+                            }
+                            title={e.studentName}
+                          >
+                            {e.studentName}
                           </div>
-                          {/* Column tag — resolveColumnTag picks the single
+                          <div className="flex items-center gap-1.5 truncate font-mono text-[10px] text-muted-foreground">
+                            <span>{e.studentNumber}</span>
+                            {e.withdrawn && (
+                              <Badge
+                                variant="secondary"
+                                className="border-0 px-1.5 py-0 font-mono text-[10px] font-normal shadow-none"
+                              >
+                                Withdrawn
+                              </Badge>
+                            )}
+                            {e.busNo && (
+                              <Badge
+                                variant="secondary"
+                                className="gap-0.5 border-0 px-1.5 py-0 text-[10px] font-normal shadow-none"
+                                title="Bus number"
+                              >
+                                <Bus aria-hidden /> {e.busNo}
+                              </Badge>
+                            )}
+                            {e.classroomOfficerRole && (
+                              <Badge
+                                variant="secondary"
+                                className="gap-0.5 border-0 px-1.5 py-0 text-[10px] font-normal shadow-none"
+                                title="Classroom officer"
+                              >
+                                <Star aria-hidden /> {e.classroomOfficerRole}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        {showDetails && (
+                          <>
+                            <TableCell className="overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground">
+                              {busCareLabel(e)}
+                            </TableCell>
+                            <TableCell className="border-l border-border px-2 py-1 text-center text-[11px] text-muted-foreground">
+                              —
+                            </TableCell>
+                            <TableCell className="border-l border-border px-2 py-1 text-center text-[11px] text-muted-foreground">
+                              —
+                            </TableCell>
+                          </>
+                        )}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* ─── Calendar pane — scrolls horizontally ─── */}
+              <div className="flex-1 overflow-x-auto">
+                <Table
+                  noWrapper
+                  className="border-separate border-spacing-0 table-fixed text-[11px]"
+                >
+                  <colgroup>
+                    {columns.map((c) => (
+                      <col key={c.iso} style={{ width: 36 }} />
+                    ))}
+                    <col style={{ width: 40 }} />
+                  </colgroup>
+                  <TableHeader>
+                    <TableRow
+                      style={{ height: ROW_HEIGHT.monthBanner }}
+                      className="hover:bg-transparent"
+                    >
+                      {monthGroups.map((g) => (
+                        <TableHead
+                          key={g.month}
+                          colSpan={g.dates.length}
+                          className="h-auto border-b border-r border-border bg-muted/60 px-2 py-1.5 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                        >
+                          {g.label}
+                        </TableHead>
+                      ))}
+                      <TableHead className="h-auto border-b border-border bg-muted/60 p-0" />
+                    </TableRow>
+                    <TableRow
+                      style={{ height: ROW_HEIGHT.dateRow }}
+                      className="hover:bg-transparent"
+                    >
+                      {columns.map((c) => {
+                        const weekday = new Date(
+                          Number(c.iso.slice(0, 4)),
+                          Number(c.iso.slice(5, 7)) - 1,
+                          Number(c.iso.slice(8, 10))
+                        ).toLocaleDateString('en-SG', { weekday: 'short' });
+                        const eventLabel = c.events
+                          .map((e) => e.label)
+                          .join(' · ');
+                        const dayTypeTitle = `${DAY_TYPE_LABELS[c.dayType]}${
+                          c.label ? ` · ${c.label}` : ''
+                        }${eventLabel ? ` · ${eventLabel}` : ''}`;
+                        const isToday = c.iso === todayIso;
+                        return (
+                          <TableHead
+                            key={c.iso}
+                            ref={isToday ? todayHeaderRef : undefined}
+                            title={
+                              isToday ? `Today · ${dayTypeTitle}` : dayTypeTitle
+                            }
+                            className={
+                              'h-auto overflow-hidden border-b border-border bg-muted/40 px-1 py-1 text-center font-mono text-[10px] font-semibold text-foreground ' +
+                              (c.drawMonthBoundary
+                                ? ' border-l-2 border-l-border'
+                                : '') +
+                              (isToday
+                                ? ' relative ring-2 ring-inset ring-brand-indigo'
+                                : '')
+                            }
+                          >
+                            <div className="leading-tight">
+                              {c.iso.slice(-2)}
+                            </div>
+                            <div className="text-[9px] font-normal opacity-70">
+                              {weekday.slice(0, 3)}
+                            </div>
+                            {/* Column tag — resolveColumnTag picks the single
                               most-informative tag: PH/SH/NC from day_type,
                               EX for exam events, SE for other events, HBL
                               for HBL days; plain school days are untagged.
                               Same ChartLegendChip rendered in the legend below
                               so the column header and legend chip read as the
                               same affordance per §10. */}
-                          {c.tag && (
-                            <div className="mt-0.5 flex justify-center">
-                              <ChartLegendChip
-                                color={COLUMN_TAG_COLOR[c.tag]}
-                                label={c.tag}
-                                className="px-1 py-px text-[9px] tracking-[0.1em]"
-                              />
-                            </div>
-                          )}
-                        </TableHead>
-                      );
-                    })}
-                    <TableHead className="h-auto border-b border-border bg-muted/60 p-0" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {enrolments.map((e) => (
-                    <TableRow
-                      key={e.enrolmentId}
-                      style={{ height: ROW_HEIGHT.body }}
-                      className={
-                        e.withdrawn
-                          ? 'bg-muted/10 text-muted-foreground hover:bg-muted/10'
-                          : 'odd:bg-muted/[0.04] hover:bg-muted/20'
-                      }
-                    >
-                      {columns.map((c) => {
-                        const cell = cells.get(keyFor(e.enrolmentId, c.iso));
-                        const status = cell?.status ?? null;
-                        const exReason = cell?.exReason ?? null;
-                        const currentValue = encodeOption(status, exReason);
-                        const disabled = e.withdrawn || !c.encodable;
-                        // Pre-enrollment: date is before the student's enrollment
-                        // date — cell should be dimmed and non-interactive. If
-                        // there is already a recorded entry, we still show it
-                        // dimmed rather than silently discarding it.
-                        const beforeEnrolment =
-                          !!e.enrollmentDate && c.iso < e.enrollmentDate;
+                            {c.tag && (
+                              <div className="mt-0.5 flex justify-center">
+                                <ChartLegendChip
+                                  color={COLUMN_TAG_COLOR[c.tag]}
+                                  label={c.tag}
+                                  className="px-1 py-px text-[9px] tracking-[0.1em]"
+                                />
+                              </div>
+                            )}
+                          </TableHead>
+                        );
+                      })}
+                      <TableHead className="h-auto border-b border-border bg-muted/60 p-0" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {enrolments.map((e) => (
+                      <TableRow
+                        key={e.enrolmentId}
+                        style={{ height: ROW_HEIGHT.body }}
+                        className={
+                          e.withdrawn
+                            ? 'bg-muted/10 text-muted-foreground hover:bg-muted/10'
+                            : 'odd:bg-muted/[0.04] hover:bg-muted/20'
+                        }
+                      >
+                        {columns.map((c) => {
+                          const cell = cells.get(keyFor(e.enrolmentId, c.iso));
+                          const status = cell?.status ?? null;
+                          const exReason = cell?.exReason ?? null;
+                          // Pre-enrollment: date is before the student's enrollment
+                          // date — cell should be dimmed and non-interactive. If
+                          // there is already a recorded entry, we still show it
+                          // dimmed rather than silently discarding it.
+                          const beforeEnrolment =
+                            !!e.enrollmentDate && c.iso < e.enrollmentDate;
 
-                        return (
-                          <TableCell
-                            key={c.iso}
-                            title={
-                              beforeEnrolment
-                                ? 'Before enrolment date'
-                                : undefined
-                            }
-                            className={
-                              'overflow-hidden p-0 text-center align-middle ' +
-                              (beforeEnrolment
-                                ? 'bg-muted/40 '
-                                : DAY_TYPE_CELL_BG[c.dayType]) +
-                              (c.drawMonthBoundary
-                                ? ' border-l-2 border-l-border'
-                                : '')
-                            }
-                          >
-                            {beforeEnrolment ? (
-                              // Dim cell for pre-enrollment dates. If data was
-                              // already recorded (edge-case: back-dated entry),
-                              // show the value dimmed but do not allow edits.
-                              <span
-                                className={
-                                  'block px-1 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] opacity-40 ' +
-                                  (status
-                                    ? statusCellWash(status)
-                                    : 'text-muted-foreground')
-                                }
-                                title={
-                                  status
-                                    ? `Before enrolment date · ${ATTENDANCE_STATUS_LABELS[status]}${status === 'EX' && exReason ? ` · ${EX_REASON_LABELS[exReason]}` : ''}`
-                                    : 'Before enrolment date'
-                                }
-                              >
-                                {status ?? '—'}
-                              </span>
-                            ) : !c.encodable ? (
-                              <span
-                                className="block px-1 py-1 text-[10px] text-muted-foreground"
-                                title={`${DAY_TYPE_LABELS[c.dayType]}${c.label ? ` · ${c.label}` : ''}`}
-                              >
-                                —
-                              </span>
-                            ) : (
-                              <div
-                                className={'relative ' + statusCellWash(status)}
-                              >
-                                {/* Native <select> couples cell display to the
-                                    selected option's text, which would surface
-                                    the EX subtype mnemonic. We keep the select as
-                                    the interaction layer (its own text is
-                                    transparent) and paint the canonical status
-                                    letter via a pointer-events-none overlay, so
-                                    the cell always reads P / A / L / EX / — while
-                                    the open dropdown keeps distinct subtype
-                                    options. */}
-                                <select
-                                  value={currentValue}
-                                  disabled={disabled}
-                                  onChange={(ev) => {
-                                    const decoded = decodeOption(
-                                      ev.target.value as OptionValue
-                                    );
-                                    if (!decoded) return;
-                                    void writeCell(
-                                      e.enrolmentId,
-                                      c.iso,
-                                      decoded.status,
-                                      decoded.exReason
-                                    );
-                                  }}
+                          return (
+                            <TableCell
+                              key={c.iso}
+                              title={
+                                beforeEnrolment
+                                  ? 'Before enrolment date'
+                                  : undefined
+                              }
+                              className={
+                                'overflow-hidden p-0 text-center align-middle ' +
+                                (beforeEnrolment
+                                  ? 'bg-muted/40 '
+                                  : DAY_TYPE_CELL_BG[c.dayType]) +
+                                (c.drawMonthBoundary
+                                  ? ' border-l-2 border-l-border'
+                                  : '')
+                              }
+                            >
+                              {beforeEnrolment ? (
+                                // Dim cell for pre-enrollment dates. If data was
+                                // already recorded (edge-case: back-dated entry),
+                                // show the value dimmed but do not allow edits.
+                                <span
                                   className={
-                                    // Own text is always transparent — the
-                                    // overlay span below is the visible label.
-                                    'w-full appearance-none bg-transparent px-1 py-1 text-center font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-transparent focus:outline-none focus:ring-1 focus:ring-primary'
+                                    'block px-1 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] opacity-40 ' +
+                                    (status
+                                      ? statusCellWash(status)
+                                      : 'text-muted-foreground')
                                   }
                                   title={
                                     status
-                                      ? `${ATTENDANCE_STATUS_LABELS[status]}${
-                                          status === 'EX' && exReason
-                                            ? ` · ${EX_REASON_LABELS[exReason]}`
-                                            : ''
-                                        }`
-                                      : 'Unmarked'
-                                  }
-                                >
-                                  {topOptions.map((o) => (
-                                    <option
-                                      key={o.value}
-                                      value={o.value}
-                                      className={'text-foreground'}
-                                    >
-                                      {o.label}
-                                    </option>
-                                  ))}
-                                  <optgroup label="Excused (EX)">
-                                    {EX_GROUP_OPTIONS.map((o) => (
-                                      <option
-                                        key={o.value}
-                                        value={o.value}
-                                        className={'text-foreground'}
-                                      >
-                                        {o.label}
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                </select>
-                                {/* Visible cell label — canonical status only
-                                    (any EX subtype collapses to "EX"). */}
-                                <span
-                                  aria-hidden="true"
-                                  className={
-                                    'pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[11px] font-semibold uppercase tracking-[0.06em] ' +
-                                    (status ? '' : 'text-foreground')
+                                      ? `Before enrolment date · ${ATTENDANCE_STATUS_LABELS[status]}${status === 'EX' && exReason ? ` · ${EX_REASON_LABELS[exReason]}` : ''}`
+                                      : 'Before enrolment date'
                                   }
                                 >
                                   {status ?? '—'}
                                 </span>
-                                {cell?.saving && (
-                                  <Loader2 className="absolute right-0 top-0 size-2.5 animate-spin text-muted-foreground" />
-                                )}
-                                {cell?.savedAt && (
-                                  <CheckCircle2 className="absolute right-0 top-0 size-2.5 text-primary" />
-                                )}
-                              </div>
-                            )}
-                          </TableCell>
-                        );
-                      })}
-                      <TableCell className="bg-background p-0" />
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                              ) : !c.encodable ? (
+                                <span
+                                  className="block px-1 py-1 text-[10px] text-muted-foreground"
+                                  title={`${DAY_TYPE_LABELS[c.dayType]}${c.label ? ` · ${c.label}` : ''}`}
+                                >
+                                  —
+                                </span>
+                              ) : (
+                                <CellButton
+                                  active={
+                                    activeCell?.enrolmentId === e.enrolmentId &&
+                                    activeCell?.iso === c.iso
+                                  }
+                                  withdrawn={e.withdrawn}
+                                  status={status}
+                                  exReason={exReason}
+                                  saving={!!cell?.saving}
+                                  saved={!!cell?.savedAt}
+                                  onOpen={() =>
+                                    setActiveCell({
+                                      enrolmentId: e.enrolmentId,
+                                      iso: c.iso,
+                                    })
+                                  }
+                                />
+                              )}
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className="bg-background p-0" />
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
-          </div>
-        )}
-      </Card>
+          )}
+        </Card>
+        <PopoverContent align="center" sideOffset={6} className="w-64">
+          {activeEnrolment && activeCell && (
+            <CellMarkPalette
+              studentName={activeEnrolment.studentName}
+              dateLabel={cellDateLabel(activeCell.iso)}
+              status={activeCellState?.status ?? null}
+              exReason={activeCellState?.exReason ?? null}
+              canWriteNc={canWriteNc}
+              vlUsed={activeEnrolment.vlUsedThisTerm}
+              vlAllowance={activeEnrolment.vlAllowance}
+              compassionateUsed={activeEnrolment.compassionateUsed}
+              compassionateAllowance={activeEnrolment.compassionateAllowance}
+              onPick={(status, exReason) => {
+                void writeCell(
+                  activeCell.enrolmentId,
+                  activeCell.iso,
+                  status,
+                  exReason
+                );
+                setActiveCell(null);
+              }}
+            />
+          )}
+        </PopoverContent>
+      </Popover>
 
       {/* Summary panel — per-month + term totals per student */}
       {showSummary && (
@@ -1000,6 +932,67 @@ export function AttendanceWideGrid({
       </Card>
     </div>
   );
+}
+
+// The per-cell control: a plain button showing the canonical letter on its
+// paper-palette wash. Clicking opens the one shared marking popover; when this
+// cell is the active one it becomes the popover's anchor. Withdrawn cells render
+// a non-interactive letter (no marking). Replaces the old native <select>.
+function CellButton({
+  active,
+  withdrawn,
+  status,
+  exReason,
+  saving,
+  saved,
+  onOpen,
+}: {
+  active: boolean;
+  withdrawn: boolean;
+  status: AttendanceStatus | null;
+  exReason: ExReason | null;
+  saving: boolean;
+  saved: boolean;
+  onOpen: () => void;
+}) {
+  const label = status ?? '—';
+  const tip = status
+    ? `${ATTENDANCE_STATUS_LABELS[status]}${status === 'EX' && exReason ? ` · ${EX_REASON_LABELS[exReason]}` : ''}`
+    : 'Mark attendance';
+
+  const inner = (
+    <div className={'relative ' + statusCellWash(status)}>
+      {withdrawn ? (
+        <span className="block px-1 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] opacity-60">
+          {label}
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-haspopup="dialog"
+          aria-expanded={active}
+          title={tip}
+          className={
+            'block w-full px-1 py-1 text-center font-mono text-[11px] font-semibold uppercase tracking-[0.06em] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ' +
+            (status
+              ? 'hover:brightness-105'
+              : 'text-foreground hover:bg-muted/50')
+          }
+        >
+          {label}
+        </button>
+      )}
+      {saving && (
+        <Loader2 className="pointer-events-none absolute right-0 top-0 size-2.5 animate-spin text-muted-foreground" />
+      )}
+      {saved && (
+        <CheckCircle2 className="pointer-events-none absolute right-0 top-0 size-2.5 text-primary" />
+      )}
+    </div>
+  );
+
+  return active ? <PopoverAnchor asChild>{inner}</PopoverAnchor> : inner;
 }
 
 // Legend row pairing a marking-cell swatch with a description label. The
