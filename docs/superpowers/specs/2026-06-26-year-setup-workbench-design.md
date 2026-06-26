@@ -137,16 +137,16 @@ fetchers are thin pass-throughs and are intentionally left to integration/manual
 
 ## Backend wiring (reuse, don't rebuild)
 
-| Step               | Wires to (existing)                                                |
-| ------------------ | ------------------------------------------------------------------ |
-| Term dates         | `PATCH /api/sis/ay-setup/terms/[termId]` (via `TermDatesEditor`)   |
-| School calendar    | `/sis/calendar` (copy-from-prior-AY + click-cycle already live)    |
-| Classes & subjects | `apply_template_to_ay` RPC via the existing template Apply route   |
-| Form advisers      | `/sis/sections` (teacher-assignment)                               |
-| Grading sheets     | Existing Markbook bulk-create (`GenerateSheetsDialog` / its route) |
-| Virtue themes      | `PATCH /api/evaluation/virtue-theme` (KD #137)                     |
-| Letterhead         | Existing school-config PATCH                                       |
-| Application window | `PATCH /api/sis/ay-setup/accepting-applications` (KD #118)         |
+| Step               | Wires to (existing, confirmed 2026-06-26)                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Term dates         | `PATCH /api/sis/ay-setup/terms/[termId]` (via `TermDatesEditor`)                                                                       |
+| School calendar    | **New thin AY-wide seed route** wrapping `ensureTermSeeded` per dated term (one-click) + Open `/sis/calendar`                          |
+| Classes & subjects | `POST /api/sis/admin/template/apply` (`apply_template_to_ay` RPC) + Open `/sis/admin/template`                                         |
+| Form advisers      | Launch `/sis/sections` (teacher-assignment; spatial)                                                                                   |
+| Grading sheets     | **Embed `GenerateSheetsDialog` controlled**, `scope={{ kind: 'ay', ayId, ayCode }}` → `POST /api/grading-sheets/bulk-create { ay_id }` |
+| Virtue themes      | Inline `virtue-themes-editor` → `PATCH /api/evaluation/virtue-theme` (KD #137)                                                         |
+| Letterhead         | `PATCH /api/sis/admin/school-config`; "ready" = `organization_name` + `address_line_1` non-empty (global singleton)                    |
+| Application window | Inline toggle → `PATCH /api/sis/ay-setup/accepting-applications` (KD #118)                                                             |
 
 ## Deduplication — `/sis` hub
 
@@ -156,11 +156,21 @@ The four-card "Year Setup" grid on `/sis` (`app/(sis)/sis/page.tsx`) is replaced
 
 ## Edge cases
 
-- **Ring must refresh after inline edits.** `getAyReadiness` is cached (tag `sis:${ay}`,
-  60s). Verify the virtue-theme, school-config (letterhead), and accepting-applications
-  routes each `revalidateTag('sis:${ay}')`; patch any that don't — otherwise the ring lies
-  for up to a minute after a step is fixed. (Term dates, apply-template, grading-sheet, and
-  calendar paths to confirm too.)
+- **Ring must refresh after inline edits — cache punch list (audited 2026-06-26).**
+  `getAyReadiness` is cached (tag `sis:${ay}`, 60s). Only **accepting-applications** and
+  **apply-template** currently `revalidateTag('sis:${ay}', 'max')`. **Four routes must be
+  patched** to add it, or the ring lies for up to 60s after the step is fixed:
+  - `app/api/sis/ay-setup/terms/[termId]/route.ts` (resolve ayCode from term; only busts
+    attendance/markbook drill tags today)
+  - `app/api/evaluation/virtue-theme/route.ts` (busts **nothing** today; resolve ayCode
+    from term)
+  - `app/api/grading-sheets/bulk-create/route.ts` (busts markbook drill only; has `ay_id`)
+  - `app/api/sis/admin/school-config/route.ts` (busts markbook drill only) — **note:**
+    `school_config` is a **global singleton** (id=1), so letterhead is AY-independent; bust
+    the **current** AY's `sis:` tag (its existing comment already busts current-AY). Editing
+    letterhead while configuring a non-current future AY self-heals within 60s — acceptable
+    since letterhead is seeded by migration 054 and rarely touched.
+    Match the repo's existing `revalidateTag(tag, 'max')` call convention.
 - **Required vs optional denominator.** `buildReadiness` counts only `required` steps; the
   optional app-window step never drags the % down.
 - **Brand-new AY (no terms).** Step 1 `not_started`, everything downstream `not_started`;
@@ -177,14 +187,18 @@ The four-card "Year Setup" grid on `/sis` (`app/(sis)/sis/page.tsx`) is replaced
 - `app/(sis)/sis/ay-setup/page.tsx` — fetch expanded readiness; render the stepper.
 - `app/(sis)/sis/page.tsx` — replace the 4-card Year Setup grid with the single readiness
   card.
-- Mutation routes missing `revalidateTag('sis:${ay}')` (virtue-theme / school-config /
-  accepting-applications — to verify).
+- Cache punch list (4 routes) — add `revalidateTag('sis:${ay}', 'max')`:
+  `sis/ay-setup/terms/[termId]`, `evaluation/virtue-theme`, `grading-sheets/bulk-create`,
+  `sis/admin/school-config` (current AY). See Edge cases.
 
 **Create**
 
 - `__tests__/sis/readiness.test.ts` — resolver + aggregation suite (100% of resolver layer).
 - `components/sis/year-setup/year-setup-stepper.tsx` — stepper shell (rail + panel +
   Resume/Back/Next), composing the existing inline editors and launch links.
+- `app/api/sis/ay-setup/seed-calendar/route.ts` (or similar) — thin AY-wide wrapper that
+  loops `ensureTermSeeded` over the AY's dated terms for the one-click calendar action,
+  busting `sis:${ay}`.
 - (Possibly) a small hub readiness card component for `/sis`.
 
 **Repurpose / remove**
@@ -192,14 +206,30 @@ The four-card "Year Setup" grid on `/sis` (`app/(sis)/sis/page.tsx`) is replaced
 - `components/sis/year-setup/year-setup-control-center.tsx` — its content is superseded by
   the stepper; either repurposed into the stepper or removed.
 
-## Open questions (resolve during planning)
+## Resolved (investigation 2026-06-26)
 
-1. **Calendar one-click generate** — does a clean single-action "generate standard school
-   days for all terms" backend exist, or does step 2 stay launch-only?
-2. **Letterhead "required fields"** — which `school_config` columns count toward "ready"
-   (and note migration 054/101 seed HFSE defaults, so this step is usually pre-satisfied)?
-3. **Grading sheets** — embed `GenerateSheetsDialog` inline, or launch to
-   `/markbook/sections`?
+1. **Calendar one-click generate — feasible, cheap.** School-day rows already auto-seed as
+   an RSC side-effect when `/sis/calendar` loads (`ensureTermSeeded` loop), and a per-term
+   `autofill_weekdays` POST action exists (`app/api/attendance/calendar/route.ts`) with no
+   UI caller. Decision: add a **thin AY-wide seed route** that loops `ensureTermSeeded` over
+   the AY's dated terms (reuses `weekdaysBetween` + idempotent upsert; ~10 lines) for the
+   one-click action, and keep "Open `/sis/calendar`" as the escape hatch. Readiness
+   "covered" = a term has **≥1** `school_calendar` row (not full-day completeness) — matches
+   the current `checkCalendar`.
+2. **Letterhead required fields — `organization_name` + `address_line_1`.** All letterhead
+   columns come from **migration 054** (there is no migration 101; "101" is the **KD**
+   number). `<ReportCardLetterhead>` renders every field conditionally; only org-name +
+   address read as "broken if blank" (logo/phone/website/email/PEI degrade gracefully).
+   `school_config` is a **global singleton (id=1)** seeded with real HFSE values by 054 (+ a
+   code-side `DEFAULT_SCHOOL_CONFIG` fallback), so this step is **usually already green** and
+   AY-independent. Keep it as a required step (honest breadth); it rarely blocks.
+3. **Grading sheets — embed `GenerateSheetsDialog` controlled (AY scope).** It's already a
+   controlled, trigger-less-capable component (`open` prop + omit `children`); the AY-scoped
+   usage is proven in `ay-setup-data-table.tsx`. `POST /api/grading-sheets/bulk-create`
+   accepts `{ ay_id }` and creates sheets for **all** sections in one idempotent call,
+   returning `{ inserted, reason }`. Zero new UI logic — just a stepper button that flips
+   `open`. (Optional: add an `onCompleted?(inserted)` prop if the step needs the count
+   client-side; otherwise `router.refresh()` + the re-fetched ring suffices.)
 
 ## Cross-references
 
