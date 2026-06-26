@@ -4,7 +4,6 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import {
-  APPLICATION_TERMINAL_REASON_VALUES,
   APPLICATION_TERMINAL_STATUSES,
   ENROLLED_PREREQ_STAGES,
   isAdmissionsStageFrozen,
@@ -14,6 +13,7 @@ import {
   STAGE_LABELS,
   STAGE_TERMINAL_STATUS,
   StageUpdateSchema,
+  validateTerminalReason,
   type StageKey,
 } from '@/lib/schemas/sis';
 import { pickSectionForApplicant } from '@/lib/sis/class-assignment';
@@ -23,6 +23,7 @@ import {
   STP_CONDITIONAL_SLOT_KEYS,
 } from '@/lib/sis/queries';
 import { getEnrolmentPosition } from '@/lib/sis/terms';
+import { stampEnrolledAtIfNull } from '@/lib/sis/enrolled-at';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { sgToday } from '@/lib/dates';
@@ -538,7 +539,11 @@ export async function PATCH(
   }
 
   // 2c) Terminal-status reason gate.
-  // When the application stage flips to a terminal status, require a reason.
+  // When the application stage flips to Cancelled / Withdrawn, a reason is
+  // REQUIRED (and notes are required when the reason is "Other"). Shared
+  // `validateTerminalReason` so the contract matches the unit test + the UI.
+  // 422 carries a machine-readable `code` (reason_required / notes_required)
+  // alongside the human message.
   if (
     stageKey === 'application' &&
     (APPLICATION_TERMINAL_STATUSES as readonly string[]).includes(status ?? '')
@@ -548,23 +553,10 @@ export async function PATCH(
     const notes = (extras as Record<string, unknown> | undefined)
       ?.terminalNotes as string | undefined;
 
-    if (
-      !reason ||
-      !(APPLICATION_TERMINAL_REASON_VALUES as readonly string[]).includes(
-        reason
-      )
-    ) {
+    const gate = validateTerminalReason(reason, notes);
+    if (!gate.ok) {
       return NextResponse.json(
-        {
-          error:
-            'Reason is required when cancelling or withdrawing an application.',
-        },
-        { status: 422 }
-      );
-    }
-    if (reason === 'other' && !notes?.trim()) {
-      return NextResponse.json(
-        { error: 'Notes are required when reason is "Other".' },
+        { error: gate.error, code: gate.code },
         { status: 422 }
       );
     }
@@ -577,6 +569,19 @@ export async function PATCH(
   if (upErr) {
     console.error('[sis stage PATCH] update failed:', upErr.message);
     return NextResponse.json({ error: upErr.message }, { status: 500 });
+  }
+
+  // 2.5) Capture the enrolment moment (write-once). Whenever the application
+  // stage reaches an Enrolled state, stamp enrolledAt = now() — but only when
+  // it's still NULL, so a re-enrol or any later edit never overwrites the
+  // original moment (migration 075). Fires on BOTH Enrolled and Enrolled
+  // (Conditional), so the timestamp can't be skipped on the conditional path.
+  // Best-effort: a failed stamp logs a warning and never blocks the flip.
+  if (
+    stageKey === 'application' &&
+    (status === 'Enrolled' || status === 'Enrolled (Conditional)')
+  ) {
+    await stampEnrolledAtIfNull(supabase, statusTable, enroleeNumber);
   }
 
   // 3) Audit log diff — only fields that actually changed.

@@ -1,10 +1,21 @@
+import 'server-only';
+
 /**
  * Pure helpers for the Attendance Insights page comparison logic.
  *
  * Extracted so the hero badge and Section-1 card use the identical signal,
- * and the decision is independently unit-testable (no Next.js / Supabase
- * imports — safe in any environment).
+ * and the decision is independently unit-testable. Pure helpers like
+ * `rateBadge` and `shapeRateTrendPoints` have no server-only imports and are
+ * unit-tested directly.
  */
+
+import { getDashboardWindows } from '@/lib/dashboard/windows';
+import {
+  kpisFor,
+  loadDailyRows,
+  sliceDailyRows,
+} from '@/lib/attendance/dashboard';
+import type { AyTrendPoint } from '@/lib/dashboard/insights-trend';
 
 export type BadgeTone = 'muted' | 'mint' | 'amber';
 
@@ -42,4 +53,81 @@ export function rateBadge(
     label: `${rate}% vs ${priorRate}% in ${compareAy}`,
     tone: rate >= priorRate ? 'mint' : 'amber',
   };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Per-term attendance rate trend — for the two-AY overlay chart.
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Pure shaping helper: given a map of AY → per-term rates (keyed by term
+ * number 1–4), produce the flat `AyTrendPoint[]` array that `buildAyTrend`
+ * expects. Separated so it can be unit-tested without hitting the DB.
+ *
+ * `ratesByAy`: Map<ayCode, Map<termNumber, attendancePct | null>>
+ */
+export function shapeRateTrendPoints(
+  ratesByAy: Map<string, Map<number, number | null>>
+): AyTrendPoint[] {
+  const points: AyTrendPoint[] = [];
+  for (const [ayCode, termMap] of ratesByAy) {
+    for (const [termNumber, value] of termMap) {
+      points.push({
+        periodLabel: `T${termNumber}`,
+        ayCode,
+        value,
+      });
+    }
+  }
+  return points;
+}
+
+/**
+ * For each AY in `ays`, load its cached daily rows and slice them per each
+ * term window (T1–T4). Returns one `AyTrendPoint` per (AY × term).
+ *
+ * Terms with no encoded rows produce `value: null` so the chart renders a gap
+ * rather than a misleading zero (recharts `connectNulls={false}`).
+ *
+ * Data source: `loadDailyRows(ay)` (cached per-AY, 300s TTL) sliced per term
+ * windows from `getDashboardWindows(ay).term.byNumber`.
+ */
+export async function getAttendanceRateTrendByAy(
+  ays: string[]
+): Promise<AyTrendPoint[]> {
+  if (ays.length === 0) return [];
+
+  // Fan out: one loadDailyRows + one getDashboardWindows per AY in parallel.
+  const results = await Promise.all(
+    ays.map(async (ayCode) => {
+      const [rows, windows] = await Promise.all([
+        loadDailyRows(ayCode),
+        getDashboardWindows(ayCode),
+      ]);
+      return { ayCode, rows, windows };
+    })
+  );
+
+  const ratesByAy = new Map<string, Map<number, number | null>>();
+
+  for (const { ayCode, rows, windows } of results) {
+    const termMap = new Map<number, number | null>();
+
+    for (let t = 1; t <= 4; t++) {
+      const range = windows.term.byNumber[t as 1 | 2 | 3 | 4];
+      if (!range) {
+        // Term not configured for this AY — skip (won't produce a null point
+        // so the chart doesn't show an empty T3/T4 slot for a partial AY).
+        continue;
+      }
+      const sliced = sliceDailyRows(rows, range.from, range.to);
+      const kpis = kpisFor(sliced);
+      // Treat zero encoded days as null so the chart renders a gap, not 0%.
+      termMap.set(t, kpis.encodedDays > 0 ? kpis.attendancePct : null);
+    }
+
+    ratesByAy.set(ayCode, termMap);
+  }
+
+  return shapeRateTrendPoints(ratesByAy);
 }

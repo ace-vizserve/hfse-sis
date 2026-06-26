@@ -1,5 +1,3 @@
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
 import {
   ArrowLeft,
   CalendarCheck,
@@ -7,8 +5,17 @@ import {
   Percent,
   Users,
 } from 'lucide-react';
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
 
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { DailyEntry } from '@/components/attendance/daily-entry';
+import { ExportSheetButton } from '@/components/attendance/export-sheet-button';
+import SheetContextCard from '@/components/attendance/sheet-context';
+import { StudentLookupSheet } from '@/components/attendance/student-lookup-sheet';
+import {
+  AttendanceWideGrid,
+  type WideGridEnrolment,
+} from '@/components/attendance/wide-grid';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,28 +32,27 @@ import {
   getCalendarEventsForTerm,
   getDedupedSchoolCalendarForTerm,
 } from '@/lib/attendance/calendar';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import {
   getCompassionateUsageForSection,
   getDailyForSection,
   getSectionAttendanceSummary,
   getVacationLeaveUsageForSection,
 } from '@/lib/attendance/queries';
-import { getSchoolConfig } from '@/lib/sis/school-config';
+import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
+import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { sgToday } from '@/lib/dates';
+import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
-import {
-  AttendanceWideGrid,
-  type WideGridEnrolment,
-} from '@/components/attendance/wide-grid';
-import { StudentLookupSheet } from '@/components/attendance/student-lookup-sheet';
-import { DailyEntry } from '@/components/attendance/daily-entry';
+import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
+import { getSchoolConfig } from '@/lib/sis/school-config';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type LevelLite = { code: string; label: string };
 type SectionRow = {
   id: string;
   name: string;
   academic_year_id: string;
+  schedule: string | null;
   level: LevelLite | LevelLite[] | null;
 };
 
@@ -70,7 +76,7 @@ export default async function SectionAttendancePage({
 
   const { data: sectionRaw } = await supabase
     .from('sections')
-    .select('id, name, academic_year_id, level:levels(code, label)')
+    .select('id, name, academic_year_id, schedule, level:levels(code, label)')
     .eq('id', sectionId)
     .maybeSingle();
   if (!sectionRaw) notFound();
@@ -119,7 +125,7 @@ export default async function SectionAttendancePage({
     );
   }
 
-  // Form adviser display (for header).
+  // Form adviser display (for the context card).
   const { data: advisers } = await supabase
     .from('teacher_assignments')
     .select('teacher_user_id, role')
@@ -127,8 +133,19 @@ export default async function SectionAttendancePage({
     .eq('role', 'form_adviser')
     .limit(1);
   const adviserUserId = advisers?.[0]?.teacher_user_id ?? null;
-  // We don't have a user-names table; email is looked up via auth but we
-  // skip that here — the section.name + level is enough for the header.
+
+  const [emailEntries, nameEntries] = await Promise.all([
+    getTeacherEmailMap(),
+    getStaffDisplayEntries(),
+  ]);
+  const emailByUserId = new Map(emailEntries);
+  const nameByEmail = new Map(nameEntries);
+  const adviserEmail = adviserUserId
+    ? (emailByUserId.get(adviserUserId) ?? null)
+    : null;
+  const adviserName = adviserEmail
+    ? (nameByEmail.get(adviserEmail) ?? adviserEmail)
+    : null;
 
   // Enrolment roster — include new metadata fields from migration 015 +
   // vacation_leave_allowance_per_term from migration 048 (KD #94).
@@ -296,22 +313,26 @@ export default async function SectionAttendancePage({
 
       {/* Term switcher — sheet view only; daily is locked to the current term. */}
       {view === 'sheet' && terms.length > 1 && (
-        <Tabs value={selectedTermId} aria-label="Term">
-          <TabsList>
-            {terms.map((t) => (
-              <TabsTrigger key={t.id} value={t.id} asChild>
-                <Link href={`/attendance/${sectionId}?term_id=${t.id}`}>
-                  {t.label}
-                  {t.is_current && (
-                    <span className="ml-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
-                      current
-                    </span>
-                  )}
-                </Link>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center justify-between w-full">
+          <Tabs value={selectedTermId} aria-label="Term">
+            <TabsList>
+              {terms.map((t) => (
+                <TabsTrigger key={t.id} value={t.id} asChild>
+                  <Link href={`/attendance/${sectionId}?term_id=${t.id}`}>
+                    {t.label}
+                    {t.is_current && (
+                      <span className="ml-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                        current
+                      </span>
+                    )}
+                  </Link>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+
+          <ExportSheetButton sectionId={sectionId} termId={selectedTermId} />
+        </div>
       )}
 
       {/* Term-level stats — sheet view only. The daily view renders its own
@@ -361,6 +382,22 @@ export default async function SectionAttendancePage({
             />
           </div>
         </div>
+      )}
+
+      {view === 'sheet' && (
+        <SheetContextCard
+          term={{ label: selectedTerm?.label ?? '' }}
+          courseLabel={level?.label ?? ''}
+          sectionName={section.name}
+          formAdviser={adviserName}
+          scheduleLabel={
+            section.schedule
+              ? SCHEDULE_LABELS[section.schedule as Schedule]
+              : null
+          }
+          calendar={calendar}
+          events={events}
+        />
       )}
 
       {/* key forces a remount on section/term change so the grid re-seeds its

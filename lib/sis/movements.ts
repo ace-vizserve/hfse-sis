@@ -186,10 +186,21 @@ export async function getMovementEvents(
     const term = e.ayCode
       ? termForDateInPreloaded(e.date, e.ayCode, preloaded)
       : null;
-    // Prefer the preloaded result; fall back to the context-supplied label
-    // (only metadata.update late-enrolled rows carry that).
-    const termNumber = term?.termNumber ?? e.ctxTermNumber ?? null;
-    const termLabel = term?.termLabel ?? e.ctxTermLabel ?? null;
+    // For late-enrolled events the registrar's explicit override
+    // (lateEnrolleeTermNumber in the audit context, surfaced as ctxTermNumber)
+    // is the authoritative joining term per KD #111/#117/#146 — it is set by
+    // the registrar when tagging a student, while the date-derived term is only
+    // a fallback. For all other event kinds, the date-derived term comes first
+    // (it is strictly more accurate than any context value, which is recorded
+    // at write-time and may lag the actual calendar).
+    const termNumber =
+      e.kind === 'late-enrolled'
+        ? (e.ctxTermNumber ?? term?.termNumber ?? null)
+        : (term?.termNumber ?? e.ctxTermNumber ?? null);
+    const termLabel =
+      e.kind === 'late-enrolled'
+        ? (e.ctxTermLabel ?? term?.termLabel ?? null)
+        : (term?.termLabel ?? e.ctxTermLabel ?? null);
 
     if (e.kind === 'section-transfer') {
       return {
@@ -430,8 +441,16 @@ async function fetchMetadataEvents(
       reasonLabel,
     });
   }
+  // Track late-row IDs so that re-enrolled rows that are ALSO late-enrolled
+  // (the route sets both lateEnrolleeTransition=true AND reEnrolment=true in
+  // the same audit context) are not double-counted. When both flags co-exist,
+  // late-enrolled is dominant — it tells the story of *how* the student joined,
+  // while re-enrolled tells *that* they had a prior enrolment. From the
+  // population-movement perspective the event is a single late join.
+  const lateRowIds = new Set<string>();
   for (const row of lateRows) {
     if (!row.entity_id) continue;
+    lateRowIds.add(row.id);
     const ctx = (row.context ?? {}) as Record<string, unknown>;
     out.push({
       id: row.id,
@@ -447,6 +466,9 @@ async function fetchMetadataEvents(
   }
   for (const row of reEnrolledRows) {
     if (!row.entity_id) continue;
+    // Skip rows already emitted as late-enrolled (de-dup, Bug 1 fix — see note
+    // above). The row carries both flags; late-enrolled is the dominant kind.
+    if (lateRowIds.has(row.id)) continue;
     out.push({
       id: row.id,
       kind: 're-enrolled',
@@ -559,8 +581,8 @@ async function enrichWithStudents(
   const studentById = new Map<string, StudentRow>();
   if (studentIds.length > 0) {
     // Chunk to keep .in() lists tractable (mirrors lib/sis/drill.ts:185).
-    for (let i = 0; i < studentIds.length; i += 500) {
-      const chunk = studentIds.slice(i, i + 500);
+    for (let i = 0; i < studentIds.length; i += 100) {
+      const chunk = studentIds.slice(i, i + 100);
       const { data, error } = await service
         .from('students')
         .select('id, student_number, first_name, last_name')

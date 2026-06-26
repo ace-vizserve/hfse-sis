@@ -297,9 +297,13 @@ export function MovementsTable({ events, ayCode, includeAllAYs }: Props) {
       <DataTable<MovementEvent>
         data={events}
         columns={columns}
-        getRowId={(row) =>
-          `${row.ayCode}-${row.date}-${row.enroleeNumber}-${row.kind}`
-        }
+        // Each MovementEvent.id is the audit_log row UUID — globally unique.
+        // The previous composite key (ayCode-date-enroleeNumber-kind) could
+        // collide when the same student had two events of the same kind on
+        // the same day (e.g. withdraw then re-enrol). Duplicate getRowId
+        // values cause React/TanStack to retain stale row DOM across a data
+        // change, producing the "previous tab's rows append" symptom.
+        getRowId={(row) => row.id}
         searchKeys={[
           (r) => r.studentName,
           (r) => r.studentNumber ?? '',

@@ -438,6 +438,42 @@ export const APPLICATION_TERMINAL_STATUSES = [
   'Withdrawn',
 ] as const;
 
+// Reason gate for cancelling / withdrawing an application. A terminal flip
+// (Cancelled / Withdrawn) MUST carry a valid reason, and when the reason is
+// 'other' it MUST carry notes. Shared by the stage PATCH route (server
+// enforcement) and unit-tested directly, so the contract can't drift.
+//   - ok: the gate passes
+//   - { code: 'reason_required' }: missing/invalid reason
+//   - { code: 'notes_required' }:  reason is 'other' but notes are blank
+export type TerminalReasonGateResult =
+  | { ok: true }
+  | { ok: false; code: 'reason_required' | 'notes_required'; error: string };
+
+export function validateTerminalReason(
+  reason: string | null | undefined,
+  notes: string | null | undefined
+): TerminalReasonGateResult {
+  if (
+    !reason ||
+    !(APPLICATION_TERMINAL_REASON_VALUES as readonly string[]).includes(reason)
+  ) {
+    return {
+      ok: false,
+      code: 'reason_required',
+      error:
+        'Reason is required when cancelling or withdrawing an application.',
+    };
+  }
+  if (reason === 'other' && !notes?.trim()) {
+    return {
+      ok: false,
+      code: 'notes_required',
+      error: 'Notes are required when reason is "Other".',
+    };
+  }
+  return { ok: true };
+}
+
 // Each stage maps to status / remarks / extras column names on enrolment_status.
 // The route reads this map to know which columns to write.
 export type StageColumns = {

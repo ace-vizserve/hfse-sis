@@ -14,6 +14,7 @@ import {
   TrendingUp,
   UserPlus,
 } from 'lucide-react';
+import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -302,7 +303,6 @@ export default async function AdmissionsDashboard({
     referral,
     kpisResult,
     velocity,
-    histogram,
     appsByLevel,
     docCompletion,
     drillRows,
@@ -310,6 +310,7 @@ export default async function AdmissionsDashboard({
     admissionsChasePriority,
     feedbackResult,
     preCourseStats,
+    histogram,
   ] = await Promise.all([
     getPipelineStageBreakdown(selectedAy),
     getConversionFunnel(selectedAy),
@@ -318,7 +319,6 @@ export default async function AdmissionsDashboard({
     getReferralSourceBreakdown(selectedAy),
     getAdmissionsKpisRange(rangeInput),
     getApplicationsVelocityRange(rangeInput),
-    getTimeToEnrollHistogram(selectedAy),
     getApplicationsByLevelRange(rangeInput),
     getDocumentCompletionByLevel(selectedAy),
     // withDocs:true here because the page-level pre-fetch seeds initialRows
@@ -339,6 +339,10 @@ export default async function AdmissionsDashboard({
     getAdmissionsPriority({ ayCode: selectedAy }),
     getAdmissionsFeedback(selectedAy),
     getPreCourseStats(selectedAy),
+    // Time-to-enrol histogram — reads real enrolledAt (migration 075).
+    // Empty when no enrolments have been stamped yet; the component renders
+    // a neutral "building" state in that case.
+    getTimeToEnrollHistogram(selectedAy),
   ]);
 
   // Freshen runs in parallel with the data fetches above; awaited here so
@@ -401,6 +405,86 @@ export default async function AdmissionsDashboard({
     ? `vs ${formatRangeLabel(kpisResult.comparisonRange)}`
     : undefined;
 
+  // ── Lede derivation ────────────────────────────────────────────────────
+  // Single-sentence description for DashboardHero derived from live signals.
+  // Priority: hard blockers (rejected/expired) > new applications > chase
+  // volume > stale applications > all-clear. Neutral for oversight roles.
+  const newAppsCount = admissionsChasePriority.headline.value;
+  const chaseHardCount = chaseSummary.withRejected + chaseSummary.withExpired;
+  const chaseTotal =
+    chaseSummary.withToFollow +
+    chaseSummary.withRejected +
+    chaseSummary.withExpired;
+
+  function buildLedeDescription(operational: boolean): string {
+    if (!operational) {
+      return 'Read-only oversight of the pre-enrolment funnel. Day-to-day triage, document chase, and validation are owned by the admissions team and registrar.';
+    }
+    if (chaseHardCount > 0 && newAppsCount > 0) {
+      return `${newAppsCount === 1 ? '1 new application' : `${newAppsCount} new applications`} need first review, and ${chaseHardCount === 1 ? '1 applicant has' : `${chaseHardCount} applicants have`} rejected or expired documents — both need action today.`;
+    }
+    if (chaseHardCount > 0) {
+      return `${chaseHardCount === 1 ? '1 applicant has' : `${chaseHardCount} applicants have`} rejected or expired documents. Chase parents to unblock their enrolment.`;
+    }
+    if (newAppsCount > 0) {
+      return `${newAppsCount === 1 ? '1 new application is' : `${newAppsCount} new applications are`} waiting for first review. Open each applicant to move them forward.`;
+    }
+    if (chaseTotal > 0) {
+      return `${chaseTotal === 1 ? '1 applicant needs a document chase' : `${chaseTotal} applicants need a document chase`} before their enrolment can complete.`;
+    }
+    if (outdated.length >= 3) {
+      return `${outdated.length} ${outdated.length === 1 ? 'application has' : 'applications have'} gone stale — stages not updated in over a week.`;
+    }
+    return 'All caught up — no pending applications or document chases right now.';
+  }
+
+  // Single RecommendationCallout tone derived from the strongest live signal.
+  // Rendered only for operational roles after the chase strip cluster.
+  function buildLedeCallout(): {
+    tone: 'positive' | 'watch' | 'act';
+    text: string;
+  } | null {
+    if (!isOperational) return null;
+    if (chaseHardCount > 0) {
+      return {
+        tone: 'act',
+        text:
+          chaseHardCount === 1
+            ? 'One applicant has a rejected or expired document — notify their parent to re-upload before the funnel stalls.'
+            : `${chaseHardCount} applicants have rejected or expired documents. Re-notify their parents now so enrolment can continue.`,
+      };
+    }
+    if (newAppsCount > 0) {
+      return {
+        tone: 'watch',
+        text:
+          newAppsCount === 1
+            ? 'One new application is waiting. Open it and move the applicant to the next stage.'
+            : `${newAppsCount} new applications are waiting for first review. Work through them before they go stale.`,
+      };
+    }
+    if (chaseTotal > 0) {
+      return {
+        tone: 'watch',
+        text: `${chaseTotal} ${chaseTotal === 1 ? 'applicant is' : 'applicants are'} in the chase queue. Send a bulk reminder to move them forward.`,
+      };
+    }
+    if (
+      chaseSummary.totalApplicants > 0 &&
+      chaseTotal === 0 &&
+      chaseSummary.withUploaded === 0
+    ) {
+      return {
+        tone: 'positive',
+        text: 'Nothing in the chase queue right now — the funnel is moving cleanly.',
+      };
+    }
+    return null;
+  }
+
+  const ledeDescription = buildLedeDescription(isOperational);
+  const ledeCallout = buildLedeCallout();
+
   // Build insights from already-fetched data — pure derivation, no extra DB calls.
   const topRef = referral[0];
   const totalRef = referral.reduce((s, r) => s + r.count, 0);
@@ -417,8 +501,6 @@ export default async function AdmissionsDashboard({
     enrolled: kpisResult.current.enrolledInRange,
     conversionPct: kpisResult.current.conversionPct,
     conversionPctPrior: kpisResult.comparison?.conversionPct,
-    avgDaysToEnroll: kpisResult.current.avgDaysToEnroll,
-    avgDaysToEnrollPrior: kpisResult.comparison?.avgDaysToEnroll,
     appsDelta: kpisResult.delta ?? undefined,
     outdatedCount: outdated.length,
     outdatedHref,
@@ -441,11 +523,7 @@ export default async function AdmissionsDashboard({
         title={
           isOperational ? 'Admissions dashboard' : 'Admissions — oversight'
         }
-        description={
-          isOperational
-            ? 'Inquiry → applied → interviewed → offered → accepted. Once enrolled, the permanent record lives in Records.'
-            : 'Read-only oversight of the pre-enrolment funnel. Day-to-day triage, document chase, and validation are owned by the admissions team and registrar.'
-        }
+        description={ledeDescription}
         badges={[
           { label: selectedAy },
           {
@@ -491,12 +569,17 @@ export default async function AdmissionsDashboard({
       {/* New applications waiting on triage. */}
       {isOperational && <NewApplicationsPriority ayCode={selectedAy} />}
 
-      {/* Chase strip + chase priority + chase narrative. */}
+      {/* Chase strip + chase priority + chase narrative + single directive callout. */}
       {isOperational && (
         <>
           <DocumentChaseQueueStrip ayCode={selectedAy} lens="admissions" />
           <PriorityPanel payload={admissionsChasePriority} />
           <InsightsPanel insights={chaseInsights} />
+          {ledeCallout && (
+            <RecommendationCallout tone={ledeCallout.tone} className="w-full">
+              {ledeCallout.text}
+            </RecommendationCallout>
+          )}
         </>
       )}
 
@@ -565,16 +648,25 @@ export default async function AdmissionsDashboard({
             />
           )}
         />
+        {/* Avg time to enrol — reads real enrolledAt (migration 075). Shows
+            a neutral em-dash with a "starts filling" subtext when sampleSize=0
+            so we never display "0d" on a metric that has no data yet. */}
         <MetricCard
-          label="Avg time to enroll"
-          value={kpisResult.current.avgDaysToEnroll}
-          format="days"
+          label="Avg time to enrol"
+          value={
+            kpisResult.current.sampleSize > 0
+              ? kpisResult.current.avgDaysToEnroll
+              : '—'
+          }
+          format={kpisResult.current.sampleSize > 0 ? 'days' : 'raw'}
           icon={Hourglass}
           intent="default"
           subtext={
-            kpisResult.comparison
-              ? `n=${kpisResult.current.sampleSize} · ${kpisResult.comparison.avgDaysToEnroll}d prior`
-              : `n=${kpisResult.current.sampleSize}`
+            kpisResult.current.sampleSize > 0
+              ? kpisResult.comparison
+                ? `n=${kpisResult.current.sampleSize} · ${kpisResult.comparison.avgDaysToEnroll}d prior`
+                : `n=${kpisResult.current.sampleSize}`
+              : 'Starts filling as enrolments are recorded'
           }
           deltaGoodWhen="down"
           drillSheet={() => (
@@ -600,10 +692,16 @@ export default async function AdmissionsDashboard({
         <Card>
           <CardHeader>
             <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-              Applications per day
+              Applications per day · {formatRangeLabel(rangeInput)}
             </CardDescription>
             <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-              Intake velocity
+              {kpisResult.current.applicationsInRange > 0
+                ? kpisResult.delta && kpisResult.delta.direction === 'up'
+                  ? 'Applications are picking up'
+                  : kpisResult.delta && kpisResult.delta.direction === 'down'
+                    ? 'Applications are slowing'
+                    : 'Intake velocity'
+                : 'Intake velocity'}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -616,12 +714,10 @@ export default async function AdmissionsDashboard({
         </Card>
       )}
 
-      {/* Bento row 2: pipeline stage (wide, current-state breakdown — the
-          glance-level "where is our intake right now") + time-to-enroll
-          histogram (narrow). The conversion-funnel cumulative chart was
-          dropped because its cumulative-counting interpretation contradicted
-          the at-a-glance "current status" purpose; the biggest drop-off
-          survives as an `admissionsInsights` narrative below. */}
+      {/* Bento row 2: pipeline stage (wide — current-state breakdown of where
+          the intake sits right now) + time-to-enrol histogram (narrow).
+          The histogram shows a neutral "building" state when enrolledAt has
+          no data yet; it self-heals as enrolments accumulate. */}
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <PipelineDrillCard

@@ -201,6 +201,17 @@ export async function getSisDashboardSummary(
     else if (s === 'Withdrawn') withdrawn += 1;
     else if (s) pending += 1;
   }
+  // KNOWN LIMITATION (Task 1 / KD #147): After the post-enrolment withdrawal
+  // fix, a student who enrolled and then withdrew via Records keeps
+  // applicationStatus='Enrolled' (the OUTCOME is preserved). This means:
+  //   - `enrolled` counts them as enrolled (shows the admission outcome, not
+  //     the current operational state).
+  //   - `withdrawn` only counts pre-enrolment withdrawals.
+  // For the authoritative "currently enrolled / currently withdrawn" count,
+  // join section_students.enrollment_status instead. This dashboard summary
+  // is a lightweight display-only function and this behaviour is acceptable
+  // for v1 — the Records movements feed is the correct surface for tracking
+  // operational withdrawal counts (KD #83).
   return {
     ayCode,
     totalStudents: rows.length,

@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
+import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { ClassAssignmentReadinessCard } from '@/components/sis/class-assignment-readiness-card';
@@ -165,6 +166,34 @@ export default async function RecordsDashboard({
     ? `vs ${formatRangeLabel(kpisResult.comparisonRange)}`
     : undefined;
 
+  // Derive the top-of-fold signal for the operational lede and recommendation.
+  // Unsynced students are the highest-urgency gap: grading + attendance can't
+  // reach them until a section is assigned. Doc backlog is next.
+  const pendingDocCount = docBacklog.reduce((sum, row) => sum + row.pending, 0);
+
+  // Build the operational lede sentence from live counts. Neutral when clear.
+  function buildLede(): string {
+    if (!isCurrentAy) {
+      return `Historical record for ${selectedAy}. Changes and actions apply to the current year only.`;
+    }
+    if (unsyncedCount > 0) {
+      const studentWord =
+        unsyncedCount === 1 ? 'student needs' : 'students need';
+      const docClause =
+        pendingDocCount > 0
+          ? ` ${pendingDocCount.toLocaleString('en-SG')} document${pendingDocCount === 1 ? '' : 's'} also awaiting validation.`
+          : '';
+      return `${unsyncedCount.toLocaleString('en-SG')} enrolled ${studentWord} a class section before grading and attendance can reach them.${docClause}`;
+    }
+    if (pendingDocCount > 0) {
+      return `${pendingDocCount.toLocaleString('en-SG')} document${pendingDocCount === 1 ? '' : 's'} uploaded and waiting for validation.`;
+    }
+    if (kpisResult.current.expiringSoon > 0) {
+      return `${kpisResult.current.expiringSoon.toLocaleString('en-SG')} document${kpisResult.current.expiringSoon === 1 ? '' : 's'} expiring within 60 days — chase families before they lapse.`;
+    }
+    return `Enrolled students, document records, and level distribution for ${selectedAy}.`;
+  }
+
   const insights = recordsInsights({
     newEnrollments: kpisResult.current.enrollmentsInRange,
     withdrawals: kpisResult.current.withdrawalsInRange,
@@ -188,7 +217,7 @@ export default async function RecordsDashboard({
         }
         description={
           isOperational
-            ? 'Permanent cross-year record of every enrolled student. Document backlog, expiring documents, level distribution, recent edits. Pre-enrolment applications live on Admissions.'
+            ? buildLede()
             : 'Read-only oversight of enrolled students across every academic year. Day-to-day record management is owned by the registrar.'
         }
         badges={[
@@ -222,10 +251,44 @@ export default async function RecordsDashboard({
             variant="outline"
             className="col-start-2 mt-2 w-fit"
           >
-            <Link href="/records/unsynced">Students needing setup</Link>
+            <Link href="/records/unsynced">
+              Assign{' '}
+              {unsyncedCount === 1
+                ? 'this student'
+                : `${unsyncedCount} students`}{' '}
+              to sections
+            </Link>
           </Button>
         </Alert>
       )}
+
+      {/* Recommendation callout — operational only; fires when the lede
+          surfaces a secondary priority that doesn't have its own full Alert.
+          Omitted when: unsynced students exist (the Alert above already acts),
+          non-current AY, or oversight roles. */}
+      {isOperational &&
+        isCurrentAy &&
+        unsyncedCount === 0 &&
+        pendingDocCount === 0 &&
+        kpisResult.current.expiringSoon > 0 && (
+          <RecommendationCallout tone="watch">
+            {kpisResult.current.expiringSoon.toLocaleString('en-SG')} document
+            {kpisResult.current.expiringSoon === 1 ? '' : 's'} expir
+            {kpisResult.current.expiringSoon === 1 ? 'es' : 'e'} within 60 days
+            — notify families now so renewals land before they lapse.
+          </RecommendationCallout>
+        )}
+      {isOperational &&
+        isCurrentAy &&
+        unsyncedCount === 0 &&
+        pendingDocCount > 0 && (
+          <RecommendationCallout tone="watch">
+            {pendingDocCount.toLocaleString('en-SG')} document
+            {pendingDocCount === 1 ? '' : 's'} uploaded and waiting for
+            validation — clear the backlog below so families aren&rsquo;t left
+            waiting.
+          </RecommendationCallout>
+        )}
 
       <ComparisonToolbar
         ayCode={selectedAy}

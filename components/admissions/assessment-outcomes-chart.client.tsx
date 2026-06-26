@@ -48,6 +48,17 @@ export function AssessmentOutcomesChart({
   ];
   const empty = rows.every((r) => r.Pass + r.Fail + r.Unknown === 0);
 
+  // Honest denominator: most applicants have no grade recorded (the assessment
+  // columns are sparsely populated — ~15% in prod). Surface how many were
+  // actually graded so the pass/fail split isn't misread as the whole cohort.
+  const mathGraded = data.mathPass + data.mathFail;
+  const engGraded = data.engPass + data.engFail;
+  const cohort = data.mathPass + data.mathFail + data.mathUnknown;
+  const gradedNote =
+    cohort > 0
+      ? `Grades recorded for ${mathGraded} math · ${engGraded} English of ${cohort.toLocaleString('en-SG')} applicants`
+      : null;
+
   return (
     <Card className="h-full">
       <CardHeader>
@@ -57,6 +68,9 @@ export function AssessmentOutcomesChart({
         <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
           Entrance assessment pass rate
         </CardTitle>
+        {gradedNote && (
+          <p className="text-xs text-muted-foreground">{gradedNote}</p>
+        )}
         <CardAction>
           <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
             <ClipboardCheck className="size-4" />

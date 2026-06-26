@@ -1,0 +1,84 @@
+import { monthKeyOf, monthLabelOf } from '@/lib/attendance/sheet-columns';
+import type { AttendanceStatus } from '@/lib/schemas/attendance';
+
+export type Mark = { date: string; status: AttendanceStatus | null };
+
+export type SummaryStat = {
+  /** Days carrying a counted mark (P/L/EX/A). NC and null are excluded. */
+  totalDays: number;
+  present: number;
+  late: number;
+  excused: number;
+  absent: number;
+  /** (P+L+EX)/totalDays * 100, 1dp. null when totalDays === 0. */
+  attendancePct: number | null;
+};
+
+export type MonthlySummary = {
+  month: string;
+  label: string;
+  stat: SummaryStat;
+};
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+/**
+ * HFSE sheet formula (read from AY2026 Term 3 Attendance.xlsx):
+ *   TotalDays = count of P/L/EX/A marks (COUNTA over the date range)
+ *   Attendance % = (Present + Late + Excused) / TotalDays
+ * NC and unmarked days are excluded — they behave like the template's blank cell.
+ */
+export function summarizeMarks(marks: Mark[]): SummaryStat {
+  let present = 0;
+  let late = 0;
+  let excused = 0;
+  let absent = 0;
+  for (const mk of marks) {
+    switch (mk.status) {
+      case 'P':
+        present++;
+        break;
+      case 'L':
+        late++;
+        break;
+      case 'EX':
+        excused++;
+        break;
+      case 'A':
+        absent++;
+        break;
+      default:
+        break; // 'NC' and null excluded
+    }
+  }
+  const totalDays = present + late + excused + absent;
+  const attendancePct =
+    totalDays === 0
+      ? null
+      : round1(((present + late + excused) / totalDays) * 100);
+  return { totalDays, present, late, excused, absent, attendancePct };
+}
+
+/** Per-student: month blocks (chronological) + term total. */
+export function summarizeByMonth(marks: Mark[]): {
+  months: MonthlySummary[];
+  term: SummaryStat;
+} {
+  const byMonth = new Map<string, Mark[]>();
+  for (const mk of marks) {
+    const k = monthKeyOf(mk.date);
+    const arr = byMonth.get(k) ?? [];
+    arr.push(mk);
+    byMonth.set(k, arr);
+  }
+  const months: MonthlySummary[] = Array.from(byMonth.keys())
+    .sort()
+    .map((k) => ({
+      month: k,
+      label: monthLabelOf(k),
+      stat: summarizeMarks(byMonth.get(k)!),
+    }));
+  return { months, term: summarizeMarks(marks) };
+}

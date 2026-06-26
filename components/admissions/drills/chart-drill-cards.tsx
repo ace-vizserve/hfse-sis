@@ -5,7 +5,6 @@ import * as React from 'react';
 import { AdmissionsDrillSheet } from '@/components/admissions/drills/admissions-drill-sheet';
 import { AssessmentOutcomesChart } from '@/components/admissions/assessment-outcomes-chart';
 import { ReferralSourceChart } from '@/components/admissions/referral-source-chart';
-import { ComparisonBarChart } from '@/components/dashboard/charts/comparison-bar-chart';
 import { PipelineStageChart } from '@/components/sis/pipeline-stage-chart';
 import {
   Card,
@@ -15,6 +14,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
+import { ComparisonBarChart } from '@/components/dashboard/charts/comparison-bar-chart';
 import type {
   AssessmentOutcomes,
   ReferralSource,
@@ -126,7 +126,10 @@ export function ReferralDrillCard({
   );
 }
 
-// ─── Time-to-enroll histogram ────────────────────────────────────────────────
+// ─── Time to enrol ───────────────────────────────────────────────────────────
+// Revived (2026-06-24) on real `enrolledAt` column (migration 075).
+// When all bucket counts are 0 (no enrolments stamped yet) a neutral
+// "building" state is rendered instead of an empty chart.
 
 export function TimeToEnrollDrillCard({
   data,
@@ -134,23 +137,37 @@ export function TimeToEnrollDrillCard({
   drillRows,
 }: CommonDrillProps & { data: TimeToEnrollBucket[] }) {
   const [segment, setSegment] = React.useState<string | null>(null);
+  const hasData = data.some((b) => b.count > 0);
+
   return (
     <Sheet open={!!segment} onOpenChange={(o) => !o && setSegment(null)}>
       <Card className="h-full">
         <CardHeader>
           <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-            Time to enrollment
+            Time to enrolment
           </CardDescription>
           <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            Days to close
+            {hasData ? 'Days to close' : 'Days to close'}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <ComparisonBarChart
-            data={data.map((b) => ({ category: b.label, current: b.count }))}
-            height={240}
-            onSegmentClick={setSegment}
-          />
+          {hasData ? (
+            <ComparisonBarChart
+              data={data.map((b) => ({ category: b.label, current: b.count }))}
+              height={240}
+              onSegmentClick={setSegment}
+            />
+          ) : (
+            <div className="flex h-[240px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-6 text-center">
+              <p className="font-serif text-base font-medium text-foreground">
+                No enrolments tracked yet
+              </p>
+              <p className="max-w-[22ch] text-sm leading-relaxed text-muted-foreground">
+                Days from application to enrolment will appear here once new
+                enrolments are recorded.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
       {segment && (

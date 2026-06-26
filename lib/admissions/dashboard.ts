@@ -53,6 +53,9 @@ type StatusLite = {
   enroleeNumber: string | null;
   applicationStatus: string | null;
   applicationUpdatedDate: string | null;
+  /** Write-once enrolment timestamp added by migration 075. NULL for all
+   *  historical rows — only populated from go-live onwards. */
+  enrolledAt: string | null;
   classLevel: string | null;
   levelApplied: string | null;
   assessmentGradeMath: string | number | null;
@@ -89,7 +92,14 @@ type AppLite = {
 
 type JoinedRow = AppLite & {
   applicationStatus: string | null;
+  /** Fallback-substituted staleness timestamp: `s.applicationUpdatedDate ?? a.created_at`.
+   *  Used for the pipeline-age / RAG-tier logic. Do NOT use for "time to enrol"
+   *  — use `enrolledAt` (the raw status-table value) for that. */
   applicationUpdatedDate: string | null;
+  /** Raw `applicationUpdatedDate` from the status table — null when the admissions
+   *  team never stamped it (the common case). Only non-null rows represent a
+   *  confirmed enrolment timestamp suitable for time-to-enrol arithmetic. */
+  enrolledAt: string | null;
   statusLevel: string | null;
   assessmentGradeMath: string | number | null;
   assessmentGradeEnglish: string | number | null;
@@ -125,7 +135,7 @@ async function loadJoinedRowsUncached(ayCode: string): Promise<JoinedRow[]> {
           supabase
             .from(statusTable)
             .select(
-              'enroleeNumber, applicationStatus, applicationUpdatedDate, classLevel, levelApplied, assessmentGradeMath, assessmentGradeEnglish'
+              'enroleeNumber, applicationStatus, applicationUpdatedDate, enrolledAt, classLevel, levelApplied, assessmentGradeMath, assessmentGradeEnglish'
             )
             .range(from, to) as unknown as P<StatusLite>
       ),
@@ -154,7 +164,14 @@ async function loadJoinedRowsUncached(ayCode: string): Promise<JoinedRow[]> {
     out.push({
       ...a,
       applicationStatus: s?.applicationStatus ?? null,
+      // Fallback for pipeline-age / RAG tiers — keeps staleness meaningful
+      // even for rows where the team never stamped the status-table column.
       applicationUpdatedDate: s?.applicationUpdatedDate ?? a.created_at,
+      // Real write-once timestamp from the status table (migration 075).
+      // NULL for all historical rows; only populated from go-live onwards.
+      // Used exclusively for time-to-enrol arithmetic — never the fallback-
+      // substituted `applicationUpdatedDate` (which would produce 0-day counts).
+      enrolledAt: s?.enrolledAt ?? null,
       statusLevel: s?.classLevel ?? s?.levelApplied ?? null,
       assessmentGradeMath: s?.assessmentGradeMath ?? null,
       assessmentGradeEnglish: s?.assessmentGradeEnglish ?? null,
@@ -205,29 +222,63 @@ export type TimeToEnrollment = {
   sampleSize: number;
 };
 
-export async function getAverageTimeToEnrollment(
-  ayCode: string
-): Promise<TimeToEnrollment> {
-  const rows = await loadJoinedRows(ayCode);
+// ──────────────────────────────────────────────────────────────────────────
+// Average time to enrolment (migration 075 — real enrolledAt timestamp).
+//
+// Previously deleted because applicationUpdatedDate was 0/490 populated so
+// every average was a phantom. Revived now that migration 075 adds a real
+// write-once `enrolledAt` timestamptz to ay{YY}_enrolment_status, stamped the
+// moment a student first reaches Enrolled / Enrolled (Conditional).
+//
+// Arithmetic: days = round((enrolledAt − created_at) / ms_per_day). Only rows
+// with both timestamps and a non-negative delta are counted. Historical rows
+// (NULL enrolledAt) are silently skipped — the UI handles sampleSize=0 with
+// a "building" neutral state so the metric self-heals as enrolments accumulate
+// from go-live.
+//
+// SGT note (KD #32): both are timestamptz; a duration in whole days is
+// timezone-agnostic so plain UTC arithmetic is correct here.
+// ──────────────────────────────────────────────────────────────────────────
+
+/** Pure helper — testable without the cache layer. */
+export function computeAverageTimeToEnrollment(
+  rows: Pick<JoinedRow, 'applicationStatus' | 'created_at' | 'enrolledAt'>[]
+): TimeToEnrollment {
   let total = 0;
   let n = 0;
   for (const r of rows) {
-    if (!r.created_at || !r.applicationUpdatedDate) continue;
     if (
       r.applicationStatus !== 'Enrolled' &&
       r.applicationStatus !== 'Enrolled (Conditional)'
-    ) {
+    )
       continue;
-    }
+    if (!r.created_at || !r.enrolledAt) continue;
     const start = Date.parse(r.created_at);
-    const end = Date.parse(r.applicationUpdatedDate);
+    const end = Date.parse(r.enrolledAt);
     if (Number.isNaN(start) || Number.isNaN(end)) continue;
-    const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
-    if (days < 0) continue;
+    const days = Math.round((end - start) / 86_400_000);
+    if (days < 0) continue; // guard against bad data
     total += days;
     n += 1;
   }
   return { avgDays: n > 0 ? Math.round(total / n) : 0, sampleSize: n };
+}
+
+async function loadAverageTimeToEnrollmentUncached(
+  ayCode: string
+): Promise<TimeToEnrollment> {
+  const rows = await loadJoinedRows(ayCode);
+  return computeAverageTimeToEnrollment(rows);
+}
+
+export function getAverageTimeToEnrollment(
+  ayCode: string
+): Promise<TimeToEnrollment> {
+  return unstable_cache(
+    () => loadAverageTimeToEnrollmentUncached(ayCode),
+    ['admissions', 'avg-time-to-enroll', ayCode],
+    { revalidate: CACHE_TTL_SECONDS, tags: tag(ayCode) }
+  )();
 }
 
 export type FunnelStage = {
@@ -499,9 +550,11 @@ function computeRangeKpis(
       r.applicationStatus === 'Enrolled (Conditional)';
     if (isEnrolled) {
       enrolled += 1;
-      if (r.created_at && r.applicationUpdatedDate) {
+      // Use `enrolledAt` (raw status-table value) for time-to-enrol, not the
+      // fallback-substituted `applicationUpdatedDate`, to avoid 0-day counts.
+      if (r.created_at && r.enrolledAt) {
         const start = Date.parse(r.created_at);
-        const end = Date.parse(r.applicationUpdatedDate);
+        const end = Date.parse(r.enrolledAt);
         if (!Number.isNaN(start) && !Number.isNaN(end) && end >= start) {
           totalDays += Math.round((end - start) / 86_400_000);
           samples += 1;
@@ -644,7 +697,15 @@ export function getApplicationsVelocityRange(
   )(input);
 }
 
-// Time-to-enroll histogram — 7 day-buckets.
+// ──────────────────────────────────────────────────────────────────────────
+// Time-to-enrol histogram — days from submission to enrolment, bucketed.
+//
+// Revived (2026-06-24) now that migration 075 provides a real write-once
+// `enrolledAt` timestamptz. Reads `enrolledAt` only — never the fallback-
+// substituted `applicationUpdatedDate` — so un-stamped historical rows are
+// simply omitted and the histogram is correctly empty (not 0-day phantom).
+// The UI renders a neutral "building" card when every bucket count is 0.
+// ──────────────────────────────────────────────────────────────────────────
 
 export type TimeToEnrollBucket = {
   label: string;
@@ -653,15 +714,19 @@ export type TimeToEnrollBucket = {
   count: number;
 };
 
-const HISTOGRAM_BUCKETS = [
-  { label: '0–7d', lo: 0, hi: 7 },
-  { label: '8–14d', lo: 8, hi: 14 },
-  { label: '15–30d', lo: 15, hi: 30 },
-  { label: '31–60d', lo: 31, hi: 60 },
-  { label: '61–90d', lo: 61, hi: 90 },
-  { label: '91–180d', lo: 91, hi: 180 },
-  { label: '>180d', lo: 181, hi: null as number | null },
-] as const;
+const HISTOGRAM_BUCKETS: ReadonlyArray<{
+  label: string;
+  lo: number;
+  hi: number | null;
+}> = [
+  { label: '0-7d', lo: 0, hi: 7 },
+  { label: '8-14d', lo: 8, hi: 14 },
+  { label: '15-30d', lo: 15, hi: 30 },
+  { label: '31-60d', lo: 31, hi: 60 },
+  { label: '61-90d', lo: 61, hi: 90 },
+  { label: '91-180d', lo: 91, hi: 180 },
+  { label: '>180d', lo: 181, hi: null },
+];
 
 async function loadTimeToEnrollHistogramUncached(
   ayCode: string
@@ -678,9 +743,11 @@ async function loadTimeToEnrollHistogramUncached(
       r.applicationStatus === 'Enrolled' ||
       r.applicationStatus === 'Enrolled (Conditional)';
     if (!isEnrolled) continue;
-    if (!r.created_at || !r.applicationUpdatedDate) continue;
+    // Use `enrolledAt` (real status-table value) not the fallback-substituted
+    // `applicationUpdatedDate` — un-stamped rows must NOT collapse into 0-7d.
+    if (!r.created_at || !r.enrolledAt) continue;
     const start = Date.parse(r.created_at);
-    const end = Date.parse(r.applicationUpdatedDate);
+    const end = Date.parse(r.enrolledAt);
     if (Number.isNaN(start) || Number.isNaN(end) || end < start) continue;
     const days = Math.round((end - start) / 86_400_000);
     const idx = buckets.findIndex(

@@ -1,19 +1,23 @@
 import {
   ArrowLeft,
+  Clock,
   FileStack,
   Percent,
   TrendingUp,
   UserMinus,
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { DonutChart } from '@/components/dashboard/charts/donut-chart';
-import { TrendChart } from '@/components/dashboard/charts/trend-chart';
+import { MultiSeriesTrendChart } from '@/components/dashboard/charts/multi-series-trend-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
+import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
+import { pickExtreme, meetsThreshold } from '@/lib/dashboard/narrative';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import {
@@ -28,21 +32,31 @@ import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   getAdmissionsKpisRange,
-  getApplicationsVelocityRange,
   getAverageTimeToEnrollment,
   getConversionFunnel,
-  getReferralSourceBreakdown,
+  getOutdatedApplications,
 } from '@/lib/admissions/dashboard';
+import {
+  getConversionByLevel,
+  getReferralConversion,
+  getEnroleeTypeConversion,
+} from '@/lib/admissions/insights-funnel';
 import {
   getAdmissionsTerminalReasons,
   growthDelta,
 } from '@/lib/admissions/insights';
 import {
+  AY_MONTH_LABELS,
+  getIntakeTrendByAy,
+} from '@/lib/admissions/insights-compare';
+import {
   comparisonCardState,
   resolveCompareAy,
 } from '@/lib/dashboard/comparison';
+import { buildAyTrend } from '@/lib/dashboard/insights-trend';
 import { admissionsInsights } from '@/lib/dashboard/insights';
 import {
+  computeDelta,
   resolveRange,
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
@@ -117,22 +131,36 @@ export default async function AdmissionsInsightsPage({
     }
   );
 
+  // Build the AY list for the two-AY overlay: selected AY first (solid),
+  // comparison AY second (muted/dashed), or just the selected AY alone.
+  const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
+
   const [
     funnel,
     priorFunnel,
     terminal,
-    velocity,
-    timeToEnroll,
-    referral,
     kpisResult,
+    intakeTrendPoints,
+    outdatedRows,
+    conversionByLevel,
+    referralConversion,
+    enroleeTypeConversion,
+    timeToEnroll,
   ] = await Promise.all([
     getConversionFunnel(selectedAy),
     compareAy ? getConversionFunnel(compareAy) : Promise.resolve(null),
     getAdmissionsTerminalReasons(selectedAy),
-    getApplicationsVelocityRange(rangeInput),
-    getAverageTimeToEnrollment(selectedAy),
-    getReferralSourceBreakdown(selectedAy),
     getAdmissionsKpisRange(rangeInput),
+    getIntakeTrendByAy(trendAys),
+    // BUG 2 fix: load real stalled-applicant count for the takeaways panel.
+    getOutdatedApplications(selectedAy),
+    // Conversion breakdowns (by level / referral / applicant type).
+    getConversionByLevel(selectedAy),
+    getReferralConversion(selectedAy),
+    getEnroleeTypeConversion(selectedAy),
+    // Time to enrol — real enrolledAt timestamp (migration 075). sampleSize=0
+    // is expected on existing data; the UI shows a "building" neutral state.
+    getAverageTimeToEnrollment(selectedAy),
   ]);
 
   // AY-wide funnel figures (whole-year, not the picker-windowed range count).
@@ -157,15 +185,49 @@ export default async function AdmissionsInsightsPage({
       ? Math.round((enrolledCount / applicationsCount) * 1000) / 10
       : 0;
 
-  // Biggest drop-off stage — the single point where the funnel leaks most.
-  const biggestDrop = funnel.reduce<(typeof funnel)[number] | null>(
-    (acc, stage) => (stage.dropOffPct > (acc?.dropOffPct ?? 0) ? stage : acc),
-    funnel[0] ?? null
+  // Prior-AY conversion rate (for delta chip on the conversion-rate card).
+  const priorEnrolledStage = priorFunnel?.find((s) => s.stage === 'Enrolled');
+  const priorEnrolledCount = priorEnrolledStage?.count ?? 0;
+  const priorConversionPct =
+    priorApplications !== null && priorApplications > 0
+      ? Math.round((priorEnrolledCount / priorApplications) * 1000) / 10
+      : null;
+
+  // Delta chips for §1 headline cards.
+  const applicationsDelta =
+    demandState === 'ok' && priorApplications !== null
+      ? computeDelta(applicationsCount, priorApplications)
+      : null;
+  const conversionDelta =
+    demandState === 'ok' && priorConversionPct !== null
+      ? computeDelta(conversionPct, priorConversionPct)
+      : null;
+
+  // §2 per-month two-AY overlay chart.
+  const intakeTrend = buildAyTrend(
+    intakeTrendPoints,
+    [...AY_MONTH_LABELS],
+    trendAys
   );
 
-  // Referral inputs for the takeaways panel (same derivation as the dashboard).
-  const topRef = referral[0];
-  const totalRef = referral.reduce((s, r) => s + r.count, 0);
+  // Funnel: find the biggest stage-to-stage leak from the REAL applicationStatus
+  // pipeline (Submitted → Ongoing Verification → Processing → Enrolled, 490/490
+  // populated). The deep stage-date funnel was hollow (0/490 stage dates), so it
+  // always reported a false "drops at Registration ~99.8%" artifact — replaced.
+  // `dropOffPct` is the % drop from the prior stage; stage[0] (Submitted) is
+  // always 0. Pick the largest positive drop; neutral when none.
+  const biggestLeak = pickExtreme(funnel, (s) => s.dropOffPct, 'max');
+  const biggestLeakStage =
+    biggestLeak.item && biggestLeak.item.dropOffPct > 0 && !biggestLeak.isTie
+      ? {
+          label: biggestLeak.item.stage,
+          dropOffPct: biggestLeak.item.dropOffPct,
+        }
+      : null;
+
+  // Referral inputs for the takeaways panel — derived from the conversion data.
+  const topRef = referralConversion[0];
+  const totalRef = referralConversion.reduce((s, r) => s + r.applied, 0);
 
   // Donut slices for cancellation reasons, humanized.
   const reasonSlices = terminal.overall.map((r) => ({
@@ -173,23 +235,98 @@ export default async function AdmissionsInsightsPage({
     value: r.count,
   }));
 
-  // Takeaways — built exactly like the operational dashboard's narrative.
+  // Takeaways — fed AY-wide funnel figures (same period as §1/§3 charts) so
+  // the narrative describes the same window the user is looking at. Previously
+  // this used the range-windowed kpisResult (defaultPreset: 'thisMonth'), which
+  // made the "conversion dropping" takeaway irreconcilable with the AY conversion
+  // rate displayed above it (BUG 3 fix).
+  //
+  // Time-to-enrol is not passed into the takeaways panel — it is displayed as
+  // its own InsightsSection in Chapter 1 with an honest sample-size label and a
+  // BuildingHistoryCard when sampleSize=0 (historical rows have no enrolledAt).
   const insights = admissionsInsights({
-    applications: kpisResult.current.applicationsInRange,
-    enrolled: kpisResult.current.enrolledInRange,
-    conversionPct: kpisResult.current.conversionPct,
-    conversionPctPrior: kpisResult.comparison?.conversionPct,
-    avgDaysToEnroll: kpisResult.current.avgDaysToEnroll,
-    avgDaysToEnrollPrior: kpisResult.comparison?.avgDaysToEnroll,
+    // AY-wide figures (match §1 headline cards and §3 funnel).
+    applications: applicationsCount,
+    enrolled: enrolledCount,
+    conversionPct,
+    conversionPctPrior: priorConversionPct ?? undefined,
     appsDelta: kpisResult.delta ?? undefined,
-    outdatedCount: 0,
+    // BUG 2 fix: real stalled-applicant count instead of hardcoded 0.
+    outdatedCount: outdatedRows.length,
+    outdatedHref: `/admissions/applications?students.staleness=Warning,Critical`,
     topReferral: topRef
-      ? { source: topRef.source, count: topRef.count, totalCount: totalRef }
+      ? { source: topRef.source, count: topRef.applied, totalCount: totalRef }
       : undefined,
-    funnelDropOff: biggestDrop
-      ? { stage: biggestDrop.stage, dropOffPct: biggestDrop.dropOffPct }
+    funnelDropOff: biggestLeakStage
+      ? {
+          stage: biggestLeakStage.label,
+          dropOffPct: biggestLeakStage.dropOffPct,
+        }
       : undefined,
   });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // Derived narrative — every finding-title + RecommendationCallout below is
+  // templated from these live values, each with a tie/empty/threshold neutral
+  // fallback. No hardcoded stage names, level codes, channel names, or "most"
+  // claims in literals. (Storytelling pass.)
+  // ────────────────────────────────────────────────────────────────────────
+
+  // 3a — Funnel: biggest leak, derived above from the real applicationStatus
+  // pipeline (largest stage-to-stage drop, or null when none). Title states the
+  // finding; callout (act) quantifies the drop. Neutral when no leak.
+  const funnelTitle = biggestLeakStage
+    ? `Applicants drop most at ${biggestLeakStage.label}`
+    : 'Application pipeline';
+
+  // 3b — Conversion by level: worst-converting level, but only claim it when
+  // the gap below the overall conversion rate is meaningful (≥ 10pp) and there
+  // is no tie. Otherwise stay neutral.
+  const worstLevel = pickExtreme(
+    conversionByLevel,
+    (r) => r.conversionPct,
+    'min'
+  );
+  const levelGap =
+    worstLevel.value !== null ? conversionPct - worstLevel.value : null;
+  const LEVEL_GAP_PP = 10;
+  const showWorstLevel =
+    !worstLevel.isTie &&
+    worstLevel.item !== null &&
+    meetsThreshold(levelGap, LEVEL_GAP_PP);
+  const levelTitle = showWorstLevel
+    ? `${worstLevel.item!.level} converts the least`
+    : 'Conversion by level';
+
+  // 5c — Referral channels: best + worst converting source, each guarded by a
+  // minimum sample so a 1-of-1 channel can't masquerade as the "best". Title
+  // names both ends when both clear the guard; neutral otherwise.
+  const REFERRAL_MIN_SAMPLE = 5;
+  const eligibleRefs = referralConversion.filter(
+    (r) => r.applied >= REFERRAL_MIN_SAMPLE
+  );
+  const bestRef = pickExtreme(eligibleRefs, (r) => r.conversionPct, 'max');
+  const worstRef = pickExtreme(eligibleRefs, (r) => r.conversionPct, 'min');
+  const showBestRef = !bestRef.isTie && bestRef.item !== null;
+  const referralTitle = showBestRef
+    ? `${bestRef.item!.source} converts best`
+    : 'Referral sources: conversion';
+
+  // 4 — Terminal reasons: top cancellation cause (terminal.overall is already
+  // sorted desc). Title names it; callout quantifies its share. Neutral when
+  // nothing is recorded or the top two tie.
+  const topReason = terminal.overall[0];
+  const reasonTie =
+    terminal.overall.length > 1 &&
+    terminal.overall[1].count === topReason?.count;
+  const showTopReason = !!topReason && topReason.count > 0 && !reasonTie;
+  const reasonTitle = showTopReason
+    ? `Most cancel due to ${reasonLabel(topReason.reason)}`
+    : 'Cancellation reasons';
+  const topReasonPct =
+    showTopReason && terminal.total > 0
+      ? Math.round((topReason.count / terminal.total) * 100)
+      : null;
 
   const growthBadge =
     growth.pct === null
@@ -215,7 +352,13 @@ export default async function AdmissionsInsightsPage({
       <DashboardHero
         eyebrow="Admissions · Insights"
         title="Enrollment Health"
-        description="The story behind the funnel — how application demand is trending, how well we convert applicants, and where they fall away before enrolling."
+        description={
+          applicationsCount > 0
+            ? biggestLeakStage && biggestLeakStage.dropOffPct > 0
+              ? `${conversionPct}% of applicants enrol — most who don't fall away at ${biggestLeakStage.label}.`
+              : `${conversionPct}% of applicants enrol. This is the story behind the funnel: where demand comes from, and where applicants fall away.`
+            : 'The story behind the funnel — how application demand is trending, how well we convert applicants, and where they fall away before enrolling.'
+        }
         badges={[
           { label: selectedAy },
           {
@@ -234,289 +377,641 @@ export default async function AdmissionsInsightsPage({
         />
       </div>
 
-      {/* 1 — Funnel headline: application demand + conversion (NOT enrolled
+      {/* ═══ Chapter 1 — Demand & conversion ═══
+          How much demand the funnel takes in, and how well it converts. */}
+      <div className="space-y-8 border-t-2 border-brand-indigo/25 pt-7">
+        <div className="space-y-1">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-indigo">
+            Chapter 1
+          </p>
+          <h2 className="font-serif text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+            Demand &amp; conversion
+          </h2>
+        </div>
+
+        {/* 1 — Funnel headline: application demand + conversion (NOT enrolled
           headcount — that's the enrolled body, owned by Records Insights).
           Primary-AY metrics (Conversion rate, Applications cancelled) always
           render. Only the demand-comparison subtext reacts to `demandState`
           (FIX 2 — matches Records' Section-1 pattern). */}
-      <InsightsSection
-        eyebrow="Demand & conversion"
-        title="Is the funnel healthy?"
-        description={
-          demandState === 'ok'
-            ? `Application demand this year compared with ${compareAy}.`
-            : compareAy === null
-              ? 'Pick a comparison year above to see year-over-year demand. Until then, this is the current cycle.'
-              : `No application data found for ${compareAy}. Try a different comparison year.`
-        }
-      >
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <MetricCard
-            label="Applications received"
-            value={applicationsCount}
-            icon={FileStack}
-            intent="default"
-            subtext={
-              demandState === 'ok' && priorApplications !== null
-                ? `${priorApplications.toLocaleString('en-SG')} in ${compareAy}`
-                : demandState === 'no-data'
-                  ? `No data for ${compareAy}`
-                  : 'Pick a comparison year above'
-            }
-          />
-          <MetricCard
-            label="Conversion rate"
-            value={conversionPct}
-            format="percent"
-            icon={Percent}
-            intent="good"
-            subtext={`${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`}
-          />
-          <MetricCard
-            label="Applications cancelled"
-            value={terminal.total}
-            icon={UserMinus}
-            intent={terminal.total > 0 ? 'warning' : 'default'}
-            subtext="withdrawn or cancelled before enrolling"
-          />
-        </section>
-      </InsightsSection>
+        <InsightsSection
+          eyebrow="Headline"
+          title="Is the funnel healthy?"
+          description={
+            demandState === 'ok'
+              ? `Application demand this year compared with ${compareAy}.`
+              : compareAy === null
+                ? 'Pick a comparison year above to see year-over-year demand. Until then, this is the current cycle.'
+                : `No application data found for ${compareAy}. Try a different comparison year.`
+          }
+        >
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <MetricCard
+              label="Applications received"
+              value={applicationsCount}
+              icon={FileStack}
+              intent="default"
+              {...(applicationsDelta
+                ? {
+                    delta: applicationsDelta,
+                    deltaGoodWhen: 'up' as const,
+                    comparisonLabel: `${priorApplications?.toLocaleString('en-SG')} in ${compareAy}`,
+                  }
+                : {
+                    subtext:
+                      demandState === 'no-data'
+                        ? `No data for ${compareAy}`
+                        : compareAy === null
+                          ? 'Pick a comparison year above'
+                          : undefined,
+                  })}
+            />
+            <MetricCard
+              label="Conversion rate"
+              value={conversionPct}
+              format="percent"
+              icon={Percent}
+              intent="good"
+              {...(conversionDelta
+                ? {
+                    delta: conversionDelta,
+                    deltaGoodWhen: 'up' as const,
+                    deltaFormat: 'absolute' as const,
+                    deltaUnit: 'pp',
+                    comparisonLabel: `${priorConversionPct?.toFixed(1)}% in ${compareAy}`,
+                  }
+                : {
+                    subtext: `${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`,
+                  })}
+            />
+            <MetricCard
+              label="Cancellations with a reason"
+              value={terminal.total}
+              icon={UserMinus}
+              intent={terminal.total > 0 ? 'warning' : 'default'}
+              subtext={
+                terminal.total > 0
+                  ? 'closed applications with a reason logged'
+                  : 'no reasons logged on closed applications yet'
+              }
+            />
+          </section>
+        </InsightsSection>
 
-      {/* 2 — Intake trend. Mirrors the dashboard's velocity card. */}
-      <InsightsSection
-        eyebrow="Demand"
-        title="How is intake trending?"
-        description="Applications received per day across the selected period."
-      >
-        {velocity.current.length > 1 ? (
-          <Card>
-            <CardHeader>
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Applications per day
-              </CardDescription>
-              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Intake velocity
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <TrendChart
-                label="Applications"
-                current={velocity.current}
-                comparison={velocity.comparison}
-              />
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="border-dashed">
-            <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              Not enough activity in this period to plot a trend yet.
-            </CardContent>
-          </Card>
-        )}
-      </InsightsSection>
-
-      {/* 3 — Funnel drop-off. */}
-      <InsightsSection
-        eyebrow="Funnel"
-        title="Where do applicants drop?"
-        description={
-          biggestDrop && biggestDrop.dropOffPct > 0
-            ? `The largest leak is at ${biggestDrop.stage} — ${biggestDrop.dropOffPct}% fall away before reaching it.`
-            : 'Each stage shows how many applications reached it. The funnel is cumulative — every enrolled applicant also passed through every earlier stage.'
-        }
-      >
-        <Card>
-          <CardHeader>
-            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-              Reached each stage
-            </CardDescription>
-            <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-              Conversion funnel
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-3">
-              {funnel.map((stage) => {
-                const top = funnel[0]?.count ?? 0;
-                const widthPct =
-                  top > 0
-                    ? Math.max(4, Math.round((stage.count / top) * 100))
-                    : 0;
-                return (
-                  <li key={stage.stage} className="space-y-1.5">
-                    <div className="flex items-baseline justify-between gap-3 text-sm">
-                      <span className="font-medium text-foreground">
-                        {stage.stage}
-                      </span>
-                      <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                        {stage.count.toLocaleString('en-SG')}
-                        {stage.dropOffPct > 0 ? (
-                          <span className="ml-2 text-destructive">
-                            −{stage.dropOffPct}%
-                          </span>
-                        ) : null}
-                      </span>
-                    </div>
-                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy"
-                        style={{ width: `${widthPct}%` }}
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </CardContent>
-        </Card>
-      </InsightsSection>
-
-      {/* 4 — Why applicants are lost (pre-enrolment; distinct from Records'
-          enrolled-student withdrawals). */}
-      <InsightsSection
-        eyebrow="Lost applicants"
-        title="Why don't they enroll?"
-        description="Reasons recorded when an application is withdrawn or cancelled before enrolling — overall and per level. (Students who leave after enrolling are in Records → Insights.)"
-      >
-        {terminal.total === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              No cancelled or withdrawn applications recorded this year —
-              nothing to break down. That&rsquo;s a good sign.
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
+        {/* 2 — Intake trend: per-month, two-AY overlay.
+          Shows applications received per month across the full Jan–Nov HFSE
+          AY window. When a comparison AY is selected, it overlays as a muted
+          dashed line so the registrar can read seasonal patterns at a glance.
+          Future months in the current AY render as gaps (null) so the line
+          doesn't misleadingly flatline to zero. */}
+        <InsightsSection
+          eyebrow="Demand"
+          title="How is intake trending?"
+          description={
+            compareAy
+              ? `Applications received per month — ${selectedAy} (solid) vs ${compareAy} (dashed).`
+              : 'Applications received per month across the academic year.'
+          }
+        >
+          {intakeTrend.data.some((d) =>
+            intakeTrend.series.some((s) => d[s.key] !== null)
+          ) ? (
             <Card>
               <CardHeader>
                 <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  Cancellation reasons
+                  Applications per month
                 </CardDescription>
                 <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  Overall
+                  Intake trend
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <DonutChart
-                  data={reasonSlices}
-                  centerLabel="Cancelled"
-                  centerValue={terminal.total}
+                <MultiSeriesTrendChart
+                  series={intakeTrend.series}
+                  data={intakeTrend.data}
+                  yFormat="number"
                 />
               </CardContent>
             </Card>
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center text-sm text-muted-foreground">
+                No applications recorded yet for this academic year.
+              </CardContent>
+            </Card>
+          )}
+        </InsightsSection>
+
+        {/* 3 — Funnel: where applicants stall, on the REAL applicationStatus
+            pipeline (490/490 populated). Submitted → Ongoing Verification →
+            Processing → Enrolled, counted cumulatively. */}
+        <InsightsSection
+          eyebrow="Funnel"
+          title="Where do applicants stall?"
+          description={
+            biggestLeakStage
+              ? `Biggest leak: at ${biggestLeakStage.label} — ${biggestLeakStage.dropOffPct}% of applicants who reached the prior step don't move on.`
+              : 'Each bar shows how many applicants reached that stage of the application pipeline. The funnel is cumulative — every enrolled applicant also passed verification and processing.'
+          }
+        >
+          {/* 3a — Application-status pipeline funnel */}
+          <Card>
+            <CardHeader>
+              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                Stage reach — {applicationsCount.toLocaleString('en-SG')} total
+                applications
+              </CardDescription>
+              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                {funnelTitle}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {applicationsCount === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No applications recorded yet for this academic year.
+                </p>
+              ) : (
+                <>
+                  <ul className="space-y-3">
+                    {funnel.map((stage) => {
+                      const widthPct =
+                        applicationsCount > 0
+                          ? Math.max(
+                              4,
+                              Math.round(
+                                (stage.count / applicationsCount) * 100
+                              )
+                            )
+                          : 0;
+                      const isBiggestLeak =
+                        biggestLeakStage !== null &&
+                        stage.stage === biggestLeakStage.label &&
+                        stage.dropOffPct === biggestLeakStage.dropOffPct;
+                      return (
+                        <li key={stage.stage} className="space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-3 text-sm">
+                            <span className="font-medium text-foreground">
+                              {stage.stage}
+                            </span>
+                            <span className="flex items-center gap-2 font-mono text-xs tabular-nums text-muted-foreground">
+                              {stage.count.toLocaleString('en-SG')}
+                              {stage.dropOffPct > 0 && (
+                                <>
+                                  <span className="text-destructive">
+                                    −{stage.dropOffPct}%
+                                  </span>
+                                  {isBiggestLeak && (
+                                    <Badge
+                                      variant="destructive"
+                                      className="px-1.5 py-0 text-[10px] font-semibold"
+                                    >
+                                      Biggest leak
+                                    </Badge>
+                                  )}
+                                </>
+                              )}
+                            </span>
+                          </div>
+                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                            <div
+                              className={
+                                isBiggestLeak
+                                  ? 'h-full rounded-full bg-gradient-to-r from-destructive/70 to-destructive/40'
+                                  : 'h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy'
+                              }
+                              style={{ width: `${widthPct}%` }}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {/* Callout (act): the biggest leak, quantified. Renders only
+                      when the loader flagged a real leak; otherwise omitted. */}
+                  {biggestLeakStage && biggestLeakStage.dropOffPct > 0 ? (
+                    <RecommendationCallout tone="act">
+                      {biggestLeakStage.dropOffPct}% of applicants fall away at{' '}
+                      {biggestLeakStage.label} — focus follow-up there to
+                      recover the most.
+                    </RecommendationCallout>
+                  ) : null}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </InsightsSection>
+
+        {/* 4 — Time to enrol: how long does conversion take?
+            Stamped by migration 075 (write-once enrolledAt on status table).
+            Historical rows have no timestamp (sampleSize=0) so we show a
+            "building" neutral state that self-heals as enrolments accumulate. */}
+        <InsightsSection
+          eyebrow="Speed"
+          title="How long does enrolment take?"
+          description={
+            timeToEnroll.sampleSize > 0
+              ? `Average number of days from application submission to enrolment — from ${timeToEnroll.sampleSize.toLocaleString('en-SG')} ${timeToEnroll.sampleSize === 1 ? 'enrolment' : 'enrolments'} since tracking began.`
+              : 'Time from application to enrolment — captured on every new enrolment going forward.'
+          }
+        >
+          {timeToEnroll.sampleSize === 0 ? (
+            <BuildingHistoryCard
+              label="Time to enrol"
+              detail="The average number of days from application to enrolment will appear here once new enrolments are recorded. It fills in automatically — nothing to configure."
+            />
+          ) : (
             <Card>
               <CardHeader>
                 <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  Top reason per level
+                  Application to enrolment ·{' '}
+                  {timeToEnroll.sampleSize.toLocaleString('en-SG')}{' '}
+                  {timeToEnroll.sampleSize === 1 ? 'enrolment' : 'enrolments'}{' '}
+                  since tracking began
                 </CardDescription>
                 <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  By level
+                  Average {timeToEnroll.avgDays} days to enrol
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <ul className="divide-y divide-hairline">
-                  {terminal.byLevel.map((lvl) => {
-                    const topReason = lvl.reasons[0];
-                    return (
-                      <li
-                        key={lvl.level}
-                        className="flex items-baseline justify-between gap-3 py-2.5 text-sm"
-                      >
-                        <span className="font-medium text-foreground">
-                          {lvl.level}
-                        </span>
-                        <span className="min-w-0 truncate text-right text-muted-foreground">
-                          {topReason ? reasonLabel(topReason.reason) : '—'}
-                          <span className="ml-2 font-mono text-xs tabular-nums text-foreground">
-                            {lvl.count.toLocaleString('en-SG')}
+                <div className="flex items-center gap-4">
+                  <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-b from-brand-indigo/15 to-brand-navy/10 text-brand-indigo">
+                    <Clock className="size-6" strokeWidth={1.75} />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="font-mono text-3xl font-bold tabular-nums text-foreground">
+                      {timeToEnroll.avgDays}
+                      <span className="ml-1.5 text-base font-normal text-muted-foreground">
+                        days
+                      </span>
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      from submission to enrolment, averaged across{' '}
+                      {timeToEnroll.sampleSize.toLocaleString('en-SG')}{' '}
+                      {timeToEnroll.sampleSize === 1
+                        ? 'enrolment'
+                        : 'enrolments'}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </InsightsSection>
+      </div>
+      {/* ═══ end Chapter 1 ═══ */}
+
+      {/* ═══ Chapter 2 — Who & why we lose ═══
+          Which levels convert worst, and the reasons applicants give for
+          dropping out before enrolling. */}
+      <div className="space-y-8 border-t-2 border-brand-amber/30 pt-7">
+        <div className="space-y-1">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-amber">
+            Chapter 2
+          </p>
+          <h2 className="font-serif text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+            Who &amp; why we lose
+          </h2>
+        </div>
+
+        {/* 2.1 — Conversion by level */}
+        <InsightsSection
+          eyebrow="Conversion gaps"
+          title="Which levels convert worst?"
+          description="How many applicants at each level go on to enrol — terminal statuses excluded so this reflects the active pipeline."
+        >
+          <Card>
+            <CardHeader>
+              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                Active pipeline only — terminal statuses excluded
+              </CardDescription>
+              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                {levelTitle}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {conversionByLevel.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No level data available.
+                </p>
+              ) : (
+                <>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                        <th className="pb-2 pr-3 font-semibold">Level</th>
+                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
+                          Applied
+                        </th>
+                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
+                          Enrolled
+                        </th>
+                        <th className="pb-2 text-right font-semibold tabular-nums">
+                          Rate
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-hairline">
+                      {conversionByLevel.map((row) => {
+                        const isWorst =
+                          showWorstLevel &&
+                          row.level === worstLevel.item!.level;
+                        return (
+                          <tr key={row.level}>
+                            <td className="py-2 pr-3 font-medium text-foreground">
+                              {row.level}
+                            </td>
+                            <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">
+                              {row.applied.toLocaleString('en-SG')}
+                            </td>
+                            <td className="py-2 pr-3 text-right font-mono tabular-nums text-foreground">
+                              {row.enrolled.toLocaleString('en-SG')}
+                            </td>
+                            <td
+                              className={
+                                isWorst
+                                  ? 'py-2 text-right font-mono text-xs font-semibold tabular-nums text-brand-amber'
+                                  : 'py-2 text-right font-mono text-xs tabular-nums text-muted-foreground'
+                              }
+                            >
+                              {row.conversionPct}%
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {/* Callout (watch): the worst-converting level, but only when
+                      its gap below the overall rate is meaningful and unambiguous. */}
+                  {showWorstLevel ? (
+                    <RecommendationCallout tone="watch">
+                      {worstLevel.item!.level} converts at{' '}
+                      {worstLevel.item!.conversionPct}% — {levelGap}pp below the{' '}
+                      {conversionPct}% overall rate. Worth a closer look at this
+                      level&rsquo;s pipeline.
+                    </RecommendationCallout>
+                  ) : null}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </InsightsSection>
+
+        {/* 2.2 — Why applicants are lost (pre-enrolment; distinct from Records'
+            enrolled-student withdrawals). */}
+        <InsightsSection
+          eyebrow="Lost applicants"
+          title="Why don't they enroll?"
+          description="Reasons recorded when an application is withdrawn or cancelled before enrolling — overall and per level. (Students who leave after enrolling are in Records → Insights.)"
+        >
+          {terminal.total === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="space-y-1.5 p-8 text-center">
+                <p className="text-sm font-medium text-foreground">
+                  Cancellation reasons aren&rsquo;t being recorded yet
+                </p>
+                <p className="mx-auto max-w-md text-sm text-muted-foreground">
+                  No reason is captured when an application is withdrawn or
+                  cancelled, so there&rsquo;s nothing to break down here. Once
+                  the team starts logging a reason on closed applications, the
+                  causes will appear automatically.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                    Cancellation reasons
+                  </CardDescription>
+                  <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                    {reasonTitle}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <DonutChart
+                    data={reasonSlices}
+                    centerLabel="Cancelled"
+                    centerValue={terminal.total}
+                  />
+                  {/* Callout (watch): the top cancellation cause + its share.
+                      Suppressed on an empty set or a tie for first. */}
+                  {showTopReason ? (
+                    <RecommendationCallout tone="watch">
+                      {reasonLabel(topReason.reason)} accounts for{' '}
+                      {topReason.count} of {terminal.total} cancellations
+                      {topReasonPct !== null ? ` (${topReasonPct}%)` : ''} — the
+                      clearest place to address drop-out.
+                    </RecommendationCallout>
+                  ) : null}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                    Top reason per level
+                  </CardDescription>
+                  <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                    By level
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="divide-y divide-hairline">
+                    {terminal.byLevel.map((lvl) => {
+                      const lvlTopReason = lvl.reasons[0];
+                      return (
+                        <li
+                          key={lvl.level}
+                          className="flex items-baseline justify-between gap-3 py-2.5 text-sm"
+                        >
+                          <span className="font-medium text-foreground">
+                            {lvl.level}
                           </span>
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
+                          <span className="min-w-0 truncate text-right text-muted-foreground">
+                            {lvlTopReason
+                              ? reasonLabel(lvlTopReason.reason)
+                              : '—'}
+                            <span className="ml-2 font-mono text-xs tabular-nums text-foreground">
+                              {lvl.count.toLocaleString('en-SG')}
+                            </span>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </InsightsSection>
+      </div>
+      {/* ═══ end Chapter 2 ═══ */}
+
+      {/* ═══ Chapter 3 — Channels & segments ═══
+          Where applicants come from, which channels convert, how long they
+          take, and how applicant segments differ. */}
+      <div className="space-y-8 border-t-2 border-brand-mint/40 pt-7">
+        <div className="space-y-1">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-mint">
+            Chapter 3
+          </p>
+          <h2 className="font-serif text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+            Channels &amp; segments
+          </h2>
+        </div>
+
+        <InsightsSection
+          eyebrow="Sources & segments"
+          title="From where, and from whom?"
+          description="Which channels send applicants, and how New vs Current students differ in conversion."
+        >
+          <div className="grid gap-4">
+            {/* 3.1 — Enrolee type conversion */}
+            <Card>
+              <CardHeader>
+                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  New vs returning applicants
+                </CardDescription>
+                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                  Conversion by applicant type
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {enroleeTypeConversion.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    No applicant type data available.
+                  </p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                        <th className="pb-2 pr-3 font-semibold">Type</th>
+                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
+                          Applied
+                        </th>
+                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
+                          Enrolled
+                        </th>
+                        <th className="pb-2 text-right font-semibold tabular-nums">
+                          Rate
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-hairline">
+                      {enroleeTypeConversion.map((row) => (
+                        <tr key={row.type}>
+                          <td className="py-2 pr-3 font-medium text-foreground">
+                            {row.type}
+                          </td>
+                          <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">
+                            {row.applied.toLocaleString('en-SG')}
+                          </td>
+                          <td className="py-2 pr-3 text-right font-mono tabular-nums text-foreground">
+                            {row.enrolled.toLocaleString('en-SG')}
+                          </td>
+                          <td className="py-2 text-right font-mono text-xs tabular-nums text-muted-foreground">
+                            {row.conversionPct}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </CardContent>
             </Card>
           </div>
-        )}
-      </InsightsSection>
 
-      {/* 5 — Time to enroll + referral, two-col. */}
-      <InsightsSection
-        eyebrow="Sources & speed"
-        title="How fast, and from where?"
-        description="How long applicants take to convert, and which channels send them."
-      >
-        <div className="grid gap-4 lg:grid-cols-2">
+          {/* 3.1c — Referral conversion table (full width) */}
           <Card>
             <CardHeader>
               <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Average across the year
+                All applicants (including cancelled/withdrawn) — true conversion
+                rate
               </CardDescription>
               <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Time to enroll
+                {referralTitle}
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <p className="font-serif text-[40px] font-semibold leading-none tabular-nums text-foreground">
-                {timeToEnroll.avgDays}
-                <span className="ml-1 text-lg font-normal text-muted-foreground">
-                  days
-                </span>
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Mean days from application to enrolment, over{' '}
-                {timeToEnroll.sampleSize.toLocaleString('en-SG')} completed
-                enrolment{timeToEnroll.sampleSize === 1 ? '' : 's'}.
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Where applicants hear about us
-              </CardDescription>
-              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                Referral sources
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {referral.length === 0 ? (
+            <CardContent className="space-y-4">
+              {referralConversion.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
                   No referral sources recorded yet.
                 </p>
               ) : (
-                <ul className="space-y-3">
-                  {referral.map((r) => {
-                    const widthPct =
-                      totalRef > 0
-                        ? Math.max(4, Math.round((r.count / totalRef) * 100))
-                        : 0;
-                    return (
-                      <li key={r.source} className="space-y-1.5">
-                        <div className="flex items-baseline justify-between gap-3 text-sm">
-                          <span className="font-medium text-foreground">
-                            {r.source}
-                          </span>
-                          <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                            {r.count.toLocaleString('en-SG')}
-                          </span>
-                        </div>
-                        <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-brand-mint to-brand-sky"
-                            style={{ width: `${widthPct}%` }}
-                          />
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                        <th className="pb-2 pr-3 font-semibold">Source</th>
+                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
+                          Applied
+                        </th>
+                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
+                          Enrolled
+                        </th>
+                        <th className="pb-2 text-right font-semibold">Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-hairline">
+                      {referralConversion.map((r) => {
+                        const barWidth =
+                          totalRef > 0
+                            ? Math.max(
+                                2,
+                                Math.round((r.applied / totalRef) * 100)
+                              )
+                            : 0;
+                        return (
+                          <tr key={r.source}>
+                            <td className="py-2.5 pr-3">
+                              <div className="space-y-1">
+                                <span className="font-medium text-foreground">
+                                  {r.source}
+                                </span>
+                                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                                  <div
+                                    className="h-full rounded-full bg-gradient-to-r from-brand-mint to-brand-sky"
+                                    style={{ width: `${barWidth}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-muted-foreground">
+                              {r.applied.toLocaleString('en-SG')}
+                            </td>
+                            <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-foreground">
+                              {r.enrolled.toLocaleString('en-SG')}
+                            </td>
+                            <td className="py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground">
+                              {r.conversionPct}%
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {/* Callout (positive): the best-converting channel, guarded by
+                      a minimum sample so a tiny channel can't win on noise.
+                      Names the worst end too when it also clears the guard. */}
+                  {showBestRef ? (
+                    <RecommendationCallout tone="positive">
+                      {bestRef.item!.source} converts best at{' '}
+                      {bestRef.item!.conversionPct}%
+                      {!worstRef.isTie &&
+                      worstRef.item !== null &&
+                      worstRef.item.source !== bestRef.item!.source
+                        ? `, ${worstRef.item.source} the lowest at ${worstRef.item.conversionPct}%`
+                        : ''}{' '}
+                      — lean into what&rsquo;s working.
+                    </RecommendationCallout>
+                  ) : null}
+                </>
               )}
             </CardContent>
           </Card>
-        </div>
-      </InsightsSection>
+        </InsightsSection>
+      </div>
+      {/* ═══ end Chapter 3 ═══ */}
 
       {/* 6 — Takeaways narrative. */}
       <InsightsSection

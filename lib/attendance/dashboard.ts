@@ -24,7 +24,7 @@ function tag(ayCode: string): string[] {
   return ['attendance-dashboard', `attendance-dashboard:${ayCode}`];
 }
 
-type DailyRow = {
+export type DailyRow = {
   date: string;
   status: string; // P | L | EX | A | NC
   ex_reason: string | null;
@@ -68,11 +68,14 @@ async function loadDailyRowsUncached(ayCode: string): Promise<DailyRow[]> {
 
   // attendance_daily can exceed PostgREST's 1000-row response cap on the
   // HFSE instance (200 students × 60+ school days = 12K+ rows for a full
-  // term). Chunk by 500 IDs to bound the IN-clause, then paginate each
-  // chunk's response via .range() so the cap doesn't truncate.
+  // term). Chunk by 100 IDs to bound the IN-clause URL: each id is a 36-char
+  // UUID, and the gateway resets the connection — surfacing as a bare
+  // "TypeError: fetch failed", not a 4xx — once the request URL exceeds ~8 KB.
+  // 100 UUIDs ≈ 3.7 KB is safe; the old 500 (~18 KB) overflowed for any AY
+  // with 400+ students. Then paginate each chunk's response via .range().
   const chunks: string[][] = [];
-  for (let i = 0; i < studentRowIds.length; i += 500) {
-    chunks.push(studentRowIds.slice(i, i + 500));
+  for (let i = 0; i < studentRowIds.length; i += 100) {
+    chunks.push(studentRowIds.slice(i, i + 100));
   }
   const all: DailyRow[] = [];
   for (const chunk of chunks) {
@@ -88,7 +91,7 @@ async function loadDailyRowsUncached(ayCode: string): Promise<DailyRow[]> {
   return all;
 }
 
-function loadDailyRows(ayCode: string): Promise<DailyRow[]> {
+export function loadDailyRows(ayCode: string): Promise<DailyRow[]> {
   return unstable_cache(
     () => loadDailyRowsUncached(ayCode),
     ['attendance', 'daily-raw', ayCode],
@@ -110,11 +113,20 @@ export type AttendanceKpis = {
   nc: number;
 };
 
-function slice(rows: DailyRow[], from: string, to: string): DailyRow[] {
+export function sliceDailyRows(
+  rows: DailyRow[],
+  from: string,
+  to: string
+): DailyRow[] {
   return rows.filter((r) => r.date >= from && r.date <= to);
 }
 
-function kpisFor(rows: DailyRow[]): AttendanceKpis {
+// Internal alias used by the functions below (backwards compat).
+function slice(rows: DailyRow[], from: string, to: string): DailyRow[] {
+  return sliceDailyRows(rows, from, to);
+}
+
+export function kpisFor(rows: DailyRow[]): AttendanceKpis {
   let present = 0,
     late = 0,
     excused = 0,
@@ -621,8 +633,8 @@ async function loadAttendancePriorityUncached(
     if (ssIds.length > 0) {
       // Chunk to respect URL length limits (mirrors loadDailyRowsUncached).
       const chunks: string[][] = [];
-      for (let i = 0; i < ssIds.length; i += 1000)
-        chunks.push(ssIds.slice(i, i + 1000));
+      for (let i = 0; i < ssIds.length; i += 100)
+        chunks.push(ssIds.slice(i, i + 100));
       for (const chunk of chunks) {
         const { data } = await service
           .from('attendance_daily')

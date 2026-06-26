@@ -8,4 +8,4 @@ load: always
 
 ## Always Do First
 
-- Invoke the `ui-ux-pro-max@ui-ux-pro-max-skill` skill before writing frontend code, every session, no exceptions.
+- Invoke the `frontend-design:frontend-design` skill before writing frontend code, every session, no exceptions.

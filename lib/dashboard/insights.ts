@@ -50,7 +50,9 @@ export type AdmissionsInsightInput = {
   conversionPct: number;
   /** Undefined when the user hasn't opted into a comparison. */
   conversionPctPrior?: number;
-  avgDaysToEnroll: number;
+  /** Omitted: applicationUpdatedDate is 0/490 in prod so the avg is hollow.
+   *  The time-to-enroll drift insight fires only when both values are present. */
+  avgDaysToEnroll?: number;
   /** Undefined when the user hasn't opted into a comparison. */
   avgDaysToEnrollPrior?: number;
   /** Undefined when the user hasn't opted into a comparison. */
@@ -94,11 +96,12 @@ export function admissionsInsights(input: AdmissionsInsightInput): Insight[] {
     }
   }
 
-  // Time-to-enroll drift
+  // Time-to-enroll drift (fires only when both values are present and non-zero)
   if (
+    input.avgDaysToEnroll != null &&
+    input.avgDaysToEnroll > 0 &&
     input.avgDaysToEnrollPrior != null &&
-    input.avgDaysToEnrollPrior > 0 &&
-    input.avgDaysToEnroll > 0
+    input.avgDaysToEnrollPrior > 0
   ) {
     const driftDays = input.avgDaysToEnroll - input.avgDaysToEnrollPrior;
     if (Math.abs(driftDays) >= 5) {

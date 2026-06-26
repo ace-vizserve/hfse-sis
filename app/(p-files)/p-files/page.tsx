@@ -9,6 +9,8 @@ import {
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
+
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
@@ -374,7 +376,11 @@ export default async function PFilesDashboard({
         }
         description={
           isOfficer
-            ? 'Retrieve validated student, parent, and guardian documents. Prior versions preserved in revision history.'
+            ? kpisResult.current.expiringSoon30 > 0
+              ? `${kpisResult.current.expiringSoon30} document${kpisResult.current.expiringSoon30 === 1 ? '' : 's'} expire within 30 days — send reminders before families let them lapse.`
+              : kpisResult.current.expiringSoon > 0
+                ? `${kpisResult.current.expiringSoon} document${kpisResult.current.expiringSoon === 1 ? '' : 's'} expire within 60 days. Nothing due in the next 30 — but renewal outreach now saves a chase later.`
+                : 'All tracked documents are current. Keep an eye on the 60-day window as the term progresses.'
             : 'Read-only view of student document completeness. The P-Files officer owns chasing, validation, and renewal — this surface is for oversight.'
         }
         badges={[
@@ -418,6 +424,17 @@ export default async function PFilesDashboard({
       )}
 
       <InsightsPanel insights={insights} />
+
+      {/* Officer-only renewal callout — fires only when documents are due
+          within 30 days. The 60-day band is mentioned in the hero; this
+          callout is the "act now" signal for the tightest window only. */}
+      {isOfficer && kpisResult.current.expiringSoon30 > 0 && (
+        <RecommendationCallout tone="act">
+          Chase {kpisResult.current.expiringSoon30} document
+          {kpisResult.current.expiringSoon30 === 1 ? '' : 's'} expiring within
+          30 days — use the bulk remind below to contact families in one step.
+        </RecommendationCallout>
+      )}
 
       {/* Range-aware KPIs */}
       <section className="grid gap-4 xl:grid-cols-4">
@@ -502,9 +519,13 @@ export default async function PFilesDashboard({
       <Card>
         <CardHeader>
           <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-            Expiring documents
+            Expiring documents · next 60 days
           </CardDescription>
-          <CardTitle className="font-serif text-xl">Next 60 days</CardTitle>
+          <CardTitle className="font-serif text-xl">
+            {expiring.length > 0
+              ? `${expiring.length} student${expiring.length === 1 ? '' : 's'} need renewal outreach`
+              : 'Nothing expiring in the next 60 days'}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <ExpiringDocumentsPanel

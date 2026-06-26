@@ -27,6 +27,7 @@ import { DOCUMENT_SLOTS, OPTIONAL_DOCUMENT_SLOT_KEYS } from '@/lib/sis/queries';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 
 import { pickNames } from './names';
+import { APPLICATION_TERMINAL_REASON_VALUES } from '@/lib/schemas/sis';
 
 // Seed actor for synthetic audit rows (movements feed, late-enrol transitions).
 // Matches the literal in lib/sis/seeder/edge-cases.ts (SEED_ACTOR_EMAIL) so the
@@ -1343,14 +1344,28 @@ async function seedEvaluationWriteups(
       });
     }
 
-    // T3 (closed-AY only) — all enrolled students' submitted writeups (mirrors T1).
+    // T3 (closed-AY only) — realistic in-progress mix: ~70% submitted, ~20%
+    // draft, ~10% missing (no row). Mirrors a T3 period that closed recently
+    // where most advisers have filed but a few are still outstanding. The mix
+    // exercises the comment hard-gate (KD #129) + the evaluation chase metrics
+    // (KD #126) in the AY9998 closed AY without blocking all publications.
     if (allTermsFull && t3) {
       const { data: enrolments } = await service
         .from('section_students')
         .select('student_id')
         .eq('section_id', sectionId);
       const students = (enrolments ?? []) as Array<{ student_id: string }>;
-      for (const s of students) pushWriteup(t3, sectionId, s.student_id, true);
+      for (const s of students) {
+        const r = rand();
+        if (r < 0.7) {
+          // 70% — submitted
+          pushWriteup(t3, sectionId, s.student_id, true);
+        } else if (r < 0.9) {
+          // 20% — draft (saved but not submitted)
+          pushWriteup(t3, sectionId, s.student_id, false);
+        }
+        // 10% — missing: skip (no row inserted)
+      }
     }
   }
 
@@ -2179,7 +2194,6 @@ async function seedAdmissionsFunnel(
         // Mirrors apps.category — same value, different column name.
         enroleeType: category,
         levelApplied: levelLabel,
-        applicationUpdatedDate: dateIso,
         registrationStatus: stageFill.registrationStatus,
         documentStatus: stageFill.documentStatus,
         assessmentStatus: stageFill.assessmentStatus,
@@ -2218,25 +2232,29 @@ async function seedAdmissionsFunnel(
           .slice(0, 10);
       }
       // Terminal reason for Cancelled / Withdrawn rows (migration 067 / KD #111).
-      // Feeds the reason column + filter chips on /admissions/applications/closed.
+      // These are now unavoidable (the stage route 422s without a reason — KD #149
+      // follow-on from commit 9b1a29b), so the seeder must populate them so the test
+      // AY matches the as-used system. Feeds the cancellation-causes donut on
+      // /admissions/insights and the reason column on /admissions/applications/closed.
+      // Excludes 'other' (which requires non-empty notes) to keep the seeder simple.
       if (
         applicationStatus === 'Cancelled' ||
         applicationStatus === 'Withdrawn'
       ) {
-        const TERMINAL_REASONS = [
-          'chose_another_school',
-          'visa_denied',
-          'lost_interest',
-          'financial',
-        ] as const;
+        const SEEDABLE_REASONS = APPLICATION_TERMINAL_REASON_VALUES.filter(
+          (r) => r !== 'other'
+        ) as readonly string[];
         const TERMINAL_NOTES: Record<string, string> = {
           chose_another_school: 'Family decided to enrol at another school.',
           visa_denied: 'Student Pass application was not approved by ICA.',
           lost_interest: 'Applicant stopped responding after initial inquiry.',
           financial: 'Family cited financial constraints.',
+          family_relocation: 'Family is relocating overseas.',
+          health: 'Health and personal reasons cited by parent.',
         };
         const reason =
-          TERMINAL_REASONS[Math.floor(rand() * TERMINAL_REASONS.length)];
+          SEEDABLE_REASONS[Math.floor(rand() * SEEDABLE_REASONS.length)] ??
+          'chose_another_school';
         statusRow.applicationTerminalReason = reason;
         statusRow.applicationTerminalNotes = TERMINAL_NOTES[reason] ?? null;
       }
@@ -2436,6 +2454,7 @@ async function seedPublication(
     publish_from: string;
     publish_until: string;
     published_by: string;
+    published_with_gaps: { gaps: string[]; by: string; at: string } | null;
   }> = [];
 
   // Real registrars publish SELECTIVELY with VARIED windows — not every
@@ -2484,12 +2503,27 @@ async function seedPublication(
     const publishUntil = new Date(
       baseDate.getTime() + windowDays * 24 * 60 * 60 * 1000
     );
+    // Mark the 1st and 3rd published windows with a soft-gap override snapshot
+    // (KD #139 / migration 073). This exercises the `published_with_gaps`
+    // accountability path on the PublishWindowPanel without blocking the card
+    // (soft gaps are publishable with "publish anyway"). Positions 0 and 2 are
+    // chosen so there's always at least one clean window between them.
+    const publishedIdx = windowCursor - 1; // after the increment above
+    const gapSnapshot =
+      publishedIdx === 0 || publishedIdx === 2
+        ? {
+            gaps: ['attendance_incomplete'],
+            by: 'test-seeder@hfse.edu.sg',
+            at: publishUntil.toISOString(),
+          }
+        : null;
     publications.push({
       section_id: c.sectionId,
       term_id: c.term.id,
       publish_from: baseDate.toISOString(),
       publish_until: publishUntil.toISOString(),
       published_by: 'test-seeder@hfse.edu.sg',
+      published_with_gaps: gapSnapshot,
     });
   });
   if (publications.length === 0) return 0;
@@ -2839,10 +2873,6 @@ async function seedEnrolledAdmissionsRows(
   ): string =>
     `${last}, ${[first, middle].filter(Boolean).join(' ')}`.toUpperCase();
 
-  // Seeder actor stamped on the per-stage {stage}Updatedby trail, matching
-  // admissions-minimal's SEEDER_ACTOR.
-  const SEEDER_ACTOR = 'seeder@demo.com';
-
   // Persona quirks layered on top of the default "everything Finished, status
   // Enrolled" baseline:
   //   - 3 are Enrolled (Conditional) — registrar carve-outs (waiver path).
@@ -2877,48 +2907,32 @@ async function seedEnrolledAdmissionsRows(
     };
   };
 
-  // Withdrawn rows backdate `applicationUpdatedDate` ~30 days so the timeline
-  // shows the withdrawal as a historical event rather than today.
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
-
   // Deterministic per-AY rand for category / classType / pass / STP picks. Same
   // pattern as funnel — keeps re-runs stable.
   const enrolledRand = mulberry32(
     hashString(`${testAy.ay_code}:enrolled-personas`)
   );
 
-  // Spread `applicationUpdatedDate` across the current calendar month for
-  // ~35% of enrolled rows so the Conversion Rate KPI's `thisMonth` range
-  // window catches enough samples to show a non-zero average.
-  const now = new Date();
-  const monthStartDay = 1;
-  const monthMaxDay = now.getDate();
-  const personaUpdatedDate = (i: number): string => {
-    if (i >= PERSONA_WITHDRAWN_RANGE.start && i < PERSONA_WITHDRAWN_RANGE.end)
-      return thirtyDaysAgo;
-    if (enrolledRand() < 0.35) {
-      const day = monthStartDay + Math.floor(enrolledRand() * monthMaxDay);
-      return new Date(now.getFullYear(), now.getMonth(), day)
-        .toISOString()
-        .slice(0, 10);
-    }
-    return todayIso;
-  };
-
-  // Backdate `applications.created_at` to N days before each row's
-  // updatedDate so `daysToEnroll = updatedAt - createdAt` has realistic
-  // positive variance (14–90 days). Without this every row's daysToEnroll
-  // would be 0 (created_at defaults to seed-time, updatedDate is also
-  // ~today). Withdrawn rows backdate further so they don't pollute
-  // averages of healthy enrol times.
+  // Backdate `applications.created_at` so each enrolled row reflects a realistic
+  // application date (14–90 days before today; withdrawn rows go back further).
   const personaCreatedAtIso = (i: number): string => {
     const daysAgo =
       i >= PERSONA_WITHDRAWN_RANGE.start && i < PERSONA_WITHDRAWN_RANGE.end
         ? 60 + Math.floor(enrolledRand() * 60) // 60–120d for withdrawn
         : 14 + Math.floor(enrolledRand() * 76); // 14–90d for active
     return new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
+  };
+
+  // `enrolledAt` — write-once enrolment timestamp (migration 075). Stamped 7–45
+  // days after the row's created_at, giving a realistic application→enrolment
+  // processing lag. Only set for Enrolled / Enrolled (Conditional) rows —
+  // Withdrawn personas never completed enrolment.
+  const personaEnrolledAt = (i: number): string | null => {
+    if (i >= PERSONA_WITHDRAWN_RANGE.start && i < PERSONA_WITHDRAWN_RANGE.end)
+      return null;
+    const createdAt = Date.parse(personaCreatedAtIso(i));
+    const lagDays = 7 + Math.floor(enrolledRand() * 39); // 7–45 days
+    return new Date(createdAt + lagDays * 24 * 60 * 60 * 1000).toISOString();
   };
 
   // Per-row metadata computed once, then shared between appInserts and
@@ -3046,17 +3060,10 @@ async function seedEnrolledAdmissionsRows(
   const statusInserts = rows.map((r, i) => {
     const fill = personaStageFill(i);
     const m = personaMeta[i];
-    // Single backdate for the whole stage trail of this row, so the per-stage
-    // {stage}UpdatedDate values are internally consistent (real rows stamp them
-    // around the enrolment moment). Column casing intentionally mirrors the live
-    // schema's inconsistency (see the real-data dump): registration uses
-    // `registrationUpdateDate`, the rest use `{stage}UpdatedDate`; all use the
-    // lowercase `Updatedby` except `applicationUpdatedBy` (capital B).
-    const stageDate = personaUpdatedDate(i);
     return {
       enroleeNumber: r.enroleeNumber,
       enroleeName: fullNameOf(r.firstName, r.lastName, r.middleName),
-      enrolmentDate: stageDate,
+      enrolmentDate: todayIso,
       // SIS-side pipeline status — Enrolled / Enrolled (Conditional) / Withdrawn
       // per the persona ranges.
       applicationStatus: personaApplicationStatus(i),
@@ -3066,27 +3073,18 @@ async function seedEnrolledAdmissionsRows(
       classLevel: r.levelLabel,
       classSection: r.sectionName,
       classStatus: 'Finished',
-      classUpdatedDate: stageDate,
-      classUpdatedby: SEEDER_ACTOR,
-      applicationUpdatedDate: stageDate,
-      applicationUpdatedBy: SEEDER_ACTOR,
-      // Every completed stage stamps its own updated date + actor. These
-      // personas are all fully enrolled, so every stage below is set.
+      // Stage statuses only — update dates not written (they are 0/490 in
+      // prod; omitting them keeps the test AY honest per KD #125).
       registrationStatus: fill.registrationStatus,
-      registrationUpdateDate: stageDate,
-      registrationUpdatedby: SEEDER_ACTOR,
       documentStatus: fill.documentStatus,
-      documentUpdatedDate: stageDate,
-      documentUpdatedby: SEEDER_ACTOR,
       assessmentStatus: fill.assessmentStatus,
-      assessmentUpdatedDate: stageDate,
-      assessmentUpdatedby: SEEDER_ACTOR,
       contractStatus: fill.contractStatus,
-      contractUpdatedDate: stageDate,
-      contractUpdatedby: SEEDER_ACTOR,
       feeStatus: fill.feeStatus,
-      feeUpdatedDate: stageDate,
-      feeUpdatedby: SEEDER_ACTOR,
+      // Write-once enrolment timestamp (migration 075). Stamped 7–45 days after
+      // created_at to give a realistic application→enrolment processing lag.
+      // Withdrawn personas never completed enrolment → null. This feeds the
+      // time-to-enrol KPI + histogram on /admissions and /admissions/insights.
+      enrolledAt: personaEnrolledAt(i),
       // Post-enrolment stages stay null for a just-enrolled student (real dump
       // shows supplies/orientation null) — and classAY stays null.
     };

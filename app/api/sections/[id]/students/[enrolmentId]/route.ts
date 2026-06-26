@@ -11,6 +11,7 @@ import {
   getTermForDate,
   loadTermsForAY,
 } from '@/lib/sis/terms';
+import { stampEnrolledAtIfNull } from '@/lib/sis/enrolled-at';
 import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
 
 // Shape of the joined student node when name columns are selected, used by both
@@ -34,6 +35,38 @@ function studentNameFromNode(
     .map((p) => (p ?? '').trim())
     .filter(Boolean)
     .join(' ');
+}
+
+// Pure helper — builds the payload written to `ay{YY}_enrolment_status` when a
+// student is withdrawn post-enrolment.
+//
+// applicationStatus is the application OUTCOME (append-only) — current state
+// lives on section_students.enrollment_status. Do NOT cascade a terminal status
+// here; the application succeeded (the student enrolled) and that fact must
+// never be overwritten by a subsequent academic event.
+export function buildWithdrawalAdmissionsPatch({
+  actorEmail,
+  todayIso,
+  admissionsAlreadyTerminal,
+  withdrawalReason,
+  withdrawalNotes,
+}: {
+  actorEmail: string;
+  todayIso: string;
+  admissionsAlreadyTerminal: boolean;
+  withdrawalReason?: string | null;
+  withdrawalNotes?: string | null;
+}): Record<string, unknown> {
+  const patch: Record<string, unknown> = {
+    applicationUpdatedDate: todayIso,
+    applicationUpdatedBy: actorEmail,
+  };
+  // Only write the reason to admissions when none is already recorded.
+  if (!admissionsAlreadyTerminal && withdrawalReason) {
+    patch.applicationTerminalReason = withdrawalReason;
+    patch.applicationTerminalNotes = withdrawalNotes ?? null;
+  }
+  return patch;
 }
 
 // PATCH /api/sections/[id]/students/[enrolmentId]
@@ -406,17 +439,13 @@ export async function PATCH(
         terminalCascadeSkipped = true;
       }
 
-      const statusUpdate: Record<string, unknown> = {
-        applicationStatus: 'Withdrawn',
-        applicationUpdatedDate: todayIso,
-        applicationUpdatedBy: actorEmail,
-      };
-      // Only write the reason to admissions when none is already recorded.
-      if (!admissionsAlreadyTerminal && parsed.data.withdrawal_reason) {
-        statusUpdate.applicationTerminalReason = parsed.data.withdrawal_reason;
-        statusUpdate.applicationTerminalNotes =
-          parsed.data.withdrawal_notes ?? null;
-      }
+      const statusUpdate = buildWithdrawalAdmissionsPatch({
+        actorEmail,
+        todayIso,
+        admissionsAlreadyTerminal,
+        withdrawalReason: parsed.data.withdrawal_reason,
+        withdrawalNotes: parsed.data.withdrawal_notes,
+      });
 
       const { error: admErr } = await admissions
         .from(
@@ -444,7 +473,8 @@ export async function PATCH(
             ...(studentName ? { studentName } : {}),
             section_student_id: enrolmentId,
             section_id: sectionId,
-            applicationStatus_after: 'Withdrawn',
+            // applicationStatus (outcome) is NOT changed — outcome is
+            // append-only and the application succeeded when the student enrolled.
             ...(terminalCascadeSkipped
               ? { terminalCascadeSkipped: 'admissions-already-terminal' }
               : {}),
@@ -510,6 +540,16 @@ export async function PATCH(
           reErr.message
         );
       } else {
+        // Capture the enrolment moment (write-once, migration 075). Only
+        // stamps when enrolledAt is still NULL, so a student who was already
+        // enrolled before keeps their original moment; a legacy/pre-075
+        // enrolment with no captured moment gets stamped here (best available
+        // signal). Best-effort — never blocks the re-enrolment.
+        await stampEnrolledAtIfNull(
+          reAdmissions,
+          `${rePrefix}_enrolment_status`,
+          reEnroleeNumber
+        );
         reEnrolmentCascade = {
           enroleeNumber: reEnroleeNumber,
           ayCode: reAyCode,
