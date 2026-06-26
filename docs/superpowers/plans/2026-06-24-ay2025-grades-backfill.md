@@ -800,22 +800,20 @@ async function apply(
     });
   }
   for (const { subjectId, levelId } of neededConfigs.values()) {
-    await svc
-      .from('subject_configs')
-      .upsert(
-        {
-          academic_year_id: ayId,
-          subject_id: subjectId,
-          level_id: levelId,
-          ww_weight: 0.3,
-          pt_weight: 0.5,
-          qa_weight: 0.2,
-        },
-        {
-          onConflict: 'academic_year_id,subject_id,level_id',
-          ignoreDuplicates: true,
-        }
-      );
+    await svc.from('subject_configs').upsert(
+      {
+        academic_year_id: ayId,
+        subject_id: subjectId,
+        level_id: levelId,
+        ww_weight: 0.3,
+        pt_weight: 0.5,
+        qa_weight: 0.2,
+      },
+      {
+        onConflict: 'academic_year_id,subject_id,level_id',
+        ignoreDuplicates: true,
+      }
+    );
   }
   const { data: cfgs } = await svc
     .from('subject_configs')
