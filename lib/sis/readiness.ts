@@ -369,7 +369,8 @@ async function fetchAdvisers(
   const { data: sections, error: sectionsError } = await db
     .from('sections')
     .select('id')
-    .eq('academic_year_id', ayId);
+    .eq('academic_year_id', ayId)
+    .not('level_id', 'is', null);
 
   if (sectionsError) throw sectionsError;
   const sectionCount = sections?.length ?? 0;
