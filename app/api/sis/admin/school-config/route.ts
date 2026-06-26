@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
@@ -142,21 +143,25 @@ export async function PATCH(request: NextRequest) {
     });
   }
 
-  // The award thresholds are baked into the cached masterfile (markbook-drill:${ay}
-  // via getSchoolConfig() inside loadMasterfile), so a threshold change must bust
-  // the markbook tag or the academic-summary award distribution stays stale until
-  // the TTL. school_config is a global singleton — bust the CURRENT AY's tag (the
-  // only AY whose masterfile is viewed). Letterhead/allowance fields are read by
-  // dynamic (uncached) routes, so they need no cache busting. Best-effort.
+  // school_config is a global singleton — bust the CURRENT AY's tags.
+  // Award thresholds are baked into the cached masterfile (markbook-drill:${ay}
+  // via getSchoolConfig() inside loadMasterfile) — bust on threshold changes.
+  // The sis: readiness tag is busted on any config change (letterhead, allowances,
+  // thresholds) since the AY readiness widget reads school_config. Best-effort.
   const awardCols = [
     'subject_award_bronze_min',
     'subject_award_silver_min',
     'subject_award_gold_min',
     'subject_award_max',
   ];
-  if (awardCols.some((c) => c in diff)) {
+  if (Object.keys(diff).length > 0) {
     const current = await getCurrentAcademicYear(service);
-    if (current) invalidateDrillTags('markbook', current.ay_code);
+    if (current) {
+      if (awardCols.some((c) => c in diff)) {
+        invalidateDrillTags('markbook', current.ay_code);
+      }
+      revalidateTag(`sis:${current.ay_code}`, 'max');
+    }
   }
 
   return NextResponse.json({ ok: true });

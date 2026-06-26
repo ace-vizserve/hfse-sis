@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { requireCurrentAyCode } from '@/lib/academic-year';
@@ -167,6 +168,7 @@ export async function POST(request: NextRequest) {
     (ayRow as { ay_code: string } | null)?.ay_code ??
     (await requireCurrentAyCode(service));
   invalidateDrillTags('markbook', ayCodeForInvalidation);
+  revalidateTag(`sis:${ayCodeForInvalidation}`, 'max');
 
   return NextResponse.json({
     ok: true,

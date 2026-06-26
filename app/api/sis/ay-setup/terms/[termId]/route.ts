@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
@@ -189,6 +190,7 @@ export async function PATCH(
     if (ayCode) {
       invalidateDrillTags('attendance', ayCode);
       invalidateDrillTags('markbook', ayCode);
+      revalidateTag(`sis:${ayCode}`, 'max');
     }
   }
 
