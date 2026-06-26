@@ -160,7 +160,6 @@ export async function seedEdgeCases(
   // relies on this).
   const prefix = prefixFor(testAy.ay_code);
   const appsTable = `${prefix}_enrolment_applications`;
-  const statusTable = `${prefix}_enrolment_status`;
 
   // ── EC1 & EC2 — Late enrollees ─────────────────────────────────────────────
   // REMOVED. Late-enrollee designation now happens UP FRONT in
@@ -256,57 +255,12 @@ export async function seedEdgeCases(
           });
         }
 
-        // Admissions cascade — mirror the real route's `student.withdrawal.cascade`
-        // (route ~360-404): flip ay####_enrolment_status.applicationStatus to
-        // 'Withdrawn' + record the terminal reason so the withdrawn student no
-        // longer reads "Enrolled" in admissions. Single shared project (KD #1).
-        const identity = await resolveStudentIdentity(
-          service,
-          ss.student_id,
-          appsTable
-        );
-        if (identity.enroleeNumber) {
-          const { error: admErr } = await service
-            .from(statusTable)
-            .update({
-              applicationStatus: 'Withdrawn',
-              applicationTerminalReason: wMeta.reason,
-              applicationTerminalNotes: wMeta.notes,
-            })
-            .eq('enroleeNumber', identity.enroleeNumber);
-          if (admErr) {
-            console.warn(
-              `[edge-cases] EC3/EC4 admissions cascade failed for ${identity.enroleeNumber}:`,
-              admErr.message
-            );
-          } else {
-            // Cascade audit — idempotent guard on entity_id + action.
-            const { count: existingCascade } = await service
-              .from('audit_log')
-              .select('id', { count: 'exact', head: true })
-              .eq('action', 'student.withdrawal.cascade')
-              .eq('entity_id', identity.enroleeNumber);
-            if ((existingCascade ?? 0) === 0) {
-              await service.from('audit_log').insert({
-                action: 'student.withdrawal.cascade',
-                actor_email: SEED_ACTOR_EMAIL,
-                entity_type: 'enrolment_status',
-                entity_id: identity.enroleeNumber,
-                context: {
-                  ay_code: testAy.ay_code,
-                  trigger: 'section_student.withdrawn',
-                  enroleeNumber: identity.enroleeNumber,
-                  ...(identity.studentName
-                    ? { studentName: identity.studentName }
-                    : {}),
-                  section_student_id: ss.id,
-                  section_id: ss.section_id,
-                  applicationStatus_after: 'Withdrawn',
-                },
-              });
-            }
-          }
-        }
+        // No admissions cascade — applicationStatus is the application OUTCOME
+        // (append-only, KD #147). An enrolled student who later withdraws keeps
+        // applicationStatus='Enrolled'; current state lives on
+        // section_students.enrollment_status='withdrawn'. The seeder must not
+        // pre-bake the old corruption (setting applicationStatus='Withdrawn' on
+        // post-enrolment withdrawal) that the real withdrawal route no longer does.
       }
     }
   } catch (err) {
