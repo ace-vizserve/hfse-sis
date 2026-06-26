@@ -393,6 +393,29 @@ export async function syncOneStudent(
         reason: 'missing classLevel or classSection',
       };
     }
+    // NOTE (KD #147 / post-enrolment withdrawal model): this guard catches the
+    // pre-enrolment 'Cancelled'/'Withdrawn' terminal states where the student
+    // never received a section_students row.
+    //
+    // POST-KD-#147 LIMITATION: an enrolled-then-withdrawn student keeps
+    // applicationStatus='Enrolled' (the OUTCOME is append-only); their
+    // withdrawal is signalled only via section_students.enrollment_status='withdrawn'.
+    // That case is NOT caught here.
+    //
+    // This is currently SAFE because:
+    //  (a) The bulk sync path's upstream `fetchAdmissionsRoster` /
+    //      `filterWithdrawnFromRoster` strips post-enrolment withdrawals before
+    //      any rows reach this function.
+    //  (b) Today's only direct callers operate on the *unsynced queue* — students
+    //      with NO section_students row at all, so a 'withdrawn' ss row cannot
+    //      coexist.
+    //
+    // IF a new call-site is added that may target already-enrolled students
+    // (e.g. a re-sync-on-demand route), the caller MUST guard against
+    // reactivating a withdrawn student. The canonical check is:
+    //   resolveIsWithdrawn(applicationStatus, ssEnrollmentStatuses)
+    // from `lib/sis/process.ts` — pass the student's current
+    // section_students.enrollment_status values for the AY.
     if (
       status.applicationStatus === 'Cancelled' ||
       status.applicationStatus === 'Withdrawn'

@@ -370,9 +370,10 @@ async function loadStudentLifecycleUncached(
   // Use the aliased `application_updatedAt` field for the "withdrawn on" date.
   const applicationStatus =
     (status?.['applicationStatus'] as string | null) ?? null;
-  // isWithdrawn is resolved after section_students is loaded below — only the
-  // post-load call to resolveIsWithdrawn is authoritative.
-  let isWithdrawn = false;
+  // Initial resolution from the application OUTCOME alone — correct for
+  // pre-enrolment withdrawals (no studentNumber / no section_students row).
+  // Refined below once section_students loads (dual-signal, transfer-aware).
+  let isWithdrawn = resolveIsWithdrawn(applicationStatus, []);
   const withdrawnDate =
     (status?.['application_updatedAt'] as string | null) ?? null;
   const withdrawnReason =
