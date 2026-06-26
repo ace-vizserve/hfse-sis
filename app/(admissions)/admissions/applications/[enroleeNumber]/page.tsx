@@ -19,6 +19,7 @@ import { EnrollmentHistoryChips } from '@/components/sis/enrollment-history-chip
 import { EnrollmentTab } from '@/components/sis/enrollment-tab';
 import { FamilyTab } from '@/components/sis/family-tab';
 import { ProfileTab } from '@/components/sis/profile-tab';
+import { StudentStatusBadges } from '@/components/sis/student-status-badges';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { StpApplicationCard } from '@/components/sis/stp-application-card';
 import { StudentLifecycleTimeline } from '@/components/sis/student-lifecycle-timeline';
@@ -379,6 +380,13 @@ export default async function SisStudentDetailPage({
         </TabsContent>
 
         <TabsContent value="enrollment" className="space-y-6">
+          {/* Application outcome badge — enrollment_status (section_students)
+              is not in scope on this page without an additional query; state
+              is surfaced on the Records permanent-record page instead. */}
+          <StudentStatusBadges
+            outcome={status?.applicationStatus ?? null}
+            state={null}
+          />
           <EnrollmentTab
             status={status}
             app={application}

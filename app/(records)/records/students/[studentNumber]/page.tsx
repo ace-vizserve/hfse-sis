@@ -37,6 +37,7 @@ import { EditFamilySheet } from '@/components/sis/edit-family-sheet';
 import { EditProfileSheet } from '@/components/sis/edit-profile-sheet';
 import { PlacementEditButton } from '@/components/sis/placement-edit-button';
 import { RecordsLitePage } from '@/components/sis/records-lite-page';
+import { StudentStatusBadges } from '@/components/sis/student-status-badges';
 import {
   SectionTransferDialog,
   type SiblingSection,
@@ -584,6 +585,7 @@ export default async function RecordsStudentCrossYearPage({
                 app={currentAyDetail.application}
                 status={currentAyDetail.status}
                 ayCode={currentAyDetail.ayCode}
+                enrollmentStatus={activePlacement?.enrollmentStatus ?? null}
               />
               <PostEnrolmentChecklist
                 status={currentAyDetail.status}
@@ -1528,10 +1530,13 @@ function StudentProfileCard({
   app,
   status,
   ayCode,
+  enrollmentStatus,
 }: {
   app: ApplicationRow;
   status: StatusRow | null;
   ayCode: string;
+  /** Current `enrollment_status` from the active `section_students` row. */
+  enrollmentStatus: PlacementRow['enrollmentStatus'] | null;
 }) {
   const hasIdDocs = app.nric || app.passportNumber || app.pass;
   const hasLearningNeeds =
@@ -1563,6 +1568,11 @@ function StudentProfileCard({
         </CardAction>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Status badges — application outcome vs current operational state */}
+        <StudentStatusBadges
+          outcome={status?.applicationStatus ?? null}
+          state={enrollmentStatus}
+        />
         {/* Personal */}
         <div>
           <p className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
