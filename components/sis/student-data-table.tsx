@@ -115,6 +115,7 @@ export function StudentDataTable({
   showReasonColumn = false,
   showIndex = false,
   showStaleness = false,
+  admissionsTab,
   statusBuckets = DEFAULT_STATUS_BUCKETS,
 }: {
   data: StudentListRow[];
@@ -135,6 +136,11 @@ export function StudentDataTable({
    *  pass from the active Admissions applications list — staleness is a
    *  pre-enrolment follow-up signal, not meaningful for enrolled/closed rows. */
   showStaleness?: boolean;
+  /** When set, appends &tab={admissionsTab} to the "Open in Admissions" link
+   *  and adds a dedicated "Review documents" quick-action pointing at tab=documents.
+   *  Only pass from pages whose primary purpose is document-chasing (e.g. the
+   *  Applications list). Other callers omit to keep the default deep-link. */
+  admissionsTab?: string;
   statusBuckets?: StatusBucketDef[];
 }) {
   const querySuffix = React.useMemo(() => {
@@ -402,7 +408,15 @@ export function StudentDataTable({
           const { studentNumber, enroleeNumber } = row.original;
           // Admissions link: always include ?ay= when the ayCode prop is set,
           // matching how callers thread historical AYs through linkQuery.
-          const admissionsHref = `/admissions/applications/${enroleeNumber}${ayCode ? `?ay=${ayCode}` : ''}`;
+          const ayParam = ayCode ? `?ay=${ayCode}` : '';
+          const tabSuffix = admissionsTab
+            ? `${ayParam ? '&' : '?'}tab=${admissionsTab}`
+            : '';
+          const admissionsHref = `/admissions/applications/${enroleeNumber}${ayParam}${tabSuffix}`;
+          const documentsHref =
+            admissionsTab !== 'documents'
+              ? `/admissions/applications/${enroleeNumber}${ayParam}${ayParam ? '&' : '?'}tab=documents`
+              : null;
           const hasStudentNumber = Boolean(studentNumber);
           return (
             <RowActionsMenu>
@@ -412,6 +426,14 @@ export function StudentDataTable({
                   Open in Admissions
                 </Link>
               </DropdownMenuItem>
+              {documentsHref && (
+                <DropdownMenuItem asChild>
+                  <Link href={documentsHref}>
+                    <ClipboardList className="size-3.5" />
+                    Review documents
+                  </Link>
+                </DropdownMenuItem>
+              )}
               {hasStudentNumber && (
                 <DropdownMenuItem asChild>
                   <Link href={`/records/students/${studentNumber}`}>
@@ -438,6 +460,7 @@ export function StudentDataTable({
       linkAttribute,
       querySuffix,
       ayCode,
+      admissionsTab,
       showSubmittedColumn,
       showReasonColumn,
       showIndex,

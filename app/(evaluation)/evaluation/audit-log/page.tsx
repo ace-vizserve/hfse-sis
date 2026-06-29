@@ -47,7 +47,12 @@ const EVALUATION_AUDIT_ALLOWLIST = [
 export default async function EvaluationAuditLogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; pageSize?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    pageSize?: string;
+    action?: string;
+    actor?: string;
+  }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -67,17 +72,42 @@ export default async function EvaluationAuditLogPage({
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
+  // Validate server-side filter params against the allowlist (never let
+  // a free-text action value escape through to the DB query).
+  const allowlistValues = EVALUATION_AUDIT_ALLOWLIST as readonly string[];
+  const currentAction =
+    params.action && allowlistValues.includes(params.action)
+      ? params.action
+      : null;
+  const currentActor = params.actor?.trim() || null;
+
   const supabase = await createClient();
 
-  const { data, count, error } = await supabase
+  // Distinct actor query for the Actor select options (un-paginated, scoped
+  // to the same allowlist so we only show actors who appear in this module).
+  const { data: actorData } = await supabase
+    .from('audit_log')
+    .select('actor_email')
+    .in('action', EVALUATION_AUDIT_ALLOWLIST);
+  const actorOptions = Array.from(
+    new Set(
+      (actorData ?? []).map((r: { actor_email: string }) => r.actor_email)
+    )
+  ).sort();
+
+  let query = supabase
     .from('audit_log')
     .select(
       'id, actor_email, action, entity_type, entity_id, context, created_at',
       { count: 'exact' }
     )
     .in('action', EVALUATION_AUDIT_ALLOWLIST)
-    .order('created_at', { ascending: false })
-    .range(from, to);
+    .order('created_at', { ascending: false });
+
+  if (currentAction) query = query.eq('action', currentAction);
+  if (currentActor) query = query.eq('actor_email', currentActor);
+
+  const { data, count, error } = await query.range(from, to);
 
   const totalPages = count ? Math.ceil(count / PAGE_SIZE) : 1;
 
@@ -189,6 +219,10 @@ export default async function EvaluationAuditLogPage({
       <AuditLogDataTable
         rows={rows}
         canExport={canExport}
+        currentAction={currentAction}
+        currentActor={currentActor}
+        actionOptions={[...EVALUATION_AUDIT_ALLOWLIST]}
+        actorOptions={actorOptions}
         pagination={{
           page,
           pageSize: PAGE_SIZE,

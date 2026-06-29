@@ -11,6 +11,7 @@
 import { type ColumnDef } from '@tanstack/react-table';
 import { Layers } from 'lucide-react';
 
+import { AdviserCell } from '@/components/sections/adviser-cell';
 import { SectionRowActions } from '@/components/sections/section-row-actions';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -25,6 +26,7 @@ export type MarkbookSectionRow = {
   name: string;
   levelLabel: string;
   active: number;
+  fcaName: string | null;
 };
 
 // ─── facetFilterFn (verbatim copy from SisSectionsDataTable / EvaluationSectionsList) ─
@@ -69,6 +71,13 @@ function buildColumns(
         </span>
       ),
       filterFn: facetFilterFn,
+    },
+    {
+      accessorKey: 'fcaName',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Adviser</SortableHeader>
+      ),
+      cell: ({ row }) => <AdviserCell name={row.original.fcaName} />,
     },
     {
       accessorKey: 'active',

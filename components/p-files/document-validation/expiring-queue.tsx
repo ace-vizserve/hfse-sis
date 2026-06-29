@@ -178,6 +178,18 @@ export function ExpiringQueue({ rows }: Props) {
         filterFn: 'arrIncludesSome',
       },
       {
+        accessorKey: 'classSection',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Section</SortableHeader>
+        ),
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            {row.original.classSection ?? '—'}
+          </span>
+        ),
+        filterFn: 'arrIncludesSome',
+      },
+      {
         accessorKey: 'daysUntilExpiry',
         header: ({ column }) => (
           <SortableHeader column={column}>Expires in</SortableHeader>
@@ -252,6 +264,7 @@ export function ExpiringQueue({ rows }: Props) {
     () => [
       { columnId: 'slotLabel', label: 'Document' },
       { columnId: 'levelApplied', label: 'Level' },
+      { columnId: 'classSection', label: 'Section' },
     ],
     []
   );

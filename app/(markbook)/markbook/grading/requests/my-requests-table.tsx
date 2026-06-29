@@ -44,6 +44,11 @@ export type MyRequestRow = {
   // request was co-signed; the teacher sees both names in the Reason cell.
   primary_reviewed_by_email: string | null;
   secondary_reviewed_by_email: string | null;
+  // Context fields populated by the loader join.
+  sectionName?: string | null;
+  subjectCode?: string | null;
+  subjectName?: string | null;
+  termLabel?: string | null;
 };
 
 // TODO(loader-join): surface section/subject/term/student per spec §5.8
@@ -83,6 +88,64 @@ const COLUMNS: ColumnDef<MyRequestRow>[] = [
     cell: ({ row }) => (
       <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">
         {row.original.field_label}
+      </span>
+    ),
+    filterFn: (row, id, value) => {
+      if (!value || (Array.isArray(value) && value.length === 0)) return true;
+      return Array.isArray(value)
+        ? value.includes(row.getValue(id))
+        : row.getValue(id) === value;
+    },
+  },
+  {
+    accessorKey: 'sectionName',
+    header: ({ column }) => (
+      <SortableHeader column={column}>Section</SortableHeader>
+    ),
+    cell: ({ row }) => (
+      <span className="text-sm text-muted-foreground">
+        {row.original.sectionName ?? '—'}
+      </span>
+    ),
+    filterFn: (row, id, value) => {
+      if (!value || (Array.isArray(value) && value.length === 0)) return true;
+      return Array.isArray(value)
+        ? value.includes(row.getValue(id))
+        : row.getValue(id) === value;
+    },
+  },
+  {
+    accessorKey: 'subjectCode',
+    header: ({ column }) => (
+      <SortableHeader column={column}>Subject</SortableHeader>
+    ),
+    cell: ({ row }) => (
+      <div>
+        <span className="font-mono text-xs text-foreground">
+          {row.original.subjectCode ?? '—'}
+        </span>
+        {row.original.subjectName && (
+          <div className="text-[11px] text-muted-foreground">
+            {row.original.subjectName}
+          </div>
+        )}
+      </div>
+    ),
+    filterFn: (row, id, value) => {
+      if (!value || (Array.isArray(value) && value.length === 0)) return true;
+      return Array.isArray(value)
+        ? value.includes(row.getValue(id))
+        : row.getValue(id) === value;
+    },
+  },
+  {
+    accessorKey: 'termLabel',
+    header: ({ column }) => (
+      <SortableHeader column={column}>Term</SortableHeader>
+    ),
+    cell: ({ row }) => (
+      <span className="font-mono text-xs text-muted-foreground">
+        {row.original.termLabel ?? '—'}
       </span>
     ),
     filterFn: (row, id, value) => {
@@ -262,6 +325,18 @@ export function MyRequestsTable({ data }: { data: MyRequestRow[] }) {
         valueOptions: Array.from(
           new Set(data.map((r) => r.field_changed))
         ).sort(),
+      },
+      {
+        columnId: 'sectionName',
+        label: 'Section',
+      },
+      {
+        columnId: 'subjectCode',
+        label: 'Subject',
+      },
+      {
+        columnId: 'termLabel',
+        label: 'Term',
       },
     ],
     [data]

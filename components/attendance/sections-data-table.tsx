@@ -7,10 +7,13 @@
 //      only (no Generate-index / Generate-sheets, so no role gating needed).
 //   3. Column header "Active" (vs "Students" in Markbook — both are fine labels;
 //      "Active" mirrors the existing attendance page copy).
+//   4. Optional `showAdviser` prop surfaces the FCA column for registrar+ view;
+//      teachers always see their own section and don't need the adviser column.
 
 import { type ColumnDef } from '@tanstack/react-table';
 import { Layers } from 'lucide-react';
 
+import { AdviserCell } from '@/components/sections/adviser-cell';
 import { SectionRowActions } from '@/components/sections/section-row-actions';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -24,6 +27,7 @@ export type AttendanceSectionRow = {
   name: string;
   levelLabel: string;
   active: number;
+  fcaName: string | null;
 };
 
 // ─── facetFilterFn (verbatim copy from MarkbookSectionsDataTable) ─────────────
@@ -41,7 +45,10 @@ function facetFilterFn(
 
 // ─── Columns ──────────────────────────────────────────────────────────────────
 
-function buildColumns(today: string): ColumnDef<AttendanceSectionRow>[] {
+function buildColumns(
+  today: string,
+  showAdviser: boolean
+): ColumnDef<AttendanceSectionRow>[] {
   return [
     {
       accessorKey: 'name',
@@ -66,6 +73,17 @@ function buildColumns(today: string): ColumnDef<AttendanceSectionRow>[] {
       ),
       filterFn: facetFilterFn,
     },
+    ...(showAdviser
+      ? ([
+          {
+            accessorKey: 'fcaName',
+            header: ({ column }) => (
+              <SortableHeader column={column}>Adviser</SortableHeader>
+            ),
+            cell: ({ row }) => <AdviserCell name={row.original.fcaName} />,
+          },
+        ] as ColumnDef<AttendanceSectionRow>[])
+      : []),
     {
       accessorKey: 'active',
       header: ({ column }) => (
@@ -102,12 +120,14 @@ export function AttendanceSectionsDataTable({
   rows,
   levels,
   today,
+  showAdviser = false,
 }: {
   rows: AttendanceSectionRow[];
   levels: { id: string; code: string; label: string }[];
   today: string;
+  showAdviser?: boolean;
 }) {
-  const columns = buildColumns(today);
+  const columns = buildColumns(today, showAdviser);
 
   const facets: FacetConfig[] =
     levels.length > 1

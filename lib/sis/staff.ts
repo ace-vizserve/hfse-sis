@@ -134,3 +134,51 @@ export function loadStaffAssignments(ayCode: string): Promise<StaffRow[]> {
     { tags: [`sis:${ayCode}`], revalidate: 60 }
   )(ayCode);
 }
+
+// ─── loadFormAdvisersBySection ────────────────────────────────────────────────
+// Resolves the form-adviser name for each given section ID.  Lighter than the
+// full loadStaffAssignments — only the form_adviser role, no subject joins.
+// Returns a Map<sectionId, { userId, name }>; first-write-wins per section.
+
+type AdviserEntry = { userId: string; name: string };
+
+async function loadFormAdvisersBySectionUncached(
+  sectionIds: string[],
+  _ayCode: string
+): Promise<Record<string, AdviserEntry>> {
+  if (sectionIds.length === 0) return {};
+
+  const service = createServiceClient();
+
+  const { data: rows } = await service
+    .from('teacher_assignments')
+    .select('section_id, teacher_user_id')
+    .eq('role', 'form_adviser')
+    .in('section_id', sectionIds);
+
+  const teachers = await getTeacherList({ excludeDisabled: false });
+  const teacherMap = new Map(teachers.map((t) => [t.id, t.name]));
+
+  const result: Record<string, AdviserEntry> = {};
+  for (const row of rows ?? []) {
+    if (!result[row.section_id]) {
+      const name = teacherMap.get(row.teacher_user_id);
+      if (name) {
+        result[row.section_id] = { userId: row.teacher_user_id, name };
+      }
+    }
+  }
+  return result;
+}
+
+export function loadFormAdvisersBySection(
+  sectionIds: string[],
+  ayCode: string
+): Promise<Record<string, AdviserEntry>> {
+  if (sectionIds.length === 0) return Promise.resolve({});
+  return unstable_cache(
+    loadFormAdvisersBySectionUncached,
+    ['sis', 'advisers-by-section', ayCode],
+    { tags: [`sis:${ayCode}`], revalidate: 60 }
+  )(sectionIds, ayCode);
+}

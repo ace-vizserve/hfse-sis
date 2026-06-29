@@ -31,6 +31,8 @@ export type FeedbackRow = {
   feedbackComments: string | null;
   feedbackConsent: boolean | null;
   feedbackSubmittedAt: string | null;
+  motherEmail: string | null;
+  fatherEmail: string | null;
 };
 
 export type FeedbackStats = {
@@ -55,6 +57,8 @@ const FEEDBACK_APP_COLUMNS = [
   'feedbackComments',
   'feedbackConsent',
   'feedbackSubmittedAt',
+  'motherEmail',
+  'fatherEmail',
 ];
 
 function prefixFor(ayCode: string): string {
@@ -126,6 +130,8 @@ async function loadFeedbackUncached(ayCode: string): Promise<FeedbackResult> {
       feedbackComments: (app.feedbackComments as string | null)?.trim() || null,
       feedbackConsent: (app.feedbackConsent as boolean | null) ?? null,
       feedbackSubmittedAt: submittedAt,
+      motherEmail: (app.motherEmail as string | null)?.trim() || null,
+      fatherEmail: (app.fatherEmail as string | null)?.trim() || null,
     });
   }
 

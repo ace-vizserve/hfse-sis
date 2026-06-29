@@ -1,6 +1,7 @@
 'use client';
 
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, ExternalLink, FileText, Mail } from 'lucide-react';
+import Link from 'next/link';
 import * as React from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 
@@ -8,7 +9,8 @@ import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 import { StalenessBadge } from '@/components/admissions/staleness-badge';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { Card } from '@/components/ui/card';
-import { DataTable } from '@/components/ui/data-table';
+import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { type FacetConfig } from '@/components/ui/data-table/types';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -239,6 +241,43 @@ function buildColumns(ayCode?: string): ColumnDef<OutdatedRow>[] {
         );
       },
       enableHiding: true,
+    },
+    {
+      id: 'actions',
+      header: () => <span className="sr-only">Actions</span>,
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => {
+        const { enroleeNumber, motherEmail, fatherEmail } = row.original;
+        const detailHref = ayCode
+          ? `/admissions/applications/${enroleeNumber}?ay=${ayCode}`
+          : `/admissions/applications/${enroleeNumber}`;
+        const parentEmail = motherEmail ?? fatherEmail ?? null;
+        return (
+          <RowActionsMenu>
+            <DropdownMenuItem asChild>
+              <Link href={detailHref}>
+                <ExternalLink className="size-3.5" />
+                Open in Admissions
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href={`${detailHref}&tab=documents`}>
+                <FileText className="size-3.5" />
+                Review documents
+              </Link>
+            </DropdownMenuItem>
+            {parentEmail && (
+              <DropdownMenuItem asChild>
+                <a href={`mailto:${parentEmail}`}>
+                  <Mail className="size-3.5" />
+                  Email parent
+                </a>
+              </DropdownMenuItem>
+            )}
+          </RowActionsMenu>
+        );
+      },
     },
   ];
 }

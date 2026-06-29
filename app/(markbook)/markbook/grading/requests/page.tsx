@@ -79,7 +79,11 @@ export default async function MyRequestsPage() {
        applied_at,
        approved_at, rejection_undone_at,
        primary_reviewed_by_email, secondary_reviewed_by_email,
-       grading_sheet:grading_sheets!inner(section:sections!inner(academic_year_id))`
+       grading_sheet:grading_sheets!inner(
+         section:sections!inner(name, academic_year_id),
+         subject:subjects(code, name),
+         term:terms(label)
+       )`
     )
     .eq('requested_by', userId)
     .order('requested_at', { ascending: false });
@@ -93,31 +97,45 @@ export default async function MyRequestsPage() {
 
   const { data: rawRows } = await listQuery;
 
-  const rawList = (rawRows ?? []) as RequestRow[];
+  type RawGradingSheet = {
+    section: { name: string; academic_year_id: string } | null;
+    subject: { code: string; name: string } | null;
+    term: { label: string } | null;
+  };
+  const rawList = (rawRows ?? []) as unknown as (RequestRow & {
+    grading_sheet?: RawGradingSheet;
+  })[];
 
   // Map server rows → MyRequestRow (derive field_label on the server so
   // it's available as a stable string for faceting + CSV export).
-  const tableRows: MyRequestRow[] = rawList.map((r) => ({
-    id: r.id,
-    grading_sheet_id: r.grading_sheet_id,
-    grade_entry_id: r.grade_entry_id,
-    field_label: fieldLabel(r.field_changed, r.slot_index),
-    field_changed: r.field_changed,
-    current_value: r.current_value,
-    proposed_value: r.proposed_value,
-    reason_category: r.reason_category,
-    justification: r.justification,
-    status: r.status,
-    requested_at: r.requested_at,
-    reviewed_at: r.reviewed_at,
-    reviewed_by_email: r.reviewed_by_email,
-    decision_note: r.decision_note,
-    applied_at: r.applied_at,
-    approved_at: r.approved_at,
-    rejection_undone_at: r.rejection_undone_at,
-    primary_reviewed_by_email: r.primary_reviewed_by_email,
-    secondary_reviewed_by_email: r.secondary_reviewed_by_email,
-  }));
+  const tableRows: MyRequestRow[] = rawList.map((r) => {
+    const gs = r.grading_sheet;
+    return {
+      id: r.id,
+      grading_sheet_id: r.grading_sheet_id,
+      grade_entry_id: r.grade_entry_id,
+      field_label: fieldLabel(r.field_changed, r.slot_index),
+      field_changed: r.field_changed,
+      current_value: r.current_value,
+      proposed_value: r.proposed_value,
+      reason_category: r.reason_category,
+      justification: r.justification,
+      status: r.status,
+      requested_at: r.requested_at,
+      reviewed_at: r.reviewed_at,
+      reviewed_by_email: r.reviewed_by_email,
+      decision_note: r.decision_note,
+      applied_at: r.applied_at,
+      approved_at: r.approved_at,
+      rejection_undone_at: r.rejection_undone_at,
+      primary_reviewed_by_email: r.primary_reviewed_by_email,
+      secondary_reviewed_by_email: r.secondary_reviewed_by_email,
+      sectionName: gs?.section?.name ?? null,
+      subjectCode: gs?.subject?.code ?? null,
+      subjectName: gs?.subject?.name ?? null,
+      termLabel: gs?.term?.label ?? null,
+    };
+  });
 
   const counts = rawList.reduce(
     (acc, r) => {

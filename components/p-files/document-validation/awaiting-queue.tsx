@@ -152,6 +152,18 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
         filterFn: 'arrIncludesSome',
       },
       {
+        accessorKey: 'classSection',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Section</SortableHeader>
+        ),
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            {row.original.classSection ?? '—'}
+          </span>
+        ),
+        filterFn: 'arrIncludesSome',
+      },
+      {
         id: 'preview',
         header: 'Preview',
         cell: ({ row }) => (
@@ -208,6 +220,7 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
       { columnId: 'slotLabel', label: 'Document' },
       { columnId: 'owner', label: 'Owner' },
       { columnId: 'levelApplied', label: 'Level' },
+      { columnId: 'classSection', label: 'Section' },
     ],
     []
   );

@@ -1,9 +1,12 @@
 'use client';
 
+import { ExternalLink, Mail, Users } from 'lucide-react';
+import Link from 'next/link';
 import { type ColumnDef } from '@tanstack/react-table';
 
 import { Badge } from '@/components/ui/badge';
-import { DataTable } from '@/components/ui/data-table';
+import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import type { StatusTabConfig } from '@/components/ui/data-table/types';
@@ -168,6 +171,82 @@ function buildColumns(ayCode: string): ColumnDef<FeedbackRow>[] {
         return av < bv ? -1 : av > bv ? 1 : 0;
       },
     },
+    // Hidden — available via Columns toggle + used by the mailto action.
+    {
+      id: 'motherEmail',
+      accessorKey: 'motherEmail',
+      header: 'Mother email',
+      cell: ({ row }) => {
+        const email = row.original.motherEmail;
+        return email ? (
+          <a
+            href={`mailto:${email}`}
+            className="text-xs text-muted-foreground hover:underline"
+          >
+            {email}
+          </a>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        );
+      },
+      enableHiding: true,
+    },
+    {
+      id: 'fatherEmail',
+      accessorKey: 'fatherEmail',
+      header: 'Father email',
+      cell: ({ row }) => {
+        const email = row.original.fatherEmail;
+        return email ? (
+          <a
+            href={`mailto:${email}`}
+            className="text-xs text-muted-foreground hover:underline"
+          >
+            {email}
+          </a>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        );
+      },
+      enableHiding: true,
+    },
+    {
+      id: 'actions',
+      header: () => <span className="sr-only">Actions</span>,
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => {
+        const { enroleeNumber, motherEmail, fatherEmail } = row.original;
+        const detailHref = `/admissions/applications/${encodeURIComponent(enroleeNumber)}?ay=${ayCode}&tab=family`;
+        const parentEmail = motherEmail ?? fatherEmail ?? null;
+        return (
+          <RowActionsMenu>
+            <DropdownMenuItem asChild>
+              <Link href={detailHref}>
+                <ExternalLink className="size-3.5" />
+                Open in Admissions
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link
+                href={`/admissions/applications/${encodeURIComponent(enroleeNumber)}?ay=${ayCode}&tab=profile`}
+              >
+                <Users className="size-3.5" />
+                View profile
+              </Link>
+            </DropdownMenuItem>
+            {parentEmail && (
+              <DropdownMenuItem asChild>
+                <a href={`mailto:${parentEmail}`}>
+                  <Mail className="size-3.5" />
+                  Email parent
+                </a>
+              </DropdownMenuItem>
+            )}
+          </RowActionsMenu>
+        );
+      },
+    },
   ];
 }
 
@@ -228,6 +307,7 @@ export function FeedbackTable({
       statusTabs={STATUS_TABS}
       pageSize={25}
       initialSort={[{ id: 'feedbackSubmittedAt', desc: true }]}
+      initialColumnVisibility={{ motherEmail: false, fatherEmail: false }}
       csv={{ filename: `feedback-${ayCode}.csv` }}
       url={{ enabled: true, namespace: 'feedback' }}
       emptyState={{

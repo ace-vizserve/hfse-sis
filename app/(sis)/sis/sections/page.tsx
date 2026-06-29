@@ -18,6 +18,7 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { sgToday } from '@/lib/dates';
+import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import type { Schedule } from '@/lib/schemas/section';
 
 type LevelLite = {
@@ -116,6 +117,10 @@ export default async function SisSectionsListPage() {
     }
   }
 
+  const adviserMap = ay
+    ? await loadFormAdvisersBySection(ids, ay.ay_code)
+    : ({} as Record<string, { userId: string; name: string }>);
+
   const getLevel = (l: LevelLite | LevelLite[] | null): LevelLite | null =>
     Array.isArray(l) ? (l[0] ?? null) : l;
 
@@ -156,6 +161,7 @@ export default async function SisSectionsListPage() {
     schedule: c.schedule,
     active: c.active,
     withdrawn: c.withdrawn,
+    fcaName: adviserMap[c.id]?.name ?? null,
   }));
 
   // Section list for the bulk "Generate all indexes" button in the toolbar.

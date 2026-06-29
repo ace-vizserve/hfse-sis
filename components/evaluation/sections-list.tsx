@@ -4,6 +4,7 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { ClipboardList, BookOpen, Users } from 'lucide-react';
 import Link from 'next/link';
 
+import { AdviserCell } from '@/components/sections/adviser-cell';
 import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -21,6 +22,7 @@ export type SectionCardData = {
   levelLabel: string | null;
   active: number;
   submitted: number;
+  fcaName: string | null;
 };
 
 export type LevelOption = { id: string; code: string; label: string };
@@ -39,6 +41,7 @@ type EvalSectionRow = {
   submitted: number;
   percent: number;
   status: WriteupStatus;
+  fcaName: string | null;
 };
 
 const STATUS_LABEL: Record<WriteupStatus, string> = {
@@ -64,6 +67,7 @@ function deriveRow(s: SectionCardData): EvalSectionRow {
     submitted: s.submitted,
     percent,
     status,
+    fcaName: s.fcaName,
   };
 }
 
@@ -78,7 +82,10 @@ function facetFilterFn(
     : row.getValue(id) === value;
 }
 
-function buildColumns(selectedTermId: string): ColumnDef<EvalSectionRow>[] {
+function buildColumns(
+  selectedTermId: string,
+  isTeacher: boolean
+): ColumnDef<EvalSectionRow>[] {
   return [
     {
       accessorKey: 'name',
@@ -105,6 +112,17 @@ function buildColumns(selectedTermId: string): ColumnDef<EvalSectionRow>[] {
       ),
       filterFn: facetFilterFn,
     },
+    ...(!isTeacher
+      ? ([
+          {
+            accessorKey: 'fcaName',
+            header: ({ column }) => (
+              <SortableHeader column={column}>Adviser</SortableHeader>
+            ),
+            cell: ({ row }) => <AdviserCell name={row.original.fcaName} />,
+          },
+        ] as ColumnDef<EvalSectionRow>[])
+      : []),
     {
       id: 'writeups',
       accessorFn: (row) => row.percent,
@@ -168,6 +186,14 @@ function buildColumns(selectedTermId: string): ColumnDef<EvalSectionRow>[] {
           <RowActionsMenu>
             <DropdownMenuItem asChild>
               <Link
+                href={`/evaluation/sections/${id}?term_id=${selectedTermId}`}
+              >
+                <ClipboardList className="size-3.5" />
+                Open write-ups
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link
                 href={`/markbook/grading?grading.section=${encodeURIComponent(name)}`}
               >
                 <BookOpen className="size-3.5" />
@@ -191,13 +217,15 @@ export function EvaluationSectionsList({
   sections,
   levels,
   selectedTermId,
+  isTeacher = false,
 }: {
   sections: SectionCardData[];
   levels: LevelOption[];
   selectedTermId: string;
+  isTeacher?: boolean;
 }) {
   const rows = sections.map(deriveRow);
-  const columns = buildColumns(selectedTermId);
+  const columns = buildColumns(selectedTermId, isTeacher);
 
   const facets: FacetConfig[] =
     levels.length > 1

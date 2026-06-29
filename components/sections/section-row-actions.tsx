@@ -16,7 +16,14 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowDownAZ, ArrowRight, FilePlus2 } from 'lucide-react';
+import {
+  ArrowDownAZ,
+  ArrowRight,
+  CalendarDays,
+  ClipboardList,
+  FilePlus2,
+  UserPlus,
+} from 'lucide-react';
 
 import { GenerateIndexDialog } from '@/components/sis/generate-index-button';
 import { GenerateSheetsDialog } from '@/components/sis/generate-sheets-dialog';
@@ -38,6 +45,9 @@ export type SectionRowActionsProps = {
   /** Attendance only: the href for "Open daily" (e.g. /attendance/[id]?date=…).
    *  Falls back to '#' when omitted. */
   todayHref?: string;
+  /** SIS only: whether this section already has a form adviser assigned.
+   *  Controls the label of the adviser action item. */
+  hasAdviser?: boolean;
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -49,6 +59,7 @@ export function SectionRowActions({
   role,
   termStarted,
   todayHref,
+  hasAdviser,
 }: SectionRowActionsProps) {
   const isRegistrarPlus =
     role === 'registrar' || role === 'school_admin' || role === 'superadmin';
@@ -87,6 +98,43 @@ export function SectionRowActions({
             {openLabel}
           </Link>
         </DropdownMenuItem>
+
+        {/* ── Assign/Change adviser (sis, registrar+) ── */}
+        {module === 'sis' && isRegistrarPlus && (
+          <DropdownMenuItem asChild>
+            <Link
+              href={`/sis/sections/${sectionId}?tab=teachers`}
+              className="flex items-center gap-2"
+            >
+              <UserPlus className="size-4 shrink-0" />
+              {hasAdviser ? 'Change adviser' : 'Assign adviser'}
+            </Link>
+          </DropdownMenuItem>
+        )}
+
+        {/* ── Markbook cross-links ── */}
+        {module === 'markbook' && (
+          <>
+            <DropdownMenuItem asChild>
+              <Link
+                href={`/attendance/${sectionId}`}
+                className="flex items-center gap-2"
+              >
+                <CalendarDays className="size-4 shrink-0" />
+                Open attendance
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link
+                href={`/evaluation/sections/${sectionId}`}
+                className="flex items-center gap-2"
+              >
+                <ClipboardList className="size-4 shrink-0" />
+                Open write-ups
+              </Link>
+            </DropdownMenuItem>
+          </>
+        )}
 
         {/* ── Generate index (sis + markbook, registrar+) ── */}
         {showGenerateItems && (

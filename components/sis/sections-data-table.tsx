@@ -8,6 +8,7 @@
 import { type ColumnDef } from '@tanstack/react-table';
 import { Layers } from 'lucide-react';
 
+import { AdviserCell } from '@/components/sections/adviser-cell';
 import { SectionRowActions } from '@/components/sections/section-row-actions';
 import { GenerateAllIndexButton } from '@/components/sis/generate-index-button';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +28,7 @@ export type SisSectionRow = {
   schedule: Schedule | null;
   active: number;
   withdrawn: number;
+  fcaName: string | null;
 };
 
 // ─── facetFilterFn (verbatim copy from EvaluationSectionsList) ────────────────
@@ -94,6 +96,13 @@ function buildColumns(
       filterFn: facetFilterFn,
     },
     {
+      accessorKey: 'fcaName',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Adviser</SortableHeader>
+      ),
+      cell: ({ row }) => <AdviserCell name={row.original.fcaName} />,
+    },
+    {
       accessorKey: 'active',
       header: ({ column }) => (
         <SortableHeader column={column}>Active</SortableHeader>
@@ -127,6 +136,7 @@ function buildColumns(
           sectionName={row.original.name}
           role={role}
           termStarted={termStarted}
+          hasAdviser={!!row.original.fcaName}
         />
       ),
     },

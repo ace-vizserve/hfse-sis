@@ -15,6 +15,7 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { sgToday } from '@/lib/dates';
 import { compareLevelLabels } from '@/lib/sis/levels';
+import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 
 type LevelLite = {
   id: string;
@@ -85,6 +86,10 @@ export default async function SectionsListPage() {
     }
   }
 
+  const adviserMap = ay
+    ? await loadFormAdvisersBySection(ids, ay.ay_code)
+    : ({} as Record<string, { userId: string; name: string }>);
+
   const getLevel = (l: LevelLite | LevelLite[] | null): LevelLite | null =>
     Array.isArray(l) ? (l[0] ?? null) : l;
 
@@ -108,6 +113,7 @@ export default async function SectionsListPage() {
     name: c.name,
     levelLabel: c.level_label,
     active: c.active,
+    fcaName: adviserMap[c.id]?.name ?? null,
   }));
 
   // Unique levels for the Level facet, sorted canonically

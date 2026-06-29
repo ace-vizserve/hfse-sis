@@ -1,10 +1,6 @@
 'use client';
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import {
   ArrowLeft,
   ArrowRight,
@@ -23,34 +19,33 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { toast } from 'sonner';
 
+import { VirtueThemesEditor } from '@/components/evaluation/virtue-themes-editor';
+import { AyAcceptingApplicationsToggle } from '@/components/sis/ay-accepting-applications-toggle';
+import { GenerateSheetsDialog } from '@/components/sis/generate-sheets-dialog';
+import { TermDatesEditor } from '@/components/sis/term-dates-editor';
+import { AyPicker } from '@/components/sis/year-setup/ay-picker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
-import { AyPicker } from '@/components/sis/year-setup/ay-picker';
-import { TermDatesEditor } from '@/components/sis/term-dates-editor';
-import { VirtueThemesEditor } from '@/components/evaluation/virtue-themes-editor';
-import { GenerateSheetsDialog } from '@/components/sis/generate-sheets-dialog';
-import { AyAcceptingApplicationsToggle } from '@/components/sis/ay-accepting-applications-toggle';
-import {
-  AY_STATUS_LABEL,
-  ayStatusTone,
-  type AyStatusTone,
-} from '@/lib/sis/year-setup';
+import type { AcademicYearListItem, TermRow } from '@/lib/sis/ay-setup/queries';
 import {
   nextIncompleteStepId,
   type AyReadiness,
   type ReadinessStep,
   type ReadinessStepId,
 } from '@/lib/sis/readiness';
-import type { AcademicYearListItem, TermRow } from '@/lib/sis/ay-setup/queries';
+import {
+  AY_STATUS_LABEL,
+  ayStatusTone,
+  type AyStatusTone,
+} from '@/lib/sis/year-setup';
 
 const STEP_ICONS: Record<ReadinessStepId, LucideIcon> = {
   'ay-setup': CalendarCog,
@@ -98,16 +93,6 @@ function StepStatusBadge({ step }: { step: ReadinessStep }) {
   );
 }
 
-function RailDot({ status }: { status: ReadinessStep['status'] }) {
-  const cls =
-    status === 'done'
-      ? 'bg-brand-mint'
-      : status === 'partial'
-        ? 'bg-brand-amber'
-        : 'bg-muted-foreground/30';
-  return <span className={`size-2 rounded-full ${cls}`} aria-hidden />;
-}
-
 export function YearSetupStepper({
   ays,
   selectedAy,
@@ -127,7 +112,7 @@ export function YearSetupStepper({
   if (!selectedAy || !readiness || steps.length === 0) {
     return (
       <Card>
-        <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
           <div className="flex size-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
             <CalendarCog className="size-5" />
           </div>
@@ -138,7 +123,7 @@ export function YearSetupStepper({
             Create an academic year to start setting up its terms, calendar,
             classes, and grading sheets.
           </p>
-        </CardContent>
+        </div>
       </Card>
     );
   }
@@ -157,33 +142,36 @@ export function YearSetupStepper({
   const allDone = readiness.complete === readiness.total;
 
   return (
-    <div className="space-y-6">
-      {/* Header — AY picker + status + readiness summary + Resume */}
-      <Card>
-        <CardHeader className="gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-2">
-            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-              Configuring
-            </CardDescription>
-            <div className="flex flex-wrap items-center gap-3">
-              <AyPicker ays={ays} selected={selectedAy.ay_code} />
-              <Badge variant="outline" className={STATUS_BADGE_CLASS[tone]}>
-                {AY_STATUS_LABEL[tone]}
-              </Badge>
+    <div className="overflow-hidden rounded-xl border border-border shadow-xs">
+      <div className="flex">
+        {/* Left rail — navigation chrome: AY meta + step list */}
+        <div className="flex w-64 shrink-0 flex-col border-r border-border bg-accent/50">
+          {/* AY meta + progress + resume */}
+          <div className="space-y-3 border-b border-border px-4 py-4">
+            <div className="space-y-1.5">
+              <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Year Setup
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <AyPicker ays={ays} selected={selectedAy.ay_code} />
+                <Badge variant="outline" className={STATUS_BADGE_CLASS[tone]}>
+                  {AY_STATUS_LABEL[tone]}
+                </Badge>
+              </div>
             </div>
-          </div>
-          <div className="min-w-[240px] space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-medium text-foreground">Readiness</span>
-              <span className="font-mono tabular-nums text-muted-foreground">
-                {readiness.complete} / {readiness.total} ready
-              </span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-brand-indigo-soft to-brand-sky transition-all"
-                style={{ width: `${pct}%` }}
-              />
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between font-mono text-[10px] text-muted-foreground">
+                <span>Readiness</span>
+                <span className="tabular-nums">
+                  {readiness.complete} / {readiness.total} ready
+                </span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-brand-indigo/10">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-sky transition-all duration-500"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
             </div>
             {!allDone && (
               <Button
@@ -191,91 +179,111 @@ export function YearSetupStepper({
                 className="w-full"
                 onClick={() => setActiveId(nextIncompleteStepId(steps))}
               >
-                Resume — next step
-                <ArrowRight className="size-3.5" />
+                Resume <ArrowRight className="size-3.5" />
               </Button>
             )}
           </div>
-        </CardHeader>
-      </Card>
 
-      {/* Clickable step rail */}
-      <Card className="py-0">
-        <nav className="flex flex-wrap gap-1 p-2" aria-label="Setup steps">
-          {steps.map((s) => {
-            const Icon = STEP_ICONS[s.id];
-            const isActive = s.id === active.id;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setActiveId(s.id)}
-                aria-current={isActive ? 'step' : undefined}
-                className={
-                  'flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ' +
-                  (isActive
-                    ? 'bg-accent text-brand-indigo-deep ring-1 ring-inset ring-brand-indigo-soft'
-                    : 'text-muted-foreground hover:bg-muted')
-                }
-              >
-                <RailDot status={s.status} />
-                <Icon className="size-4 shrink-0" />
-                <span className="hidden font-medium md:inline">{s.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-      </Card>
-
-      {/* Active step panel */}
-      <Card className="gap-0 py-0">
-        <CardHeader className="border-b border-border py-5 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start gap-4">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              <ActiveIcon className="size-5" />
-            </div>
-            <div className="space-y-1">
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Step {active.step} of {steps.length}
-              </CardDescription>
-              <CardTitle className="font-serif text-[22px]">
-                {active.label}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {active.description}
-              </p>
-            </div>
-          </div>
-          <StepStatusBadge step={active} />
-        </CardHeader>
-
-        <CardContent className="py-6">
-          <StepPanel
-            step={active}
-            selectedAy={selectedAy}
-            selectedTerms={selectedTerms}
-          />
-        </CardContent>
-
-        <div className="flex items-center justify-between border-t border-border px-6 py-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={activeIndex <= 0}
-            onClick={() => setActiveId(steps[activeIndex - 1].id)}
-          >
-            <ArrowLeft className="size-3.5" /> Back
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={activeIndex >= steps.length - 1}
-            onClick={() => setActiveId(steps[activeIndex + 1].id)}
-          >
-            Next <ArrowRight className="size-3.5" />
-          </Button>
+          {/* Step buttons */}
+          <nav className="flex flex-col gap-0.5 p-2" aria-label="Setup steps">
+            {steps.map((s) => {
+              const isActive = s.id === active.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setActiveId(s.id)}
+                  aria-current={isActive ? 'step' : undefined}
+                  className={cn(
+                    'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors',
+                    isActive
+                      ? 'bg-card font-semibold text-brand-indigo-deep shadow-xs ring-1 ring-inset ring-brand-indigo-soft'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                  )}
+                >
+                  {/* Numbered status tile: position + completion at a glance */}
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'flex size-6 shrink-0 items-center justify-center rounded-md font-mono text-[10px] font-bold',
+                      isActive
+                        ? 'bg-brand-indigo text-white'
+                        : s.status === 'done'
+                          ? 'bg-brand-mint text-ink'
+                          : s.status === 'partial'
+                            ? 'bg-brand-amber/40 text-ink ring-1 ring-inset ring-brand-amber'
+                            : s.required
+                              ? 'bg-accent text-muted-foreground ring-1 ring-inset ring-brand-indigo-soft'
+                              : 'bg-muted/60 text-muted-foreground/50'
+                    )}
+                  >
+                    {s.step}
+                  </span>
+                  <span className="flex-1 leading-tight">{s.label}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
-      </Card>
+
+        {/* Right panel — active step content */}
+        <div className="flex min-w-0 flex-1 flex-col bg-card">
+          {/* Step header */}
+          <div className="flex items-start justify-between gap-4 border-b border-border bg-gradient-to-b from-accent/20 to-transparent px-6 py-5">
+            <div className="flex items-start gap-4">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                <ActiveIcon className="size-5" />
+              </div>
+              <div className="space-y-1">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Step {active.step} of {steps.length}
+                </p>
+                <h2 className="font-serif text-[22px] font-semibold leading-tight text-foreground">
+                  {active.label}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  {active.description}
+                </p>
+                {active.fraction && (
+                  <p className="font-mono text-[11px] font-semibold tabular-nums text-brand-indigo-deep">
+                    {active.fraction.done} of {active.fraction.total} complete
+                  </p>
+                )}
+              </div>
+            </div>
+            <StepStatusBadge step={active} />
+          </div>
+
+          {/* Step content */}
+          <div className="flex-1 px-6 py-6">
+            <StepPanel
+              step={active}
+              selectedAy={selectedAy}
+              selectedTerms={selectedTerms}
+            />
+          </div>
+
+          {/* Navigation footer */}
+          <div className="flex items-center justify-between border-t border-border px-6 py-3">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={activeIndex <= 0}
+              onClick={() => setActiveId(steps[activeIndex - 1].id)}
+            >
+              <ArrowLeft className="size-3.5" /> Back
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={activeIndex >= steps.length - 1}
+              onClick={() => setActiveId(steps[activeIndex + 1].id)}
+            >
+              Next <ArrowRight className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

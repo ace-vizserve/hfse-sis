@@ -3,6 +3,7 @@ import { School, Users } from 'lucide-react';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { sgToday } from '@/lib/dates';
+import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -131,6 +132,16 @@ export default async function AttendanceSectionsListPage() {
     (s) => !allowedSectionIds || allowedSectionIds.has(s.id)
   );
 
+  // Load advisers only for registrar+ views (for teachers the adviser is always
+  // themselves — surfacing it would be redundant noise).
+  const adviserMap =
+    !isTeacherOnly && ay
+      ? await loadFormAdvisersBySection(
+          filteredSections.map((s) => s.id),
+          ay.ay_code
+        )
+      : ({} as Record<string, { userId: string; name: string }>);
+
   const rows: AttendanceSectionRow[] = filteredSections.map((s) => {
     const lvl = getLevel(s.level as LevelLite | LevelLite[] | null);
     return {
@@ -138,6 +149,7 @@ export default async function AttendanceSectionsListPage() {
       name: s.name,
       levelLabel: lvl?.label ?? 'Unknown',
       active: counts[s.id] ?? 0,
+      fcaName: adviserMap[s.id]?.name ?? null,
     };
   });
 
@@ -230,6 +242,7 @@ export default async function AttendanceSectionsListPage() {
           rows={rows}
           levels={levels}
           today={today}
+          showAdviser={!isTeacherOnly}
         />
       )}
     </PageShell>

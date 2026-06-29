@@ -28,6 +28,7 @@ import {
   listFormAdviserSectionIds,
 } from '@/lib/evaluation/queries';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 
 type LevelLite = {
   id: string;
@@ -126,6 +127,13 @@ export default async function EvaluationSectionsPickerPage({
   }
 
   const sectionIds = sections.map((s) => s.id);
+
+  // Advisers are only relevant for registrar+ (teachers already know they're
+  // the adviser for their own sections — surfacing it is noise).
+  const adviserMap =
+    sessionUser.role !== 'teacher'
+      ? await loadFormAdvisersBySection(sectionIds, ay.ay_code)
+      : ({} as Record<string, { userId: string; name: string }>);
 
   const progress = selectedTerm
     ? await getWriteupProgressByTerm(selectedTerm.id, sectionIds)
@@ -327,6 +335,7 @@ export default async function EvaluationSectionsPickerPage({
           <EvaluationSectionsList
             levels={levels}
             selectedTermId={selectedTerm?.id ?? ''}
+            isTeacher={isTeacher}
             sections={sorted.map((s) => {
               const p = progress[s.id];
               return {
@@ -336,6 +345,7 @@ export default async function EvaluationSectionsPickerPage({
                 levelLabel: s.level?.label ?? null,
                 active: p?.active_count ?? 0,
                 submitted: p?.submitted_count ?? 0,
+                fcaName: adviserMap[s.id]?.name ?? null,
               };
             })}
           />

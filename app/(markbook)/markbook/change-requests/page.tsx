@@ -70,7 +70,11 @@ export default async function AdminChangeRequestsPage({
        primary_reviewed_by_email, secondary_reviewed_by_email,
        primary_reviewed_at,
        approved_at, rejection_undone_at,
-       grading_sheet:grading_sheets!inner(section:sections!inner(academic_year_id))`
+       grading_sheet:grading_sheets!inner(
+         section:sections!inner(id, name, academic_year_id),
+         subject:subjects(code, name),
+         term:terms(label)
+       )`
     )
     .order('requested_at', { ascending: false })
     .limit(500);
@@ -87,7 +91,28 @@ export default async function AdminChangeRequestsPage({
 
   const { data: rawRows } = await query;
 
-  const rows = (rawRows ?? []) as AdminRequestRow[];
+  type RawGradingSheet = {
+    section: { id: string; name: string; academic_year_id: string } | null;
+    subject: { code: string; name: string } | null;
+    term: { label: string } | null;
+  };
+  type RawRequestRow = Omit<
+    AdminRequestRow,
+    'sectionId' | 'sectionName' | 'subjectCode' | 'subjectName' | 'termLabel'
+  > & { grading_sheet?: RawGradingSheet };
+  const rows: AdminRequestRow[] = (
+    (rawRows ?? []) as unknown as RawRequestRow[]
+  ).map((r) => {
+    const gs = r.grading_sheet;
+    return {
+      ...r,
+      sectionId: gs?.section?.id ?? null,
+      sectionName: gs?.section?.name ?? null,
+      subjectCode: gs?.subject?.code ?? null,
+      subjectName: gs?.subject?.name ?? null,
+      termLabel: gs?.term?.label ?? null,
+    };
+  });
 
   const counts: Record<ChangeRequestStatus, number> = {
     pending: 0,
