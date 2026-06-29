@@ -1,14 +1,10 @@
 # Attendance Module (Daily Attendance)
 
-> **Status:** ✅ **Sprint-ready.** Excel reference received (`T1_Attendance_Jan-Mar.xlsx`) — status vocabulary frozen (`P / L / EX / A / NC`), daily + rollup DDL specified below, Excel-import flow defined. 3 open questions remain (late-minutes granularity, school-calendar publication, parent daily visibility) — none block the Phase 1 build.
+> **Status:** ✅ **Shipped (Phase 1 + 1.1 live; KD #151 term-sheet redesign shipped 2026-06-26).** The Attendance module owns the daily ledger, the term-sheet grid, the xlsx export, and the rollup write path. Phase 2 (period-level, requires Scheduling) remains deferred.
 
 ## Why this doc exists
 
-Today the SIS has term-summary attendance only: one `attendance_records` row per student × term with `present / absent / tardy / excused` counts, entered once per term in the Markbook module's `/admin/sections/[id]/attendance` grid. This covers the report card's attendance column and nothing else.
-
-A proper **Attendance module** owns the daily ledger those summaries should roll up from. It's the biggest gap in the SIS's "records connected to the student profile" shape — every other domain (grades, documents, pipeline) has per-event fidelity; attendance doesn't.
-
-This doc owns the **module contract** (sole writer, three read-only consumers), the **concrete schema**, and the **Excel-import workflow** — everything a sprint needs to open. Excel reference landed; schema + status vocabulary frozen.
+This doc owns the **module contract** (sole writer, three read-only consumers), the **schema**, and the shipped workflow — including the Phase 1.1 term-sheet redesign (KD #151) that makes the in-system grid recognisable to HFSE staff who know the Excel workbook. The Markbook module's old `/admin/sections/[id]/attendance` grid has been removed; all attendance entry now goes through `/attendance/*`.
 
 ## Contract
 
@@ -84,16 +80,18 @@ Both `school_calendar` and `calendar_events` now carry `audience IN ('all', 'pri
 
 **Carry-forward** stays manual via the `Copy from prior AY` dialog (`components/attendance/copy-from-prior-ay-dialog.tsx` — replaces the legacy holiday-only copy dialog). Two tabs (day-type overrides + events) with year-shift; default `markTentative=true` flips every copied row to `tentative=true` so the registrar reviews each before locking. No template table, no auto-copy on AY creation.
 
-## Routes (planned)
+## Routes (shipped)
 
-Phase 1 route surface, skeletal — actual components + URLs finalise once Excel-driven decisions land:
-
-- `/attendance` — entry surface list (pick a section + date, similar to how Markbook `/grading` lists sheets).
-- `/attendance/[sectionId]` — daily grid for a section (default: today). Columns: students; rows: days within the current term; cells: status. Autosave per cell, like the Markbook score grid.
-- `/attendance/[sectionId]?date=YYYY-MM-DD` — specific date view (bookmarkable, deep-linkable).
-- `/sis/calendar` — **school-calendar admin (moved to SIS Admin 2026-04-22)**. Defines which weekdays are school days vs holidays per term, plus overlays for important dates. The Attendance sidebar keeps a cross-module link for registrar convenience; the legacy `/attendance/calendar` URL redirects.
-- `/records/students/[enroleeNumber]?tab=attendance` — per-student log (new tab on the existing Records student detail page).
-- Optional: `/attendance/audit-log` — module-scoped audit, mirroring `/p-files/audit-log` and `/records/audit-log`.
+- `/attendance` — analytics dashboard (registrar+ only, KD #55). Aggregate attendance stats, drill-down cards, quota cards (compassionate + vacation leave).
+- `/attendance/sections` — section picker (teachers land here and cannot see the analytics dashboard).
+- `/attendance/[sectionId]` — per-section attendance surface with **Term sheet | Daily view** toggle (KD #116).
+  - **Term sheet** — the HFSE register grid. See §Term-sheet redesign below.
+  - **Daily view** (`components/attendance/daily-entry.tsx`) — mark-the-exceptions today-centric surface; roster defaults to Present, teacher flips absences/lates/EX.
+- `/attendance/[sectionId]/export?term_id=` — `GET` → `.xlsx` download (SheetJS, `lib/attendance/sheet-export.ts`). Gate: registrar+ or assigned teacher.
+- `/attendance/students/[studentNumber]` — per-student attendance detail page. Compassionate leave quota card + vacation leave quota card.
+- `/attendance/insights` — Attendance Health Insights (KD #142). Over-time: rate trend, chronic-absentee watchlist, absence causes, leave-quota risk.
+- `/attendance/audit-log` — module-scoped audit log (`attendance.*` prefix allowlist).
+- `/sis/calendar` — school-calendar admin (SIS Admin, KD #76). Primary/secondary audience tabs; carry-forward dialog. The Attendance sidebar keeps a cross-module link.
 
 ## Data model
 
@@ -158,38 +156,89 @@ Role strategy stays consistent with the rest of the SIS — no new role needed.
 5. **Report-card consumption** (Markbook). `ReportCardDocument` reads `attendance_records` for the selected term (interim T1–T3) or all four terms (T4 final). Cumulative `attendance_pct` for T4 is computed at render time — `SUM(days_present) / SUM(school_days) × 100` across T1–T4 — not stored.
 6. **Rollup.** Write-through on every daily write (see §Agreed decisions §3). No nightly job.
 
+## Term-sheet redesign (KD #151, shipped 2026-06-26)
+
+Makes the in-system Term sheet visually recognisable to staff coming from HFSE's `AY2026 Term 3 Attendance.xlsx` workbook. All data resolves from existing tables — no migration.
+
+### Register masthead
+
+A collapsible header (`components/attendance/sheet-context.tsx`) above the grid:
+
+- **Gradient-tile header** with serif virtue name (term's `virtue_theme`) + course·term eyebrow + school-name + meta strip.
+- **Collapsible term-calendar key** showing the colour legend for date-column tags (PH / SH / HBL / NC / SE / EX).
+
+### Date-column tags (`components/attendance/column-tags.ts`)
+
+`resolveColumnTag(date, calendarRow, calendarEvents)` derives the header tag for each date column (single source for the grid AND the xlsx export):
+
+- `PH` — `school_calendar.day_type='public_holiday'`
+- `SH` — `day_type='school_holiday'` (without HBL overlay)
+- `HBL` — `day_type='hbl'` or `school_holiday + hbl_overlay=true`
+- `NC` — `day_type='no_class'`
+- `EX` — event `category='term_exam'`
+- `SE` — any other overlay event (school event, parents dialogue, etc.)
+- Blank — regular school day
+
+### Details + Summary toggles
+
+Two collapsible column groups controlled by `SheetContext`:
+
+- **Details** (hidden by default): Bus No. / Student Care columns (from `section_students.bus_no` + `classroom_officer_role`) + Academics / Admin placeholder columns (v1 read-only, pending HFSE definition).
+- **Summary** (hidden by default): per-month attendance % + term totals columns, computed live by `lib/attendance/sheet-summary.ts`.
+
+### HFSE summary formula (`lib/attendance/sheet-summary.ts`)
+
+```
+Attendance % = (Present + Late + Excused) / TotalDays
+```
+
+where `TotalDays` = count of cells with any of P / L / EX / A (i.e. marked days; NC + unmarked excluded). Rounded to 1dp; null when 0 days marked. **This intentionally diverges from the dashboard rollup's `Present ÷ school-days` — do NOT "align" them.** The dashboard measures absence risk; the register formula measures what HFSE reports to parents.
+
+### Marking-palette popover (cell control redesign)
+
+The per-cell native `<select>` / `<optgroup>` was replaced by:
+
+- A plain `<button>` per cell showing the mark letter in the paper palette colour.
+- **One shared "marking palette" popover** (`components/attendance/cell-mark-popover.tsx`, `CellMarkPalette`) — single portal, anchored to the active cell. Perf invariant changed from "native select per cell" to **"one shared popover"**.
+- Status buttons stamp the cell in the HFSE paper palette (P light-blue · A yellow · EX cyan · L pink, KD #132).
+- Excuse rows (MC / Vacation / Compassionate) show **this student's used/allowance inline** at point of entry (Vacation: `0/1 per term`; Compassionate: `0/5 per year`) — replaces the after-the-fact toast.
+
+Shared single-source maps:
+
+- `components/attendance/column-tags.ts` — `COLUMN_TAG_COLOR` (used by grid headers + the context-card key)
+- `components/attendance/status-wash.ts` — `STATUS_CELL_WASH` (used by cells + the palette + the legend)
+
+### xlsx export (`GET /api/attendance/[sectionId]/export?term_id=`)
+
+Built by `lib/attendance/sheet-export.ts::buildAttendanceSheetWorkbook` via SheetJS (`xlsx`). Reproduces the HFSE workbook layout: every date column (including weekends), locale-independent date formatting, column tags, masthead rows, all student rows with status marks. Gate: registrar+ or assigned teacher. An "Export sheet" button in the grid toolbar triggers the download.
+
 ## Relationship to other modules
 
-- **Markbook** — consumes the rollup (`attendance_records`) for report-card rendering. Markbook's `/admin/sections/[id]/attendance` route goes away once Attendance is live (or becomes a thin read-only summary view); `components/admin/attendance-grid.tsx` gets replaced by the Attendance module's daily grid.
-- **Records module** — hosts the per-student Attendance tab (new). Reads the same daily-attendance table.
-- **Scheduling** (future) — Phase 2 prerequisite for period-level attendance.
-- **Audit log** — new action prefix `attendance.*` (e.g. `attendance.daily.update`, `attendance.daily.correct`). Existing Markbook `attendance.update` prefix migrates with the table ownership. `/admin/audit-log` will need to add `attendance.*` to its exclusion list if we want module-scoped separation (same pattern as `pfile.*` / `sis.*`).
+- **Markbook** — consumes the rollup (`attendance_records`) for report-card rendering (unchanged read path: `term_id`, `section_student_id`, `school_days`, `days_present`, `days_late`). Markbook's `/admin/sections/[id]/attendance` grid was removed; all attendance entry goes through `/attendance/*`.
+- **Records** — per-student Attendance tab on `/records/students/[studentNumber]` reads from `attendance_daily`.
+- **Evaluation** — attendance and leave-quota widgets reuse `lib/attendance/drill.ts` helpers.
+- **Scheduling** (future) — Phase 2 prerequisite for period-level attendance. `period_id` column reserved on `attendance_daily`.
+- **Audit log** — prefix `attendance.*` (`attendance.daily.update`, `attendance.daily.correct`, etc.). `/attendance/audit-log` uses an explicit `.in('action', allowlist)` filter — never a `.like('attendance.%')` wildcard (KD #9).
 
-## Open questions
+## Resolved decisions
 
-Answered by the Excel reference — no longer blocking:
+- ✅ Status vocabulary: `P / L / EX / A / NC`. NC = school holidays / HBL / public holidays / not-yet-enrolled (non-teacher-selectable; used for column tagging only in the term sheet).
+- ✅ Reason codes for EX: `mc` (MC / excuse leave), `compassionate`, `vacation` (migration 070 trimmed `school_activity`). Quotas: vacation 1/term · compassionate 5/year, per-student override on `section_students`.
+- ✅ Who enters attendance: **both** — Excel import (registrar, `POST /api/attendance/import`) AND live daily entry (teacher / form adviser). Both paths shipped.
+- ✅ School-calendar pre-publication: handled by `/sis/calendar` (registrar pre-marks day types; the term sheet only activates write-enabled cells on encodable days).
+- ✅ Paper palette (KD #132): P = light blue · A = yellow · EX = cyan · L = pink.
+- ✅ Per-month summary and Bus No. / Student Care columns shipped as Details / Summary collapsible groups (KD #151).
+- ✅ `Academics` / `Admin` columns: v1 placeholder (read-only), pending HFSE definition.
 
-- ✅ Excel columns: `index_number`, `bus_no`, `urgent/compassionate_leave` quota, `classroom_officers`, `full_name`, daily status cells (Jan 8 – Mar 13), computed totals (days present/late/excused/absent), monthly breakdowns (Jan/Feb/Mar %). See §Appendix.
-- ✅ Status vocabulary: `P / L / EX / A / NC` (NC = holidays + not-yet-enrolled).
-- ✅ Reason codes for excused: single `EX` bucket — MC, compassionate leave, school-activity all fold in. Quota lives on student profile, not attendance.
-- ✅ Half-days / early dismissals: not tracked in Phase 1. Any partial-day situation folds to `P` (showed up), `L` (arrived late), or `EX` (excused early leave).
-- ✅ Period-level absences: deferred to Phase 2 (needs Scheduling). `period_id` column reserved from day one.
+## Out of scope
 
-Still open — none blocks the Phase 1 build:
-
-- [ ] **Late-minutes granularity** (tardy = 10 min vs tardy = 45 min). Proposal doesn't answer. If HFSE wants this, add `late_minutes smallint` to `attendance_daily` in Phase 1b.
-- [ ] **School-calendar publication.** Needs the registrar to publish the list of school days ahead of time so the daily grid pre-renders only weekdays in session (vs. `NC`-marking every holiday reactively after the fact). Affects grid UX, not schema.
-- [ ] **Parent daily visibility.** Today parents only see the report-card rollup. Not needed for Phase 1; revisit if a stakeholder asks.
-- [ ] **Who enters attendance today.** Excel reference shows Joann imports centrally; teacher live-entry is _planned_ but not confirmed as a current HFSE habit. **Sprint-kickoff decision** — if teachers won't do live entry immediately, ship the import flow first and add the live grid in a 1b bite.
-
-## Out of scope (until explicitly pulled in)
-
-- Period-level attendance (Phase 2, requires Scheduling).
+- Period-level attendance (Phase 2, requires Scheduling). `period_id` column reserved on `attendance_daily`.
+- Late-minutes granularity (tardy = 10 min vs 45 min) — not tracked; `L` is binary.
 - Daily attendance for non-students (staff, visitors).
-- Clock-in / clock-out time tracking (this is attendance, not timesheet).
-- Automated absence notifications to parents (email on 3rd consecutive absence, etc.) — Communications-module territory.
-- Dashboard analytics over attendance rates — Reports-hub territory.
+- Clock-in / clock-out time tracking.
+- Automated parent absence notifications.
 - Attendance forecasting / ML.
+- `Bus Summary` + `Reference - Dropdown` workbook tabs from the HFSE xlsx (deferred, KD #151).
 
 ## Appendix: Excel source layout
 

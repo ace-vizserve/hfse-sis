@@ -3,6 +3,11 @@
 -- Supersedes migration 071's enum-based bucketing
 -- (CASE enrollment_status WHEN 'active' THEN 0 ELSE 1 END).
 --
+-- PURE TS MIRROR (unit-tested executable spec):
+--   lib/sis/index-ordering.ts :: computeIndexAssignments()
+--   Cross-reference: when the ordering rules below change, update that module
+--   and its test (__tests__/sis/index-ordering.test.ts) to match, and vice versa.
+--
 -- PROBLEM with 071: a mid-year TRANSFER is stored as enrollment_status='active'
 -- (Hard Rule #6 / KD #67: transfer = withdraw old row + insert NEW active row in
 -- destination).  Because its status is 'active' it fell into bucket 0 and was

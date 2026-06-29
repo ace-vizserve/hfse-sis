@@ -128,7 +128,7 @@ type StudentSectionLite = {
   student_id: string;
   enrollment_status: string;
 };
-type StudentLite = {
+export type StudentLite = {
   id: string;
   first_name: string | null;
   middle_name: string | null;
@@ -497,6 +497,52 @@ async function loadChaseStateUncached(
     adviserNameById.set(id, name ?? email ?? 'Unknown adviser');
   }
 
+  return buildChaseState({
+    roster,
+    submittedStudentIds,
+    sectionById,
+    adviserBySection,
+    studentMap,
+    adviserNameById,
+    termId,
+    termNumber,
+  });
+}
+
+/**
+ * Pure aggregator: given already-fetched maps, build the
+ * `EvaluationChaseState` payload (outstanding write-up rows + per-adviser
+ * rollup). Exported so it can be unit-tested without a Supabase service
+ * client or `unstable_cache`.
+ *
+ * NOTE: this function is called by `loadChaseStateUncached` after all DB
+ * fetches are done. It contains the business rules only — no I/O.
+ */
+export function buildChaseState({
+  roster,
+  submittedStudentIds,
+  sectionById,
+  adviserBySection,
+  studentMap,
+  adviserNameById,
+  termId,
+  termNumber,
+}: {
+  /** Active roster: every non-withdrawn student × their section for this AY + term */
+  roster: Array<{ section_id: string; student_id: string }>;
+  /** Students who have a submitted + non-empty write-up for this term */
+  submittedStudentIds: Set<string>;
+  /** section_id → section name */
+  sectionById: Map<string, string>;
+  /** section_id → adviser userId (first-wins; undefined = no adviser) */
+  adviserBySection: Map<string, string>;
+  /** student_id → student info */
+  studentMap: Map<string, StudentLite>;
+  /** adviser userId → display name */
+  adviserNameById: Map<string, string>;
+  termId: string;
+  termNumber: number;
+}): EvaluationChaseState {
   // Build the outstanding rows + per-adviser rollup in one pass.
   const outstanding: OutstandingWriteupRow[] = [];
   // adviserKey: userId for assigned advisers, '__unassigned__' for the bucket.

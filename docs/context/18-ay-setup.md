@@ -1,6 +1,6 @@
-# AY Setup Wizard (AY Rollover)
+# Year Setup Workbench (AY Rollover)
 
-> **Status:** ✅ **Shipped 2026-04-20 (MVP).** Wizard live at `/sis/ay-setup`. Creates `academic_years` row + 4 terms + copied sections + copied subject*configs + 4 AY-prefixed admissions tables (`ay{YY}\_enrolment*\*`+`ay{YY}\_discount_codes`) atomically via the `create_academic_year`Postgres function. Switch-active + superadmin-gated delete ship alongside. **Role split:** create + switch-active = admin + superadmin; delete = superadmin only. The switcher is **DB-driven** (reads`academic_years` at render time), so creating an AY makes it visible everywhere immediately — no code deploy step.
+> **Status:** ✅ **Shipped (MVP 2026-04-20 + guided stepper + 8-step readiness engine).** The Year Setup Workbench lives at `/sis/ay-setup` (school_admin + superadmin). It lists all academic years in a DataTable with an inline guided stepper per row. Creating an AY runs `create_academic_year` atomically — `academic_years` row + 4 terms + copied sections + copied `subject_configs` + 4 AY-prefixed admissions tables. Switch-active + superadmin-gated delete ship alongside. **Role split:** create + switch-active = school_admin + superadmin; delete = superadmin only. The switcher is **DB-driven** (reads `academic_years` at render time); creating an AY makes it visible everywhere immediately with no code deploy.
 
 ## Why this doc exists
 
@@ -69,84 +69,62 @@ Since the parent portal also writes to these tables (KD #12 parent-portal integr
 - Audit action `ay.create` context includes `{aySlug, tablesCreated: [...], rowsInserted: {...}}` for forensics.
 - The wizard never drops or alters an existing AY's admissions tables. Past-AY DDL is immutable once created.
 
-## Proposed wizard flow
+## Shipped: Year Setup Workbench
 
-Multi-step form at `/sis/ay-setup` (superadmin-only; `ROUTE_ACCESS` gate + layout check), modelled on the `edit-stage-dialog.tsx` + `new-sheet` form patterns already in use.
+`/sis/ay-setup` (school_admin + superadmin, `ROUTE_ACCESS` gate + SIS layout check).
 
-### Step 1 — AY identity
+### AY list DataTable
 
-- `ay_code` (required, format `AY\d{4}`, uniqueness checked against `academic_years`). **HFSE convention:** the four digits are the calendar year. AY2026 = January–November 2026 (single calendar year, not a 2025–2026 split).
-- `label` (auto-suggested from code, e.g. `AY2027` → `Academic Year 2027`; editable)
-- `is_current` stays `false` at creation (separate step to switch the active AY — see §Safety rails)
-- `accepting_applications` (KD #77, default off) — when checked, the new AY immediately surfaces in the Admissions sidebar's "Upcoming AY applications" entry and the parent portal accepts submissions for it. Leave off if you're staging the AY ahead of opening early-bird; flip on later from the AY-list row's "Open for apps" toggle.
+Lists all `academic_years` rows. Per-row columns: AY code, label, `is_current` badge, `accepting_applications` toggle, actions menu (Switch active / Delete / Open stepper). Inline editors for term dates directly in the table row (inline stepper pattern, no full-page redirect).
 
-Uniqueness is validated both client-side (the API `POST` pre-check returns `{ ok: true, alreadyExisted: true }` without mutating) and server-side (the `academic_years.ay_code` unique constraint is the safety net against races).
+### Inline guided stepper (per AY row)
 
-### Step 2 — Copy-forward sections + subject_configs
+An 8-step guided stepper surfaces inside the Workbench for each AY, walking the registrar/school_admin through the setup tasks for that year. Steps cover: AY identity, terms (dates + virtue themes via the `PATCH /api/evaluation/virtue-theme` route — KD #137 relocated virtue-theme editing here and then to `/evaluation/virtue-themes`), sections, grading sheets, and other readiness checks. Each step renders an inline editor or a status summary; the stepper advances on save.
 
-- Dropdown: "Copy sections + subject weights from" → defaults to the most recent AY (by `ay_code` desc).
-- Preview grid: shows the sections that will be cloned (level × section name), and subject_configs (subject × level × weights).
-- Admin can toggle individual rows off (e.g. "don't copy Sec 3 Economics this year").
-- Rationale: sections rarely change year-to-year; subject weights almost never. Copy-forward is 95% correct; edit is the 5% exception.
+### Create-AY flow (school_admin + superadmin)
 
-### Step 3 — Curriculum edit (optional)
+`POST /api/sis/ay-setup` — creates the compound set atomically:
 
-- Add new subjects (inserts into `subjects` if new; creates `subject_configs` for applicable levels × the new AY).
-- Remove subjects from specific levels for the new AY (no insert into `subject_configs` for that combination).
-- Adjust weights on any subject_config row.
-- Default: skip this step (copy-forward is good enough).
+1. `create_ay_admissions_tables(ay_slug)` security-definer RPC — `CREATE TABLE IF NOT EXISTS` for all 4 admissions tables.
+2. Insert `academic_years` row (`is_current=false`, `accepting_applications=false`).
+3. Copy-forward `sections` + `subject_configs` from the prior AY (via `apply_template_to_ay` RPC for sections/configs).
+4. Insert 4 `terms` (T1–T4) with placeholder dates.
+5. Audit action `ay.create`.
 
-### Step 4 — Terms
+AY code format is `AY\d{4}` (single calendar year — AY2026 = Jan–Nov 2026, not a 2025–2026 split). The switcher reads `academic_years` at render time via `listAyCodes()` — the new AY appears immediately everywhere with no code deploy.
 
-- Auto-create 4 terms (T1–T4) for the new AY. Term labels fixed ("Term 1 – Quarter 1", etc.).
-- Term dates (start / end) optional but recommended — these drive the publish window defaults later.
+### Switch-active-AY flow (school_admin + superadmin)
 
-### Step 5 — Review + commit
+`PATCH /api/sis/ay-setup` — flips `is_current` across the two AYs atomically, auto-opens the new current AY for applications (`accepting_applications=true`), closes the outgoing AY (`accepting_applications=false`, KD #118). Requires typing the target code as confirmation. Audit action `ay.switch_current`.
 
-- Single summary screen: "You're about to insert: 1 AY row, 4 terms, 18 sections, 82 subject_configs, 2 new subjects; create 4 admissions tables (`ay27_enrolment_applications`, `_status`, `_documents`, `ay27_discount_codes`)."
-- Commit button runs the full compound operation in a single transaction:
-  1. `CREATE TABLE IF NOT EXISTS` for all 4 admissions tables using the template in `lib/sis/ay-setup/admissions-ddl.ts`.
-  2. Insert the `academic_years` row.
-  3. Insert the `terms`, `sections`, `subject_configs` (+ optional `subjects`) rows.
-  4. Write one `audit_log` row, action `ay.create`, context with the full breakdown.
-- On success → redirect to the new AY's overview; show a **Follow-up Actions** card with:
-  - ✅ Created admissions tables (4) + SIS rows (1 + 4 + ~18 + ~82). Switcher already lists the new AY on all AY-scoped pages.
-  - 🔶 **When ready:** flip `is_current` via the "Switch active AY" action on `/sis/ay-setup`.
+### Early-bird applications toggle (KD #118)
 
-### Switch-active-AY flow (separate action, admin + superadmin)
+Per-row `Switch` on the AY list (`components/sis/ay-accepting-applications-toggle.tsx`). Single-select enforcement: opening a non-current upcoming AY for applications closes every other non-current AY that was accepting, so at most one upcoming AY is ever open at a time. `PATCH /api/sis/ay-setup/accepting-applications` — gate school_admin + superadmin; audit action `ay.accepting_applications.toggle`.
 
-A small button on the AY Setup landing page: "Switch active AY from AY2026 → AY2027." Runs `UPDATE academic_years SET is_current = (ay_code = 'AY2027')`, audited, requires typing the target code as confirmation (destructive-confirm pattern).
+### AY Readiness Pill (KD #109)
 
-### Delete-AY flow (separate action, superadmin only)
+A separate floating 4-step readiness indicator in the SIS layout (`app/(sis)/layout.tsx`), visible to school_admin + superadmin. Not the same as the inline stepper — this is a header-bar chip that opens a dialog. The **4 steps** are:
 
-A "Delete" button on each AY's row in the AY Setup landing list. Renders **only for superadmin** and is **disabled** under any of these conditions (with tooltip explaining why):
+1. **AY Setup** — terms exist with dated start/end
+2. **School Calendar** — school_day-type rows present for all terms
+3. **Sections** — at least one section with a form adviser assigned
+4. **Grading Sheets** — all sections have grading sheets created
 
-- The AY is `is_current=true`.
-- Any child rows exist: `terms`, `sections`, `subject_configs` (copied-forward rows count as data), `section_students`, `grading_sheets`, `grade_entries`, `attendance_records`, `report_card_publications`, `grade_change_requests`, or any rows in the 4 AY-prefixed admissions tables (`ay{YY}_enrolment_*`, `ay{YY}_discount_codes`).
+Pill turns amber "Setup needed" when any step is incomplete. Source: `lib/sis/readiness.ts::getAyReadiness(ayCode)` (`unstable_cache`, tag `sis:${ayCode}`).
 
-If the AY is truly empty, clicking Delete opens an `AlertDialog`:
+### Delete-AY flow (superadmin only)
 
-> **Delete AY2027?** This will drop 4 admissions tables (`ay27_enrolment_applications`, `_status`, `_documents`, `ay27_discount_codes`) and remove the AY + terms + sections + subject_configs rows. This cannot be undone. Type **AY2027** to confirm.
-
-On confirm, the backend runs in a single transaction:
-
-1. Pre-flight emptiness check (repeats the server-side gate — never trust client).
-2. `DROP TABLE IF EXISTS ay{YY}_enrolment_applications, _status, _documents, ay{YY}_discount_codes` via the same `security definer` helper used for creation.
-3. `DELETE FROM subject_configs / sections / terms / academic_years` for the AY.
-4. Audit row, action `ay.delete`, context: `{aySlug, droppedTables: [...], deletedRowCounts: {...}}`.
-
-Delete is intentionally narrow — it's the _inverse of creation for mis-created AYs_, not a way to retire historical years. Archival of old AYs with real data is a separate future feature if HFSE ever asks for it.
+Guarded to truly empty AYs only (no child rows in terms / sections / section*students / grading_sheets / grade_entries / attendance_records / report_card_publications / grade_change_requests / any `ay{YY}*\*`admissions table rows).`DELETE /api/sis/ay-setup`→ confirm dialog requiring the admin to type the AY code → drops 4 admissions tables + removes SIS rows atomically. Audit action`ay.delete`.
 
 ## Safety rails
 
-- **Role split.** Create + switch-active-AY are `admin + superadmin` (aligned with KD #32's "admin = full operator" direction). Delete is **superadmin only** — destructive + irreversible, matches KD #2's reservation of destructive ops for superadmin.
-- **Idempotent uniqueness.** `ay_code` unique constraint on `academic_years` already in `001_initial_schema.sql`; wizard shows a clear error before committing.
-- **Single transaction for the compound insert.** All-or-nothing. Partial failure rolls back; wizard shows the specific failing row.
-- **Audit log.** New actions: `ay.create`, `ay.switch_current`, `ay.delete`. Context includes the full rowcount / tablecount breakdown.
-- **Delete is guarded, not forbidden.** Can only run on a truly empty AY (no child rows in any related table, not `is_current`). Always a destructive-confirm dialog requiring the admin to type the AY code. `DROP TABLE IF EXISTS` is idempotent and safe to re-run.
-- **No pre-emptive `is_current` flip.** Wizard creates the AY as `is_current=false`. Flipping is a deliberate separate action — the admin decides when the new AY becomes the live default.
-- **Dry-run / preview step.** Review screen (step 5) shows the exact SQL-equivalent summary before commit.
-- **Server-side re-validation.** Every role check + emptiness check runs on the server in the API route, not just the client. The UI disables buttons for UX; the server enforces the actual gate.
+- **Role split.** Create + switch-active = school_admin + superadmin. Delete = **superadmin only** (destructive + irreversible).
+- **Idempotent uniqueness.** `ay_code` unique constraint on `academic_years`; the route returns a clear error on duplicate.
+- **Single transaction.** All-or-nothing. Partial failure rolls back.
+- **Audit log.** Actions: `ay.create`, `ay.switch_current`, `ay.delete`, `ay.accepting_applications.toggle`. Context includes full rowcount/tablecount breakdown.
+- **Delete is guarded, not forbidden.** Runs only on truly empty AYs. Always destructive-confirm (type the AY code). `DROP TABLE IF EXISTS` is idempotent.
+- **No pre-emptive `is_current` flip.** Created as `is_current=false`. Flipping is a deliberate separate action.
+- **Server-side re-validation.** Every role check + emptiness check runs on the server, not just the client.
 
 ## Scope boundaries
 
@@ -202,27 +180,25 @@ Cache invalidation: `revalidateTag('sis:${newAyCode}', 'max')` after creation or
 
 Per-action, not per-surface:
 
-| Action             | Roles allowed                      | Rationale                                                              |
-| ------------------ | ---------------------------------- | ---------------------------------------------------------------------- |
-| View AY list       | `registrar`, `admin`, `superadmin` | Read-only visibility into what exists.                                 |
-| Create AY (wizard) | `admin`, `superadmin`              | Aligned with KD #32: admin is "full operator." Reversible via delete.  |
-| Switch active AY   | `admin`, `superadmin`              | Same bracket as create — it's reversible (switch back) and audited.    |
-| Delete AY          | `superadmin` only                  | Destructive + irreversible. Matches KD #2's destructive-ops carve-out. |
+| Action                     | Roles allowed                             | Rationale                                                              |
+| -------------------------- | ----------------------------------------- | ---------------------------------------------------------------------- |
+| View AY list               | `registrar`, `school_admin`, `superadmin` | Read-only visibility into what exists.                                 |
+| Create AY                  | `school_admin`, `superadmin`              | Reversible via delete.                                                 |
+| Switch active AY           | `school_admin`, `superadmin`              | Reversible (switch back) and audited.                                  |
+| Early-bird toggle          | `school_admin`, `superadmin`              | Config surface (KD #118 — Admissions reads, SIS Admin owns).           |
+| Delete AY (empty AYs only) | `superadmin` only                         | Destructive + irreversible. Matches KD #2's destructive-ops carve-out. |
 
-Registrar sees the AY list but none of the mutation buttons. Teachers, parents, p-file officers never reach this surface.
+Registrar sees the AY list but none of the mutation buttons. Teachers, parents, p-file officers, and admissions role never reach this surface.
 
-## Open questions
+## Resolved decisions
 
-- [ ] **Where exactly does AY setup sit in the nav?** Nested under Records sidebar, or its own top-level admin surface? Depends on whether user-role / weight-config admin joins it later.
-- [ ] **Term dates** — required, optional, or pre-filled from a school-calendar import? HFSE likely has a set calendar per AY.
-- [ ] **Subject weight editing after AY creation** — the wizard handles initial setup; can superadmins edit `subject_configs` rows later, or does that require a separate UI?
-- [ ] **Parent-portal coordination agreement** — the wizard now owns the DDL for AY-prefixed admissions tables. Need explicit agreement with the parent-portal team that (a) the SIS is the source-of-truth for new-AY DDL creation, (b) schema drift is caught by keeping `10-parent-portal.md` §Reference DDL in lockstep with `lib/sis/ay-setup/admissions-ddl.ts`, and (c) both codebases continue writing to the shared schema.
-- [ ] **`create_ay_admissions_tables` helper function** — this needs to be a `security definer` Postgres function (DDL privileges required). Do we ship it via a migration (e.g. `012_ay_admissions_ddl_helper.sql`) or define it ad-hoc? Migration is cleaner.
-- [ ] **Schema-drift detection** — if parent-portal bumps a column on AY2027 after we've created the table, who notices? Option: a `structure-diff` check on each wizard run comparing template vs canonical `10-parent-portal.md` DDL. Or accept manual discipline for v1.
-- [ ] **Discount codes catalogue content** — DDL is now in scope; does the wizard offer to copy-forward existing discount-code rows from the prior AY, or leave the new AY's catalogue empty?
-- [ ] **Returning-student re-enrolment tie-in** — when AY rolls, does the system also auto-create "renewal" applications for last year's students? Probably no (parent re-initiates via portal), but worth confirming.
-- [ ] **Archive semantics** — when AY2027 becomes current, does AY2026 become "archived" in any visible way, or does it just stay in the switcher with `is_current=false`?
-- [ ] **Audit retention** — should AY-setup audit actions have special retention rules (never pruned)?
+- ✅ **Nav placement:** `/sis/ay-setup` under SIS Admin (school_admin + superadmin). Registrar accesses it read-only; the module-switcher sidebar links here for discoverability.
+- ✅ **Term dates:** optional at creation, editable inline from the AY list stepper. The AY Readiness Pill (step 1) turns partial/amber when terms have no dates.
+- ✅ **Subject weight editing after creation:** `/sis/admin/subjects` matrix tab handles per-AY weight CRUD post-creation. The `sync_grading_sheets_from_config` RPC (KD #99) propagates weight changes to unlocked sheets.
+- ✅ **Admissions DDL:** `create_ay_admissions_tables` is a security-definer Postgres function shipped via migrations. KD #119 documents the regression pattern (re-emitting the function from a stale body silently drops columns added by later migrations — always diff against the live definition).
+- ✅ **Discount codes:** copy-forward not built; the admissions team adds codes manually per AY via `/sis/admin/discount-codes` (KD #133 widened access to the `admissions` role).
+- ✅ **Returning-student re-enrolment:** parents re-initiate via portal; no auto-create on rollover.
+- ✅ **Archive semantics:** prior-AY rows stay in the switcher with `is_current=false`. No "archived" state needed yet.
 
 ## See also
 
