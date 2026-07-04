@@ -109,6 +109,7 @@ const ACTION_LABELS: Record<string, string> = {
   'admissions.reminder.sent': 'Reminder sent',
   'admissions.reminder.bulk': 'Reminders sent',
   'admissions.mark.promised': 'Marked as promised',
+  'admissions.level_label.remap': 'Level labels remapped',
 
   // SIS / admissions edits
   'sis.profile.update': 'Profile updated',
@@ -125,6 +126,7 @@ const ACTION_LABELS: Record<string, string> = {
   'sis.documents.auto-revive': 'Documents auto-revived',
   'sis.allowance.update': 'Leave allowance updated',
   'sis.vl_allowance.update': 'Vacation allowance updated',
+  'sis.level.create': 'Level created',
 
   // Academic years
   'ay.create': 'Academic year created',
