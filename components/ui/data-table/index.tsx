@@ -377,7 +377,11 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     const options =
       f.valueOptions?.map((v) => ({ value: v, label: v })) ??
       Array.from(col.getFacetedUniqueValues().keys())
-        .filter((v): v is string => typeof v === 'string')
+        // Blank/whitespace values would render as an empty selectable row —
+        // drop them from the derived vocabulary, matching filter-rows.ts::
+        // getFacetOptions (the export sheet's equivalent derivation). Rows
+        // with a blank value stay reachable by clearing the facet.
+        .filter((v): v is string => typeof v === 'string' && v.trim() !== '')
         .sort()
         .map((v) => ({ value: v, label: v }));
     const selected =
