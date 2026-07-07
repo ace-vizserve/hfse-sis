@@ -1046,6 +1046,29 @@ export type CrossAyMatch = {
   status: string | null;
 };
 
+/**
+ * Union + dedupe the per-column search result lists (first occurrence wins,
+ * keyed by enroleeNumber; rows without one are dropped), then sort newest
+ * application first and cap. Pure — exported for unit testing; the DB-side
+ * `.or()` this replaces did the ordering/limit in one query, so this is the
+ * client-side equivalent over the per-column `.ilike()` result lists.
+ */
+export function mergeSearchHits<
+  T extends { enroleeNumber: string | null; created_at?: string | null },
+>(lists: T[][], limit: number): T[] {
+  const byEnrolee = new Map<string, T>();
+  for (const list of lists) {
+    for (const row of list) {
+      if (row.enroleeNumber && !byEnrolee.has(row.enroleeNumber)) {
+        byEnrolee.set(row.enroleeNumber, row);
+      }
+    }
+  }
+  return Array.from(byEnrolee.values())
+    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+    .slice(0, limit);
+}
+
 export async function searchStudentsAcrossAY(
   query: string
 ): Promise<CrossAyMatch[]> {
@@ -1071,8 +1094,24 @@ export async function searchStudentsAcrossAY(
 
   // 2) For each AY, query the apps + status tables in parallel. Bail on per-AY
   //    failures so a single missing table doesn't kill the whole search.
+  //
+  //    One `.ilike()` call per searched column, unioned + deduped via
+  //    mergeSearchHits below — NOT a single `.or()` with the query spliced
+  //    into the raw filter string. `.or()`'s argument is a PostgREST DSL
+  //    where `,` and `(`/`)` are grammar — a search like "Tan, Wei Ming"
+  //    corrupted the condition list and silently returned no matches.
+  //    `.ilike('col', pattern)` passes the pattern as a parameterized filter
+  //    value, so only genuine ILIKE wildcards matter — and the user's own
+  //    literal `%`/`_` are escaped below (unchanged search semantics).
   const escaped = trimmed.replace(/[%_]/g, (m) => `\\${m}`);
   const pattern = `%${escaped}%`;
+  const SEARCH_COLUMNS = [
+    'enroleeNumber',
+    'studentNumber',
+    'enroleeFullName',
+    'firstName',
+    'lastName',
+  ] as const;
 
   type AppHit = {
     enroleeNumber: string | null;
@@ -1081,28 +1120,35 @@ export async function searchStudentsAcrossAY(
     firstName: string | null;
     lastName: string | null;
     middleName: string | null;
+    created_at: string | null;
   };
 
   const perAyPromises = ayCodes.map(async (ayCode) => {
     const prefix = prefixFor(ayCode);
-    const { data: appsData, error: appsErr } = await supabase
-      .from(`${prefix}_enrolment_applications`)
-      .select(
-        'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, middleName'
+    const appsSelect =
+      'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, middleName, created_at';
+    const perColumn = await Promise.all(
+      SEARCH_COLUMNS.map((col) =>
+        supabase
+          .from(`${prefix}_enrolment_applications`)
+          .select(appsSelect)
+          .ilike(col, pattern)
+          .order('created_at', { ascending: false })
+          .limit(20)
       )
-      .or(
-        `enroleeNumber.ilike.${pattern},studentNumber.ilike.${pattern},enroleeFullName.ilike.${pattern},firstName.ilike.${pattern},lastName.ilike.${pattern}`
-      )
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (appsErr) {
+    );
+    const failed = perColumn.find((res) => res.error);
+    if (failed?.error) {
       console.warn(
         `[sis] cross-AY search apps fail (${ayCode}):`,
-        appsErr.message
+        failed.error.message
       );
       return [] as CrossAyMatch[];
     }
-    const apps = (appsData ?? []) as AppHit[];
+    const apps = mergeSearchHits(
+      perColumn.map((res) => (res.data ?? []) as AppHit[]),
+      20
+    );
     if (apps.length === 0) return [] as CrossAyMatch[];
 
     const enroleeNumbers = apps
