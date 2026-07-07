@@ -57,6 +57,35 @@ export type StudentListRow = {
   // safe — callers only render these on the closed-applications page.
   applicationTerminalReason?: string | null;
   applicationTerminalNotes?: string | null;
+  // Additional _enrolment_status fields — not rendered as on-screen columns
+  // anywhere today, but fetched so pages can offer them as CSV export-only
+  // extras (see components/sis/student-data-table.tsx's `csv.extraColumns`).
+  // The apps×status join already existed; this just widens the status
+  // SELECT + merge to surface more of what's already in that table.
+  enroleeType: string | null;
+  enrolmentDate: string | null;
+  assessmentStatus: string | null;
+  assessmentGradeMath: string | number | null;
+  assessmentGradeEnglish: string | number | null;
+  contractStatus: string | null;
+  feeStatus: string | null;
+  registrationStatus: string | null;
+  // Added for the applications-table pipeline strip (KD-pending) — the 4
+  // stage statuses not previously loaded, plus every stage's updatedDate
+  // (applicationUpdatedDate already existed above). Per-stage last-updated
+  // powers the strip's popover detail.
+  documentStatus: string | null;
+  classStatus: string | null;
+  suppliesStatus: string | null;
+  orientationStatus: string | null;
+  registrationUpdateDate: string | null;
+  documentUpdatedDate: string | null;
+  assessmentUpdatedDate: string | null;
+  contractUpdatedDate: string | null;
+  feeUpdatedDate: string | null;
+  classUpdatedDate: string | null;
+  suppliesUpdatedDate: string | null;
+  orientationUpdatedDate: string | null;
 };
 
 // `created_at` carries the application's submission timestamp (Supabase default
@@ -65,7 +94,7 @@ export type StudentListRow = {
 const LIST_APP_COLUMNS =
   'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied, created_at';
 const LIST_STATUS_COLUMNS =
-  'enroleeNumber, classLevel, classSection, applicationStatus, applicationUpdatedDate, "applicationTerminalReason", "applicationTerminalNotes"';
+  'enroleeNumber, classLevel, classSection, applicationStatus, applicationUpdatedDate, "applicationTerminalReason", "applicationTerminalNotes", enroleeType, enrolmentDate, assessmentStatus, assessmentGradeMath, assessmentGradeEnglish, contractStatus, feeStatus, registrationStatus, documentStatus, classStatus, suppliesStatus, orientationStatus, registrationUpdateDate, documentUpdatedDate, assessmentUpdatedDate, contractUpdatedDate, feeUpdatedDate, classUpdatedDate, suppliesUpdatedDate, orientationUpdatedDate';
 
 export type StudentListOrder = 'created_at_desc' | 'name_asc';
 
@@ -140,6 +169,26 @@ export async function listStudents(
         applicationUpdatedDate: string | null;
         applicationTerminalReason: string | null;
         applicationTerminalNotes: string | null;
+        enroleeType: string | null;
+        enrolmentDate: string | null;
+        assessmentStatus: string | null;
+        assessmentGradeMath: string | number | null;
+        assessmentGradeEnglish: string | number | null;
+        contractStatus: string | null;
+        feeStatus: string | null;
+        registrationStatus: string | null;
+        documentStatus: string | null;
+        classStatus: string | null;
+        suppliesStatus: string | null;
+        orientationStatus: string | null;
+        registrationUpdateDate: string | null;
+        documentUpdatedDate: string | null;
+        assessmentUpdatedDate: string | null;
+        contractUpdatedDate: string | null;
+        feeUpdatedDate: string | null;
+        classUpdatedDate: string | null;
+        suppliesUpdatedDate: string | null;
+        orientationUpdatedDate: string | null;
       };
 
       const apps = (appsRes.data ?? []) as AppLite[];
@@ -169,6 +218,26 @@ export async function listStudents(
           created_at: a.created_at,
           applicationTerminalReason: s?.applicationTerminalReason ?? null,
           applicationTerminalNotes: s?.applicationTerminalNotes ?? null,
+          enroleeType: s?.enroleeType ?? null,
+          enrolmentDate: s?.enrolmentDate ?? null,
+          assessmentStatus: s?.assessmentStatus ?? null,
+          assessmentGradeMath: s?.assessmentGradeMath ?? null,
+          assessmentGradeEnglish: s?.assessmentGradeEnglish ?? null,
+          contractStatus: s?.contractStatus ?? null,
+          feeStatus: s?.feeStatus ?? null,
+          registrationStatus: s?.registrationStatus ?? null,
+          documentStatus: s?.documentStatus ?? null,
+          classStatus: s?.classStatus ?? null,
+          suppliesStatus: s?.suppliesStatus ?? null,
+          orientationStatus: s?.orientationStatus ?? null,
+          registrationUpdateDate: s?.registrationUpdateDate ?? null,
+          documentUpdatedDate: s?.documentUpdatedDate ?? null,
+          assessmentUpdatedDate: s?.assessmentUpdatedDate ?? null,
+          contractUpdatedDate: s?.contractUpdatedDate ?? null,
+          feeUpdatedDate: s?.feeUpdatedDate ?? null,
+          classUpdatedDate: s?.classUpdatedDate ?? null,
+          suppliesUpdatedDate: s?.suppliesUpdatedDate ?? null,
+          orientationUpdatedDate: s?.orientationUpdatedDate ?? null,
         });
       }
       return out;
@@ -281,6 +350,10 @@ export type ApplicationRow = {
   preferredSchedule: string | null;
   classType: string | null;
   paymentOption: string | null;
+  // Parent-portal payment preference (see PREFERRED_PAYMENT_SCHEME_OPTIONS /
+  // PREFERRED_PAYMENT_METHOD_OPTIONS in lib/schemas/sis.ts).
+  preferredPaymentScheme: string | null;
+  preferredPaymentMethod: string | null;
   // avail* fields — production DB stores 'Yes' / 'No' strings, not booleans.
   // Type widened to string | null to match real shape; the schema enforces the
   // 'Yes'|'No' enum on writes via lib/schemas/sis.ts::optionalYesNo.
@@ -298,16 +371,23 @@ export type ApplicationRow = {
   discount3: string | null;
   referrerName: string | null;
   referrerMobile: string | null;
+  // The referral person's name when howDidYouKnowAboutHFSEIS === 'Referral'.
+  marketingReferrerName: string | null;
   contractSignatory: string | null;
   // Family — father
   fatherFullName: string | null;
   fatherFirstName: string | null;
+  fatherMiddleName: string | null;
   fatherLastName: string | null;
+  fatherPreferredName: string | null;
   fatherNric: string | null;
   fatherBirthDay: string | null;
   fatherMobile: string | null;
   fatherEmail: string | null;
   fatherNationality: string | null;
+  fatherReligion: string | null;
+  fatherReligionOther: string | null;
+  fatherMarital: string | null;
   fatherCompanyName: string | null;
   fatherPosition: string | null;
   fatherPassport: string | null;
@@ -318,12 +398,17 @@ export type ApplicationRow = {
   // Family — mother
   motherFullName: string | null;
   motherFirstName: string | null;
+  motherMiddleName: string | null;
   motherLastName: string | null;
+  motherPreferredName: string | null;
   motherNric: string | null;
   motherBirthDay: string | null;
   motherMobile: string | null;
   motherEmail: string | null;
   motherNationality: string | null;
+  motherReligion: string | null;
+  motherReligionOther: string | null;
+  motherMarital: string | null;
   motherCompanyName: string | null;
   motherPosition: string | null;
   motherPassport: string | null;
@@ -333,14 +418,51 @@ export type ApplicationRow = {
   motherWhatsappTeamsConsent: boolean | null;
   // Family — guardian
   guardianFullName: string | null;
+  guardianFirstName: string | null;
+  guardianMiddleName: string | null;
+  guardianLastName: string | null;
+  guardianPreferredName: string | null;
+  guardianNric: string | null;
+  guardianBirthDay: string | null;
   guardianMobile: string | null;
   guardianEmail: string | null;
   guardianNationality: string | null;
+  guardianReligion: string | null;
+  guardianReligionOther: string | null;
+  guardianCompanyName: string | null;
+  guardianPosition: string | null;
   guardianPassport: string | null;
   guardianPassportExpiry: string | null;
   guardianPass: string | null;
   guardianPassExpiry: string | null;
   guardianWhatsappTeamsConsent: boolean | null;
+  // Siblings — 5 slots. Parent-portal-collected, not yet displayed anywhere
+  // in the SIS prior to this addition.
+  siblingFullName1: string | null;
+  siblingBirthDay1: string | null;
+  siblingReligion1: string | null;
+  siblingEducationOccupation1: string | null;
+  siblingSchoolCompany1: string | null;
+  siblingFullName2: string | null;
+  siblingBirthDay2: string | null;
+  siblingReligion2: string | null;
+  siblingEducationOccupation2: string | null;
+  siblingSchoolCompany2: string | null;
+  siblingFullName3: string | null;
+  siblingBirthDay3: string | null;
+  siblingReligion3: string | null;
+  siblingEducationOccupation3: string | null;
+  siblingSchoolCompany3: string | null;
+  siblingFullName4: string | null;
+  siblingBirthDay4: string | null;
+  siblingReligion4: string | null;
+  siblingEducationOccupation4: string | null;
+  siblingSchoolCompany4: string | null;
+  siblingFullName5: string | null;
+  siblingBirthDay5: string | null;
+  siblingReligion5: string | null;
+  siblingEducationOccupation5: string | null;
+  siblingSchoolCompany5: string | null;
   // Medical
   asthma: boolean | null;
   allergies: boolean | null;
@@ -395,6 +517,8 @@ const DETAIL_APP_COLUMNS = [
   'preferredSchedule',
   'classType',
   'paymentOption',
+  'preferredPaymentScheme',
+  'preferredPaymentMethod',
   'availSchoolBus',
   'availStudentCare',
   'studentCareProgram',
@@ -409,15 +533,21 @@ const DETAIL_APP_COLUMNS = [
   'discount3',
   'referrerName',
   'referrerMobile',
+  'marketingReferrerName',
   'contractSignatory',
   'fatherFullName',
   'fatherFirstName',
+  'fatherMiddleName',
   'fatherLastName',
+  'fatherPreferredName',
   'fatherNric',
   'fatherBirthDay',
   'fatherMobile',
   'fatherEmail',
   'fatherNationality',
+  'fatherReligion',
+  'fatherReligionOther',
+  'fatherMarital',
   'fatherCompanyName',
   'fatherPosition',
   'fatherPassport',
@@ -427,12 +557,17 @@ const DETAIL_APP_COLUMNS = [
   'fatherWhatsappTeamsConsent',
   'motherFullName',
   'motherFirstName',
+  'motherMiddleName',
   'motherLastName',
+  'motherPreferredName',
   'motherNric',
   'motherBirthDay',
   'motherMobile',
   'motherEmail',
   'motherNationality',
+  'motherReligion',
+  'motherReligionOther',
+  'motherMarital',
   'motherCompanyName',
   'motherPosition',
   'motherPassport',
@@ -441,14 +576,49 @@ const DETAIL_APP_COLUMNS = [
   'motherPassExpiry',
   'motherWhatsappTeamsConsent',
   'guardianFullName',
+  'guardianFirstName',
+  'guardianMiddleName',
+  'guardianLastName',
+  'guardianPreferredName',
+  'guardianNric',
+  'guardianBirthDay',
   'guardianMobile',
   'guardianEmail',
   'guardianNationality',
+  'guardianReligion',
+  'guardianReligionOther',
+  'guardianCompanyName',
+  'guardianPosition',
   'guardianPassport',
   'guardianPassportExpiry',
   'guardianPass',
   'guardianPassExpiry',
   'guardianWhatsappTeamsConsent',
+  'siblingFullName1',
+  'siblingBirthDay1',
+  'siblingReligion1',
+  'siblingEducationOccupation1',
+  'siblingSchoolCompany1',
+  'siblingFullName2',
+  'siblingBirthDay2',
+  'siblingReligion2',
+  'siblingEducationOccupation2',
+  'siblingSchoolCompany2',
+  'siblingFullName3',
+  'siblingBirthDay3',
+  'siblingReligion3',
+  'siblingEducationOccupation3',
+  'siblingSchoolCompany3',
+  'siblingFullName4',
+  'siblingBirthDay4',
+  'siblingReligion4',
+  'siblingEducationOccupation4',
+  'siblingSchoolCompany4',
+  'siblingFullName5',
+  'siblingBirthDay5',
+  'siblingReligion5',
+  'siblingEducationOccupation5',
+  'siblingSchoolCompany5',
   'asthma',
   'allergies',
   'allergyDetails',

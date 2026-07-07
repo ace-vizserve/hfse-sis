@@ -78,6 +78,48 @@ const ENROLEE_CATEGORIES = [
   'VizSchool Current',
 ] as const;
 
+// `preferredPaymentScheme` / `preferredPaymentMethod` — parent-portal-only
+// columns added directly on the admissions table (not yet part of any
+// migration's DDL as of this writing). Stored as plain text, not a DB CHECK —
+// these lists constrain what the parent portal writes; the SIS is read-only
+// on them today (display via the option-label lookups below). The DB value
+// for the card payment method doesn't match its intended display label (the
+// "3% platform fee" note), so `paymentMethodLabel` translates it.
+export const PREFERRED_PAYMENT_SCHEME_OPTIONS = [
+  { label: 'Annual (Full Payment)', value: 'Annual (Full Payment)' },
+  { label: 'Quarterly Payment', value: 'Quarterly Payment' },
+  { label: 'Monthly Payment', value: 'Monthly Payment' },
+] as const;
+
+export const PREFERRED_PAYMENT_METHOD_OPTIONS = [
+  { label: 'Bank Transfer', value: 'Bank Transfer' },
+  { label: 'GIRO', value: 'GIRO' },
+  {
+    label: 'Credit/Debit Card ( 3% platform fee)',
+    value: 'Credit/Debit Card Payment',
+  },
+] as const;
+
+export function paymentSchemeLabel(
+  value: string | null | undefined
+): string | null {
+  if (!value) return null;
+  return (
+    PREFERRED_PAYMENT_SCHEME_OPTIONS.find((o) => o.value === value)?.label ??
+    value
+  );
+}
+
+export function paymentMethodLabel(
+  value: string | null | undefined
+): string | null {
+  if (!value) return null;
+  return (
+    PREFERRED_PAYMENT_METHOD_OPTIONS.find((o) => o.value === value)?.label ??
+    value
+  );
+}
+
 export const ProfileUpdateSchema = z.object({
   // Names — all optional (some students have only a first/last)
   firstName: optionalText(120),
@@ -124,7 +166,14 @@ export const ProfileUpdateSchema = z.object({
   otherSource: optionalText(240),
   referrerName: optionalText(120),
   referrerMobile: optionalNumberOrText,
+  // The person's name when howDidYouKnowAboutHFSEIS === 'Referral' — a
+  // separate column from referrerName (referral-source-specific).
+  marketingReferrerName: optionalText(120),
   contractSignatory: optionalText(120),
+  // Parent-portal payment preference — see PREFERRED_PAYMENT_SCHEME_OPTIONS /
+  // PREFERRED_PAYMENT_METHOD_OPTIONS above. Read-only from the SIS today.
+  preferredPaymentScheme: optionalText(80),
+  preferredPaymentMethod: optionalText(80),
   // Discount slots — these are codes; the future enrolment_discounts table
   // (Phase 3) is the per-student grant ledger
   discount1: optionalText(60),
@@ -276,7 +325,9 @@ export const GuardianUpdateSchema = z.object({
   guardianNationality: optionalText(80),
   guardianReligion: optionalText(80),
   guardianReligionOther: optionalText(120),
-  guardianMarital: optionalText(60),
+  // No guardianMarital — unlike fatherMarital/motherMarital, guardian never
+  // got a Marital column in the ay{YYYY}_enrolment_applications DDL
+  // (create_ay_admissions_tables, migration 076).
   guardianCompanyName: optionalText(240),
   guardianPosition: optionalText(120),
   guardianPassport: optionalText(40),

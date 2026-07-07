@@ -65,12 +65,17 @@ type FieldConfig = {
 const FATHER_FIELDS: FieldConfig[] = [
   { name: 'fatherFullName', label: 'Full name', wide: true },
   { name: 'fatherFirstName', label: 'First name' },
+  { name: 'fatherMiddleName', label: 'Middle name' },
   { name: 'fatherLastName', label: 'Last name' },
+  { name: 'fatherPreferredName', label: 'Preferred name' },
   { name: 'fatherNric', label: 'NRIC / FIN' },
   { name: 'fatherBirthDay', label: 'Date of birth', kind: 'date' },
   { name: 'fatherMobile', label: 'Mobile' },
   { name: 'fatherEmail', label: 'Email', kind: 'email', wide: true },
   { name: 'fatherNationality', label: 'Nationality' },
+  { name: 'fatherReligion', label: 'Religion' },
+  { name: 'fatherReligionOther', label: 'Religion (other)' },
+  { name: 'fatherMarital', label: 'Marital status' },
   { name: 'fatherCompanyName', label: 'Company' },
   { name: 'fatherPosition', label: 'Position' },
   { name: 'fatherPassport', label: 'Passport' },
@@ -89,21 +94,18 @@ const MOTHER_FIELDS: FieldConfig[] = FATHER_FIELDS.map((f) => ({
   name: f.name.replace(/^father/, 'mother'),
 }));
 
-const GUARDIAN_FIELDS: FieldConfig[] = [
-  { name: 'guardianFullName', label: 'Full name', wide: true },
-  { name: 'guardianMobile', label: 'Mobile' },
-  { name: 'guardianEmail', label: 'Email', kind: 'email', wide: true },
-  { name: 'guardianNationality', label: 'Nationality' },
-  { name: 'guardianPassport', label: 'Passport' },
-  { name: 'guardianPassportExpiry', label: 'Passport expiry', kind: 'date' },
-  { name: 'guardianPass', label: 'Pass type' },
-  { name: 'guardianPassExpiry', label: 'Pass expiry', kind: 'date' },
-  {
-    name: 'guardianWhatsappTeamsConsent',
-    label: 'WhatsApp / Teams consent',
-    kind: 'tribool',
-  },
-];
+// Guardian's schema (GuardianUpdateSchema) has near-full field parity with
+// father's — derive the same way mother does, EXCEPT marital status:
+// guardian never got a Marital column in the DDL (unlike father/mother), so
+// GuardianUpdateSchema has no `guardianMarital` field. Filter out the
+// father-only field before deriving, or the sheet would render a dead
+// input that zod silently drops on submit.
+const GUARDIAN_FIELDS: FieldConfig[] = FATHER_FIELDS.filter(
+  (f) => f.name !== 'fatherMarital'
+).map((f) => ({
+  ...f,
+  name: f.name.replace(/^father/, 'guardian'),
+}));
 
 const PARENT_LABELS: Record<ParentSlot, string> = {
   father: 'Father',

@@ -57,16 +57,16 @@ Follow the **student lifecycle** for a cohesive story; each module also stands a
 
 ### 0 · Login & shell — _everyone (short, opens the video)_
 
-- [ ] ★ Branded login screen → land on dashboard
-- [ ] ★ Module switcher + sidebar
-- [ ] ○ Cmd+K command palette
+- [x] ★ Branded login screen → land on dashboard
+- [x] ★ Module switcher + sidebar
+- [x] ○ Cmd+K command palette
 
 ### 1 · Admissions — _admissions seat_
 
-- [ ] ★ Dashboard — funnel KPIs, new-applications priority, chase strip
-- [ ] ★ Applications list — search/filter, open one
-- [ ] ★ Application detail — **Profile** edit, **Family**, **Documents** tab, **STP** application + residence history, **Enrollment** stage editor (advance a stage), **Lifecycle** timeline
-- [ ] ★ Document validation queue — table mode **and** triage mode (PDF preview, Approve/Reject with note, ←/→ nav)
+- [x] ★ Dashboard — funnel KPIs, new-applications priority, chase strip
+- [x] ★ Applications list — search/filter, open one
+- [x] ★ Application detail — **Profile** edit, **Family**, **Documents** tab, **STP** application + residence history, **Enrollment** stage editor (advance a stage), **Lifecycle** timeline
+- [x] ★ Document validation queue — table mode **and** triage mode (PDF preview, Approve/Reject with note, ←/→ nav)
 - [ ] ○ Closed applications + terminal reasons
 - [ ] ○ Feedback page
 - [ ] ○ Insights (Enrollment Health)

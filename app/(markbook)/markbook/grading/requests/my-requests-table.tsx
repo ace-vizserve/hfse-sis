@@ -81,6 +81,9 @@ const COLUMNS: ColumnDef<MyRequestRow>[] = [
         })}
       </span>
     ),
+    // Raw ISO timestamp isn't presentable as-is in a CSV — CSV_CONFIG's
+    // "Filed" extra column supplies the same formatting as the on-screen cell.
+    meta: { excludeFromExport: true },
   },
   {
     accessorKey: 'field_changed',
@@ -90,6 +93,9 @@ const COLUMNS: ColumnDef<MyRequestRow>[] = [
         {row.original.field_label}
       </span>
     ),
+    // Raw value (e.g. "ww_scores") isn't the friendly label shown on screen
+    // — CSV_CONFIG's "Field" extra exports field_label instead.
+    meta: { excludeFromExport: true },
     filterFn: (row, id, value) => {
       if (!value || (Array.isArray(value) && value.length === 0)) return true;
       return Array.isArray(value)
@@ -165,6 +171,9 @@ const COLUMNS: ColumnDef<MyRequestRow>[] = [
         <span className="font-medium">{row.original.proposed_value}</span>
       </span>
     ),
+    // Composite cell with no accessor value to export — CSV_CONFIG's
+    // "From"/"To" extras carry the two values as separate columns instead.
+    meta: { excludeFromExport: true },
   },
   {
     accessorKey: 'reason_category',
@@ -180,6 +189,9 @@ const COLUMNS: ColumnDef<MyRequestRow>[] = [
         <ReviewerLine row={row.original} />
       </div>
     ),
+    // Raw snake_case value isn't presentable — CSV_CONFIG's "Reason" extra
+    // exports the humanized version shown on screen.
+    meta: { excludeFromExport: true },
   },
   {
     id: 'req_status',
@@ -195,6 +207,9 @@ const COLUMNS: ColumnDef<MyRequestRow>[] = [
         </Badge>
       );
     },
+    // Raw enum value isn't the friendly label — CSV_CONFIG's "Status" extra
+    // exports statusLabel() instead.
+    meta: { excludeFromExport: true },
     filterFn: (row, id, value) => {
       if (!value || (Array.isArray(value) && value.length === 0)) return true;
       return Array.isArray(value)
@@ -270,22 +285,54 @@ const STATUS_TABS: StatusTabConfig<MyRequestRow>[] = [
   },
 ];
 
+// These pair with the `meta: { excludeFromExport: true }` on-screen columns
+// above (requested_at / field_changed / change / reason_category /
+// req_status) — each humanizes a raw value that isn't presentable as-is,
+// and defaults to checked so a same-day export looks the same as before
+// this table had a picker at all.
 const CSV_CONFIG: CsvConfig<MyRequestRow> = {
   filename: 'my-change-requests.csv',
-  columns: [
+  extraColumns: [
     {
+      id: 'csv_filed',
       header: 'Filed',
+      defaultChecked: true,
       accessor: (r) =>
         new Date(r.requested_at).toLocaleString('en-SG', {
           dateStyle: 'medium',
           timeStyle: 'short',
         }),
     },
-    { header: 'Field', accessor: (r) => r.field_label },
-    { header: 'From', accessor: (r) => r.current_value ?? '(blank)' },
-    { header: 'To', accessor: (r) => r.proposed_value },
-    { header: 'Reason', accessor: (r) => r.reason_category.replace(/_/g, ' ') },
-    { header: 'Status', accessor: (r) => statusLabel(r.status) },
+    {
+      id: 'csv_field',
+      header: 'Field',
+      defaultChecked: true,
+      accessor: (r) => r.field_label,
+    },
+    {
+      id: 'csv_from',
+      header: 'From',
+      defaultChecked: true,
+      accessor: (r) => r.current_value ?? '(blank)',
+    },
+    {
+      id: 'csv_to',
+      header: 'To',
+      defaultChecked: true,
+      accessor: (r) => r.proposed_value,
+    },
+    {
+      id: 'csv_reason',
+      header: 'Reason',
+      defaultChecked: true,
+      accessor: (r) => r.reason_category.replace(/_/g, ' '),
+    },
+    {
+      id: 'csv_status',
+      header: 'Status',
+      defaultChecked: true,
+      accessor: (r) => statusLabel(r.status),
+    },
   ],
 };
 

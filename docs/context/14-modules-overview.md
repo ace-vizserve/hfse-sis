@@ -4,6 +4,8 @@
 
 The hub for cross-module concerns. The HFSE SIS is one Next.js deployable with **seven modules** on top of one Supabase project and one `auth.users` table. Read this doc before touching anything that spans modules — the module map, the shared student identity, what's allowed to read/write what, the access matrix, and where to add new per-student data all live here.
 
+For _why_ this architecture exists — the original separate-Google-Sheets/VLOOKUP pain points this consolidation replaces — see the "The Problem Being Solved" → "What the SIS Delivers" mapping in `01-project-overview.md`.
+
 For the detailed scope of each module, see its own doc: `15-markbook-module.md`, `16-attendance-module.md`, `19-evaluation-module.md`, `12-p-files-module.md`, `08-admission-dashboard.md`, `13-sis-module.md`, `18-ay-setup.md`. This doc deliberately does not duplicate their contents.
 
 ## Module map

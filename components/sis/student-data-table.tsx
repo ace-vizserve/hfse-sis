@@ -11,8 +11,10 @@ import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { StalenessBadge } from '@/components/admissions/staleness-badge';
+import { PipelineStrip } from '@/components/sis/pipeline-strip';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import type { EnrollmentStatus } from '@/components/ui/enrollment-status-badge';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import type { StudentListRow } from '@/lib/sis/queries';
 import {
   STALENESS_ORDER,
@@ -23,8 +25,30 @@ import {
 } from '@/lib/admissions/staleness';
 import {
   APPLICATION_TERMINAL_REASON_LABELS,
+  STAGE_KEYS,
+  STAGE_LABELS,
+  STAGE_STATUS_OPTIONS,
   type ApplicationTerminalReason,
+  type StageKey,
 } from '@/lib/schemas/sis';
+
+// Field on StudentListRow carrying each stage's status string — used to build
+// the 9 hidden filterable "stage_<key>" facet columns when `showPipeline` is
+// on. The strip's own cell rendering (components/sis/pipeline-strip.tsx)
+// keeps its own copy of this mapping (plus each stage's updatedDate) — kept
+// separate since the two components use it for different purposes (a facet
+// column vs. a rendered detail popover).
+const STAGE_STATUS_FIELD: Record<StageKey, keyof StudentListRow> = {
+  application: 'applicationStatus',
+  registration: 'registrationStatus',
+  documents: 'documentStatus',
+  assessment: 'assessmentStatus',
+  contract: 'contractStatus',
+  fees: 'feeStatus',
+  class: 'classStatus',
+  supplies: 'suppliesStatus',
+  orientation: 'orientationStatus',
+};
 
 // ─── Bucket types ───────────────────────────────────────────────────────────
 
@@ -115,6 +139,7 @@ export function StudentDataTable({
   showReasonColumn = false,
   showIndex = false,
   showStaleness = false,
+  showPipeline = false,
   admissionsTab,
   statusBuckets = DEFAULT_STATUS_BUCKETS,
 }: {
@@ -136,6 +161,12 @@ export function StudentDataTable({
    *  pass from the active Admissions applications list — staleness is a
    *  pre-enrolment follow-up signal, not meaningful for enrolled/closed rows. */
   showStaleness?: boolean;
+  /** When true, adds a "Pipeline" column (9-stage progress strip, click for
+   *  per-stage detail) + a "Stage filters" facet group for filtering by any
+   *  of the 9 intake stages' status. Only pass from the in-flight Admissions
+   *  applications list — the strip is most useful while a student is still
+   *  moving through intake. */
+  showPipeline?: boolean;
   /** When set, appends &tab={admissionsTab} to the "Open in Admissions" link
    *  and adds a dedicated "Review documents" quick-action pointing at tab=documents.
    *  Only pass from pages whose primary purpose is document-chasing (e.g. the
@@ -277,6 +308,38 @@ export function StudentDataTable({
         ),
         enableHiding: false,
       },
+      ...(showPipeline
+        ? [
+            {
+              id: 'pipeline',
+              header: 'Pipeline',
+              enableSorting: false,
+              cell: ({ row }: { row: { original: StudentListRow } }) => (
+                <PipelineStrip row={row.original} />
+              ),
+            } satisfies ColumnDef<StudentListRow>,
+            // 9 hidden filterable columns — one per intake stage, driving the
+            // toolbar's "Stage filters" facet group. Never rendered (see
+            // initialColumnVisibility below); getFacetedUniqueValues +
+            // filterFn still work on a hidden column (KD #84 pattern).
+            ...STAGE_KEYS.map(
+              (stageKey) =>
+                ({
+                  id: `stage_${stageKey}`,
+                  accessorFn: (row: StudentListRow) =>
+                    (row[STAGE_STATUS_FIELD[stageKey]] as string | null) ?? '',
+                  header: STAGE_LABELS[stageKey],
+                  filterFn: (row, id, value) => {
+                    if (!value || (Array.isArray(value) && value.length === 0))
+                      return true;
+                    return Array.isArray(value)
+                      ? value.includes(row.getValue(id))
+                      : row.getValue(id) === value;
+                  },
+                }) satisfies ColumnDef<StudentListRow>
+            ),
+          ]
+        : []),
       ...(showStaleness
         ? [
             {
@@ -465,6 +528,7 @@ export function StudentDataTable({
       showReasonColumn,
       showIndex,
       showStaleness,
+      showPipeline,
     ]
   );
 
@@ -479,13 +543,18 @@ export function StudentDataTable({
     [statusBuckets]
   );
 
-  const initialColumnVisibility = React.useMemo(
-    () => ({
+  const initialColumnVisibility = React.useMemo(() => {
+    const base: Record<string, boolean> = {
       enroleeNumber: false,
       lastUpdated: false,
-    }),
-    []
-  );
+    };
+    if (showPipeline) {
+      for (const stageKey of STAGE_KEYS) {
+        base[`stage_${stageKey}`] = false;
+      }
+    }
+    return base;
+  }, [showPipeline]);
 
   return (
     <DataTable<StudentListRow>
@@ -514,6 +583,20 @@ export function StudentDataTable({
             ]
           : []),
       ]}
+      facetGroups={
+        showPipeline
+          ? [
+              {
+                label: 'Stage filters',
+                facets: STAGE_KEYS.map((stageKey) => ({
+                  columnId: `stage_${stageKey}`,
+                  label: STAGE_LABELS[stageKey],
+                  valueOptions: [...STAGE_STATUS_OPTIONS[stageKey]],
+                })),
+              },
+            ]
+          : []
+      }
       statusTabs={statusTabs}
       // Namespaced so filters/search/tab persist + are shareable. 'students.*'
       // only — the page's own ?ay= (server-scope) is left untouched (KD #84).
@@ -526,7 +609,95 @@ export function StudentDataTable({
       }
       initialColumnVisibility={initialColumnVisibility}
       pageSize={25}
-      csv={{ filename: `students-${ayCode ?? 'export'}.csv` }}
+      csv={{
+        filename: `students-${ayCode ?? 'export'}.csv`,
+        // More _enrolment_status fields the apps×status join in
+        // listStudents already fetches but this table doesn't render
+        // on-screen — offered only in the export sheet's column picker,
+        // unchecked by default so a plain export stays lean.
+        extraColumns: [
+          {
+            id: 'enroleeType',
+            header: 'Enrolee Type',
+            accessor: (r) => r.enroleeType,
+          },
+          {
+            id: 'enrolmentDate',
+            header: 'Enrolment Date',
+            accessor: (r) => r.enrolmentDate,
+          },
+          {
+            id: 'assessmentStatus',
+            header: 'Assessment',
+            accessor: (r) => r.assessmentStatus,
+          },
+          {
+            id: 'assessmentGradeMath',
+            header: 'Math Grade',
+            accessor: (r) => r.assessmentGradeMath,
+          },
+          {
+            id: 'assessmentGradeEnglish',
+            header: 'English Grade',
+            accessor: (r) => r.assessmentGradeEnglish,
+          },
+          {
+            id: 'contractStatus',
+            header: 'Contract',
+            accessor: (r) => r.contractStatus,
+          },
+          {
+            id: 'feeStatus',
+            header: 'Fee Status',
+            accessor: (r) => r.feeStatus,
+          },
+          {
+            id: 'registrationStatus',
+            header: 'Registration',
+            accessor: (r) => r.registrationStatus,
+          },
+        ],
+        // Only meaningful when the caller passes ayCode (the prefix the
+        // fetch needs to resolve) — /admissions/applications and
+        // /records/students both do; other StudentDataTable callers simply
+        // don't get the "load all columns" capability until they opt in the
+        // same way.
+        ...(ayCode
+          ? {
+              rawColumns: {
+                keyOf: (r: StudentListRow) => r.enroleeNumber,
+                sources: [
+                  {
+                    id: 'applications',
+                    label: 'Applications',
+                    fetch: (keys: string[]) =>
+                      apiFetch<{
+                        rows: Record<string, Record<string, unknown>>;
+                      }>(
+                        '/api/sis/students/raw-columns',
+                        jsonInit('POST', {
+                          ay: ayCode,
+                          source: 'applications',
+                          keys,
+                        })
+                      ).then((r) => r.rows),
+                  },
+                  {
+                    id: 'status',
+                    label: 'Status',
+                    fetch: (keys: string[]) =>
+                      apiFetch<{
+                        rows: Record<string, Record<string, unknown>>;
+                      }>(
+                        '/api/sis/students/raw-columns',
+                        jsonInit('POST', { ay: ayCode, source: 'status', keys })
+                      ).then((r) => r.rows),
+                  },
+                ],
+              },
+            }
+          : {}),
+      }}
       emptyState={{
         icon: Users,
         title: 'No students in view.',

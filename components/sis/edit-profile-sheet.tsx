@@ -40,11 +40,13 @@ import {
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  PREFERRED_PAYMENT_METHOD_OPTIONS,
+  PREFERRED_PAYMENT_SCHEME_OPTIONS,
   ProfileUpdateSchema,
   type ProfileUpdateInput,
 } from '@/lib/schemas/sis';
 
-type FieldKind = 'text' | 'textarea' | 'date' | 'tribool';
+type FieldKind = 'text' | 'textarea' | 'date' | 'tribool' | 'select';
 
 type FieldConfig = {
   name: keyof ProfileUpdateInput;
@@ -52,6 +54,9 @@ type FieldConfig = {
   kind?: FieldKind;
   placeholder?: string;
   wide?: boolean;
+  // Only used when kind === 'select' — bounded option list (e.g. payment
+  // scheme/method, both parent-portal-constrained but not DB-enum-checked).
+  options?: readonly { label: string; value: string }[];
 };
 
 type SectionConfig = { title: string; fields: FieldConfig[] };
@@ -108,6 +113,18 @@ const SECTIONS: SectionConfig[] = [
       { name: 'preferredSchedule', label: 'Preferred schedule' },
       { name: 'classType', label: 'Class type' },
       { name: 'paymentOption', label: 'Payment option' },
+      {
+        name: 'preferredPaymentScheme',
+        label: 'Payment scheme',
+        kind: 'select',
+        options: PREFERRED_PAYMENT_SCHEME_OPTIONS,
+      },
+      {
+        name: 'preferredPaymentMethod',
+        label: 'Payment method',
+        kind: 'select',
+        options: PREFERRED_PAYMENT_METHOD_OPTIONS,
+      },
       { name: 'availSchoolBus', label: 'School bus', kind: 'tribool' },
       { name: 'availStudentCare', label: 'Student care', kind: 'tribool' },
       { name: 'studentCareProgram', label: 'Student care program' },
@@ -127,8 +144,12 @@ const SECTIONS: SectionConfig[] = [
       { name: 'previousSchool', label: 'Previous school' },
       { name: 'howDidYouKnowAboutHFSEIS', label: 'Referral source' },
       { name: 'otherSource', label: 'Other source' },
-      { name: 'referrerName', label: 'Referrer name' },
-      { name: 'referrerMobile', label: 'Referrer mobile' },
+      // "How did you know about HFSE" attribution — distinct from the
+      // referrerName/referrerMobile pair below, which is a discount-code
+      // referral (unrelated concept).
+      { name: 'marketingReferrerName', label: 'Referral name' },
+      { name: 'referrerName', label: 'Referrer name (discount code)' },
+      { name: 'referrerMobile', label: 'Referrer mobile (discount code)' },
       { name: 'contractSignatory', label: 'Contract signatory' },
     ],
   },
@@ -140,6 +161,38 @@ const SECTIONS: SectionConfig[] = [
       { name: 'discount3', label: 'Discount 3' },
     ],
   },
+  // 5 fixed slots (always shown, matching the discount-slots precedent above)
+  // — parent-portal-collected, mirrors the read-only grouping in
+  // family-tab.tsx's SiblingsCard.
+  ...([1, 2, 3, 4, 5] as const).map(
+    (n): SectionConfig => ({
+      title: `Sibling ${n}`,
+      fields: [
+        {
+          name: `siblingFullName${n}` as keyof ProfileUpdateInput,
+          label: 'Full name',
+          wide: true,
+        },
+        {
+          name: `siblingBirthDay${n}` as keyof ProfileUpdateInput,
+          label: 'Date of birth',
+          kind: 'date',
+        },
+        {
+          name: `siblingReligion${n}` as keyof ProfileUpdateInput,
+          label: 'Religion',
+        },
+        {
+          name: `siblingEducationOccupation${n}` as keyof ProfileUpdateInput,
+          label: 'Education / occupation',
+        },
+        {
+          name: `siblingSchoolCompany${n}` as keyof ProfileUpdateInput,
+          label: 'School / company',
+        },
+      ],
+    })
+  ),
 ];
 
 export function EditProfileSheet({
@@ -274,8 +327,9 @@ function buildDefaults(
 }
 
 // Radix Select rejects empty-string item values. Sentinel stays client-side
-// only; onValueChange maps it back to null before RHF sees it.
-const TRIBOOL_UNSET = '__unset';
+// only; onValueChange maps it back to null before RHF sees it. Shared by
+// both the tribool (Yes/No/Not set) and generic options-driven selects.
+const UNSET_SENTINEL = '__unset';
 
 function SchemaField({
   cfg,
@@ -293,7 +347,8 @@ function SchemaField({
         const wrapperClass = cfg.wide ? 'sm:col-span-2' : '';
         if (kind === 'tribool') {
           const v = field.value as boolean | null | undefined;
-          const value = v === true ? 'yes' : v === false ? 'no' : TRIBOOL_UNSET;
+          const value =
+            v === true ? 'yes' : v === false ? 'no' : UNSET_SENTINEL;
           return (
             <FormItem className={wrapperClass}>
               <FormLabel className="text-xs">{cfg.label}</FormLabel>
@@ -309,9 +364,46 @@ function SchemaField({
                   <SelectValue placeholder="Not set" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={TRIBOOL_UNSET}>Not set</SelectItem>
+                  <SelectItem value={UNSET_SENTINEL}>Not set</SelectItem>
                   <SelectItem value="yes">Yes</SelectItem>
                   <SelectItem value="no">No</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+        if (kind === 'select') {
+          const v = field.value as string | null | undefined;
+          const options = cfg.options ?? [];
+          // These are parent-portal-constrained lists, not DB-enum-checked
+          // (lib/schemas/sis.ts) — a stored value can in principle be
+          // outside the known options. Surface it as an extra item instead
+          // of letting the trigger render blank while real data sits
+          // underneath.
+          const isKnown = v == null || options.some((o) => o.value === v);
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <Select
+                value={v ?? UNSET_SENTINEL}
+                onValueChange={(next) =>
+                  field.onChange(next === UNSET_SENTINEL ? null : next)
+                }
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Not set" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNSET_SENTINEL}>Not set</SelectItem>
+                  {!isKnown && v && (
+                    <SelectItem value={v}>{v} (current)</SelectItem>
+                  )}
+                  {options.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <FormMessage />

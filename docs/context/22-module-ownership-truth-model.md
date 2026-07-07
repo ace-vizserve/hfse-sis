@@ -15,6 +15,10 @@ this on the Records dashboard: the New-Enrollments and Withdrawals card↔drill
 divergences). This document defines **who owns what**, and **the direction data is
 allowed to move**, so the modules stay consistent by construction.
 
+This is the same "one record, no reconciliation step" principle that replaced HFSE's
+original separate-Google-Sheets/VLOOKUP setup — see the pain-point → solution mapping
+in `01-project-overview.md`.
+
 ## Two kinds of truth
 
 - **Historical truth** — the immutable record of _what happened_. Append-only;

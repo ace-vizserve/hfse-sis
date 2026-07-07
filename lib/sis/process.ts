@@ -216,10 +216,25 @@ export type LifecycleBlockerBucket = {
 // Status helpers
 // ──────────────────────────────────────────────────────────────────────────
 
+// Display-only "done" values for stages STAGE_TERMINAL_STATUS doesn't cover.
+// STAGE_TERMINAL_STATUS (lib/schemas/sis.ts) is scoped to the Enrolled-flip
+// prereq gate (ENROLLED_PREREQ_STAGES only) — class/supplies/orientation are
+// deliberately absent from it since they aren't enrollment prereqs. But for
+// *display* purposes (this bucket classifier, the lifecycle timeline, the
+// applications pipeline strip) their own terminal values ARE a "done" state.
+// Kept separate from STAGE_TERMINAL_STATUS so that map's single documented
+// responsibility (the enroll gate) stays untouched.
+const STAGE_DISPLAY_DONE: Partial<Record<StageKey, string>> = {
+  class: 'Finished',
+  supplies: 'Claimed',
+  orientation: 'Finished',
+};
+
 // Maps an admissions stage status string onto our 4-tone bucket. "Cancelled"
 // is intentionally rendered as `blocked` so admins see it as needing attention
-// rather than a benign neutral.
-function bucketForAdmissionsStatus(
+// rather than a benign neutral. Exported for reuse by the applications-table
+// pipeline strip (components/sis/pipeline-strip.tsx) and for unit testing.
+export function bucketForAdmissionsStatus(
   stageKey: StageKey,
   status: string | null
 ): StageStatusBucket {
@@ -242,6 +257,7 @@ function bucketForAdmissionsStatus(
   }
   // 'Incomplete' on documents/class is a known blocker (admin needs to chase).
   if (trimmed === 'Incomplete') return 'blocked';
+  if (STAGE_DISPLAY_DONE[stageKey] === trimmed) return 'done';
   return 'in_progress';
 }
 

@@ -312,10 +312,12 @@ export default async function AdmissionsApplicationsPage({
         <CardContent className="p-0">
           <StudentDataTable
             data={applications}
+            ayCode={selectedAy}
             linkBase="/admissions/applications"
             linkQuery={isCurrentAy ? undefined : { ay: selectedAy }}
             showSubmittedColumn
             showStaleness
+            showPipeline
             admissionsTab="documents"
             defaultSorting={[{ id: 'submitted', desc: true }]}
             statusBuckets={APPLICATIONS_STATUS_BUCKETS}

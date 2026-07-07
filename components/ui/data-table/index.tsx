@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Columns3, Download, Search, X } from 'lucide-react';
+import { ChevronDown, Columns3, Download, Search, X } from 'lucide-react';
 import {
   type ColumnFiltersState,
   type RowSelectionState,
@@ -16,6 +16,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -24,6 +25,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import {
   Table,
   TableBody,
@@ -37,11 +43,12 @@ import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
 import { BulkActionFooter } from './bulk-action-footer';
 import { DataTableEmptyState } from './empty-state';
-import { exportCsv } from './csv';
+import { DataTableExportSheet } from './export-sheet';
 import { FacetDropdown } from './facet-dropdown';
+import { filterRows } from './filter-rows';
 import { FilterChip } from './filter-chip';
 import { DataTablePagination } from './pagination';
-import type { DataTableProps } from './types';
+import type { DataTableProps, FacetConfig } from './types';
 import { useUrlState } from './use-url-state';
 
 export { RowActionsMenu } from './row-actions-menu';
@@ -55,6 +62,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     searchPlaceholder = 'Search…',
     initialSearch,
     facets = [],
+    facetGroups = [],
     statusTabs,
     meScope,
     toolbarLeading,
@@ -104,6 +112,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     Object.entries(initial.facets ?? {}).map(([id, value]) => ({ id, value }))
   );
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [exportOpen, setExportOpen] = useState(false);
 
   // External reset hook — bump `selectionResetSignal` to drop the selection
   // (and the bulk-action footer) after a bulk action completes.
@@ -127,63 +136,23 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
   // "Data after every active filter except status" — drives the per-tab
   // count badges so each tab shows how many rows would match it if the
   // user clicked it, narrowed by the other filters they've already set.
-  // Replicates facet (column filter) + global search + mine logic on raw
-  // data so the answer doesn't depend on which tab is currently active.
+  // The facet/search filtering itself is shared with the export sheet via
+  // `filterRows` (components/ui/data-table/filter-rows.ts) so the two can
+  // never disagree about what "matches the current filters" means.
   const tabCountData = useMemo(() => {
     let rows = data;
     if (mineActive && meScope && meScopeEnabled) {
       rows = rows.filter((r) => meScope.predicate(r, meScope.userId));
     }
-    for (const f of columnFilters) {
-      const value = f.value;
-      if (value == null) continue;
-      const valueArr = Array.isArray(value) ? value : [value];
-      if (valueArr.length === 0) continue;
-      const valueSet = new Set(valueArr.map((v) => String(v)));
-      // Resolve the facet value through the column's accessor — NOT a raw
-      // `row[f.id]` lookup, which is undefined for accessorFn-backed columns
-      // (or columns whose id differs from their accessorKey) and would silently
-      // zero out every tab count whenever such a facet is active.
-      const col = columns.find(
-        (c) =>
-          c.id === f.id ||
-          ('accessorKey' in c &&
-            (c as { accessorKey?: string }).accessorKey === f.id)
-      ) as
-        | {
-            accessorFn?: (row: TRow, index: number) => unknown;
-            accessorKey?: string;
-          }
-        | undefined;
-      const getValue = (r: TRow, i: number): unknown => {
-        if (col && typeof col.accessorFn === 'function')
-          return col.accessorFn(r, i);
-        const key = col?.accessorKey ?? f.id;
-        return (r as unknown as Record<string, unknown>)[key];
-      };
-      rows = rows.filter((r, i) => {
-        const raw = getValue(r, i);
-        const cell = raw == null || raw === '' ? '(unassigned)' : String(raw);
-        return valueSet.has(cell);
-      });
-    }
-    if (search && searchKeys && searchKeys.length > 0) {
-      const lower = search.toLowerCase();
-      rows = rows.filter((r) => {
-        const hay = searchKeys
-          .map((k) =>
-            typeof k === 'function'
-              ? k(r)
-              : String(
-                  (r as unknown as Record<string, unknown>)[k as string] ?? ''
-                )
-          )
-          .join(' ')
-          .toLowerCase();
-        return hay.includes(lower);
-      });
-    }
-    return rows;
+    return filterRows(rows, {
+      columns,
+      facets: columnFilters.map((f) => ({
+        id: f.id,
+        values: (Array.isArray(f.value) ? f.value : []).map(String),
+      })),
+      search,
+      searchKeys,
+    });
   }, [
     data,
     mineActive,
@@ -322,6 +291,13 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     [rowSelection, table]
   );
 
+  // Facets that live behind a `facetGroups` trigger still need to resolve to
+  // a label for their chip — flatten both sources into one lookup list.
+  const allFacets = useMemo(
+    () => [...facets, ...facetGroups.flatMap((g) => g.facets)],
+    [facets, facetGroups]
+  );
+
   const activeChips = useMemo(() => {
     const chips: Array<{
       key: string;
@@ -330,7 +306,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
       onClear: () => void;
     }> = [];
     for (const f of columnFilters) {
-      const facetCfg = facets.find((fc) => fc.columnId === f.id);
+      const facetCfg = allFacets.find((fc) => fc.columnId === f.id);
       if (!facetCfg) continue;
       const values = Array.isArray(f.value) ? (f.value as string[]) : [];
       values.forEach((v) =>
@@ -371,10 +347,45 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
         onClear: () => setMineActive(false),
       });
     return chips;
-  }, [columnFilters, facets, search, mineActive, meScope]);
+  }, [columnFilters, allFacets, search, mineActive, meScope]);
 
   const showEmpty = data.length === 0;
   const showFilteredEmpty = !showEmpty && totalRows === 0;
+
+  // Shared per-facet render body — used both for top-level `facets` (inline
+  // in the toolbar) and for facets nested inside a `facetGroups` popover.
+  // Identical logic either way: resolve options (fixed valueOptions or the
+  // column's faceted unique values), read the current selection out of
+  // columnFilters, write back on change.
+  const renderFacet = (f: FacetConfig) => {
+    const col = table.getColumn(f.columnId);
+    if (!col) return null;
+    const options =
+      f.valueOptions?.map((v) => ({ value: v, label: v })) ??
+      Array.from(col.getFacetedUniqueValues().keys())
+        .filter((v): v is string => typeof v === 'string')
+        .sort()
+        .map((v) => ({ value: v, label: v }));
+    const selected =
+      (columnFilters.find((cf) => cf.id === f.columnId)?.value as string[]) ??
+      [];
+    return (
+      <FacetDropdown
+        key={f.columnId}
+        label={f.label}
+        options={options}
+        selected={selected}
+        onChange={(next) =>
+          setColumnFilters((prev) => {
+            const without = prev.filter((p) => p.id !== f.columnId);
+            return next.length
+              ? [...without, { id: f.columnId, value: next }]
+              : without;
+          })
+        }
+      />
+    );
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -402,33 +413,44 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
             {meScope.label}
           </Toggle>
         )}
-        {facets.map((f) => {
-          const col = table.getColumn(f.columnId);
-          if (!col) return null;
-          const options =
-            f.valueOptions?.map((v) => ({ value: v, label: v })) ??
-            Array.from(col.getFacetedUniqueValues().keys())
-              .filter((v): v is string => typeof v === 'string')
-              .sort()
-              .map((v) => ({ value: v, label: v }));
-          const selected =
-            (columnFilters.find((cf) => cf.id === f.columnId)
-              ?.value as string[]) ?? [];
+        {facets.map(renderFacet)}
+        {facetGroups.map((group) => {
+          const activeCount = group.facets.reduce((sum, f) => {
+            const selected =
+              (columnFilters.find((cf) => cf.id === f.columnId)
+                ?.value as string[]) ?? [];
+            return sum + selected.length;
+          }, 0);
           return (
-            <FacetDropdown
-              key={f.columnId}
-              label={f.label}
-              options={options}
-              selected={selected}
-              onChange={(next) =>
-                setColumnFilters((prev) => {
-                  const without = prev.filter((p) => p.id !== f.columnId);
-                  return next.length
-                    ? [...without, { id: f.columnId, value: next }]
-                    : without;
-                })
-              }
-            />
+            <Popover key={group.label}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-dashed"
+                >
+                  {group.label}
+                  {activeCount > 0 && (
+                    <>
+                      <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+                      <Badge
+                        variant="secondary"
+                        className="rounded-sm px-1 font-mono text-[10px]"
+                      >
+                        {activeCount}
+                      </Badge>
+                    </>
+                  )}
+                  <ChevronDown
+                    className="ml-1 h-3 w-3 opacity-60"
+                    aria-hidden
+                  />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 space-y-1.5 p-2" align="start">
+                {group.facets.map(renderFacet)}
+              </PopoverContent>
+            </Popover>
           );
         })}
         <div className="ml-auto flex items-center gap-2">
@@ -438,28 +460,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
               variant="outline"
               size="sm"
               className="h-8"
-              onClick={() => {
-                const cols =
-                  csv.columns ??
-                  table
-                    .getVisibleLeafColumns()
-                    .filter((c) => c.id !== 'select')
-                    .map((c) => ({
-                      header:
-                        typeof c.columnDef.header === 'string'
-                          ? c.columnDef.header
-                          : c.id,
-                      accessor: (row: TRow) => {
-                        const v = (row as Record<string, unknown>)[c.id];
-                        return v == null ? null : (v as string | number);
-                      },
-                    }));
-                exportCsv(
-                  table.getFilteredRowModel().rows.map((r) => r.original),
-                  cols,
-                  csv.filename
-                );
-              }}
+              onClick={() => setExportOpen(true)}
             >
               <Download className="mr-1 h-3.5 w-3.5" />
               Export CSV
@@ -613,6 +614,35 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
           selectedRows={selectedRows}
           actions={selection.bulkActions}
           onClear={() => table.resetRowSelection()}
+        />
+      )}
+
+      {csv && (
+        <DataTableExportSheet
+          open={exportOpen}
+          onOpenChange={setExportOpen}
+          data={data}
+          columns={columns}
+          facets={facets}
+          searchKeys={searchKeys}
+          csv={csv}
+          statusTabs={statusTabs}
+          selectionEnabled={Boolean(selection?.enabled)}
+          selectedRows={selectedRows}
+          seed={{
+            search,
+            facets: columnFilters.map((f) => ({
+              id: f.id,
+              values: (Array.isArray(f.value) ? f.value : []).map(String),
+            })),
+            statusTab,
+            visibleColumnIds: table
+              .getVisibleLeafColumns()
+              .filter((c) => c.id !== 'select')
+              .map((c) => c.id),
+            initialSortId: sorting[0]?.id,
+            initialSortDesc: sorting[0]?.desc,
+          }}
         />
       )}
     </div>
