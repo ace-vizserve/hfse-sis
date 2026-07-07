@@ -2,16 +2,11 @@ import 'server-only';
 
 import { unstable_cache } from 'next/cache';
 
-import {
-  buildCompareCells,
-  type CompareCellResult,
-  type CompareInput,
-  type CompareResult,
-} from '@/lib/dashboard/compare';
+import { type CompareCellResult } from '@/lib/dashboard/compare';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
-import { getMarkbookKpisRange, type MarkbookRangeKpis } from './dashboard';
+import type { MarkbookRangeKpis } from './dashboard';
 import type { SubjectLevelRawPoint } from './insights-level';
 
 export type MarkbookCompareKpis = MarkbookRangeKpis;
@@ -25,35 +20,6 @@ export type SubjectTrendPoint = {
   /** Average quarterly grade rounded to 1dp. null when no entries exist. */
   avgGrade: number | null;
 };
-
-/**
- * Fans out across CompareInput's cells, calling the existing per-range
- * KPI loader for each (ayCode, range) tuple. Each cell stays cached
- * independently via getMarkbookKpisRange's per-call unstable_cache, so
- * compare mode shares cache slots with the operational dashboard.
- */
-export async function getMarkbookCompareKpis(
-  input: CompareInput
-): Promise<CompareResult<MarkbookCompareKpis>> {
-  const cells = await buildCompareCells(input);
-  if (cells.length === 0) return { cells: [] };
-
-  const results = await Promise.all(
-    cells.map((cell) =>
-      getMarkbookKpisRange({
-        ayCode: cell.ayCode,
-        from: cell.range.from,
-        to: cell.range.to,
-        cmpFrom: null,
-        cmpTo: null,
-      })
-    )
-  );
-
-  return {
-    cells: cells.map((cell, i) => ({ cell, data: results[i].current })),
-  };
-}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Subject performance trend — average quarterly grade per (subject × term)
