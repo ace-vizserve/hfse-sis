@@ -623,14 +623,19 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
           onOpenChange={setExportOpen}
           data={data}
           columns={columns}
-          facets={facets}
+          // Flattened union — grouped facets (facetGroups) must be
+          // first-class in the export sheet too, or a grouped selection
+          // silently narrows the export with no visible/clearable control.
+          facets={allFacets}
           searchKeys={searchKeys}
           csv={csv}
           statusTabs={statusTabs}
+          meScope={meScopeEnabled ? meScope : undefined}
           selectionEnabled={Boolean(selection?.enabled)}
           selectedRows={selectedRows}
           seed={{
             search,
+            mine: mineActive,
             facets: columnFilters.map((f) => ({
               id: f.id,
               values: (Array.isArray(f.value) ? f.value : []).map(String),

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -50,6 +50,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
 import { exportCsv } from './csv';
 import { FacetDropdown } from './facet-dropdown';
@@ -64,6 +65,7 @@ import type {
   CsvConfig,
   CsvRawColumnSource,
   FacetConfig,
+  MeScopeConfig,
   StatusTabConfig,
 } from './types';
 
@@ -130,6 +132,9 @@ export type DataTableExportSeed = {
   search: string;
   facets: FacetSelection[];
   statusTab?: string;
+  /** Whether the shell's me-scope toggle ("Only mine", …) is active — the
+   *  export must honour the same scope the on-screen table shows. */
+  mine: boolean;
   visibleColumnIds: string[];
   initialSortId?: string;
   initialSortDesc?: boolean;
@@ -144,6 +149,9 @@ type DataTableExportSheetProps<TRow> = {
   searchKeys?: Array<keyof TRow | ((row: TRow) => string)>;
   csv: CsvConfig<TRow>;
   statusTabs?: Array<StatusTabConfig<TRow>>;
+  /** Passed only when the shell's me-scope toggle is enabled — lets the
+   *  export apply (and the user adjust) the same "mine" scope. */
+  meScope?: MeScopeConfig<TRow>;
   selectionEnabled: boolean;
   selectedRows: TRow[];
   seed: DataTableExportSeed;
@@ -158,6 +166,7 @@ export function DataTableExportSheet<TRow>({
   searchKeys,
   csv,
   statusTabs,
+  meScope,
   selectionEnabled,
   selectedRows,
   seed,
@@ -237,6 +246,7 @@ export function DataTableExportSheet<TRow>({
   const [statusTab, setStatusTab] = useState<string | undefined>(
     seed.statusTab
   );
+  const [mine, setMine] = useState<boolean>(Boolean(seed.mine && meScope));
   const [checkedCols, setCheckedCols] = useState<Set<string>>(new Set());
   // Export column ORDER — the single source of truth for the order columns
   // appear in the downloaded CSV. Independent of `checkedCols` (membership);
@@ -271,6 +281,7 @@ export function DataTableExportSheet<TRow>({
     setDebouncedSearch(seed.search);
     setFacetSel(seed.facets.map((f) => ({ id: f.id, values: [...f.values] })));
     setStatusTab(seed.statusTab);
+    setMine(Boolean(seed.mine && meScope));
     setColumnSearch('');
     setRawBySource({});
     const checked = new Set<string>();
@@ -301,12 +312,21 @@ export function DataTableExportSheet<TRow>({
     return () => window.clearTimeout(t);
   }, [search]);
 
+  // Monotonic scope epoch — bumped whenever the export's row-scope inputs
+  // change. `handleLoadRaw` captures the epoch when a fetch launches; a
+  // resolution from an older epoch is keyed to a row set that no longer
+  // matches the current scope, so it lands as 'stale' (never 'loaded') and
+  // the group's auto-load refetches with the current keys. Guards the
+  // in-flight case the effect below can't see (it only flips 'loaded').
+  const scopeEpochRef = useRef(0);
+
   // A loaded raw-columns source is only valid for the row keys it was
   // fetched for. When the export scope changes after loading, mark it
   // stale AND drop its fields from checkedCols/columnOrder — a stale field
   // must never be silently exportable with partial/wrong data. No-ops on
   // first mount (rawBySource starts empty until the user loads something).
   useEffect(() => {
+    scopeEpochRef.current += 1;
     setRawBySource((prev) => {
       const staleIds = Object.entries(prev)
         .filter(([, s]) => s.status === 'loaded')
@@ -318,7 +338,7 @@ export function DataTableExportSheet<TRow>({
       }
       return next;
     });
-  }, [scope, debouncedSearch, facetSel, statusTab]);
+  }, [scope, debouncedSearch, facetSel, statusTab, mine]);
 
   useEffect(() => {
     if (Object.values(rawBySource).every((s) => s.status !== 'stale')) return;
@@ -342,6 +362,7 @@ export function DataTableExportSheet<TRow>({
 
   async function handleLoadRaw(source: CsvRawColumnSource) {
     if (!csv.rawColumns) return;
+    const epoch = scopeEpochRef.current;
     setRawBySource((prev) => ({
       ...prev,
       [source.id]: { ...IDLE_RAW_STATE, status: 'loading' },
@@ -349,6 +370,17 @@ export function DataTableExportSheet<TRow>({
     try {
       const keys = previewRows.map(csv.rawColumns.keyOf);
       const data = await source.fetch(keys);
+      if (epoch !== scopeEpochRef.current) {
+        // Scope changed while this fetch was in flight — its payload is
+        // keyed to the OLD row set (newly-matched rows would export blank
+        // cells). Land it as 'stale' so the open group auto-reloads with
+        // the current keys instead of silently accepting old data.
+        setRawBySource((prev) => ({
+          ...prev,
+          [source.id]: { ...IDLE_RAW_STATE, status: 'stale' },
+        }));
+        return;
+      }
       const colNames = Array.from(
         new Set(Object.values(data).flatMap((row) => Object.keys(row)))
       );
@@ -357,6 +389,13 @@ export function DataTableExportSheet<TRow>({
         [source.id]: { status: 'loaded', colNames, data },
       }));
     } catch (e) {
+      if (epoch !== scopeEpochRef.current) {
+        setRawBySource((prev) => ({
+          ...prev,
+          [source.id]: { ...IDLE_RAW_STATE, status: 'stale' },
+        }));
+        return;
+      }
       setRawBySource((prev) => ({
         ...prev,
         [source.id]: {
@@ -426,6 +465,11 @@ export function DataTableExportSheet<TRow>({
       const tab = statusTabs.find((t) => t.value === statusTab);
       if (tab) rows = rows.filter(tab.predicate);
     }
+    // Mirror the shell's on-screen scoping (tabFilteredData): the me-scope
+    // toggle narrows the export exactly like it narrows the visible table.
+    if (mine && meScope) {
+      rows = rows.filter((r) => meScope.predicate(r, meScope.userId));
+    }
     return filterRows(rows, {
       columns,
       facets: facetSel,
@@ -438,6 +482,8 @@ export function DataTableExportSheet<TRow>({
     data,
     statusTabs,
     statusTab,
+    mine,
+    meScope,
     columns,
     facetSel,
     debouncedSearch,
@@ -649,6 +695,20 @@ export function DataTableExportSheet<TRow>({
                 placeholder="Search…"
                 className="h-8 text-xs"
               />
+              {meScope && (
+                <Toggle
+                  pressed={mine}
+                  onPressedChange={setMine}
+                  size="sm"
+                  className="h-8"
+                  aria-label={meScope.label}
+                >
+                  {meScope.icon && (
+                    <meScope.icon className="mr-1 h-3.5 w-3.5" />
+                  )}
+                  {meScope.label}
+                </Toggle>
+              )}
               {statusTabs && statusTabs.length > 0 && (
                 <Select value={statusTab} onValueChange={setStatusTab}>
                   <SelectTrigger className="h-8 text-xs">
