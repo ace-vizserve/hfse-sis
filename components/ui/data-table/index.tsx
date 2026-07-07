@@ -268,8 +268,14 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
 
   useEffect(() => {
     if (!url.enabled) return;
+    // Thunk, not a plain snapshot: page/pageSize are read at debounce-FIRE
+    // time so (a) the mount-scheduled write can't delete a deep-linked
+    // ?page=/?pageSize= (they were previously omitted → deleted ~300ms after
+    // mount, breaking the KD #84 "page round-trips on refresh/share"
+    // contract), and (b) after the "search resets to page 1" effect runs,
+    // this write reflects the post-reset page, never a stale one.
     urlState.write(
-      {
+      () => ({
         search: search || undefined,
         status: statusTab !== defaultStatus ? statusTab : undefined,
         mine: mineActive || undefined,
@@ -278,7 +284,15 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
             .filter((f) => Array.isArray(f.value) && f.value.length > 0)
             .map((f) => [f.id, (f.value as unknown[]).map(String)])
         ),
-      },
+        page:
+          table.getState().pagination.pageIndex > 0
+            ? table.getState().pagination.pageIndex + 1
+            : undefined,
+        pageSize:
+          table.getState().pagination.pageSize !== pageSize
+            ? table.getState().pagination.pageSize
+            : undefined,
+      }),
       { debounce: true }
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
