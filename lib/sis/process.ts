@@ -9,6 +9,7 @@ import {
   ENROLLED_PREREQ_STAGES,
   type StageKey,
 } from '@/lib/schemas/sis';
+import { WITHDRAWAL_REASON_LABELS } from '@/lib/schemas/enrolment';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -293,6 +294,63 @@ export function resolveIsWithdrawn(
   return currentlyWithdrawn;
 }
 
+// Minimal section_students shape resolveWithdrawnDisplay needs. The loader
+// selects these three columns per KD #111 (migration 067).
+export type WithdrawalSsRow = {
+  enrollment_status: string;
+  withdrawal_date: string | null;
+  withdrawal_reason: string | null;
+};
+
+// Pure helper — picks the correct source for the timeline's "Withdrawn on
+// {date} / {reason}" display (KD #150 model):
+//
+//   - Not withdrawn (incl. a KD #67 transfer, whose old 'withdrawn' row
+//     coexists with an active/late one) → null. Delegates to
+//     resolveIsWithdrawn, the canonical dual-signal check.
+//   - Pre-enrolment terminal (applicationStatus='Withdrawn' via the stage
+//     route) → the application-side date/remark. That's a genuinely
+//     application-side event; unchanged behavior.
+//   - Post-enrolment withdrawal (applicationStatus stays 'Enrolled' — the
+//     append-only OUTCOME — while section_students carries
+//     enrollment_status='withdrawn') → the withdrawn section_students row's
+//     withdrawal_date + withdrawal_reason (KD #111), humanized via
+//     WITHDRAWAL_REASON_LABELS. Previously this case wrongly displayed the
+//     application stage's updatedDate/remarks (= the enrolment event).
+//
+// Exported for unit testing without a live DB connection.
+export function resolveWithdrawnDisplay(
+  applicationStatus: string | null,
+  appSide: { date: string | null; reason: string | null },
+  ssRows: WithdrawalSsRow[]
+): { date: string | null; reason: string | null } | null {
+  const isWithdrawn = resolveIsWithdrawn(
+    applicationStatus,
+    ssRows.map((r) => r.enrollment_status)
+  );
+  if (!isWithdrawn) return null;
+
+  // Pre-enrolment exit — the application-side fields ARE the withdrawal.
+  if ((applicationStatus ?? '').trim() === 'Withdrawn') return appSide;
+
+  // Post-enrolment: prefer the most recent withdrawn row (a student who
+  // transferred earlier and later withdrew carries an older transfer-created
+  // withdrawn row too — latest withdrawal_date wins; null dates sort last).
+  const latest = ssRows
+    .filter((r) => r.enrollment_status === 'withdrawn')
+    .sort((a, b) =>
+      (b.withdrawal_date ?? '').localeCompare(a.withdrawal_date ?? '')
+    )[0];
+  if (!latest) return appSide; // defensive — resolveIsWithdrawn guarantees one
+
+  const rawReason = latest.withdrawal_reason;
+  const reason = rawReason
+    ? ((WITHDRAWAL_REASON_LABELS as Record<string, string>)[rawReason] ??
+      rawReason)
+    : null;
+  return { date: latest.withdrawal_date, reason };
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Per-student composite — getStudentLifecycle
 // ──────────────────────────────────────────────────────────────────────────
@@ -380,20 +438,21 @@ async function loadStudentLifecycleUncached(
   const docs = (docsRes.data ?? null) as Record<string, string | null> | null;
   const studentNumber = app?.studentNumber ?? null;
 
-  // Withdrawn check — see resolveIsWithdrawn() above for the full rationale.
-  // We resolve the pre-enrolment signal here (applicationStatus) and
-  // override below once section_students is loaded (post-enrolment signal).
-  // Use the aliased `application_updatedAt` field for the "withdrawn on" date.
+  // Withdrawn check — see resolveWithdrawnDisplay() above for the full
+  // rationale. The application-side pair below is only the PRE-enrolment
+  // withdrawal source (the stage route stamps applicationStatus='Withdrawn'
+  // + remarks); a post-enrolment withdrawal keeps applicationStatus at
+  // 'Enrolled' (KD #150) and its date/reason live on the withdrawn
+  // section_students row (KD #111) — collected below once it loads.
   const applicationStatus =
     (status?.['applicationStatus'] as string | null) ?? null;
-  // Initial resolution from the application OUTCOME alone — correct for
-  // pre-enrolment withdrawals (no studentNumber / no section_students row).
-  // Refined below once section_students loads (dual-signal, transfer-aware).
-  let isWithdrawn = resolveIsWithdrawn(applicationStatus, []);
-  const withdrawnDate =
-    (status?.['application_updatedAt'] as string | null) ?? null;
-  const withdrawnReason =
-    (status?.['applicationRemarks'] as string | null) ?? null;
+  const appSideWithdrawal = {
+    date: (status?.['application_updatedAt'] as string | null) ?? null,
+    reason: (status?.['applicationRemarks'] as string | null) ?? null,
+  };
+  // section_students rows feeding the withdrawal display — stays [] for
+  // pre-enrolment applicants (no studentNumber / no section_students row).
+  let withdrawalSsRows: WithdrawalSsRow[] = [];
 
   // Build admissions stage rows.
   const rows: LifecycleStageRow[] = [];
@@ -558,7 +617,7 @@ async function loadStudentLifecycleUncached(
         const { data: secStudents, error: secErr } = await supabase
           .from('section_students')
           .select(
-            'id, section_id, enrollment_status, enrollment_date, sections!inner(id, name, academic_year_id)'
+            'id, section_id, enrollment_status, enrollment_date, withdrawal_date, withdrawal_reason, sections!inner(id, name, academic_year_id)'
           )
           .eq('student_id', studentRow.id)
           .eq('sections.academic_year_id', ayId);
@@ -571,18 +630,20 @@ async function loadStudentLifecycleUncached(
           section_id: string;
           enrollment_status: string;
           enrollment_date: string | null;
+          withdrawal_date: string | null;
+          withdrawal_reason: string | null;
         };
         const allSsRows = (secStudents ?? []) as SectionStudentRow[];
 
-        // Post-enrolment withdrawal detection (Task 1 / KD #147): re-resolve
-        // isWithdrawn now that we have section_students data. resolveIsWithdrawn
-        // is the single pure source of truth — the applicationStatus check is
-        // already baked in; the OR against ss statuses adds the post-enrolment
-        // case where applicationStatus remains 'Enrolled' but ss is 'withdrawn'.
-        isWithdrawn = resolveIsWithdrawn(
-          applicationStatus,
-          allSsRows.map((r) => r.enrollment_status)
-        );
+        // Post-enrolment withdrawal detection (Task 1 / KD #147 / KD #150):
+        // feed the section_students rows into resolveWithdrawnDisplay at the
+        // end — it wraps resolveIsWithdrawn (the single pure source of truth,
+        // transfer-aware per KD #67) and selects the right date/reason source.
+        withdrawalSsRows = allSsRows.map((r) => ({
+          enrollment_status: r.enrollment_status,
+          withdrawal_date: r.withdrawal_date,
+          withdrawal_reason: r.withdrawal_reason,
+        }));
 
         const enrollments = allSsRows.filter(
           (r) => r.enrollment_status !== 'withdrawn'
@@ -777,9 +838,11 @@ async function loadStudentLifecycleUncached(
     enroleeNumber,
     ayCode,
     applicationStatus,
-    withdrawn: isWithdrawn
-      ? { date: withdrawnDate, reason: withdrawnReason }
-      : null,
+    withdrawn: resolveWithdrawnDisplay(
+      applicationStatus,
+      appSideWithdrawal,
+      withdrawalSsRows
+    ),
     rows,
     fetchWarnings,
   };
