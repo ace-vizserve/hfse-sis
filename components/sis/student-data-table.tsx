@@ -314,6 +314,11 @@ export function StudentDataTable({
               id: 'pipeline',
               header: 'Pipeline',
               enableSorting: false,
+              // Display-only strip with no accessor — exporting it would
+              // produce a blank "Pipeline" CSV column. The per-stage values
+              // are available on demand via the export sheet's raw-columns
+              // "Status" source (and 4 of them via extraColumns).
+              meta: { excludeFromExport: true },
               cell: ({ row }: { row: { original: StudentListRow } }) => (
                 <PipelineStrip row={row.original} />
               ),
@@ -329,6 +334,11 @@ export function StudentDataTable({
                   accessorFn: (row: StudentListRow) =>
                     (row[STAGE_STATUS_FIELD[stageKey]] as string | null) ?? '',
                   header: STAGE_LABELS[stageKey],
+                  // Facet-backing implementation columns — keep them out of
+                  // the export column picker (several would duplicate the
+                  // extraColumns entries below; all 9 are reachable via the
+                  // raw-columns "Status" source when needed).
+                  meta: { excludeFromExport: true },
                   filterFn: (row, id, value) => {
                     if (!value || (Array.isArray(value) && value.length === 0))
                       return true;
