@@ -61,6 +61,27 @@ export async function PATCH(request: NextRequest) {
         { status: 403 }
       );
     }
+
+    // Confirm studentId (also caller-supplied) actually belongs to this
+    // section's current roster — otherwise a form adviser of ANY section
+    // could forge a write-up for a student in a different section (the
+    // sectionId check above only proves adviser-of-sectionId, not that
+    // studentId is on that roster).
+    const { data: rosterRow } = await service
+      .from('section_students')
+      .select('id')
+      .eq('section_id', sectionId)
+      .eq('student_id', studentId)
+      .neq('enrollment_status', 'withdrawn')
+      .maybeSingle();
+    if (!rosterRow) {
+      return NextResponse.json(
+        {
+          error: 'This student is not on the current roster for this section.',
+        },
+        { status: 403 }
+      );
+    }
   }
 
   // Load current row (if any) to detect what changed for the audit.

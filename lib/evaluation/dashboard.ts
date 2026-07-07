@@ -3,6 +3,7 @@ import { unstable_cache } from 'next/cache';
 import { loadAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import type { PriorityPayload } from '@/lib/dashboard/priority';
 import { createServiceClient } from '@/lib/supabase/service';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import {
   computeDelta,
   daysInRange,
@@ -91,15 +92,20 @@ async function loadWriteupsUncached(ayCode: string): Promise<{
           .neq('enrollment_status', 'withdrawn')
       : { count: 0 };
 
-  const { data: rows } = await service
-    .from('evaluation_writeups')
-    .select(
-      'id, student_id, section_id, term_id, submitted, submitted_at, created_at, updated_at'
-    )
-    .in('term_id', termIds);
+  // Paginated around PostgREST's 1000-row cap — ~490 enrolled students ×
+  // 3 terms (T1-T3, T4 excluded per KD #49) routinely exceeds it.
+  const rows = await fetchAllPages<WriteupRow>((from, to) =>
+    service
+      .from('evaluation_writeups')
+      .select(
+        'id, student_id, section_id, term_id, submitted, submitted_at, created_at, updated_at'
+      )
+      .in('term_id', termIds)
+      .range(from, to)
+  );
 
   return {
-    writeups: (rows ?? []) as WriteupRow[],
+    writeups: rows,
     termIdsByNumber,
     totalStudents: studentCount ?? 0,
   };
