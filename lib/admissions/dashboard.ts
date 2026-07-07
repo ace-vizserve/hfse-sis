@@ -12,6 +12,11 @@ import {
   type RangeResult,
 } from '@/lib/dashboard/range';
 import type { VelocityPoint } from '@/lib/dashboard/velocity';
+import {
+  daysSinceUpdate as stalenessDaysSinceUpdate,
+  isFollowUpStaleness,
+  stalenessLabel,
+} from '@/lib/admissions/staleness';
 
 // Sprint 7 Part A — read-only admissions analytics.
 //
@@ -350,10 +355,12 @@ export type OutdatedRow = {
 // Spec §1.2 uses a blocklist (`NOT IN ('Enrolled', 'Cancelled', 'Withdrawn')`)
 // rather than an allowlist. This matters: rows with NULL applicationStatus
 // and any future intermediate status (e.g. "Ready for Assessment") stay in
-// scope automatically. The freshness cutoff of 7 days comes from the same
-// section of the spec — this function only returns genuinely outdated rows.
+// scope automatically. The staleness cutoff comes from the shared tier
+// helpers in lib/admissions/staleness.ts — this function keeps exactly the
+// STALENESS_FOLLOW_UP_VALUES tiers (Warning / Critical / Never updated), so
+// the dashboard count and the deep-linked staleness facet cannot drift
+// (count == drill, KD #124).
 const INACTIVE_STATUSES = new Set(['Enrolled', 'Cancelled', 'Withdrawn']);
-const STALE_DAY_THRESHOLD = 7;
 
 export async function getOutdatedApplications(
   ayCode: string
@@ -367,21 +374,17 @@ export async function getOutdatedApplications(
     if (INACTIVE_STATUSES.has(status)) continue;
 
     const created = r.created_at ? Date.parse(r.created_at) : NaN;
-    const updated = r.applicationUpdatedDate
-      ? Date.parse(r.applicationUpdatedDate)
-      : NaN;
-
-    const daysSinceUpdate = Number.isNaN(updated)
-      ? null
-      : Math.floor((today.getTime() - updated) / (1000 * 60 * 60 * 24));
     const daysInPipeline = Number.isNaN(created)
       ? 0
       : Math.floor((today.getTime() - created) / (1000 * 60 * 60 * 24));
 
-    // Spec-faithful freshness cutoff: keep rows where applicationUpdatedDate
-    // is NULL (most urgent) or ≥ 7 days old. Fresh rows are dropped.
-    if (daysSinceUpdate !== null && daysSinceUpdate < STALE_DAY_THRESHOLD)
-      continue;
+    // Shared staleness predicate (lib/admissions/staleness.ts): keep rows
+    // whose tier is in STALENESS_FOLLOW_UP_VALUES — Warning (≥7d), Critical
+    // (≥14d), and Never updated (NULL applicationUpdatedDate, most urgent).
+    // Fresh rows (<7d) are dropped. Same tier computation as the
+    // applications-table staleness column, so count == deep-link.
+    const daysSinceUpdate = stalenessDaysSinceUpdate(r.applicationUpdatedDate);
+    if (!isFollowUpStaleness(stalenessLabel(daysSinceUpdate))) continue;
 
     out.push({
       enroleeNumber: r.enroleeNumber,

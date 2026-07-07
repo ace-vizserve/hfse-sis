@@ -493,9 +493,12 @@ export default async function AdmissionsDashboard({
     funnel[0] ?? null
   );
   // The "needs follow-up" insight deep-links straight into the applications
-  // table pre-filtered to the stale rows (Warning + Critical) — there's no
-  // separate follow-up card anymore; the insight IS the entry point.
-  const outdatedHref = `/admissions/applications?ay=${selectedAy}&students.staleness=${STALENESS_FOLLOW_UP_VALUES.join(',')}`;
+  // table pre-filtered to the stale rows (Warning + Critical + Never updated
+  // — the same tiers getOutdatedApplications counts, so count == deep-link)
+  // — there's no separate follow-up card anymore; the insight IS the entry
+  // point. Values are URI-encoded per item ('Never updated' has a space);
+  // the table's url-state reads via URLSearchParams (decodes) + split(',').
+  const outdatedHref = `/admissions/applications?ay=${selectedAy}&students.staleness=${STALENESS_FOLLOW_UP_VALUES.map(encodeURIComponent).join(',')}`;
   const insights = admissionsInsights({
     applications: kpisResult.current.applicationsInRange,
     enrolled: kpisResult.current.enrolledInRange,
