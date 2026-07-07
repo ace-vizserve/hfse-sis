@@ -45,6 +45,11 @@ import {
 } from './use-approval-reference';
 import { GradeDiffDialog, type AlertComparison } from './grade-diff-dialog';
 import {
+  applyServerEntry,
+  revertPatchedFields,
+  type EntryPatchBody,
+} from './score-revert';
+import {
   resolveNonExaminableLetter,
   type NonExaminableLetter,
 } from '@/lib/compute/letter-grade';
@@ -156,6 +161,14 @@ export function ScoreEntryGrid({
   const [rows, setRows] = useState<GradeRow[]>(initialRows);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  // Last server-confirmed state per entry — the revert target when a commit
+  // fails or the locked-sheet approval dialog is cancelled. Seeded from the
+  // RSC rows; advanced ONLY on a successful PATCH reconcile. (The optimistic
+  // update happens while TYPING via onLocalChange, so by commit time the rows
+  // state no longer holds the pre-edit value — this snapshot does.)
+  const savedRowsRef = useRef<Map<string, GradeRow>>(
+    new Map(initialRows.map((r) => [r.entry_id, r]))
+  );
   const [savingId, setSavingId] = useState<string | null>(null);
   const [filters, setFilters] = useState<GridFilters>(DEFAULT_GRID_FILTERS);
   const { requireChangeReference, dialog: approvalDialog } =
@@ -316,13 +329,33 @@ export function ScoreEntryGrid({
           'ww_scores' | 'pt_scores' | 'qa_score' | 'letter_grade' | 'is_na'
         >
       > | null = null;
+      // Fold the touched fields back to the last server-confirmed values —
+      // used when the commit fails or the approval dialog is cancelled, since
+      // typing already updated the row optimistically (onLocalChange / the
+      // N/A checkbox flip) and the cell would otherwise keep showing a value
+      // that was never saved.
+      const revertEntry = () => {
+        const saved = savedRowsRef.current.get(entryId);
+        if (!saved) return;
+        setRows((current) =>
+          current.map((r) =>
+            r.entry_id === entryId
+              ? revertPatchedFields(r, saved, body as EntryPatchBody)
+              : r
+          )
+        );
+      };
+
       if (requireApproval) {
         const ref = await requireChangeReference({
           sheetId,
           entryId,
           ...target,
         });
-        if (!ref) return;
+        if (!ref) {
+          revertEntry();
+          return;
+        }
         if (ref.mode === 'request') {
           extraPayload = {
             change_request_id: ref.change_request_id,
@@ -351,29 +384,28 @@ export function ScoreEntryGrid({
         const data = await entryMutation.mutateAsync({ entryId, payload });
         setRows((current) =>
           current.map((r) =>
-            r.entry_id === entryId
-              ? {
-                  ...r,
-                  ww_scores: data.entry.ww_scores ?? r.ww_scores,
-                  pt_scores: data.entry.pt_scores ?? r.pt_scores,
-                  qa_score: data.entry.qa_score,
-                  ww_ps: data.entry.ww_ps,
-                  pt_ps: data.entry.pt_ps,
-                  qa_ps: data.entry.qa_ps,
-                  initial_grade: data.entry.initial_grade,
-                  quarterly_grade: data.entry.quarterly_grade,
-                  letter_grade: data.entry.letter_grade ?? null,
-                  is_na: data.entry.is_na ?? r.is_na,
-                }
-              : r
+            r.entry_id === entryId ? applyServerEntry(r, data.entry) : r
           )
         );
+        // Advance the last-saved snapshot to the server-confirmed state so a
+        // later failed commit reverts to THIS save, not the page-load values.
+        const savedPrev = savedRowsRef.current.get(entryId);
+        if (savedPrev) {
+          savedRowsRef.current.set(
+            entryId,
+            applyServerEntry(savedPrev, data.entry)
+          );
+        }
         if ('change_request_id' in extraPayload) {
           toast.success('Change request applied — teacher will be notified');
         } else if ('correction_reason' in extraPayload) {
           toast.success('Correction logged on activity history');
         }
       } catch (e) {
+        // The commit did NOT persist — fold the optimistic cell (and its
+        // derived Total) back to the last saved values so the grid never
+        // keeps displaying a rejected score.
+        revertEntry();
         // Preserve the exact per-cell error voices: a non-2xx (ApiError) keeps
         // the "Failed to save #N Name: {server error}" line with the same
         // 'save failed' fallback (reading body.error off ApiError.body); any
@@ -1567,6 +1599,16 @@ function ScoreInput({
   onCommit: (v: number | null) => void;
 }) {
   const [text, setText] = useState<string>(displayCell(value));
+
+  // Re-sync the draft text when the row value changes UNDERNEATH the input —
+  // i.e. a failed/cancelled commit reverted the optimistic row state. While
+  // the user is typing, onLocalChange keeps `value` === parseCell(text), so
+  // this bails out (returns the same string → React skips the re-render) and
+  // never touches an in-progress draft. Same when a successful save echoes
+  // the typed value back.
+  useEffect(() => {
+    setText((prev) => (parseCell(prev) === value ? prev : displayCell(value)));
+  }, [value]);
 
   if (plaintext) {
     return (
