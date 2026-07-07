@@ -1,5 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
+
+// The T4 path calls getSchoolConfig() (constructs a real service client) —
+// stub it with a complete letterhead so the T4 tests stay pure.
+vi.mock('@/lib/sis/school-config', () => ({
+  getSchoolConfig: async () => ({
+    principalName: 'Principal',
+    ceoName: 'CEO',
+    peiRegistrationNumber: 'PEI-1',
+  }),
+}));
 
 import {
   computePublishReadiness,
@@ -386,5 +396,319 @@ describe('computePublishReadiness — verdict classification', () => {
     expect(isReadiness(r)).toBe(false);
     if (isReadiness(r)) return;
     expect(r.status).toBe(404);
+  });
+});
+
+// ── T4 grades-missing scan — enrolment-coverage exemption (KD #148) ─────────
+// A late enrollee's pre-join terms render N.A. on the report card at RENDER
+// time (build-report-card.ts coverage logic) — never stored as is_na on any
+// entry — so the T4 missing-grades scan must exempt them too.
+
+type T4TermRow = TermRow & {
+  start_date: string | null;
+};
+
+type AyEnrolmentRow = {
+  id: string;
+  student_id: string;
+  enrollment_date: string | null;
+  withdrawal_date: string | null;
+};
+
+type T4SheetRow = {
+  id: string;
+  term_id: string;
+  is_locked: boolean;
+  subject: { id: string; name: string; is_examinable: boolean } | null;
+};
+
+type T4EntryRow = {
+  section_student_id: string;
+  quarterly_grade: number | null;
+  letter_grade: string | null;
+  is_na: boolean;
+  annual_letter_grade: string | null;
+  grading_sheet: {
+    id: string;
+    term_id: string;
+    subject: { id: string; name: string; is_examinable: boolean };
+  };
+};
+
+function makeT4Service(opts: {
+  t4Term: T4TermRow;
+  ayTerms: T4TermRow[];
+  rosterRows: RosterRow[];
+  ayEnrolmentRows: AyEnrolmentRow[];
+  allSheets: T4SheetRow[];
+  entryRows: T4EntryRow[];
+  attendanceRows: AttendanceRow[];
+}): SupabaseClient {
+  return {
+    from(table: string) {
+      if (table === 'teacher_assignments') {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: () =>
+            Promise.resolve({ data: { id: 'ta1' }, error: null }),
+        };
+        return chain;
+      }
+      if (table === 'terms') {
+        let col = '';
+        const chain = {
+          select: () => chain,
+          eq: (c: string) => {
+            col = c;
+            return chain;
+          },
+          order: () => Promise.resolve({ data: opts.ayTerms, error: null }),
+          single: () =>
+            Promise.resolve({
+              data: col === 'id' ? opts.t4Term : null,
+              error: null,
+            }),
+        };
+        return chain;
+      }
+      if (table === 'section_students') {
+        // Two shapes: the roster query ends with .order(); the AY-enrolments
+        // query (.in('student_id').eq('section.academic_year_id')) is awaited
+        // on the chain itself, so the chain is thenable.
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          in: () => chain,
+          order: () => Promise.resolve({ data: opts.rosterRows, error: null }),
+          then: (
+            resolve: (v: unknown) => unknown,
+            reject: (e: unknown) => unknown
+          ) =>
+            Promise.resolve({ data: opts.ayEnrolmentRows, error: null }).then(
+              resolve,
+              reject
+            ),
+        };
+        return chain;
+      }
+      if (table === 'grading_sheets') {
+        // Current-term sheets: .eq('section_id').eq('term_id') (second eq
+        // resolves). All-terms sheets: .eq('section_id').in('term_id', ids).
+        let eqCount = 0;
+        const chain = {
+          select: () => chain,
+          eq: () => {
+            eqCount += 1;
+            if (eqCount >= 2) {
+              const t4Sheets = opts.allSheets.filter(
+                (s) => s.term_id === opts.t4Term.id
+              );
+              return Promise.resolve({ data: t4Sheets, error: null });
+            }
+            return chain;
+          },
+          in: () => Promise.resolve({ data: opts.allSheets, error: null }),
+        };
+        return chain;
+      }
+      if (table === 'grade_entries') {
+        // .select().in().in().range(from, to) — paginated via fetchAllPages.
+        const chain = {
+          select: () => chain,
+          in: () => chain,
+          range: (from: number, to: number) =>
+            Promise.resolve({
+              data: opts.entryRows.slice(from, to + 1),
+              error: null,
+            }),
+        };
+        return chain;
+      }
+      if (table === 'attendance_records') {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          in: () => Promise.resolve({ data: opts.attendanceRows, error: null }),
+        };
+        return chain;
+      }
+      throw new Error(`unexpected table ${table}`);
+    },
+  } as unknown as SupabaseClient;
+}
+
+const T4_AY_TERMS: T4TermRow[] = [
+  {
+    id: 't1',
+    term_number: 1,
+    academic_year_id: 'ay',
+    start_date: '2026-01-05',
+    end_date: '2026-03-31',
+  },
+  {
+    id: 't2',
+    term_number: 2,
+    academic_year_id: 'ay',
+    start_date: '2026-04-07',
+    end_date: '2026-06-30',
+  },
+  {
+    id: 't3',
+    term_number: 3,
+    academic_year_id: 'ay',
+    start_date: '2026-07-07',
+    end_date: '2026-09-30',
+  },
+  {
+    id: 't4',
+    term_number: 4,
+    academic_year_id: 'ay',
+    start_date: '2026-10-05',
+    end_date: '2026-11-30',
+  },
+];
+
+const MATH = { id: 'subj-math', name: 'Math', is_examinable: true };
+
+const T4_SHEETS: T4SheetRow[] = T4_AY_TERMS.map((t) => ({
+  id: `sh-${t.id}`,
+  term_id: t.id,
+  is_locked: true,
+  subject: MATH,
+}));
+
+const entry = (
+  ssId: string,
+  termId: string,
+  q: number | null,
+  na = false
+): T4EntryRow => ({
+  section_student_id: ssId,
+  quarterly_grade: q,
+  letter_grade: null,
+  is_na: na,
+  annual_letter_grade: null,
+  grading_sheet: { id: `sh-${termId}`, term_id: termId, subject: MATH },
+});
+
+describe('computePublishReadiness — T4 grades-missing scan (KD #148 coverage)', () => {
+  it('late enrollee (joined T2): pre-join T1 is N.A.-exempt, a genuinely blank T3 still flags', async () => {
+    const roster: RosterRow[] = [
+      {
+        id: 'ssL',
+        index_number: 1,
+        enrollment_status: 'late_enrollee',
+        enrollment_date: '2026-05-01',
+        student: { id: 'L', last_name: 'Late', first_name: 'Lee' },
+      },
+      {
+        id: 'ssM',
+        index_number: 2,
+        enrollment_status: 'active',
+        enrollment_date: null,
+        student: { id: 'M', last_name: 'Main', first_name: 'May' },
+      },
+    ];
+    const service = makeT4Service({
+      t4Term: T4_AY_TERMS[3],
+      ayTerms: T4_AY_TERMS,
+      rosterRows: roster,
+      ayEnrolmentRows: [
+        {
+          id: 'ssL',
+          student_id: 'L',
+          enrollment_date: '2026-05-01', // joined mid-T2
+          withdrawal_date: null,
+        },
+        {
+          id: 'ssM',
+          student_id: 'M',
+          enrollment_date: null,
+          withdrawal_date: null,
+        },
+      ],
+      allSheets: T4_SHEETS,
+      entryRows: [
+        // L: NO T1 entry at all (sheet predated the join — the KD #148 case
+        // the stored-is_na exemption can never cover), T2/T4 graded, T3 blank
+        // (a real gap that must still flag).
+        entry('ssL', 't2', 80),
+        entry('ssL', 't3', null),
+        entry('ssL', 't4', 85),
+        // M: fully graded — never flags.
+        entry('ssM', 't1', 90),
+        entry('ssM', 't2', 91),
+        entry('ssM', 't3', 92),
+        entry('ssM', 't4', 93),
+      ],
+      attendanceRows: [fullAttendance('ssL'), fullAttendance('ssM')],
+    });
+
+    const r = await computePublishReadiness(service, 'sec', 't4');
+    if (!isReadiness(r)) throw new Error('expected readiness');
+
+    // Exactly one gap row: L's Math, missing T3 only — T1 (pre-enrolment) is
+    // exempt via coverage, NOT reported as missing.
+    expect(r.t4_readiness?.missing_annual_count).toBe(1);
+    expect(r.t4_readiness?.missing_annual_grades).toEqual([
+      {
+        student_name: 'Late, Lee',
+        subject_name: 'Math',
+        missing_terms: [3],
+      },
+    ]);
+
+    // Classification stays SOFT (KD #139): grades_missing is a soft gap,
+    // never a hard blocker; T4 has no comment gate.
+    expect(r.softGaps.map((g) => g.code)).toContain('grades_missing');
+    expect(r.hardBlockers).toHaveLength(0);
+    expect(r.canPublish).toBe(true);
+  });
+
+  it('transfer: pre-transfer grades under the old (withdrawn) enrolment row still count via the student_id union', async () => {
+    const roster: RosterRow[] = [
+      {
+        id: 'ssNew',
+        index_number: 1,
+        enrollment_status: 'active',
+        enrollment_date: null,
+        student: { id: 'X', last_name: 'Xfer', first_name: 'Xia' },
+      },
+    ];
+    const service = makeT4Service({
+      t4Term: T4_AY_TERMS[3],
+      ayTerms: T4_AY_TERMS,
+      rosterRows: roster,
+      ayEnrolmentRows: [
+        // KD #67 — the old row is withdrawn on transfer but its coverage
+        // interval + grade entries still belong to the student.
+        {
+          id: 'ssOld',
+          student_id: 'X',
+          enrollment_date: null,
+          withdrawal_date: '2026-06-15',
+        },
+        {
+          id: 'ssNew',
+          student_id: 'X',
+          enrollment_date: '2026-06-16',
+          withdrawal_date: null,
+        },
+      ],
+      allSheets: T4_SHEETS,
+      entryRows: [
+        entry('ssOld', 't1', 88),
+        entry('ssOld', 't2', 87),
+        entry('ssNew', 't3', 90),
+        entry('ssNew', 't4', 91),
+      ],
+      attendanceRows: [fullAttendance('ssNew')],
+    });
+
+    const r = await computePublishReadiness(service, 'sec', 't4');
+    if (!isReadiness(r)) throw new Error('expected readiness');
+    expect(r.t4_readiness?.missing_annual_count).toBe(0);
+    expect(r.softGaps.map((g) => g.code)).not.toContain('grades_missing');
   });
 });
