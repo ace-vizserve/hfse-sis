@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSchoolConfig } from '@/lib/sis/school-config';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import {
   cumulativeCommentGaps,
   missingCommentStudents,
@@ -324,18 +325,26 @@ export async function computePublishReadiness(
     }
     const allEnrolmentIds = Array.from(studentBySectionStudent.keys());
 
-    const { data: rawEntries } =
+    // Paginate around PostgREST's 1000-row response cap (silent truncation) —
+    // this read spans all four terms × every subject × every enrolment row the
+    // roster holds this AY (a 40-student section × ~13 subjects × 4 terms is
+    // ~2,080 rows), so a single query under-reports and the missing-grade /
+    // non-exam-final checks read wrong.
+    const rawEntries =
       allEnrolmentIds.length > 0
-        ? await service
-            .from('grade_entries')
-            .select(
-              'section_student_id, quarterly_grade, letter_grade, is_na, annual_letter_grade, grading_sheet:grading_sheets!inner(id, term_id, subject:subjects!inner(id, name, is_examinable))'
-            )
-            .in('section_student_id', allEnrolmentIds)
-            .in('grading_sheet.term_id', termIds)
-        : { data: [] };
+        ? await fetchAllPages((from, to) =>
+            service
+              .from('grade_entries')
+              .select(
+                'section_student_id, quarterly_grade, letter_grade, is_na, annual_letter_grade, grading_sheet:grading_sheets!inner(id, term_id, subject:subjects!inner(id, name, is_examinable))'
+              )
+              .in('section_student_id', allEnrolmentIds)
+              .in('grading_sheet.term_id', termIds)
+              .range(from, to)
+          )
+        : [];
 
-    const entries = (rawEntries ?? []) as unknown as EntryRow[];
+    const entries = rawEntries as unknown as EntryRow[];
 
     t4AllSheetCount = (allSheets ?? []).length;
 
