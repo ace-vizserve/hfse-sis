@@ -38,7 +38,7 @@ The post-enrolment operational hub. Enrolled-student directory, cross-year acade
 
 ### SIS Admin — configuration surface (`/sis/*`)
 
-AY setup + rollover, school calendar, sections, teacher assignments, approvers, discount codes (accessible also to admissions role, KD #133), school config, users, template. The Year Setup Workbench at `/sis/ay-setup` (school_admin + superadmin) manages AY creation, early-bird toggle (KD #118), and the 4-step AY Readiness Pill (KD #109). **Operational modules consume config from here; they do not define it (KD #48).** Audience: school_admin, superadmin (registrar read-only for AY list).
+AY setup + rollover, school calendar, sections, teacher assignments, approvers, discount codes (accessible also to admissions role, KD #133), school config, users, template. The Year Setup Workbench at `/sis/ay-setup` (school_admin + superadmin) manages AY creation, early-bird toggle (KD #118), and the 4-step AY Readiness Pill (KD #109). **Operational modules consume config from here; they do not define it (KD #48).** Audience: school_admin, superadmin (registrar reaches only calendar, sections, sync-students, and discount codes via cross-links — not the hub or AY Setup).
 
 ### Academic Summary (under Records)
 
@@ -141,22 +141,22 @@ Deep-links and module-to-module routes in place:
 
 Reflects current `ROUTE_ACCESS` in `lib/auth/roles.ts`. `—` means the role cannot reach that surface. The `admin` role was **retired in KD #39** — `school_admin` is the consolidated cross-cutting generalist.
 
-| Module / surface                                | teacher                      | p-file            | admissions                | registrar      | school_admin             | superadmin          |
-| ----------------------------------------------- | ---------------------------- | ----------------- | ------------------------- | -------------- | ------------------------ | ------------------- |
-| Markbook `/markbook/*` (own sheets)             | ✓ own sheets                 | —                 | —                         | ✓ full         | ✓ full                   | ✓ full              |
-| Markbook change-request approval                | — (view own)                 | —                 | —                         | ✓ apply only   | ✓ approve/reject         | ✓ full              |
-| Attendance `/attendance/*`                      | ✓ own sections               | —                 | —                         | ✓ full         | ✓ full                   | ✓ full              |
-| Evaluation `/evaluation/*`                      | ✓ form adviser               | —                 | —                         | ✓ full         | ✓ full                   | ✓ full              |
-| P-Files `/p-files/*`                            | —                            | ✓ full            | —                         | —              | ✓ read                   | ✓ full              |
-| Admissions `/admissions/*`                      | —                            | —                 | ✓ full (excl. AY config)  | ✓ full         | ✓ full                   | ✓ full              |
-| Discount codes `/sis/admin/discount-codes`      | —                            | —                 | ✓ (KD #133)               | —              | ✓ full                   | ✓ full              |
-| Records `/records/*`                            | —                            | —                 | —                         | ✓ full         | ✓ full                   | ✓ full              |
-| Academic Summary `/records/academic-summary`    | —                            | —                 | —                         | ✓ full         | ✓ full                   | ✓ full              |
-| SIS Admin `/sis/*`                              | —                            | —                 | — (except discount codes) | ✓ read AY list | ✓ full config            | ✓ full incl. delete |
-| AY Setup `/sis/ay-setup`                        | —                            | —                 | —                         | ✓ read only    | ✓ create + switch-active | ✓ full incl. delete |
-| Approver management `/sis/admin/approvers`      | —                            | —                 | —                         | —              | ✓                        | ✓                   |
-| Module switcher visible                         | ✓ (markbook/attendance/eval) | locked to P-Files | locked to admissions      | —              | ✓                        | ✓                   |
-| Parent portal (external SPA `/api/parent/v2/*`) | —                            | —                 | —                         | —              | —                        | —                   |
+| Module / surface                                | teacher                      | p-file            | admissions                | registrar                                              | school_admin             | superadmin          |
+| ----------------------------------------------- | ---------------------------- | ----------------- | ------------------------- | ------------------------------------------------------ | ------------------------ | ------------------- |
+| Markbook `/markbook/*` (own sheets)             | ✓ own sheets                 | —                 | —                         | ✓ full                                                 | ✓ full                   | ✓ full              |
+| Markbook change-request approval                | — (view own)                 | —                 | —                         | ✓ apply only                                           | ✓ approve/reject         | ✓ full              |
+| Attendance `/attendance/*`                      | ✓ own sections               | —                 | —                         | ✓ full                                                 | ✓ full                   | ✓ full              |
+| Evaluation `/evaluation/*`                      | ✓ form adviser               | —                 | —                         | ✓ full                                                 | ✓ full                   | ✓ full              |
+| P-Files `/p-files/*`                            | —                            | ✓ full            | —                         | —                                                      | ✓ read                   | ✓ full              |
+| Admissions `/admissions/*`                      | —                            | —                 | ✓ full (excl. AY config)  | ✓ full                                                 | ✓ full                   | ✓ full              |
+| Discount codes `/sis/admin/discount-codes`      | —                            | —                 | ✓ (KD #133)               | ✓                                                      | ✓ full                   | ✓ full              |
+| Records `/records/*`                            | —                            | —                 | —                         | ✓ full                                                 | ✓ full                   | ✓ full              |
+| Academic Summary `/records/academic-summary`    | —                            | —                 | —                         | ✓ full                                                 | ✓ full                   | ✓ full              |
+| SIS Admin `/sis/*`                              | —                            | —                 | — (except discount codes) | — (except calendar / sections / sync / discount codes) | ✓ full config            | ✓ full incl. delete |
+| AY Setup `/sis/ay-setup`                        | —                            | —                 | —                         | —                                                      | ✓ create + switch-active | ✓ full incl. delete |
+| Approver management `/sis/admin/approvers`      | —                            | —                 | —                         | —                                                      | —                        | ✓                   |
+| Module switcher visible                         | ✓ (markbook/attendance/eval) | locked to P-Files | locked to admissions      | ✓ (5 modules)                                          | ✓                        | ✓                   |
+| Parent portal (external SPA `/api/parent/v2/*`) | —                            | —                 | —                         | —                                                      | —                        | —                   |
 
 Parents authenticate against the shared Supabase project from the external SPA and call `/api/parent/v2/*` directly — they are not SIS users and never appear in this matrix.
 

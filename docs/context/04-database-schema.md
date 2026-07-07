@@ -88,14 +88,14 @@ CREATE TABLE sections (
 
 ### `section_students`
 
-Student-section enrollment per AY with fixed index numbers.
+Student-section enrollment per AY with per-section index numbers (roll numbers — frozen in normal operation, see integrity rule 2).
 
 ```sql
 CREATE TABLE section_students (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   section_id UUID REFERENCES sections(id),
   student_id UUID REFERENCES students(id),
-  index_number SMALLINT NOT NULL,            -- fixed per AY, never reassigned
+  index_number SMALLINT NOT NULL,            -- per section/AY; never auto-reordered (KD #136)
   enrollment_status TEXT NOT NULL            -- "active", "late_enrollee", "withdrawn"
     CHECK (enrollment_status IN ('active', 'late_enrollee', 'withdrawn')),
   enrollment_date DATE,
@@ -279,7 +279,7 @@ ORDER BY s."classLevel", s."classSection", a."lastName";
 ## Key Data Integrity Rules
 
 1. `studentNumber` must never be null for any synced student
-2. Index numbers in `section_students` are immutable once assigned
+2. Index numbers in `section_students` are frozen in normal operation — never auto-reordered (teachers call students by number); late enrollees append at the bottom, and a withdrawn student's number is retired, never reused. The one sanctioned renumbering path is the registrar's deliberate "Generate class index" action (`generate_section_index_numbers` RPC, migrations 071/072, KD #136)
 3. Withdrawn students keep their row with `enrollment_status = 'withdrawn'` — never deleted
 4. Grade entries are never deleted — only nulled or updated with audit log
 5. `ww_weight + pt_weight + qa_weight` must equal 1.00 (enforced by CHECK constraint)
