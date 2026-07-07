@@ -18,7 +18,17 @@ export async function GET(request: NextRequest) {
 
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
-  const next = searchParams.get('next') ?? '/';
+  // Only honour a same-origin relative path — `${origin}${next}` with an
+  // attacker-supplied `next` like `@evil.com` (→ https://host@evil.com) or
+  // `//evil.com` is an open redirect. `/\` is also rejected (browsers treat
+  // a backslash like a forward slash when parsing URLs).
+  const rawNext = searchParams.get('next') ?? '/';
+  const next =
+    rawNext.startsWith('/') &&
+    !rawNext.startsWith('//') &&
+    !rawNext.startsWith('/\\')
+      ? rawNext
+      : '/';
 
   if (code) {
     const supabase = await createClient();
