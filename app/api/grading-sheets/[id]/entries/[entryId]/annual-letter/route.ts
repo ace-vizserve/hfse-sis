@@ -62,8 +62,8 @@ export async function PATCH(
         `
         id,
         term:terms(term_number),
-        subject:subjects(is_examinable, subject_code),
-        section:sections(academic_year_id, section_name)
+        subject:subjects(is_examinable, code),
+        section:sections(academic_year_id, name)
       `
       )
       .eq('id', sheetId)
@@ -93,12 +93,12 @@ export async function PATCH(
     id: string;
     term: { term_number: number } | { term_number: number }[] | null;
     subject:
-      | { is_examinable: boolean; subject_code: string }
-      | { is_examinable: boolean; subject_code: string }[]
+      | { is_examinable: boolean; code: string }
+      | { is_examinable: boolean; code: string }[]
       | null;
     section:
-      | { academic_year_id: string; section_name: string }
-      | { academic_year_id: string; section_name: string }[]
+      | { academic_year_id: string; name: string }
+      | { academic_year_id: string; name: string }[]
       | null;
   };
   type EntryRow = {
@@ -127,7 +127,7 @@ export async function PATCH(
 
   const subjectData = (
     Array.isArray(sheet.subject) ? sheet.subject[0] : sheet.subject
-  ) as { is_examinable: boolean; subject_code: string } | null;
+  ) as { is_examinable: boolean; code: string } | null;
   if (!subjectData) {
     return NextResponse.json(
       { error: 'subject not found on sheet' },
@@ -169,7 +169,7 @@ export async function PATCH(
   // Resolve context for audit log, notifications, and cache invalidation.
   const sectionData = (
     Array.isArray(sheet.section) ? sheet.section[0] : sheet.section
-  ) as { academic_year_id: string; section_name: string } | null;
+  ) as { academic_year_id: string; name: string } | null;
   const termData = (Array.isArray(sheet.term) ? sheet.term[0] : sheet.term) as {
     term_number: number;
   } | null;
@@ -194,7 +194,7 @@ export async function PATCH(
   const studentName = studentData
     ? `${studentData.last_name}, ${studentData.first_name}`
     : '(unknown student)';
-  const sectionName = sectionData?.section_name ?? '(unknown section)';
+  const sectionName = sectionData?.name ?? '(unknown section)';
   const termLabel = termData
     ? `Term ${termData.term_number}`
     : '(unknown term)';
@@ -222,7 +222,7 @@ export async function PATCH(
       grading_sheet_id: sheetId,
       grade_entry_id: entryId,
       student_name: studentName,
-      subject_code: subjectData.subject_code,
+      subject_code: subjectData.code,
       section_name: sectionName,
       before: entry.annual_letter_grade,
       after: newValue,
@@ -255,7 +255,7 @@ export async function PATCH(
           await notifyAnnualLetterChanged(
             {
               studentName,
-              subjectCode: subjectData.subject_code,
+              subjectCode: subjectData.code,
               sectionName,
               termLabel,
               before: existingValue,
