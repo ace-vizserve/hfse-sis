@@ -17,6 +17,7 @@ import {
   type SubjectAwardLabel,
 } from '@/lib/compute/awards';
 import { getSchoolConfig } from '@/lib/sis/school-config';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // HFSE Masterfile — registrar-facing cross-subject grid (KD #95).
@@ -470,20 +471,6 @@ async function loadMasterfileUncached(
     isLocked: s.is_locked === true,
   }));
 
-  const { data: entriesRaw } =
-    sheets.length > 0
-      ? await service
-          .from('grade_entries')
-          .select(
-            'id, grading_sheet_id, section_student_id, quarterly_grade, letter_grade, is_na, annual_letter_grade'
-          )
-          .in(
-            'grading_sheet_id',
-            sheets.map((s) => s.id)
-          )
-          .in('section_student_id', allEnrolmentIds)
-      : { data: [] };
-
   type EntryRow = {
     id: string;
     grading_sheet_id: string;
@@ -493,19 +480,35 @@ async function loadMasterfileUncached(
     is_na: boolean;
     annual_letter_grade: string | null;
   };
-  const entries = (entriesRaw ?? []) as EntryRow[];
+
+  // Paginate around PostgREST's 1000-row response cap — a level's
+  // roster x subjects x terms routinely exceeds it (KD #95's masterfile
+  // feeds both the Academic Summary dashboard and the official
+  // .xlsx/.csv report-book export, so truncation here means wrong grades
+  // + wrong derived award tiers in the school's official record).
+  const entries: EntryRow[] =
+    sheets.length > 0
+      ? await fetchAllPages<EntryRow>((from, to) =>
+          service
+            .from('grade_entries')
+            .select(
+              'id, grading_sheet_id, section_student_id, quarterly_grade, letter_grade, is_na, annual_letter_grade'
+            )
+            .in(
+              'grading_sheet_id',
+              sheets.map((s) => s.id)
+            )
+            .in('section_student_id', allEnrolmentIds)
+            .range(from, to)
+        )
+      : [];
 
   // Lookup helpers.
   const sheetById = new Map<string, SheetRow>();
   for (const s of sheets) sheetById.set(s.id, s);
 
-  // 7. Attendance per term per enrolment.
-  const { data: attendanceRaw } = await service
-    .from('attendance_records')
-    .select('section_student_id, term_id, school_days, days_present, days_late')
-    .in('section_student_id', allEnrolmentIds)
-    .in('term_id', termIds);
-
+  // 7. Attendance per term per enrolment. Paginated for the same reason
+  // as the grade_entries fetch above (PostgREST's 1000-row cap).
   type AttRow = {
     section_student_id: string;
     term_id: string;
@@ -513,7 +516,16 @@ async function loadMasterfileUncached(
     days_present: number | null;
     days_late: number | null;
   };
-  const attendanceRows = (attendanceRaw ?? []) as AttRow[];
+  const attendanceRows = await fetchAllPages<AttRow>((from, to) =>
+    service
+      .from('attendance_records')
+      .select(
+        'section_student_id, term_id, school_days, days_present, days_late'
+      )
+      .in('section_student_id', allEnrolmentIds)
+      .in('term_id', termIds)
+      .range(from, to)
+  );
 
   // 7b. FCA write-up comments (KD #49) — T1–T3 only (T4 has no FCA comment).
   // `evaluation_writeups` is uniquely keyed (term_id, student_id); we resolve
