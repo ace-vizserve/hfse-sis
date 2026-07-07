@@ -235,7 +235,17 @@ export function resolveStatus(
   // its own filter on the dashboard (KD #60).
   if (s === 'to follow') return 'to-follow';
 
-  // For expiring docs, check if expired
+  // A stored 'Expired' status is authoritative — the auto-freshen job
+  // (lib/p-files/freshen-document-statuses.ts) writes it when
+  // `expiry <= today` (inclusive), while the date backstop below only
+  // derives it at strict `<`. Without this branch, a stored 'Expired'
+  // row falls through to 'missing' on the expiry day itself, or when
+  // the expiry date was later cleared/corrected, or on a non-expiring
+  // slot — landing the student in the wrong chase bucket.
+  if (s === 'expired') return 'expired';
+
+  // Date backstop for stale 'Valid' rows whose expiry has passed but
+  // whose status hasn't been freshened yet.
   if (expires && expiryDate) {
     const expiry = new Date(expiryDate);
     const today = new Date();
