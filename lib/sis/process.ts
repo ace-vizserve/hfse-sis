@@ -800,6 +800,25 @@ export async function getStudentLifecycle(
 // Aggregate per-AY blocker counts — getLifecycleAggregate
 // ──────────────────────────────────────────────────────────────────────────
 
+/**
+ * "Awaiting STP completion" predicate (pure, exported for tests).
+ *
+ * An applicant is awaiting STP completion when they opted into the
+ * Singapore Student Pass sub-flow (`stpApplicationType` set) AND the
+ * application hasn't reached a terminal outcome — terminal being
+ * `'Approved'` or `'Rejected'` per the `stpApplicationStatus` CHECK
+ * (migration 069, KD #61/#119). A null/missing status counts as
+ * awaiting (application declared but not progressed).
+ */
+export function isAwaitingStpCompletion(
+  stpApplicationType: string | null,
+  stpApplicationStatus: string | null
+): boolean {
+  if (!stpApplicationType) return false;
+  const s = (stpApplicationStatus ?? '').trim();
+  return s !== 'Approved' && s !== 'Rejected';
+}
+
 async function loadLifecycleAggregateUncached(
   ayCode: string
 ): Promise<LifecycleBlockerBucket[]> {
@@ -828,9 +847,14 @@ async function loadLifecycleAggregateUncached(
   ];
 
   // Apps row — pull only the columns that drive bucket predicates today
-  // (`stpApplicationType` for the STP completion bucket). Add to this list
-  // when a future bucket needs another column off the apps table.
-  const appColumns = ['enroleeNumber', 'stpApplicationType'];
+  // (`stpApplicationType` + `stpApplicationStatus` for the STP completion
+  // bucket). Add to this list when a future bucket needs another column
+  // off the apps table.
+  const appColumns = [
+    'enroleeNumber',
+    'stpApplicationType',
+    'stpApplicationStatus',
+  ];
 
   const [statusRes, docsRes, appsRes] = await Promise.all([
     supabase
@@ -867,6 +891,7 @@ async function loadLifecycleAggregateUncached(
   type AppRow = {
     enroleeNumber: string | null;
     stpApplicationType: string | null;
+    stpApplicationStatus: string | null;
   };
 
   const statusRows = ((statusRes.data ?? []) as unknown as StatusRow[]).filter(
@@ -887,13 +912,6 @@ async function loadLifecycleAggregateUncached(
   for (const a of appRows) {
     if (a.enroleeNumber) appsByEnrolee.set(a.enroleeNumber, a);
   }
-  // Hard-coded STP slot keys + status-cols pair so the predicate doesn't
-  // re-walk DOCUMENT_SLOTS by string match every iteration.
-  const STP_STATUS_COLS = [
-    'icaPhotoStatus',
-    'financialSupportDocsStatus',
-    'vaccinationInformationStatus',
-  ];
 
   let awaitingFeePayment = 0;
   let awaitingDocRevalidation = 0;
@@ -933,28 +951,22 @@ async function loadLifecycleAggregateUncached(
     if (docFlags.hasPromised) awaitingPromisedDocs += 1;
 
     // 4. Awaiting STP completion — the parent opted into the Singapore
-    //    Student Pass sub-flow (`stpApplicationType IS NOT NULL`) AND any of
-    //    the 3 STP-conditional doc slots (icaPhoto / financialSupportDocs /
-    //    vaccinationInformation) is not in the terminal `'Valid'` state.
-    //    null + 'Uploaded' + 'Rejected' + 'Expired' all qualify here. This is
-    //    a SUPERSET of the doc-validation/revalidation buckets above, scoped
-    //    to STP students — overlap is intentional, the registrar's STP queue
-    //    is its own surface that needs to clear independently of the rest of
-    //    the document family. See KD #58 + docs/context/21-stp-application.md.
+    //    Student Pass sub-flow (`stpApplicationType IS NOT NULL`) AND the
+    //    application itself hasn't reached a terminal outcome
+    //    (`stpApplicationStatus` not 'Approved' / 'Rejected'; null counts
+    //    as awaiting — declared but not progressed). Document-slot state is
+    //    deliberately NOT consulted: the 3 STP doc slots were removed from
+    //    DOCUMENT_SLOTS in migration 050 (KD #96 — parents upload those
+    //    files directly to ICA; the school never receives them). What the
+    //    SIS still tracks is the STP application status pair on the apps
+    //    row (KD #61). See docs/context/21-stp-application.md.
     const appRow = appsByEnrolee.get(r.enroleeNumber!);
-    if (appRow?.stpApplicationType && docs) {
-      let stpIncomplete = false;
-      for (const col of STP_STATUS_COLS) {
-        const v = (docs[col] ?? '').toString().trim();
-        if (v !== 'Valid') {
-          stpIncomplete = true;
-          break;
-        }
-      }
-      if (stpIncomplete) awaitingStpCompletion += 1;
-    } else if (appRow?.stpApplicationType && !docs) {
-      // Edge case — apps row says STP but documents row missing entirely.
-      // Counted as needing completion (every slot is implicitly null).
+    if (
+      isAwaitingStpCompletion(
+        appRow?.stpApplicationType ?? null,
+        appRow?.stpApplicationStatus ?? null
+      )
+    ) {
       awaitingStpCompletion += 1;
     }
 
