@@ -543,6 +543,35 @@ function rollupBySection(
   return rows;
 }
 
+// Pure seam (exported for unit tests): tally leave usage per STUDENT — not per
+// section_students row. A mid-year transfer (KD #67) leaves the pre-transfer
+// usage recorded against the withdrawn enrolment row, so counting only the
+// active row's own entries under-reports a transferred student's used days.
+// The quota is attached to the student, so usage is the union across every
+// enrolment row in the AY — mirroring `getCompassionateUsageForSection` /
+// `getVacationLeaveUsageForSection` in lib/attendance/queries.ts.
+export function tallyLeaveUsageByStudent(
+  entries: Array<
+    Pick<
+      AttendanceEntryRow,
+      'studentSectionId' | 'termId' | 'status' | 'exReason'
+    >
+  >,
+  studentIdBySectionStudentId: Map<string, string>,
+  exReason: 'compassionate' | 'vacation',
+  termId?: string | null
+): Map<string, number> {
+  const usage = new Map<string, number>();
+  for (const e of entries) {
+    if (termId && e.termId !== termId) continue;
+    if (e.status !== 'EX' || e.exReason !== exReason) continue;
+    const studentId = studentIdBySectionStudentId.get(e.studentSectionId);
+    if (!studentId) continue;
+    usage.set(studentId, (usage.get(studentId) ?? 0) + 1);
+  }
+  return usage;
+}
+
 async function rollupCompassionate(
   ayCode: string,
   preloadedEntries?: AttendanceEntryRow[]
@@ -558,12 +587,16 @@ async function rollupCompassionate(
   // When buildAllRowSets has already loaded entries, reuse them rather than
   // hitting the cache + re-iterating ~180k rows for a second roll-up.
   const entries = preloadedEntries ?? (await loadEntryRows(ayCode));
-  const usage = new Map<string, number>();
-  for (const e of entries) {
-    if (e.status === 'EX' && e.exReason === 'compassionate') {
-      usage.set(e.studentSectionId, (usage.get(e.studentSectionId) ?? 0) + 1);
-    }
-  }
+  // Per-student union across ALL enrolment rows (incl. withdrawn pre-transfer
+  // rows, KD #67) — ctx.sectionStudents deliberately includes withdrawn rows.
+  const studentIdBySsId = new Map<string, string>();
+  for (const ss of ctx.sectionStudents)
+    studentIdBySsId.set(ss.id, ss.student_id);
+  const usage = tallyLeaveUsageByStudent(
+    entries,
+    studentIdBySsId,
+    'compassionate'
+  );
   const sectionById = new Map<string, SectionLite>();
   for (const s of ctx.sections) sectionById.set(s.id, s);
   const rows: CompassionateUsageRow[] = [];
@@ -573,7 +606,7 @@ async function rollupCompassionate(
     if (!student) continue;
     const section = sectionById.get(ss.section_id);
     if (!section) continue;
-    const used = usage.get(ss.id) ?? 0;
+    const used = usage.get(ss.student_id) ?? 0;
     const allowance = student.urgent_compassionate_allowance ?? 5;
     rows.push({
       studentSectionId: ss.id,
@@ -615,13 +648,19 @@ async function rollupVacationLeave(
 
   const entries = preloadedEntries ?? (await loadEntryRows(ayCode));
 
-  const usage = new Map<string, number>();
-  for (const e of entries) {
-    if (e.termId !== termId) continue;
-    if (e.status === 'EX' && e.exReason === 'vacation') {
-      usage.set(e.studentSectionId, (usage.get(e.studentSectionId) ?? 0) + 1);
-    }
-  }
+  // Per-student union across ALL enrolment rows (incl. withdrawn pre-transfer
+  // rows, KD #67) — the VL entry is recorded against whichever section the
+  // student belonged to on the day; quota stays attached to the student
+  // (mirrors getVacationLeaveUsageForSection in lib/attendance/queries.ts).
+  const studentIdBySsId = new Map<string, string>();
+  for (const ss of ctx.sectionStudents)
+    studentIdBySsId.set(ss.id, ss.student_id);
+  const usage = tallyLeaveUsageByStudent(
+    entries,
+    studentIdBySsId,
+    'vacation',
+    termId
+  );
 
   const sectionById = new Map<string, SectionLite>();
   for (const s of ctx.sections) sectionById.set(s.id, s);
@@ -632,7 +671,7 @@ async function rollupVacationLeave(
     if (!student) continue;
     const section = sectionById.get(ss.section_id);
     if (!section) continue;
-    const used = usage.get(ss.id) ?? 0;
+    const used = usage.get(ss.student_id) ?? 0;
     const allowance =
       student.vacation_leave_allowance_per_term ?? defaultAllowance;
     rows.push({
