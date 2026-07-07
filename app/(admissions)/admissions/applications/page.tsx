@@ -29,6 +29,7 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { getAdmissionsCompletenessForChase } from '@/lib/admissions/dashboard';
+import { isActiveFunnelStatus } from '@/lib/schemas/sis';
 import { listStudents } from '@/lib/sis/queries';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -69,11 +70,9 @@ function parseChaseStatus(
 //   belong on the in-flight list.
 // This is the admissions team's operational list — drop-off% across the 3
 // stages surfaces on the /admissions dashboard's InsightsPanel narrative.
-const ACTIVE_FUNNEL_STAGES = new Set([
-  'Submitted',
-  'Ongoing Verification',
-  'Processing',
-]);
+// The membership predicate is the shared isActiveFunnelStatus /
+// ACTIVE_FUNNEL_STAGES (lib/schemas/sis.ts) — the same one the dashboard's
+// "needs follow-up" count uses, so that count == this list (KD #124).
 
 const STAGES: Array<{
   key: string;
@@ -150,7 +149,7 @@ export default async function AdmissionsApplicationsPage({
 
   const allStudents = await listStudents(selectedAy, 'created_at_desc');
   let applications = allStudents.filter((s) =>
-    ACTIVE_FUNNEL_STAGES.has((s.applicationStatus ?? '').trim())
+    isActiveFunnelStatus(s.applicationStatus)
   );
 
   // Optional chase pre-filter — when ?status=to-follow|rejected|uploaded is

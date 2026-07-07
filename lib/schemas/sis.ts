@@ -392,6 +392,30 @@ export const STAGE_STATUS_OPTIONS: Record<StageKey, readonly string[]> = {
   orientation: ['Pending', 'Finished', 'Cancelled'],
 } as const;
 
+// The pre-enrolment, actively-in-flight subset of the application stage
+// vocabulary above (STAGE_STATUS_OPTIONS.application minus the post-funnel
+// values Enrolled / Enrolled (Conditional) and the terminals Cancelled /
+// Withdrawn). This is the SINGLE definition of "in the applications funnel":
+// the /admissions/applications list (and its early-bird sibling) server-
+// filters to it, and the dashboard's "needs follow-up" count
+// (getOutdatedApplications) + its 'outdated' drill scope to it — so the
+// insight's number equals what its deep-link shows (count == drill, KD #124).
+// Don't redeclare these strings locally; import this set.
+export const ACTIVE_FUNNEL_STAGES = new Set<string>([
+  'Submitted',
+  'Ongoing Verification',
+  'Processing',
+]);
+
+/** The exact funnel-membership predicate the applications list applies
+ *  (trimmed; NULL/empty status → not in the funnel). Share it — every
+ *  count/list pair that must agree on "in-flight application" reads this. */
+export function isActiveFunnelStatus(
+  status: string | null | undefined
+): boolean {
+  return ACTIVE_FUNNEL_STAGES.has((status ?? '').trim());
+}
+
 // Stages that must reach a "done" status before `applicationStatus` can be
 // flipped to `Enrolled`. Enforced server-side in the stage PATCH route.
 // `Enrolled (Conditional)` bypasses this gate (registrar override).

@@ -17,6 +17,7 @@ import {
   isFollowUpStaleness,
   stalenessLabel,
 } from '@/lib/admissions/staleness';
+import { isActiveFunnelStatus } from '@/lib/schemas/sis';
 
 // Sprint 7 Part A — read-only admissions analytics.
 //
@@ -352,15 +353,18 @@ export type OutdatedRow = {
   daysInPipeline: number;
 };
 
-// Spec §1.2 uses a blocklist (`NOT IN ('Enrolled', 'Cancelled', 'Withdrawn')`)
-// rather than an allowlist. This matters: rows with NULL applicationStatus
-// and any future intermediate status (e.g. "Ready for Assessment") stay in
-// scope automatically. The staleness cutoff comes from the shared tier
-// helpers in lib/admissions/staleness.ts — this function keeps exactly the
-// STALENESS_FOLLOW_UP_VALUES tiers (Warning / Critical / Never updated), so
-// the dashboard count and the deep-linked staleness facet cannot drift
-// (count == drill, KD #124).
-const INACTIVE_STATUSES = new Set(['Enrolled', 'Cancelled', 'Withdrawn']);
+// Scope: exactly the population the /admissions/applications list shows —
+// the shared isActiveFunnelStatus predicate (Submitted / Ongoing
+// Verification / Processing; trimmed, NULL excluded; lib/schemas/sis.ts).
+// The dashboard's "needs follow-up" insight deep-links into that list, so
+// the count must be computed over the same rows (count == drill, KD #124).
+// This supersedes the original spec-§1.2 blocklist (`NOT IN
+// Enrolled/Cancelled/Withdrawn`), which also kept 'Enrolled (Conditional)'
+// + NULL-status rows the destination list never shows — following up on a
+// conditional enrollee is a Records/lifecycle workflow, not application
+// chasing. The staleness cutoff likewise comes from the shared tier helpers
+// in lib/admissions/staleness.ts: this function keeps exactly the
+// STALENESS_FOLLOW_UP_VALUES tiers (Warning / Critical / Never updated).
 
 export async function getOutdatedApplications(
   ayCode: string
@@ -371,7 +375,7 @@ export async function getOutdatedApplications(
   for (const r of rows) {
     if (!r.enroleeNumber) continue;
     const status = (r.applicationStatus ?? '').trim();
-    if (INACTIVE_STATUSES.has(status)) continue;
+    if (!isActiveFunnelStatus(status)) continue;
 
     const created = r.created_at ? Date.parse(r.created_at) : NaN;
     const daysInPipeline = Number.isNaN(created)
