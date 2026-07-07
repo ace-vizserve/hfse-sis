@@ -295,8 +295,12 @@ async function loadWriteupRowsUncached(ayCode: string): Promise<WriteupRow[]> {
         writeupKey(sectionStudent.student_id, term.id)
       );
       const draftLen = (w?.writeup ?? '').trim().length;
+      // KD #120: 'submitted' requires the submitted flag AND non-empty content
+      // — an emptied-but-still-submitted write-up reads as 'missing' (matches
+      // the KPI numerator in lib/evaluation/dashboard.ts::kpisFrom, the chase
+      // loader below, and publish-readiness; count == drill per KD #124).
       let status: WriteupRow['status'] = 'missing';
-      if (w?.submitted) status = 'submitted';
+      if (w?.submitted && draftLen > 0) status = 'submitted';
       else if (draftLen > 0) status = 'draft';
 
       let daysToSubmit: number | null = null;
