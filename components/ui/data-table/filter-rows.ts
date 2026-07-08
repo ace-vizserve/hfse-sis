@@ -11,17 +11,15 @@ import type { FacetConfig } from './types';
 // claims to describe must share one implementation.
 
 /**
- * Resolve a column's value for a given row via its `accessorFn` OR
- * `accessorKey` — never a raw `row[id]` lookup, which is `undefined` for
- * accessorFn-backed columns (or columns whose `id` differs from their
- * `accessorKey`).
+ * Resolve a column definition's accessor once for a given `columnId` — the
+ * shared lookup behind `resolveColumnValue`, hoisted so hot paths that
+ * resolve the same column across many rows (the `filterRows` facet loop,
+ * `getFacetOptions`) do a single `columns.find(...)` instead of one per row.
  */
-export function resolveColumnValue<TRow>(
+function getColumnAccessor<TRow>(
   columns: ColumnDef<TRow>[],
-  columnId: string,
-  row: TRow,
-  index: number
-): unknown {
+  columnId: string
+): (row: TRow, index: number) => unknown {
   const col = columns.find(
     (c) =>
       c.id === columnId ||
@@ -33,10 +31,30 @@ export function resolveColumnValue<TRow>(
         accessorKey?: string;
       }
     | undefined;
-  if (col && typeof col.accessorFn === 'function')
-    return col.accessorFn(row, index);
+  if (col && typeof col.accessorFn === 'function') {
+    const accessorFn = col.accessorFn;
+    return (row, index) => accessorFn(row, index);
+  }
   const key = col?.accessorKey ?? columnId;
-  return (row as unknown as Record<string, unknown>)[key];
+  return (row) => (row as unknown as Record<string, unknown>)[key];
+}
+
+/**
+ * Resolve a column's value for a given row via its `accessorFn` OR
+ * `accessorKey` — never a raw `row[id]` lookup, which is `undefined` for
+ * accessorFn-backed columns (or columns whose `id` differs from their
+ * `accessorKey`). Convenience one-shot wrapper around
+ * `getColumnAccessor` — prefer resolving the accessor once and reusing it
+ * when calling across many rows for the same column (see `filterRows` /
+ * `getFacetOptions` below).
+ */
+export function resolveColumnValue<TRow>(
+  columns: ColumnDef<TRow>[],
+  columnId: string,
+  row: TRow,
+  index: number
+): unknown {
+  return getColumnAccessor(columns, columnId)(row, index);
 }
 
 export type FacetSelection = { id: string; values: string[] };
@@ -61,8 +79,9 @@ export function filterRows<TRow>(
   for (const f of facets) {
     if (!f.values || f.values.length === 0) continue;
     const valueSet = new Set(f.values.map((v) => String(v)));
+    const accessor = getColumnAccessor(columns, f.id);
     out = out.filter((r, i) => {
-      const raw = resolveColumnValue(columns, f.id, r, i);
+      const raw = accessor(r, i);
       const cell = raw == null || raw === '' ? '(unassigned)' : String(raw);
       return valueSet.has(cell);
     });
@@ -105,9 +124,10 @@ export function getFacetOptions<TRow>(
   if (facet.valueOptions) {
     return facet.valueOptions.map((v) => ({ value: v, label: v }));
   }
+  const accessor = getColumnAccessor(columns, facet.columnId);
   const values = new Set<string>();
   data.forEach((row, i) => {
-    const raw = resolveColumnValue(columns, facet.columnId, row, i);
+    const raw = accessor(row, i);
     if (typeof raw === 'string' && raw.trim() !== '') values.add(raw);
   });
   return Array.from(values)
