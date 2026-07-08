@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
 
+import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { ensureTermSeeded } from '@/lib/attendance/calendar';
@@ -92,8 +93,20 @@ export async function POST(request: NextRequest) {
       totalInserted += inserted;
     }
 
-    // 4. Bust the AY cache so the readiness pill + calendar page reflect the
-    //    new rows immediately.
+    // 4. Audit + bust the AY cache so the readiness pill + calendar page
+    //    reflect the new rows immediately. Same action + shape as the
+    //    calendar page's own auto-seed-on-visit (app/(sis)/sis/calendar/page.tsx)
+    //    — only logged when rows were actually written.
+    if (totalInserted > 0) {
+      await logAction({
+        service,
+        actor: { id: auth.user.id, email: auth.user.email ?? null },
+        action: 'attendance.calendar.autoseed',
+        entityType: 'school_calendar',
+        entityId: ayId,
+        context: { ayCode, inserted: totalInserted, terms: datedTerms.length },
+      });
+    }
     revalidateTag(`sis:${ayCode}`, 'max');
 
     return NextResponse.json({
