@@ -256,8 +256,12 @@ async function getStudentsByParentEmail(
   //    wildcards — splicing an unescaped value in let a crafted email (e.g.
   //    containing `%`) over-match other parents' children, or corrupt the
   //    filter grammar outright. `.ilike('col', value)` instead passes `value`
-  //    as a genuine parameterized filter value, so this class of injection
-  //    does not apply here.
+  //    as a genuine parameterized filter value, closing the `,`/`()` grammar
+  //    injection — but `value` is still interpreted as an ILIKE *pattern*, so
+  //    a literal `%`/`_` in the caller's own email is still a live wildcard
+  //    (e.g. a parent registered as "%@gmail.com" would match every stored
+  //    email ending "@gmail.com"). Escape those two metacharacters so the
+  //    match is exact (mirrors the pattern at lib/sis/queries.ts ~line 1106).
   type AppRow = {
     enroleeNumber: string | null;
     studentNumber: string | null;
@@ -269,9 +273,10 @@ async function getStudentsByParentEmail(
   };
   const appsSelect =
     'enroleeNumber, studentNumber, lastName, firstName, middleName, motherEmail, fatherEmail';
+  const escapedEmail = trimmed.replace(/[%_]/g, (m) => `\\${m}`);
   const [motherRes, fatherRes] = await Promise.all([
-    supabase.from(appsTable).select(appsSelect).ilike('motherEmail', trimmed),
-    supabase.from(appsTable).select(appsSelect).ilike('fatherEmail', trimmed),
+    supabase.from(appsTable).select(appsSelect).ilike('motherEmail', escapedEmail),
+    supabase.from(appsTable).select(appsSelect).ilike('fatherEmail', escapedEmail),
   ]);
   if (motherRes.error || fatherRes.error) {
     // Admissions schema drift or missing columns — fail soft so the parent
