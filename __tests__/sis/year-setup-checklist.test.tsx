@@ -1,8 +1,8 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { YearSetupStepper } from '@/components/sis/year-setup/year-setup-stepper';
+import { YearSetupChecklist } from '@/components/sis/year-setup/year-setup-checklist';
 import { renderWithClient } from '../_utils/render-with-client';
 import type { AyReadiness } from '@/lib/sis/readiness';
 
@@ -44,7 +44,7 @@ const READINESS: AyReadiness = {
     {
       id: 'ay-setup',
       step: 1,
-      label: 'Term Dates',
+      label: 'Term dates',
       description: 'All terms have start and end dates set',
       href: '/sis/ay-setup',
       status: 'done',
@@ -53,7 +53,7 @@ const READINESS: AyReadiness = {
     {
       id: 'calendar',
       step: 2,
-      label: 'School Calendar',
+      label: 'School calendar',
       description: 'All terms have calendar coverage',
       href: '/sis/calendar',
       status: 'done',
@@ -64,14 +64,14 @@ const READINESS: AyReadiness = {
       step: 3,
       label: 'Classes',
       description: 'No sections created for this AY',
-      href: '/sis/sections',
+      href: '/sis/admin/template',
       status: 'not_started',
       required: true,
     },
     {
       id: 'advisers',
       step: 4,
-      label: 'Form Advisers',
+      label: 'Form advisers',
       description: '0 of 3 sections have a form adviser',
       href: '/sis/sections',
       status: 'not_started',
@@ -80,7 +80,7 @@ const READINESS: AyReadiness = {
     {
       id: 'grading-sheets',
       step: 5,
-      label: 'Grading Sheets',
+      label: 'Grading sheets',
       description: '1 of 3 sections have grading sheets',
       href: '/markbook/sections',
       status: 'partial',
@@ -90,7 +90,7 @@ const READINESS: AyReadiness = {
     {
       id: 'virtue-themes',
       step: 6,
-      label: 'Virtue Themes',
+      label: 'Virtue themes',
       description: '0 of 3 terms have a virtue theme set',
       href: '/evaluation/virtue-themes',
       status: 'not_started',
@@ -99,7 +99,7 @@ const READINESS: AyReadiness = {
     {
       id: 'letterhead',
       step: 7,
-      label: 'Report Card Letterhead',
+      label: 'Report-card letterhead',
       description: 'Organization name is set',
       href: '/sis/admin/school-config',
       status: 'not_started',
@@ -108,7 +108,7 @@ const READINESS: AyReadiness = {
     {
       id: 'app-window',
       step: 8,
-      label: 'Application Window',
+      label: 'Application window',
       description: 'Applications are not open for this year',
       href: '/sis/ay-setup',
       status: 'not_started',
@@ -129,14 +129,37 @@ function makeAy(overrides: Record<string, unknown> = {}) {
     is_current: true,
     accepting_applications: false,
     created_at: '2026-01-01',
+    counts: { terms: 4, sections: 0, subject_configs: 0, section_students: 0 },
+    has_children: false,
     ...overrides,
   } as never;
 }
 
-describe('YearSetupStepper', () => {
+const STEP_IDS = [
+  'ay-setup',
+  'calendar',
+  'classes',
+  'advisers',
+  'grading-sheets',
+  'virtue-themes',
+  'letterhead',
+  'app-window',
+];
+
+// Elements carrying the default-variant's unique `shadow-button` class
+// (destructive/warning/success use `shadow-md`, outline `shadow-input`,
+// ghost/link carry no shadow class at all) — queried directly against the DOM
+// rather than via `getByRole('button')` because a few rows render their
+// primary action as `<Button asChild><Link>…</Link></Button>`, which paints
+// the button's classes onto an `<a>` (implicit role "link", not "button").
+function defaultVariantElements(): Element[] {
+  return Array.from(document.querySelectorAll('.shadow-button'));
+}
+
+describe('YearSetupChecklist', () => {
   it('shows the empty state when there is no selected AY', () => {
     renderWithClient(
-      <YearSetupStepper
+      <YearSetupChecklist
         ays={[]}
         selectedAy={null}
         selectedTerms={[]}
@@ -146,124 +169,140 @@ describe('YearSetupStepper', () => {
     expect(screen.getByText('No academic year yet')).toBeInTheDocument();
   });
 
-  it('renders the step rail with all 8 step labels', () => {
+  it('renders all 8 checklist rows', () => {
     renderWithClient(
-      <YearSetupStepper
+      <YearSetupChecklist
         ays={PICKER_AYS}
         selectedAy={makeAy()}
         selectedTerms={[]}
         readiness={READINESS}
       />
     );
-    // Rail buttons have accessible names matching step labels; use getByRole to
-    // avoid false-duplicate matches from the active step's panel CardTitle.
-    expect(
-      screen.getByRole('button', { name: 'Term Dates' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'School Calendar' })
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Classes' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Form Advisers' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Grading Sheets' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Virtue Themes' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Report Card Letterhead' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Application Window' })
-    ).toBeInTheDocument();
+    for (const id of STEP_IDS) {
+      expect(screen.getByTestId(`checklist-row-${id}`)).toBeInTheDocument();
+    }
   });
 
-  it('opens on the first incomplete required step (classes)', () => {
+  it('shows the readiness fraction', () => {
     renderWithClient(
-      <YearSetupStepper
+      <YearSetupChecklist
         ays={PICKER_AYS}
         selectedAy={makeAy()}
         selectedTerms={[]}
         readiness={READINESS}
       />
     );
-    // The active rail button carries aria-current="step"
-    expect(screen.getByRole('button', { name: 'Classes' })).toHaveAttribute(
-      'aria-current',
-      'step'
-    );
+    expect(screen.getByText('2 of 7 ready')).toBeInTheDocument();
   });
 
-  it('shows the resume button when not all required steps are done', () => {
+  it('shows the Optional divider before the app-window row', () => {
     renderWithClient(
-      <YearSetupStepper
+      <YearSetupChecklist
         ays={PICKER_AYS}
         selectedAy={makeAy()}
         selectedTerms={[]}
         readiness={READINESS}
       />
     );
-    expect(screen.getByRole('button', { name: /Resume/i })).toBeInTheDocument();
+    expect(screen.getByTestId('optional-divider')).toBeInTheDocument();
   });
 
-  it('shows "Edit term dates" button when ay-setup step is active', () => {
-    const allDoneReadiness: AyReadiness = {
+  it('renders exactly one default-variant (primary CTA) button — on the next-up row', () => {
+    renderWithClient(
+      <YearSetupChecklist
+        ays={PICKER_AYS}
+        selectedAy={makeAy()}
+        selectedTerms={[]}
+        readiness={READINESS}
+      />
+    );
+    // First incomplete required step in READINESS is 'classes'.
+    const defaults = defaultVariantElements();
+    expect(defaults).toHaveLength(1);
+    const classesRow = screen.getByTestId('checklist-row-classes');
+    expect(within(classesRow).getByRole('button')).toBe(defaults[0]);
+  });
+
+  it('accents no row and shows the "All set" badge when every required item is done', () => {
+    const allDone: AyReadiness = {
       ...READINESS,
       steps: READINESS.steps.map((s) =>
-        s.id === 'ay-setup' ? { ...s, status: 'not_started' } : s
-      ),
-      complete: 0,
-    };
-    renderWithClient(
-      <YearSetupStepper
-        ays={PICKER_AYS}
-        selectedAy={makeAy()}
-        selectedTerms={[]}
-        readiness={allDoneReadiness}
-      />
-    );
-    expect(
-      screen.getByRole('button', { name: 'Edit term dates' })
-    ).toBeInTheDocument();
-  });
-
-  it('shows "Optional" status badge for the app-window step', async () => {
-    const user = userEvent.setup();
-    const appWindowActive: AyReadiness = {
-      ...READINESS,
-      steps: READINESS.steps.map((s) =>
-        s.id !== 'app-window' ? { ...s, status: 'done' } : s
+        s.required
+          ? {
+              ...s,
+              status: 'done',
+              fraction: s.fraction && {
+                done: s.fraction.total,
+                total: s.fraction.total,
+              },
+            }
+          : s
       ),
       complete: 7,
     };
     renderWithClient(
-      <YearSetupStepper
+      <YearSetupChecklist
         ays={PICKER_AYS}
         selectedAy={makeAy()}
         selectedTerms={[]}
-        readiness={appWindowActive}
+        readiness={allDone}
       />
     );
-    // When all required steps are done nextIncompleteStepId falls back to step 1.
-    // Click into the app-window rail entry to open its panel, then check the badge.
-    await user.click(
-      screen.getByRole('button', { name: 'Application Window' })
-    );
-    expect(screen.getByText('Optional')).toBeInTheDocument();
+    expect(defaultVariantElements()).toHaveLength(0);
+    expect(
+      screen.getByText(/All set for Academic Year 2026/)
+    ).toBeInTheDocument();
   });
 
-  it('shows the readiness progress fraction', () => {
+  it('expands the virtue-themes collapsible to show the editor', async () => {
+    const user = userEvent.setup();
+    const terms = [
+      {
+        id: 't1',
+        academic_year_id: 'ay-id',
+        term_number: 1,
+        label: 'Term 1',
+        start_date: '2026-01-06',
+        end_date: '2026-03-21',
+        is_current: true,
+        virtue_theme: null,
+        grading_lock_date: null,
+      },
+    ] as never;
     renderWithClient(
-      <YearSetupStepper
+      <YearSetupChecklist
+        ays={PICKER_AYS}
+        selectedAy={makeAy()}
+        selectedTerms={terms}
+        readiness={READINESS}
+      />
+    );
+    expect(screen.queryByTestId('virtue-editor')).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: /Set virtue themes/i })
+    );
+    expect(screen.getByTestId('virtue-editor')).toBeInTheDocument();
+  });
+
+  it('shows the "set term dates first" note when there are no Terms 1–3', async () => {
+    const user = userEvent.setup();
+    renderWithClient(
+      <YearSetupChecklist
         ays={PICKER_AYS}
         selectedAy={makeAy()}
         selectedTerms={[]}
         readiness={READINESS}
       />
     );
-    expect(screen.getByText('2 / 7 ready')).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: /Set virtue themes/i })
+    );
+    // The calendar row's own summary line reads the same "Set term dates
+    // first." sentence with no dated terms — scope to the virtue-themes row
+    // so this only asserts the dashed in-place note, not that coincidence.
+    const virtueRow = screen.getByTestId('checklist-row-virtue-themes');
+    expect(
+      within(virtueRow).getByText('Set term dates first.')
+    ).toBeInTheDocument();
   });
 });
