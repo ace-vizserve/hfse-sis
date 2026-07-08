@@ -107,11 +107,29 @@ const STEP_META: Record<
 
 export function resolveAySetupStep(input: {
   datedTermCount: number;
+  totalTermCount: number;
 }): ReadinessStep {
-  const status = input.datedTermCount > 0 ? 'done' : 'not_started';
+  const { datedTermCount, totalTermCount } = input;
+  let status: ReadinessStatus;
+  let fraction: { done: number; total: number } | undefined;
+
+  if (totalTermCount === 0) {
+    status = 'not_started';
+  } else if (datedTermCount === totalTermCount) {
+    status = 'done';
+    fraction = { done: datedTermCount, total: totalTermCount };
+  } else if (datedTermCount > 0) {
+    status = 'partial';
+    fraction = { done: datedTermCount, total: totalTermCount };
+  } else {
+    status = 'not_started';
+    fraction = { done: 0, total: totalTermCount };
+  }
+
   return {
     ...STEP_META['ay-setup'],
     status,
+    fraction,
   };
 }
 
@@ -294,16 +312,30 @@ export function nextIncompleteStepId(steps: ReadinessStep[]): ReadinessStepId {
 
 // DB fetchers (private async functions)
 
-async function fetchAySetup(db: SupabaseClient, ayId: string): Promise<number> {
-  const { count, error } = await db
+async function fetchAySetup(
+  db: SupabaseClient,
+  ayId: string
+): Promise<{ datedTermCount: number; totalTermCount: number }> {
+  const { count: totalTermCount, error: totalError } = await db
+    .from('terms')
+    .select('id', { count: 'exact', head: true })
+    .eq('academic_year_id', ayId);
+
+  if (totalError) throw totalError;
+
+  const { count: datedTermCount, error: datedError } = await db
     .from('terms')
     .select('id', { count: 'exact', head: true })
     .eq('academic_year_id', ayId)
     .not('start_date', 'is', null)
     .not('end_date', 'is', null);
 
-  if (error) throw error;
-  return count ?? 0;
+  if (datedError) throw datedError;
+
+  return {
+    datedTermCount: datedTermCount ?? 0,
+    totalTermCount: totalTermCount ?? 0,
+  };
 }
 
 async function fetchCalendar(
@@ -486,7 +518,7 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   if (ayError || !ayRow) {
     // Return all not-started if AY not found
     return buildReadiness(ayCode, [
-      resolveAySetupStep({ datedTermCount: 0 }),
+      resolveAySetupStep({ datedTermCount: 0, totalTermCount: 0 }),
       resolveCalendarStep({ totalTerms: 0, coveredTerms: 0 }),
       resolveClassesStep({ sectionCount: 0, subjectConfigCount: 0 }),
       resolveAdvisersStep({ sectionCount: 0, advisedSectionCount: 0 }),
@@ -520,7 +552,7 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   ]);
 
   // Build steps
-  const step1 = resolveAySetupStep({ datedTermCount: aySetup });
+  const step1 = resolveAySetupStep(aySetup);
   const step2 = resolveCalendarStep(calendar);
   const step3 = resolveClassesStep(classes);
   const step4 = resolveAdvisersStep(advisers);
