@@ -1,6 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+} from 'react';
+import dynamic from 'next/dynamic';
 import { ChevronDown, Columns3, Download, Search, X } from 'lucide-react';
 import {
   type ColumnFiltersState,
@@ -43,7 +50,7 @@ import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
 import { BulkActionFooter } from './bulk-action-footer';
 import { DataTableEmptyState } from './empty-state';
-import { DataTableExportSheet } from './export-sheet';
+import type { DataTableExportSheetProps } from './export-sheet';
 import { FacetDropdown } from './facet-dropdown';
 import { filterRows } from './filter-rows';
 import { FilterChip } from './filter-chip';
@@ -52,6 +59,31 @@ import type { DataTableProps, FacetConfig } from './types';
 import { useUrlState } from './use-url-state';
 
 export { RowActionsMenu } from './row-actions-menu';
+
+// Lazy — `export-sheet.tsx` pulls in @dnd-kit (drag-reorder columns) plus its
+// own filter/facet logic, none of which is needed until a user actually opens
+// "Export CSV". Statically importing it put that weight in every one of the
+// ~31 DataTable consumer pages' bundles. Follows the same next/dynamic
+// pattern as `components/dashboard/charts/*` (KD #80), adapted for a generic
+// component: `dynamic()` can't preserve `DataTableExportSheetProps<TRow>`'s
+// type parameter, so the loaded component is cast once at the module
+// boundary and re-exposed through a thin generic wrapper with the same name,
+// so call sites below are unchanged. `ssr: false` because the shell (and the
+// sheet) are client-only; the sheet itself isn't mounted until first open
+// (see `exportEverOpened` below), so there's no SSR/hydration mismatch and no
+// loading-fallback flash to worry about.
+const DataTableExportSheetLazy = dynamic(
+  () => import('./export-sheet').then((m) => m.DataTableExportSheet),
+  { ssr: false }
+) as unknown as ComponentType<DataTableExportSheetProps<unknown>>;
+
+function DataTableExportSheet<TRow>(props: DataTableExportSheetProps<TRow>) {
+  return (
+    <DataTableExportSheetLazy
+      {...(props as unknown as DataTableExportSheetProps<unknown>)}
+    />
+  );
+}
 
 export function DataTable<TRow>(props: DataTableProps<TRow>) {
   const {
@@ -113,6 +145,14 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
   );
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [exportOpen, setExportOpen] = useState(false);
+  // Gates mounting the (dynamically-imported) export sheet — stays false
+  // until the user opens it once, then stays true so closing/reopening
+  // within the same page visit keeps its filter state (unchanged behavior
+  // from before this file's export sheet was lazy-loaded).
+  const [exportEverOpened, setExportEverOpened] = useState(false);
+  useEffect(() => {
+    if (exportOpen) setExportEverOpened(true);
+  }, [exportOpen]);
 
   // External reset hook — bump `selectionResetSignal` to drop the selection
   // (and the bulk-action footer) after a bulk action completes.
@@ -640,7 +680,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
         />
       )}
 
-      {csv && (
+      {csv && exportEverOpened && (
         <DataTableExportSheet
           open={exportOpen}
           onOpenChange={setExportOpen}

@@ -140,7 +140,7 @@ export type DataTableExportSeed = {
   initialSortDesc?: boolean;
 };
 
-type DataTableExportSheetProps<TRow> = {
+export type DataTableExportSheetProps<TRow> = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   data: TRow[];
