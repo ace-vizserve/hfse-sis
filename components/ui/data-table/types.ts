@@ -11,7 +11,6 @@ export type FacetConfig = {
   columnId: string;
   label: string;
   valueOptions?: string[];
-  showUnassigned?: boolean;
 };
 
 /**
