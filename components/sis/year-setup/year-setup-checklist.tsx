@@ -163,7 +163,10 @@ function ChecklistRow({
     <div className="flex flex-wrap items-start gap-4 px-6 py-4">
       <StatusTile step={step} />
       <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="text-[14px] font-medium text-foreground">{step.label}</p>
+        <p className="text-[14px] font-medium text-foreground">
+          {isNextUp && <span className="sr-only">Next up: </span>}
+          {step.label}
+        </p>
         <p className="text-[13px] tabular-nums text-muted-foreground">
           {summary}
         </p>
@@ -472,6 +475,7 @@ export function YearSetupChecklist({
               <Fragment key={step.id}>
                 {step.id === firstOptionalId && (
                   <li
+                    role="presentation"
                     data-testid="optional-divider"
                     className="bg-muted/30 px-6 py-2"
                   >
