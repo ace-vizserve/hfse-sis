@@ -455,6 +455,18 @@ export function DataTableExportSheet<TRow>({
     });
   }
 
+  // Facet dropdown options, one full `data` scan per facet — memoized so
+  // typing in the search box / toggling other filters (state changes that
+  // don't touch `data`/`columns`/`facets`) doesn't re-derive every facet's
+  // option list on every keystroke.
+  const facetOptionsById = useMemo(() => {
+    const map = new Map<string, Array<{ value: string; label: string }>>();
+    for (const f of facets) {
+      map.set(f.columnId, getFacetOptions(data, columns, f));
+    }
+    return map;
+  }, [data, columns, facets]);
+
   // Rows this export would include — the SAME `filterRows` helper the shell
   // uses for its per-tab counts, so this can never disagree with what the
   // user sees reflected elsewhere in the table (KD #82/#84).
@@ -729,7 +741,7 @@ export function DataTableExportSheet<TRow>({
                     <FacetDropdown
                       key={f.columnId}
                       label={f.label}
-                      options={getFacetOptions(data, columns, f)}
+                      options={facetOptionsById.get(f.columnId) ?? []}
                       selected={
                         facetSel.find((s) => s.id === f.columnId)?.values ?? []
                       }
