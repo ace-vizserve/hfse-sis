@@ -88,7 +88,7 @@ The page has two shadcn `Tabs`: **Year Setup** (default) and **Manage years**.
 
 ### Manage years tab
 
-`AySetupDataTable` — lists all `academic_years` rows. Per-row columns: AY code, label, `is_current` badge, `accepting_applications` toggle (with a short visible caption, same single-select explanation as above), actions menu (Switch active / Copy teacher assignments / Create sheets / Switch active / **Delete, visually separated by a `DropdownMenuSeparator` + destructive styling**). Inline editors for term dates directly in the table row. Below the table, a plain bulleted "Starting a new academic year" list (not numbered — deliberately dropped "step" vocabulary) walking through create → verify parent-portal readiness → switch active → optional delete → "work through the Year Setup tab for the new year."
+`AySetupDataTable` — lists all `academic_years` rows. Per-row columns: AY code, label, `is_current` badge, `accepting_applications` toggle (with a short visible caption, same single-select explanation as above), actions menu (Copy teacher assignments / Create sheets / Switch active / **Delete, visually separated by a `DropdownMenuSeparator` + destructive styling**). Inline editors for term dates directly in the table row. Below the table, a plain bulleted "Starting a new academic year" list (not numbered — deliberately dropped "step" vocabulary) walking through create → verify parent-portal readiness → switch active → optional delete → "work through the Year Setup tab for the new year."
 
 ### Create-AY flow (school_admin + superadmin)
 
