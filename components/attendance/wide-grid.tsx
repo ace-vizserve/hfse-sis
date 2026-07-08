@@ -35,7 +35,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -219,6 +219,15 @@ export function AttendanceWideGrid({
     iso: string;
   } | null>(null);
 
+  // Stable callback (identity never changes — `setActiveCell` is a useState
+  // setter) so the memoized `CellButton` below can take `onOpen` as a prop
+  // without invalidating its memo on every parent render. Cells pass their
+  // own enrolmentId/iso as primitive props instead of baking them into a
+  // fresh per-cell closure.
+  const openCell = useCallback((enrolmentId: string, iso: string) => {
+    setActiveCell({ enrolmentId, iso });
+  }, []);
+
   function busCareLabel(e: WideGridEnrolment): string {
     return [e.busNo, e.classroomOfficerRole].filter(Boolean).join(' / ') || '—';
   }
@@ -351,6 +360,15 @@ export function AttendanceWideGrid({
       const monthKey = c.date.slice(0, 7);
       const isMonthStart = monthKey !== prevMonth;
       prevMonth = monthKey;
+      // Weekday label ("Mon"/"Tue"/…) — computed once per column here rather
+      // than in the header's render body, since the header re-renders on
+      // every cell mark (the whole grid re-renders on `cells` state changes)
+      // while `calendar`/`events` only change on a server refetch.
+      const weekday = new Date(
+        Number(c.date.slice(0, 4)),
+        Number(c.date.slice(5, 7)) - 1,
+        Number(c.date.slice(8, 10))
+      ).toLocaleDateString('en-SG', { weekday: 'short' });
       return {
         iso: c.date,
         dayType: c.dayType,
@@ -359,6 +377,7 @@ export function AttendanceWideGrid({
         events: evBy(c.date),
         drawMonthBoundary: isMonthStart && idx > 0,
         tag: resolveColumnTag({ dayType: c.dayType, events: evBy(c.date) }),
+        weekday,
       };
     });
   }, [calendar, events]);
@@ -649,11 +668,6 @@ export function AttendanceWideGrid({
                       className="hover:bg-transparent"
                     >
                       {columns.map((c) => {
-                        const weekday = new Date(
-                          Number(c.iso.slice(0, 4)),
-                          Number(c.iso.slice(5, 7)) - 1,
-                          Number(c.iso.slice(8, 10))
-                        ).toLocaleDateString('en-SG', { weekday: 'short' });
                         const eventLabel = c.events
                           .map((e) => e.label)
                           .join(' · ');
@@ -682,7 +696,7 @@ export function AttendanceWideGrid({
                               {c.iso.slice(-2)}
                             </div>
                             <div className="text-[9px] font-normal opacity-70">
-                              {weekday.slice(0, 3)}
+                              {c.weekday.slice(0, 3)}
                             </div>
                             {/* Column tag — resolveColumnTag picks the single
                               most-informative tag: PH/SH/NC from day_type,
@@ -774,6 +788,8 @@ export function AttendanceWideGrid({
                                 </span>
                               ) : (
                                 <CellButton
+                                  enrolmentId={e.enrolmentId}
+                                  iso={c.iso}
                                   active={
                                     activeCell?.enrolmentId === e.enrolmentId &&
                                     activeCell?.iso === c.iso
@@ -783,12 +799,7 @@ export function AttendanceWideGrid({
                                   exReason={exReason}
                                   saving={!!cell?.saving}
                                   saved={!!cell?.savedAt}
-                                  onOpen={() =>
-                                    setActiveCell({
-                                      enrolmentId: e.enrolmentId,
-                                      iso: c.iso,
-                                    })
-                                  }
+                                  onOpen={openCell}
                                 />
                               )}
                             </TableCell>
@@ -938,7 +949,18 @@ export function AttendanceWideGrid({
 // paper-palette wash. Clicking opens the one shared marking popover; when this
 // cell is the active one it becomes the popover's anchor. Withdrawn cells render
 // a non-interactive letter (no marking). Replaces the old native <select>.
-function CellButton({
+//
+// Memoized: at HFSE scale (~1,410 cells) an unmemoized CellButton re-renders
+// every cell on every grid re-render (e.g. a single `writeCell` optimistic
+// update touching one cell's entry in the `cells` Map). `onOpen` is the
+// parent's stable `openCell` callback (identity never changes) and
+// `enrolmentId`/`iso` are passed as primitive props instead of baked into a
+// fresh per-cell closure, so React.memo's default shallow-prop comparison
+// correctly skips re-rendering every cell whose props (status/saving/
+// saved/active) are unchanged.
+const CellButton = memo(function CellButton({
+  enrolmentId,
+  iso,
   active,
   withdrawn,
   status,
@@ -947,13 +969,15 @@ function CellButton({
   saved,
   onOpen,
 }: {
+  enrolmentId: string;
+  iso: string;
   active: boolean;
   withdrawn: boolean;
   status: AttendanceStatus | null;
   exReason: ExReason | null;
   saving: boolean;
   saved: boolean;
-  onOpen: () => void;
+  onOpen: (enrolmentId: string, iso: string) => void;
 }) {
   const label = status ?? '—';
   const tip = status
@@ -969,7 +993,7 @@ function CellButton({
       ) : (
         <button
           type="button"
-          onClick={onOpen}
+          onClick={() => onOpen(enrolmentId, iso)}
           aria-haspopup="dialog"
           aria-expanded={active}
           title={tip}
@@ -993,7 +1017,7 @@ function CellButton({
   );
 
   return active ? <PopoverAnchor asChild>{inner}</PopoverAnchor> : inner;
-}
+});
 
 // Legend row pairing a marking-cell swatch with a description label. The
 // swatch reads the SAME STATUS_CELL_WASH map applied to the cells when status
