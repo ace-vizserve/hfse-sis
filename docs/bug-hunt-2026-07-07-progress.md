@@ -3,7 +3,7 @@
 **Branch:** `fix/bug-hunt-2026-07-07` (off `main` @ `5a92466`, NOT yet pushed/PR'd)
 **Backlog:** `docs/bug-hunt-2026-07-07.md` (3 CRITICAL, 10 HIGH, ~17 MEDIUM, ~10 LOW)
 **Method:** subagent-driven development — per-task briefs/reports under `.superpowers/sdd/sdd-workspace/` (git-ignored scratch; this doc is the durable record). Every finding was re-verified against the code before fixing; every batch verified with `npx next build` + the relevant vitest suites.
-**State at pause (2026-07-08):** Phases 1–3 complete — 31 commits, working tree clean, full suite 106 files / 860 tests green, build clean.
+**State (2026-07-08, session 2):** ALL PHASES COMPLETE + final whole-branch review passed — **Ready to merge (Yes)**. 43 commits, working tree clean, build clean; full suite 859/860 at final review (1 timing flake in `data-table-export-sheet.test.tsx` under full-suite load — passes 4/4 in isolation).
 
 ## Done
 
@@ -50,22 +50,29 @@
 - `395d1eb` **M-5** dead compare loaders deleted (`lib/admissions/compare.ts`, `lib/attendance/compare.ts`, `lib/sis/records-compare.ts`, `getMarkbookCompareKpis`); `MarkbookCompareKpis` type kept (live).
 - `9863795` **M-6** docs: registrar switcher cell (+3 more stale matrix cells), index-number model → KD #136, migration range → 076, 15 primitives added to the design-system table.
 
+### Pre-Phase-4 note (session 2)
+
+- `e6d5bff` — a stray uncommitted `React.cache()` wrapper on `getSessionUser` (`lib/supabase/server.ts`) was found in the working tree at resume (NOT part of the bug-hunt backlog; origin unknown — the tree was clean at pause). Committed separately so it can be dropped if unwanted; the final reviewer checked it (safe: `cache()` outside render is a per-invocation no-op, so route handlers are unaffected).
+
+### Phase 4 — LOW (all verified real; 2 tasks)
+
+- `3a4d05a` **L1** seed-calendar route audits via `logAction` (reuses `attendance.calendar.autoseed`, exact sibling pattern, already dual-allowlisted on SIS + Attendance audit pages).
+- `e1d8a8f` **L2** data-table `selectedRows` memo deps on `tabFilteredData` — bulk footer no longer acts on stale rows after `router.refresh()`.
+- `173211b` **L3** letterhead inline rgba → `text-white/90` (Hard Rule #7).
+- `9d0ef84` **L5** dead `FacetConfig.showUnassigned` prop deleted (shell types + movements-table local mirror + misleading comment).
+- `e1906f4` `ca1226b` `fc6c463` `dd674de` `b72f39b` **L4** perf nits ×6: filterRows per-facet accessor hoist; export-sheet facet-options memo; wide-grid `CellButton` `React.memo` + weekday-label into columns memo (KD #151 single-popover invariant verified held); export sheet + `@dnd-kit` lazy via `next/dynamic` (gated on first open, no fallback flash); batch-print calendar fetched once per (term, level) via optional preload param (levelType-keyed, misses degrade to the old per-student query).
+
+### Final whole-branch review (2284ae3..b72f39b)
+
+- Verdict after one fix wave: **Ready to merge — Yes.**
+- 1 Critical found + fixed: **C2 was only half-fixed** — the parameterized `.ilike()` calls closed the `.or()` grammar injection but left `%`/`_` live as ILIKE wildcards in the parent-email match (a parent registered `%@gmail.com` would match every `@gmail.com` family; sole authorization basis for `/api/parent/v2/*`). Fixed `a20eaa1`: escape mirroring `lib/sis/queries.ts` + 4-test regression file `__tests__/supabase/parent-email-ilike-escape.test.ts` (fails against pre-fix code). Re-review confirmed closed.
+- No Important findings. All Minors triaged ride-along (selectedRows memo still ignores columnFilters/search — pre-existing; autoseed action naming; preload comment understates the levelType-cache safety; redundant filter-rows closure; exportEverOpened one-frame delay; pre-existing evBy double-call).
+- Non-blocking follow-ups (not regressions): `9ba5965`'s commit message "only remaining `.or()`" claim is stale (others exist, all UUID/constant-interpolated — audited safe); `fetchAllPages` call sites (all ~19, incl. the new ones) lack explicit `.order()` — a codebase-wide hardening question if ever taken up, helper-wide not per-site.
+
 ## Remaining
 
-### Phase 4 — LOW (one batched commit; from `docs/bug-hunt-2026-07-07.md` §LOW)
-
-Verify-then-fix each (finder-reported, mostly unverified):
-
-1. `app/api/sis/ay-setup/seed-calendar/route.ts` — no `logAction` audit call (KD #9).
-2. `components/ui/data-table/index.tsx` ~288-292 — `selectedRows` memo missing `data` dep (stale rows after `router.refresh()`). NOTE: index.tsx was modified by M1 — re-locate.
-3. `components/report-card/report-card-letterhead.tsx` ~89,98 — inline `style={{ color: 'rgba(255,255,255,0.92)' }}` → `text-white/90` utility.
-4. Perf nits: `filter-rows.ts` per-row column lookup → hoist per facet; export-sheet facet-options memo; wide-grid `CellButton` memoization + weekday-label into columns memo; `next/dynamic` the export sheet (+ `@dnd-kit`) out of the 31 DataTable pages; batch-print calendar re-query once per (term, level) in `build-report-card.ts` ~469.
-5. `FacetConfig.showUnassigned` — declared + referenced in a movements-table comment but never implemented → implement or delete (delete likely right; verify no consumer sets it).
-
-### Then
-
-6. **Final whole-branch review** — `superpowers:requesting-code-review` (feature-dev:code-reviewer or /code-review) over `2284ae3..HEAD`; dispatch ONE fix subagent for the full findings list if any.
-7. **Wrap-up** — `/sync-docs` (CLAUDE.md session-context + dev-plan snapshot; the H4/H10/M4.b fixes deserve KD-update notes), then `superpowers:finishing-a-development-branch` (merge/PR decision is the user's; `git pull --rebase origin main` before any push).
+- **Wrap-up** — `/sync-docs` (CLAUDE.md session-context + dev-plan snapshot; the H4/H10/M4.b fixes deserve KD-update notes), then `superpowers:finishing-a-development-branch` (merge/PR decision is the user's; `git pull --rebase origin main` before any push).
+- **Before deploy** (from the backlog's Verification section): curl re-test of the two parent-API criticals against a live env — confirm a request omitting `termNumber` returns only active-window terms, and a `%`-email no longer over-matches.
 
 ## Resumption notes
 
