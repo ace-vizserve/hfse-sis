@@ -127,9 +127,9 @@ export default async function AySetupPage({
 
           <section className="rounded-xl border border-hairline bg-card p-4 text-xs leading-relaxed text-muted-foreground">
             <p className="mb-2 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
-              <CalendarRange className="size-3" /> Rollover checklist
+              <CalendarRange className="size-3" /> Starting a new academic year
             </p>
-            <ol className="ml-4 list-decimal space-y-1">
+            <ul className="ml-4 list-disc space-y-1">
               <li>
                 <strong>Create the new AY</strong> here — sets up terms,
                 sections, subjects, and admissions data all at once. The new AY
@@ -152,7 +152,12 @@ export default async function AySetupPage({
                 <strong>Optional:</strong> delete a mis-created AY if it&apos;s
                 still empty. (superadmin only)
               </li>
-            </ol>
+              <li>
+                <strong>Get it ready:</strong> work through the Year Setup tab
+                for the new year — term dates, calendar, classes, grading
+                sheets, and the rest.
+              </li>
+            </ul>
           </section>
         </TabsContent>
       </Tabs>

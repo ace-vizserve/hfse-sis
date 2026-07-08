@@ -226,6 +226,7 @@ function AyRowActions({ row }: { row: AyTableRow }) {
         ayCode={row.ay_code}
         current={row.accepting_applications}
         isCurrentAy={row.is_current}
+        showCaption
       />
 
       {/* Dropdown: rare / scope-changing / destructive actions */}

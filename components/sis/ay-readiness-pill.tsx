@@ -38,6 +38,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 
 type Props = {
@@ -53,8 +54,14 @@ const STEP_ICONS: Partial<Record<ReadinessStepId, LucideIcon>> = {
 
 export function AyReadinessPill({ readiness, role }: Props) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
 
   if (role !== 'school_admin' && role !== 'superadmin') return null;
+  // The Year Setup tab (/sis/ay-setup) renders its own checklist dashboard
+  // with the same readiness data — the floating pill there would duplicate
+  // (and could visually diverge from) that surface, so it's suppressed here
+  // and stays everywhere else, where it still deep-links to /sis/ay-setup.
+  if (pathname?.startsWith('/sis/ay-setup')) return null;
   const done = readiness.complete === readiness.total;
   const pct = done
     ? 100
