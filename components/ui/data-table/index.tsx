@@ -301,8 +301,13 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
   const totalRows = table.getFilteredRowModel().rows.length;
   const selectedRows = useMemo(
     () => table.getFilteredSelectedRowModel().rows.map((r) => r.original),
+    // `table`'s object identity is stable across renders (TanStack keeps one
+    // instance via an internal ref and mutates its options in place), so it
+    // must NOT be relied on as the recompute trigger — `tabFilteredData` is
+    // the actual value that changes when `data` is swapped (e.g. after a
+    // router.refresh()), and must be a dep or selectedRows goes stale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rowSelection, table]
+    [rowSelection, table, tabFilteredData]
   );
 
   // Facets that live behind a `facetGroups` trigger still need to resolve to
