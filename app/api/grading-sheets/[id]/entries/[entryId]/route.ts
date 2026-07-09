@@ -137,6 +137,11 @@ export async function PATCH(
     reviewed_at?: string | null;
     decision_note: string | null;
   } | null = null;
+  // The single validated slot/field value being applied (Path A only) — the
+  // exact value already checked by valuesMatch/proposedFromPayload against
+  // the approved request. buildEntryPatch uses this (never the raw client
+  // body) so it can never clobber unrelated slots/fields.
+  let appliedProposedValue: string | number | boolean | null = null;
   let correctionMeta: {
     reason: CorrectionReason;
     justification: string;
@@ -245,6 +250,7 @@ export async function PATCH(
       }
 
       appliedChangeRequest = reqRow;
+      appliedProposedValue = typedProposed;
       const approverEmail =
         reqRow.primary_reviewed_by_email ??
         reqRow.reviewed_by_email ??
@@ -401,7 +407,12 @@ export async function PATCH(
     // the top-of-handler read and now will surface as `lock_state_changed`.
     const entryPatch = buildEntryPatch(
       appliedChangeRequest.field_changed,
-      body
+      appliedProposedValue,
+      {
+        ww_scores: entry.ww_scores as (number | null)[] | null,
+        pt_scores: entry.pt_scores as (number | null)[] | null,
+      },
+      appliedChangeRequest.slot_index
     );
     const { error: rpcErr } = await service.rpc('apply_change_request_atomic', {
       p_grading_sheet_id: sheet.id,
@@ -603,30 +614,43 @@ function valuesMatch(
   return String(typed) === String(approved);
 }
 
-// Builds the JSONB patch passed to apply_change_request_atomic. Only includes
-// the single field the approved request targets — the RPC's coalesce logic
-// leaves untouched columns alone.
-function buildEntryPatch(
+// Builds the JSONB patch passed to apply_change_request_atomic for a
+// change-request "apply" (Path A). This patch must reflect ONLY the single
+// approved slot/field — never more. For ww_scores/pt_scores, a change
+// request only ever approves ONE element of the array (a single slot_index);
+// the array as a whole is not under review. So the patch is built from the
+// entry's CURRENT DB array with just that one slot replaced by the approved
+// value — never from the client's full (possibly stale) array, which could
+// otherwise silently overwrite every other slot under an approval_reference
+// that never covered them (Hard Rule #5). qa_score/letter_grade/is_na are
+// scalar columns — a change request targeting one of those covers the whole
+// field (there's no "other slots" to protect), so they're written directly.
+export function buildEntryPatch(
   fieldChanged: string,
-  body: {
-    ww_scores?: (number | null)[];
-    pt_scores?: (number | null)[];
-    qa_score?: number | null;
-    letter_grade?: string | null;
-    is_na?: boolean;
-  }
+  proposedValue: string | number | boolean | null,
+  currentArrays: {
+    ww_scores: (number | null)[] | null;
+    pt_scores: (number | null)[] | null;
+  },
+  slotIndex: number | null
 ): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
-  if (fieldChanged === 'ww_scores' && Array.isArray(body.ww_scores)) {
-    patch.ww_scores = body.ww_scores;
-  } else if (fieldChanged === 'pt_scores' && Array.isArray(body.pt_scores)) {
-    patch.pt_scores = body.pt_scores;
-  } else if (fieldChanged === 'qa_score' && 'qa_score' in body) {
-    patch.qa_score = body.qa_score ?? null;
-  } else if (fieldChanged === 'letter_grade' && 'letter_grade' in body) {
-    patch.letter_grade = body.letter_grade ?? null;
-  } else if (fieldChanged === 'is_na' && 'is_na' in body) {
-    patch.is_na = Boolean(body.is_na);
+  if (fieldChanged === 'ww_scores' || fieldChanged === 'pt_scores') {
+    if (slotIndex == null) return patch;
+    const current =
+      (fieldChanged === 'ww_scores'
+        ? currentArrays.ww_scores
+        : currentArrays.pt_scores) ?? [];
+    const next = [...current];
+    while (next.length <= slotIndex) next.push(null);
+    next[slotIndex] = (proposedValue as number | null) ?? null;
+    patch[fieldChanged] = next;
+  } else if (fieldChanged === 'qa_score') {
+    patch.qa_score = (proposedValue as number | null) ?? null;
+  } else if (fieldChanged === 'letter_grade') {
+    patch.letter_grade = (proposedValue as string | null) ?? null;
+  } else if (fieldChanged === 'is_na') {
+    patch.is_na = Boolean(proposedValue);
   }
   return patch;
 }

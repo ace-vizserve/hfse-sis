@@ -64,12 +64,17 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
       initial: {
         fatherFullName: app.fatherFullName,
         fatherFirstName: app.fatherFirstName,
+        fatherMiddleName: app.fatherMiddleName,
         fatherLastName: app.fatherLastName,
+        fatherPreferredName: app.fatherPreferredName,
         fatherNric: app.fatherNric,
         fatherBirthDay: app.fatherBirthDay,
         fatherMobile: app.fatherMobile,
         fatherEmail: app.fatherEmail,
         fatherNationality: app.fatherNationality,
+        fatherReligion: app.fatherReligion,
+        fatherReligionOther: app.fatherReligionOther,
+        fatherMarital: app.fatherMarital,
         fatherCompanyName: app.fatherCompanyName,
         fatherPosition: app.fatherPosition,
         fatherPassport: app.fatherPassport,
@@ -80,11 +85,18 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
       },
       fields: [
         { label: 'Full name', value: app.fatherFullName },
+        { label: 'Middle name', value: app.fatherMiddleName },
+        { label: 'Preferred name', value: app.fatherPreferredName },
         { label: 'NRIC / FIN', value: app.fatherNric },
         { label: 'Date of birth', value: app.fatherBirthDay, asDate: true },
         { label: 'Mobile', value: app.fatherMobile },
         { label: 'Email', value: app.fatherEmail, wide: true },
         { label: 'Nationality', value: app.fatherNationality },
+        {
+          label: 'Religion',
+          value: app.fatherReligion ?? app.fatherReligionOther,
+        },
+        { label: 'Marital status', value: app.fatherMarital },
         { label: 'Company', value: app.fatherCompanyName },
         { label: 'Position', value: app.fatherPosition },
         { label: 'Passport', value: app.fatherPassport },
@@ -114,12 +126,17 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
       initial: {
         motherFullName: app.motherFullName,
         motherFirstName: app.motherFirstName,
+        motherMiddleName: app.motherMiddleName,
         motherLastName: app.motherLastName,
+        motherPreferredName: app.motherPreferredName,
         motherNric: app.motherNric,
         motherBirthDay: app.motherBirthDay,
         motherMobile: app.motherMobile,
         motherEmail: app.motherEmail,
         motherNationality: app.motherNationality,
+        motherReligion: app.motherReligion,
+        motherReligionOther: app.motherReligionOther,
+        motherMarital: app.motherMarital,
         motherCompanyName: app.motherCompanyName,
         motherPosition: app.motherPosition,
         motherPassport: app.motherPassport,
@@ -130,11 +147,18 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
       },
       fields: [
         { label: 'Full name', value: app.motherFullName },
+        { label: 'Middle name', value: app.motherMiddleName },
+        { label: 'Preferred name', value: app.motherPreferredName },
         { label: 'NRIC / FIN', value: app.motherNric },
         { label: 'Date of birth', value: app.motherBirthDay, asDate: true },
         { label: 'Mobile', value: app.motherMobile },
         { label: 'Email', value: app.motherEmail, wide: true },
         { label: 'Nationality', value: app.motherNationality },
+        {
+          label: 'Religion',
+          value: app.motherReligion ?? app.motherReligionOther,
+        },
+        { label: 'Marital status', value: app.motherMarital },
         { label: 'Company', value: app.motherCompanyName },
         { label: 'Position', value: app.motherPosition },
         { label: 'Passport', value: app.motherPassport },
@@ -156,16 +180,28 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
       label: 'Guardian',
       optional: true,
       fullName: app.guardianFullName,
-      firstName: null,
-      lastName: null,
+      firstName: app.guardianFirstName,
+      lastName: app.guardianLastName,
       mobile: app.guardianMobile,
       email: app.guardianEmail,
       whatsappConsent: app.guardianWhatsappTeamsConsent,
       initial: {
         guardianFullName: app.guardianFullName,
+        guardianFirstName: app.guardianFirstName,
+        guardianMiddleName: app.guardianMiddleName,
+        guardianLastName: app.guardianLastName,
+        guardianPreferredName: app.guardianPreferredName,
+        guardianNric: app.guardianNric,
+        guardianBirthDay: app.guardianBirthDay,
         guardianMobile: app.guardianMobile,
         guardianEmail: app.guardianEmail,
         guardianNationality: app.guardianNationality,
+        guardianReligion: app.guardianReligion,
+        guardianReligionOther: app.guardianReligionOther,
+        // No guardianMarital — guardian has no Marital column (see
+        // edit-family-sheet.tsx).
+        guardianCompanyName: app.guardianCompanyName,
+        guardianPosition: app.guardianPosition,
         guardianPassport: app.guardianPassport,
         guardianPassportExpiry: app.guardianPassportExpiry,
         guardianPass: app.guardianPass,
@@ -174,9 +210,21 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
       },
       fields: [
         { label: 'Full name', value: app.guardianFullName },
+        { label: 'First name', value: app.guardianFirstName },
+        { label: 'Middle name', value: app.guardianMiddleName },
+        { label: 'Last name', value: app.guardianLastName },
+        { label: 'Preferred name', value: app.guardianPreferredName },
+        { label: 'NRIC / FIN', value: app.guardianNric },
+        { label: 'Date of birth', value: app.guardianBirthDay, asDate: true },
         { label: 'Mobile', value: app.guardianMobile },
         { label: 'Email', value: app.guardianEmail, wide: true },
         { label: 'Nationality', value: app.guardianNationality },
+        {
+          label: 'Religion',
+          value: app.guardianReligion ?? app.guardianReligionOther,
+        },
+        { label: 'Company', value: app.guardianCompanyName },
+        { label: 'Position', value: app.guardianPosition },
         { label: 'Passport', value: app.guardianPassport },
         {
           label: 'Passport expiry',
@@ -204,6 +252,7 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
           enroleeNumber={enroleeNumber}
         />
       ))}
+      <SiblingsCard app={app} />
     </div>
   );
 }
@@ -472,6 +521,84 @@ function ParentCard({
           </CardContent>
         </>
       )}
+    </Card>
+  );
+}
+
+// ─── siblings ───────────────────────────────────────────────────────────────
+
+type SiblingEntry = {
+  index: number;
+  fullName: string | null;
+  fields: Field[];
+};
+
+// Parent-portal-collected, read-only here — siblings live on
+// ProfileUpdateSchema (not the family schemas), so they're edited from the
+// Profile tab's Edit profile sheet ("Sibling 1"–"Sibling 5" sections), not
+// EditFamilySheet. Hidden entirely when no slot has data, matching the
+// Medical card's precedent on the Profile tab (components/sis/profile-tab.tsx)
+// — an applicant with no siblings on file doesn't get an empty card. Adding
+// a first sibling still works: Edit Profile always shows all 5 slots
+// (mirrors the discount-slot precedent), independent of this card.
+function SiblingsCard({ app }: { app: ApplicationRow }) {
+  const entries: SiblingEntry[] = ([1, 2, 3, 4, 5] as const).map((n) => {
+    const fullName = app[`siblingFullName${n}`];
+    const birthDay = app[`siblingBirthDay${n}`];
+    const religion = app[`siblingReligion${n}`];
+    const educationOccupation = app[`siblingEducationOccupation${n}`];
+    const schoolCompany = app[`siblingSchoolCompany${n}`];
+    return {
+      index: n,
+      fullName,
+      fields: [
+        { label: 'Date of birth', value: birthDay, asDate: true },
+        { label: 'Religion', value: religion },
+        { label: 'Education / occupation', value: educationOccupation },
+        { label: 'School / company', value: schoolCompany },
+      ],
+    };
+  });
+
+  const populated = entries.filter(
+    (e) => !!e.fullName || e.fields.some((f) => !isFieldEmpty(f))
+  );
+
+  if (populated.length === 0) return null;
+
+  return (
+    <Card className="gap-0 overflow-hidden p-0">
+      <CardHeader className="border-b border-border px-5 py-4">
+        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+          Siblings
+        </CardDescription>
+        <CardTitle className="font-serif text-[15px] font-semibold tracking-tight text-foreground">
+          Siblings on file
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Edit from the Profile tab
+        </p>
+        <CardAction>
+          <div className="flex items-center gap-2">
+            <Badge variant="muted">
+              {populated.length} / {entries.length}
+            </Badge>
+            <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <Users className="size-4" />
+            </div>
+          </div>
+        </CardAction>
+      </CardHeader>
+      <ul className="divide-y divide-border">
+        {populated.map((sibling) => (
+          <li key={sibling.index} className="px-5 py-4">
+            <p className="mb-3 font-serif text-[14px] font-semibold tracking-tight text-foreground">
+              {sibling.fullName?.trim() || `Sibling ${sibling.index}`}
+            </p>
+            <FieldGrid fields={sibling.fields} dimEmpty />
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }

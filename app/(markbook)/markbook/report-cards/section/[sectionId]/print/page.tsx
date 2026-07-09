@@ -3,7 +3,12 @@ import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 
 import { getSessionUser, createClient } from '@/lib/supabase/server';
-import { buildReportCard } from '@/lib/report-card/build-report-card';
+import {
+  buildReportCard,
+  type PreloadedCalendarDates,
+} from '@/lib/report-card/build-report-card';
+import { getEncodableDatesForTerm } from '@/lib/attendance/calendar';
+import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { ReportCardDocument } from '@/components/report-card/report-card-document';
 import { PrintButton } from '../../../[studentId]/print-button';
 import { AutoPrintTrigger } from './auto-print-trigger';
@@ -67,24 +72,28 @@ export default async function SectionPrintPage({
     : section.academic_year;
   const level = Array.isArray(section.level) ? section.level[0] : section.level;
 
-  // Parallelize: current-term lookup + roster are independent once ay.id is known.
-  const [{ data: currentTermRow }, { data: enrolments }] = await Promise.all([
-    supabase
-      .from('terms')
-      .select('term_number')
-      .eq('academic_year_id', ay.id)
-      .eq('is_current', true)
-      .maybeSingle(),
-    supabase
-      .from('section_students')
-      .select(
-        `id, index_number, enrollment_status,
+  // Parallelize: current-term lookup + roster + this AY's term ids are all
+  // independent once ay.id is known. The term-id list feeds the shared
+  // calendar-dates preload below (Finding L-B/6).
+  const [{ data: currentTermRow }, { data: enrolments }, { data: ayTerms }] =
+    await Promise.all([
+      supabase
+        .from('terms')
+        .select('term_number')
+        .eq('academic_year_id', ay.id)
+        .eq('is_current', true)
+        .maybeSingle(),
+      supabase
+        .from('section_students')
+        .select(
+          `id, index_number, enrollment_status,
          student:students!inner(id, last_name, first_name, middle_name, student_number)`
-      )
-      .eq('section_id', sectionId)
-      .in('enrollment_status', ['active', 'late_enrollee'])
-      .order('index_number'),
-  ]);
+        )
+        .eq('section_id', sectionId)
+        .in('enrollment_status', ['active', 'late_enrollee'])
+        .order('index_number'),
+      supabase.from('terms').select('id').eq('academic_year_id', ay.id),
+    ]);
 
   const parsedTerm = termParam ? parseInt(termParam, 10) : NaN;
   const viewingTermNumber = (
@@ -100,6 +109,31 @@ export default async function SectionPrintPage({
     })
     .filter((id): id is string => typeof id === 'string');
 
+  // Every student built below is drawn from THIS section's active roster
+  // (the query above), so buildReportCard's internal primary-enrolment
+  // tie-break (active/late_enrollee always outranks withdrawn) resolves
+  // every one of them back to this same section — meaning they all share
+  // this section's level, and therefore the same per-term encodable-date
+  // set. Resolve it here ONCE so every buildReportCard call below reuses it
+  // instead of each independently re-querying the same (term, levelType)
+  // calendar rows (Finding L-B/6 — query-count reduction only, the resolved
+  // dates are identical to what each per-student call would have fetched).
+  const preloadedCalendar: PreloadedCalendarDates = {
+    byTermAndLevel: new Map(),
+  };
+  if (studentIds.length > 0 && ayTerms && ayTerms.length > 0) {
+    const levelType = levelTypeForAudienceLookup(level.code);
+    await Promise.all(
+      ayTerms.map(async (t) => {
+        const dates = await getEncodableDatesForTerm(t.id, levelType);
+        preloadedCalendar.byTermAndLevel.set(
+          `${t.id}:${levelType ?? 'none'}`,
+          dates
+        );
+      })
+    );
+  }
+
   // Build all report-card payloads in parallel. Postgres pool handles
   // 50 concurrent reads easily; serial execution was the bottleneck at
   // section size 40-50 (4-8× slower than parallel). Skip silently on
@@ -107,7 +141,7 @@ export default async function SectionPrintPage({
   const cards = (
     await Promise.all(
       studentIds.map(async (id) => {
-        const result = await buildReportCard(supabase, id);
+        const result = await buildReportCard(supabase, id, preloadedCalendar);
         return result.ok ? { studentId: id, payload: result.payload } : null;
       })
     )

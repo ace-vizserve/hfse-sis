@@ -107,9 +107,30 @@ const first = <T>(v: T | T[] | null): T | null =>
 
 const empty: Cell = { quarterly: null, letter: null, is_na: false };
 
+// Batch-print optimisation: the section batch-print page
+// (app/(markbook)/markbook/report-cards/section/[sectionId]/print) calls
+// buildReportCard once per student in the SAME section — every one of those
+// students shares the same level, and `getEncodableDatesForTerm` doesn't
+// vary by student, only by (term, levelType). Passing a pre-fetched map here
+// lets a batch caller resolve each (term, levelType) pair's encodable dates
+// ONCE and reuse them across every buildReportCard call in the batch,
+// instead of this function's internal per-student N-term fan-out repeating
+// identical calendar queries. Optional — when omitted, behavior (and query
+// count) for a single-student build is byte-identical to before this
+// parameter existed. Mirrors the `PreloadedSyncSnapshot` pattern in
+// lib/sync/students.ts (a request-scoped object passed by the caller, never
+// a module-level/global cache).
+export type PreloadedCalendarDates = {
+  // Keyed by `${termId}:${levelType ?? 'none'}` — matches exactly how this
+  // function itself derives its cache key below, so a set of dates fetched
+  // for one levelType is never mistakenly reused for another.
+  byTermAndLevel: Map<string, string[]>;
+};
+
 export async function buildReportCard(
   supabase: SupabaseClient,
-  studentId: string
+  studentId: string,
+  preloadedCalendar?: PreloadedCalendarDates
 ): Promise<
   | { ok: true; payload: ReportCardPayload }
   | { ok: false; error: BuildReportCardError }
@@ -466,8 +487,15 @@ export async function buildReportCard(
   const calendarDatesByTerm = new Map<string, string[]>();
   await Promise.all(
     termList.map(async (t) => {
+      const cacheKey = `${t.id}:${levelType ?? 'none'}`;
+      const cached = preloadedCalendar?.byTermAndLevel.get(cacheKey);
+      if (cached) {
+        calendarDatesByTerm.set(t.id, cached);
+        return;
+      }
       const dates = await getEncodableDatesForTerm(t.id, levelType);
       calendarDatesByTerm.set(t.id, dates);
+      preloadedCalendar?.byTermAndLevel.set(cacheKey, dates);
     })
   );
 

@@ -84,19 +84,13 @@ export function ReportCardLetterhead({ config }: { config: SchoolConfig }) {
         )}
         {showPei && (
           <>
-            <p
-              className="text-[10px] leading-tight"
-              style={{ color: 'rgba(255,255,255,0.92)' }}
-            >
+            <p className="text-[10px] leading-tight text-white/90">
               {config.peiRegistrationNumber && (
                 <>PEI Registration No. {config.peiRegistrationNumber}</>
               )}
             </p>
 
-            <p
-              className="text-[10px] leading-tight"
-              style={{ color: 'rgba(255,255,255,0.92)' }}
-            >
+            <p className="text-[10px] leading-tight text-white/90">
               {peiPeriod && <>Registration Period: {peiPeriod}</>}
             </p>
           </>

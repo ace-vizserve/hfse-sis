@@ -6,6 +6,7 @@ import { applyDateRangeFilter } from '@/lib/dashboard/drill-range';
 import { sgToday } from '@/lib/dates';
 import { resolveCurrentTerm } from '@/lib/sis/current-term';
 import { createServiceClient } from '@/lib/supabase/service';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 
 // Evaluation drill primitives — single row shape (WriteupRow). Simpler than
 // Markbook/Attendance because the underlying table is uniform.
@@ -245,13 +246,17 @@ async function loadWriteupRowsUncached(ayCode: string): Promise<WriteupRow[]> {
     }
   }
 
-  const { data: writeupsRows } = await service
-    .from('evaluation_writeups')
-    .select(
-      'id, student_id, section_id, term_id, writeup, submitted, submitted_at, created_at, updated_at'
-    )
-    .in('term_id', termIds);
-  const writeups = (writeupsRows ?? []) as WriteupRecord[];
+  // Paginated around PostgREST's 1000-row cap — ~490 enrolled students ×
+  // 3 terms (T1-T3, T4 excluded per KD #49) routinely exceeds it.
+  const writeups = await fetchAllPages<WriteupRecord>((from, to) =>
+    service
+      .from('evaluation_writeups')
+      .select(
+        'id, student_id, section_id, term_id, writeup, submitted, submitted_at, created_at, updated_at'
+      )
+      .in('term_id', termIds)
+      .range(from, to)
+  );
   // Writeup uniqueness in DB is (term_id, student_id) per migration 018 —
   // key the lookup map by student id, not section_student id, so the join
   // below resolves correctly.
@@ -290,8 +295,12 @@ async function loadWriteupRowsUncached(ayCode: string): Promise<WriteupRow[]> {
         writeupKey(sectionStudent.student_id, term.id)
       );
       const draftLen = (w?.writeup ?? '').trim().length;
+      // KD #120: 'submitted' requires the submitted flag AND non-empty content
+      // — an emptied-but-still-submitted write-up reads as 'missing' (matches
+      // the KPI numerator in lib/evaluation/dashboard.ts::kpisFrom, the chase
+      // loader below, and publish-readiness; count == drill per KD #124).
       let status: WriteupRow['status'] = 'missing';
-      if (w?.submitted) status = 'submitted';
+      if (w?.submitted && draftLen > 0) status = 'submitted';
       else if (draftLen > 0) status = 'draft';
 
       let daysToSubmit: number | null = null;

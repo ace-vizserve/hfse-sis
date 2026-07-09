@@ -2,7 +2,11 @@ import { unstable_cache } from 'next/cache';
 
 import { applyDateRangeFilter } from '@/lib/dashboard/drill-range';
 import { prefixFor } from '@/lib/admissions/_shared';
-import { STAGE_COLUMN_MAP, STAGE_KEYS } from '@/lib/schemas/sis';
+import {
+  STAGE_COLUMN_MAP,
+  STAGE_KEYS,
+  isActiveFunnelStatus,
+} from '@/lib/schemas/sis';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 
@@ -556,15 +560,13 @@ export function applyTargetFilter(
       return funnelOnly.filter((r) => r.level === segment);
     }
     case 'outdated':
-      // Outdated = stale & active (≥7 days since update, status not closed).
+      // Outdated = stale & in the active funnel. Same scope predicate as
+      // getOutdatedApplications (the dashboard count) and the
+      // /admissions/applications list — shared isActiveFunnelStatus, so the
+      // drill rows always equal the count (count == drill, KD #124). Kept
+      // tiers: never-updated (null) / >= 7 days = STALENESS_FOLLOW_UP_VALUES.
       return rows.filter((r) => {
-        const closed = [
-          'Enrolled',
-          'Enrolled (Conditional)',
-          'Cancelled',
-          'Withdrawn',
-        ].includes(r.status);
-        if (closed) return false;
+        if (!isActiveFunnelStatus(r.status)) return false;
         return r.daysSinceUpdate === null || r.daysSinceUpdate >= 7;
       });
     default:

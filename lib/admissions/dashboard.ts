@@ -12,6 +12,12 @@ import {
   type RangeResult,
 } from '@/lib/dashboard/range';
 import type { VelocityPoint } from '@/lib/dashboard/velocity';
+import {
+  daysSinceUpdate as stalenessDaysSinceUpdate,
+  isFollowUpStaleness,
+  stalenessLabel,
+} from '@/lib/admissions/staleness';
+import { isActiveFunnelStatus } from '@/lib/schemas/sis';
 
 // Sprint 7 Part A — read-only admissions analytics.
 //
@@ -347,13 +353,18 @@ export type OutdatedRow = {
   daysInPipeline: number;
 };
 
-// Spec §1.2 uses a blocklist (`NOT IN ('Enrolled', 'Cancelled', 'Withdrawn')`)
-// rather than an allowlist. This matters: rows with NULL applicationStatus
-// and any future intermediate status (e.g. "Ready for Assessment") stay in
-// scope automatically. The freshness cutoff of 7 days comes from the same
-// section of the spec — this function only returns genuinely outdated rows.
-const INACTIVE_STATUSES = new Set(['Enrolled', 'Cancelled', 'Withdrawn']);
-const STALE_DAY_THRESHOLD = 7;
+// Scope: exactly the population the /admissions/applications list shows —
+// the shared isActiveFunnelStatus predicate (Submitted / Ongoing
+// Verification / Processing; trimmed, NULL excluded; lib/schemas/sis.ts).
+// The dashboard's "needs follow-up" insight deep-links into that list, so
+// the count must be computed over the same rows (count == drill, KD #124).
+// This supersedes the original spec-§1.2 blocklist (`NOT IN
+// Enrolled/Cancelled/Withdrawn`), which also kept 'Enrolled (Conditional)'
+// + NULL-status rows the destination list never shows — following up on a
+// conditional enrollee is a Records/lifecycle workflow, not application
+// chasing. The staleness cutoff likewise comes from the shared tier helpers
+// in lib/admissions/staleness.ts: this function keeps exactly the
+// STALENESS_FOLLOW_UP_VALUES tiers (Warning / Critical / Never updated).
 
 export async function getOutdatedApplications(
   ayCode: string
@@ -364,24 +375,20 @@ export async function getOutdatedApplications(
   for (const r of rows) {
     if (!r.enroleeNumber) continue;
     const status = (r.applicationStatus ?? '').trim();
-    if (INACTIVE_STATUSES.has(status)) continue;
+    if (!isActiveFunnelStatus(status)) continue;
 
     const created = r.created_at ? Date.parse(r.created_at) : NaN;
-    const updated = r.applicationUpdatedDate
-      ? Date.parse(r.applicationUpdatedDate)
-      : NaN;
-
-    const daysSinceUpdate = Number.isNaN(updated)
-      ? null
-      : Math.floor((today.getTime() - updated) / (1000 * 60 * 60 * 24));
     const daysInPipeline = Number.isNaN(created)
       ? 0
       : Math.floor((today.getTime() - created) / (1000 * 60 * 60 * 24));
 
-    // Spec-faithful freshness cutoff: keep rows where applicationUpdatedDate
-    // is NULL (most urgent) or ≥ 7 days old. Fresh rows are dropped.
-    if (daysSinceUpdate !== null && daysSinceUpdate < STALE_DAY_THRESHOLD)
-      continue;
+    // Shared staleness predicate (lib/admissions/staleness.ts): keep rows
+    // whose tier is in STALENESS_FOLLOW_UP_VALUES — Warning (≥7d), Critical
+    // (≥14d), and Never updated (NULL applicationUpdatedDate, most urgent).
+    // Fresh rows (<7d) are dropped. Same tier computation as the
+    // applications-table staleness column, so count == deep-link.
+    const daysSinceUpdate = stalenessDaysSinceUpdate(r.applicationUpdatedDate);
+    if (!isFollowUpStaleness(stalenessLabel(daysSinceUpdate))) continue;
 
     out.push({
       enroleeNumber: r.enroleeNumber,

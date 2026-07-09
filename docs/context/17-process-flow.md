@@ -15,7 +15,7 @@
 
 ## Why this doc exists
 
-After the SIS-first docs realignment, the product's shape is clear: four modules, one student record, lifecycle implicit in the existing admissions stage pipeline. What's missing is **observability** (seeing where a student is across all modules in one view) and **gentle guidance** (checklist-style hints on what needs to happen before advancing a stage). This is different from Records, P-Files, Markbook, or Attendance — it's not a new module, it's how the modules **connect as a process**.
+After the SIS-first docs realignment, the product's shape is clear: seven modules (Markbook, Attendance, Evaluation, P-Files, Records, Admissions, SIS Admin — see `14-modules-overview.md`), one student record, lifecycle implicit in the existing admissions stage pipeline. What's missing is **observability** (seeing where a student is across all modules in one view) and **gentle guidance** (checklist-style hints on what needs to happen before advancing a stage). This is different from Records, P-Files, Markbook, or Attendance — it's not a new module, it's how the modules **connect as a process**.
 
 Positioning: cross-cutting design concern, similar in spirit to `11-performance-patterns.md`. Not its own route group; enhances Records + adds one cross-module view.
 

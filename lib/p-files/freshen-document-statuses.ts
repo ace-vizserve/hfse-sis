@@ -21,7 +21,14 @@ import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 // Each call runs 16 parallel idempotent UPDATEs (8 expiring slots × 2
 // directions):
 //   • expire:  `<slot>Status = 'Valid'`   AND `<slot>Expiry <= today` → 'Expired'
-//   • revive:  `<slot>Status = 'Expired'` AND `<slot>Expiry >= today` → 'Valid'
+//   • revive:  `<slot>Status = 'Expired'` AND `<slot>Expiry >  today` → 'Valid'
+//
+// The boundary day belongs unambiguously to "expired": expire is inclusive
+// (`<= today`) and revive is strictly greater-than (`> today`). Both
+// inclusive would let a document expiring exactly today satisfy BOTH
+// predicates, so successive runs would flip it Valid↔Expired all day,
+// polluting the audit log and flickering the chase queue. Matches
+// `resolveStatus`'s stored-'Expired'-is-authoritative semantics.
 //
 // The revive direction is a backstop for cases where a future-dated expiry
 // lands on a row whose status wasn't updated alongside it (e.g. parent-portal
@@ -95,10 +102,13 @@ async function freshenAyDocumentsUncached(
           .eq(slot.statusCol, direction === 'expire' ? 'Valid' : 'Expired')
           .not(slot.expiryCol!, 'is', null);
 
+        // Boundary rule: expiry === today is EXPIRED (expire pass inclusive,
+        // revive pass strictly `>` — see module header). Never make both
+        // inclusive: a doc expiring today would oscillate Valid↔Expired.
         const { data, error } =
           direction === 'expire'
             ? await query.lte(slot.expiryCol!, today).select('enroleeNumber')
-            : await query.gte(slot.expiryCol!, today).select('enroleeNumber');
+            : await query.gt(slot.expiryCol!, today).select('enroleeNumber');
 
         if (error) {
           console.warn(

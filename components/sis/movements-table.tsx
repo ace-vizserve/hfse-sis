@@ -99,7 +99,8 @@ function buildColumns(
     {
       id: 'reason',
       // Expose the human-readable reason label for facet filtering.
-      // Non-withdrawn rows expose '' so the facet's showUnassigned bucket catches them.
+      // Non-withdrawn rows expose '' — it never matches any of the facet's
+      // valueOptions, so selecting a Reason filter naturally excludes them.
       accessorFn: (r) => {
         if (r.kind !== 'withdrawn') return '';
         const w = r as Extract<MovementEvent, { kind: 'withdrawn' }>;
@@ -260,7 +261,6 @@ export function MovementsTable({ events, ayCode, includeAllAYs }: Props) {
       columnId: string;
       label: string;
       valueOptions?: string[];
-      showUnassigned?: boolean;
     }> = [
       { columnId: 'level', label: 'Level' },
       { columnId: 'term', label: 'Term' },

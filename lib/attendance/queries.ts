@@ -1,6 +1,13 @@
 import { createServiceClient } from '@/lib/supabase/service';
 
-import type { AttendanceStatus, ExReason } from '@/lib/schemas/attendance';
+import {
+  isEncodableDayType,
+  type Audience,
+  type AttendanceStatus,
+  type DayType,
+  type ExReason,
+} from '@/lib/schemas/attendance';
+import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 
 // Attendance module — server-side read helpers.
@@ -323,15 +330,58 @@ export type MonthlyBreakdownRow = {
   pct: number | null;
 };
 
+// Pure seam (exported for unit tests): count encodable school days per month
+// (yyyy-MM) from raw `school_calendar` rows, applying the KD #50/#76
+// audience-precedence rule — exactly ONE row per date, the level-specific
+// override beating the `'all'` baseline. Without the dedupe, a date carrying
+// BOTH an `'all'` row and an audience-specific row (unique key is
+// `(term_id, audience, date)`, migration 037) counted twice and deflated the
+// monthly %. Encodable = `isEncodableDayType` (school_day / hbl / HBL-overlaid
+// school_holiday, KD #98).
+//
+// Callers must pre-filter the rows to `audience IN ('all', <levelType>)` —
+// any non-'all' row seen here is assumed to be the student's own audience.
+export type CalendarDayLite = {
+  date: string; // yyyy-MM-dd
+  audience: Audience;
+  day_type: DayType;
+  hbl_overlay: boolean | null;
+};
+
+export function countSchoolDaysByMonth(
+  rows: CalendarDayLite[]
+): Map<string, number> {
+  const byDate = new Map<string, CalendarDayLite>();
+  for (const r of rows) {
+    const cur = byDate.get(r.date);
+    if (!cur) {
+      byDate.set(r.date, r);
+      continue;
+    }
+    // Specific audience wins over the 'all' baseline (KD #50 read rule).
+    if (cur.audience === 'all' && r.audience !== 'all') byDate.set(r.date, r);
+  }
+  const out = new Map<string, number>();
+  for (const [date, r] of byDate.entries()) {
+    if (!isEncodableDayType(r.day_type, r.hbl_overlay ?? false)) continue;
+    const month = date.slice(0, 7);
+    out.set(month, (out.get(month) ?? 0) + 1);
+  }
+  return out;
+}
+
 // Computes monthly breakdown from the latest-per-(date,period_id) rows in
 // `attendance_daily`. Pass `termId` to scope; otherwise covers all terms.
 //
 // `schoolDays` per month is the count of encodable days from
-// `school_calendar` (`day_type IN ('school_day', 'hbl')`) — NOT the count
-// of days the student has rows for. Rows-based counting under-reports
-// when entries are missing (late enrollee, ungraded days, etc.). The
-// calendar is the source of truth for "how many school days were there
-// this month"; entries tell us "how many of those the student attended".
+// `school_calendar` — NOT the count of days the student has rows for.
+// Rows-based counting under-reports when entries are missing (late
+// enrollee, ungraded days, etc.). The calendar is the source of truth for
+// "how many school days were there this month"; entries tell us "how many
+// of those the student attended". Audience precedence (KD #50/#76) is
+// applied via `countSchoolDaysByMonth`, with the student's level type
+// resolved from their section; rows are scoped to the section's AY terms
+// so an overlapping test-AY calendar can't double-count dates.
 //
 // Pct is calendar-based: present / schoolDays. Days without entries
 // drag the percentage down — that's the intended signal so missing
@@ -357,9 +407,7 @@ export async function getMonthlyBreakdown(
   }
 
   // Calendar-based schoolDays per month. Range = first of earliest month
-  // seen → last of latest month seen. Encodable day_types only —
-  // public_holiday / school_holiday / no_class don't count toward
-  // schoolDays per migration 019 (KD #50).
+  // seen → last of latest month seen.
   const months = Array.from(byMonth.keys()).sort();
   const [latestY, latestM] = months[months.length - 1].split('-').map(Number);
   const startDate = `${months[0]}-01`;
@@ -367,18 +415,61 @@ export async function getMonthlyBreakdown(
   const endDate = `${months[months.length - 1]}-${String(lastDayOfLatest).padStart(2, '0')}`;
 
   const service = createServiceClient();
-  const { data: calRows } = await service
+
+  // Resolve the student's section → level type (for audience precedence) and
+  // the section's AY term ids (so we never count another AY's calendar rows
+  // for the same dates — test AYs share the current calendar year).
+  let levelType: 'primary' | 'secondary' | null = null;
+  let ayTermIds: string[] | null = null;
+  {
+    const { data: enr } = await service
+      .from('section_students')
+      .select('section_id, sections!inner(level_id, academic_year_id)')
+      .eq('id', sectionStudentId)
+      .maybeSingle();
+    type EnrJoin = {
+      sections:
+        | { level_id: string | null; academic_year_id: string | null }
+        | Array<{ level_id: string | null; academic_year_id: string | null }>
+        | null;
+    };
+    const joined = (enr as EnrJoin | null)?.sections ?? null;
+    const sec = Array.isArray(joined) ? joined[0] : joined;
+    if (sec?.level_id) {
+      const { data: levelRow } = await service
+        .from('levels')
+        .select('code')
+        .eq('id', sec.level_id)
+        .maybeSingle();
+      levelType = levelTypeForAudienceLookup(
+        (levelRow?.code as string | undefined) ?? null
+      );
+    }
+    if (sec?.academic_year_id && !termId) {
+      const { data: termRows } = await service
+        .from('terms')
+        .select('id')
+        .eq('academic_year_id', sec.academic_year_id);
+      ayTermIds = ((termRows ?? []) as Array<{ id: string }>).map((t) => t.id);
+    }
+  }
+
+  // Preschool (levelType null) reads only 'all' rows per KD #50.
+  const audiences: Audience[] = levelType ? ['all', levelType] : ['all'];
+  let calQuery = service
     .from('school_calendar')
-    .select('date')
+    .select('date, audience, day_type, hbl_overlay')
     .gte('date', startDate)
     .lte('date', endDate)
-    .in('day_type', ['school_day', 'hbl']);
+    .in('audience', audiences);
+  if (termId) calQuery = calQuery.eq('term_id', termId);
+  else if (ayTermIds && ayTermIds.length > 0)
+    calQuery = calQuery.in('term_id', ayTermIds);
+  const { data: calRows } = await calQuery;
 
-  const calByMonth = new Map<string, number>();
-  for (const row of (calRows ?? []) as Array<{ date: string }>) {
-    const month = row.date.slice(0, 7);
-    calByMonth.set(month, (calByMonth.get(month) ?? 0) + 1);
-  }
+  const calByMonth = countSchoolDaysByMonth(
+    (calRows ?? []) as CalendarDayLite[]
+  );
 
   const rows: MonthlyBreakdownRow[] = [];
   for (const [month, counts] of byMonth.entries()) {

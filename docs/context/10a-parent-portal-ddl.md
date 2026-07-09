@@ -6,6 +6,8 @@ Frozen copy of the admissions table definitions, as of 2026-05-15, pulled from t
 
 **Changes since 2026-04-20:** `"stpApplicationStatus" text` column + its 4-value CHECK constraint added to `enrolment_applications`; `capture_doc_revision_trigger` body documented on `enrolment_documents`.
 
+**Changes since 2026-05-15 (2026-07, not independently re-verified live — added per operator report):** three columns added to `enrolment_applications` directly on the admissions Supabase project, outside any migration: `"preferredPaymentScheme" text` (∈ Annual (Full Payment) / Quarterly Payment / Monthly Payment), `"preferredPaymentMethod" text` (∈ Bank Transfer / GIRO / Credit/Debit Card Payment), `"marketingReferrerName" text` (the referral person's name when `howDidYouKnowAboutHFSEIS = 'Referral'`). Healed onto every existing AY table + added to `create_ay_admissions_tables` by migration 076 (`supabase/migrations/076_payment_preference_referral_columns.sql`); surfaced read-only on the SIS Profile tab (`lib/schemas/sis.ts::PREFERRED_PAYMENT_SCHEME_OPTIONS` / `PREFERRED_PAYMENT_METHOD_OPTIONS`).
+
 Column name identifiers are quoted camelCase. This is what PostgREST returns when you `.select('*')` from these tables in JavaScript; the Supabase JS client handles the quoting automatically in both `.select()` and `.or()` filter strings.
 
 ## Notes on the two `applicationStatus` columns
@@ -167,6 +169,9 @@ create table public.ay2026_enrolment_applications (
   "referrerName" text null,
   "paymentOption" text null,
   "referrerMobile" text null,
+  "marketingReferrerName" text null,                         -- added out-of-band, docs updated 2026-07 (migration 076 heal)
+  "preferredPaymentScheme" text null,                        -- added out-of-band, docs updated 2026-07 (migration 076 heal)
+  "preferredPaymentMethod" text null,                        -- added out-of-band, docs updated 2026-07 (migration 076 heal)
   "contractSignatory" text null,
   "vizSchoolProgram" text null,
   "feedbackRating" smallint null,

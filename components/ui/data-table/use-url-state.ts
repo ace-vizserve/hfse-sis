@@ -80,26 +80,32 @@ export function useUrlState(config: UrlStateConfig) {
 
   const write = useCallback(
     (
-      snapshot: UrlStateSnapshot,
+      // A debounced caller can pass a THUNK so the snapshot is resolved at
+      // fire time, not schedule time — page/pageSize must reflect the state
+      // AFTER the shell's "filter change resets to page 1" effect has run,
+      // never a value captured ~300ms earlier.
+      snapshot: UrlStateSnapshot | (() => UrlStateSnapshot),
       { debounce = false }: { debounce?: boolean } = {}
     ) => {
       if (!enabled) return;
       const apply = () => {
+        debounceRef.current = null;
+        const snap = typeof snapshot === 'function' ? snapshot() : snapshot;
         const next = new URLSearchParams(params?.toString() ?? '');
         const set = (k: string, v: string | undefined) => {
           if (v === undefined || v === '') next.delete(k);
           else next.set(k, v);
         };
-        set(searchKey, snapshot.search);
-        set(statusKey, snapshot.status);
-        set(mineKey, snapshot.mine ? '1' : undefined);
+        set(searchKey, snap.search);
+        set(statusKey, snap.status);
+        set(mineKey, snap.mine ? '1' : undefined);
         set(
           key('page', namespace),
-          snapshot.page && snapshot.page > 1 ? String(snapshot.page) : undefined
+          snap.page && snap.page > 1 ? String(snap.page) : undefined
         );
         set(
           key('pageSize', namespace),
-          snapshot.pageSize ? String(snapshot.pageSize) : undefined
+          snap.pageSize ? String(snap.pageSize) : undefined
         );
         const reserved = new Set([
           searchKey,
@@ -114,7 +120,7 @@ export function useUrlState(config: UrlStateConfig) {
           if (!namespace && k.includes('.')) continue;
           next.delete(k);
         }
-        for (const [k, vs] of Object.entries(snapshot.facets)) {
+        for (const [k, vs] of Object.entries(snap.facets)) {
           if (vs.length === 0) continue;
           next.set(key(k, namespace), vs.join(','));
         }
@@ -124,6 +130,14 @@ export function useUrlState(config: UrlStateConfig) {
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(apply, debounceMs);
       } else {
+        // A non-debounced write carries the FULL current snapshot (the
+        // shell's immediate-write effect includes search too) — cancel any
+        // pending debounced write so its stale snapshot can't clobber this
+        // one when the timer fires.
+        if (debounceRef.current) {
+          clearTimeout(debounceRef.current);
+          debounceRef.current = null;
+        }
         apply();
       }
     },

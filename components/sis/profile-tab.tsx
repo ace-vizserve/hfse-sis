@@ -11,7 +11,11 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import type { ProfileUpdateInput } from '@/lib/schemas/sis';
+import {
+  paymentMethodLabel,
+  paymentSchemeLabel,
+  type ProfileUpdateInput,
+} from '@/lib/schemas/sis';
 import { isFieldEmpty } from '@/lib/sis/field-helpers';
 import type { ApplicationRow } from '@/lib/sis/queries';
 import { cn } from '@/lib/utils';
@@ -76,12 +80,40 @@ export function ProfileTab({ app, ayCode, enroleeNumber }: Props) {
     previousSchool: app.previousSchool,
     howDidYouKnowAboutHFSEIS: app.howDidYouKnowAboutHFSEIS,
     otherSource: app.otherSource,
+    marketingReferrerName: app.marketingReferrerName,
     referrerName: app.referrerName,
     referrerMobile: app.referrerMobile,
     contractSignatory: app.contractSignatory,
+    preferredPaymentScheme: app.preferredPaymentScheme,
+    preferredPaymentMethod: app.preferredPaymentMethod,
     discount1: app.discount1,
     discount2: app.discount2,
     discount3: app.discount3,
+    siblingFullName1: app.siblingFullName1,
+    siblingBirthDay1: app.siblingBirthDay1,
+    siblingReligion1: app.siblingReligion1,
+    siblingEducationOccupation1: app.siblingEducationOccupation1,
+    siblingSchoolCompany1: app.siblingSchoolCompany1,
+    siblingFullName2: app.siblingFullName2,
+    siblingBirthDay2: app.siblingBirthDay2,
+    siblingReligion2: app.siblingReligion2,
+    siblingEducationOccupation2: app.siblingEducationOccupation2,
+    siblingSchoolCompany2: app.siblingSchoolCompany2,
+    siblingFullName3: app.siblingFullName3,
+    siblingBirthDay3: app.siblingBirthDay3,
+    siblingReligion3: app.siblingReligion3,
+    siblingEducationOccupation3: app.siblingEducationOccupation3,
+    siblingSchoolCompany3: app.siblingSchoolCompany3,
+    siblingFullName4: app.siblingFullName4,
+    siblingBirthDay4: app.siblingBirthDay4,
+    siblingReligion4: app.siblingReligion4,
+    siblingEducationOccupation4: app.siblingEducationOccupation4,
+    siblingSchoolCompany4: app.siblingSchoolCompany4,
+    siblingFullName5: app.siblingFullName5,
+    siblingBirthDay5: app.siblingBirthDay5,
+    siblingReligion5: app.siblingReligion5,
+    siblingEducationOccupation5: app.siblingEducationOccupation5,
+    siblingSchoolCompany5: app.siblingSchoolCompany5,
   };
 
   const identityFields: Field[] = [
@@ -114,6 +146,14 @@ export function ProfileTab({ app, ayCode, enroleeNumber }: Props) {
     { label: 'Preferred schedule', value: app.preferredSchedule },
     { label: 'Class type', value: app.classType },
     { label: 'Payment option', value: app.paymentOption },
+    {
+      label: 'Payment scheme',
+      value: paymentSchemeLabel(app.preferredPaymentScheme),
+    },
+    {
+      label: 'Payment method',
+      value: paymentMethodLabel(app.preferredPaymentMethod),
+    },
     { label: 'School bus', value: app.availSchoolBus },
     { label: 'Student care', value: app.availStudentCare },
     { label: 'Student care program', value: app.studentCareProgram },
@@ -133,8 +173,12 @@ export function ProfileTab({ app, ayCode, enroleeNumber }: Props) {
     { label: 'Previous school', value: app.previousSchool },
     { label: 'Referral source', value: app.howDidYouKnowAboutHFSEIS },
     { label: 'Other source', value: app.otherSource },
-    { label: 'Referrer name', value: app.referrerName },
-    { label: 'Referrer mobile', value: app.referrerMobile },
+    // "How did you know about HFSE" attribution — distinct from the
+    // referrerName/referrerMobile pair below, which is a discount-code
+    // referral (unrelated concept).
+    { label: 'Referral name', value: app.marketingReferrerName },
+    { label: 'Referrer name (discount code)', value: app.referrerName },
+    { label: 'Referrer mobile (discount code)', value: app.referrerMobile },
     { label: 'Contract signatory', value: app.contractSignatory },
   ];
 

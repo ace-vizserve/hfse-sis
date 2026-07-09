@@ -325,11 +325,26 @@ export type SyncOneResult = {
   error?: string;
 };
 
+// AY-invariant lookup tables a bulk caller can fetch ONCE and pass to every
+// syncOneStudent call in the run. Both arrays are identical across every
+// student in a batch (levels is global; sections is per-AY), so re-fetching
+// them per student in the bulk auto-sync was O(N) redundant full-table reads.
+// Shapes match what syncOneStudent derives internally: `sections` is the
+// post-join mapping WITHOUT the joined `academic_year` object.
+export type PreloadedSyncSnapshot = {
+  levels: LevelRow[];
+  sections: SectionRow[]; // only sections for the target academic year
+};
+
 export async function syncOneStudent(
   service: SupabaseClient,
   admissions: SupabaseClient,
   enroleeNumber: string,
-  ayCode: string
+  ayCode: string,
+  // Optional bulk-run optimisation: when provided, the `levels` and
+  // `sections` fetches below are skipped and these arrays are used instead.
+  // When omitted, behavior is identical to before this parameter existed.
+  preloaded?: PreloadedSyncSnapshot
 ): Promise<SyncOneResult> {
   try {
     const year = ayCode.replace(/^AY/i, '').toLowerCase();
@@ -442,36 +457,53 @@ export async function syncOneStudent(
     //    independent (levels + student + sections-joined-to-ay), so firing
     //    them together cuts round-trips from ~4 sequential to 1 Promise.all
     //    + 1 follow-up for enrolments (Sprint 14.5 fix).
-    const [levelsRes, studentRes, sectionsRes] = await Promise.all([
-      service.from('levels').select('id, label'),
-      service
-        .from('students')
-        .select('id, student_number, last_name, first_name, middle_name')
-        .eq('student_number', app.studentNumber)
-        .maybeSingle(),
-      service
-        .from('sections')
-        .select(
-          'id, level_id, name, academic_year:academic_years!inner(ay_code)'
-        )
-        .eq('academic_year.ay_code', ayCode),
-    ]);
-
+    //
+    //    When a bulk caller passes `preloaded` (levels + per-AY sections are
+    //    identical across every student in a run), only the per-student
+    //    `students` row is fetched here.
     type SectionJoin = {
       id: string;
       level_id: string;
       name: string;
       academic_year: { ay_code: string } | { ay_code: string }[] | null;
     };
-    const sections = ((sectionsRes.data ?? []) as SectionJoin[]).map((s) => ({
-      id: s.id,
-      level_id: s.level_id,
-      name: s.name,
-    }));
-    const levels = (levelsRes.data ?? []) as Array<{
-      id: string;
-      label: string;
-    }>;
+
+    const studentQuery = service
+      .from('students')
+      .select('id, student_number, last_name, first_name, middle_name')
+      .eq('student_number', app.studentNumber)
+      .maybeSingle();
+
+    let levels: LevelRow[];
+    let sections: SectionRow[];
+    let studentRes: Awaited<typeof studentQuery>;
+
+    if (preloaded) {
+      levels = preloaded.levels;
+      sections = preloaded.sections;
+      studentRes = await studentQuery;
+    } else {
+      const [levelsRes, sRes, sectionsRes] = await Promise.all([
+        service.from('levels').select('id, label'),
+        studentQuery,
+        service
+          .from('sections')
+          .select(
+            'id, level_id, name, academic_year:academic_years!inner(ay_code)'
+          )
+          .eq('academic_year.ay_code', ayCode),
+      ]);
+      studentRes = sRes;
+      sections = ((sectionsRes.data ?? []) as SectionJoin[]).map((s) => ({
+        id: s.id,
+        level_id: s.level_id,
+        name: s.name,
+      }));
+      levels = (levelsRes.data ?? []) as Array<{
+        id: string;
+        label: string;
+      }>;
+    }
 
     const studentRow = studentRes.data as null | {
       id: string;

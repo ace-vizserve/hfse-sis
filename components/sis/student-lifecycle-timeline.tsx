@@ -13,6 +13,10 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  BUCKET_FILL as BUCKET_DOT,
+  BUCKET_LABEL,
+} from '@/components/sis/stage-bucket-visuals';
 import { cn } from '@/lib/utils';
 import type { EnrollmentHistoryEntry } from '@/lib/sis/queries';
 import type {
@@ -22,9 +26,12 @@ import type {
 } from '@/lib/sis/process';
 
 // ──────────────────────────────────────────────────────────────────────────
-// Bucket → ChartLegendChip + dot color tables. The chip carries the bucket
-// label across the rest of the app's visual language; the dot on the rail is
-// just the chip's gradient compressed to a 12px disc.
+// Bucket → ChartLegendChip color table. The chip carries the bucket label
+// across the rest of the app's visual language. The rail dot's fill +
+// BUCKET_LABEL now come from the shared components/sis/stage-bucket-visuals
+// module (design system §10.2 single source of truth) — the applications
+// pipeline strip reads the exact same map so a segment and this rail dot can
+// never render a bucket differently.
 // ──────────────────────────────────────────────────────────────────────────
 
 const BUCKET_CHIP_COLOR: Record<StageStatusBucket, ChartLegendChipColor> = {
@@ -32,24 +39,6 @@ const BUCKET_CHIP_COLOR: Record<StageStatusBucket, ChartLegendChipColor> = {
   in_progress: 'primary',
   blocked: 'very-stale',
   not_started: 'neutral',
-};
-
-const BUCKET_LABEL: Record<StageStatusBucket, string> = {
-  done: 'Done',
-  in_progress: 'In progress',
-  blocked: 'Blocked',
-  not_started: 'Not started',
-};
-
-// Rail-dot gradient — same gradient pair the chip uses, but rendered as a
-// solid disc so the timeline reads as a connected progression.
-const BUCKET_DOT: Record<StageStatusBucket, string> = {
-  done: 'bg-gradient-to-b from-chart-5 to-chart-3 ring-2 ring-chart-5/30',
-  in_progress:
-    'bg-gradient-to-b from-brand-indigo to-brand-navy ring-2 ring-brand-indigo/25',
-  blocked:
-    'bg-gradient-to-b from-destructive to-destructive/80 ring-2 ring-destructive/30',
-  not_started: 'bg-ink-3 ring-2 ring-ink-3/30',
 };
 
 function formatTimestamp(iso: string | undefined): string | null {

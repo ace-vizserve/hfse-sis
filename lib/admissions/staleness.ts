@@ -1,10 +1,11 @@
 // Pure, client-safe staleness helpers for admissions applications.
 //
 // "Staleness" = how long since an application's record was last touched
-// (ay{YY}_enrolment_status.applicationUpdatedDate). This mirrors the bucketing
-// in getOutdatedApplications (lib/admissions/dashboard.ts) so the dashboard's
-// "Follow up today" list, the outdated drill, and the applications-table
-// staleness filter/badge all agree on the same thresholds + vocabulary.
+// (ay{YY}_enrolment_status.applicationUpdatedDate). This module is the single
+// source for the bucketing — getOutdatedApplications (lib/admissions/
+// dashboard.ts), the outdated drill, and the applications-table staleness
+// filter/badge all consume these helpers, so the dashboard "needs follow-up"
+// count and its deep-linked table can never drift (count == drill, KD #124).
 //
 // Thresholds match the existing tierFor() in outdated-applications-table.tsx and
 // admissions-drill-sheet.tsx: Warning at >= 7 days, Critical at >= 14 days.
@@ -31,13 +32,25 @@ export const STALENESS_ORDER: StalenessLabel[] = [
   STALENESS_LABELS.unknown,
 ];
 
-// The "needs follow-up" tiers (>= 7 days). This is the single vocabulary the
-// dashboard "Follow up today" deep-link shares with the applications-table
+// The "needs follow-up" tiers. This is the single vocabulary the dashboard's
+// "needs follow-up" insight deep-link shares with the applications-table
 // staleness facet — import it on both sides so the strings can never drift.
+// Includes 'Never updated': getOutdatedApplications counts rows with a NULL
+// applicationUpdatedDate as most urgent, so the deep-link must show them too
+// (count == drill, KD #124). In production this tier is the common case —
+// applicationUpdatedDate is largely unpopulated.
 export const STALENESS_FOLLOW_UP_VALUES: StalenessLabel[] = [
   STALENESS_LABELS.warning,
   STALENESS_LABELS.critical,
+  STALENESS_LABELS.unknown,
 ];
+
+/** True when a tier is in the "needs follow-up" set — the shared predicate
+ *  behind BOTH the dashboard's outdated-applications count and the
+ *  deep-linked staleness facet selection. */
+export function isFollowUpStaleness(label: StalenessLabel): boolean {
+  return STALENESS_FOLLOW_UP_VALUES.includes(label);
+}
 
 /** Whole days since `applicationUpdatedDate`; null when no/invalid date. */
 export function daysSinceUpdate(

@@ -4,9 +4,15 @@ import {
   STALENESS_FOLLOW_UP_VALUES,
   STALENESS_LABELS,
   daysSinceUpdate,
+  isFollowUpStaleness,
   stalenessLabel,
   stalenessRank,
 } from '@/lib/admissions/staleness';
+import {
+  ACTIVE_FUNNEL_STAGES,
+  STAGE_STATUS_OPTIONS,
+  isActiveFunnelStatus,
+} from '@/lib/schemas/sis';
 
 describe('stalenessLabel — tier boundaries', () => {
   it('null day-count → Never updated', () => {
@@ -53,10 +59,83 @@ describe('stalenessRank — severity ordering', () => {
 });
 
 describe('STALENESS_FOLLOW_UP_VALUES — deep-link vocabulary', () => {
-  it('is exactly the >= 7-day tiers (Warning + Critical)', () => {
+  // Intentionally updated (Task H-C): the vocabulary now includes
+  // 'Never updated' so the dashboard's "needs follow-up" deep-link shows
+  // the null-date rows that getOutdatedApplications counts (count == drill,
+  // KD #124). In prod applicationUpdatedDate is largely unpopulated, so
+  // never-updated is the dominant tier.
+  it('is the >= 7-day tiers plus Never updated', () => {
     expect(STALENESS_FOLLOW_UP_VALUES).toEqual([
       STALENESS_LABELS.warning,
       STALENESS_LABELS.critical,
+      STALENESS_LABELS.unknown,
     ]);
+  });
+
+  it("includes 'Never updated' (null-basis rows stay reachable via the deep-link)", () => {
+    expect(STALENESS_FOLLOW_UP_VALUES).toContain(STALENESS_LABELS.unknown);
+  });
+});
+
+describe('isFollowUpStaleness — the shared count/deep-link predicate', () => {
+  it('keeps exactly what getOutdatedApplications keeps: null or >= 7 days', () => {
+    // Never updated (null applicationUpdatedDate) → counted AND deep-linked.
+    expect(isFollowUpStaleness(stalenessLabel(null))).toBe(true);
+    // Warning boundary (7–13d) → in.
+    expect(isFollowUpStaleness(stalenessLabel(7))).toBe(true);
+    expect(isFollowUpStaleness(stalenessLabel(13))).toBe(true);
+    // Critical (>= 14d) → in.
+    expect(isFollowUpStaleness(stalenessLabel(14))).toBe(true);
+    // Fresh (< 7d) → dropped from both the count and the deep-link.
+    expect(isFollowUpStaleness(stalenessLabel(0))).toBe(false);
+    expect(isFollowUpStaleness(stalenessLabel(6))).toBe(false);
+  });
+
+  it('null applicationUpdatedDate with no other date → Never updated tier', () => {
+    // getOutdatedApplications has NO created_at fallback for staleness
+    // (verified — created_at only feeds daysInPipeline). A row with no
+    // update stamp is simply the 'Never updated' tier, everywhere.
+    expect(stalenessLabel(daysSinceUpdate(null))).toBe(
+      STALENESS_LABELS.unknown
+    );
+    expect(stalenessLabel(daysSinceUpdate(undefined))).toBe(
+      STALENESS_LABELS.unknown
+    );
+  });
+});
+
+describe('isActiveFunnelStatus — the count/deep-link status scope', () => {
+  // getOutdatedApplications (the "needs follow-up" count), its 'outdated'
+  // drill, and the /admissions/applications list all scope through this one
+  // predicate, so the counted population equals the deep-linked list's
+  // population (count == drill, KD #124).
+  it('keeps exactly the 3 in-flight funnel stages', () => {
+    expect(isActiveFunnelStatus('Submitted')).toBe(true);
+    expect(isActiveFunnelStatus('Ongoing Verification')).toBe(true);
+    expect(isActiveFunnelStatus('Processing')).toBe(true);
+  });
+
+  it('excludes post-funnel + terminal statuses the applications list never shows', () => {
+    expect(isActiveFunnelStatus('Enrolled')).toBe(false);
+    expect(isActiveFunnelStatus('Enrolled (Conditional)')).toBe(false);
+    expect(isActiveFunnelStatus('Cancelled')).toBe(false);
+    expect(isActiveFunnelStatus('Withdrawn')).toBe(false);
+  });
+
+  it('excludes NULL/empty status (mirrors the applications page: NULL rows are not listed)', () => {
+    expect(isActiveFunnelStatus(null)).toBe(false);
+    expect(isActiveFunnelStatus(undefined)).toBe(false);
+    expect(isActiveFunnelStatus('')).toBe(false);
+    expect(isActiveFunnelStatus('   ')).toBe(false);
+  });
+
+  it('trims before matching (same normalization as the applications page)', () => {
+    expect(isActiveFunnelStatus('  Submitted  ')).toBe(true);
+  });
+
+  it('is a subset of the canonical application stage vocabulary (KD #59)', () => {
+    for (const v of ACTIVE_FUNNEL_STAGES) {
+      expect(STAGE_STATUS_OPTIONS.application).toContain(v);
+    }
   });
 });

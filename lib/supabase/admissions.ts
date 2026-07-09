@@ -247,16 +247,21 @@ async function getStudentsByParentEmail(
   //    when their Supabase Auth account was created as "Jane.Smith@Example.com".
   //    Emails are case-insensitive in practice; the admissions schema stores
   //    whatever the parent typed in the enrolment form.
-  const { data: apps, error: appsErr } = await supabase
-    .from(appsTable)
-    .select('enroleeNumber, studentNumber, lastName, firstName, middleName, motherEmail, fatherEmail')
-    .or(`motherEmail.ilike.${trimmed},fatherEmail.ilike.${trimmed}`);
-  if (appsErr) {
-    // Admissions schema drift or missing columns — fail soft so the parent
-    // still gets a "no records found" page instead of a hard crash.
-    console.error('[admissions] parent email lookup failed:', appsErr.message);
-    return [];
-  }
+  //
+  //    Two separate column-scoped `.ilike()` calls, unioned + deduped below —
+  //    NOT a single `.or()` with `trimmed` spliced into the raw filter string.
+  //    `trimmed` is the caller's own auth.users.email (attacker-controlled to
+  //    the extent they can register any email), and `.or()`'s filter argument
+  //    is a raw DSL string where `,`/`()` are syntax and `%`/`_`/`*` are ILIKE
+  //    wildcards — splicing an unescaped value in let a crafted email (e.g.
+  //    containing `%`) over-match other parents' children, or corrupt the
+  //    filter grammar outright. `.ilike('col', value)` instead passes `value`
+  //    as a genuine parameterized filter value, closing the `,`/`()` grammar
+  //    injection — but `value` is still interpreted as an ILIKE *pattern*, so
+  //    a literal `%`/`_` in the caller's own email is still a live wildcard
+  //    (e.g. a parent registered as "%@gmail.com" would match every stored
+  //    email ending "@gmail.com"). Escape those two metacharacters so the
+  //    match is exact (mirrors the pattern at lib/sis/queries.ts ~line 1106).
   type AppRow = {
     enroleeNumber: string | null;
     studentNumber: string | null;
@@ -266,7 +271,29 @@ async function getStudentsByParentEmail(
     motherEmail: string | null;
     fatherEmail: string | null;
   };
-  const rows = (apps ?? []) as AppRow[];
+  const appsSelect =
+    'enroleeNumber, studentNumber, lastName, firstName, middleName, motherEmail, fatherEmail';
+  const escapedEmail = trimmed.replace(/[%_]/g, (m) => `\\${m}`);
+  const [motherRes, fatherRes] = await Promise.all([
+    supabase.from(appsTable).select(appsSelect).ilike('motherEmail', escapedEmail),
+    supabase.from(appsTable).select(appsSelect).ilike('fatherEmail', escapedEmail),
+  ]);
+  if (motherRes.error || fatherRes.error) {
+    // Admissions schema drift or missing columns — fail soft so the parent
+    // still gets a "no records found" page instead of a hard crash.
+    console.error(
+      '[admissions] parent email lookup failed:',
+      motherRes.error?.message ?? fatherRes.error?.message,
+    );
+    return [];
+  }
+  const dedupedByEnrolee = new Map<string, AppRow>();
+  for (const r of [...((motherRes.data ?? []) as AppRow[]), ...((fatherRes.data ?? []) as AppRow[])]) {
+    if (r.enroleeNumber && !dedupedByEnrolee.has(r.enroleeNumber)) {
+      dedupedByEnrolee.set(r.enroleeNumber, r);
+    }
+  }
+  const rows = Array.from(dedupedByEnrolee.values());
   const enroleeNumbers = rows.map((r) => r.enroleeNumber).filter((x): x is string => !!x);
   if (enroleeNumbers.length === 0) return [];
 

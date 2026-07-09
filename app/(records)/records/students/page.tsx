@@ -308,6 +308,7 @@ export default async function RecordsStudentsPage({
         <CardContent className="p-0">
           <StudentDataTable
             data={studentsWithStatus}
+            ayCode={selectedAy}
             linkBase="/records/students"
             linkAttribute="studentNumber"
             statusBuckets={RECORDS_STATUS_BUCKETS}

@@ -9,6 +9,7 @@ import {
   ENROLLED_PREREQ_STAGES,
   type StageKey,
 } from '@/lib/schemas/sis';
+import { WITHDRAWAL_REASON_LABELS } from '@/lib/schemas/enrolment';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -216,10 +217,25 @@ export type LifecycleBlockerBucket = {
 // Status helpers
 // ──────────────────────────────────────────────────────────────────────────
 
+// Display-only "done" values for stages STAGE_TERMINAL_STATUS doesn't cover.
+// STAGE_TERMINAL_STATUS (lib/schemas/sis.ts) is scoped to the Enrolled-flip
+// prereq gate (ENROLLED_PREREQ_STAGES only) — class/supplies/orientation are
+// deliberately absent from it since they aren't enrollment prereqs. But for
+// *display* purposes (this bucket classifier, the lifecycle timeline, the
+// applications pipeline strip) their own terminal values ARE a "done" state.
+// Kept separate from STAGE_TERMINAL_STATUS so that map's single documented
+// responsibility (the enroll gate) stays untouched.
+const STAGE_DISPLAY_DONE: Partial<Record<StageKey, string>> = {
+  class: 'Finished',
+  supplies: 'Claimed',
+  orientation: 'Finished',
+};
+
 // Maps an admissions stage status string onto our 4-tone bucket. "Cancelled"
 // is intentionally rendered as `blocked` so admins see it as needing attention
-// rather than a benign neutral.
-function bucketForAdmissionsStatus(
+// rather than a benign neutral. Exported for reuse by the applications-table
+// pipeline strip (components/sis/pipeline-strip.tsx) and for unit testing.
+export function bucketForAdmissionsStatus(
   stageKey: StageKey,
   status: string | null
 ): StageStatusBucket {
@@ -242,6 +258,7 @@ function bucketForAdmissionsStatus(
   }
   // 'Incomplete' on documents/class is a known blocker (admin needs to chase).
   if (trimmed === 'Incomplete') return 'blocked';
+  if (STAGE_DISPLAY_DONE[stageKey] === trimmed) return 'done';
   return 'in_progress';
 }
 
@@ -275,6 +292,63 @@ export function resolveIsWithdrawn(
     ssEnrollmentStatuses.includes('withdrawn') &&
     !ssEnrollmentStatuses.some((s) => s === 'active' || s === 'late_enrollee');
   return currentlyWithdrawn;
+}
+
+// Minimal section_students shape resolveWithdrawnDisplay needs. The loader
+// selects these three columns per KD #111 (migration 067).
+export type WithdrawalSsRow = {
+  enrollment_status: string;
+  withdrawal_date: string | null;
+  withdrawal_reason: string | null;
+};
+
+// Pure helper — picks the correct source for the timeline's "Withdrawn on
+// {date} / {reason}" display (KD #150 model):
+//
+//   - Not withdrawn (incl. a KD #67 transfer, whose old 'withdrawn' row
+//     coexists with an active/late one) → null. Delegates to
+//     resolveIsWithdrawn, the canonical dual-signal check.
+//   - Pre-enrolment terminal (applicationStatus='Withdrawn' via the stage
+//     route) → the application-side date/remark. That's a genuinely
+//     application-side event; unchanged behavior.
+//   - Post-enrolment withdrawal (applicationStatus stays 'Enrolled' — the
+//     append-only OUTCOME — while section_students carries
+//     enrollment_status='withdrawn') → the withdrawn section_students row's
+//     withdrawal_date + withdrawal_reason (KD #111), humanized via
+//     WITHDRAWAL_REASON_LABELS. Previously this case wrongly displayed the
+//     application stage's updatedDate/remarks (= the enrolment event).
+//
+// Exported for unit testing without a live DB connection.
+export function resolveWithdrawnDisplay(
+  applicationStatus: string | null,
+  appSide: { date: string | null; reason: string | null },
+  ssRows: WithdrawalSsRow[]
+): { date: string | null; reason: string | null } | null {
+  const isWithdrawn = resolveIsWithdrawn(
+    applicationStatus,
+    ssRows.map((r) => r.enrollment_status)
+  );
+  if (!isWithdrawn) return null;
+
+  // Pre-enrolment exit — the application-side fields ARE the withdrawal.
+  if ((applicationStatus ?? '').trim() === 'Withdrawn') return appSide;
+
+  // Post-enrolment: prefer the most recent withdrawn row (a student who
+  // transferred earlier and later withdrew carries an older transfer-created
+  // withdrawn row too — latest withdrawal_date wins; null dates sort last).
+  const latest = ssRows
+    .filter((r) => r.enrollment_status === 'withdrawn')
+    .sort((a, b) =>
+      (b.withdrawal_date ?? '').localeCompare(a.withdrawal_date ?? '')
+    )[0];
+  if (!latest) return appSide; // defensive — resolveIsWithdrawn guarantees one
+
+  const rawReason = latest.withdrawal_reason;
+  const reason = rawReason
+    ? ((WITHDRAWAL_REASON_LABELS as Record<string, string>)[rawReason] ??
+      rawReason)
+    : null;
+  return { date: latest.withdrawal_date, reason };
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -364,20 +438,21 @@ async function loadStudentLifecycleUncached(
   const docs = (docsRes.data ?? null) as Record<string, string | null> | null;
   const studentNumber = app?.studentNumber ?? null;
 
-  // Withdrawn check — see resolveIsWithdrawn() above for the full rationale.
-  // We resolve the pre-enrolment signal here (applicationStatus) and
-  // override below once section_students is loaded (post-enrolment signal).
-  // Use the aliased `application_updatedAt` field for the "withdrawn on" date.
+  // Withdrawn check — see resolveWithdrawnDisplay() above for the full
+  // rationale. The application-side pair below is only the PRE-enrolment
+  // withdrawal source (the stage route stamps applicationStatus='Withdrawn'
+  // + remarks); a post-enrolment withdrawal keeps applicationStatus at
+  // 'Enrolled' (KD #150) and its date/reason live on the withdrawn
+  // section_students row (KD #111) — collected below once it loads.
   const applicationStatus =
     (status?.['applicationStatus'] as string | null) ?? null;
-  // Initial resolution from the application OUTCOME alone — correct for
-  // pre-enrolment withdrawals (no studentNumber / no section_students row).
-  // Refined below once section_students loads (dual-signal, transfer-aware).
-  let isWithdrawn = resolveIsWithdrawn(applicationStatus, []);
-  const withdrawnDate =
-    (status?.['application_updatedAt'] as string | null) ?? null;
-  const withdrawnReason =
-    (status?.['applicationRemarks'] as string | null) ?? null;
+  const appSideWithdrawal = {
+    date: (status?.['application_updatedAt'] as string | null) ?? null,
+    reason: (status?.['applicationRemarks'] as string | null) ?? null,
+  };
+  // section_students rows feeding the withdrawal display — stays [] for
+  // pre-enrolment applicants (no studentNumber / no section_students row).
+  let withdrawalSsRows: WithdrawalSsRow[] = [];
 
   // Build admissions stage rows.
   const rows: LifecycleStageRow[] = [];
@@ -542,7 +617,7 @@ async function loadStudentLifecycleUncached(
         const { data: secStudents, error: secErr } = await supabase
           .from('section_students')
           .select(
-            'id, section_id, enrollment_status, enrollment_date, sections!inner(id, name, academic_year_id)'
+            'id, section_id, enrollment_status, enrollment_date, withdrawal_date, withdrawal_reason, sections!inner(id, name, academic_year_id)'
           )
           .eq('student_id', studentRow.id)
           .eq('sections.academic_year_id', ayId);
@@ -555,18 +630,20 @@ async function loadStudentLifecycleUncached(
           section_id: string;
           enrollment_status: string;
           enrollment_date: string | null;
+          withdrawal_date: string | null;
+          withdrawal_reason: string | null;
         };
         const allSsRows = (secStudents ?? []) as SectionStudentRow[];
 
-        // Post-enrolment withdrawal detection (Task 1 / KD #147): re-resolve
-        // isWithdrawn now that we have section_students data. resolveIsWithdrawn
-        // is the single pure source of truth — the applicationStatus check is
-        // already baked in; the OR against ss statuses adds the post-enrolment
-        // case where applicationStatus remains 'Enrolled' but ss is 'withdrawn'.
-        isWithdrawn = resolveIsWithdrawn(
-          applicationStatus,
-          allSsRows.map((r) => r.enrollment_status)
-        );
+        // Post-enrolment withdrawal detection (Task 1 / KD #147 / KD #150):
+        // feed the section_students rows into resolveWithdrawnDisplay at the
+        // end — it wraps resolveIsWithdrawn (the single pure source of truth,
+        // transfer-aware per KD #67) and selects the right date/reason source.
+        withdrawalSsRows = allSsRows.map((r) => ({
+          enrollment_status: r.enrollment_status,
+          withdrawal_date: r.withdrawal_date,
+          withdrawal_reason: r.withdrawal_reason,
+        }));
 
         const enrollments = allSsRows.filter(
           (r) => r.enrollment_status !== 'withdrawn'
@@ -761,9 +838,11 @@ async function loadStudentLifecycleUncached(
     enroleeNumber,
     ayCode,
     applicationStatus,
-    withdrawn: isWithdrawn
-      ? { date: withdrawnDate, reason: withdrawnReason }
-      : null,
+    withdrawn: resolveWithdrawnDisplay(
+      applicationStatus,
+      appSideWithdrawal,
+      withdrawalSsRows
+    ),
     rows,
     fetchWarnings,
   };
@@ -783,6 +862,25 @@ export async function getStudentLifecycle(
 // ──────────────────────────────────────────────────────────────────────────
 // Aggregate per-AY blocker counts — getLifecycleAggregate
 // ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * "Awaiting STP completion" predicate (pure, exported for tests).
+ *
+ * An applicant is awaiting STP completion when they opted into the
+ * Singapore Student Pass sub-flow (`stpApplicationType` set) AND the
+ * application hasn't reached a terminal outcome — terminal being
+ * `'Approved'` or `'Rejected'` per the `stpApplicationStatus` CHECK
+ * (migration 069, KD #61/#119). A null/missing status counts as
+ * awaiting (application declared but not progressed).
+ */
+export function isAwaitingStpCompletion(
+  stpApplicationType: string | null,
+  stpApplicationStatus: string | null
+): boolean {
+  if (!stpApplicationType) return false;
+  const s = (stpApplicationStatus ?? '').trim();
+  return s !== 'Approved' && s !== 'Rejected';
+}
 
 async function loadLifecycleAggregateUncached(
   ayCode: string
@@ -812,9 +910,14 @@ async function loadLifecycleAggregateUncached(
   ];
 
   // Apps row — pull only the columns that drive bucket predicates today
-  // (`stpApplicationType` for the STP completion bucket). Add to this list
-  // when a future bucket needs another column off the apps table.
-  const appColumns = ['enroleeNumber', 'stpApplicationType'];
+  // (`stpApplicationType` + `stpApplicationStatus` for the STP completion
+  // bucket). Add to this list when a future bucket needs another column
+  // off the apps table.
+  const appColumns = [
+    'enroleeNumber',
+    'stpApplicationType',
+    'stpApplicationStatus',
+  ];
 
   const [statusRes, docsRes, appsRes] = await Promise.all([
     supabase
@@ -851,6 +954,7 @@ async function loadLifecycleAggregateUncached(
   type AppRow = {
     enroleeNumber: string | null;
     stpApplicationType: string | null;
+    stpApplicationStatus: string | null;
   };
 
   const statusRows = ((statusRes.data ?? []) as unknown as StatusRow[]).filter(
@@ -871,13 +975,6 @@ async function loadLifecycleAggregateUncached(
   for (const a of appRows) {
     if (a.enroleeNumber) appsByEnrolee.set(a.enroleeNumber, a);
   }
-  // Hard-coded STP slot keys + status-cols pair so the predicate doesn't
-  // re-walk DOCUMENT_SLOTS by string match every iteration.
-  const STP_STATUS_COLS = [
-    'icaPhotoStatus',
-    'financialSupportDocsStatus',
-    'vaccinationInformationStatus',
-  ];
 
   let awaitingFeePayment = 0;
   let awaitingDocRevalidation = 0;
@@ -917,28 +1014,22 @@ async function loadLifecycleAggregateUncached(
     if (docFlags.hasPromised) awaitingPromisedDocs += 1;
 
     // 4. Awaiting STP completion — the parent opted into the Singapore
-    //    Student Pass sub-flow (`stpApplicationType IS NOT NULL`) AND any of
-    //    the 3 STP-conditional doc slots (icaPhoto / financialSupportDocs /
-    //    vaccinationInformation) is not in the terminal `'Valid'` state.
-    //    null + 'Uploaded' + 'Rejected' + 'Expired' all qualify here. This is
-    //    a SUPERSET of the doc-validation/revalidation buckets above, scoped
-    //    to STP students — overlap is intentional, the registrar's STP queue
-    //    is its own surface that needs to clear independently of the rest of
-    //    the document family. See KD #58 + docs/context/21-stp-application.md.
+    //    Student Pass sub-flow (`stpApplicationType IS NOT NULL`) AND the
+    //    application itself hasn't reached a terminal outcome
+    //    (`stpApplicationStatus` not 'Approved' / 'Rejected'; null counts
+    //    as awaiting — declared but not progressed). Document-slot state is
+    //    deliberately NOT consulted: the 3 STP doc slots were removed from
+    //    DOCUMENT_SLOTS in migration 050 (KD #96 — parents upload those
+    //    files directly to ICA; the school never receives them). What the
+    //    SIS still tracks is the STP application status pair on the apps
+    //    row (KD #61). See docs/context/21-stp-application.md.
     const appRow = appsByEnrolee.get(r.enroleeNumber!);
-    if (appRow?.stpApplicationType && docs) {
-      let stpIncomplete = false;
-      for (const col of STP_STATUS_COLS) {
-        const v = (docs[col] ?? '').toString().trim();
-        if (v !== 'Valid') {
-          stpIncomplete = true;
-          break;
-        }
-      }
-      if (stpIncomplete) awaitingStpCompletion += 1;
-    } else if (appRow?.stpApplicationType && !docs) {
-      // Edge case — apps row says STP but documents row missing entirely.
-      // Counted as needing completion (every slot is implicitly null).
+    if (
+      isAwaitingStpCompletion(
+        appRow?.stpApplicationType ?? null,
+        appRow?.stpApplicationStatus ?? null
+      )
+    ) {
       awaitingStpCompletion += 1;
     }
 

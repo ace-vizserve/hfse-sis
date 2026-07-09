@@ -3,6 +3,7 @@ import { unstable_cache } from 'next/cache';
 import { loadAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import type { PriorityPayload } from '@/lib/dashboard/priority';
 import { createServiceClient } from '@/lib/supabase/service';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import {
   computeDelta,
   daysInRange,
@@ -34,12 +35,15 @@ function tag(ayCode: string): string[] {
 // — there is no `section_student_id` column. The earlier shape selected one,
 // PostgREST 400'd, the helper silently returned an empty array, and every
 // Evaluation KPI rendered as 0 / 0% across all AYs.
-type WriteupRow = {
+export type WriteupRow = {
   id: string;
   student_id: string;
   section_id: string;
   term_id: string;
   submitted: boolean;
+  /** Derived at load time: the `writeup` text is non-empty after trim.
+   *  The full text is deliberately NOT cached — only this boolean. */
+  has_content: boolean;
   submitted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -83,30 +87,56 @@ async function loadWriteupsUncached(ayCode: string): Promise<{
 
   const sectionIds = (sectionRows ?? []).map((r) => r.id as string);
 
-  // studentCount (section-scoped) and the writeups fetch (term-scoped) are
-  // independent of each other — parallelized.
-  const [studentCountRes, writeupsRes] = await Promise.all([
+  // Active roster (not withdrawn), fetched as rows (not a head count) so the
+  // write-up set below can be restricted to students actually on the roster —
+  // KD #120: a withdrawn student's write-up row must not count toward
+  // "submitted" when the "expected" denominator only counts the active roster.
+  // Paginated defensively (rows ≈ active students, but transfers/re-enrols
+  // can push the table past PostgREST's 1000-row cap).
+  const rosterRows =
     sectionIds.length > 0
-      ? service
-          .from('section_students')
-          .select('id', { count: 'exact', head: true })
-          .in('section_id', sectionIds)
-          .neq('enrollment_status', 'withdrawn')
-      : Promise.resolve({ count: 0 }),
+      ? await fetchAllPages<{ student_id: string }>((from, to) =>
+          service
+            .from('section_students')
+            .select('student_id')
+            .in('section_id', sectionIds)
+            .neq('enrollment_status', 'withdrawn')
+            .range(from, to)
+        )
+      : [];
+  const activeStudentIds = new Set(rosterRows.map((r) => r.student_id));
+
+  // Paginated around PostgREST's 1000-row cap — ~490 enrolled students ×
+  // 3 terms (T1-T3, T4 excluded per KD #49) routinely exceeds it.
+  // `writeup` is selected only to derive `has_content` (KD #120: "submitted"
+  // requires non-empty content); the text is dropped before caching.
+  type WriteupRawRow = Omit<WriteupRow, 'has_content'> & {
+    writeup: string | null;
+  };
+  const rawRows = await fetchAllPages<WriteupRawRow>((from, to) =>
     service
       .from('evaluation_writeups')
       .select(
-        'id, student_id, section_id, term_id, submitted, submitted_at, created_at, updated_at'
+        'id, student_id, section_id, term_id, writeup, submitted, submitted_at, created_at, updated_at'
       )
-      .in('term_id', termIds),
-  ]);
-  const studentCount = studentCountRes.count;
-  const rows = writeupsRes.data;
+      .in('term_id', termIds)
+      .range(from, to)
+  );
+
+  // Restrict to the active roster (matches the drill row set in
+  // lib/evaluation/drill.ts, which iterates the non-withdrawn roster — keeps
+  // count == drill per KD #124).
+  const rows: WriteupRow[] = rawRows
+    .filter((r) => activeStudentIds.has(r.student_id))
+    .map(({ writeup, ...rest }) => ({
+      ...rest,
+      has_content: !!writeup && writeup.trim().length > 0,
+    }));
 
   return {
-    writeups: (rows ?? []) as WriteupRow[],
+    writeups: rows,
     termIdsByNumber,
-    totalStudents: studentCount ?? 0,
+    totalStudents: rosterRows.length,
   };
 }
 
@@ -128,7 +158,12 @@ export type EvaluationKpis = {
   expected: number; // total students × T1-T3 terms
 };
 
-function kpisFrom(
+// Exported for unit tests (pure — no I/O). The "submitted" numerator applies
+// KD #120's rule: submitted=true AND non-empty content (an emptied-but-still-
+// submitted write-up doesn't count), over write-ups already restricted to the
+// active roster by `loadWriteupsUncached`. Same predicate as the drill's
+// status === 'submitted' (lib/evaluation/drill.ts) so count == drill (KD #124).
+export function kpisFrom(
   writeups: WriteupRow[],
   from: string,
   to: string,
@@ -141,7 +176,7 @@ function kpisFrom(
     return day >= from && day <= to;
   });
 
-  const submitted = inRange.filter((w) => w.submitted).length;
+  const submitted = inRange.filter((w) => w.submitted && w.has_content).length;
   const expected = totalStudents * termCount;
   const submissionPct = expected > 0 ? (submitted / expected) * 100 : 0;
 

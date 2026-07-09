@@ -944,7 +944,7 @@ export function DocumentCompletenessTable(props: Props) {
 
       {/* Bulk-remind footer — officer/operational roles only */}
       {bulkRemindEnabled && selected.size > 0 && (
-        <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-border bg-card px-6 py-3 shadow-[0_-4px_6px_-2px_oklch(0_0_0/0.04)]">
+        <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-border bg-card px-6 py-3 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.04)]">
           <div className="flex items-center gap-3">
             <Mail className="size-4 text-brand-amber" />
             <span className="text-sm">

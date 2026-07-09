@@ -1,5 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSchoolConfig } from '@/lib/sis/school-config';
+import { fetchAllPages } from '@/lib/supabase/paginate';
+import {
+  isEnrolledForTerm,
+  type EnrolmentInterval,
+} from '@/lib/report-card/enrolment-coverage';
 import {
   cumulativeCommentGaps,
   missingCommentStudents,
@@ -264,10 +269,29 @@ export async function computePublishReadiness(
   if (isT4) {
     const { data: allTerms } = await service
       .from('terms')
-      .select('id, term_number')
+      .select('id, term_number, start_date, end_date')
       .eq('academic_year_id', term.academic_year_id)
       .order('term_number');
     const termIds = (allTerms ?? []).map((t) => t.id);
+    // Term windows (date-only SGT strings, KD #32) — drive the KD #148
+    // enrolment-coverage exemption in the missing-grades scan below. A term
+    // without dated boundaries can't be coverage-checked and stays flagged.
+    const termWindowByNumber = new Map<
+      number,
+      { start: string; end: string }
+    >();
+    for (const t of (allTerms ?? []) as Array<{
+      term_number: number;
+      start_date: string | null;
+      end_date: string | null;
+    }>) {
+      if (t.start_date && t.end_date) {
+        termWindowByNumber.set(t.term_number, {
+          start: t.start_date.slice(0, 10),
+          end: t.end_date.slice(0, 10),
+        });
+      }
+    }
 
     // allSheets, grade entries, and school config are independent — fetch in parallel.
     type EntryRow = {
@@ -307,7 +331,7 @@ export async function computePublishReadiness(
           ? service
               .from('section_students')
               .select(
-                'id, student_id, section:sections!inner(academic_year_id)'
+                'id, student_id, enrollment_date, withdrawal_date, section:sections!inner(academic_year_id)'
               )
               .in('student_id', studentIds)
               .eq('section.academic_year_id', term.academic_year_id)
@@ -316,26 +340,50 @@ export async function computePublishReadiness(
       ]);
 
     const studentBySectionStudent = new Map<string, string>();
+    // KD #148 — per-student enrolment coverage: the union of the student's
+    // [enrollment_date, withdrawal_date] intervals across ALL their AY
+    // enrolment rows (transfer-safe, KD #67; null start/end = open-ended).
+    // A term entirely outside coverage renders N.A. on the report card at
+    // RENDER time (build-report-card.ts) — it is never stored as is_na on any
+    // entry — so the missing-grades scan must apply the same exemption or a
+    // late enrollee false-flags "grades missing" for pre-join terms.
+    const coverageByStudent = new Map<string, EnrolmentInterval[]>();
     for (const r of (ayEnrolmentRows ?? []) as Array<{
       id: string;
       student_id: string;
+      enrollment_date: string | null;
+      withdrawal_date: string | null;
     }>) {
       studentBySectionStudent.set(r.id, r.student_id);
+      const intervals = coverageByStudent.get(r.student_id) ?? [];
+      intervals.push({
+        start: r.enrollment_date ? r.enrollment_date.slice(0, 10) : null,
+        end: r.withdrawal_date ? r.withdrawal_date.slice(0, 10) : null,
+      });
+      coverageByStudent.set(r.student_id, intervals);
     }
     const allEnrolmentIds = Array.from(studentBySectionStudent.keys());
 
-    const { data: rawEntries } =
+    // Paginate around PostgREST's 1000-row response cap (silent truncation) —
+    // this read spans all four terms × every subject × every enrolment row the
+    // roster holds this AY (a 40-student section × ~13 subjects × 4 terms is
+    // ~2,080 rows), so a single query under-reports and the missing-grade /
+    // non-exam-final checks read wrong.
+    const rawEntries =
       allEnrolmentIds.length > 0
-        ? await service
-            .from('grade_entries')
-            .select(
-              'section_student_id, quarterly_grade, letter_grade, is_na, annual_letter_grade, grading_sheet:grading_sheets!inner(id, term_id, subject:subjects!inner(id, name, is_examinable))'
-            )
-            .in('section_student_id', allEnrolmentIds)
-            .in('grading_sheet.term_id', termIds)
-        : { data: [] };
+        ? await fetchAllPages((from, to) =>
+            service
+              .from('grade_entries')
+              .select(
+                'section_student_id, quarterly_grade, letter_grade, is_na, annual_letter_grade, grading_sheet:grading_sheets!inner(id, term_id, subject:subjects!inner(id, name, is_examinable))'
+              )
+              .in('section_student_id', allEnrolmentIds)
+              .in('grading_sheet.term_id', termIds)
+              .range(from, to)
+          )
+        : [];
 
-    const entries = (rawEntries ?? []) as unknown as EntryRow[];
+    const entries = rawEntries as unknown as EntryRow[];
 
     t4AllSheetCount = (allSheets ?? []).length;
 
@@ -413,12 +461,27 @@ export async function computePublishReadiness(
     }[] = [];
     for (const s of activeStudents) {
       if (!s.studentId) continue;
+      const coverage = coverageByStudent.get(s.studentId) ?? [];
       for (const subjName of examinableSubjectNames) {
         const grades = gradeMap.get(s.studentId)?.get(subjName) ?? blankCells();
         // An N/A term (late enrollee) has a null quarterly but is excluded
-        // from computeAnnualGrade — so it is NOT a missing grade.
+        // from computeAnnualGrade — so it is NOT a missing grade. Same for a
+        // term outside the student's enrolment coverage (KD #148): the card
+        // renders it N.A. and prorates the annual over enrolled terms only.
+        // Undated terms / missing coverage rows keep flagging (conservative).
         const missing = grades
-          .map((c, i) => (c.q == null && !c.na ? i + 1 : null))
+          .map((c, i) => {
+            if (c.q != null || c.na) return null;
+            const win = termWindowByNumber.get(i + 1);
+            if (
+              win &&
+              coverage.length > 0 &&
+              !isEnrolledForTerm(coverage, win.start, win.end)
+            ) {
+              return null; // not enrolled this term → N.A., not missing
+            }
+            return i + 1;
+          })
           .filter((t): t is number => t !== null);
         if (missing.length > 0) {
           missingAnnual.push({
