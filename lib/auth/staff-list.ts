@@ -32,37 +32,45 @@ type _StaffRecord = {
   disabled: boolean;
 };
 
+async function loadAllStaffUncached(): Promise<_StaffRecord[]> {
+  try {
+    const service = createServiceClient();
+    const { data } = await service.auth.admin.listUsers({ perPage: 1000 });
+    const out: _StaffRecord[] = [];
+    for (const u of data?.users ?? []) {
+      if (!u.email) continue;
+      const appMeta = (u.app_metadata ?? {}) as {
+        role?: string;
+        disabled?: boolean;
+      };
+      const userMeta = (u.user_metadata ?? {}) as {
+        role?: string;
+        full_name?: string;
+        name?: string;
+      };
+      const role = appMeta.role ?? userMeta.role ?? null;
+      const disabled = appMeta.disabled === true;
+      const name = (userMeta.full_name ?? userMeta.name ?? u.email).trim();
+      out.push({ id: u.id, email: u.email, role, name, disabled });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+// Hoisted to module scope — the key/tags are fully static (no per-call
+// parameter), so recreating the wrapper inside the exported function on
+// every call is the anti-pattern §2 of docs/context/11-performance-patterns.md
+// warns against.
+const _loadAllStaffCached = unstable_cache(
+  loadAllStaffUncached,
+  ['all-staff-list'],
+  { revalidate: 300, tags: ['teacher-emails'] }
+);
+
 function _loadAllStaff(): Promise<_StaffRecord[]> {
-  return unstable_cache(
-    async () => {
-      try {
-        const service = createServiceClient();
-        const { data } = await service.auth.admin.listUsers({ perPage: 1000 });
-        const out: _StaffRecord[] = [];
-        for (const u of data?.users ?? []) {
-          if (!u.email) continue;
-          const appMeta = (u.app_metadata ?? {}) as {
-            role?: string;
-            disabled?: boolean;
-          };
-          const userMeta = (u.user_metadata ?? {}) as {
-            role?: string;
-            full_name?: string;
-            name?: string;
-          };
-          const role = appMeta.role ?? userMeta.role ?? null;
-          const disabled = appMeta.disabled === true;
-          const name = (userMeta.full_name ?? userMeta.name ?? u.email).trim();
-          out.push({ id: u.id, email: u.email, role, name, disabled });
-        }
-        return out;
-      } catch {
-        return [];
-      }
-    },
-    ['all-staff-list'],
-    { revalidate: 300, tags: ['teacher-emails'] }
-  )();
+  return _loadAllStaffCached();
 }
 
 // ---------------------------------------------------------------------------

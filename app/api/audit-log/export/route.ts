@@ -77,25 +77,25 @@ export async function GET(req: Request) {
     context_json: string;
   };
 
-  const rows: Row[] = [
-    ...((newRes.data ?? []) as NewRow[]).map((r): Row => {
-      const ctx = r.context ?? {};
-      const sheetId =
-        (ctx['grading_sheet_id'] as string | undefined) ??
-        (r.entity_type === 'grading_sheet' ? r.entity_id : null) ??
-        null;
-      return {
-        timestamp_utc: r.created_at,
-        source: 'audit_log',
-        actor_email: r.actor_email,
-        action: r.action,
-        entity_type: r.entity_type,
-        entity_id: r.entity_id,
-        sheet_id: sheetId,
-        context_json: JSON.stringify(ctx),
-      };
-    }),
-    ...((legacyRes.data ?? []) as LegacyRow[]).map((r): Row => {
+  const newRows: Row[] = ((newRes.data ?? []) as NewRow[]).map((r): Row => {
+    const ctx = r.context ?? {};
+    const sheetId =
+      (ctx['grading_sheet_id'] as string | undefined) ??
+      (r.entity_type === 'grading_sheet' ? r.entity_id : null) ??
+      null;
+    return {
+      timestamp_utc: r.created_at,
+      source: 'audit_log',
+      actor_email: r.actor_email,
+      action: r.action,
+      entity_type: r.entity_type,
+      entity_id: r.entity_id,
+      sheet_id: sheetId,
+      context_json: JSON.stringify(ctx),
+    };
+  });
+  const legacyRows: Row[] = ((legacyRes.data ?? []) as LegacyRow[]).map(
+    (r): Row => {
       const isTotals =
         r.field_changed.startsWith('ww_totals') ||
         r.field_changed.startsWith('pt_totals') ||
@@ -116,16 +116,25 @@ export async function GET(req: Request) {
           legacy: true,
         }),
       };
-    }),
-  ].sort((a, b) =>
-    // ISO-8601 timestamps sort lexicographically — no `Date` allocation per
-    // comparison. Descending = most recent first.
-    b.timestamp_utc < a.timestamp_utc
-      ? -1
-      : b.timestamp_utc > a.timestamp_utc
-        ? 1
-        : 0
+    }
   );
+
+  // Linear two-pointer merge — both sources are already `ORDER BY ... DESC`
+  // from the queries above, so a `[...a, ...b].sort()` would be O(n log n)
+  // over two pre-sorted arrays. ISO-8601 timestamps compare lexicographically,
+  // no `Date` allocation per comparison (§3 of 11-performance-patterns.md).
+  const rows: Row[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < newRows.length && j < legacyRows.length) {
+    if (newRows[i].timestamp_utc >= legacyRows[j].timestamp_utc) {
+      rows.push(newRows[i++]);
+    } else {
+      rows.push(legacyRows[j++]);
+    }
+  }
+  while (i < newRows.length) rows.push(newRows[i++]);
+  while (j < legacyRows.length) rows.push(legacyRows[j++]);
 
   const body = buildCsv(
     [

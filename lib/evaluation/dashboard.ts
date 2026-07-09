@@ -60,11 +60,16 @@ async function loadWriteupsUncached(ayCode: string): Promise<{
   if (!ayId)
     return { writeups: [], termIdsByNumber: new Map(), totalStudents: 0 };
 
-  const { data: termRows } = await service
-    .from('terms')
-    .select('id, term_number')
-    .eq('academic_year_id', ayId)
-    .neq('term_number', 4);
+  // termRows and sectionRows both depend only on ayId, not on each other —
+  // parallelized (§2 of 11-performance-patterns.md).
+  const [{ data: termRows }, { data: sectionRows }] = await Promise.all([
+    service
+      .from('terms')
+      .select('id, term_number')
+      .eq('academic_year_id', ayId)
+      .neq('term_number', 4),
+    service.from('sections').select('id').eq('academic_year_id', ayId),
+  ]);
   const termIds = (termRows ?? []).map((r) => r.id as string);
   const termIdsByNumber = new Map<number, string>();
   for (const row of (termRows ?? []) as Array<{
@@ -76,27 +81,27 @@ async function loadWriteupsUncached(ayCode: string): Promise<{
   if (termIds.length === 0)
     return { writeups: [], termIdsByNumber, totalStudents: 0 };
 
-  const { data: sectionRows } = await service
-    .from('sections')
-    .select('id')
-    .eq('academic_year_id', ayId);
   const sectionIds = (sectionRows ?? []).map((r) => r.id as string);
 
-  const { count: studentCount } =
+  // studentCount (section-scoped) and the writeups fetch (term-scoped) are
+  // independent of each other — parallelized.
+  const [studentCountRes, writeupsRes] = await Promise.all([
     sectionIds.length > 0
-      ? await service
+      ? service
           .from('section_students')
           .select('id', { count: 'exact', head: true })
           .in('section_id', sectionIds)
           .neq('enrollment_status', 'withdrawn')
-      : { count: 0 };
-
-  const { data: rows } = await service
-    .from('evaluation_writeups')
-    .select(
-      'id, student_id, section_id, term_id, submitted, submitted_at, created_at, updated_at'
-    )
-    .in('term_id', termIds);
+      : Promise.resolve({ count: 0 }),
+    service
+      .from('evaluation_writeups')
+      .select(
+        'id, student_id, section_id, term_id, submitted, submitted_at, created_at, updated_at'
+      )
+      .in('term_id', termIds),
+  ]);
+  const studentCount = studentCountRes.count;
+  const rows = writeupsRes.data;
 
   return {
     writeups: (rows ?? []) as WriteupRow[],
@@ -417,6 +422,90 @@ function formatPtcDaysLabel(days: number): string {
   return `${Math.abs(days)} days ago`;
 }
 
+type SectionPendingRow = {
+  sectionId: string;
+  sectionName: string;
+  pending: number;
+};
+
+/**
+ * Batches the "active roster minus submitted writeups" computation across
+ * many sections into 2 queries TOTAL, not 2 per section (§8 N+1 avoidance —
+ * this fed the registrar/teacher priority panels via a per-section
+ * `Promise.all(sections.map(async s => { ...2 queries... }))` loop that
+ * scaled with school-wide section count).
+ *
+ * Roster is counted by the section's CURRENT active roster (student_id), not
+ * evaluation_writeups.section_id — a writeup's section_id is a seed-time tag
+ * that does NOT follow a mid-year transfer (KD #67), so counting by
+ * section_id over-reports "pending" in the destination section. Per-roster
+ * counting stays correct after any transfer. Each active student belongs to
+ * exactly one section, so bucketing submittedStudentIds by roster membership
+ * is equivalent to a per-section submitted count.
+ */
+async function loadSectionWriteupPending(
+  service: ReturnType<typeof createServiceClient>,
+  sections: Array<{ id: string; name: string }>,
+  termId: string
+): Promise<SectionPendingRow[]> {
+  if (sections.length === 0) return [];
+  const sectionIds = sections.map((s) => s.id);
+
+  const { data: rosterRows } = await service
+    .from('section_students')
+    .select('section_id, student_id')
+    .in('section_id', sectionIds)
+    .neq('enrollment_status', 'withdrawn');
+
+  const studentIdsBySection = new Map<string, string[]>();
+  const allStudentIds: string[] = [];
+  for (const row of (rosterRows ?? []) as Array<{
+    section_id: string;
+    student_id: string;
+  }>) {
+    const list = studentIdsBySection.get(row.section_id) ?? [];
+    list.push(row.student_id);
+    studentIdsBySection.set(row.section_id, list);
+    allStudentIds.push(row.student_id);
+  }
+
+  // KD #120: "submitted" requires non-empty content — an emptied-but-
+  // still-submitted write-up must not count (mirrors getWriteupProgressByTerm,
+  // publish-readiness, and the chase loader). The DB filter handles
+  // submitted=true; the JS filter enforces non-empty.
+  const submittedStudentIds = new Set<string>();
+  if (allStudentIds.length > 0) {
+    const { data: subRows } = await service
+      .from('evaluation_writeups')
+      .select('student_id, writeup, submitted')
+      .eq('term_id', termId)
+      .eq('submitted', true)
+      .in('student_id', allStudentIds);
+    for (const w of (subRows ?? []) as Array<{
+      student_id: string;
+      writeup: string | null;
+      submitted: boolean;
+    }>) {
+      if (w.writeup && w.writeup.trim().length > 0) {
+        submittedStudentIds.add(w.student_id);
+      }
+    }
+  }
+
+  return sections.map((s) => {
+    const studentIds = studentIdsBySection.get(s.id) ?? [];
+    const expected = studentIds.length;
+    const submitted = studentIds.filter((id) =>
+      submittedStudentIds.has(id)
+    ).length;
+    return {
+      sectionId: s.id,
+      sectionName: s.name,
+      pending: Math.max(0, expected - submitted),
+    };
+  });
+}
+
 export type EvaluationTeacherPriorityInput = {
   ayCode: string;
   teacherUserId: string;
@@ -482,50 +571,26 @@ async function loadEvaluationTeacherPriorityUncached(
 
   // 4. For each adviser section, count active students MINUS submitted writeups
   //    for the current term. evaluation_writeups uses `submitted boolean`
-  //    (migration 018) — there is no `status` column.
-  const perSection = await Promise.all(
-    adviserSectionIds.map(async (sectionId) => {
-      // Count by the section's CURRENT active roster (student_id), not by
-      // evaluation_writeups.section_id — a writeup's section_id is a seed-time
-      // tag that doesn't follow a mid-year transfer (KD #67), so a per-section_id
-      // count over-reports "pending" in the destination section.
-      const [rosterRes, sectionRes] = await Promise.all([
-        service
-          .from('section_students')
-          .select('student_id')
-          .eq('section_id', sectionId)
-          .neq('enrollment_status', 'withdrawn'),
-        service
-          .from('sections')
-          .select('name')
-          .eq('id', sectionId)
-          .maybeSingle(),
-      ]);
-      const studentIds = (rosterRes.data ?? []).map(
-        (r) => (r as { student_id: string }).student_id
-      );
-      const expected = studentIds.length;
-      let submitted = 0;
-      if (expected > 0) {
-        // KD #120: "submitted" requires non-empty content — an emptied-but-
-        // still-submitted write-up must not count (mirrors getWriteupProgressByTerm,
-        // publish-readiness, and the chase loader). The DB filter handles
-        // submitted=true; the JS filter enforces non-empty.
-        const { data: subRows } = await service
-          .from('evaluation_writeups')
-          .select('writeup, submitted')
-          .eq('term_id', currentTerm.id)
-          .eq('submitted', true)
-          .in('student_id', studentIds);
-        submitted = (subRows ?? []).filter(
-          (w) => !!w.writeup && w.writeup.trim().length > 0
-        ).length;
-      }
-      const pending = Math.max(0, expected - submitted);
-      const sectionName =
-        (sectionRes.data as { name: string } | null)?.name ?? 'Section';
-      return { sectionId, sectionName, pending };
-    })
+  //    (migration 018) — there is no `status` column. Batched via
+  //    loadSectionWriteupPending — 3 queries total (section names + roster +
+  //    writeups), not up to 3 per section.
+  const { data: adviserSectionRows } = await service
+    .from('sections')
+    .select('id, name')
+    .in('id', adviserSectionIds);
+  const adviserSectionNameById = new Map(
+    ((adviserSectionRows ?? []) as Array<{ id: string; name: string }>).map(
+      (s) => [s.id, s.name]
+    )
+  );
+  const adviserSections = adviserSectionIds.map((id) => ({
+    id,
+    name: adviserSectionNameById.get(id) ?? 'Section',
+  }));
+  const perSection = await loadSectionWriteupPending(
+    service,
+    adviserSections,
+    currentTerm.id
   );
 
   const totalPending = perSection.reduce((sum, s) => sum + s.pending, 0);
@@ -643,45 +708,13 @@ async function loadEvaluationRegistrarPriorityUncached(
     .eq('academic_years.ay_code', input.ayCode);
   const sections = (sectionRows ?? []) as Array<{ id: string; name: string }>;
 
-  const perSection = await Promise.all(
-    sections.map(async (s) => {
-      // Count by the section's CURRENT active roster (student_id), not by
-      // evaluation_writeups.section_id. A writeup is keyed (term_id, student_id);
-      // its section_id is a seed-time tag that does NOT follow a mid-year
-      // transfer (KD #67), so counting by section_id over-reports "pending" in
-      // the destination section. Per-roster counting stays correct after any
-      // transfer.
-      const { data: rosterRows } = await service
-        .from('section_students')
-        .select('student_id')
-        .eq('section_id', s.id)
-        .neq('enrollment_status', 'withdrawn');
-      const studentIds = (rosterRows ?? []).map(
-        (r) => (r as { student_id: string }).student_id
-      );
-      const expected = studentIds.length;
-      let submitted = 0;
-      if (expected > 0) {
-        // KD #120: "submitted" requires non-empty content — an emptied-but-
-        // still-submitted write-up must not count (mirrors getWriteupProgressByTerm,
-        // publish-readiness, and the chase loader). The DB filter handles
-        // submitted=true; the JS filter enforces non-empty.
-        const { data: subRows } = await service
-          .from('evaluation_writeups')
-          .select('writeup, submitted')
-          .eq('term_id', currentTerm.id)
-          .eq('submitted', true)
-          .in('student_id', studentIds);
-        submitted = (subRows ?? []).filter(
-          (w) => !!w.writeup && w.writeup.trim().length > 0
-        ).length;
-      }
-      return {
-        sectionId: s.id,
-        sectionName: s.name,
-        pending: Math.max(0, expected - submitted),
-      };
-    })
+  // Batched via loadSectionWriteupPending — 2 queries total across every
+  // section in the AY, not 2 per section (§8 N+1 avoidance; this scaled with
+  // school-wide section count before the fix).
+  const perSection = await loadSectionWriteupPending(
+    service,
+    sections,
+    currentTerm.id
   );
 
   const totalPending = perSection.reduce((sum, s) => sum + s.pending, 0);

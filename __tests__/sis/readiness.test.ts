@@ -13,14 +13,25 @@ import {
 } from '@/lib/sis/readiness';
 
 describe('resolveAySetupStep', () => {
-  it('not_started with no dated terms', () => {
-    expect(resolveAySetupStep({ datedTermCount: 0 }).status).toBe(
-      'not_started'
-    );
+  it('not_started when no terms exist, no fraction key', () => {
+    const s = resolveAySetupStep({ datedTermCount: 0, totalTermCount: 0 });
+    expect(s.status).toBe('not_started');
+    expect(s.fraction).toBeUndefined();
   });
-  it('done with at least one dated term, required, correct id', () => {
-    const s = resolveAySetupStep({ datedTermCount: 4 });
+  it('not_started when terms exist but none dated', () => {
+    const s = resolveAySetupStep({ datedTermCount: 0, totalTermCount: 4 });
+    expect(s.status).toBe('not_started');
+    expect(s.fraction).toEqual({ done: 0, total: 4 });
+  });
+  it('partial when some but not all terms are dated', () => {
+    const s = resolveAySetupStep({ datedTermCount: 1, totalTermCount: 4 });
+    expect(s.status).toBe('partial');
+    expect(s.fraction).toEqual({ done: 1, total: 4 });
+  });
+  it('done with all terms dated, required, correct id', () => {
+    const s = resolveAySetupStep({ datedTermCount: 4, totalTermCount: 4 });
     expect(s.status).toBe('done');
+    expect(s.fraction).toEqual({ done: 4, total: 4 });
     expect(s.required).toBe(true);
     expect(s.id).toBe('ay-setup');
   });
@@ -191,7 +202,7 @@ describe('resolveAppWindowStep', () => {
 describe('buildReadiness', () => {
   it('counts only required steps; optional app-window excluded from total', () => {
     const steps = [
-      resolveAySetupStep({ datedTermCount: 4 }), // done, required
+      resolveAySetupStep({ datedTermCount: 4, totalTermCount: 4 }), // done, required
       resolveCalendarStep({ totalTerms: 4, coveredTerms: 4 }), // done, required
       resolveClassesStep({ sectionCount: 18, subjectConfigCount: 82 }), // done, required
       resolveAdvisersStep({ sectionCount: 18, advisedSectionCount: 12 }), // partial, required
@@ -208,7 +219,7 @@ describe('buildReadiness', () => {
   });
   it('all-not-started → complete=0, total=7', () => {
     const steps = [
-      resolveAySetupStep({ datedTermCount: 0 }),
+      resolveAySetupStep({ datedTermCount: 0, totalTermCount: 0 }),
       resolveCalendarStep({ totalTerms: 0, coveredTerms: 0 }),
       resolveClassesStep({ sectionCount: 0, subjectConfigCount: 0 }),
       resolveAdvisersStep({ sectionCount: 0, advisedSectionCount: 0 }),
@@ -226,14 +237,14 @@ describe('buildReadiness', () => {
 describe('nextIncompleteStepId', () => {
   it('returns the first required step that is not done', () => {
     const steps = [
-      resolveAySetupStep({ datedTermCount: 4 }), // done
+      resolveAySetupStep({ datedTermCount: 4, totalTermCount: 4 }), // done
       resolveCalendarStep({ totalTerms: 4, coveredTerms: 1 }), // partial (incomplete)
     ];
     expect(nextIncompleteStepId(steps)).toBe('calendar');
   });
   it('falls back to steps[0].id when all required steps are done', () => {
     const steps = [
-      resolveAySetupStep({ datedTermCount: 4 }), // done, required
+      resolveAySetupStep({ datedTermCount: 4, totalTermCount: 4 }), // done, required
       resolveAppWindowStep({ accepting: false }), // not done, but optional — skipped
     ];
     expect(nextIncompleteStepId(steps)).toBe('ay-setup');

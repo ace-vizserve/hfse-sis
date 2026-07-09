@@ -1,6 +1,6 @@
 # Year Setup Workbench (AY Rollover)
 
-> **Status:** ✅ **Shipped (MVP 2026-04-20 + guided stepper + 8-step readiness engine).** The Year Setup Workbench lives at `/sis/ay-setup` (school_admin + superadmin). It lists all academic years in a DataTable with an inline guided stepper per row. Creating an AY runs `create_academic_year` atomically — `academic_years` row + 4 terms + copied sections + copied `subject_configs` + 4 AY-prefixed admissions tables. Switch-active + superadmin-gated delete ship alongside. **Role split:** create + switch-active = school_admin + superadmin; delete = superadmin only. The switcher is **DB-driven** (reads `academic_years` at render time); creating an AY makes it visible everywhere immediately with no code deploy.
+> **Status:** ✅ **Shipped (MVP 2026-04-20 + 8-step readiness engine + checklist dashboard 2026-07-08).** The Year Setup Workbench lives at `/sis/ay-setup` (school_admin + superadmin only — **registrar cannot reach this page**, see Access below). It has two tabs: **Year Setup** (a per-AY checklist dashboard, replacing the earlier Back/Next stepper) and **Manage years** (the AY list DataTable). Creating an AY runs `create_academic_year` atomically — `academic_years` row + 4 terms + copied sections + copied `subject_configs` + 4 AY-prefixed admissions tables. Switch-active + superadmin-gated delete ship alongside. **Role split:** create + switch-active = school_admin + superadmin; delete = superadmin only. The switcher is **DB-driven** (reads `academic_years` at render time); creating an AY makes it visible everywhere immediately with no code deploy.
 
 ## Why this doc exists
 
@@ -71,15 +71,24 @@ Since the parent portal also writes to these tables (KD #12 parent-portal integr
 
 ## Shipped: Year Setup Workbench
 
-`/sis/ay-setup` (school_admin + superadmin, `ROUTE_ACCESS` gate + SIS layout check).
+`/sis/ay-setup` (school_admin + superadmin, `ROUTE_ACCESS` gate + a page-level redirect-to-`/sis` for every other role — including registrar).
 
-### AY list DataTable
+The page has two shadcn `Tabs`: **Year Setup** (default) and **Manage years**.
 
-Lists all `academic_years` rows. Per-row columns: AY code, label, `is_current` badge, `accepting_applications` toggle, actions menu (Switch active / Delete / Open stepper). Inline editors for term dates directly in the table row (inline stepper pattern, no full-page redirect).
+### Year Setup tab — checklist dashboard (replaces the stepper, 2026-07-08)
 
-### Inline guided stepper (per AY row)
+`components/sis/year-setup/year-setup-checklist.tsx` (`YearSetupChecklist`) renders the selected AY's readiness as a **checklist dashboard**, not a wizard. Layout:
 
-An 8-step guided stepper surfaces inside the Workbench for each AY, walking the registrar/school_admin through the setup tasks for that year. Steps cover: AY identity, terms (dates + virtue themes via the `PATCH /api/evaluation/virtue-theme` route — KD #137 relocated virtue-theme editing here and then to `/evaluation/virtue-themes`), sections, grading sheets, and other readiness checks. Each step renders an inline editor or a status summary; the stepper advances on save.
+- **Header strip** (the only progress indicator on the page): `AyPicker` (AY select, defaults to the current AY) + an AY status badge (Active / Early-bird open / Inactive) on the left; one readiness bar + "N of M ready" (required items only) on the right. Copy says "ready", never "step".
+- **One card**, a `<ul className="divide-y divide-border">` with one row per readiness item (all 8 — see AY Readiness Pill below for the full list). Each row: a solid-tint status tile (mint done / amber partial / muted not-started — deliberately not gradient), a title + a **live plain-English data summary line** (`lib/sis/year-setup.ts::checklistSummary`, e.g. "4 of 4 terms dated · T1 Jan 6 – Mar 21", "School days cover 3 of 4 terms."), a status badge (Ready / In progress / Not started·Optional), and an in-place action on the right.
+- **No step numbers, no Back/Next/Resume.** The **first incomplete required row** gets an indigo left-accent and its action renders as the page's one default-variant (gradient) `Button`; every other row's actions are `outline`/`ghost` — this replaces the old "Resume" affordance with an always-current "what's next" cue instead of a fixed sequence.
+- Actions per row: Term dates → `TermDatesEditor` dialog; Calendar → `GenerateCalendarButton` + "Open calendar ↗"; Classes → `ApplyTemplateButton` + "Open template ↗"; Advisers → "Open Sections ↗" (deep-link only — no inline editor); Grading sheets → `GenerateSheetsDialog` + "Open Markbook ↗"; **Virtue themes → a `Collapsible` that expands the row in place to the existing `VirtueThemesEditor`** (same component `/evaluation/virtue-themes` uses, KD #137 — not a separate route, not part of `TermDatesEditor`); Letterhead → "Open School config ↗"; Application window → `AyAcceptingApplicationsToggle` inline plus a visible caption explaining the single-select early-bird rule (KD #118).
+- The **Application window** row is the one optional item and sits below an "OPTIONAL" divider row — it never gets the "next up" accent.
+- Empty state ("No academic year yet") unchanged from the original stepper.
+
+### Manage years tab
+
+`AySetupDataTable` — lists all `academic_years` rows. Per-row columns: AY code, label, `is_current` badge, `accepting_applications` toggle (with a short visible caption, same single-select explanation as above), actions menu (Copy teacher assignments / Create sheets / Switch active / **Delete, visually separated by a `DropdownMenuSeparator` + destructive styling**). Inline editors for term dates directly in the table row. Below the table, a plain bulleted "Starting a new academic year" list (not numbered — deliberately dropped "step" vocabulary) walking through create → verify parent-portal readiness → switch active → optional delete → "work through the Year Setup tab for the new year."
 
 ### Create-AY flow (school_admin + superadmin)
 
@@ -103,14 +112,20 @@ Per-row `Switch` on the AY list (`components/sis/ay-accepting-applications-toggl
 
 ### AY Readiness Pill (KD #109)
 
-A separate floating 4-step readiness indicator in the SIS layout (`app/(sis)/layout.tsx`), visible to school_admin + superadmin. Not the same as the inline stepper — this is a header-bar chip that opens a dialog. The **4 steps** are:
+A separate floating readiness indicator in the SIS layout (`app/(sis)/layout.tsx`), visible to school_admin + superadmin. Not the same as the Year Setup checklist — this is a header-bar chip that opens a dialog. **It is suppressed on `/sis/ay-setup` itself** (2026-07-08) since the checklist dashboard on that page already renders the same readiness data in place — the pill stays everywhere else and deep-links here.
 
-1. **AY Setup** — terms exist with dated start/end
-2. **School Calendar** — school_day-type rows present for all terms
-3. **Sections** — at least one section with a form adviser assigned
-4. **Grading Sheets** — all sections have grading sheets created
+The readiness engine (`lib/sis/readiness.ts`) tracks **8 items** (7 required + 1 optional), not 4 — `STEP_META`'s `ReadinessStepId` union is `'ay-setup' | 'calendar' | 'classes' | 'advisers' | 'grading-sheets' | 'virtue-themes' | 'letterhead' | 'app-window'`:
 
-Pill turns amber "Setup needed" when any step is incomplete. Source: `lib/sis/readiness.ts::getAyReadiness(ayCode)` (`unstable_cache`, tag `sis:${ayCode}`).
+1. **AY Setup** (required) — terms exist with dated start/end.
+2. **School Calendar** (required) — school_day-type rows present for all terms.
+3. **Classes & subjects** (required) — sections + subject_configs exist for the AY.
+4. **Form advisers** (required) — every section has a form adviser assigned.
+5. **Grading Sheets** (required) — all sections have grading sheets created.
+6. **Virtue themes** (required) — T1–T3 terms each have a `virtue_theme` set.
+7. **Report-card letterhead** (required) — `school_config` has an organization name + address.
+8. **Application window** (optional) — the AY's early-bird `accepting_applications` window is open.
+
+`complete`/`total` on `AyReadiness` count **required items only** (currently 7) — the optional Application-window item never blocks "all set." Pill turns amber "Setup needed" when any required item is incomplete. Source: `lib/sis/readiness.ts::getAyReadiness(ayCode)` (`unstable_cache`, tag `sis:${ayCode}`).
 
 ### Delete-AY flow (superadmin only)
 
@@ -169,31 +184,35 @@ Cache invalidation: `revalidateTag('sis:${newAyCode}', 'max')` after creation or
 
 ## Placement
 
-- **Route:** `/sis/ay-setup` (superadmin-only). Or nested `/sis/admin/ay-setup` if we grow a superadmin admin sub-area in Records.
-- **Sidebar:** add under Records sidebar for superadmins only (gate in `NAV_BY_MODULE.sis` with a role check — or render conditionally in `components/sis-sidebar.tsx`).
-- **Components:**
-  - `app/(sis)/sis/ay-setup/page.tsx` — wizard landing (list existing AYs + "New AY" button + "Switch active" button).
-  - `components/sis/ay-setup-wizard.tsx` — multi-step form (shadcn Tabs or stepped navigation, same pattern as existing SIS dialogs).
-  - `components/sis/ay-copy-forward-preview.tsx` — the step-2 grid.
+- **Route:** `/sis/ay-setup` (school_admin + superadmin — see Access).
+- **Sidebar:** under SIS Admin (school_admin + superadmin only; registrar doesn't see this entry — `ROUTE_ACCESS` gates the whole prefix).
+- **Components (current):**
+  - `app/(sis)/sis/ay-setup/page.tsx` — the two-tab shell (Year Setup / Manage years) + role redirect + all server-side loaders.
+  - `components/sis/year-setup/year-setup-checklist.tsx` — the Year Setup tab's checklist dashboard (`YearSetupChecklist`), plus its two mutation buttons (`GenerateCalendarButton`, `ApplyTemplateButton`).
+  - `components/sis/year-setup/ay-picker.tsx` — the header-strip AY select.
+  - `lib/sis/year-setup.ts` — `checklistSummary`, `resolveSelectedAyCode`, `ayStatusTone`/`AY_STATUS_LABEL` (pure helpers backing the checklist).
+  - `components/sis/ay-setup-wizard.tsx` — the "New AY" creation flow (`NewAyButton` + its multi-step dialog). The copy-forward review grid for the new-AY preview is inline inside this file as a `ReviewRow` component — there is no separate `ay-copy-forward-preview.tsx` file.
+  - `components/sis/ay-setup-data-table.tsx` — the Manage-years tab's AY list table + its row dialogs/menu.
+  - `components/sis/ay-readiness-pill.tsx` — the floating pill (suppressed on `/sis/ay-setup` itself, see AY Readiness Pill above).
 
 ## Access
 
-Per-action, not per-surface:
+**The whole page is gated to `school_admin` + `superadmin` — registrar cannot reach `/sis/ay-setup` at all.** Both layers agree: `ROUTE_ACCESS` (`lib/auth/roles.ts`) has an explicit `{ prefix: '/sis/ay-setup', allowed: ['school_admin', 'superadmin'] }` entry (evaluated before the broader `/sis` rule, longer-prefix-wins), and the page component itself (`app/(sis)/sis/ay-setup/page.tsx`) redirects any session whose role is not `school_admin`/`superadmin` — including `registrar` — to `/sis`. This is a page-level gate, not merely per-action; the table below is the finer-grained split **within** that already-narrowed audience:
 
-| Action                     | Roles allowed                             | Rationale                                                              |
-| -------------------------- | ----------------------------------------- | ---------------------------------------------------------------------- |
-| View AY list               | `registrar`, `school_admin`, `superadmin` | Read-only visibility into what exists.                                 |
-| Create AY                  | `school_admin`, `superadmin`              | Reversible via delete.                                                 |
-| Switch active AY           | `school_admin`, `superadmin`              | Reversible (switch back) and audited.                                  |
-| Early-bird toggle          | `school_admin`, `superadmin`              | Config surface (KD #118 — Admissions reads, SIS Admin owns).           |
-| Delete AY (empty AYs only) | `superadmin` only                         | Destructive + irreversible. Matches KD #2's destructive-ops carve-out. |
+| Action                       | Roles allowed                | Rationale                                                              |
+| ---------------------------- | ---------------------------- | ---------------------------------------------------------------------- |
+| Reach `/sis/ay-setup` at all | `school_admin`, `superadmin` | Registrar does not see this surface (see note above).                  |
+| Create AY                    | `school_admin`, `superadmin` | Reversible via delete.                                                 |
+| Switch active AY             | `school_admin`, `superadmin` | Reversible (switch back) and audited.                                  |
+| Early-bird toggle            | `school_admin`, `superadmin` | Config surface (KD #118 — Admissions reads, SIS Admin owns).           |
+| Delete AY (empty AYs only)   | `superadmin` only            | Destructive + irreversible. Matches KD #2's destructive-ops carve-out. |
 
-Registrar sees the AY list but none of the mutation buttons. Teachers, parents, p-file officers, and admissions role never reach this surface.
+Registrar-edited config that lives on related data (e.g. virtue themes) is reached through **other** surfaces registrar can access — e.g. `/evaluation/virtue-themes` (KD #137) — not through this page. Teachers, parents, p-file officers, and the admissions role never reach this surface either.
 
 ## Resolved decisions
 
-- ✅ **Nav placement:** `/sis/ay-setup` under SIS Admin (school_admin + superadmin). Registrar accesses it read-only; the module-switcher sidebar links here for discoverability.
-- ✅ **Term dates:** optional at creation, editable inline from the AY list stepper. The AY Readiness Pill (step 1) turns partial/amber when terms have no dates.
+- ✅ **Nav placement:** `/sis/ay-setup` under SIS Admin (school_admin + superadmin only — registrar does not see this page; see Access above).
+- ✅ **Term dates:** optional at creation, editable inline via `TermDatesEditor` from either the Year Setup checklist's "Term dates" row or the Manage-years AY list table. The AY Readiness Pill's "AY Setup" item turns partial/amber when terms have no dates.
 - ✅ **Subject weight editing after creation:** `/sis/admin/subjects` matrix tab handles per-AY weight CRUD post-creation. The `sync_grading_sheets_from_config` RPC (KD #99) propagates weight changes to unlocked sheets.
 - ✅ **Admissions DDL:** `create_ay_admissions_tables` is a security-definer Postgres function shipped via migrations. KD #119 documents the regression pattern (re-emitting the function from a stale body silently drops columns added by later migrations — always diff against the live definition).
 - ✅ **Discount codes:** copy-forward not built; the admissions team adds codes manually per AY via `/sis/admin/discount-codes` (KD #133 widened access to the `admissions` role).

@@ -17,22 +17,30 @@ import { createServiceClient } from '@/lib/supabase/service';
  * 5-min TTL is fine — teachers rarely change emails, and the email is only
  * used as a display field on drill rows. Stale email is harmless.
  */
+async function loadTeacherEmailMapUncached(): Promise<Array<[string, string]>> {
+  try {
+    const service = createServiceClient();
+    const { data } = await service.auth.admin.listUsers({ perPage: 1000 });
+    const out: Array<[string, string]> = [];
+    for (const u of data?.users ?? []) {
+      if (u.email) out.push([u.id, u.email]);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+// Hoisted to module scope — the key/tags are fully static (no per-call
+// parameter), so recreating the wrapper inside the exported function on
+// every call is the anti-pattern §2 of docs/context/11-performance-patterns.md
+// warns against.
+const loadTeacherEmailMap = unstable_cache(
+  loadTeacherEmailMapUncached,
+  ['teacher-emails-map'],
+  { revalidate: 300, tags: ['teacher-emails'] }
+);
+
 export function getTeacherEmailMap(): Promise<Array<[string, string]>> {
-  return unstable_cache(
-    async () => {
-      try {
-        const service = createServiceClient();
-        const { data } = await service.auth.admin.listUsers({ perPage: 1000 });
-        const out: Array<[string, string]> = [];
-        for (const u of data?.users ?? []) {
-          if (u.email) out.push([u.id, u.email]);
-        }
-        return out;
-      } catch {
-        return [];
-      }
-    },
-    ['teacher-emails-map'],
-    { revalidate: 300, tags: ['teacher-emails'] }
-  )();
+  return loadTeacherEmailMap();
 }

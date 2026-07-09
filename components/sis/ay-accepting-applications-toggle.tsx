@@ -15,10 +15,18 @@ export function AyAcceptingApplicationsToggle({
   ayCode,
   current,
   isCurrentAy,
+  showCaption = false,
 }: {
   ayCode: string;
   current: boolean;
   isCurrentAy: boolean;
+  /**
+   * Renders a short visible caption explaining the single-select early-bird
+   * behavior (KD #118) beneath the switch — opt-in so call sites that already
+   * render their own longer caption nearby (the Year Setup checklist row)
+   * don't end up with the explanation twice.
+   */
+  showCaption?: boolean;
 }) {
   const router = useRouter();
 
@@ -57,17 +65,28 @@ export function AyAcceptingApplicationsToggle({
       : 'Open for early-bird applications.'
     : 'Closed to new applications.';
 
+  const caption = isCurrentAy
+    ? 'Live window for the active year.'
+    : 'Opening this closes any other open upcoming year.';
+
   return (
-    <div className="flex items-center gap-2" title={stateHint}>
-      <Switch
-        checked={current}
-        disabled={busy}
-        onCheckedChange={(v) => flip(Boolean(v))}
-        aria-label={`Accepting applications for ${ayCode}`}
-      />
-      <span className="whitespace-nowrap text-[13px] font-medium text-foreground">
-        Accepting applications
-      </span>
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2" title={stateHint}>
+        <Switch
+          checked={current}
+          disabled={busy}
+          onCheckedChange={(v) => flip(Boolean(v))}
+          aria-label={`Accepting applications for ${ayCode}`}
+        />
+        <span className="whitespace-nowrap text-[13px] font-medium text-foreground">
+          Accepting applications
+        </span>
+      </div>
+      {showCaption && (
+        <p className="max-w-[180px] text-[11px] leading-snug text-muted-foreground">
+          {caption}
+        </p>
+      )}
     </div>
   );
 }

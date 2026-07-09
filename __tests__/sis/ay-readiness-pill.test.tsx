@@ -1,15 +1,23 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AyReadinessPill } from '@/components/sis/ay-readiness-pill';
 import type { AyReadiness } from '@/lib/sis/readiness';
 
+const { usePathname } = vi.hoisted(() => ({
+  usePathname: vi.fn(() => '/sis'),
+}));
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
-  usePathname: () => '/sis',
+  usePathname,
   useSearchParams: () => new URLSearchParams(),
 }));
+
+afterEach(() => {
+  usePathname.mockReturnValue('/sis');
+});
 
 const READINESS: AyReadiness = {
   ayCode: 'AY2026',
@@ -62,6 +70,22 @@ describe('AyReadinessPill', () => {
       <AyReadinessPill readiness={READINESS} role="teacher" />
     );
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('renders nothing on the Year Setup tab (the checklist replaces it there)', () => {
+    usePathname.mockReturnValue('/sis/ay-setup');
+    const { container } = render(
+      <AyReadinessPill readiness={READINESS} role="superadmin" />
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('still renders on other /sis pages', () => {
+    usePathname.mockReturnValue('/sis/calendar');
+    const { container } = render(
+      <AyReadinessPill readiness={READINESS} role="superadmin" />
+    );
+    expect(container).not.toBeEmptyDOMElement();
   });
 
   it('points every step Open button at the Year Setup control center', async () => {
