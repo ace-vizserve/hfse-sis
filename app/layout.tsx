@@ -1,6 +1,7 @@
 import { Toaster } from '@/components/ui/sonner';
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono, Source_Serif_4 } from 'next/font/google';
+import NextTopLoader from 'nextjs-toploader';
 import './globals.css';
 
 import {
@@ -54,6 +55,12 @@ export default async function RootLayout({
       className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} h-full`}
     >
       <body className="min-h-full bg-background text-foreground flex flex-col">
+        <NextTopLoader
+          color="var(--av-indigo)"
+          height={3}
+          showSpinner={false}
+          shadow="0 0 8px var(--av-indigo), 0 0 3px var(--av-indigo)"
+        />
         <QueryProvider>
           <CommandPaletteProvider>
             {children}
