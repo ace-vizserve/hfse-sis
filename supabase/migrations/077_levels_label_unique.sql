@@ -1,4 +1,4 @@
--- supabase/migrations/076_levels_label_unique.sql
+-- supabase/migrations/077_levels_label_unique.sql
 --
 -- Adds a UNIQUE constraint to public.levels.label to ensure level display labels
 -- are never duplicated. This supports the admissions-driven level reconciliation
@@ -9,7 +9,7 @@
 -- the schema generator (create_academic_year RPC + the AY-setup wizard) never
 -- copies or generates duplicate labels.
 --
--- Idempotent + safe to re-run. Apply after 075.
+-- Idempotent + safe to re-run. Apply after 076 (076_payment_preference_referral_columns.sql).
 
 ALTER TABLE public.levels
   ADD CONSTRAINT levels_label_unique UNIQUE (label);
