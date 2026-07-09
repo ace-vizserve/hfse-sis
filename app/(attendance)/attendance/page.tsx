@@ -77,12 +77,19 @@ export default async function AttendanceDashboard({
   const resolvedSearch = await searchParams;
   const selectedAy =
     typeof resolvedSearch.ay === 'string' ? resolvedSearch.ay : ay.ay_code;
-  const windows = await getDashboardWindows(selectedAy);
+  // getSchoolConfig() takes no AY/term input, so it's independent of
+  // getDashboardWindows() and the term-resolution chain below — parallelized
+  // rather than fetched serially after them (§2 of 11-performance-patterns.md).
+  const [windows, schoolConfig] = await Promise.all([
+    getDashboardWindows(selectedAy),
+    getSchoolConfig(),
+  ]);
   const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
   const ayCodes = [ay.ay_code];
 
   // Resolve current term for the VL quota card (KD #94 — VL is per-term).
   // Prefer the current-flagged term in the selected AY; fall back to T1.
+  // termRow genuinely depends on ayRow, so this pair stays sequential.
   const { data: ayRow } = await supabase
     .from('academic_years')
     .select('id')
@@ -110,8 +117,6 @@ export default async function AttendanceDashboard({
       currentTermLabel = active.label;
     }
   }
-
-  const schoolConfig = await getSchoolConfig();
 
   const [kpisResult, dailySeries, exMix, dayTypes, drillRowSets] =
     await Promise.all([

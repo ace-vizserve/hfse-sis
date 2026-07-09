@@ -176,9 +176,16 @@ export function loadFormAdvisersBySection(
   ayCode: string
 ): Promise<Record<string, AdviserEntry>> {
   if (sectionIds.length === 0) return Promise.resolve({});
+  // Cache key must include sectionIds — the result varies by input set, and
+  // several pages (markbook/attendance/evaluation/sis sections lists) call
+  // this with different (sometimes filtered) section-id sets for the same
+  // ayCode. Without this, one page's cached result could serve another
+  // page's request within the 60s window — wrong adviser names, not just
+  // stale ones. Sorted + joined so key identity doesn't depend on order.
+  const sectionIdsKey = sectionIds.slice().sort().join(',');
   return unstable_cache(
     loadFormAdvisersBySectionUncached,
-    ['sis', 'advisers-by-section', ayCode],
+    ['sis', 'advisers-by-section', ayCode, sectionIdsKey],
     { tags: [`sis:${ayCode}`], revalidate: 60 }
   )(sectionIds, ayCode);
 }
