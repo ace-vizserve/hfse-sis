@@ -32,6 +32,7 @@
     "cmdk": "^1.1.1",
     "lucide-react": "^1.8.0",
     "next": "16.2.3",
+    "nextjs-toploader": "^3.9.17",
     "pdf-merger-js": "^5.1.2",
     "radix-ui": "^1.6.0",
     "react": "19.2.4",
