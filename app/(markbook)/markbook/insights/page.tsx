@@ -9,7 +9,7 @@ import {
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
-import { MultiSeriesTrendChart } from '@/components/dashboard/charts/multi-series-trend-chart';
+import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
@@ -78,7 +78,7 @@ const FAILING_TAIL_MIN_PCT = 15;
 // Minimum pending change-request count to surface a throughput bottleneck callout.
 const PENDING_CR_MIN = 3;
 
-// MultiSeriesTrendChart reads cleanly with up to 5 distinct-hue lines; beyond
+// GroupedBarChart reads cleanly with up to 5 distinct-hue bar series; beyond
 // that hues repeat and the chart tangles. Only the subjects that moved most
 // across the AY's terms are plotted — the rest are named in the section copy.
 const TOP_SUBJECT_LIMIT = 5;
@@ -147,7 +147,7 @@ export default async function MarkbookInsightsPage({
 
   // Subject-performance trend needs term cells (termId + termNumber). When a
   // comparison AY is selected we include both AYs so the trend chart can show
-  // two lines per subject. getSubjectPerformanceTrend reads only
+  // two series per subject. getSubjectPerformanceTrend reads only
   // cell.{termId,termNumber,ayCode} — the `data` payload is irrelevant.
   const [trendCells, levelTrendCells] = await Promise.all([
     buildCompareCells({
@@ -241,8 +241,8 @@ export default async function MarkbookInsightsPage({
     .reverse()
     .find((p) => primaryTrendPoints.some((pt) => pt.periodLabel === p));
 
-  // ── Performance trend chart, top-N-by-movement lines ──────────────────────
-  // A line per subject reads cleanly up to MultiSeriesTrendChart's 5-hue
+  // ── Performance trend chart, top-N-by-movement bars ───────────────────────
+  // A bar series per subject reads cleanly up to GroupedBarChart's 5-hue
   // budget; beyond that hues repeat and the chart tangles. So we plot only
   // the subjects that moved most from their first to their latest recorded
   // term this AY — deliberately CURRENT-AY-ONLY (the AY-over-AY read for
@@ -255,7 +255,7 @@ export default async function MarkbookInsightsPage({
   const totalSubjectCount = new Set(
     primaryTrendPoints.map((p) => p.subjectName)
   ).size;
-  const { data: trendLineData, series: trendLineSeries } = buildMultiAyTrend(
+  const { data: trendBarData, series: trendBarSeries } = buildMultiAyTrend(
     primaryTrendPoints.filter((p) =>
       topMovementSubjects.includes(p.subjectName)
     ),
@@ -264,15 +264,15 @@ export default async function MarkbookInsightsPage({
   );
 
   // ── Trend-section visibility gate ─────────────────────────────────────────
-  // Gated on what's ACTUALLY plotted (trendLineSeries/primaryTrendPoints,
+  // Gated on what's ACTUALLY plotted (trendBarSeries/primaryTrendPoints,
   // built current-AY-only from the top-movement subjects) — not on the raw
   // trendPoints matrix, which stays non-empty from the comparison AY alone at
   // AY rollover (current AY has no grades yet). Gating on that matrix rendered
   // an empty, axes-only chart instead of hiding the section.
-  const haveTrend = primaryTrendPoints.length > 0 && trendLineSeries.length > 0;
+  const haveTrend = primaryTrendPoints.length > 0 && trendBarSeries.length > 0;
 
   // Overall average per period across every plotted-AY subject (not just the
-  // 5 plotted lines) — the honest schoolwide headline behind the chart.
+  // 5 plotted bars) — the honest schoolwide headline behind the chart.
   // summariseSeriesMovement (tested, lib/dashboard/trend-delta.ts) turns the
   // per-period points into the latest value + a first→latest movement delta
   // ("+X vs T1"), and returns delta: null on a single data point so no
@@ -475,7 +475,7 @@ export default async function MarkbookInsightsPage({
         </InsightsSection>
 
         {/* 1b — Subject performance trend across terms. Only the top-N
-            subjects by movement are plotted (MultiSeriesTrendChart's 5-hue
+            subjects by movement are plotted (GroupedBarChart's 5-hue
             budget); the rest are named in the description, not hidden. */}
         {haveTrend ? (
           <InsightsSection
@@ -504,14 +504,14 @@ export default async function MarkbookInsightsPage({
                     delta={overallTrendSummary.delta ?? undefined}
                   />
                 )}
-                {/* [0,100] matches the full grade scale — a tighter domain
-                    would exaggerate movement on a line chart where the shape
-                    should read at true scale. */}
-                <MultiSeriesTrendChart
-                  series={trendLineSeries}
-                  data={trendLineData}
+                {/* [60,100] per the approved design mock — grouped bars read
+                    clearly at this compressed range without the empty
+                    0–60 headroom a full grade-scale domain would add. */}
+                <GroupedBarChart
+                  series={trendBarSeries}
+                  data={trendBarData}
                   yFormat="number"
-                  yDomain={[0, 100]}
+                  yDomain={[60, 100]}
                   height={280}
                 />
               </CardContent>

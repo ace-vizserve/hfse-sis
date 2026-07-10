@@ -11,7 +11,7 @@ import {
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
-import { AyComparisonLineChart } from '@/components/dashboard/charts/ay-comparison-line-chart';
+import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
@@ -220,6 +220,15 @@ export default async function AttendanceInsightsPage({
   );
   const haveTrend = rateTrendPoints.some((p) => p.value !== null);
 
+  // Grouped-bar presentation labels (design: "Insights Trend Charts —
+  // Redesign Preview"): the current-AY series reads "This year (AYxxxx)" in
+  // the legend; the comparison series keeps its bare AY code and stays
+  // `muted` (buildAyTrend already marks every non-first series muted, which
+  // GroupedBarChart renders as neutral grey — never a second blue).
+  const rateTrendSeries = rateTrend.series.map((s, i) =>
+    i === 0 ? { ...s, label: `This year (${selectedAy})` } : s
+  );
+
   // Headline + delta caption sat above the trend chart (KD-style honesty
   // guard: summariseAyTrend anchors the comparison at the same term index as
   // the current AY's latest data, so no fake delta ever renders).
@@ -390,7 +399,7 @@ export default async function AttendanceInsightsPage({
           title="How does attendance move term to term?"
           description={
             compareAy
-              ? `Attendance rate per term — ${selectedAy} (solid) alongside ${compareAy} (dashed).`
+              ? `Attendance rate per term — ${selectedAy} alongside ${compareAy} (grey).`
               : 'Attendance rate per term across the academic year.'
           }
         >
@@ -419,8 +428,8 @@ export default async function AttendanceInsightsPage({
                     delta={rateTrendDelta}
                   />
                 )}
-                <AyComparisonLineChart
-                  series={rateTrend.series}
+                <GroupedBarChart
+                  series={rateTrendSeries}
                   data={rateTrend.data}
                   yFormat="percent"
                   yDomain={[80, 100]}

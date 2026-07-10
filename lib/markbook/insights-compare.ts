@@ -58,8 +58,8 @@ export type MultiAyTrendResult = {
 
 /**
  * Convert flat trend points (from getSubjectPerformanceTrend) into the shape
- * MultiSeriesTrendChart expects: `data` rows keyed by period, `series` array
- * with one entry per (subject × AY) line.
+ * GroupedBarChart expects: `data` rows keyed by period, `series` array
+ * with one entry per (subject × AY) bar series.
  *
  * Key contract:
  *  - Each series key is namespaced `"{subjectName} · {ayCode}"` so the same
@@ -123,8 +123,8 @@ export function buildMultiAyTrend(
 // ── selectTopMovementSubjects ───────────────────────────────────────────────
 
 /**
- * Select which subjects plot as lines on the Markbook Insights subject-
- * performance trend chart. MultiSeriesTrendChart reads cleanly with up to 5
+ * Select which subjects plot as bar series on the Markbook Insights subject-
+ * performance trend chart. GroupedBarChart reads cleanly with up to 5
  * distinct-hue series — beyond that, hues repeat and the chart becomes an
  * unreadable tangle — so we plot only the `limit` subjects that moved the
  * most, and note the rest in the section copy instead of hiding them silently.
