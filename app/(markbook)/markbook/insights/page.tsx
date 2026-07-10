@@ -34,7 +34,7 @@ import {
   computeDelta,
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
-import { summariseAyTrend } from '@/lib/dashboard/trend-delta';
+import { summariseSeriesMovement } from '@/lib/dashboard/trend-delta';
 import {
   getChangeRequestSummary,
   getGradeDistribution,
@@ -235,9 +235,9 @@ export default async function MarkbookInsightsPage({
     ),
   ].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
   const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
-  // Only the series count is needed here — this AY×comparison shape gated the
-  // section's visibility before the bar reshape below existed; `trendBarData`
-  // (current-AY-only) is what actually renders.
+  // Only the series count matters here (does ANY subject×AY series exist?) —
+  // what actually renders is `trendLineData` below, built current-AY-only
+  // from the top-movement subjects.
   const { series: trendSeries } = buildMultiAyTrend(
     trendPoints,
     periods,
@@ -277,31 +277,27 @@ export default async function MarkbookInsightsPage({
   );
 
   // Overall average per period across every plotted-AY subject (not just the
-  // 5 plotted lines) — the honest schoolwide headline behind the chart. Built
-  // into summariseAyTrend's {data,series} shape so the anchor-period lookup
-  // reuses the same tested logic every other Insights page's trend caption
-  // relies on. There's no muted comparison series here — this is a within-AY
-  // trend, not an AY-vs-AY overlay — so summariseAyTrend naturally returns
-  // delta: null and the caption renders the headline alone (no fabricated
-  // "vs T1" pill; TrendDeltaCaption already supports an omitted delta).
-  const overallTrendData = periods.map((period) => {
-    const values = primaryTrendPoints
-      .filter((p) => p.periodLabel === period && p.avgGrade !== null)
-      .map((p) => p.avgGrade as number);
-    return {
-      x: period,
-      overall:
-        values.length > 0
-          ? Math.round(
-              (values.reduce((a, b) => a + b, 0) / values.length) * 10
-            ) / 10
-          : null,
-    };
-  });
-  const overallTrendSeries = [{ key: 'overall', label: 'Overall average' }];
-  const overallTrendSummary = summariseAyTrend(
-    overallTrendData,
-    overallTrendSeries
+  // 5 plotted lines) — the honest schoolwide headline behind the chart.
+  // summariseSeriesMovement (tested, lib/dashboard/trend-delta.ts) turns the
+  // per-period points into the latest value + a first→latest movement delta
+  // ("+X vs T1"), and returns delta: null on a single data point so no
+  // movement is ever fabricated. Its periodLabel is by construction the same
+  // "latest period with data" as `latestPeriodWithData` above.
+  const overallTrendSummary = summariseSeriesMovement(
+    periods.map((period) => {
+      const values = primaryTrendPoints
+        .filter((p) => p.periodLabel === period && p.avgGrade !== null)
+        .map((p) => p.avgGrade as number);
+      return {
+        x: period,
+        value:
+          values.length > 0
+            ? Math.round(
+                (values.reduce((a, b) => a + b, 0) / values.length) * 10
+              ) / 10
+            : null,
+      };
+    })
   );
 
   const watchRows: SubjectTrendPoint[] = latestPeriodWithData
@@ -510,6 +506,7 @@ export default async function MarkbookInsightsPage({
                   <TrendDeltaCaption
                     value={overallTrendSummary.currentValue.toString()}
                     caption={`overall average in ${overallTrendSummary.periodLabel}`}
+                    delta={overallTrendSummary.delta ?? undefined}
                   />
                 )}
                 {/* [0,100] matches the full grade scale — a tighter domain

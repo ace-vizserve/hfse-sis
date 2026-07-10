@@ -94,3 +94,66 @@ export function summariseAyTrend(
     delta: { pct: growth.pct, abs, direction },
   };
 }
+
+// ── summariseSeriesMovement ─────────────────────────────────────────────────
+
+export type SeriesMovementPoint = {
+  /** Period label on the X axis (e.g. 'T1', 'Jul'). */
+  x: string;
+  value: number | null;
+};
+
+export type SeriesMovementSummary = {
+  /** The period the headline anchors to (latest with data). Null = no data. */
+  periodLabel: string | null;
+  currentValue: number | null;
+  /**
+   * First→latest movement within the one series, ready for TrendDeltaCaption.
+   * Null when fewer than 2 data points exist (single point or empty) — the
+   * first and latest period would be the same, so there is no movement to
+   * report and none is fabricated.
+   */
+  delta: { label: string; direction: TrendDeltaDirection } | null;
+};
+
+/**
+ * Summarise a SINGLE series into a headline value + first→latest delta for
+ * the Insights "Trend" caption. The within-AY sibling of `summariseAyTrend`:
+ * that helper compares a current series against a muted comparison series at
+ * the same period; this one measures how far one series moved from its FIRST
+ * period with data to its LATEST period with data (leading/trailing nulls
+ * skipped). The label reads plainly, e.g. "+3.3 vs T1".
+ */
+export function summariseSeriesMovement(
+  points: SeriesMovementPoint[]
+): SeriesMovementSummary {
+  const withData = points.filter((p) => typeof p.value === 'number');
+
+  if (withData.length === 0) {
+    return { periodLabel: null, currentValue: null, delta: null };
+  }
+
+  const latest = withData[withData.length - 1];
+  if (withData.length === 1) {
+    return {
+      periodLabel: latest.x,
+      currentValue: latest.value,
+      delta: null,
+    };
+  }
+
+  const first = withData[0];
+  const abs =
+    Math.round(((latest.value as number) - (first.value as number)) * 10) / 10;
+  const direction: TrendDeltaDirection =
+    abs > 0 ? 'up' : abs < 0 ? 'down' : 'flat';
+
+  return {
+    periodLabel: latest.x,
+    currentValue: latest.value,
+    delta: {
+      label: `${abs >= 0 ? '+' : ''}${abs} vs ${first.x}`,
+      direction,
+    },
+  };
+}
