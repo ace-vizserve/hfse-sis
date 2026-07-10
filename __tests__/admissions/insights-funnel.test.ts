@@ -2,14 +2,15 @@ import { describe, it, expect } from 'vitest';
 import {
   computeConversionByLevel,
   computeReferralConversion,
-  computeEnroleeTypeConversion,
 } from '@/lib/admissions/insights-funnel';
 
 // NOTE: the deep stage-date funnel (buildDeepFunnel / DEEP_FUNNEL_STAGE_KEYS /
 // getDeepFunnelStats) was removed — those columns are 0/490 populated in prod,
 // so the funnel was hollow. The Admissions Insights funnel is now built from the
 // real `applicationStatus` pipeline via getConversionFunnel (covered elsewhere).
-// The conversion-breakdown helpers below are unchanged and still drive the page.
+// The enrolee-type conversion helper was removed with the 2026-07 Insights
+// simplification (no production callers). The two helpers below still drive
+// the page.
 
 // ──────────────────────────────────────────────────────────────────────────
 // computeConversionByLevel
@@ -135,65 +136,5 @@ describe('computeReferralConversion', () => {
 
   it('returns empty array for empty input', () => {
     expect(computeReferralConversion([])).toEqual([]);
-  });
-});
-
-// ──────────────────────────────────────────────────────────────────────────
-// computeEnroleeTypeConversion
-// ──────────────────────────────────────────────────────────────────────────
-describe('computeEnroleeTypeConversion', () => {
-  it('excludes terminal statuses from applied', () => {
-    const rows = [
-      { enroleeType: 'New', applicationStatus: 'Enrolled' },
-      { enroleeType: 'New', applicationStatus: 'Cancelled' },
-      { enroleeType: 'Current', applicationStatus: 'Processing' },
-    ];
-    const result = computeEnroleeTypeConversion(rows);
-    const newRow = result.find((r) => r.type === 'New');
-    expect(newRow?.applied).toBe(1); // Cancelled excluded
-    expect(newRow?.enrolled).toBe(1);
-    const curRow = result.find((r) => r.type === 'Current');
-    expect(curRow?.applied).toBe(1);
-    expect(curRow?.enrolled).toBe(0);
-  });
-
-  it('sorts by canonical order: New, Current, VizSchool New, VizSchool Current', () => {
-    const rows = [
-      { enroleeType: 'VizSchool Current', applicationStatus: 'Processing' },
-      { enroleeType: 'Current', applicationStatus: 'Processing' },
-      { enroleeType: 'New', applicationStatus: 'Processing' },
-      { enroleeType: 'VizSchool New', applicationStatus: 'Processing' },
-    ];
-    const result = computeEnroleeTypeConversion(rows);
-    expect(result.map((r) => r.type)).toEqual([
-      'New',
-      'Current',
-      'VizSchool New',
-      'VizSchool Current',
-    ]);
-  });
-
-  it('defaults null enroleeType to "Unspecified"', () => {
-    const rows = [{ enroleeType: null, applicationStatus: 'Processing' }];
-    const result = computeEnroleeTypeConversion(rows);
-    expect(result[0].type).toBe('Unspecified');
-  });
-
-  it('computes conversionPct correctly', () => {
-    const rows = [
-      { enroleeType: 'New', applicationStatus: 'Enrolled' },
-      { enroleeType: 'New', applicationStatus: 'Enrolled (Conditional)' },
-      { enroleeType: 'New', applicationStatus: 'Processing' },
-      { enroleeType: 'New', applicationStatus: 'Processing' },
-    ];
-    const result = computeEnroleeTypeConversion(rows);
-    const newRow = result.find((r) => r.type === 'New');
-    expect(newRow?.applied).toBe(4);
-    expect(newRow?.enrolled).toBe(2);
-    expect(newRow?.conversionPct).toBe(50);
-  });
-
-  it('returns empty array for empty input', () => {
-    expect(computeEnroleeTypeConversion([])).toEqual([]);
   });
 });

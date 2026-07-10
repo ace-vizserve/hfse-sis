@@ -220,17 +220,34 @@ export default async function AdmissionsInsightsPage({
     (a, b) => b.conversionPct - a.conversionPct
   );
 
-  // Cancellation reasons — top 5 + "Other" for the sorted bar list.
+  // Cancellation reasons — top 5 + an overflow bucket for the sorted bar list.
   // terminal.overall is already sorted desc by count (lib/admissions/insights.ts).
+  // The overflow bucket carries a sentinel key + the label "Other reasons" —
+  // deliberately distinct from the real `other` reason code, whose display
+  // label is already "Other" (APPLICATION_TERMINAL_REASON_LABELS) and which
+  // can legitimately rank in the top 5 alongside the overflow row.
+  const OVERFLOW_REASON_KEY = '__overflow__';
   const TOP_REASON_COUNT = 5;
   const topReasons = terminal.overall.slice(0, TOP_REASON_COUNT);
   const otherReasonsCount = terminal.overall
     .slice(TOP_REASON_COUNT)
     .reduce((s, r) => s + r.count, 0);
-  const reasonBars =
-    otherReasonsCount > 0
-      ? [...topReasons, { reason: 'Other', count: otherReasonsCount }]
-      : topReasons;
+  const reasonBars = [
+    ...topReasons.map((r) => ({
+      key: r.reason,
+      label: reasonLabel(r.reason),
+      count: r.count,
+    })),
+    ...(otherReasonsCount > 0
+      ? [
+          {
+            key: OVERFLOW_REASON_KEY,
+            label: 'Other reasons',
+            count: otherReasonsCount,
+          },
+        ]
+      : []),
+  ];
 
   // ────────────────────────────────────────────────────────────────────────
   // Derived narrative — every finding-title + RecommendationCallout below is
@@ -692,13 +709,12 @@ export default async function AdmissionsInsightsPage({
                         terminal.total > 0
                           ? Math.round((r.count / terminal.total) * 100)
                           : 0;
-                      const isTop =
-                        showTopReason && r.reason === topReason.reason;
+                      const isTop = showTopReason && r.key === topReason.reason;
                       return (
-                        <li key={r.reason} className="space-y-1.5">
+                        <li key={r.key} className="space-y-1.5">
                           <div className="flex items-baseline justify-between gap-3 text-sm">
                             <span className="font-medium text-foreground">
-                              {reasonLabel(r.reason)}
+                              {r.label}
                             </span>
                             <span
                               className={

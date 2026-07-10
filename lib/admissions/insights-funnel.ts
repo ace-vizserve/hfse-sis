@@ -7,15 +7,13 @@ import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 
 // ──────────────────────────────────────────────────────────────────────────
-// Conversion breakdowns for the Admissions Insights page — by level, by
-// referral source, and by applicant type. All driven by `applicationStatus`
-// (populated 490/490 in prod) + `levelApplied` / `enroleeType` /
-// `howDidYouKnowAboutHFSEIS`, never the per-stage `*UpdatedDate` columns
-// (unstamped in prod — the deep stage-date funnel was hollow and was removed).
-//
-// This module provides a PARALLEL loader that fetches enroleeType from the
-// status table (not available on dashboard.ts's loadJoinedRows). It does NOT
-// modify dashboard.ts.
+// Conversion breakdowns for the Admissions Insights page — by level and by
+// referral source. All driven by `applicationStatus` (populated 490/490 in
+// prod) + `levelApplied` / `howDidYouKnowAboutHFSEIS`, never the per-stage
+// `*UpdatedDate` columns (unstamped in prod — the deep stage-date funnel was
+// hollow and was removed). The enrolee-type conversion breakdown was removed
+// with the 2026-07 Insights simplification (returning students re-enrol
+// ~100% structurally — nobody acts on it).
 //
 // Cache tag: `admissions-dashboard:${ayCode}` — same invalidation as the
 // operational dashboard so any write that flushes admissions data also
@@ -31,7 +29,6 @@ const CACHE_TTL_SECONDS = 60;
 type StatusFunnelRow = {
   enroleeNumber: string | null;
   applicationStatus: string | null;
-  enroleeType: string | null;
 };
 
 type AppFunnelRow = {
@@ -43,7 +40,6 @@ type AppFunnelRow = {
 type JoinedFunnelRow = {
   enroleeNumber: string;
   applicationStatus: string | null;
-  enroleeType: string | null;
   levelApplied: string | null;
   howDidYouKnowAboutHFSEIS: string | null;
 };
@@ -72,7 +68,7 @@ async function loadFunnelRowsUncached(
         (from, to) =>
           supabase
             .from(`${prefix}_enrolment_status`)
-            .select('enroleeNumber, applicationStatus, enroleeType')
+            .select('enroleeNumber, applicationStatus')
             .range(from, to) as unknown as P<StatusFunnelRow>
       ),
       fetchAllPages<AppFunnelRow>(
@@ -100,7 +96,6 @@ async function loadFunnelRowsUncached(
     out.push({
       enroleeNumber: s.enroleeNumber,
       applicationStatus: s.applicationStatus ?? null,
-      enroleeType: s.enroleeType ?? null,
       levelApplied: app?.levelApplied ?? null,
       howDidYouKnowAboutHFSEIS: app?.howDidYouKnowAboutHFSEIS ?? null,
     });
@@ -276,71 +271,6 @@ export function computeReferralConversion(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Enrolee type conversion (New vs Current vs VizSchool)
-// ──────────────────────────────────────────────────────────────────────────
-
-export type EnroleeTypeRow = {
-  type: string;
-  applied: number;
-  enrolled: number;
-  conversionPct: number;
-};
-
-type SimpleRow3 = {
-  enroleeType: string | null;
-  applicationStatus: string | null;
-};
-
-const ENROLEE_TYPE_ORDER = [
-  'New',
-  'Current',
-  'VizSchool New',
-  'VizSchool Current',
-];
-
-/** Count applications and enrolments by enroleeType, excluding terminal statuses. */
-export function computeEnroleeTypeConversion(
-  rows: SimpleRow3[]
-): EnroleeTypeRow[] {
-  const applied = new Map<string, number>();
-  const enrolled = new Map<string, number>();
-
-  for (const r of rows) {
-    if (TERMINAL_STATUSES.has(r.applicationStatus ?? '')) continue;
-    const type = (r.enroleeType ?? '').trim() || 'Unspecified';
-
-    applied.set(type, (applied.get(type) ?? 0) + 1);
-    if (ENROLLED_STATUSES.has(r.applicationStatus ?? '')) {
-      enrolled.set(type, (enrolled.get(type) ?? 0) + 1);
-    }
-  }
-
-  const out: EnroleeTypeRow[] = Array.from(applied.entries()).map(
-    ([type, app]) => {
-      const enr = enrolled.get(type) ?? 0;
-      return {
-        type,
-        applied: app,
-        enrolled: enr,
-        conversionPct: app > 0 ? Math.round((enr / app) * 100) : 0,
-      };
-    }
-  );
-
-  // Sort by canonical order, then alphabetically for unknowns.
-  out.sort((a, b) => {
-    const ai = ENROLEE_TYPE_ORDER.indexOf(a.type);
-    const bi = ENROLEE_TYPE_ORDER.indexOf(b.type);
-    if (ai !== -1 && bi !== -1) return ai - bi;
-    if (ai !== -1) return -1;
-    if (bi !== -1) return 1;
-    return a.type.localeCompare(b.type);
-  });
-
-  return out;
-}
-
-// ──────────────────────────────────────────────────────────────────────────
 // Cached public API
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -362,11 +292,4 @@ export async function getReferralConversion(
 ): Promise<ReferralConversionRow[]> {
   const rows = await loadFunnelRows(ayCode);
   return computeReferralConversion(rows);
-}
-
-export async function getEnroleeTypeConversion(
-  ayCode: string
-): Promise<EnroleeTypeRow[]> {
-  const rows = await loadFunnelRows(ayCode);
-  return computeEnroleeTypeConversion(rows);
 }
