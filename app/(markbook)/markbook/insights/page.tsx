@@ -2,7 +2,6 @@ import {
   ArrowLeft,
   BarChart3,
   ClipboardCheck,
-  FileCheck2,
   GitPullRequestArrow,
   Lock,
   Timer,
@@ -11,10 +10,8 @@ import {
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
-import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
-import { TrendChart } from '@/components/dashboard/charts/trend-chart';
+import { MultiSeriesTrendChart } from '@/components/dashboard/charts/multi-series-trend-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
-import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
@@ -35,15 +32,12 @@ import { buildCompareCells } from '@/lib/dashboard/compare';
 import { resolveCompareAy } from '@/lib/dashboard/comparison';
 import {
   computeDelta,
-  resolveRange,
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
-import { getDashboardWindows } from '@/lib/dashboard/windows';
+import { summariseAyTrend } from '@/lib/dashboard/trend-delta';
 import {
   getChangeRequestSummary,
   getGradeDistribution,
-  getGradeEntryVelocityRange,
-  getPublicationCoverage,
   getSheetLockProgressByTerm,
   GRADE_BANDS,
 } from '@/lib/markbook/dashboard';
@@ -55,6 +49,7 @@ import {
 } from '@/lib/markbook/compare';
 import {
   buildMultiAyTrend,
+  selectTopMovementSubjects,
   topBandBadge,
 } from '@/lib/markbook/insights-compare';
 import {
@@ -83,6 +78,11 @@ const FAILING_TAIL_MIN_PCT = 15;
 
 // Minimum pending change-request count to surface a throughput bottleneck callout.
 const PENDING_CR_MIN = 3;
+
+// MultiSeriesTrendChart reads cleanly with up to 5 distinct-hue lines; beyond
+// that hues repeat and the chart tangles. Only the subjects that moved most
+// across the AY's terms are plotted — the rest are named in the section copy.
+const TOP_SUBJECT_LIMIT = 5;
 
 // Markbook · Insights — the "Academic Performance" companion to the operational
 // dashboard. How students are performing in graded subjects, where attention is
@@ -146,11 +146,6 @@ export default async function MarkbookInsightsPage({
   const ayId = (ayRow as { id: string } | null)?.id ?? null;
   const compareAyId = (compareAyRow as { id: string } | null)?.id ?? null;
 
-  const windows = await getDashboardWindows(selectedAy);
-  // Markbook is term-scoped (KD #79) — mirror the operational dashboard, which
-  // resolves the default range via the thisTerm cascade (no preset).
-  const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
-
   // Subject-performance trend needs term cells (termId + termNumber). When a
   // comparison AY is selected we include both AYs so the trend chart can show
   // two lines per subject. getSubjectPerformanceTrend reads only
@@ -185,8 +180,6 @@ export default async function MarkbookInsightsPage({
     trendPoints,
     changeRequests,
     lockProgress,
-    pubCoverage,
-    velocity,
     rawLevelPoints,
   ] = await Promise.all([
     ayId ? getGradeDistribution(ayId) : Promise.resolve(null),
@@ -196,8 +189,6 @@ export default async function MarkbookInsightsPage({
     getSubjectPerformanceTrend(trendCellResults),
     getChangeRequestSummary(selectedAy, 30),
     ayId ? getSheetLockProgressByTerm(ayId) : Promise.resolve([]),
-    ayId ? getPublicationCoverage(ayId) : Promise.resolve([]),
-    getGradeEntryVelocityRange(rangeInput),
     getSubjectLevelTrend(levelTrendCellResults),
   ]);
 
@@ -232,10 +223,10 @@ export default async function MarkbookInsightsPage({
       ? computeDelta(topBandPct, compareTopBandPct)
       : null;
 
-  // ── Performance trend chart ───────────────────────────────────────────────
-  // One line per examinable subject (× AY when comparison is set); X axis =
-  // terms in order. buildMultiAyTrend handles namespacing so each
-  // (subject × AY) becomes its own series key with no collision.
+  // ── Trend-section visibility gate ─────────────────────────────────────────
+  // This AY×comparison shape decides ONLY whether the 1b trend section exists
+  // (`haveTrend`) — the lines actually plotted are built separately below
+  // from `primaryTrendPoints` only (current-AY-only, top-N by movement).
   const periods = [
     ...new Set(
       trendCells
@@ -263,52 +254,56 @@ export default async function MarkbookInsightsPage({
     .reverse()
     .find((p) => primaryTrendPoints.some((pt) => pt.periodLabel === p));
 
-  // ── Performance trend chart, bar view ──────────────────────────────────────
-  // Grouped bars read cleanly with the 4-term period count, but a bar per
-  // (subject × AY) — the line chart's shape — becomes an unreadable tangle
-  // once a comparison AY is added on top of several subjects. So the bar view
-  // is deliberately CURRENT-AY-ONLY (one bar per subject, distinct hues); the
-  // AY-over-AY read for Markbook already lives in the hero's topBandBadge and
-  // on /markbook/compare.
-  const { data: trendBarData, series: trendBarSeries } = buildMultiAyTrend(
+  // ── Performance trend chart, top-N-by-movement lines ──────────────────────
+  // A line per subject reads cleanly up to MultiSeriesTrendChart's 5-hue
+  // budget; beyond that hues repeat and the chart tangles. So we plot only
+  // the subjects that moved most from their first to their latest recorded
+  // term this AY — deliberately CURRENT-AY-ONLY (the AY-over-AY read for
+  // Markbook already lives in the hero's topBandBadge and on /markbook/compare).
+  const topMovementSubjects = selectTopMovementSubjects(
     primaryTrendPoints,
+    periods,
+    TOP_SUBJECT_LIMIT
+  );
+  const totalSubjectCount = new Set(
+    primaryTrendPoints.map((p) => p.subjectName)
+  ).size;
+  const { data: trendLineData, series: trendLineSeries } = buildMultiAyTrend(
+    primaryTrendPoints.filter((p) =>
+      topMovementSubjects.includes(p.subjectName)
+    ),
     periods,
     [selectedAy]
   );
 
-  function averageAvgGrade(
-    points: SubjectTrendPoint[],
-    period: string
-  ): number | null {
-    const values = points
+  // Overall average per period across every plotted-AY subject (not just the
+  // 5 plotted lines) — the honest schoolwide headline behind the chart. Built
+  // into summariseAyTrend's {data,series} shape so the anchor-period lookup
+  // reuses the same tested logic every other Insights page's trend caption
+  // relies on. There's no muted comparison series here — this is a within-AY
+  // trend, not an AY-vs-AY overlay — so summariseAyTrend naturally returns
+  // delta: null and the caption renders the headline alone (no fabricated
+  // "vs T1" pill; TrendDeltaCaption already supports an omitted delta).
+  const overallTrendData = periods.map((period) => {
+    const values = primaryTrendPoints
       .filter((p) => p.periodLabel === period && p.avgGrade !== null)
       .map((p) => p.avgGrade as number);
-    if (values.length === 0) return null;
-    return (
-      Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10
-    );
-  }
+    return {
+      x: period,
+      overall:
+        values.length > 0
+          ? Math.round(
+              (values.reduce((a, b) => a + b, 0) / values.length) * 10
+            ) / 10
+          : null,
+    };
+  });
+  const overallTrendSeries = [{ key: 'overall', label: 'Overall average' }];
+  const overallTrendSummary = summariseAyTrend(
+    overallTrendData,
+    overallTrendSeries
+  );
 
-  const firstPeriod = periods[0] ?? null;
-  const latestOverallAvg = latestPeriodWithData
-    ? averageAvgGrade(primaryTrendPoints, latestPeriodWithData)
-    : null;
-  const firstOverallAvg = firstPeriod
-    ? averageAvgGrade(primaryTrendPoints, firstPeriod)
-    : null;
-  const trendCaptionDelta =
-    latestOverallAvg !== null &&
-    firstOverallAvg !== null &&
-    firstPeriod !== latestPeriodWithData
-      ? {
-          label: `${latestOverallAvg - firstOverallAvg >= 0 ? '+' : ''}${Math.round((latestOverallAvg - firstOverallAvg) * 10) / 10} vs ${firstPeriod}`,
-          direction: (latestOverallAvg > firstOverallAvg
-            ? 'up'
-            : latestOverallAvg < firstOverallAvg
-              ? 'down'
-              : 'flat') as 'up' | 'down' | 'flat',
-        }
-      : undefined;
   const watchRows: SubjectTrendPoint[] = latestPeriodWithData
     ? primaryTrendPoints
         .filter(
@@ -330,8 +325,7 @@ export default async function MarkbookInsightsPage({
   const watchRowsByLevel = getWatchRowsByLevel(levelPoints, periods);
   const failingTail = computeFailingTailBySubject(rawLevelPoints, periods);
 
-  // ── Grade distribution token-bar ─────────────────────────────────────────
-  const maxBand = (gradeDist ?? []).reduce((m, b) => Math.max(m, b.count), 0);
+  // ── Grade distribution token-bar (compare-AY reference only) ─────────────
   const compareMaxBand = (compareGradeDist ?? []).reduce(
     (m, b) => Math.max(m, b.count),
     0
@@ -343,7 +337,6 @@ export default async function MarkbookInsightsPage({
 
   // ── Throughput ────────────────────────────────────────────────────────────
   const crs = changeRequests;
-  const haveVelocity = velocity.current.length > 1;
 
   // ──────────────────────────────────────────────────────────────────────────
   // Derived narrative — every finding-title + RecommendationCallout below is
@@ -361,22 +354,6 @@ export default async function MarkbookInsightsPage({
   const ledeDescription = showRegression
     ? `${biggestRegression.subjectName} (${biggestRegression.levelCode}) fell ${Math.abs(biggestRegression.delta).toFixed(1)} pts from ${biggestRegression.fromPeriod} to ${biggestRegression.toPeriod} — the biggest drop across all subjects and levels.`
     : 'How students are performing in graded subjects, which subjects need attention, and how steadily grades are moving across the year.';
-
-  // Ch1 — §1 grade-distribution title: names the dominant lower band when it
-  // accounts for a notable share, neutral otherwise.
-  const worstBand = pickExtreme(
-    (gradeDist ?? []).filter((b) => !TOP_BAND_KEYS.has(b.key)),
-    (b) => b.count,
-    'max'
-  );
-  const worstBandIsLarge =
-    !worstBand.isTie &&
-    worstBand.item !== null &&
-    totalGraded > 0 &&
-    meetsThreshold((worstBand.value ?? 0) / totalGraded, 0.25);
-  const distTitle = worstBandIsLarge
-    ? `${worstBand.item!.label} is the largest band`
-    : 'Grade distribution';
 
   // Ch2 — subjects-to-watch title: worst subject in the watchlist (guard: list
   // must be non-empty and no tie with the second-worst avg).
@@ -506,12 +483,18 @@ export default async function MarkbookInsightsPage({
           </section>
         </InsightsSection>
 
-        {/* 1b — Subject performance trend across terms. */}
+        {/* 1b — Subject performance trend across terms. Only the top-N
+            subjects by movement are plotted (MultiSeriesTrendChart's 5-hue
+            budget); the rest are named in the description, not hidden. */}
         {haveTrend ? (
           <InsightsSection
             eyebrow="Trend"
             title="How does performance move across terms?"
-            description="Average quarterly grade per examinable subject, term by term — the shape behind the headline."
+            description={
+              totalSubjectCount > topMovementSubjects.length
+                ? `${topMovementSubjects.length} of ${totalSubjectCount} subjects shown — those that moved most across the terms.`
+                : 'Average quarterly grade per examinable subject, term by term — the shape behind the headline.'
+            }
           >
             <Card className="@container/card">
               <CardHeader className="space-y-1">
@@ -523,16 +506,18 @@ export default async function MarkbookInsightsPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {latestOverallAvg !== null && (
+                {overallTrendSummary.currentValue !== null && (
                   <TrendDeltaCaption
-                    value={latestOverallAvg.toString()}
-                    caption={`overall average in ${latestPeriodWithData}`}
-                    delta={trendCaptionDelta}
+                    value={overallTrendSummary.currentValue.toString()}
+                    caption={`overall average in ${overallTrendSummary.periodLabel}`}
                   />
                 )}
-                <GroupedBarChart
-                  series={trendBarSeries}
-                  data={trendBarData}
+                {/* [0,100] matches the full grade scale — a tighter domain
+                    would exaggerate movement on a line chart where the shape
+                    should read at true scale. */}
+                <MultiSeriesTrendChart
+                  series={trendLineSeries}
+                  data={trendLineData}
                   yFormat="number"
                   yDomain={[0, 100]}
                   height={280}
@@ -542,38 +527,35 @@ export default async function MarkbookInsightsPage({
           </InsightsSection>
         ) : null}
 
-        {/* 1c — Grade distribution. */}
-        <InsightsSection
-          eyebrow="Distribution"
-          title="Where do the grades land?"
-          description="The spread of quarterly grades across mastery bands for the current term."
-        >
-          {totalGraded === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="p-8 text-center text-sm text-muted-foreground">
-                No quarterly grades recorded yet for the current term — nothing
-                to chart.
-              </CardContent>
-            </Card>
-          ) : (
+        {/* 1c — Grade distribution, compare-AY reference only. The primary
+            AY's distribution already lives on the /markbook dashboard
+            (GradeDistributionDrillCard) — this section adds only what the
+            dashboard doesn't: the comparison AY's shape, for reference.
+            Auto-hides entirely when no comparison AY is picked or it has no
+            data — no orphaned header, no placeholder card. */}
+        {hasCompareDistData ? (
+          <InsightsSection
+            eyebrow="Distribution"
+            title={`How did ${compareAy} compare?`}
+            description={`The quarterly grade distribution for ${compareAy}, for reference against the current year.`}
+          >
             <Card>
               <CardHeader>
                 <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
                   Quarterly grades by band
                 </CardDescription>
                 <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  {distTitle}
+                  {compareAy} distribution
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-5">
-                {/* Primary AY distribution */}
+              <CardContent>
                 <ul className="space-y-3">
-                  {(gradeDist ?? []).map((band) => {
+                  {(compareGradeDist ?? []).map((band) => {
                     const widthPct =
-                      maxBand > 0
+                      compareMaxBand > 0
                         ? Math.max(
                             band.count > 0 ? 4 : 0,
-                            Math.round((band.count / maxBand) * 100)
+                            Math.round((band.count / compareMaxBand) * 100)
                           )
                         : 0;
                     const isTop = TOP_BAND_KEYS.has(band.key);
@@ -602,59 +584,10 @@ export default async function MarkbookInsightsPage({
                     );
                   })}
                 </ul>
-
-                {/* Comparison AY distribution — subordinated, shown only when data exists */}
-                {compareAy && !hasCompareDistData ? (
-                  <BuildingHistoryCard
-                    variant="no-data"
-                    label={`No data for ${compareAy}`}
-                  />
-                ) : hasCompareDistData ? (
-                  <div className="border-t border-border pt-4">
-                    <p className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      {compareAy} distribution
-                    </p>
-                    <ul className="space-y-3 opacity-70">
-                      {(compareGradeDist ?? []).map((band) => {
-                        const widthPct =
-                          compareMaxBand > 0
-                            ? Math.max(
-                                band.count > 0 ? 4 : 0,
-                                Math.round((band.count / compareMaxBand) * 100)
-                              )
-                            : 0;
-                        const isTop = TOP_BAND_KEYS.has(band.key);
-                        return (
-                          <li key={band.key} className="space-y-1.5">
-                            <div className="flex items-baseline justify-between gap-3 text-sm">
-                              <span className="font-medium text-muted-foreground">
-                                {band.label}
-                              </span>
-                              <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                                {band.count.toLocaleString('en-SG')}
-                              </span>
-                            </div>
-                            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                              <div
-                                className={
-                                  'h-full rounded-full bg-gradient-to-r opacity-60 ' +
-                                  (isTop
-                                    ? 'from-brand-mint to-brand-sky'
-                                    : 'from-brand-indigo to-brand-navy')
-                                }
-                                style={{ width: `${widthPct}%` }}
-                              />
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ) : null}
               </CardContent>
             </Card>
-          )}
-        </InsightsSection>
+          </InsightsSection>
+        ) : null}
       </div>
       {/* ═══ end Chapter 1 ═══ */}
 
@@ -926,8 +859,11 @@ export default async function MarkbookInsightsPage({
       {/* ═══ end Chapter 2 ═══ */}
 
       {/* ═══ Chapter 3 — Grading throughput ═══
-          Change-request turnaround, sheet-lock readiness, publication coverage,
-          and grade-entry velocity — the operational pulse behind the grades. */}
+          Change-request turnaround and sheet-lock readiness — the operational
+          pulse behind the grades. Publication coverage and grade-entry
+          velocity are cut: they verbatim-dupe the /markbook dashboard's
+          PublicationCoverageDrillCard and its richer (comparison-series)
+          velocity chart. */}
       <div className="space-y-8 border-t-2 border-brand-mint/40 pt-7">
         <div className="space-y-1">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-mint">
@@ -941,7 +877,7 @@ export default async function MarkbookInsightsPage({
         <InsightsSection
           eyebrow="Throughput"
           title="How steadily is grading moving?"
-          description="Change-request turnaround, how many sheets are locked per term, and how widely report cards are published — the operational pulse behind the grades."
+          description="Change-request turnaround and how many sheets are locked per term — the operational pulse behind the grades."
         >
           {crs ? (
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -974,92 +910,31 @@ export default async function MarkbookInsightsPage({
             </section>
           ) : null}
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardDescription className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  <Lock className="size-3" strokeWidth={2.25} />
-                  Sheets locked · per term
-                </CardDescription>
-                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  {throughputTitle}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {lockProgress.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    No grading sheets created yet for this year.
-                  </p>
-                ) : (
-                  <>
-                    <ul className="space-y-3">
-                      {lockProgress.map((t) => {
-                        const total = t.locked + t.open;
-                        const pct =
-                          total > 0
-                            ? Math.max(
-                                t.locked > 0 ? 4 : 0,
-                                Math.round((t.locked / total) * 100)
-                              )
-                            : 0;
-                        return (
-                          <li key={t.termNumber} className="space-y-1.5">
-                            <div className="flex items-baseline justify-between gap-3 text-sm">
-                              <span className="font-medium text-foreground">
-                                {t.termLabel}
-                              </span>
-                              <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                                {t.locked.toLocaleString('en-SG')} / {total}{' '}
-                                locked
-                              </span>
-                            </div>
-                            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                              <div
-                                className="h-full rounded-full bg-gradient-to-r from-brand-mint to-brand-sky"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                    {/* Callout (act): pending CRs are a bottleneck that needs a
-                        decision. Guard: must clear PENDING_CR_MIN. */}
-                    {showCrBottleneck ? (
-                      <RecommendationCallout tone="act">
-                        {pendingCrs} change request
-                        {pendingCrs === 1 ? '' : 's'} still awaiting a decision
-                        — grades locked pending approval.
-                      </RecommendationCallout>
-                    ) : null}
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardDescription className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  <FileCheck2 className="size-3" strokeWidth={2.25} />
-                  Report cards published · per term
-                </CardDescription>
-                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  Publication coverage
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {pubCoverage.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    No sections to publish for yet this year.
-                  </p>
-                ) : (
+          <Card>
+            <CardHeader>
+              <CardDescription className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                <Lock className="size-3" strokeWidth={2.25} />
+                Sheets locked · per term
+              </CardDescription>
+              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                {throughputTitle}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {lockProgress.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No grading sheets created yet for this year.
+                </p>
+              ) : (
+                <>
                   <ul className="space-y-3">
-                    {pubCoverage.map((t) => {
+                    {lockProgress.map((t) => {
+                      const total = t.locked + t.open;
                       const pct =
-                        t.sections > 0
+                        total > 0
                           ? Math.max(
-                              t.published > 0 ? 4 : 0,
-                              Math.round((t.published / t.sections) * 100)
+                              t.locked > 0 ? 4 : 0,
+                              Math.round((t.locked / total) * 100)
                             )
                           : 0;
                       return (
@@ -1069,13 +944,13 @@ export default async function MarkbookInsightsPage({
                               {t.termLabel}
                             </span>
                             <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                              {t.published.toLocaleString('en-SG')} /{' '}
-                              {t.sections} sections
+                              {t.locked.toLocaleString('en-SG')} / {total}{' '}
+                              locked
                             </span>
                           </div>
                           <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
                             <div
-                              className="h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy"
+                              className="h-full rounded-full bg-gradient-to-r from-brand-mint to-brand-sky"
                               style={{ width: `${pct}%` }}
                             />
                           </div>
@@ -1083,41 +958,22 @@ export default async function MarkbookInsightsPage({
                       );
                     })}
                   </ul>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {haveVelocity ? (
-            <Card>
-              <CardHeader>
-                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  Grade entries per day
-                </CardDescription>
-                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  Grading velocity
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <TrendChart label="Entries" current={velocity.current} />
-              </CardContent>
-            </Card>
-          ) : null}
+                  {/* Callout (act): pending CRs are a bottleneck that needs a
+                      decision. Guard: must clear PENDING_CR_MIN. */}
+                  {showCrBottleneck ? (
+                    <RecommendationCallout tone="act">
+                      {pendingCrs} change request
+                      {pendingCrs === 1 ? '' : 's'} still awaiting a decision —
+                      grades locked pending approval.
+                    </RecommendationCallout>
+                  ) : null}
+                </>
+              )}
+            </CardContent>
+          </Card>
         </InsightsSection>
       </div>
       {/* ═══ end Chapter 3 ═══ */}
-
-      {/* Seasonal: building history. */}
-      <InsightsSection
-        eyebrow="Seasonal"
-        title="When does performance shift?"
-        description="Term-over-term and year-over-year academic patterns reveal the predictable peaks and dips."
-      >
-        <BuildingHistoryCard
-          label="Seasonal performance"
-          detail="Term-over-term and year-over-year academic trends sharpen once more history is on record."
-        />
-      </InsightsSection>
 
       {/* Footer trust strip */}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">

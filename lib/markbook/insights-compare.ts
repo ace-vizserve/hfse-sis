@@ -119,3 +119,62 @@ export function buildMultiAyTrend(
 
   return { data, series };
 }
+
+// ── selectTopMovementSubjects ───────────────────────────────────────────────
+
+/**
+ * Select which subjects plot as lines on the Markbook Insights subject-
+ * performance trend chart. MultiSeriesTrendChart reads cleanly with up to 5
+ * distinct-hue series — beyond that, hues repeat and the chart becomes an
+ * unreadable tangle — so we plot only the `limit` subjects that moved the
+ * most, and note the rest in the section copy instead of hiding them silently.
+ *
+ * Movement = |avg at the first period with data − avg at the latest period
+ * with data| for that subject (periods with a null avgGrade are skipped when
+ * locating "first"/"latest"). A subject with only one period of data has
+ * movement 0 — still eligible, just deprioritized against subjects that
+ * actually moved.
+ *
+ * Ties resolve alphabetically by subject name — stable and deterministic,
+ * matching buildMultiAyTrend's own subject ordering.
+ */
+export function selectTopMovementSubjects(
+  points: TrendPoint[],
+  periods: string[],
+  limit = 5
+): string[] {
+  const subjects = [...new Set(points.map((p) => p.subjectName))];
+
+  const withMovement = subjects.map((subjectName) => {
+    const subjectPoints = points.filter((p) => p.subjectName === subjectName);
+
+    let firstAvg: number | null = null;
+    for (const period of periods) {
+      const match = subjectPoints.find((p) => p.periodLabel === period);
+      if (match && match.avgGrade !== null) {
+        firstAvg = match.avgGrade;
+        break;
+      }
+    }
+
+    let lastAvg: number | null = null;
+    for (let i = periods.length - 1; i >= 0; i -= 1) {
+      const match = subjectPoints.find((p) => p.periodLabel === periods[i]);
+      if (match && match.avgGrade !== null) {
+        lastAvg = match.avgGrade;
+        break;
+      }
+    }
+
+    const movement =
+      firstAvg !== null && lastAvg !== null ? Math.abs(lastAvg - firstAvg) : 0;
+    return { subjectName, movement };
+  });
+
+  withMovement.sort((a, b) => {
+    if (b.movement !== a.movement) return b.movement - a.movement;
+    return a.subjectName.localeCompare(b.subjectName);
+  });
+
+  return withMovement.slice(0, limit).map((m) => m.subjectName);
+}
