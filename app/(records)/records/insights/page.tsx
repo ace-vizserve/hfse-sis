@@ -107,6 +107,17 @@ export default async function RecordsInsightsPage({
 
   const today = sgToday();
   const movementAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
+  // isCurrent is DB-derived (getCurrentAcademicYear), never inferred from the
+  // AY code's own digits — the clamp fix keys on this flag alone. compareAy
+  // is never equal to selectedAy (resolveCompareAy guarantees that), but it
+  // CAN be the DB-current AY when the user explicitly compares against it.
+  const compareIsCurrentAy = compareAy === currentAy.ay_code;
+  const movementAyRequests = compareAy
+    ? [
+        { ayCode: selectedAy, isCurrent: isCurrentAy },
+        { ayCode: compareAy, isCurrent: compareIsCurrentAy },
+      ]
+    : [{ ayCode: selectedAy, isCurrent: isCurrentAy }];
 
   const [
     headcount,
@@ -121,7 +132,7 @@ export default async function RecordsInsightsPage({
     getRecordsRetention(selectedAy, compareAy),
     getRecordsRetentionByLevel(selectedAy, compareAy),
     getMovementEvents(selectedAy),
-    getMovementTrendByAy(movementAys, today),
+    getMovementTrendByAy(movementAyRequests, today),
   ]);
 
   const priorTotal = priorHeadcount ? priorHeadcount.total : null;
@@ -162,7 +173,7 @@ export default async function RecordsInsightsPage({
       // delta when the anchor is the current in-progress month so a partial
       // month isn't compared against a full historical one as a fabricated
       // decline (only meaningful for the current-calendar-year AY).
-      inProgressPeriod: currentInProgressMonthLabel(selectedAy, today),
+      inProgressPeriod: currentInProgressMonthLabel(isCurrentAy, today),
     }
   );
   const movementTrendDelta =

@@ -50,24 +50,25 @@ export const AY_MONTH_LABELS = [
 export type AyMonthLabel = (typeof AY_MONTH_LABELS)[number];
 
 /**
- * The in-progress month label for `ayCode`'s intake trend — the month whose
- * count is a PARTIAL total, not yet a complete month — or `null` when every
- * month in `ayCode` is either fully past (a prior calendar year) or hasn't
- * started (a future calendar year), so no partial month exists.
+ * The in-progress month label for the DB-current AY's intake trend — the
+ * month whose count is a PARTIAL total, not yet a complete month — or `null`
+ * when `isCurrent` is false (a non-current AY, historical or future-coded,
+ * has no partial month; it renders exactly what is saved, KD-honesty rule).
  *
- * Mirrors `loadIntakeTrendByAyUncached`'s per-AY cutoff derivation exactly:
- * the cutoff month for the CURRENT calendar year IS the in-progress one.
- * Used by the Insights caption's honesty guard (`summariseAyTrend`'s
- * `inProgressPeriod` option) so a few days into a month isn't compared
- * against a full historical month as a fabricated decline.
+ * Mirrors `computeIntakeTrendCutoffs`'s per-AY cutoff derivation exactly:
+ * the cutoff month for the DB-current AY IS the in-progress one. Used by the
+ * Insights caption's honesty guard (`summariseAyTrend`'s `inProgressPeriod`
+ * option) so a few days into a month isn't compared against a full
+ * historical month as a fabricated decline.
+ *
+ * `now` is injectable for tests; defaults to the real clock.
  */
 export function currentInProgressMonthLabel(
-  ayCode: string
+  isCurrent: boolean,
+  now: Date = new Date()
 ): AyMonthLabel | null {
-  const ayYear = parseInt(ayCode.replace(/^AY/i, ''), 10);
-  const currentYear = new Date().getUTCFullYear();
-  if (!Number.isFinite(ayYear) || ayYear !== currentYear) return null;
-  const currentMonth = new Date().getUTCMonth(); // 0-based
+  if (!isCurrent) return null;
+  const currentMonth = now.getUTCMonth(); // 0-based
   if (currentMonth > 10) return null; // December — outside the HFSE AY window
   return AY_MONTH_LABELS[currentMonth];
 }
@@ -136,12 +137,44 @@ export function shapeIntakeTrendPoints(
   return points;
 }
 
+/** One AY the intake trend is requested for, plus whether the DB flags it
+ *  `is_current` (`getCurrentAcademicYear`'s `ay_code`) — the clamp fix's
+ *  single source of truth for "has this AY's calendar caught up to today." */
+export type AyTrendRequest = { ayCode: string; isCurrent: boolean };
+
+/**
+ * Pure: for each requested AY, compute the cutoff month index (0-based,
+ * inclusive) that `shapeIntakeTrendPoints` uses to null-out months that
+ * haven't happened yet.
+ *
+ * - `isCurrent` → clamp to `Math.min(currentMonth, 10)` (unchanged behavior
+ *   for the truly-current AY — today's real calendar month, not derived
+ *   from the AY code's own digits).
+ * - not current → cutoff `10` (NO clamp — every saved month renders,
+ *   including honest zeros). This is the fix: the old ladder compared the
+ *   AY-code's numeric year against today's calendar year, so a future-coded
+ *   AY holding real data (the AY9999 test environment, seeded with
+ *   2026-dated rows; or any early `is_current` rollover) always fell into
+ *   the "future AY" branch and every month nulled out despite full rows in
+ *   the DB. Clamping is now keyed on the DB `is_current` flag alone.
+ */
+export function computeIntakeTrendCutoffs(
+  ays: AyTrendRequest[],
+  currentMonth: number // 0-based UTC month, e.g. new Date().getUTCMonth()
+): Map<string, number> {
+  const todayMonthByAy = new Map<string, number>();
+  for (const { ayCode, isCurrent } of ays) {
+    todayMonthByAy.set(ayCode, isCurrent ? Math.min(currentMonth, 10) : 10);
+  }
+  return todayMonthByAy;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Data fetcher
 // ──────────────────────────────────────────────────────────────────────────────
 
 async function loadIntakeTrendByAyUncached(
-  ays: string[]
+  ays: AyTrendRequest[]
 ): Promise<AyTrendPoint[]> {
   if (ays.length === 0) return [];
 
@@ -149,7 +182,7 @@ async function loadIntakeTrendByAyUncached(
 
   // Fan out one fetch per AY in parallel.
   const perAyRows = await Promise.all(
-    ays.map(async (ayCode) => {
+    ays.map(async ({ ayCode }) => {
       const prefix = prefixFor(ayCode);
       const appsTable = `${prefix}_enrolment_applications`;
       type AppDateRow = { created_at: string | null };
@@ -170,49 +203,32 @@ async function loadIntakeTrendByAyUncached(
   const allRows = perAyRows.flat();
 
   // Determine the "today" month index for each AY so we can null-out
-  // months that haven't occurred yet in the selected AY.
+  // months that haven't occurred yet — clamped only for the DB-current AY.
   const currentMonth = new Date().getUTCMonth(); // 0-based
-  const currentYear = new Date().getUTCFullYear();
-
-  const todayMonthByAy = new Map<string, number>();
-  for (const ayCode of ays) {
-    // AY code is e.g. "AY2026" → calendar year 2026.
-    const ayYear = parseInt(ayCode.replace(/^AY/i, ''), 10);
-    if (!Number.isFinite(ayYear)) {
-      todayMonthByAy.set(ayCode, 10); // unknown AY → include all months
-      continue;
-    }
-    if (ayYear < currentYear) {
-      // Historical AY → all months are in the past, include all.
-      todayMonthByAy.set(ayCode, 10);
-    } else if (ayYear === currentYear) {
-      // Current AY → cut off at today's month.
-      todayMonthByAy.set(ayCode, Math.min(currentMonth, 10));
-    } else {
-      // Future AY → no months have occurred yet; render all as null.
-      todayMonthByAy.set(ayCode, -1);
-    }
-  }
+  const todayMonthByAy = computeIntakeTrendCutoffs(ays, currentMonth);
 
   return shapeIntakeTrendPoints(allRows, todayMonthByAy);
 }
 
 /**
  * Fetch per-month application counts for each AY, formatted as `AyTrendPoint[]`
- * for use with `buildAyTrend(points, AY_MONTH_LABELS, ays)`.
+ * for use with `buildAyTrend(points, AY_MONTH_LABELS, ays.map(a => a.ayCode))`.
  *
- * Cached per AY-list under each AY's `admissions-dashboard:${ay}` tag.
+ * Cached per AY-list under each AY's `admissions-dashboard:${ay}` tag. The
+ * cache key includes each AY's `isCurrent` flag so a current-AY result never
+ * collides with a non-current (unclamped) result for the same AY code —
+ * relevant right at an AY-rollover boundary.
  */
-export function getIntakeTrendByAy(ays: string[]): Promise<AyTrendPoint[]> {
-  // Cache key includes all requested AYs so different page comparisons don't
-  // collide. Tags cover every AY so any AY mutation flushes the entry.
-  const sortedAys = [...ays].sort();
+export function getIntakeTrendByAy(
+  ays: AyTrendRequest[]
+): Promise<AyTrendPoint[]> {
+  const sortedKeys = [...ays].map((a) => `${a.ayCode}:${a.isCurrent}`).sort();
   return unstable_cache(
     () => loadIntakeTrendByAyUncached(ays),
-    ['admissions', 'intake-trend-by-ay', ...sortedAys],
+    ['admissions', 'intake-trend-by-ay', ...sortedKeys],
     {
       revalidate: CACHE_TTL_SECONDS,
-      tags: ays.map(cacheTag),
+      tags: ays.map((a) => cacheTag(a.ayCode)),
     }
   )();
 }

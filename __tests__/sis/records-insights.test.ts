@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  currentInProgressMonthLabel,
   hasMonthlyResolution,
   netMovementByMonth,
   rollupMovements,
@@ -88,7 +89,7 @@ describe('rollupMovements — Bug 1: re-enrollee de-dup', () => {
     const events = [
       mkEvent('late-enrolled', '2026-03-10'), // the de-duped event
     ];
-    const points = netMovementByMonth(events, 'AY2026', '2026-12-31');
+    const points = netMovementByMonth(events, 'AY2026', '2026-12-31', true);
     const mar = points.find((p) => p.periodLabel === 'Mar')!;
     expect(mar.value).toBe(1); // exactly +1, not +2
   });
@@ -186,7 +187,7 @@ describe('netMovementByMonth', () => {
       mkEvent('re-enrolled', '2026-05-01'), // May → +1
       mkEvent('section-transfer', '2026-03-05'), // ignored
     ];
-    const points = netMovementByMonth(events, 'AY2026', '2026-12-31');
+    const points = netMovementByMonth(events, 'AY2026', '2026-12-31', true);
     const mar = points.find((p) => p.periodLabel === 'Mar')!;
     const may = points.find((p) => p.periodLabel === 'May')!;
     const jan = points.find((p) => p.periodLabel === 'Jan')!;
@@ -198,7 +199,7 @@ describe('netMovementByMonth', () => {
   it('future months return null (gap in chart)', () => {
     const events = [mkEvent('late-enrolled', '2026-03-01')];
     // today is April 30 → May–Dec should be null
-    const points = netMovementByMonth(events, 'AY2026', '2026-04-30');
+    const points = netMovementByMonth(events, 'AY2026', '2026-04-30', true);
     const may = points.find((p) => p.periodLabel === 'May')!;
     const dec = points.find((p) => p.periodLabel === 'Dec')!;
     expect(may.value).toBeNull();
@@ -209,7 +210,7 @@ describe('netMovementByMonth', () => {
   });
 
   it('returns 12 points, all labelled with the correct ayCode', () => {
-    const points = netMovementByMonth([], 'AY2025', '2025-12-31');
+    const points = netMovementByMonth([], 'AY2025', '2025-12-31', true);
     expect(points).toHaveLength(12);
     expect(points.every((p) => p.ayCode === 'AY2025')).toBe(true);
     expect(points.map((p) => p.periodLabel)).toEqual([
@@ -226,6 +227,81 @@ describe('netMovementByMonth', () => {
       'Nov',
       'Dec',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// netMovementByMonth — the DB-`is_current` clamp fix.
+//
+// Regression: the old mask compared a date string built from the AY-CODE's
+// own numeric year (`"${ayCode-year}-${month}-01" > today`) — for a
+// future-coded AY holding real, saved data (the AY9999 test environment,
+// seeded with 2026-dated rows) that string is always lexically "in the
+// future" no matter what today's real date is, so every month nulled out
+// despite full rows in the DB. The fix: clamp trailing months ONLY for the
+// AY the DB flags `is_current` (via the real calendar month index, not the
+// AY code's digits); every other AY renders exactly what is saved.
+// ---------------------------------------------------------------------------
+
+describe('netMovementByMonth — isCurrent clamp', () => {
+  it('a future-coded AY (isCurrent: false) with saved data → all saved months render (AY9999 regression)', () => {
+    const events = [
+      mkEvent('late-enrolled', '2026-03-10'), // Mar → +1
+      mkEvent('withdrawn', '2026-09-20'), // Sep → -1 (a "future" month vs today)
+    ];
+    // ayCode's digits ("9999") would always read as "in the future" under
+    // the old string-compare mask — isCurrent: false must bypass that
+    // entirely, regardless of what the code says.
+    const points = netMovementByMonth(events, 'AY9999', '2026-04-30', false);
+    expect(points.every((p) => p.value !== null)).toBe(true);
+    const mar = points.find((p) => p.periodLabel === 'Mar')!;
+    const sep = points.find((p) => p.periodLabel === 'Sep')!;
+    expect(mar.value).toBe(1);
+    expect(sep.value).toBe(-1); // NOT nulled, even though it's "after" today
+  });
+
+  it('isCurrent: true → months after the current real month are null', () => {
+    const events = [
+      mkEvent('late-enrolled', '2026-03-01'),
+      mkEvent('withdrawn', '2026-09-01'),
+    ];
+    const points = netMovementByMonth(events, 'AY9999', '2026-04-30', true);
+    const mar = points.find((p) => p.periodLabel === 'Mar')!;
+    const apr = points.find((p) => p.periodLabel === 'Apr')!;
+    const may = points.find((p) => p.periodLabel === 'May')!;
+    const sep = points.find((p) => p.periodLabel === 'Sep')!;
+    expect(mar.value).toBe(1); // past today's month → numeric
+    expect(apr.value).toBe(0); // today's own month → numeric (even if 0)
+    expect(may.value).toBeNull(); // after today's month → gap
+    expect(sep.value).toBeNull();
+  });
+
+  it('a past AY (isCurrent: false) → unchanged full render, every month numeric', () => {
+    const events = [mkEvent('late-enrolled', '2025-06-01')];
+    const points = netMovementByMonth(events, 'AY2025', '2026-04-30', false);
+    expect(points.every((p) => p.value !== null)).toBe(true);
+    const jun = points.find((p) => p.periodLabel === 'Jun')!;
+    expect(jun.value).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// currentInProgressMonthLabel — keys on `isCurrent`, not `ayCode`'s year.
+// ---------------------------------------------------------------------------
+
+describe('currentInProgressMonthLabel', () => {
+  it('returns null when isCurrent is false, regardless of the date', () => {
+    expect(currentInProgressMonthLabel(false, '2026-06-15')).toBeNull();
+  });
+
+  it('returns the current month label when isCurrent is true', () => {
+    expect(currentInProgressMonthLabel(true, '2026-06-15')).toBe('Jun');
+  });
+
+  it('is unaffected by a future-coded AY (no ayCode param at all)', () => {
+    // A future-coded AY (e.g. AY9999) that IS the DB-current AY still
+    // resolves the in-progress month from the real "today" string alone.
+    expect(currentInProgressMonthLabel(true, '2026-11-30')).toBe('Nov');
   });
 });
 

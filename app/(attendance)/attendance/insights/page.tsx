@@ -48,6 +48,7 @@ import {
   computeDelta,
   resolveRange,
   type DashboardSearchParams,
+  type RangeInput,
 } from '@/lib/dashboard/range';
 import { buildAyTrend } from '@/lib/dashboard/insights-trend';
 import {
@@ -130,18 +131,56 @@ export default async function AttendanceInsightsPage({
 
   const schoolConfig = await getSchoolConfig();
 
-  // Comparison-AY full-range rate, when a comparison year is set — for the
-  // headline rate comparison. Resolved over that AY's whole calendar year.
-  const priorRangeInput = compareAy
-    ? resolveRange(
-        {},
-        await getDashboardWindows(compareAy),
-        compareAy,
-        undefined,
-        {
-          defaultPreset: 'thisAY',
+  // Comparison-AY headline rate, when a comparison year is set. Previously
+  // this was hard-forced to the comparison AY's WHOLE calendar year
+  // (`defaultPreset: 'thisAY'`) while `rangeInput` above resolves the
+  // selected AY's current TERM window — comparing a single term's rate
+  // against a full year's rate is an apples-to-oranges scope mismatch that
+  // can silently inflate or deflate the "vs {compareAy}" delta.
+  //
+  // Fix: align the comparison to the SAME term when it's derivable — find
+  // which term number `rangeInput` resolved to (by matching it against the
+  // selected AY's own `windows.term.byNumber`), then look up that same term
+  // number in the comparison AY's own terms. When `rangeInput` doesn't match
+  // a term window (a custom date range, or the between-terms/cross-AY
+  // fallback in `getDashboardWindows`), there is no well-defined "same term"
+  // to align to — fall back to the comparison AY's whole year, same as
+  // before (the card copy already reads generically as "compared with
+  // {compareAy}", not "same term as {compareAy}", so this fallback never
+  // overclaims scope parity).
+  const selectedTermNumber = compareAy
+    ? (
+        Object.entries(windows.term.byNumber) as [
+          string,
+          { from: string; to: string } | null,
+        ][]
+      ).find(
+        ([, w]) => w && w.from === rangeInput.from && w.to === rangeInput.to
+      )?.[0]
+    : undefined;
+
+  const compareWindows = compareAy
+    ? await getDashboardWindows(compareAy)
+    : null;
+  const compareTermWindow =
+    compareWindows && selectedTermNumber
+      ? compareWindows.term.byNumber[
+          Number(selectedTermNumber) as 1 | 2 | 3 | 4
+        ]
+      : null;
+
+  const priorRangeInput: RangeInput | null = compareAy
+    ? compareTermWindow
+      ? {
+          ayCode: compareAy,
+          from: compareTermWindow.from,
+          to: compareTermWindow.to,
+          cmpFrom: null,
+          cmpTo: null,
         }
-      )
+      : resolveRange({}, compareWindows!, compareAy, undefined, {
+          defaultPreset: 'thisAY',
+        })
     : null;
 
   const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];

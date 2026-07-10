@@ -111,6 +111,17 @@ export default async function AdmissionsInsightsPage({
   // Build the AY list for the two-AY overlay: selected AY first (solid),
   // comparison AY second (muted/dashed), or just the selected AY alone.
   const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
+  // isCurrent is DB-derived (getCurrentAcademicYear), never inferred from the
+  // AY code's own digits — the clamp fix keys on this flag alone. compareAy
+  // is never equal to selectedAy (resolveCompareAy guarantees that), but it
+  // CAN be the DB-current AY when the user explicitly compares against it.
+  const compareIsCurrentAy = compareAy === currentAy.ay_code;
+  const trendAyRequests = compareAy
+    ? [
+        { ayCode: selectedAy, isCurrent: isCurrentAy },
+        { ayCode: compareAy, isCurrent: compareIsCurrentAy },
+      ]
+    : [{ ayCode: selectedAy, isCurrent: isCurrentAy }];
 
   const [
     funnel,
@@ -124,7 +135,7 @@ export default async function AdmissionsInsightsPage({
     getConversionFunnel(selectedAy),
     compareAy ? getConversionFunnel(compareAy) : Promise.resolve(null),
     getAdmissionsTerminalReasons(selectedAy),
-    getIntakeTrendByAy(trendAys),
+    getIntakeTrendByAy(trendAyRequests),
     // Conversion breakdowns (by level / referral).
     getConversionByLevel(selectedAy),
     getReferralConversion(selectedAy),
@@ -188,7 +199,7 @@ export default async function AdmissionsInsightsPage({
       // the delta when the anchor is the current in-progress month so a
       // partial month isn't compared against a full historical one as a
       // fabricated decline (only meaningful for the current-calendar-year AY).
-      inProgressPeriod: currentInProgressMonthLabel(selectedAy),
+      inProgressPeriod: currentInProgressMonthLabel(isCurrentAy),
     }
   );
   const intakeTrendDelta =

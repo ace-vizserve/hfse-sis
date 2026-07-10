@@ -604,13 +604,28 @@ export const MONTH_LABELS = [
 
 /**
  * Pure: compute per-month net movement from a pre-fetched events array for
- * one AY. Returns 12 points (Jan–Dec), value = net (can be 0 or negative),
- * or null for future months relative to `today` (yyyy-mm-dd string).
+ * one AY. Returns 12 points (Jan–Dec), value = net (can be 0 or negative).
+ *
+ * `isCurrent` (the DB `is_current` flag for `ayCode`, KD honesty rule) gates
+ * the future-month clamp: when true, months after `today`'s real calendar
+ * month are null (a gap in the chart — unchanged behavior for the truly-
+ * current AY). When false, NO clamp is applied — every saved month renders,
+ * including honest zeros.
+ *
+ * The cutoff is derived from `today`'s own calendar month index, never from
+ * `ayCode`'s digits — the old mask built a date string from the AY code's
+ * numeric year (`"${ayCode-year}-${month}-01" > today`), which is always
+ * lexically "in the future" for a future-coded AY holding real data (the
+ * AY9999 test environment, seeded with 2026-dated rows), nulling out every
+ * month regardless of what actually happened. Keying the clamp on `isCurrent`
+ * alone — and computing it from `today`'s real month, not the code's year —
+ * fixes that for both current AND non-current future-coded AYs.
  */
 export function netMovementByMonth(
   events: MovementEvent[],
   ayCode: string,
-  today: string
+  today: string,
+  isCurrent: boolean
 ): AyTrendPoint[] {
   const net = new Array<number>(12).fill(0);
   for (const e of events) {
@@ -623,35 +638,33 @@ export function netMovementByMonth(
     }
     // section-transfer: no population change → skip
   }
+  const todayMonthIdx = Number(today.slice(5, 7)) - 1; // 0-based
   return MONTH_LABELS.map((label, i) => {
-    // Month string for this AY: AY2026 + i=0 → "2026-01"
-    const year = ayCode.replace(/^AY/i, '');
-    const month = String(i + 1).padStart(2, '0');
-    const monthStart = `${year}-${month}-01`;
-    // Null for future months (beyond today) — renders as a gap in the chart.
-    const value = monthStart > today ? null : net[i];
+    // Null for months after today's real calendar month — but ONLY for the
+    // DB-current AY. Non-current AYs (historical, or a future-coded AY not
+    // currently active) render exactly what is saved, unclamped.
+    const value = isCurrent && i > todayMonthIdx ? null : net[i];
     return { periodLabel: label, ayCode, value };
   });
 }
 
 /**
- * The in-progress calendar month for `ayCode`'s movement trend as of `today`
- * (`yyyy-MM-dd`, SGT per KD #32) — the month whose net-movement count is a
- * PARTIAL total, not a finished month — or `null` when `ayCode`'s calendar
- * year doesn't match `today`'s year (a fully past or fully future AY has no
- * partial month). Mirrors `netMovementByMonth`'s month-index math exactly.
+ * The in-progress calendar month for the DB-current AY's movement trend as
+ * of `today` (`yyyy-MM-dd`, SGT per KD #32) — the month whose net-movement
+ * count is a PARTIAL total, not a finished month — or `null` when
+ * `isCurrent` is false (a non-current AY, historical or future-coded, has
+ * no partial month; it renders exactly what is saved, KD-honesty rule).
+ * Mirrors `netMovementByMonth`'s month-index math exactly.
  *
  * Used by the Insights caption's honesty guard (`summariseAyTrend`'s
  * `inProgressPeriod` option) so a few days of net movement this month aren't
  * compared against a full historical month as a fabricated decline.
  */
 export function currentInProgressMonthLabel(
-  ayCode: string,
+  isCurrent: boolean,
   today: string
 ): (typeof MONTH_LABELS)[number] | null {
-  const ayYear = ayCode.replace(/^AY/i, '');
-  const todayYear = today.slice(0, 4);
-  if (ayYear !== todayYear) return null;
+  if (!isCurrent) return null;
   const monthIdx = Number(today.slice(5, 7)) - 1; // 0-based
   if (monthIdx < 0 || monthIdx > 11) return null;
   return MONTH_LABELS[monthIdx];
@@ -677,19 +690,31 @@ export function hasMonthlyResolution(points: AyTrendPoint[]): boolean {
   return monthsWithActivity.size >= 2;
 }
 
+/** One AY the movement trend is requested for, plus whether the DB flags it
+ *  `is_current` (`getCurrentAcademicYear`'s `ay_code`) — the clamp fix's
+ *  single source of truth for "has this AY's calendar caught up to today." */
+export type AyMovementRequest = { ayCode: string; isCurrent: boolean };
+
 /**
  * Async loader: fetches movement events for each AY and returns the combined
  * array of AyTrendPoints for use with buildAyTrend + AyComparisonLineChart.
  */
 export async function getMovementTrendByAy(
-  ays: string[],
+  ays: AyMovementRequest[],
   today: string
 ): Promise<AyTrendPoint[]> {
   if (ays.length === 0) return [];
-  const eventsByAy = await Promise.all(ays.map((ay) => getMovementEvents(ay)));
+  const eventsByAy = await Promise.all(
+    ays.map((a) => getMovementEvents(a.ayCode))
+  );
   const points: AyTrendPoint[] = [];
   for (let i = 0; i < ays.length; i++) {
-    const monthPoints = netMovementByMonth(eventsByAy[i], ays[i], today);
+    const monthPoints = netMovementByMonth(
+      eventsByAy[i],
+      ays[i].ayCode,
+      today,
+      ays[i].isCurrent
+    );
     points.push(...monthPoints);
   }
   return points;

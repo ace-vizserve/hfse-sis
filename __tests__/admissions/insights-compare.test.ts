@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   shapeIntakeTrendPoints,
+  computeIntakeTrendCutoffs,
+  currentInProgressMonthLabel,
   AY_MONTH_LABELS,
 } from '@/lib/admissions/insights-compare';
 
@@ -124,5 +126,88 @@ describe('shapeIntakeTrendPoints', () => {
       (p) => p.ayCode === 'AY2025' && p.periodLabel === 'Mar'
     );
     expect(ay25Mar?.value).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeIntakeTrendCutoffs — the DB-`is_current` clamp fix.
+//
+// Regression: the old ladder compared the AY-CODE's numeric year against
+// today's calendar year to decide "has this AY started/ended" — so a
+// future-coded AY holding real, saved data (the AY9999 test environment,
+// seeded with 2026-dated rows; or any early is_current rollover) always fell
+// into the "future AY" branch and every month nulled out despite full rows
+// in the DB. The fix: clamp trailing months ONLY for the AY the DB flags
+// `is_current`; every other AY (regardless of what its code's digits say)
+// renders exactly what is saved, unclamped.
+// ---------------------------------------------------------------------------
+
+describe('computeIntakeTrendCutoffs', () => {
+  it('a future-coded AY (isCurrent: false) with saved data → no clamp (cutoff 10, the AY9999 regression)', () => {
+    const cutoffs = computeIntakeTrendCutoffs(
+      [{ ayCode: 'AY9999', isCurrent: false }],
+      5 // real current month = June, irrelevant since not current
+    );
+    expect(cutoffs.get('AY9999')).toBe(10);
+  });
+
+  it('isCurrent: true → cutoff clamps to Math.min(currentMonth, 10)', () => {
+    const cutoffs = computeIntakeTrendCutoffs(
+      [{ ayCode: 'AY2026', isCurrent: true }],
+      3 // April, 0-based
+    );
+    expect(cutoffs.get('AY2026')).toBe(3);
+  });
+
+  it('isCurrent: true and currentMonth is December (11) → cutoff clamps to 10 (Nov, HFSE AY window)', () => {
+    const cutoffs = computeIntakeTrendCutoffs(
+      [{ ayCode: 'AY2026', isCurrent: true }],
+      11
+    );
+    expect(cutoffs.get('AY2026')).toBe(10);
+  });
+
+  it('a past AY (isCurrent: false) → unchanged full render (cutoff 10)', () => {
+    const cutoffs = computeIntakeTrendCutoffs(
+      [{ ayCode: 'AY2025', isCurrent: false }],
+      5
+    );
+    expect(cutoffs.get('AY2025')).toBe(10);
+  });
+
+  it('handles a mixed current + non-current pair independently', () => {
+    const cutoffs = computeIntakeTrendCutoffs(
+      [
+        { ayCode: 'AY2026', isCurrent: true },
+        { ayCode: 'AY9999', isCurrent: false },
+      ],
+      4
+    );
+    expect(cutoffs.get('AY2026')).toBe(4);
+    expect(cutoffs.get('AY9999')).toBe(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// currentInProgressMonthLabel — keys on `isCurrent`, not `ayYear === currentYear`.
+// ---------------------------------------------------------------------------
+
+describe('currentInProgressMonthLabel', () => {
+  it('returns null when isCurrent is false, regardless of the date', () => {
+    expect(
+      currentInProgressMonthLabel(false, new Date('2026-06-15T00:00:00Z'))
+    ).toBeNull();
+  });
+
+  it('returns the current month label when isCurrent is true', () => {
+    expect(
+      currentInProgressMonthLabel(true, new Date('2026-06-15T00:00:00Z'))
+    ).toBe('Jun');
+  });
+
+  it('returns null in December even when isCurrent is true (outside the HFSE AY window)', () => {
+    expect(
+      currentInProgressMonthLabel(true, new Date('2026-12-05T00:00:00Z'))
+    ).toBeNull();
   });
 });
