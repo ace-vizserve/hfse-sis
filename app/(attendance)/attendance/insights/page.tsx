@@ -2,22 +2,17 @@ import {
   AlertTriangle,
   ArrowLeft,
   CalendarCheck,
-  Clock,
   HeartHandshake,
-  School,
   ShieldAlert,
   ShieldCheck,
   TrendingUp,
   Umbrella,
-  UserX,
 } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
-import { DonutChart } from '@/components/dashboard/charts/donut-chart';
-import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
+import { AyComparisonLineChart } from '@/components/dashboard/charts/ay-comparison-line-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
-import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
@@ -33,10 +28,7 @@ import {
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
-import {
-  getAttendanceKpisRange,
-  getExReasonMixRange,
-} from '@/lib/attendance/dashboard';
+import { getAttendanceKpisRange } from '@/lib/attendance/dashboard';
 import { buildAllRowSets } from '@/lib/attendance/drill';
 import {
   computeAbsenceMix,
@@ -52,7 +44,6 @@ import {
   comparisonCardState,
   resolveCompareAy,
 } from '@/lib/dashboard/comparison';
-import { pickExtreme } from '@/lib/dashboard/narrative';
 import {
   computeDelta,
   resolveRange,
@@ -152,22 +143,20 @@ export default async function AttendanceInsightsPage({
 
   const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
 
-  const [kpis, exMix, allRowSets, priorKpis, rateTrendPoints] =
-    await Promise.all([
-      getAttendanceKpisRange(rangeInput),
-      getExReasonMixRange(rangeInput),
-      buildAllRowSets({
-        ayCode: selectedAy,
-        from: rangeInput.from,
-        to: rangeInput.to,
-        vacationTermId: currentTermId,
-        defaultVlAllowance: schoolConfig.defaultVlAllowancePerTerm,
-      }),
-      priorRangeInput
-        ? getAttendanceKpisRange(priorRangeInput)
-        : Promise.resolve(null),
-      getAttendanceRateTrendByAy(trendAys),
-    ]);
+  const [kpis, allRowSets, priorKpis, rateTrendPoints] = await Promise.all([
+    getAttendanceKpisRange(rangeInput),
+    buildAllRowSets({
+      ayCode: selectedAy,
+      from: rangeInput.from,
+      to: rangeInput.to,
+      vacationTermId: currentTermId,
+      defaultVlAllowance: schoolConfig.defaultVlAllowancePerTerm,
+    }),
+    priorRangeInput
+      ? getAttendanceKpisRange(priorRangeInput)
+      : Promise.resolve(null),
+    getAttendanceRateTrendByAy(trendAys),
+  ]);
 
   // ── Derived row sets (already computed — no extra DB work) ─────────────────
 
@@ -179,10 +168,6 @@ export default async function AttendanceInsightsPage({
   // Split into intervene (truancy signal) vs monitor (health narrative).
   // Cap at 8 per bucket — beyond that the list becomes unactionable.
   const watchlist = splitWatchlist(allTopAbsent, 8);
-
-  // Section-level rollup — worst-attending classes first (already sorted by
-  // rollupBySection ascending attendancePct).
-  const sectionRows = allRowSets.sectionAttendance;
 
   // A-vs-EX mix for the school-wide split card.
   const absenceMix = computeAbsenceMix(
@@ -282,13 +267,6 @@ export default async function AttendanceInsightsPage({
       ? `${interveneCount} student${interveneCount === 1 ? '' : 's'} to follow up with`
       : 'Intervene';
 
-  // Ch2 sections to watch — worst-attending section (pickExtreme), with tie/empty guard.
-  const worstSection = pickExtreme(sectionRows, (s) => s.attendancePct, 'min');
-  const sectionsTitle =
-    !worstSection.isTie && worstSection.item !== null
-      ? `${worstSection.item.sectionName} has the lowest attendance`
-      : 'Sections to watch';
-
   // Ch3 A/EX mix title — describes the dominant signal.
   const absenceMixTitle =
     absenceMix.awayDays === 0
@@ -343,10 +321,11 @@ export default async function AttendanceInsightsPage({
           </h2>
         </div>
 
-        {/* 1 — Rate headline: this period vs comparison AY.
-            Primary-AY metrics (Late incidents, Absences) always render so the
-            registrar always has actionable data. Only the comparison-bearing rate
-            card reacts to `rateState` (FIX 2 — matches Records' Section-1 pattern). */}
+        {/* 1 — Rate headline: this period vs comparison AY. Late-incidents and
+            Absences tiles are dashboard duplicates and live on /attendance
+            instead (KD #140) — this stays the single over-time anchor metric.
+            The card reacts to `rateState` (FIX 2 — matches Records' Section-1
+            pattern). */}
         <InsightsSection
           eyebrow="Health"
           title={rateHealthTitle}
@@ -381,20 +360,6 @@ export default async function AttendanceInsightsPage({
                   ? undefined
                   : 'present, late, or excused of days encoded'
               }
-            />
-            <MetricCard
-              label="Late incidents"
-              value={kpis.current.late}
-              icon={Clock}
-              intent={kpis.current.late > 0 ? 'warning' : 'default'}
-              subtext="arrived after the start of the day"
-            />
-            <MetricCard
-              label="Absences"
-              value={kpis.current.absent}
-              icon={UserX}
-              intent={kpis.current.absent > 0 ? 'warning' : 'default'}
-              subtext="full days missed without an excuse"
             />
           </section>
         </InsightsSection>
@@ -434,7 +399,7 @@ export default async function AttendanceInsightsPage({
                     delta={rateTrendDelta}
                   />
                 )}
-                <GroupedBarChart
+                <AyComparisonLineChart
                   series={rateTrend.series}
                   data={rateTrend.data}
                   yFormat="percent"
@@ -447,16 +412,16 @@ export default async function AttendanceInsightsPage({
       </div>
       {/* ═══ end Chapter 1 ═══ */}
 
-      {/* ═══ Chapter 2 — Who & where to act ═══
-          Chronic absentee watchlist (intervene/monitor split) + sections to
-          watch. The registrar's action list for this period. */}
+      {/* ═══ Chapter 2 — Who to act on ═══
+          Chronic absentee watchlist (intervene/monitor split). The
+          registrar's action list for this period. */}
       <div className="space-y-8 border-t-2 border-brand-amber/30 pt-7">
         <div className="space-y-1">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-amber">
             Chapter 2
           </p>
           <h2 className="font-serif text-[28px] font-semibold leading-tight tracking-tight text-foreground">
-            Who &amp; where to act
+            Who to act on
           </h2>
         </div>
 
@@ -632,117 +597,12 @@ export default async function AttendanceInsightsPage({
             </div>
           )}
         </InsightsSection>
-
-        {/* 4 — Sections to watch: per-section attendance table. Uses the already-
-            computed sectionAttendance from buildAllRowSets (sorted worst-first). */}
-        {sectionRows.length > 0 && (
-          <InsightsSection
-            eyebrow="By class"
-            title="Which classes are below average?"
-            description="Sections sorted by attendance rate — lowest first. A class consistently near the bottom may need a check-in with the form adviser."
-          >
-            <Card>
-              <CardHeader>
-                <CardDescription className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  <School className="size-3" strokeWidth={2.25} />
-                  Sections · lowest attendance first
-                </CardDescription>
-                <CardTitle className="font-serif text-xl font-semibold leading-tight tracking-tight text-foreground">
-                  {sectionsTitle}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 p-0 pb-4">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-hairline">
-                        <th className="px-4 py-2.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                          Section
-                        </th>
-                        <th className="px-4 py-2.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                          Level
-                        </th>
-                        <th className="px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                          Rate
-                        </th>
-                        <th className="hidden px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground sm:table-cell">
-                          Absences
-                        </th>
-                        <th className="hidden px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground lg:table-cell">
-                          Days encoded
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-hairline">
-                      {sectionRows.map((s, idx) => {
-                        const isLow = s.attendancePct < 90;
-                        const isMid = !isLow && s.attendancePct < 95;
-                        return (
-                          <tr
-                            key={s.sectionId}
-                            className={
-                              idx % 2 === 0 ? 'bg-card' : 'bg-muted/30'
-                            }
-                          >
-                            <td className="px-4 py-2.5 font-medium text-foreground">
-                              <Link
-                                href={`/attendance/${s.sectionId}`}
-                                className="transition-colors hover:text-primary hover:underline underline-offset-4"
-                              >
-                                {s.sectionName}
-                              </Link>
-                            </td>
-                            <td className="px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
-                              {s.level ?? '—'}
-                            </td>
-                            <td className="px-4 py-2.5 text-right">
-                              <span
-                                className={[
-                                  'font-mono text-xs font-semibold tabular-nums',
-                                  isLow
-                                    ? 'text-destructive'
-                                    : isMid
-                                      ? 'text-brand-amber'
-                                      : 'text-foreground',
-                                ].join(' ')}
-                              >
-                                {s.attendancePct}%
-                              </span>
-                            </td>
-                            <td className="hidden px-4 py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground sm:table-cell">
-                              {s.absentCount.toLocaleString('en-SG')}
-                            </td>
-                            <td className="hidden px-4 py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground lg:table-cell">
-                              {s.encodedDays.toLocaleString('en-SG')}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                {/* Callout (watch): worst-attending section, guarded by tie/empty. */}
-                {!worstSection.isTie && worstSection.item !== null ? (
-                  <div className="px-4">
-                    <RecommendationCallout tone="watch">
-                      {worstSection.item.sectionName} sits at{' '}
-                      {worstSection.item.attendancePct}% — lowest in this
-                      period. A check-in with the form adviser is worth
-                      considering.
-                    </RecommendationCallout>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          </InsightsSection>
-        )}
       </div>
       {/* ═══ end Chapter 2 ═══ */}
 
       {/* ═══ Chapter 3 — Causes & limits ═══
-          Absence mix (A vs EX), excuse reasons, and leave-quota risk. The
-          diagnostic: why students are away and whether policies are being
-          stretched. */}
+          Absence mix (A vs EX) and leave-quota risk. The diagnostic: why
+          students are away and whether leave policies are being stretched. */}
       <div className="space-y-8 border-t-2 border-brand-mint/40 pt-7">
         <div className="space-y-1">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-mint">
@@ -753,110 +613,80 @@ export default async function AttendanceInsightsPage({
           </h2>
         </div>
 
-        {/* 5 — The diagnostic: why are students absent?
-            Now prefixed with the school-wide A-vs-EX mix split so the registrar
-            can see the truancy vs health signal at a glance before drilling into
-            the EX-reason donut. */}
+        {/* 4 — The diagnostic: why are students absent? School-wide A-vs-EX
+            split — how much of the away-time is unexplained (follow up) vs
+            excused (monitor). The EX-reason breakdown lives on the /attendance
+            dashboard (ExReasonDrillCard) — kept there, not duplicated here. */}
         <InsightsSection
           eyebrow="Diagnosis"
           title="Why are they absent?"
-          description="The split between unexplained absences (follow up) and excused ones (monitor), then the breakdown of excuse reasons."
+          description="The split between unexplained absences (follow up) and excused ones (monitor)."
         >
-          <div className="space-y-4">
-            {/* A/EX mix signal — school-wide split */}
-            {absenceMix.awayDays > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                    Away-day mix
-                  </CardDescription>
-                  <CardTitle className="font-serif text-xl font-semibold leading-tight tracking-tight text-foreground">
-                    {absenceMixTitle}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Split bar */}
-                  <div className="flex h-3 w-full overflow-hidden rounded-full">
-                    <div
-                      className="h-full bg-gradient-to-r from-destructive to-destructive/70 transition-all"
-                      style={{ width: `${absenceMix.unexplainedPct}%` }}
-                      title={`${absenceMix.unexplained} unexplained A days`}
-                    />
-                    <div
-                      className="h-full bg-gradient-to-r from-brand-mint to-brand-mint/60"
-                      style={{ width: `${absenceMix.excusedPct}%` }}
-                      title={`${absenceMix.excused} excused EX days`}
-                    />
+          {absenceMix.awayDays === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center text-sm text-muted-foreground">
+                No absences recorded in this period.
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  Away-day mix
+                </CardDescription>
+                <CardTitle className="font-serif text-xl font-semibold leading-tight tracking-tight text-foreground">
+                  {absenceMixTitle}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Split bar */}
+                <div className="flex h-3 w-full overflow-hidden rounded-full">
+                  <div
+                    className="h-full bg-gradient-to-r from-destructive to-destructive/70 transition-all"
+                    style={{ width: `${absenceMix.unexplainedPct}%` }}
+                    title={`${absenceMix.unexplained} unexplained A days`}
+                  />
+                  <div
+                    className="h-full bg-gradient-to-r from-brand-mint to-brand-mint/60"
+                    style={{ width: `${absenceMix.excusedPct}%` }}
+                    title={`${absenceMix.excused} excused EX days`}
+                  />
+                </div>
+                {/* Legend row */}
+                <div className="flex flex-wrap gap-x-6 gap-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-destructive" />
+                    <span className="font-mono text-xs tabular-nums text-foreground">
+                      {absenceMix.unexplainedPct}%
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Unexplained ({absenceMix.unexplained} days)
+                    </span>
                   </div>
-                  {/* Legend row */}
-                  <div className="flex flex-wrap gap-x-6 gap-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-destructive" />
-                      <span className="font-mono text-xs tabular-nums text-foreground">
-                        {absenceMix.unexplainedPct}%
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        Unexplained ({absenceMix.unexplained} days)
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-brand-mint" />
-                      <span className="font-mono text-xs tabular-nums text-foreground">
-                        {absenceMix.excusedPct}%
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        Excused ({absenceMix.excused} days)
-                      </span>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-brand-mint" />
+                    <span className="font-mono text-xs tabular-nums text-foreground">
+                      {absenceMix.excusedPct}%
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Excused ({absenceMix.excused} days)
+                    </span>
                   </div>
-                  {/* Interpretive copy — derived, no hardcoded claim */}
-                  <p className="text-xs text-muted-foreground">
-                    {absenceMix.unexplainedPct > 50
-                      ? 'Unexplained absences are the majority of away-days this period — the watchlist above is the place to act.'
-                      : absenceMix.unexplainedPct > 25
-                        ? 'Most away-days are covered by an excuse, but there is a meaningful unexplained minority worth monitoring.'
-                        : 'Almost all away-days are excused — attendance is largely health-driven this period.'}
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-
-            <div className="grid gap-4 lg:grid-cols-3">
-              <Card className="lg:col-span-2">
-                <CardHeader>
-                  <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                    Excused-leave reasons
-                  </CardDescription>
-                  <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                    Reasons for excused absence
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {exMix.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-muted-foreground">
-                      No excused-leave days recorded in this period.
-                    </p>
-                  ) : (
-                    <DonutChart
-                      data={exMix}
-                      centerLabel="Excused"
-                      centerValue={kpis.current.excused}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-              <MetricCard
-                label="Late incidents"
-                value={kpis.current.late}
-                icon={Clock}
-                intent={kpis.current.late > 0 ? 'warning' : 'default'}
-                subtext="not absent, but not on time either"
-              />
-            </div>
-          </div>
+                </div>
+                {/* Interpretive copy — derived, no hardcoded claim */}
+                <p className="text-xs text-muted-foreground">
+                  {absenceMix.unexplainedPct > 50
+                    ? 'Unexplained absences are the majority of away-days this period — the watchlist above is the place to act.'
+                    : absenceMix.unexplainedPct > 25
+                      ? 'Most away-days are covered by an excuse, but there is a meaningful unexplained minority worth monitoring.'
+                      : 'Almost all away-days are excused — attendance is largely health-driven this period.'}
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </InsightsSection>
 
-        {/* 6 — Leave-quota risk: over quota + approaching (vacation-leave only). */}
+        {/* 5 — Leave-quota risk: over quota + approaching (vacation-leave only). */}
         <InsightsSection
           eyebrow="Quotas"
           title="Is anyone over — or about to exceed — their leave quota?"
@@ -1051,18 +881,6 @@ export default async function AttendanceInsightsPage({
               ) : null}
             </div>
           )}
-        </InsightsSection>
-
-        {/* 7 — Seasonal patterns: building history. */}
-        <InsightsSection
-          eyebrow="Seasonal"
-          title="When does attendance dip?"
-          description="Term-by-term and year-over-year patterns reveal the predictable dips — exam weeks, post-break Mondays, end-of-year fatigue."
-        >
-          <BuildingHistoryCard
-            label="Seasonal attendance"
-            detail="Term-by-term and year-over-year attendance patterns unlock once more history is on record. It fills in automatically each term and year."
-          />
         </InsightsSection>
       </div>
       {/* ═══ end Chapter 3 ═══ */}
