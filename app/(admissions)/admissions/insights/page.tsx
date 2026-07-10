@@ -1,25 +1,15 @@
-import {
-  ArrowLeft,
-  Clock,
-  FileStack,
-  Percent,
-  TrendingUp,
-  UserMinus,
-} from 'lucide-react';
+import { ArrowLeft, Clock, FileStack, Percent, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { AyComparisonLineChart } from '@/components/dashboard/charts/ay-comparison-line-chart';
-import { DonutChart } from '@/components/dashboard/charts/donut-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
-import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
 import { pickExtreme, meetsThreshold } from '@/lib/dashboard/narrative';
-import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import {
   Card,
@@ -32,15 +22,12 @@ import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
-  getAdmissionsKpisRange,
   getAverageTimeToEnrollment,
   getConversionFunnel,
-  getOutdatedApplications,
 } from '@/lib/admissions/dashboard';
 import {
   getConversionByLevel,
   getReferralConversion,
-  getEnroleeTypeConversion,
 } from '@/lib/admissions/insights-funnel';
 import {
   getAdmissionsTerminalReasons,
@@ -56,13 +43,10 @@ import {
 } from '@/lib/dashboard/comparison';
 import { buildAyTrend } from '@/lib/dashboard/insights-trend';
 import { summariseAyTrend } from '@/lib/dashboard/trend-delta';
-import { admissionsInsights } from '@/lib/dashboard/insights';
 import {
   computeDelta,
-  resolveRange,
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
-import { getDashboardWindows } from '@/lib/dashboard/windows';
 import { APPLICATION_TERMINAL_REASON_LABELS } from '@/lib/schemas/sis';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -122,17 +106,6 @@ export default async function AdmissionsInsightsPage({
     selectedAy
   );
 
-  const windows = await getDashboardWindows(selectedAy);
-  const rangeInput = resolveRange(
-    resolvedSearch,
-    windows,
-    selectedAy,
-    undefined,
-    {
-      defaultPreset: 'thisMonth',
-    }
-  );
-
   // Build the AY list for the two-AY overlay: selected AY first (solid),
   // comparison AY second (muted/dashed), or just the selected AY alone.
   const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
@@ -141,27 +114,21 @@ export default async function AdmissionsInsightsPage({
     funnel,
     priorFunnel,
     terminal,
-    kpisResult,
     intakeTrendPoints,
-    outdatedRows,
     conversionByLevel,
     referralConversion,
-    enroleeTypeConversion,
     timeToEnroll,
   ] = await Promise.all([
     getConversionFunnel(selectedAy),
     compareAy ? getConversionFunnel(compareAy) : Promise.resolve(null),
     getAdmissionsTerminalReasons(selectedAy),
-    getAdmissionsKpisRange(rangeInput),
     getIntakeTrendByAy(trendAys),
-    // BUG 2 fix: load real stalled-applicant count for the takeaways panel.
-    getOutdatedApplications(selectedAy),
-    // Conversion breakdowns (by level / referral / applicant type).
+    // Conversion breakdowns (by level / referral).
     getConversionByLevel(selectedAy),
     getReferralConversion(selectedAy),
-    getEnroleeTypeConversion(selectedAy),
     // Time to enrol — real enrolledAt timestamp (migration 075). sampleSize=0
-    // is expected on existing data; the UI shows a "building" neutral state.
+    // is expected on existing data; folded into §1's headline row when it has
+    // data, hidden entirely otherwise (no lib change, KD #140 honesty rule).
     getAverageTimeToEnrollment(selectedAy),
   ]);
 
@@ -241,45 +208,29 @@ export default async function AdmissionsInsightsPage({
         }
       : null;
 
-  // Referral inputs for the takeaways panel — derived from the conversion data.
-  const topRef = referralConversion[0];
-  const totalRef = referralConversion.reduce((s, r) => s + r.applied, 0);
+  // Levels sorted worst-converter-first so the bar list is scannable without
+  // reading the callout below it (requirement: ascending on conversionPct).
+  const levelsWorstFirst = [...conversionByLevel].sort(
+    (a, b) => a.conversionPct - b.conversionPct
+  );
 
-  // Donut slices for cancellation reasons, humanized.
-  const reasonSlices = terminal.overall.map((r) => ({
-    name: reasonLabel(r.reason),
-    value: r.count,
-  }));
+  // Referrals sorted best-converter-first — the bar now encodes conversion %
+  // (the story), volume stays visible as mono meta text alongside it.
+  const referralsByConversion = [...referralConversion].sort(
+    (a, b) => b.conversionPct - a.conversionPct
+  );
 
-  // Takeaways — fed AY-wide funnel figures (same period as §1/§3 charts) so
-  // the narrative describes the same window the user is looking at. Previously
-  // this used the range-windowed kpisResult (defaultPreset: 'thisMonth'), which
-  // made the "conversion dropping" takeaway irreconcilable with the AY conversion
-  // rate displayed above it (BUG 3 fix).
-  //
-  // Time-to-enrol is not passed into the takeaways panel — it is displayed as
-  // its own InsightsSection in Chapter 1 with an honest sample-size label and a
-  // BuildingHistoryCard when sampleSize=0 (historical rows have no enrolledAt).
-  const insights = admissionsInsights({
-    // AY-wide figures (match §1 headline cards and §3 funnel).
-    applications: applicationsCount,
-    enrolled: enrolledCount,
-    conversionPct,
-    conversionPctPrior: priorConversionPct ?? undefined,
-    appsDelta: kpisResult.delta ?? undefined,
-    // BUG 2 fix: real stalled-applicant count instead of hardcoded 0.
-    outdatedCount: outdatedRows.length,
-    outdatedHref: `/admissions/applications?students.staleness=Warning,Critical`,
-    topReferral: topRef
-      ? { source: topRef.source, count: topRef.applied, totalCount: totalRef }
-      : undefined,
-    funnelDropOff: biggestLeakStage
-      ? {
-          stage: biggestLeakStage.label,
-          dropOffPct: biggestLeakStage.dropOffPct,
-        }
-      : undefined,
-  });
+  // Cancellation reasons — top 5 + "Other" for the sorted bar list.
+  // terminal.overall is already sorted desc by count (lib/admissions/insights.ts).
+  const TOP_REASON_COUNT = 5;
+  const topReasons = terminal.overall.slice(0, TOP_REASON_COUNT);
+  const otherReasonsCount = terminal.overall
+    .slice(TOP_REASON_COUNT)
+    .reduce((s, r) => s + r.count, 0);
+  const reasonBars =
+    otherReasonsCount > 0
+      ? [...topReasons, { reason: 'Other', count: otherReasonsCount }]
+      : topReasons;
 
   // ────────────────────────────────────────────────────────────────────────
   // Derived narrative — every finding-title + RecommendationCallout below is
@@ -460,17 +411,15 @@ export default async function AdmissionsInsightsPage({
                     subtext: `${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`,
                   })}
             />
-            <MetricCard
-              label="Cancellations with a reason"
-              value={terminal.total}
-              icon={UserMinus}
-              intent={terminal.total > 0 ? 'warning' : 'default'}
-              subtext={
-                terminal.total > 0
-                  ? 'closed applications with a reason logged'
-                  : 'no reasons logged on closed applications yet'
-              }
-            />
+            {timeToEnroll.sampleSize > 0 && (
+              <MetricCard
+                label="Avg. days to enrol"
+                value={timeToEnroll.avgDays}
+                icon={Clock}
+                intent="default"
+                subtext={`from ${timeToEnroll.sampleSize.toLocaleString('en-SG')} ${timeToEnroll.sampleSize === 1 ? 'enrolment' : 'enrolments'} since tracking began`}
+              />
+            )}
           </section>
         </InsightsSection>
 
@@ -625,63 +574,6 @@ export default async function AdmissionsInsightsPage({
             </CardContent>
           </Card>
         </InsightsSection>
-
-        {/* 4 — Time to enrol: how long does conversion take?
-            Stamped by migration 075 (write-once enrolledAt on status table).
-            Historical rows have no timestamp (sampleSize=0) so we show a
-            "building" neutral state that self-heals as enrolments accumulate. */}
-        <InsightsSection
-          eyebrow="Speed"
-          title="How long does enrolment take?"
-          description={
-            timeToEnroll.sampleSize > 0
-              ? `Average number of days from application submission to enrolment — from ${timeToEnroll.sampleSize.toLocaleString('en-SG')} ${timeToEnroll.sampleSize === 1 ? 'enrolment' : 'enrolments'} since tracking began.`
-              : 'Time from application to enrolment — captured on every new enrolment going forward.'
-          }
-        >
-          {timeToEnroll.sampleSize === 0 ? (
-            <BuildingHistoryCard
-              label="Time to enrol"
-              detail="The average number of days from application to enrolment will appear here once new enrolments are recorded. It fills in automatically — nothing to configure."
-            />
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  Application to enrolment ·{' '}
-                  {timeToEnroll.sampleSize.toLocaleString('en-SG')}{' '}
-                  {timeToEnroll.sampleSize === 1 ? 'enrolment' : 'enrolments'}{' '}
-                  since tracking began
-                </CardDescription>
-                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  Average {timeToEnroll.avgDays} days to enrol
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-4">
-                  <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-b from-brand-indigo/15 to-brand-navy/10 text-brand-indigo">
-                    <Clock className="size-6" strokeWidth={1.75} />
-                  </div>
-                  <div className="space-y-0.5">
-                    <p className="font-mono text-3xl font-bold tabular-nums text-foreground">
-                      {timeToEnroll.avgDays}
-                      <span className="ml-1.5 text-base font-normal text-muted-foreground">
-                        days
-                      </span>
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      from submission to enrolment, averaged across{' '}
-                      {timeToEnroll.sampleSize.toLocaleString('en-SG')}{' '}
-                      {timeToEnroll.sampleSize === 1
-                        ? 'enrolment'
-                        : 'enrolments'}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </InsightsSection>
       </div>
       {/* ═══ end Chapter 1 ═══ */}
 
@@ -714,57 +606,51 @@ export default async function AdmissionsInsightsPage({
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {conversionByLevel.length === 0 ? (
+              {levelsWorstFirst.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
                   No level data available.
                 </p>
               ) : (
                 <>
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                        <th className="pb-2 pr-3 font-semibold">Level</th>
-                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
-                          Applied
-                        </th>
-                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
-                          Enrolled
-                        </th>
-                        <th className="pb-2 text-right font-semibold tabular-nums">
-                          Rate
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-hairline">
-                      {conversionByLevel.map((row) => {
-                        const isWorst =
-                          showWorstLevel &&
-                          row.level === worstLevel.item!.level;
-                        return (
-                          <tr key={row.level}>
-                            <td className="py-2 pr-3 font-medium text-foreground">
+                  <ul className="space-y-3">
+                    {levelsWorstFirst.map((row) => {
+                      const isWorst =
+                        showWorstLevel && row.level === worstLevel.item!.level;
+                      const widthPct = Math.max(4, row.conversionPct);
+                      return (
+                        <li key={row.level} className="space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-3 text-sm">
+                            <span className="font-medium text-foreground">
                               {row.level}
-                            </td>
-                            <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">
-                              {row.applied.toLocaleString('en-SG')}
-                            </td>
-                            <td className="py-2 pr-3 text-right font-mono tabular-nums text-foreground">
-                              {row.enrolled.toLocaleString('en-SG')}
-                            </td>
-                            <td
+                            </span>
+                            <span className="flex items-center gap-2 font-mono text-xs tabular-nums text-muted-foreground">
+                              {row.applied.toLocaleString('en-SG')} applied ·{' '}
+                              {row.enrolled.toLocaleString('en-SG')} enrolled
+                              <span
+                                className={
+                                  isWorst
+                                    ? 'font-semibold text-brand-amber'
+                                    : 'text-foreground'
+                                }
+                              >
+                                {row.conversionPct}%
+                              </span>
+                            </span>
+                          </div>
+                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                            <div
                               className={
                                 isWorst
-                                  ? 'py-2 text-right font-mono text-xs font-semibold tabular-nums text-brand-amber'
-                                  : 'py-2 text-right font-mono text-xs tabular-nums text-muted-foreground'
+                                  ? 'h-full rounded-full bg-gradient-to-r from-brand-amber/80 to-brand-amber/40'
+                                  : 'h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy'
                               }
-                            >
-                              {row.conversionPct}%
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              style={{ width: `${widthPct}%` }}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
                   {/* Callout (watch): the worst-converting level, but only when
                       its gap below the overall rate is meaningful and unambiguous. */}
                   {showWorstLevel ? (
@@ -783,26 +669,12 @@ export default async function AdmissionsInsightsPage({
 
         {/* 2.2 — Why applicants are lost (pre-enrolment; distinct from Records'
             enrolled-student withdrawals). */}
-        <InsightsSection
-          eyebrow="Lost applicants"
-          title="Why don't they enroll?"
-          description="Reasons recorded when an application is withdrawn or cancelled before enrolling — overall and per level. (Students who leave after enrolling are in Records → Insights.)"
-        >
-          {terminal.total === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="space-y-1.5 p-8 text-center">
-                <p className="text-sm font-medium text-foreground">
-                  Cancellation reasons aren&rsquo;t being recorded yet
-                </p>
-                <p className="mx-auto max-w-md text-sm text-muted-foreground">
-                  No reason is captured when an application is withdrawn or
-                  cancelled, so there&rsquo;s nothing to break down here. Once
-                  the team starts logging a reason on closed applications, the
-                  causes will appear automatically.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
+        {terminal.total > 0 && (
+          <InsightsSection
+            eyebrow="Lost applicants"
+            title="Why don't they enroll?"
+            description="Reasons recorded when an application is withdrawn or cancelled before enrolling — overall and per level. (Students who leave after enrolling are in Records → Insights.)"
+          >
             <div className="grid gap-4 lg:grid-cols-2">
               <Card>
                 <CardHeader>
@@ -814,11 +686,44 @@ export default async function AdmissionsInsightsPage({
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <DonutChart
-                    data={reasonSlices}
-                    centerLabel="Cancelled"
-                    centerValue={terminal.total}
-                  />
+                  <ul className="space-y-3">
+                    {reasonBars.map((r) => {
+                      const pct =
+                        terminal.total > 0
+                          ? Math.round((r.count / terminal.total) * 100)
+                          : 0;
+                      const isTop =
+                        showTopReason && r.reason === topReason.reason;
+                      return (
+                        <li key={r.reason} className="space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-3 text-sm">
+                            <span className="font-medium text-foreground">
+                              {reasonLabel(r.reason)}
+                            </span>
+                            <span
+                              className={
+                                isTop
+                                  ? 'font-mono text-xs font-semibold tabular-nums text-brand-amber'
+                                  : 'font-mono text-xs tabular-nums text-muted-foreground'
+                              }
+                            >
+                              {r.count.toLocaleString('en-SG')} · {pct}%
+                            </span>
+                          </div>
+                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                            <div
+                              className={
+                                isTop
+                                  ? 'h-full rounded-full bg-gradient-to-r from-brand-amber/80 to-brand-amber/40'
+                                  : 'h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy'
+                              }
+                              style={{ width: `${Math.max(4, pct)}%` }}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
                   {/* Callout (watch): the top cancellation cause + its share.
                       Suppressed on an empty set or a tie for first. */}
                   {showTopReason ? (
@@ -867,8 +772,8 @@ export default async function AdmissionsInsightsPage({
                 </CardContent>
               </Card>
             </div>
-          )}
-        </InsightsSection>
+          </InsightsSection>
+        )}
       </div>
       {/* ═══ end Chapter 2 ═══ */}
 
@@ -886,67 +791,12 @@ export default async function AdmissionsInsightsPage({
         </div>
 
         <InsightsSection
-          eyebrow="Sources & segments"
-          title="From where, and from whom?"
-          description="Which channels send applicants, and how New vs Current students differ in conversion."
+          eyebrow="Sources"
+          title="Which channels bring enrolments?"
+          description="How applicants heard about HFSE, and how well each channel converts to enrolment."
         >
-          <div className="grid gap-4">
-            {/* 3.1 — Enrolee type conversion */}
-            <Card>
-              <CardHeader>
-                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  New vs returning applicants
-                </CardDescription>
-                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  Conversion by applicant type
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {enroleeTypeConversion.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    No applicant type data available.
-                  </p>
-                ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                        <th className="pb-2 pr-3 font-semibold">Type</th>
-                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
-                          Applied
-                        </th>
-                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
-                          Enrolled
-                        </th>
-                        <th className="pb-2 text-right font-semibold tabular-nums">
-                          Rate
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-hairline">
-                      {enroleeTypeConversion.map((row) => (
-                        <tr key={row.type}>
-                          <td className="py-2 pr-3 font-medium text-foreground">
-                            {row.type}
-                          </td>
-                          <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">
-                            {row.applied.toLocaleString('en-SG')}
-                          </td>
-                          <td className="py-2 pr-3 text-right font-mono tabular-nums text-foreground">
-                            {row.enrolled.toLocaleString('en-SG')}
-                          </td>
-                          <td className="py-2 text-right font-mono text-xs tabular-nums text-muted-foreground">
-                            {row.conversionPct}%
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* 3.1c — Referral conversion table (full width) */}
+          {/* 3.1 — Referral conversion, sorted by conversion % descending —
+              the bar encodes conversion (the story); volume stays as meta. */}
           <Card>
             <CardHeader>
               <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
@@ -958,63 +808,55 @@ export default async function AdmissionsInsightsPage({
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {referralConversion.length === 0 ? (
+              {referralsByConversion.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
                   No referral sources recorded yet.
                 </p>
               ) : (
                 <>
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                        <th className="pb-2 pr-3 font-semibold">Source</th>
-                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
-                          Applied
-                        </th>
-                        <th className="pb-2 pr-3 text-right font-semibold tabular-nums">
-                          Enrolled
-                        </th>
-                        <th className="pb-2 text-right font-semibold">Rate</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-hairline">
-                      {referralConversion.map((r) => {
-                        const barWidth =
-                          totalRef > 0
-                            ? Math.max(
-                                2,
-                                Math.round((r.applied / totalRef) * 100)
-                              )
-                            : 0;
-                        return (
-                          <tr key={r.source}>
-                            <td className="py-2.5 pr-3">
-                              <div className="space-y-1">
-                                <span className="font-medium text-foreground">
-                                  {r.source}
-                                </span>
-                                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                                  <div
-                                    className="h-full rounded-full bg-gradient-to-r from-brand-mint to-brand-sky"
-                                    style={{ width: `${barWidth}%` }}
-                                  />
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-muted-foreground">
-                              {r.applied.toLocaleString('en-SG')}
-                            </td>
-                            <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-foreground">
-                              {r.enrolled.toLocaleString('en-SG')}
-                            </td>
-                            <td className="py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground">
-                              {r.conversionPct}%
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  <ul className="space-y-3">
+                    {referralsByConversion.map((r) => {
+                      const isBest =
+                        showBestRef && r.source === bestRef.item!.source;
+                      const isWorst =
+                        showBestRef &&
+                        !worstRef.isTie &&
+                        worstRef.item !== null &&
+                        r.source === worstRef.item.source &&
+                        worstRef.item.source !== bestRef.item!.source;
+                      const widthPct = Math.max(2, r.conversionPct);
+                      return (
+                        <li key={r.source} className="space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-3 text-sm">
+                            <span className="font-medium text-foreground">
+                              {r.source}
+                            </span>
+                            <span className="flex items-center gap-2 font-mono text-xs tabular-nums text-muted-foreground">
+                              {r.applied.toLocaleString('en-SG')} applied ·{' '}
+                              {r.enrolled.toLocaleString('en-SG')} enrolled
+                              <span
+                                className={
+                                  isBest
+                                    ? 'font-semibold text-brand-mint'
+                                    : isWorst
+                                      ? 'font-semibold text-brand-amber'
+                                      : 'text-foreground'
+                                }
+                              >
+                                {r.conversionPct}%
+                              </span>
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-brand-mint to-brand-sky"
+                              style={{ width: `${widthPct}%` }}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
                   {/* Callout (positive): the best-converting channel, guarded by
                       a minimum sample so a tiny channel can't win on noise.
                       Names the worst end too when it also clears the guard. */}
@@ -1037,35 +879,6 @@ export default async function AdmissionsInsightsPage({
         </InsightsSection>
       </div>
       {/* ═══ end Chapter 3 ═══ */}
-
-      {/* 6 — Takeaways narrative. */}
-      <InsightsSection
-        eyebrow="Takeaways"
-        title="What stands out"
-        description="Automatic observations from this year's funnel and the selected period."
-      >
-        {insights.length > 0 ? (
-          <InsightsPanel insights={insights} title="Admissions takeaways" />
-        ) : (
-          <Card className="border-dashed">
-            <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              Nothing notable to flag for this period — the funnel is steady.
-            </CardContent>
-          </Card>
-        )}
-      </InsightsSection>
-
-      {/* 7 — Seasonal (building history). */}
-      <InsightsSection
-        eyebrow="Seasonality"
-        title="When do applications peak?"
-        description="Month-by-month seasonal patterns become reliable once a few full intake cycles are on record."
-      >
-        <BuildingHistoryCard
-          label="Seasonal intake patterns"
-          detail="Once the school has several completed admission cycles, this will show which months consistently drive applications — so you can time outreach. It fills in automatically each year."
-        />
-      </InsightsSection>
 
       {/* Footer trust strip */}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
