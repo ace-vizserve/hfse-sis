@@ -49,6 +49,29 @@ export const AY_MONTH_LABELS = [
 
 export type AyMonthLabel = (typeof AY_MONTH_LABELS)[number];
 
+/**
+ * The in-progress month label for `ayCode`'s intake trend — the month whose
+ * count is a PARTIAL total, not yet a complete month — or `null` when every
+ * month in `ayCode` is either fully past (a prior calendar year) or hasn't
+ * started (a future calendar year), so no partial month exists.
+ *
+ * Mirrors `loadIntakeTrendByAyUncached`'s per-AY cutoff derivation exactly:
+ * the cutoff month for the CURRENT calendar year IS the in-progress one.
+ * Used by the Insights caption's honesty guard (`summariseAyTrend`'s
+ * `inProgressPeriod` option) so a few days into a month isn't compared
+ * against a full historical month as a fabricated decline.
+ */
+export function currentInProgressMonthLabel(
+  ayCode: string
+): AyMonthLabel | null {
+  const ayYear = parseInt(ayCode.replace(/^AY/i, ''), 10);
+  const currentYear = new Date().getUTCFullYear();
+  if (!Number.isFinite(ayYear) || ayYear !== currentYear) return null;
+  const currentMonth = new Date().getUTCMonth(); // 0-based
+  if (currentMonth > 10) return null; // December — outside the HFSE AY window
+  return AY_MONTH_LABELS[currentMonth];
+}
+
 const CACHE_TTL_SECONDS = 600;
 
 function cacheTag(ayCode: string): string {

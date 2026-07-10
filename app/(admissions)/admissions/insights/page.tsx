@@ -28,6 +28,7 @@ import {
 import {
   getConversionByLevel,
   getReferralConversion,
+  sortLevelsByConversionAsc,
 } from '@/lib/admissions/insights-funnel';
 import {
   getAdmissionsTerminalReasons,
@@ -35,6 +36,7 @@ import {
 } from '@/lib/admissions/insights';
 import {
   AY_MONTH_LABELS,
+  currentInProgressMonthLabel,
   getIntakeTrendByAy,
 } from '@/lib/admissions/insights-compare';
 import {
@@ -180,7 +182,14 @@ export default async function AdmissionsInsightsPage({
   );
   const intakeTrendSummary = summariseAyTrend(
     intakeTrend.data,
-    intakeTrend.series
+    intakeTrend.series,
+    {
+      // Applications-received is a month-granularity COUNT series — suppress
+      // the delta when the anchor is the current in-progress month so a
+      // partial month isn't compared against a full historical one as a
+      // fabricated decline (only meaningful for the current-calendar-year AY).
+      inProgressPeriod: currentInProgressMonthLabel(selectedAy),
+    }
   );
   const intakeTrendDelta =
     intakeTrendSummary.delta && intakeTrendSummary.comparisonLabel
@@ -210,9 +219,7 @@ export default async function AdmissionsInsightsPage({
 
   // Levels sorted worst-converter-first so the bar list is scannable without
   // reading the callout below it (requirement: ascending on conversionPct).
-  const levelsWorstFirst = [...conversionByLevel].sort(
-    (a, b) => a.conversionPct - b.conversionPct
-  );
+  const levelsWorstFirst = sortLevelsByConversionAsc(conversionByLevel);
 
   // Referrals sorted best-converter-first — the bar now encodes conversion %
   // (the story), volume stays visible as mono meta text alongside it.

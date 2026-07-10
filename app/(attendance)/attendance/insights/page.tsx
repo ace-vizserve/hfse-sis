@@ -50,7 +50,10 @@ import {
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
 import { buildAyTrend } from '@/lib/dashboard/insights-trend';
-import { summariseAyTrend } from '@/lib/dashboard/trend-delta';
+import {
+  summariseAyTrend,
+  type TrendDeltaDirection,
+} from '@/lib/dashboard/trend-delta';
 import { getDashboardWindows } from '@/lib/dashboard/windows';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -221,11 +224,28 @@ export default async function AttendanceInsightsPage({
   // guard: summariseAyTrend anchors the comparison at the same term index as
   // the current AY's latest data, so no fake delta ever renders).
   const rateTrendSummary = summariseAyTrend(rateTrend.data, rateTrend.series);
+  // Round to 1dp (matches summariseSeriesMovement's convention elsewhere on
+  // this page family) and derive the arrow direction from THAT rounded value
+  // — deriving it from the raw delta let a genuine +0.4pt move read "+0 pts"
+  // next to an up arrow, a visible inconsistency (bug-hunt finding).
+  const rateTrendDeltaAbs = rateTrendSummary.delta
+    ? Math.round(rateTrendSummary.delta.abs * 10) / 10
+    : null;
+  const rateTrendDeltaDirection: TrendDeltaDirection | null =
+    rateTrendDeltaAbs === null
+      ? null
+      : rateTrendDeltaAbs > 0
+        ? 'up'
+        : rateTrendDeltaAbs < 0
+          ? 'down'
+          : 'flat';
   const rateTrendDelta =
-    rateTrendSummary.delta && rateTrendSummary.comparisonLabel
+    rateTrendDeltaAbs !== null &&
+    rateTrendDeltaDirection !== null &&
+    rateTrendSummary.comparisonLabel
       ? {
-          label: `${rateTrendSummary.delta.abs >= 0 ? '+' : ''}${Math.round(rateTrendSummary.delta.abs)} pts vs ${rateTrendSummary.comparisonLabel}`,
-          direction: rateTrendSummary.delta.direction,
+          label: `${rateTrendDeltaAbs >= 0 ? '+' : ''}${rateTrendDeltaAbs} pts vs ${rateTrendSummary.comparisonLabel}`,
+          direction: rateTrendDeltaDirection,
         }
       : undefined;
 

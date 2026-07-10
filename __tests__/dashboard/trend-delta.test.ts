@@ -90,6 +90,70 @@ describe('summariseAyTrend', () => {
     expect(summary.delta?.abs).toBe(12);
     expect(summary.delta?.direction).toBe('up');
   });
+
+  // ── Partial-period anchor guard (opts.inProgressPeriod) ────────────────────
+  // For month-granularity COUNT series, the anchor can land on the current
+  // in-progress month (e.g. 10 days into July). Comparing that partial total
+  // against a full historical month fabricates a decline. When the caller
+  // identifies the anchor as in-progress, the delta must be suppressed while
+  // the headline value/periodLabel stay intact ("count so far" is honest).
+
+  it('partial-period guard: anchor equals inProgressPeriod → delta null, headline intact', () => {
+    const series = [
+      { key: 'AY2026', label: 'AY2026', muted: false },
+      { key: 'AY2025', label: 'AY2025', muted: true },
+    ];
+    const data = [
+      { x: 'Jun', AY2026: 40, AY2025: 38 },
+      { x: 'Jul', AY2026: 10, AY2025: 35 }, // Jul is 10 days in; AY2025's Jul is a full month
+    ];
+    const summary = summariseAyTrend(data, series, {
+      inProgressPeriod: 'Jul',
+    });
+    expect(summary.periodLabel).toBe('Jul');
+    expect(summary.currentValue).toBe(10);
+    expect(summary.comparisonValue).toBe(35);
+    expect(summary.delta).toBeNull();
+  });
+
+  it('partial-period guard: anchor differs from inProgressPeriod → delta unchanged', () => {
+    const series = [
+      { key: 'AY2026', label: 'AY2026', muted: false },
+      { key: 'AY2025', label: 'AY2025', muted: true },
+    ];
+    const data = [{ x: 'Jun', AY2026: 40, AY2025: 38 }];
+    const summary = summariseAyTrend(data, series, {
+      inProgressPeriod: 'Jul',
+    });
+    expect(summary.periodLabel).toBe('Jun');
+    expect(summary.delta).not.toBeNull();
+    expect(summary.delta?.abs).toBe(2);
+    expect(summary.delta?.direction).toBe('up');
+  });
+
+  it('partial-period guard: option omitted → behavior unchanged (delta still computed)', () => {
+    const series = [
+      { key: 'AY2026', label: 'AY2026', muted: false },
+      { key: 'AY2025', label: 'AY2025', muted: true },
+    ];
+    const data = [{ x: 'Jul', AY2026: 10, AY2025: 35 }];
+    const summary = summariseAyTrend(data, series);
+    expect(summary.periodLabel).toBe('Jul');
+    expect(summary.delta).not.toBeNull();
+    expect(summary.delta?.abs).toBe(-25);
+  });
+
+  it('partial-period guard: inProgressPeriod null → behaves as if omitted', () => {
+    const series = [
+      { key: 'AY2026', label: 'AY2026', muted: false },
+      { key: 'AY2025', label: 'AY2025', muted: true },
+    ];
+    const data = [{ x: 'Jul', AY2026: 10, AY2025: 35 }];
+    const summary = summariseAyTrend(data, series, {
+      inProgressPeriod: null,
+    });
+    expect(summary.delta).not.toBeNull();
+  });
 });
 
 describe('summariseSeriesMovement', () => {

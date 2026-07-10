@@ -5,7 +5,6 @@ import {
   GitPullRequestArrow,
   Lock,
   Timer,
-  TrendingDown,
 } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
@@ -223,10 +222,8 @@ export default async function MarkbookInsightsPage({
       ? computeDelta(topBandPct, compareTopBandPct)
       : null;
 
-  // ── Trend-section visibility gate ─────────────────────────────────────────
-  // This AY×comparison shape decides ONLY whether the 1b trend section exists
-  // (`haveTrend`) — the lines actually plotted are built separately below
-  // from `primaryTrendPoints` only (current-AY-only, top-N by movement).
+  // Term periods across whichever AYs are in scope — the shared x-axis for
+  // both the subject trend chart and the level-breakdown watchlists below.
   const periods = [
     ...new Set(
       trendCells
@@ -234,16 +231,6 @@ export default async function MarkbookInsightsPage({
         .filter((p): p is string => p !== null)
     ),
   ].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
-  const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
-  // Only the series count matters here (does ANY subject×AY series exist?) —
-  // what actually renders is `trendLineData` below, built current-AY-only
-  // from the top-movement subjects.
-  const { series: trendSeries } = buildMultiAyTrend(
-    trendPoints,
-    periods,
-    trendAys
-  );
-  const haveTrend = trendPoints.length > 0 && trendSeries.length > 0;
 
   // ── Subjects to watch (school-wide, unchanged) ─────────────────────────────
   // From the LATEST term that has any trend data in the PRIMARY AY, the lowest-
@@ -275,6 +262,14 @@ export default async function MarkbookInsightsPage({
     periods,
     [selectedAy]
   );
+
+  // ── Trend-section visibility gate ─────────────────────────────────────────
+  // Gated on what's ACTUALLY plotted (trendLineSeries/primaryTrendPoints,
+  // built current-AY-only from the top-movement subjects) — not on the raw
+  // trendPoints matrix, which stays non-empty from the comparison AY alone at
+  // AY rollover (current AY has no grades yet). Gating on that matrix rendered
+  // an empty, axes-only chart instead of hiding the section.
+  const haveTrend = primaryTrendPoints.length > 0 && trendLineSeries.length > 0;
 
   // Overall average per period across every plotted-AY subject (not just the
   // 5 plotted lines) — the honest schoolwide headline behind the chart.

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   computeConversionByLevel,
   computeReferralConversion,
+  sortLevelsByConversionAsc,
+  type LevelConversionRow,
 } from '@/lib/admissions/insights-funnel';
 
 // NOTE: the deep stage-date funnel (buildDeepFunnel / DEEP_FUNNEL_STAGE_KEYS /
@@ -136,5 +138,40 @@ describe('computeReferralConversion', () => {
 
   it('returns empty array for empty input', () => {
     expect(computeReferralConversion([])).toEqual([]);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// sortLevelsByConversionAsc
+// ──────────────────────────────────────────────────────────────────────────
+describe('sortLevelsByConversionAsc', () => {
+  const row = (level: string, conversionPct: number): LevelConversionRow => ({
+    level,
+    applied: 10,
+    enrolled: Math.round((conversionPct / 100) * 10),
+    conversionPct,
+  });
+
+  it('sorts worst-converting level first', () => {
+    const rows = [row('P1', 80), row('P2', 20), row('P3', 50)];
+    const result = sortLevelsByConversionAsc(rows);
+    expect(result.map((r) => r.level)).toEqual(['P2', 'P3', 'P1']);
+  });
+
+  it('is stable on ties, preserving input order', () => {
+    const rows = [row('P1', 50), row('P2', 50), row('P3', 50)];
+    const result = sortLevelsByConversionAsc(rows);
+    expect(result.map((r) => r.level)).toEqual(['P1', 'P2', 'P3']);
+  });
+
+  it('does not mutate the input array', () => {
+    const rows = [row('P1', 80), row('P2', 20)];
+    const original = [...rows];
+    sortLevelsByConversionAsc(rows);
+    expect(rows).toEqual(original);
+  });
+
+  it('returns empty array for empty input', () => {
+    expect(sortLevelsByConversionAsc([])).toEqual([]);
   });
 });

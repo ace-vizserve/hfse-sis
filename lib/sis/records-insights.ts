@@ -635,6 +635,29 @@ export function netMovementByMonth(
 }
 
 /**
+ * The in-progress calendar month for `ayCode`'s movement trend as of `today`
+ * (`yyyy-MM-dd`, SGT per KD #32) — the month whose net-movement count is a
+ * PARTIAL total, not a finished month — or `null` when `ayCode`'s calendar
+ * year doesn't match `today`'s year (a fully past or fully future AY has no
+ * partial month). Mirrors `netMovementByMonth`'s month-index math exactly.
+ *
+ * Used by the Insights caption's honesty guard (`summariseAyTrend`'s
+ * `inProgressPeriod` option) so a few days of net movement this month aren't
+ * compared against a full historical month as a fabricated decline.
+ */
+export function currentInProgressMonthLabel(
+  ayCode: string,
+  today: string
+): (typeof MONTH_LABELS)[number] | null {
+  const ayYear = ayCode.replace(/^AY/i, '');
+  const todayYear = today.slice(0, 4);
+  if (ayYear !== todayYear) return null;
+  const monthIdx = Number(today.slice(5, 7)) - 1; // 0-based
+  if (monthIdx < 0 || monthIdx > 11) return null;
+  return MONTH_LABELS[monthIdx];
+}
+
+/**
  * Backfill-resolution guard (pure).
  *
  * Backfilled AY movement events all carry the migration/backfill run-date in

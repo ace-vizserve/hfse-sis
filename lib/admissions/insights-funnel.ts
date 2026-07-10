@@ -205,6 +205,19 @@ export function computeConversionByLevel(
   return out;
 }
 
+/**
+ * Sort level-conversion rows worst-converter-first (ascending conversionPct)
+ * so the Insights bar list reads scannable without needing the callout below
+ * it. Stable on ties, so rows with equal conversionPct keep their input
+ * order (canonical level order from `computeConversionByLevel`). Does not
+ * mutate the input array.
+ */
+export function sortLevelsByConversionAsc(
+  rows: LevelConversionRow[]
+): LevelConversionRow[] {
+  return [...rows].sort((a, b) => a.conversionPct - b.conversionPct);
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Referral conversion
 // ──────────────────────────────────────────────────────────────────────────

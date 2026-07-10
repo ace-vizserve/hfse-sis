@@ -42,6 +42,7 @@ import {
 import { sgToday } from '@/lib/dates';
 import { getMovementEvents } from '@/lib/sis/movements';
 import {
+  currentInProgressMonthLabel,
   getInsightsHeadcount,
   getMovementTrendByAy,
   getRecordsRetention,
@@ -155,7 +156,14 @@ export default async function RecordsInsightsPage({
   );
   const movementTrendSummary = summariseAyTrend(
     movementTrend.data,
-    movementTrend.series
+    movementTrend.series,
+    {
+      // Net movement is a month-granularity COUNT series — suppress the
+      // delta when the anchor is the current in-progress month so a partial
+      // month isn't compared against a full historical one as a fabricated
+      // decline (only meaningful for the current-calendar-year AY).
+      inProgressPeriod: currentInProgressMonthLabel(selectedAy, today),
+    }
   );
   const movementTrendDelta =
     movementTrendSummary.delta && movementTrendSummary.comparisonLabel
@@ -466,7 +474,7 @@ export default async function RecordsInsightsPage({
               <CardHeader>
                 <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
                   Net enrolment movement per month
-                  {compareAy && compareAyHasMonthlyResolution
+                  {compareAyHasMonthlyResolution
                     ? ` · ${selectedAy} vs ${compareAy}`
                     : ''}
                 </CardDescription>
@@ -477,7 +485,7 @@ export default async function RecordsInsightsPage({
               <CardContent className="space-y-4">
                 {movementTrendSummary.currentValue !== null && (
                   <TrendDeltaCaption
-                    value={`${movementTrendSummary.currentValue >= 0 ? '+' : ''}${movementTrendSummary.currentValue}`}
+                    value={`${movementTrendSummary.currentValue > 0 ? '+' : ''}${movementTrendSummary.currentValue}`}
                     caption={`net movement in ${movementTrendSummary.periodLabel}`}
                     delta={movementTrendDelta}
                   />

@@ -9,6 +9,13 @@ import { growthDelta } from './growth';
  * point) — otherwise a comparison AY with more completed periods than the
  * current one could compare e.g. this-year-T3 against last-year-T4, which
  * would misleadingly attribute a full extra period's movement to "growth."
+ *
+ * Partial-period guard: pass `opts.inProgressPeriod` (a period label, e.g.
+ * the current in-progress month for a month-granularity COUNT series) when
+ * the caller knows the anchor period may still be accumulating data. If the
+ * resolved anchor equals it, the delta is suppressed (headline stays) so a
+ * partial period is never compared against a full historical one as if it
+ * were a real decline.
  */
 
 export type TrendDeltaDirection = 'up' | 'down' | 'flat';
@@ -31,7 +38,8 @@ export type TrendDeltaSummary = {
 
 export function summariseAyTrend(
   data: Array<Record<string, string | number | null>>,
-  series: Array<{ key: string; label: string; muted?: boolean }>
+  series: Array<{ key: string; label: string; muted?: boolean }>,
+  opts?: { inProgressPeriod?: string | null }
 ): TrendDeltaSummary {
   const current = series.find((s) => !s.muted);
   const comparison = series.find((s) => s.muted);
@@ -76,6 +84,22 @@ export function summariseAyTrend(
       periodLabel,
       currentValue,
       comparisonValue: null,
+      comparisonLabel: comparison?.label ?? null,
+      delta: null,
+    };
+  }
+
+  // Partial-period anchor guard: for month-granularity COUNT series, the
+  // anchor can land on the current in-progress period (e.g. 10 days into
+  // July) — comparing that partial total against a full historical period
+  // fabricates a decline. When the caller identifies the anchor as
+  // in-progress, suppress the delta but keep the headline value/periodLabel
+  // (a partial "count so far" is still honest to show).
+  if (opts?.inProgressPeriod != null && periodLabel === opts.inProgressPeriod) {
+    return {
+      periodLabel,
+      currentValue,
+      comparisonValue,
       comparisonLabel: comparison?.label ?? null,
       delta: null,
     };
