@@ -1,8 +1,6 @@
 import {
   AlertTriangle,
   ArrowLeft,
-  ArrowRightLeft,
-  CalendarClock,
   RotateCcw,
   Users,
   UserMinus,
@@ -13,7 +11,6 @@ import { notFound, redirect } from 'next/navigation';
 
 import { AttritionStackedBarChart } from '@/components/dashboard/charts/attrition-stacked-bar-chart';
 import { AyComparisonLineChart } from '@/components/dashboard/charts/ay-comparison-line-chart';
-import { DonutChart } from '@/components/dashboard/charts/donut-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
@@ -50,6 +47,7 @@ import {
   getRecordsRetention,
   getRecordsRetentionByLevel,
   growthDelta,
+  hasMonthlyResolution,
   MONTH_LABELS,
   rollupMovements,
 } from '@/lib/sis/records-insights';
@@ -130,15 +128,30 @@ export default async function RecordsInsightsPage({
 
   const rollup = rollupMovements(movementEvents);
 
-  // Net-movement trend: two-AY overlaid line chart.
+  // Backfill guard (KD honesty rule): a backfilled AY's movement events all
+  // carry the backfill run-date, so its whole year piles into 1-2 months —
+  // overlaying that on the trend chart would fabricate seasonality. Drop the
+  // comparison AY from the chart when its own monthly series fails the
+  // resolution check; the current AY's line always renders.
+  const compareAyMovementPoints = compareAy
+    ? movementTrendPoints.filter((p) => p.ayCode === compareAy)
+    : [];
+  const compareAyHasMonthlyResolution =
+    compareAy !== null && hasMonthlyResolution(compareAyMovementPoints);
+  const movementChartAys = compareAyHasMonthlyResolution
+    ? movementAys
+    : [selectedAy];
+
+  // Net-movement trend: two-AY overlaid line chart (or one line when the
+  // comparison AY fails the backfill guard above).
   const movementTrend = buildAyTrend(
     movementTrendPoints,
     MONTH_LABELS as unknown as string[],
-    movementAys
+    movementChartAys
   );
   // Show the trend chart when there are any non-null, non-zero data points.
   const haveMovementTrend = movementTrend.data.some((row) =>
-    movementAys.some((ay) => row[ay] !== null && row[ay] !== 0)
+    movementChartAys.some((ay) => row[ay] !== null && row[ay] !== 0)
   );
   const movementTrendSummary = summariseAyTrend(
     movementTrend.data,
@@ -173,11 +186,12 @@ export default async function RecordsInsightsPage({
 
   const maxLevel = headcount.byLevel.reduce((m, l) => Math.max(m, l.count), 0);
 
-  // Donut slices for withdrawal reasons (already humanized by reasonLabel).
-  const reasonSlices = rollup.withdrawalsByReason.map((r) => ({
-    name: r.reason,
-    value: r.count,
-  }));
+  // §2 population-by-level: comparison-year count per level, for the muted
+  // "vs {compareAy}" meta value on each row (section only renders when a
+  // compareAy is chosen, so priorHeadcount is populated whenever this is read).
+  const priorLevelCounts = new Map(
+    (priorHeadcount?.byLevel ?? []).map((l) => [l.level, l.count])
+  );
 
   const haveLate =
     rollup.lateByLevel.length > 0 || rollup.lateByTerm.length > 0;
@@ -198,6 +212,13 @@ export default async function RecordsInsightsPage({
     compareAy !== null && retentionByLevel.length > 0;
 
   const { controllability } = rollup;
+
+  // §6 controllability fallback: when every withdrawal reason on record is
+  // Unspecified, the "% preventable" story is unknown, not zero — show the
+  // honest withdrawals-per-level bar-list instead of the banner/stacked-bar.
+  const hasSpecifiedWithdrawalReasons =
+    controllability.total > 0 &&
+    controllability.unspecifiedCount < controllability.total;
 
   // ──────────────────────────────────────────────────────────────────────────
   // Derived narrative — every finding-title + RecommendationCallout below is
@@ -361,124 +382,93 @@ export default async function RecordsInsightsPage({
                     : `No data for ${compareAy}`
               }
             />
-            <MetricCard
-              label="Levels in use"
-              value={headcount.byLevel.length}
-              icon={Users}
-              intent="default"
-              subtext="distinct year levels with students"
-            />
-            <MetricCard
-              label="Withdrawals this year"
-              value={rollup.counts.withdrawn}
-              icon={UserMinus}
-              intent={rollup.counts.withdrawn > 0 ? 'warning' : 'default'}
-              subtext="students who left mid-year"
-            />
           </section>
         </InsightsSection>
 
-        {/* 2 — Student population by level: derived title states the level count. */}
-        <InsightsSection
-          eyebrow="Distribution"
-          title={distributionTitle}
-          description={
-            priorTotal !== null
-              ? `Enrolled headcount per level. ${headcount.total.toLocaleString('en-SG')} this year vs ${priorTotal.toLocaleString('en-SG')} in ${compareAy}.`
-              : 'Enrolled headcount per level for the selected year.'
-          }
-        >
-          {headcount.byLevel.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="p-8 text-center text-sm text-muted-foreground">
-                No enrolled students recorded for this year yet.
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  Enrolled per level
-                </CardDescription>
-                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  Student population
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-3">
-                  {headcount.byLevel.map((lvl) => {
-                    const widthPct =
-                      maxLevel > 0
-                        ? Math.max(4, Math.round((lvl.count / maxLevel) * 100))
-                        : 0;
-                    return (
-                      <li key={lvl.level} className="space-y-1.5">
-                        <div className="flex items-baseline justify-between gap-3 text-sm">
-                          <span className="font-medium text-foreground">
-                            {lvl.level}
-                          </span>
-                          <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                            {lvl.count.toLocaleString('en-SG')}
-                          </span>
-                        </div>
-                        <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy"
-                            style={{ width: `${widthPct}%` }}
-                          />
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
-        </InsightsSection>
+        {/* 2 — Student population by level: comparison-only (the primary-AY-only
+            snapshot dupes the /records dashboard's level distribution) — auto-
+            hides entirely when no compareAy is chosen. */}
+        {compareAy && priorHeadcount && (
+          <InsightsSection
+            eyebrow="Distribution"
+            title={distributionTitle}
+            description={`Enrolled headcount per level. ${headcount.total.toLocaleString('en-SG')} this year vs ${priorHeadcount.total.toLocaleString('en-SG')} in ${compareAy}.`}
+          >
+            {headcount.byLevel.length === 0 ? (
+              <Card className="border-dashed">
+                <CardContent className="p-8 text-center text-sm text-muted-foreground">
+                  No enrolled students recorded for this year yet.
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                    Enrolled per level
+                  </CardDescription>
+                  <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                    Student population
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-3">
+                    {headcount.byLevel.map((lvl) => {
+                      const widthPct =
+                        maxLevel > 0
+                          ? Math.max(
+                              4,
+                              Math.round((lvl.count / maxLevel) * 100)
+                            )
+                          : 0;
+                      const priorCount =
+                        priorLevelCounts.get(lvl.level) ?? null;
+                      return (
+                        <li key={lvl.level} className="space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-3 text-sm">
+                            <span className="font-medium text-foreground">
+                              {lvl.level}
+                            </span>
+                            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                              {lvl.count.toLocaleString('en-SG')}
+                              {priorCount !== null && (
+                                <span className="ml-2 text-muted-foreground/50">
+                                  vs {compareAy}{' '}
+                                  {priorCount.toLocaleString('en-SG')}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy"
+                              style={{ width: `${widthPct}%` }}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+          </InsightsSection>
+        )}
 
-        {/* 3 — Student movement: 4 tiles + velocity overlay. */}
+        {/* 3 — Student movement: net-movement velocity overlay only (the 4
+            count tiles are byte-for-byte /records/movements' stat cards). */}
         <InsightsSection
           eyebrow="Movement"
           title="Who moves in and out?"
-          description="Enrolment movements recorded across the year — and the daily rhythm of joins against departures over the selected period."
+          description="The net rhythm of joins against departures across the year — late enrolments and re-enrolments count up, withdrawals count down."
         >
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard
-              label="Withdrawals"
-              value={rollup.counts.withdrawn}
-              icon={UserMinus}
-              intent={rollup.counts.withdrawn > 0 ? 'warning' : 'default'}
-              subtext="left during the year"
-            />
-            <MetricCard
-              label="Late enrollees"
-              value={rollup.counts.lateEnrolled}
-              icon={CalendarClock}
-              intent="default"
-              subtext="joined after the year began"
-            />
-            <MetricCard
-              label="Transfers"
-              value={rollup.counts.transferred}
-              icon={ArrowRightLeft}
-              intent="default"
-              subtext="moved between sections"
-            />
-            <MetricCard
-              label="Re-enrollees"
-              value={rollup.counts.reEnrolled}
-              icon={RotateCcw}
-              intent="default"
-              subtext="returned after leaving"
-            />
-          </section>
-
           {haveMovementTrend ? (
             <Card>
               <CardHeader>
                 <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
                   Net enrolment movement per month
-                  {compareAy ? ` · ${selectedAy} vs ${compareAy}` : ''}
+                  {compareAy && compareAyHasMonthlyResolution
+                    ? ` · ${selectedAy} vs ${compareAy}`
+                    : ''}
                 </CardDescription>
                 <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
                   Movement by month
@@ -771,7 +761,9 @@ export default async function RecordsInsightsPage({
         </InsightsSection>
 
         {/* 6 — Withdrawal analysis: derived title + controllability callout +
-            reason×level stacked bar + donut. */}
+            reason×level stacked bar when reasons are recorded; the honest
+            withdrawals-per-level bar-list fallback when every reason on file
+            is Unspecified (the "% preventable" story is unknown, not zero). */}
         <InsightsSection
           eyebrow="Attrition"
           title={attritionTitle}
@@ -784,54 +776,52 @@ export default async function RecordsInsightsPage({
                 That&rsquo;s a good sign.
               </CardContent>
             </Card>
-          ) : (
+          ) : hasSpecifiedWithdrawalReasons ? (
             <div className="space-y-4">
               {/* Controllability summary banner */}
-              {controllability.total > 0 && (
-                <Card
-                  className={
-                    controllability.controllableCount > 0
-                      ? 'border-brand-amber/40 bg-gradient-to-r from-brand-amber/5 to-transparent'
-                      : ''
-                  }
-                >
-                  <CardContent className="p-4">
-                    <div className="flex flex-wrap items-start gap-3">
-                      {controllability.controllableCount > 0 && (
-                        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-brand-amber" />
-                      )}
-                      <div className="flex-1 space-y-1 text-sm">
-                        <p className="font-medium text-foreground">
-                          {controllability.controllablePct !== null
-                            ? `${controllability.controllablePct}% of withdrawals are potentially preventable`
-                            : 'No preventable withdrawals recorded'}
-                          {controllability.controllableCount > 0 && (
-                            <span className="ml-1 font-mono text-xs font-normal text-muted-foreground">
-                              ({controllability.controllableCount} of{' '}
-                              {controllability.total})
-                            </span>
-                          )}
-                        </p>
-                        {controllability.topControllableTakeaway && (
-                          <p className="text-muted-foreground">
-                            {controllability.topControllableTakeaway}
-                          </p>
+              <Card
+                className={
+                  controllability.controllableCount > 0
+                    ? 'border-brand-amber/40 bg-gradient-to-r from-brand-amber/5 to-transparent'
+                    : ''
+                }
+              >
+                <CardContent className="p-4">
+                  <div className="flex flex-wrap items-start gap-3">
+                    {controllability.controllableCount > 0 && (
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-brand-amber" />
+                    )}
+                    <div className="flex-1 space-y-1 text-sm">
+                      <p className="font-medium text-foreground">
+                        {controllability.controllablePct !== null
+                          ? `${controllability.controllablePct}% of withdrawals are potentially preventable`
+                          : 'No preventable withdrawals recorded'}
+                        {controllability.controllableCount > 0 && (
+                          <span className="ml-1 font-mono text-xs font-normal text-muted-foreground">
+                            ({controllability.controllableCount} of{' '}
+                            {controllability.total})
+                          </span>
                         )}
-                        <p className="text-xs text-muted-foreground">
-                          Preventable ={' '}
-                          <span className="font-medium">financial</span>,{' '}
-                          <span className="font-medium">disciplinary</span>,{' '}
-                          <span className="font-medium">academic fit</span>.
-                          Structural ={' '}
-                          <span className="font-medium">relocation</span>,{' '}
-                          <span className="font-medium">transfer</span>,{' '}
-                          <span className="font-medium">health</span>.
+                      </p>
+                      {controllability.topControllableTakeaway && (
+                        <p className="text-muted-foreground">
+                          {controllability.topControllableTakeaway}
                         </p>
-                      </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Preventable ={' '}
+                        <span className="font-medium">financial</span>,{' '}
+                        <span className="font-medium">disciplinary</span>,{' '}
+                        <span className="font-medium">academic fit</span>.
+                        Structural ={' '}
+                        <span className="font-medium">relocation</span>,{' '}
+                        <span className="font-medium">transfer</span>,{' '}
+                        <span className="font-medium">health</span>.
+                      </p>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* Callout (act): top controllable takeaway when present. */}
               {showActCallout ? (
@@ -859,81 +849,61 @@ export default async function RecordsInsightsPage({
                   </CardContent>
                 </Card>
               )}
-
-              {/* Original two-panel: reason donut + level bar */}
-              <div className="grid gap-4 lg:grid-cols-2">
-                <Card>
-                  <CardHeader>
-                    <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                      Withdrawal reasons
-                    </CardDescription>
-                    <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                      Overall
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <DonutChart
-                      data={reasonSlices}
-                      centerLabel="Withdrawn"
-                      centerValue={rollup.counts.withdrawn}
-                    />
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                      Withdrawals per level
-                    </CardDescription>
-                    <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                      By level
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {rollup.withdrawalsByLevel.length === 0 ? (
-                      <p className="py-6 text-center text-sm text-muted-foreground">
-                        No level breakdown available.
-                      </p>
-                    ) : (
-                      <ul className="space-y-3">
-                        {(() => {
-                          const maxW = rollup.withdrawalsByLevel.reduce(
-                            (m, l) => Math.max(m, l.count),
-                            0
-                          );
-                          return rollup.withdrawalsByLevel.map((lvl) => {
-                            const widthPct =
-                              maxW > 0
-                                ? Math.max(
-                                    4,
-                                    Math.round((lvl.count / maxW) * 100)
-                                  )
-                                : 0;
-                            return (
-                              <li key={lvl.level} className="space-y-1.5">
-                                <div className="flex items-baseline justify-between gap-3 text-sm">
-                                  <span className="font-medium text-foreground">
-                                    {lvl.level}
-                                  </span>
-                                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                                    {lvl.count.toLocaleString('en-SG')}
-                                  </span>
-                                </div>
-                                <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                                  <div
-                                    className="h-full rounded-full bg-gradient-to-r from-destructive to-brand-amber"
-                                    style={{ width: `${widthPct}%` }}
-                                  />
-                                </div>
-                              </li>
-                            );
-                          });
-                        })()}
-                      </ul>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
             </div>
+          ) : (
+            /* Fallback: no reason is ever recorded (all Unspecified) — the
+               preventable-% story would be fabricated, so show only what is
+               actually known: how many withdrew per level. */
+            <Card>
+              <CardHeader>
+                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  No withdrawal reasons recorded yet
+                </CardDescription>
+                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                  Withdrawals per level
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {rollup.withdrawalsByLevel.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    No level breakdown available.
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {(() => {
+                      const maxW = rollup.withdrawalsByLevel.reduce(
+                        (m, l) => Math.max(m, l.count),
+                        0
+                      );
+                      return rollup.withdrawalsByLevel.map((lvl) => {
+                        const widthPct =
+                          maxW > 0
+                            ? Math.max(4, Math.round((lvl.count / maxW) * 100))
+                            : 0;
+                        return (
+                          <li key={lvl.level} className="space-y-1.5">
+                            <div className="flex items-baseline justify-between gap-3 text-sm">
+                              <span className="font-medium text-foreground">
+                                {lvl.level}
+                              </span>
+                              <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                                {lvl.count.toLocaleString('en-SG')}
+                              </span>
+                            </div>
+                            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-destructive to-brand-amber"
+                                style={{ width: `${widthPct}%` }}
+                              />
+                            </div>
+                          </li>
+                        );
+                      });
+                    })()}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
           )}
         </InsightsSection>
       </div>

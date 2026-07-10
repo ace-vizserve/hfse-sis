@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  hasMonthlyResolution,
   netMovementByMonth,
   rollupMovements,
   WITHDRAWAL_CONTROLLABILITY,
 } from '@/lib/sis/records-insights';
+import type { AyTrendPoint } from '@/lib/dashboard/insights-trend';
 import {
   WITHDRAWAL_REASON_VALUES,
   WITHDRAWAL_REASON_LABELS,
@@ -224,6 +226,59 @@ describe('netMovementByMonth', () => {
       'Nov',
       'Dec',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hasMonthlyResolution — backfill guard
+//
+// Backfilled AY movement events all carry the migration/backfill run-date in
+// audit_log.created_at, so a whole year of activity piles into 1-2 months —
+// the compare overlay would fabricate seasonality. This pure helper detects
+// that signature: true only when the AY's non-zero/non-null months span at
+// least 2 distinct months (real monthly resolution).
+// ---------------------------------------------------------------------------
+
+const monthPoint = (
+  periodLabel: string,
+  value: number | null,
+  ayCode = 'AY2025'
+): AyTrendPoint => ({ periodLabel, ayCode, value });
+
+describe('hasMonthlyResolution — backfill guard', () => {
+  it('all activity piled into a single month -> false (backfill signature)', () => {
+    const points = [
+      monthPoint('Jan', -14),
+      monthPoint('Feb', 0),
+      monthPoint('Mar', 0),
+      monthPoint('Apr', 0),
+      monthPoint('May', null),
+    ];
+    expect(hasMonthlyResolution(points)).toBe(false);
+  });
+
+  it('activity spread across two distinct months -> true', () => {
+    const points = [
+      monthPoint('Jan', -3),
+      monthPoint('Feb', 2),
+      monthPoint('Mar', 0),
+      monthPoint('Apr', null),
+    ];
+    expect(hasMonthlyResolution(points)).toBe(true);
+  });
+
+  it('empty array -> false', () => {
+    expect(hasMonthlyResolution([])).toBe(false);
+  });
+
+  it('a single non-zero month among many nulls -> false', () => {
+    const points = [monthPoint('Jun', 5), monthPoint('Jul', null)];
+    expect(hasMonthlyResolution(points)).toBe(false);
+  });
+
+  it('all zero/null -> false (no activity at all)', () => {
+    const points = [monthPoint('Jan', 0), monthPoint('Feb', 0)];
+    expect(hasMonthlyResolution(points)).toBe(false);
   });
 });
 

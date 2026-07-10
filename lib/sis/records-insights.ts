@@ -635,8 +635,28 @@ export function netMovementByMonth(
 }
 
 /**
+ * Backfill-resolution guard (pure).
+ *
+ * Backfilled AY movement events all carry the migration/backfill run-date in
+ * `audit_log.created_at`, so an entire year of activity piles into 1-2
+ * months — overlaying that series on the movement trend chart would read as
+ * fabricated seasonality, not a real monthly pattern. Given ONE AY's monthly
+ * points (12 points, one per month), this returns true only when the
+ * non-zero, non-null months span at least 2 distinct months — i.e. there is
+ * genuine monthly resolution behind the series, not a single-month pile-up.
+ */
+export function hasMonthlyResolution(points: AyTrendPoint[]): boolean {
+  const monthsWithActivity = new Set(
+    points
+      .filter((p) => p.value !== null && p.value !== 0)
+      .map((p) => p.periodLabel)
+  );
+  return monthsWithActivity.size >= 2;
+}
+
+/**
  * Async loader: fetches movement events for each AY and returns the combined
- * array of AyTrendPoints for use with buildAyTrend + MultiSeriesTrendChart.
+ * array of AyTrendPoints for use with buildAyTrend + AyComparisonLineChart.
  */
 export async function getMovementTrendByAy(
   ays: string[],
