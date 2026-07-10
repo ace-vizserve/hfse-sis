@@ -11,13 +11,14 @@ import {
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
-import { MultiSeriesTrendChart } from '@/components/dashboard/charts/multi-series-trend-chart';
+import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
+import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { pickExtreme, meetsThreshold } from '@/lib/dashboard/narrative';
 import {
@@ -243,7 +244,10 @@ export default async function MarkbookInsightsPage({
     ),
   ].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
   const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
-  const { data: trendData, series: trendSeries } = buildMultiAyTrend(
+  // Only the series count is needed here — this AY×comparison shape gated the
+  // section's visibility before the bar reshape below existed; `trendBarData`
+  // (current-AY-only) is what actually renders.
+  const { series: trendSeries } = buildMultiAyTrend(
     trendPoints,
     periods,
     trendAys
@@ -258,6 +262,53 @@ export default async function MarkbookInsightsPage({
   const latestPeriodWithData = [...periods]
     .reverse()
     .find((p) => primaryTrendPoints.some((pt) => pt.periodLabel === p));
+
+  // ── Performance trend chart, bar view ──────────────────────────────────────
+  // Grouped bars read cleanly with the 4-term period count, but a bar per
+  // (subject × AY) — the line chart's shape — becomes an unreadable tangle
+  // once a comparison AY is added on top of several subjects. So the bar view
+  // is deliberately CURRENT-AY-ONLY (one bar per subject, distinct hues); the
+  // AY-over-AY read for Markbook already lives in the hero's topBandBadge and
+  // on /markbook/compare.
+  const { data: trendBarData, series: trendBarSeries } = buildMultiAyTrend(
+    primaryTrendPoints,
+    periods,
+    [selectedAy]
+  );
+
+  function averageAvgGrade(
+    points: SubjectTrendPoint[],
+    period: string
+  ): number | null {
+    const values = points
+      .filter((p) => p.periodLabel === period && p.avgGrade !== null)
+      .map((p) => p.avgGrade as number);
+    if (values.length === 0) return null;
+    return (
+      Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10
+    );
+  }
+
+  const firstPeriod = periods[0] ?? null;
+  const latestOverallAvg = latestPeriodWithData
+    ? averageAvgGrade(primaryTrendPoints, latestPeriodWithData)
+    : null;
+  const firstOverallAvg = firstPeriod
+    ? averageAvgGrade(primaryTrendPoints, firstPeriod)
+    : null;
+  const trendCaptionDelta =
+    latestOverallAvg !== null &&
+    firstOverallAvg !== null &&
+    firstPeriod !== latestPeriodWithData
+      ? {
+          label: `${latestOverallAvg - firstOverallAvg >= 0 ? '+' : ''}${Math.round((latestOverallAvg - firstOverallAvg) * 10) / 10} vs ${firstPeriod}`,
+          direction: (latestOverallAvg > firstOverallAvg
+            ? 'up'
+            : latestOverallAvg < firstOverallAvg
+              ? 'down'
+              : 'flat') as 'up' | 'down' | 'flat',
+        }
+      : undefined;
   const watchRows: SubjectTrendPoint[] = latestPeriodWithData
     ? primaryTrendPoints
         .filter(
@@ -468,14 +519,20 @@ export default async function MarkbookInsightsPage({
                   Average quarterly grade
                 </CardDescription>
                 <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  Subject performance —{' '}
-                  {compareAy ? `${selectedAy} vs ${compareAy}` : selectedAy}
+                  Subject performance — {selectedAy}
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <MultiSeriesTrendChart
-                  series={trendSeries}
-                  data={trendData}
+              <CardContent className="space-y-4">
+                {latestOverallAvg !== null && (
+                  <TrendDeltaCaption
+                    value={latestOverallAvg.toString()}
+                    caption={`overall average in ${latestPeriodWithData}`}
+                    delta={trendCaptionDelta}
+                  />
+                )}
+                <GroupedBarChart
+                  series={trendBarSeries}
+                  data={trendBarData}
                   yFormat="number"
                   yDomain={[0, 100]}
                   height={280}

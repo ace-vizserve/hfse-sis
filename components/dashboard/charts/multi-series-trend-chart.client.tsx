@@ -12,13 +12,15 @@ import {
   YAxis,
 } from 'recharts';
 
+import { formatterFor, type YFormat } from './chart-primitives';
+
 export type MultiSeriesTrendSeries = {
   key: string;
   label: string;
   muted?: boolean;
 };
 
-export type YFormat = 'number' | 'percent' | 'days';
+export type { YFormat };
 
 export type MultiSeriesTrendChartProps = {
   /** Each series maps to one line. series[i].key must be a key in data objects. */
@@ -38,21 +40,6 @@ const SERIES_COLORS = [
   'var(--color-chart-4)',
   'var(--color-chart-5)',
 ];
-
-function formatterFor(
-  format: YFormat | undefined
-): ((n: number) => string) | undefined {
-  switch (format) {
-    case 'percent':
-      return (n) => `${Math.round(n)}%`;
-    case 'days':
-      return (n) => `${Math.round(n)}d`;
-    case 'number':
-      return (n) => n.toLocaleString('en-SG');
-    default:
-      return undefined;
-  }
-}
 
 function MultiSeriesTrendChartImpl({
   series,

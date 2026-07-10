@@ -10,13 +10,14 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import { AyComparisonLineChart } from '@/components/dashboard/charts/ay-comparison-line-chart';
 import { DonutChart } from '@/components/dashboard/charts/donut-chart';
-import { MultiSeriesTrendChart } from '@/components/dashboard/charts/multi-series-trend-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
+import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
 import { pickExtreme, meetsThreshold } from '@/lib/dashboard/narrative';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
@@ -54,6 +55,7 @@ import {
   resolveCompareAy,
 } from '@/lib/dashboard/comparison';
 import { buildAyTrend } from '@/lib/dashboard/insights-trend';
+import { summariseAyTrend } from '@/lib/dashboard/trend-delta';
 import { admissionsInsights } from '@/lib/dashboard/insights';
 import {
   computeDelta,
@@ -209,6 +211,20 @@ export default async function AdmissionsInsightsPage({
     [...AY_MONTH_LABELS],
     trendAys
   );
+  const intakeTrendSummary = summariseAyTrend(
+    intakeTrend.data,
+    intakeTrend.series
+  );
+  const intakeTrendDelta =
+    intakeTrendSummary.delta && intakeTrendSummary.comparisonLabel
+      ? {
+          label:
+            intakeTrendSummary.delta.pct !== null
+              ? `${intakeTrendSummary.delta.pct >= 0 ? '+' : ''}${intakeTrendSummary.delta.pct}% vs ${intakeTrendSummary.comparisonLabel}`
+              : `${intakeTrendSummary.delta.abs >= 0 ? '+' : ''}${intakeTrendSummary.delta.abs} vs ${intakeTrendSummary.comparisonLabel}`,
+          direction: intakeTrendSummary.delta.direction,
+        }
+      : undefined;
 
   // Funnel: find the biggest stage-to-stage leak from the REAL applicationStatus
   // pipeline (Submitted → Ongoing Verification → Processing → Enrolled, 490/490
@@ -485,8 +501,17 @@ export default async function AdmissionsInsightsPage({
                   Intake trend
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <MultiSeriesTrendChart
+              <CardContent className="space-y-4">
+                {intakeTrendSummary.currentValue !== null && (
+                  <TrendDeltaCaption
+                    value={intakeTrendSummary.currentValue.toLocaleString(
+                      'en-SG'
+                    )}
+                    caption={`applications in ${intakeTrendSummary.periodLabel}`}
+                    delta={intakeTrendDelta}
+                  />
+                )}
+                <AyComparisonLineChart
                   series={intakeTrend.series}
                   data={intakeTrend.data}
                   yFormat="number"

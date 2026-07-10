@@ -15,12 +15,13 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { DonutChart } from '@/components/dashboard/charts/donut-chart';
-import { MultiSeriesTrendChart } from '@/components/dashboard/charts/multi-series-trend-chart';
+import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
+import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import {
   Card,
@@ -58,6 +59,7 @@ import {
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
 import { buildAyTrend } from '@/lib/dashboard/insights-trend';
+import { summariseAyTrend } from '@/lib/dashboard/trend-delta';
 import { getDashboardWindows } from '@/lib/dashboard/windows';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -229,6 +231,18 @@ export default async function AttendanceInsightsPage({
     trendAys
   );
   const haveTrend = rateTrendPoints.some((p) => p.value !== null);
+
+  // Headline + delta caption sat above the trend chart (KD-style honesty
+  // guard: summariseAyTrend anchors the comparison at the same term index as
+  // the current AY's latest data, so no fake delta ever renders).
+  const rateTrendSummary = summariseAyTrend(rateTrend.data, rateTrend.series);
+  const rateTrendDelta =
+    rateTrendSummary.delta && rateTrendSummary.comparisonLabel
+      ? {
+          label: `${rateTrendSummary.delta.abs >= 0 ? '+' : ''}${Math.round(rateTrendSummary.delta.abs)} pts vs ${rateTrendSummary.comparisonLabel}`,
+          direction: rateTrendSummary.delta.direction,
+        }
+      : undefined;
 
   // Delta between current and prior AY headline rates (percentage points).
   const rateDelta =
@@ -412,8 +426,15 @@ export default async function AttendanceInsightsPage({
                   Term-by-term attendance
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <MultiSeriesTrendChart
+              <CardContent className="space-y-4">
+                {rateTrendSummary.currentValue !== null && (
+                  <TrendDeltaCaption
+                    value={`${Math.round(rateTrendSummary.currentValue)}%`}
+                    caption={`attendance rate in ${rateTrendSummary.periodLabel}`}
+                    delta={rateTrendDelta}
+                  />
+                )}
+                <GroupedBarChart
                   series={rateTrend.series}
                   data={rateTrend.data}
                   yFormat="percent"

@@ -14,24 +14,11 @@ import {
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 
+import { formatterFor, type YFormat } from './chart-primitives';
+
 export type TrendPoint = { x: string; y: number };
 
-export type YFormat = 'number' | 'percent' | 'days';
-
-function formatterFor(
-  format: YFormat | undefined
-): ((n: number) => string) | undefined {
-  switch (format) {
-    case 'percent':
-      return (n) => `${Math.round(n)}%`;
-    case 'days':
-      return (n) => `${Math.round(n)}d`;
-    case 'number':
-      return (n) => n.toLocaleString('en-SG');
-    default:
-      return undefined;
-  }
-}
+export type { YFormat };
 
 export type TrendChartProps = {
   label: string;

@@ -12,13 +12,14 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { AttritionStackedBarChart } from '@/components/dashboard/charts/attrition-stacked-bar-chart';
+import { AyComparisonLineChart } from '@/components/dashboard/charts/ay-comparison-line-chart';
 import { DonutChart } from '@/components/dashboard/charts/donut-chart';
-import { MultiSeriesTrendChart } from '@/components/dashboard/charts/multi-series-trend-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { InsightsSection } from '@/components/dashboard/insights/insights-section';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
+import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import {
   Card,
@@ -35,6 +36,7 @@ import {
   resolveCompareAy,
 } from '@/lib/dashboard/comparison';
 import { buildAyTrend } from '@/lib/dashboard/insights-trend';
+import { summariseAyTrend } from '@/lib/dashboard/trend-delta';
 import { pickExtreme, meetsThreshold } from '@/lib/dashboard/narrative';
 import {
   computeDelta,
@@ -138,6 +140,17 @@ export default async function RecordsInsightsPage({
   const haveMovementTrend = movementTrend.data.some((row) =>
     movementAys.some((ay) => row[ay] !== null && row[ay] !== 0)
   );
+  const movementTrendSummary = summariseAyTrend(
+    movementTrend.data,
+    movementTrend.series
+  );
+  const movementTrendDelta =
+    movementTrendSummary.delta && movementTrendSummary.comparisonLabel
+      ? {
+          label: `${movementTrendSummary.delta.abs >= 0 ? '+' : ''}${movementTrendSummary.delta.abs} vs ${movementTrendSummary.comparisonLabel}`,
+          direction: movementTrendSummary.delta.direction,
+        }
+      : undefined;
 
   // §1 enrolled card: delta chip when prior headcount is available.
   const enrolledDelta =
@@ -471,8 +484,15 @@ export default async function RecordsInsightsPage({
                   Movement by month
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <MultiSeriesTrendChart
+              <CardContent className="space-y-4">
+                {movementTrendSummary.currentValue !== null && (
+                  <TrendDeltaCaption
+                    value={`${movementTrendSummary.currentValue >= 0 ? '+' : ''}${movementTrendSummary.currentValue}`}
+                    caption={`net movement in ${movementTrendSummary.periodLabel}`}
+                    delta={movementTrendDelta}
+                  />
+                )}
+                <AyComparisonLineChart
                   series={movementTrend.series}
                   data={movementTrend.data}
                   yFormat="number"
