@@ -2,11 +2,20 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Plus, Trash2, UserCheck, UserCog, Users } from 'lucide-react';
+import {
+  Loader2,
+  Plus,
+  Trash2,
+  UserCheck,
+  UserCog,
+  UserPlus,
+  Users,
+} from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { StaffAvatar } from '@/components/sis/staff-visuals';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -227,8 +236,15 @@ export function TeacherAssignmentsPanel({
               Loading…
             </div>
           ) : formAdviser ? (
-            <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3">
-              <div>
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <StaffAvatar
+                name={
+                  teachersById.get(formAdviser.teacher_user_id)?.display_name ??
+                  ''
+                }
+                size={9}
+              />
+              <div className="min-w-0 flex-1">
                 <div className="font-medium text-foreground">
                   {teachersById.get(formAdviser.teacher_user_id)
                     ?.display_name ?? '(unknown user)'}
@@ -244,14 +260,19 @@ export function TeacherAssignmentsPanel({
                 onClick={() => setPendingRemoveId(formAdviser.id)}
                 disabled={busy}
                 aria-label="Remove form adviser"
-                className="text-muted-foreground hover:text-destructive"
+                className="shrink-0 text-muted-foreground hover:text-destructive"
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-5 text-center text-xs text-muted-foreground">
-              No form adviser assigned yet. Use the form below to assign one.
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-6 text-center">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <UserPlus className="size-4" />
+              </span>
+              <p className="text-xs text-muted-foreground">
+                No form adviser assigned yet. Use the form below to assign one.
+              </p>
             </div>
           )}
         </CardContent>
@@ -282,9 +303,14 @@ export function TeacherAssignmentsPanel({
               Loading…
             </div>
           ) : subjectTeachers.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-5 text-center text-xs text-muted-foreground">
-              No subject teachers assigned yet. Use the form below to assign
-              one.
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-6 text-center">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <UserPlus className="size-4" />
+              </span>
+              <p className="text-xs text-muted-foreground">
+                No subject teachers assigned yet. Use the form below to assign
+                one.
+              </p>
             </div>
           ) : (
             <ul className="space-y-2">
@@ -294,8 +320,9 @@ export function TeacherAssignmentsPanel({
                 return (
                   <li
                     key={a.id}
-                    className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3"
+                    className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3"
                   >
+                    <StaffAvatar name={t?.display_name ?? ''} size={9} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <Badge
@@ -321,7 +348,7 @@ export function TeacherAssignmentsPanel({
                       onClick={() => setPendingRemoveId(a.id)}
                       disabled={busy}
                       aria-label="Remove subject teacher"
-                      className="text-muted-foreground hover:text-destructive"
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

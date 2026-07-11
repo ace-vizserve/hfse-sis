@@ -114,9 +114,20 @@ export function SectionRosterTable({
         id: 'enrollmentStatus',
         accessorKey: 'enrollmentStatus',
         header: 'Status',
-        cell: ({ row }) => (
-          <EnrollmentStatusBadge status={row.original.enrollmentStatus} />
-        ),
+        cell: ({ row }) => {
+          const r = row.original;
+          return (
+            <span className="inline-flex items-center gap-1.5">
+              <EnrollmentStatusBadge status={r.enrollmentStatus} />
+              {r.enrollmentStatus === 'late_enrollee' &&
+                r.lateEnrolleTermNumber != null && (
+                  <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-brand-amber">
+                    · T{r.lateEnrolleTermNumber}
+                  </span>
+                )}
+            </span>
+          );
+        },
         filterFn: (row, _id, value) => {
           if (!value || (Array.isArray(value) && value.length === 0))
             return true;
@@ -314,6 +325,7 @@ export function SectionRosterTable({
       emptyState={{
         icon: Users,
         title: 'No students in this section.',
+        body: 'Students appear here once they’re assigned to this section from Admissions or moved in from another section.',
       }}
       emptyFilteredState={{
         title: 'No students match.',

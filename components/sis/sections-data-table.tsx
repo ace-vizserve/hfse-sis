@@ -57,7 +57,13 @@ function buildColumns(
         <SortableHeader column={column}>Section</SortableHeader>
       ),
       cell: ({ row }) => (
-        <IdentifierLink href={`/sis/sections/${row.original.id}`}>
+        // Serif — section names are HFSE's virtue names (Obedience, Patience,
+        // …, KD #144), not arbitrary labels, so the row anchor carries the
+        // same editorial weight as a section's hero title.
+        <IdentifierLink
+          href={`/sis/sections/${row.original.id}`}
+          className="font-serif text-[14.5px] font-semibold"
+        >
           {row.original.name}
         </IdentifierLink>
       ),
@@ -68,9 +74,16 @@ function buildColumns(
         <SortableHeader column={column}>Level</SortableHeader>
       ),
       cell: ({ row }) => (
-        <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+        // Same chip recipe as the Schedule column + the page header's
+        // level/schedule/AY chips — one "module chip anatomy," not a
+        // one-off. bg-card (not bg-white) per the no-new-bg-white rule;
+        // renders identically since both resolve to #FFFFFF.
+        <Badge
+          variant="outline"
+          className="h-6 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-foreground"
+        >
           {row.original.levelLabel}
-        </span>
+        </Badge>
       ),
       filterFn: facetFilterFn,
     },
