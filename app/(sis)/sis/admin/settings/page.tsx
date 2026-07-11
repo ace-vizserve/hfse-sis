@@ -25,10 +25,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 export default async function SettingsPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
-  if (
-    sessionUser.role !== 'superadmin' &&
-    sessionUser.role !== 'school_admin'
-  ) {
+  if (sessionUser.role !== 'superadmin') {
     redirect('/sis');
   }
 

@@ -21,8 +21,8 @@ import {
 import { SubjectConfigMatrix } from '@/components/sis/subject-config-matrix';
 import { SubjectAySwitcher } from '@/components/sis/subject-ay-switcher';
 
-// Subject weights + max-slots matrix. Superadmin only. Changing here affects
-// every grading sheet for the (subject × level) inside the selected AY.
+// Subject weights + max-slots matrix. school_admin + superadmin. Changing here
+// affects every grading sheet for the (subject × level) inside the selected AY.
 export default async function SubjectConfigPage({
   searchParams,
 }: {

@@ -403,10 +403,13 @@ const SIS_NAV: NavSection[] = [
       {
         href: '/sis',
         label: 'Admin Hub',
-        // The hub root is school_admin/superadmin+registrar territory; an
-        // admissions user admitted to /sis only for Discount Codes must not
-        // see a dead link to /sis (proxy bounces them off it).
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        // The hub root is school_admin/superadmin-only territory (ROUTE_ACCESS's
+        // broad `/sis` catch-all excludes registrar) — gating the nav link to
+        // match kills the registrar dead-end where the link was visible but
+        // the proxy bounced her off it. Her direct cross-links into SIS Admin
+        // (Records → /sis/sections, /sis/admin/staff, /sis/admin/discount-codes)
+        // are unaffected — those routes carry their own ROUTE_ACCESS rows.
+        requiresRoles: ['school_admin', 'superadmin'],
       },
     ],
   },
@@ -645,6 +648,15 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   },
   { prefix: '/sis/admin/users', allowed: ['superadmin'] },
   { prefix: '/sis/admin/settings', allowed: ['superadmin'] },
+  {
+    // Was missing a ROUTE_ACCESS row entirely — the registrar's Staff nav
+    // link (SIS_NAV "Year Setup" group) was visible but proxy-blocked
+    // because pathname resolution fell through to the broad `/sis`
+    // catch-all (school_admin/superadmin only). Matches the page's own
+    // inline guard (app/(sis)/sis/admin/staff/page.tsx).
+    prefix: '/sis/admin/staff',
+    allowed: ['registrar', 'school_admin', 'superadmin'],
+  },
   {
     // Discount codes are operationally owned by admissions (they assign codes
     // to applicants); office roles keep access per their rights. Config stays

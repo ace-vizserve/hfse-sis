@@ -44,7 +44,7 @@ export default async function ApproversPage() {
 
       <header className="space-y-3">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Records · Admin · Approvers
+          SIS Admin · Access
         </p>
         <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
           Approver assignments.
