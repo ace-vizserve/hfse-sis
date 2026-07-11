@@ -24,8 +24,9 @@ import { corsHeaders } from '@/lib/cors';
 // Supabase session cookie. This route is called cross-origin by the
 // external portal SPA with only an `Authorization: Bearer` header — there
 // is no session cookie on the request, so that client would authenticate
-// as `anon`, and the `academic_years` RLS policy ("to authenticated using
-// (true)", migration 001) would silently return zero rows — both helpers
+// as `anon`, and the `academic_years` RLS policy (`to authenticated using
+// (public.current_user_role() is not null)`, migration 004) would silently
+// return zero rows — both helpers
 // would always resolve to null here, and the endpoint would 500 on every
 // call. Instead this route re-implements their exact filter/order
 // semantics (accepting_applications=true AND is_current=false, newest
