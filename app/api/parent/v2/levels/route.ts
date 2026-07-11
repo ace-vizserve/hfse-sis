@@ -86,12 +86,20 @@ export async function GET(request: Request) {
   //    if one exists, else the current AY. See file-header note above for
   //    why this queries `academic_years` directly instead of going through
   //    lib/academic-year.ts.
+  //
+  //    The upcoming-AY branch excludes test AYs (`AY9%`, same precedent as
+  //    create_academic_year's `ay_code !~ '^AY9'`, KD #52) — a mis-toggled
+  //    AY9999 `accepting_applications` flag must never be served to a real
+  //    parent-portal caller. The current-AY fallback below is deliberately
+  //    left unguarded: in the test environment AY9999 IS current by design,
+  //    and that's the intended behaviour when browsing Test.
   type AyRow = { id: string; ay_code: string };
   const { data: upcomingAy } = await service
     .from('academic_years')
     .select('id, ay_code')
     .eq('accepting_applications', true)
     .eq('is_current', false)
+    .not('ay_code', 'like', 'AY9%')
     .order('ay_code', { ascending: false })
     .limit(1)
     .maybeSingle();
