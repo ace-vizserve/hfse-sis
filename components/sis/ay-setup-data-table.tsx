@@ -17,6 +17,7 @@ import { GenerateSheetsDialog } from '@/components/sis/generate-sheets-dialog';
 import { CopyTeacherAssignmentsDialog } from '@/components/sis/copy-teacher-assignments-dialog';
 import { TermDatesEditor } from '@/components/sis/term-dates-editor';
 import { Button } from '@/components/ui/button';
+import { CodeChip } from '@/components/ui/code-chip';
 import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
 import {
   DropdownMenuItem,
@@ -54,11 +55,7 @@ const columns: ColumnDef<AyTableRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>AY code</SortableHeader>
     ),
-    cell: ({ row }) => (
-      <span className="font-mono text-xs font-semibold uppercase tracking-wider text-foreground">
-        {row.original.ay_code}
-      </span>
-    ),
+    cell: ({ row }) => <CodeChip>{row.original.ay_code}</CodeChip>,
     enableHiding: false,
   },
   {

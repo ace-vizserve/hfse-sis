@@ -419,10 +419,24 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function NewAyButton({ preview }: { preview: Preview }) {
+export function NewAyButton({
+  preview,
+  variant = 'default',
+}: {
+  preview: Preview;
+  /**
+   * Design system §9.2/§9.5 — exactly one `default` (primary) button per
+   * page. On `/sis/ay-setup`, the Year Setup checklist's own next-step CTA
+   * is the page's primary (it's the page's actual job — getting the
+   * selected AY ready); this header action stays `outline` so the two
+   * never compete. Defaults to `default` for other call sites (none
+   * currently pass `outline`).
+   */
+  variant?: 'default' | 'outline';
+}) {
   return (
     <AySetupWizard preview={preview}>
-      <Button>
+      <Button variant={variant}>
         <Plus className="mr-1 size-4" /> New AY
       </Button>
     </AySetupWizard>

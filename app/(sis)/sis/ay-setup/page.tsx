@@ -100,7 +100,7 @@ export default async function AySetupPage({
             <>
               <Badge
                 variant="outline"
-                className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+                className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
               >
                 {selectedAy.ay_code}
               </Badge>
@@ -110,7 +110,7 @@ export default async function AySetupPage({
                   className={
                     readiness.complete === readiness.total
                       ? 'h-7 gap-1 border-brand-mint bg-brand-mint/30 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink'
-                      : 'h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground'
+                      : 'h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground'
                   }
                 >
                   {readiness.complete === readiness.total && (
@@ -122,7 +122,7 @@ export default async function AySetupPage({
             </>
           )
         }
-        actions={<NewAyButton preview={preview} />}
+        actions={<NewAyButton preview={preview} variant="outline" />}
       />
 
       <Tabs defaultValue="setup" className="mt-8">

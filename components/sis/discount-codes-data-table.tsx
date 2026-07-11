@@ -4,6 +4,7 @@ import { CalendarRange, Tag } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import { DiscountCodeRowActions } from '@/components/sis/discount-code-row-actions';
+import { CodeChip } from '@/components/ui/code-chip';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import {
@@ -43,11 +44,7 @@ const columns: ColumnDef<DiscountCodeRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Code</SortableHeader>
     ),
-    cell: ({ row }) => (
-      <span className="font-mono text-xs font-semibold uppercase tracking-wider text-foreground">
-        {row.original.discountCode}
-      </span>
-    ),
+    cell: ({ row }) => <CodeChip>{row.original.discountCode}</CodeChip>,
     enableHiding: false,
   },
   {
@@ -56,9 +53,7 @@ const columns: ColumnDef<DiscountCodeRow>[] = [
     header: 'Type',
     cell: ({ row }) =>
       row.original.enroleeType ? (
-        <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-foreground">
-          {row.original.enroleeType}
-        </span>
+        <CodeChip tone="muted">{row.original.enroleeType}</CodeChip>
       ) : (
         <span className="text-muted-foreground">—</span>
       ),

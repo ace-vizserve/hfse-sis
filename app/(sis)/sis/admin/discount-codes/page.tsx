@@ -88,7 +88,7 @@ export default async function SisDiscountCodesPage({
             <div className="flex items-center gap-2">
               <Badge
                 variant="outline"
-                className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+                className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
               >
                 {selectedAy}
               </Badge>
@@ -99,7 +99,7 @@ export default async function SisDiscountCodesPage({
               ) : (
                 <Badge
                   variant="outline"
-                  className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                  className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                 >
                   Historical
                 </Badge>

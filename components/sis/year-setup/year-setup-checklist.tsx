@@ -163,7 +163,7 @@ function ChecklistRow({
     <div className="flex flex-wrap items-start gap-4 px-6 py-4">
       <StatusTile step={step} />
       <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="text-[14px] font-medium text-foreground">
+        <p className="font-serif text-[15.5px] font-semibold leading-tight text-foreground">
           {isNextUp && <span className="sr-only">Next up: </span>}
           {step.label}
         </p>

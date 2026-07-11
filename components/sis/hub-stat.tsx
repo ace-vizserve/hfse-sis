@@ -46,7 +46,7 @@ export function HubStat({
       </div>
       <div className="min-w-0">
         <p className="font-serif text-[21px] font-semibold leading-tight tabular-nums text-foreground">
-          {value}
+          {typeof value === 'number' ? value.toLocaleString('en-SG') : value}
         </p>
         <p className="truncate text-[11.5px] text-muted-foreground">
           {subtext ?? label}
