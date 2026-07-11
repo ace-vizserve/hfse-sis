@@ -128,6 +128,12 @@ const ACTION_LABELS: Record<string, string> = {
   'sis.vl_allowance.update': 'Vacation allowance updated',
   'sis.level.create': 'Level created',
 
+  // Grade levels (Levels & Grade Progression, migration 078)
+  'level.create': 'Grade level added',
+  'level.update': 'Grade level updated',
+  'level.delete': 'Grade level removed',
+  'level.offering.toggle': 'Level offering changed',
+
   // Academic years
   'ay.create': 'Academic year created',
   'ay.switch_current': 'Current year switched',
@@ -620,6 +626,55 @@ function templateSummary(
         const v = str(ctx.virtue_theme ?? ctx.new_virtue);
         if (v) parts.push(v);
       }
+      return joinParts(parts);
+    }
+
+    // Grade levels (Levels & Grade Progression, migration 078) ---------------
+    case 'level.create':
+    case 'level.delete': {
+      const parts: string[] = [];
+      const code = str(ctx.code);
+      const label = str(ctx.label);
+      if (code && label) parts.push(`${code} · ${label}`);
+      else if (label) parts.push(label);
+      else if (code) parts.push(code);
+      const levelType = str(ctx.levelType ?? ctx.level_type);
+      if (levelType) parts.push(humanizeKey(levelType));
+      return joinParts(parts);
+    }
+    case 'level.update': {
+      const parts: string[] = [];
+      const code = str(ctx.code);
+      const label = str(ctx.label);
+      if (code) parts.push(code);
+      else if (label) parts.push(label);
+      const before = isRecord(ctx.before) ? ctx.before : null;
+      const after = isRecord(ctx.after) ? ctx.after : null;
+      if (before && after) {
+        const labelDiff = scalarDiff(before.label, after.label, 'label');
+        if (labelDiff) parts.push(labelDiff);
+        const sortDiff = scalarDiff(
+          before.sort_order,
+          after.sort_order,
+          'sort order'
+        );
+        if (sortDiff) parts.push(sortDiff);
+        if (!valuesEqual(before.next_level_id, after.next_level_id)) {
+          parts.push('progression updated');
+        }
+      }
+      return joinParts(parts);
+    }
+    case 'level.offering.toggle': {
+      const parts: string[] = [];
+      const code = str(ctx.code);
+      const label = str(ctx.label);
+      if (code && label) parts.push(`${code} · ${label}`);
+      else if (label) parts.push(label);
+      else if (code) parts.push(code);
+      const offered = boolish(ctx.offered);
+      if (offered === true) parts.push('offered');
+      else if (offered === false) parts.push('not offered');
       return joinParts(parts);
     }
 
