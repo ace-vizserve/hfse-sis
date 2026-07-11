@@ -30,13 +30,29 @@ export function walksBackTo(
   return false;
 }
 
+// Core level names (P1-P6, S1-S4) are load-bearing compile-time constants —
+// `LEVEL_LABELS` (lib/sis/levels.ts), `levelTypeForAudienceLookup`, and the
+// class-assignment auto-enroll matcher all key off the exact stored string.
+// Renaming one in the DB would silently desync every consumer that keys off
+// the hardcoded label. A same-value resubmit (label unchanged) is harmless
+// and allowed — only an actual change to a core row's label is blocked.
+// Pure + exported so it's directly unit-testable (mirrors `walksBackTo`).
+export function isCoreLabelChangeBlocked(
+  existing: { isCore: boolean; label: string },
+  label: string | undefined
+): boolean {
+  return existing.isCore && label !== undefined && label !== existing.label;
+}
+
 // PATCH /api/sis/admin/levels/[id]
 //
 // Partial update of label / sort_order / next_level_id. `code` and
-// `levelType` are not editable here. Applies to both core and volatile
-// levels — renaming/reordering/re-chaining a core level (e.g. P6 -> S1) is
-// a legitimate progression edit, not restricted to volatile levels (only
-// DELETE is volatile-only).
+// `levelType` are not editable here. sort_order / next_level_id (the
+// progression pointer) apply to both core and volatile levels — reordering
+// or re-chaining a core level (e.g. P6 -> S1) is a legitimate progression
+// edit, not restricted to volatile levels (only DELETE is volatile-only).
+// `label` is the one field core levels can't change — see
+// `isCoreLabelChangeBlocked` above.
 //
 // `nextLevelId` is guarded against two shapes of self-reference:
 //   - direct: nextLevelId === the edited level's own id (422 self_reference)
@@ -72,6 +88,17 @@ export async function PATCH(
   const existing = rows.find((r) => r.id === id);
   if (!existing) {
     return NextResponse.json({ error: 'Level not found' }, { status: 404 });
+  }
+
+  if (isCoreLabelChangeBlocked(existing, label)) {
+    return NextResponse.json(
+      {
+        error:
+          'Core level names are fixed — attendance and class-assignment rules key on them.',
+        code: 'core_label_locked',
+      },
+      { status: 422 }
+    );
   }
 
   if (nextLevelId !== undefined && nextLevelId !== null) {

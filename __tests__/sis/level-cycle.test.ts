@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { walksBackTo } from '@/app/api/sis/admin/levels/[id]/route';
+import {
+  isCoreLabelChangeBlocked,
+  walksBackTo,
+} from '@/app/api/sis/admin/levels/[id]/route';
 import type { LevelRow } from '@/lib/sis/levels';
 
 // Local factory mirroring the LevelRow shape — only id + nextLevelId matter
@@ -64,5 +67,43 @@ describe('walksBackTo — progression cycle detection', () => {
 
   it('returns false on an empty rows array (zero hops allowed)', () => {
     expect(walksBackTo([], 'a', 'b')).toBe(false);
+  });
+});
+
+describe('isCoreLabelChangeBlocked — core level name protection', () => {
+  it('blocks an actual label change on a core level', () => {
+    expect(
+      isCoreLabelChangeBlocked(
+        { isCore: true, label: 'Primary One' },
+        'Primary 1'
+      )
+    ).toBe(true);
+  });
+
+  it('allows a same-value resubmit on a core level (not a real change)', () => {
+    expect(
+      isCoreLabelChangeBlocked(
+        { isCore: true, label: 'Primary One' },
+        'Primary One'
+      )
+    ).toBe(false);
+  });
+
+  it('allows label omitted (sortOrder/nextLevelId-only PATCH) on a core level', () => {
+    expect(
+      isCoreLabelChangeBlocked(
+        { isCore: true, label: 'Primary One' },
+        undefined
+      )
+    ).toBe(false);
+  });
+
+  it('allows any label change on a volatile level', () => {
+    expect(
+      isCoreLabelChangeBlocked(
+        { isCore: false, label: 'Cambridge Secondary One (Year 8)' },
+        'CS1 renamed'
+      )
+    ).toBe(false);
   });
 });

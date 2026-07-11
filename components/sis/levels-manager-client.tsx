@@ -6,10 +6,13 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { z } from 'zod';
 import {
+  AlertTriangle,
   CalendarRange,
   Layers,
   Loader2,
+  Pencil,
   Plus,
   Trash2,
   Users,
@@ -124,6 +127,16 @@ export function LevelsManagerClient({
     return m;
   }, [demandRows]);
 
+  // Demand rows that matched no level in the catalog at all — typos or
+  // levels applicants named that don't exist yet. Highest-value signal in
+  // the demand data (a real level being under-offered is visible via the
+  // per-row chip above; an unmatched label is invisible unless surfaced
+  // here), so these are never silently dropped.
+  const unmatchedDemand = React.useMemo(
+    () => demandRows.filter((d) => d.levelId === null && d.count > 0),
+    [demandRows]
+  );
+
   const coreCount = levels.filter((l) => l.isCore).length;
 
   return (
@@ -190,6 +203,35 @@ export function LevelsManagerClient({
           </ul>
         )}
       </Card>
+
+      {unmatchedDemand.length > 0 && (
+        <div className="flex flex-wrap items-start gap-2 rounded-xl border border-brand-amber/30 bg-brand-amber/5 px-4 py-3">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-brand-amber" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <p className="text-xs font-medium text-foreground">
+              Applied-for levels that match nothing
+              {acceptingAyCode ? ` in ${acceptingAyCode}` : ''}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {unmatchedDemand.map((d) => (
+                <Badge
+                  key={d.label}
+                  variant="warning"
+                  className="gap-1 font-normal"
+                >
+                  &ldquo;{d.label}&rdquo;
+                  <span className="tabular-nums">· {d.count}</span>
+                </Badge>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Likely typos in applicant-entered level names, or a level not yet
+              in this catalog. Add the level above, or correct the application
+              record.
+            </p>
+          </div>
+        </div>
+      )}
 
       <p className="text-center font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         {currentAyCode || '—'} · {levels.length} level
@@ -333,7 +375,7 @@ function LevelRowItem({
             currentAyCode={currentAyCode}
           />
         )}
-        <DeleteLevelMenu level={level} />
+        <LevelRowActions level={level} />
       </div>
     </li>
   );
@@ -475,11 +517,13 @@ function OfferedSwitch({
 }
 
 // =====================================================================
-// Delete — row ⋯ menu → AlertDialog confirm; disabled-with-reason on core.
+// Row ⋯ menu — Edit (dialog) + Delete (AlertDialog confirm, disabled-with-
+// reason on core).
 // =====================================================================
 
-function DeleteLevelMenu({ level }: { level: LevelRow }) {
+function LevelRowActions({ level }: { level: LevelRow }) {
   const router = useRouter();
+  const [editOpen, setEditOpen] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   const deleteMutation = useMutation({
@@ -501,6 +545,15 @@ function DeleteLevelMenu({ level }: { level: LevelRow }) {
   return (
     <>
       <RowActionsMenu>
+        <DropdownMenuItem
+          onSelect={(e) => {
+            e.preventDefault();
+            setEditOpen(true);
+          }}
+        >
+          <Pencil className="size-4" />
+          Edit
+        </DropdownMenuItem>
         {level.isCore ? (
           <DropdownMenuItem
             disabled
@@ -527,6 +580,12 @@ function DeleteLevelMenu({ level }: { level: LevelRow }) {
           </DropdownMenuItem>
         )}
       </RowActionsMenu>
+
+      <EditLevelDialog
+        level={level}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+      />
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
@@ -561,6 +620,171 @@ function DeleteLevelMenu({ level }: { level: LevelRow }) {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+// =====================================================================
+// Edit level — label + position. `code` and `levelType` aren't editable
+// here (mirrors LevelAdminUpdateSchema — the route doesn't accept them
+// either); "Next level" already has its own always-visible inline picker
+// (NextLevelSelect above) so it isn't duplicated in this dialog.
+// =====================================================================
+
+const EditLevelFormSchema = z.object({
+  label: z
+    .string()
+    .trim()
+    .min(1, 'Label required')
+    .max(80, 'Keep label under 80 chars'),
+  sortOrder: z
+    .number()
+    .int('Sort order must be a whole number')
+    .min(1, 'Sort order must be at least 1')
+    .max(99, 'Sort order must be 99 or less'),
+});
+type EditLevelFormInput = z.infer<typeof EditLevelFormSchema>;
+
+function EditLevelDialog({
+  level,
+  open,
+  onOpenChange,
+}: {
+  level: LevelRow;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const router = useRouter();
+
+  const form = useForm<EditLevelFormInput>({
+    resolver: zodResolver(EditLevelFormSchema),
+    defaultValues: { label: level.label, sortOrder: level.sortOrder },
+  });
+
+  // Re-seed whenever the dialog opens (in case another edit changed this
+  // row underneath us) or the row's own values move.
+  React.useEffect(() => {
+    if (open) form.reset({ label: level.label, sortOrder: level.sortOrder });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, level.label, level.sortOrder]);
+
+  const mutation = useMutation({
+    mutationFn: (payload: { label?: string; sortOrder: number }) =>
+      apiFetch(`/api/sis/admin/levels/${level.id}`, jsonInit('PATCH', payload)),
+    onError: (e) => {
+      // 422 core_label_locked surfaces verbatim (KD #24) — shouldn't fire
+      // in practice since the label field is disabled for core rows, but
+      // covers a stale-form edge case.
+      toast.error(
+        e instanceof Error ? e.message : 'Could not update this level'
+      );
+    },
+  });
+
+  async function onSubmit(values: EditLevelFormInput) {
+    try {
+      // Core rows never send a label — the route treats an omitted field as
+      // "unchanged", so this is a belt-and-suspenders match for the
+      // disabled input rather than relying on the value happening to equal
+      // the original.
+      await mutation.mutateAsync(
+        level.isCore
+          ? { sortOrder: values.sortOrder }
+          : { label: values.label, sortOrder: values.sortOrder }
+      );
+      toast.success(`Updated ${level.label}`);
+      onOpenChange(false);
+      router.refresh();
+    } catch {
+      // onError already surfaced the toast.
+    }
+  }
+
+  const busy = form.formState.isSubmitting;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit {level.code}</DialogTitle>
+          <DialogDescription>
+            {level.isCore
+              ? 'Position can change; the name is fixed for core levels.'
+              : "Update this level's display name or where it sits in the list."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="label"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Label</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      disabled={level.isCore}
+                      autoCapitalize="words"
+                    />
+                  </FormControl>
+                  {level.isCore ? (
+                    <FormDescription>
+                      Core level names are fixed — attendance and
+                      class-assignment rules key on them.
+                    </FormDescription>
+                  ) : (
+                    <FormMessage />
+                  )}
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="sortOrder"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Position</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={field.value}
+                      onChange={(e) =>
+                        field.onChange(Number(e.target.value) || 0)
+                      }
+                      className="tabular-nums"
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Where this level sits in display order (1–99).
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy} className="gap-1.5">
+                {busy ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Pencil className="size-3.5" />
+                )}
+                {busy ? 'Saving…' : 'Save'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
