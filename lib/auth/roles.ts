@@ -452,6 +452,11 @@ const SIS_NAV: NavSection[] = [
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
       {
+        href: '/sis/admin/levels',
+        label: 'Grade Levels',
+        requiresRoles: ['school_admin', 'superadmin'],
+      },
+      {
         href: '/sis/admin/subjects',
         label: 'Subject Weights',
         requiresRoles: ['school_admin', 'superadmin'],
@@ -645,6 +650,7 @@ export const NAV_BY_MODULE: {
 export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   { prefix: '/sis/admin/approvers', allowed: ['superadmin'] },
   { prefix: '/sis/admin/subjects', allowed: ['school_admin', 'superadmin'] },
+  { prefix: '/sis/admin/levels', allowed: ['school_admin', 'superadmin'] },
   { prefix: '/sis/admin/template', allowed: ['school_admin', 'superadmin'] },
   {
     prefix: '/sis/admin/school-config',

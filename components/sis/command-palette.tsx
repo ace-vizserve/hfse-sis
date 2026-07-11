@@ -7,6 +7,7 @@ import {
   GraduationCapIcon,
   HomeIcon,
   InboxIcon,
+  LayersIcon,
   Loader2Icon,
   PlaneIcon,
   SearchIcon,
@@ -316,6 +317,12 @@ const NAV_ENTRIES: NavEntry[] = [
     label: 'Discount Codes',
     group: 'Admin',
     icon: WalletIcon,
+  },
+  {
+    href: '/sis/admin/levels',
+    label: 'Grade Levels',
+    group: 'Admin',
+    icon: LayersIcon,
   },
   {
     href: '/sis/admin/subjects',
