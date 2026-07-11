@@ -20,6 +20,7 @@ import {
   type NavSection,
   type Role,
   type SidebarBadges,
+  type SidebarCounts,
 } from '@/lib/auth/roles';
 import { SIDEBAR_REGISTRY, type SidebarModule } from '@/lib/sidebar/registry';
 import { useRealtimeBadges } from '@/lib/sidebar/use-realtime-badges';
@@ -36,12 +37,17 @@ type ModuleSidebarProps = {
   email: string;
   userId: string;
   badges?: SidebarBadges;
+  // Informational per-item count chips (e.g. AY Setup "6/7", Sections "28").
+  // Optional and additive — only SIS Admin passes this today (Task V2); every
+  // other module's call site omits it and renders byte-identically to before.
+  counts?: SidebarCounts;
 };
 
 // Stable empty default. Inlining `badges ?? {}` would create a fresh
 // object every render and the realtime-badges hook would treat each as
 // a state change → infinite loop on modules that don't ship badges.
 const EMPTY_BADGES: SidebarBadges = {};
+const EMPTY_COUNTS: SidebarCounts = {};
 
 // Some entry points (e.g. /sis/sections) want the parent nav item to
 // stay highlighted on /sis/sections/[id]. Add their primary hrefs here.
@@ -133,12 +139,14 @@ export function ModuleSidebar({
   email,
   userId,
   badges,
+  counts,
 }: ModuleSidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const config = SIDEBAR_REGISTRY[module];
 
   const liveBadges = useRealtimeBadges(role, userId, badges ?? EMPTY_BADGES);
+  const itemCounts = counts ?? EMPTY_COUNTS;
 
   const sections = resolveSectionsForRole(module, role);
   const allItems = sections.flatMap((s) => s.items);
@@ -173,8 +181,13 @@ export function ModuleSidebar({
             {sections.map((section, i) => (
               <SidebarGroup key={i}>
                 {section.label && (
-                  <SidebarGroupLabel className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
-                    {section.label}
+                  <SidebarGroupLabel className="flex items-baseline justify-between gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
+                    <span>{section.label}</span>
+                    {section.hint && (
+                      <span className="font-normal normal-case tracking-normal text-sidebar-foreground/40 group-data-[collapsible=icon]:hidden">
+                        {section.hint}
+                      </span>
+                    )}
                   </SidebarGroupLabel>
                 )}
                 <SidebarGroupContent>
@@ -186,6 +199,7 @@ export function ModuleSidebar({
                         isActive={item.href === activeHref}
                         config={config}
                         badges={liveBadges}
+                        counts={itemCounts}
                       />
                     ))}
                   </SidebarMenu>

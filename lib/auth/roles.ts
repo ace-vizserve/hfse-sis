@@ -30,10 +30,25 @@ export type NavItem = {
   href: string;
   label: string;
   badgeKey?: SidebarBadgeKey;
+  // Informational count chip (mono, bordered, muted) — distinct from
+  // badgeKey's realtime "needs attention" alert pill. Always shown when
+  // present (no >0 gating); value is a pre-formatted string (e.g. "6/7",
+  // "28") since it's assembled server-side by the layout, not counted
+  // live client-side like badgeKey. SIS Admin visual pass (Task V2).
+  countKey?: SidebarCountKey;
   requiresRoles?: Role[];
   step?: number;
 };
-export type NavSection = { label?: string; items: NavItem[] };
+export type NavSection = {
+  label?: string;
+  // Right-aligned cadence hint next to the group label (e.g. "weekly",
+  // "yearly", "rare") — plain text, muted, no visual weight beyond the
+  // existing mono-eyebrow group-label styling. Optional; groups that
+  // don't set it render byte-identically to before. SIS Admin visual
+  // pass (Task V2).
+  hint?: string;
+  items: NavItem[];
+};
 
 export type SidebarBadgeKey =
   | 'changeRequests'
@@ -41,6 +56,13 @@ export type SidebarBadgeKey =
   | 'unsyncedStudents'
   | 'pfileAwaitingVerification';
 export type SidebarBadges = Partial<Record<SidebarBadgeKey, number>>;
+
+// Informational nav-item count chips — see NavItem.countKey above.
+export type SidebarCountKey =
+  | 'aySetupReadiness'
+  | 'sectionsCount'
+  | 'staffCount';
+export type SidebarCounts = Partial<Record<SidebarCountKey, string>>;
 
 const PFILES_NAV: NavSection[] = [
   {
@@ -418,10 +440,12 @@ const SIS_NAV: NavSection[] = [
     // touches through the school year. Per-item requiresRoles preserved
     // from the pre-regroup tree; registrar keeps every entry she had.
     label: 'This year',
+    hint: 'weekly',
     items: [
       {
         href: '/sis/ay-setup',
         label: 'AY Setup',
+        countKey: 'aySetupReadiness',
         requiresRoles: ['school_admin', 'superadmin'],
       },
       {
@@ -432,11 +456,13 @@ const SIS_NAV: NavSection[] = [
       {
         href: '/sis/sections',
         label: 'Sections',
+        countKey: 'sectionsCount',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
       {
         href: '/sis/admin/staff',
         label: 'Staff',
+        countKey: 'staffCount',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
       {
@@ -449,6 +475,7 @@ const SIS_NAV: NavSection[] = [
   {
     // Once-a-year structural config — school_admin + superadmin only.
     label: 'Structure',
+    hint: 'yearly',
     items: [
       {
         href: '/sis/admin/levels',
@@ -479,6 +506,7 @@ const SIS_NAV: NavSection[] = [
     // any other role); reachable via the "Staff accounts" command-palette
     // entry or the Staff row's Accounts tab, not a standalone nav item.
     label: 'Access & system',
+    hint: 'rare',
     items: [
       {
         href: '/sis/admin/approvers',

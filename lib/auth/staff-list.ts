@@ -135,3 +135,14 @@ export async function getStaffDisplayEntries(): Promise<
   const all = await _loadAllStaff();
   return all.map((u) => [u.email, u.name]);
 }
+
+/**
+ * Returns a count of active (non-disabled) staff accounts — used by the SIS
+ * Admin sidebar's Staff count chip (SIS Admin visual pass, Task V2). Shares
+ * the same 5-min cached listUsers() call as every other helper in this file
+ * — no new query, just a length over the already-cached list.
+ */
+export async function getStaffCount(): Promise<number> {
+  const all = await _loadAllStaff();
+  return all.filter((u) => !u.disabled).length;
+}

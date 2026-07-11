@@ -10,7 +10,10 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { getStaffCount } from '@/lib/auth/staff-list';
+import type { SidebarCounts } from '@/lib/auth/roles';
 import { getAyReadiness } from '@/lib/sis/readiness';
+import { getSectionsCount } from '@/lib/sis/sidebar-counts';
 
 export default async function SisLayout({
   children,
@@ -46,9 +49,42 @@ export default async function SisLayout({
       ? await getAyReadiness(currentAy.ay_code)
       : null;
 
+  // Sidebar "This year" group count chips (SIS Admin visual pass, Task V2).
+  // AY Setup reuses the `readiness` fetch above (same data already powers
+  // the floating readiness pill) — no extra query. Sections/Staff are only
+  // fetched for the roles that actually see those nav items (registrar +
+  // school_admin + superadmin); admissions (single Discount Codes link)
+  // and any other role skip the fetch entirely.
+  const canSeeYearNav =
+    role === 'registrar' || role === 'school_admin' || role === 'superadmin';
+  const [sectionsCount, staffCount] =
+    canSeeYearNav && currentAy
+      ? await Promise.all([
+          getSectionsCount(currentAy.ay_code),
+          getStaffCount(),
+        ])
+      : [null, null];
+
+  const sidebarCounts: SidebarCounts = {};
+  if (readiness) {
+    sidebarCounts.aySetupReadiness = `${readiness.complete}/${readiness.total}`;
+  }
+  if (sectionsCount != null) {
+    sidebarCounts.sectionsCount = String(sectionsCount);
+  }
+  if (staffCount != null) {
+    sidebarCounts.staffCount = String(staffCount);
+  }
+
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
-      <ModuleSidebar module="sis" role={role} email={email} userId={id} />
+      <ModuleSidebar
+        module="sis"
+        role={role}
+        email={email}
+        userId={id}
+        counts={sidebarCounts}
+      />
       <SidebarInset>
         <AyBanner />
         <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md">

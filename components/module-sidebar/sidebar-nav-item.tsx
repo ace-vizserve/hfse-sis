@@ -3,7 +3,7 @@
 import Link from 'next/link';
 
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import type { NavItem, SidebarBadges } from '@/lib/auth/roles';
+import type { NavItem, SidebarBadges, SidebarCounts } from '@/lib/auth/roles';
 import type { ModuleSidebarConfig } from '@/lib/sidebar/registry';
 
 type SidebarNavItemProps = {
@@ -11,6 +11,10 @@ type SidebarNavItemProps = {
   isActive: boolean;
   config: ModuleSidebarConfig;
   badges?: SidebarBadges;
+  // Informational count chip (item.countKey → counts[countKey]) — see
+  // NavItem.countKey. Optional; items without a countKey (i.e. every
+  // non-SIS-Admin nav item today) render byte-identically to before.
+  counts?: SidebarCounts;
 };
 
 const NAV_ACTIVE_CLASSES =
@@ -27,9 +31,11 @@ export function SidebarNavItem({
   isActive,
   config,
   badges,
+  counts,
 }: SidebarNavItemProps) {
   const Icon = config.iconByHref[item.href] ?? config.fallbackIcon;
   const badge = item.badgeKey ? (badges?.[item.badgeKey] ?? 0) : 0;
+  const count = item.countKey ? counts?.[item.countKey] : undefined;
 
   return (
     <SidebarMenuItem>
@@ -50,6 +56,11 @@ export function SidebarNavItem({
           {badge > 0 && (
             <span className="ml-auto rounded-full bg-destructive px-1.5 text-[10px] font-semibold tabular-nums text-white group-data-[collapsible=icon]:hidden">
               {badge}
+            </span>
+          )}
+          {badge === 0 && count != null && (
+            <span className="ml-auto rounded-md border border-sidebar-border bg-sidebar-accent/40 px-1.5 font-mono text-[10px] text-sidebar-foreground/50 group-data-[collapsible=icon]:hidden">
+              {count}
             </span>
           )}
         </Link>
