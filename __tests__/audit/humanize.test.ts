@@ -30,6 +30,15 @@ describe('auditActionLabel', () => {
     expect(auditActionLabel('parent.session.issued')).toBe('Parent signed in');
   });
 
+  it('labels the grade-level admin actions', () => {
+    expect(auditActionLabel('level.create')).toBe('Grade level added');
+    expect(auditActionLabel('level.update')).toBe('Grade level updated');
+    expect(auditActionLabel('level.delete')).toBe('Grade level removed');
+    expect(auditActionLabel('level.offering.toggle')).toBe(
+      'Level offering changed'
+    );
+  });
+
   it('prettifies unknown action codes so a raw code never leaks', () => {
     expect(auditActionLabel('some.brand_new.action')).toBe(
       'Some Brand New Action'
@@ -216,6 +225,76 @@ describe('auditContextSummary — per-action templates', () => {
       rows_renumbered: 18,
     });
     expect(out).toBe('18 students renumbered');
+  });
+});
+
+describe('auditContextSummary — grade-level templates', () => {
+  it('level.create renders code · label plus the level type (exact route context shape)', () => {
+    const out = auditContextSummary('level.create', {
+      code: 'CS3',
+      label: 'Cambridge Secondary Three',
+      levelType: 'secondary',
+      sortOrder: 16,
+      nextLevelId: null,
+    });
+    expect(out).toContain('CS3 · Cambridge Secondary Three');
+    expect(out).toContain('Secondary');
+    expect(out).not.toContain('{');
+  });
+
+  it('level.update renders code + label/sort diffs + progression change (exact route context shape)', () => {
+    const out = auditContextSummary('level.update', {
+      code: 'CS3',
+      label: 'Cambridge Secondary 3',
+      before: {
+        label: 'Cambridge Secondary Three',
+        sort_order: 16,
+        next_level_id: null,
+      },
+      after: {
+        label: 'Cambridge Secondary 3',
+        sort_order: 17,
+        next_level_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      },
+    });
+    expect(out).toContain('CS3');
+    expect(out).toContain(
+      'Label: Cambridge Secondary Three → Cambridge Secondary 3'
+    );
+    expect(out).toContain('Sort Order: 16 → 17');
+    expect(out).toContain('progression updated');
+    // Raw uuid never leaks into the summary.
+    expect(out).not.toContain('a0eebc99');
+  });
+
+  it('level.delete renders code · label plus the level type (exact route context shape)', () => {
+    const out = auditContextSummary('level.delete', {
+      code: 'CS3',
+      label: 'Cambridge Secondary Three',
+      levelType: 'secondary',
+    });
+    expect(out).toContain('CS3 · Cambridge Secondary Three');
+    expect(out).toContain('Secondary');
+  });
+
+  it('level.offering.toggle renders code · label + offered / not offered (exact route context shape)', () => {
+    const on = auditContextSummary('level.offering.toggle', {
+      code: 'CS1',
+      label: 'Cambridge Secondary One (Year 8)',
+      academicYearId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      offered: true,
+    });
+    expect(on).toContain('CS1 · Cambridge Secondary One (Year 8)');
+    expect(on).toContain('offered');
+    expect(on).not.toContain('a0eebc99');
+
+    const off = auditContextSummary('level.offering.toggle', {
+      code: 'CS1',
+      label: 'Cambridge Secondary One (Year 8)',
+      academicYearId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      offered: false,
+    });
+    expect(off).toContain('not offered');
   });
 });
 

@@ -63,6 +63,11 @@ export async function PATCH(
 
   const service = createServiceClient();
 
+  // getLevelRows is cached 60s under the 'levels' tag. A stale read here is
+  // an acceptable tradeoff: this is admin-only config edited by one or two
+  // people, and every level write path calls revalidateTag('levels','max')
+  // on the same instance — so back-to-back edits in one session always see
+  // fresh rows for the cycle walk below.
   const rows = await getLevelRows(service);
   const existing = rows.find((r) => r.id === id);
   if (!existing) {
