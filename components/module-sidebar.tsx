@@ -180,16 +180,26 @@ export function ModuleSidebar({
           <div className="px-1.5 pb-3 pt-1">
             {sections.map((section, i) => (
               <SidebarGroup key={i}>
-                {section.label && (
-                  <SidebarGroupLabel className="flex items-baseline justify-between gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
-                    <span>{section.label}</span>
-                    {section.hint && (
+                {section.label &&
+                  // The cadence-hint chrome (flex spread + span wrapper) is
+                  // gated strictly on `section.hint` — hint-less groups (every
+                  // module except SIS Admin today) render the exact pre-V2
+                  // markup: bare label text, original className, no wrapper
+                  // span. `items-baseline`/`justify-between` must not leak
+                  // into the hint-less branch (twMerge would override the
+                  // primitive's base `items-center`).
+                  (section.hint ? (
+                    <SidebarGroupLabel className="flex items-baseline justify-between gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
+                      <span>{section.label}</span>
                       <span className="font-normal normal-case tracking-normal text-sidebar-foreground/40 group-data-[collapsible=icon]:hidden">
                         {section.hint}
                       </span>
-                    )}
-                  </SidebarGroupLabel>
-                )}
+                    </SidebarGroupLabel>
+                  ) : (
+                    <SidebarGroupLabel className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
+                      {section.label}
+                    </SidebarGroupLabel>
+                  ))}
                 <SidebarGroupContent>
                   <SidebarMenu>
                     {section.items.map((item) => (
