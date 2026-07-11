@@ -310,11 +310,13 @@ export function nextIncompleteStepId(steps: ReadinessStep[]): ReadinessStepId {
   return incomplete?.id ?? steps[0].id;
 }
 
-// Single source of truth for the year-band segmented bar's fill color per
-// status — mint done / amber partial / muted not_started, reusing the exact
-// status vocabulary the Year Setup checklist's `StatusTile` already paints
-// (`components/sis/year-setup/year-setup-checklist.tsx`) so the two surfaces
-// can't drift apart (design system §10.2).
+// Fill color per status for the hub year-band's segmented bar — same color
+// FAMILIES (mint done / amber partial / muted not_started) as the Year Setup
+// checklist's `StatusTile` (`components/sis/year-setup/year-setup-checklist.tsx`),
+// but NOT the same classes: the tiles use washed tints (`bg-brand-mint/30` etc.)
+// that would be illegible on an 8px bar segment, so these are full-strength.
+// Hand-kept in sync on the family level — if the checklist's status→color
+// mapping ever changes, update this map in the same stroke.
 export const READINESS_SEGMENT_CLASS: Record<ReadinessStatus, string> = {
   done: 'bg-brand-mint',
   partial: 'bg-brand-amber',

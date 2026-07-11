@@ -13,7 +13,9 @@ import type { UpcomingCalendarEvent } from '@/lib/sis/dashboard';
 /**
  * HubUpcomingEventsCard — the SIS Admin hub's "Coming up" panel (Task V1,
  * `docs/superpowers/specs/2026-07-11-sis-admin-visual-redesign.html` Screen
- * 1). Same loader/data as before; restyled into the mockup's date-box rows.
+ * 1). Restyled into the mockup's date-box rows; the "Next 14 days" caption
+ * is a claim about the loader's actual bounds (`getUpcomingCalendarEvents`
+ * queries `start_date` in [today, today+14d]) — change one, change both.
  * Category tags reuse the shared `EVENT_CATEGORY_LABELS` /
  * `EVENT_CATEGORY_LEGEND_COLOR` maps that already back the school calendar's
  * legend + cells (design system §10.2 — single source of truth, no
@@ -67,7 +69,7 @@ export function HubUpcomingEventsCard({
             <CalendarDays className="size-4" />
           </div>
           <p className="text-[13px] text-muted-foreground">
-            No upcoming events in the school calendar.
+            Nothing scheduled in the next two weeks.
           </p>
         </div>
       ) : (

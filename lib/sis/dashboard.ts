@@ -1590,7 +1590,9 @@ export function getHubKpis(ayCode: string): Promise<HubKpis> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Upcoming calendar events — next N events from the current AY's terms.
+// Upcoming calendar events — next N events from the current AY's terms,
+// bounded to a real look-ahead window so consumers' scope captions (the
+// hub's "Next 14 days") state a fact about the query, not a vibe.
 // ──────────────────────────────────────────────────────────────────────────
 
 export type UpcomingCalendarEvent = {
@@ -1604,7 +1606,8 @@ export type UpcomingCalendarEvent = {
 
 async function loadUpcomingCalendarEventsUncached(
   ayCode: string,
-  limit: number
+  limit: number,
+  withinDays: number
 ): Promise<UpcomingCalendarEvent[]> {
   const service = createServiceClient();
   const ayId = await getAyIdByCode(ayCode);
@@ -1617,13 +1620,18 @@ async function loadUpcomingCalendarEventsUncached(
   const termIds = ((termsData ?? []) as { id: string }[]).map((r) => r.id);
   if (termIds.length === 0) return [];
 
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const windowEnd = new Date(now.getTime() + withinDays * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
 
   const { data, error } = await service
     .from('calendar_events')
     .select('id, label, start_date, end_date, category, tentative')
     .in('term_id', termIds)
     .gte('start_date', today)
+    .lte('start_date', windowEnd)
     .order('start_date', { ascending: true })
     .limit(limit);
 
@@ -1654,15 +1662,25 @@ async function loadUpcomingCalendarEventsUncached(
   }));
 }
 
+// `withinDays` defaults to the hub's "Next 14 days" caption — a consumer
+// that changes it must change its own scope caption in the same stroke
+// (the caption is a claim about this query's bounds).
 export function getUpcomingCalendarEvents(
   ayCode: string,
-  limit: number = 5
+  limit: number = 5,
+  withinDays: number = 14
 ): Promise<UpcomingCalendarEvent[]> {
   return unstable_cache(
     loadUpcomingCalendarEventsUncached,
-    ['sis', 'upcoming-calendar-events', ayCode, String(limit)],
+    [
+      'sis',
+      'upcoming-calendar-events',
+      ayCode,
+      String(limit),
+      String(withinDays),
+    ],
     { tags: tag(ayCode), revalidate: 120 }
-  )(ayCode, limit);
+  )(ayCode, limit, withinDays);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
