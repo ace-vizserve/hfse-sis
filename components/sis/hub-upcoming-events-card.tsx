@@ -1,44 +1,48 @@
-import { CalendarDays } from 'lucide-react';
 import Link from 'next/link';
+import { CalendarDays } from 'lucide-react';
 
+import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
+import { Card } from '@/components/ui/card';
+import { EVENT_CATEGORY_LEGEND_COLOR } from '@/components/attendance/calendar/calendar-cell';
 import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  EVENT_CATEGORY_LABELS,
+  type EventCategory,
+} from '@/lib/schemas/attendance';
 import type { UpcomingCalendarEvent } from '@/lib/sis/dashboard';
 
-const CATEGORY_LABELS: Record<string, string> = {
-  term_exam: 'Term Exam',
-  term_break: 'Term Break',
-  start_of_term: 'Start of Term',
-  parents_dialogue: 'Parents Dialogue',
-  subject_week: 'Subject Week',
-  school_event: 'School Event',
-  pfe: 'PFE',
-  ptc: 'PTC',
-  other: 'Other',
-};
+/**
+ * HubUpcomingEventsCard — the SIS Admin hub's "Coming up" panel (Task V1,
+ * `docs/superpowers/specs/2026-07-11-sis-admin-visual-redesign.html` Screen
+ * 1). Same loader/data as before; restyled into the mockup's date-box rows.
+ * Category tags reuse the shared `EVENT_CATEGORY_LABELS` /
+ * `EVENT_CATEGORY_LEGEND_COLOR` maps that already back the school calendar's
+ * legend + cells (design system §10.2 — single source of truth, no
+ * hand-picked "looks similar" color).
+ */
 
-function formatEventDate(startDate: string, endDate: string | null): string {
-  try {
-    const start = new Date(startDate);
-    const startFmt = start.toLocaleString('en-SG', {
-      month: 'short',
-      day: 'numeric',
-    });
-    if (!endDate || endDate === startDate) return startFmt;
-    const end = new Date(endDate);
-    if (end.getMonth() === start.getMonth()) {
-      return `${startFmt}–${end.getDate()}`;
-    }
-    return `${startFmt} – ${end.toLocaleString('en-SG', { month: 'short', day: 'numeric' })}`;
-  } catch {
-    return startDate;
-  }
+function isEventCategory(value: string): value is EventCategory {
+  return value in EVENT_CATEGORY_LABELS;
+}
+
+// `start_date`/`end_date` are date-only SGT calendar strings (KD #32) —
+// parsed as UTC components so the displayed day/month never shift with the
+// rendering machine's local timezone.
+function DateBox({ iso }: { iso: string }) {
+  const [, m, d] = iso.split('-').map(Number);
+  const day = d;
+  const month = new Date(Date.UTC(2000, (m ?? 1) - 1, 1))
+    .toLocaleDateString('en-SG', { month: 'short', timeZone: 'UTC' })
+    .toUpperCase();
+  return (
+    <div className="flex w-10 shrink-0 flex-col items-center rounded-lg border border-border bg-muted/40 py-1">
+      <span className="font-serif text-[15px] font-semibold leading-none tabular-nums text-foreground">
+        {day}
+      </span>
+      <span className="mt-1 font-mono text-[8.5px] uppercase tracking-wider text-muted-foreground">
+        {month}
+      </span>
+    </div>
+  );
 }
 
 export function HubUpcomingEventsCard({
@@ -47,56 +51,62 @@ export function HubUpcomingEventsCard({
   events: UpcomingCalendarEvent[];
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          School calendar
-        </CardDescription>
-        <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-          Upcoming events
-        </CardTitle>
-        <CardAction>
-          <Link href="/sis/calendar" tabIndex={-1}>
-            <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              <CalendarDays className="size-4" />
-            </div>
-          </Link>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="p-0">
-        {events.length === 0 ? (
-          <div className="px-5 py-8 text-center text-sm text-muted-foreground">
-            No upcoming events in the school calendar.
+    <Card className="gap-0 overflow-hidden py-0">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <p className="font-serif text-[15.5px] font-semibold text-foreground">
+          Coming up
+        </p>
+        <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+          Next 14 days
+        </p>
+      </div>
+
+      {events.length === 0 ? (
+        <div className="flex items-center gap-3 px-4 py-6">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <CalendarDays className="size-4" />
           </div>
-        ) : (
-          <ul className="divide-y divide-hairline">
-            {events.map((event) => (
+          <p className="text-[13px] text-muted-foreground">
+            No upcoming events in the school calendar.
+          </p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-border">
+          {events.map((event) => {
+            const category = isEventCategory(event.category)
+              ? event.category
+              : 'other';
+            return (
               <li
                 key={event.id}
-                className="flex items-start gap-3.5 px-5 py-3.5"
+                className="flex items-center gap-3 px-4 py-3 text-[13px]"
               >
-                <div className="mt-[7px] flex size-2 shrink-0 rounded-full bg-brand-indigo/50" />
-                <div className="min-w-0 flex-1">
-                  <p className="font-serif text-[14px] font-semibold leading-snug text-foreground">
-                    {event.label}
-                    {event.tentative && (
-                      <span className="ml-1.5 font-mono text-[10px] font-normal uppercase tracking-wide text-muted-foreground/60">
-                        tentative
-                      </span>
-                    )}
-                  </p>
-                  <p className="mt-0.5 font-mono text-[11px] text-muted-foreground/70">
-                    {CATEGORY_LABELS[event.category] ?? event.category}
-                  </p>
-                </div>
-                <span className="shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-muted-foreground/70">
-                  {formatEventDate(event.startDate, event.endDate)}
+                <DateBox iso={event.startDate} />
+                <span className="min-w-0 flex-1 truncate text-foreground">
+                  {event.label}
+                  {event.tentative && (
+                    <span className="ml-1.5 font-mono text-[10px] font-normal uppercase tracking-wide text-muted-foreground/70">
+                      tentative
+                    </span>
+                  )}
                 </span>
+                <ChartLegendChip
+                  color={EVENT_CATEGORY_LEGEND_COLOR[category]}
+                  label={EVENT_CATEGORY_LABELS[category]}
+                  className="hidden px-1.5 text-[9px] sm:inline-flex"
+                />
               </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
+            );
+          })}
+        </ul>
+      )}
+
+      <Link
+        href="/sis/calendar"
+        className="block border-t border-border px-4 py-2.5 text-center text-[12px] font-semibold text-brand-indigo hover:underline"
+      >
+        Open school calendar →
+      </Link>
     </Card>
   );
 }

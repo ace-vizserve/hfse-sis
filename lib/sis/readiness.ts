@@ -310,6 +310,58 @@ export function nextIncompleteStepId(steps: ReadinessStep[]): ReadinessStepId {
   return incomplete?.id ?? steps[0].id;
 }
 
+// Single source of truth for the year-band segmented bar's fill color per
+// status — mint done / amber partial / muted not_started, reusing the exact
+// status vocabulary the Year Setup checklist's `StatusTile` already paints
+// (`components/sis/year-setup/year-setup-checklist.tsx`) so the two surfaces
+// can't drift apart (design system §10.2).
+export const READINESS_SEGMENT_CLASS: Record<ReadinessStatus, string> = {
+  done: 'bg-brand-mint',
+  partial: 'bg-brand-amber',
+  not_started: 'bg-muted',
+};
+
+// Pure, unit-tested one-liner for the hub's year band — a plain-English
+// headline + detail naming the next incomplete REQUIRED item. Kept here
+// (colocated with AyReadiness) so the hub component stays presentational.
+export function describeYearBandStatus(readiness: AyReadiness): {
+  headline: string;
+  detail: string;
+} {
+  const { complete, total, steps } = readiness;
+  if (total === 0) {
+    return {
+      headline: 'No academic year set up yet.',
+      detail: 'Create one to start setup.',
+    };
+  }
+  if (complete === total) {
+    return {
+      headline: 'Year setup is complete.',
+      detail: 'Every required item is configured for this year.',
+    };
+  }
+  const nextStep = steps.find((s) => s.id === nextIncompleteStepId(steps));
+  const label = nextStep?.label ?? 'the remaining items';
+  if (complete === 0) {
+    return {
+      headline: "Year setup hasn't started yet.",
+      detail: `Start with ${label}.`,
+    };
+  }
+  if (complete === total - 1) {
+    return {
+      headline: 'Year setup is almost done.',
+      detail: `${label} still needs attention.`,
+    };
+  }
+  const pct = Math.round((complete / total) * 100);
+  return {
+    headline: `Year setup is ${pct}% done.`,
+    detail: `Next up: ${label}.`,
+  };
+}
+
 // DB fetchers (private async functions)
 
 async function fetchAySetup(

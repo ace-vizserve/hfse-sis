@@ -10,6 +10,9 @@ import {
   resolveAppWindowStep,
   buildReadiness,
   nextIncompleteStepId,
+  describeYearBandStatus,
+  READINESS_SEGMENT_CLASS,
+  type AyReadiness,
 } from '@/lib/sis/readiness';
 
 describe('resolveAySetupStep', () => {
@@ -248,5 +251,67 @@ describe('nextIncompleteStepId', () => {
       resolveAppWindowStep({ accepting: false }), // not done, but optional — skipped
     ];
     expect(nextIncompleteStepId(steps)).toBe('ay-setup');
+  });
+});
+
+describe('READINESS_SEGMENT_CLASS', () => {
+  it('maps each status to a distinct solid-tint class', () => {
+    expect(READINESS_SEGMENT_CLASS.done).toBe('bg-brand-mint');
+    expect(READINESS_SEGMENT_CLASS.partial).toBe('bg-brand-amber');
+    expect(READINESS_SEGMENT_CLASS.not_started).toBe('bg-muted');
+  });
+});
+
+describe('describeYearBandStatus', () => {
+  function readinessWith(
+    steps: ReturnType<typeof resolveAySetupStep>[]
+  ): AyReadiness {
+    return buildReadiness('AY2027', steps);
+  }
+
+  it('no academic year (total 0)', () => {
+    const r = readinessWith([resolveAppWindowStep({ accepting: false })]); // only optional → total 0
+    const s = describeYearBandStatus(r);
+    expect(s.headline).toBe('No academic year set up yet.');
+  });
+
+  it('all required done', () => {
+    const r = readinessWith([
+      resolveAySetupStep({ datedTermCount: 4, totalTermCount: 4 }),
+    ]);
+    const s = describeYearBandStatus(r);
+    expect(s.headline).toBe('Year setup is complete.');
+  });
+
+  it('nothing done yet names the first incomplete step', () => {
+    const r = readinessWith([
+      resolveAySetupStep({ datedTermCount: 0, totalTermCount: 4 }),
+      resolveCalendarStep({ totalTerms: 4, coveredTerms: 0 }),
+    ]);
+    const s = describeYearBandStatus(r);
+    expect(s.headline).toBe("Year setup hasn't started yet.");
+    expect(s.detail).toContain('Academic year & term dates');
+  });
+
+  it('one item left reads "almost done" and names it', () => {
+    const r = readinessWith([
+      resolveAySetupStep({ datedTermCount: 4, totalTermCount: 4 }), // done
+      resolveLetterheadStep({ hasOrgName: false, hasAddress: false }), // not done
+    ]);
+    const s = describeYearBandStatus(r);
+    expect(s.headline).toBe('Year setup is almost done.');
+    expect(s.detail).toContain('Report-card letterhead');
+  });
+
+  it('partway through names the next incomplete step and a percent', () => {
+    const r = readinessWith([
+      resolveAySetupStep({ datedTermCount: 4, totalTermCount: 4 }), // done
+      resolveCalendarStep({ totalTerms: 4, coveredTerms: 0 }), // not done, next up
+      resolveClassesStep({ sectionCount: 0, subjectConfigCount: 0 }), // not done
+      resolveAdvisersStep({ sectionCount: 0, advisedSectionCount: 0 }), // not done
+    ]);
+    const s = describeYearBandStatus(r);
+    expect(s.headline).toBe('Year setup is 25% done.');
+    expect(s.detail).toContain('School calendar');
   });
 });

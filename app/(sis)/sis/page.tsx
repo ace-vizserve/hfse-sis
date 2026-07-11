@@ -2,31 +2,42 @@ import { Activity, BookOpen, GitBranch, LayoutGrid, Users } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
-import { MetricCard } from '@/components/dashboard/metric-card';
-import { HubYearSetupCard } from '@/components/sis/year-setup/hub-year-setup-card';
-import { HubClassAssignmentCallout } from '@/components/sis/hub-class-assignment-callout';
+import { HubAttentionFeed } from '@/components/sis/hub-attention-feed';
+import { HubQuickActions } from '@/components/sis/hub-quick-actions';
+import { HubStat } from '@/components/sis/hub-stat';
 import { HubUpcomingEventsCard } from '@/components/sis/hub-upcoming-events-card';
+import { HubYearBand } from '@/components/sis/hub-year-band';
 import { SystemHealthStrip } from '@/components/sis/system-health-strip';
 import { PageShell } from '@/components/ui/page-shell';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
+import {
+  getCurrentAcademicYear,
+  getUpcomingAcademicYear,
+} from '@/lib/academic-year';
+import { buildAttentionRows } from '@/lib/sis/hub-attention';
+import { isTestAyCode } from '@/lib/sis/environment';
 import {
   getClassAssignmentReadiness,
   getHubKpis,
   getUpcomingCalendarEvents,
 } from '@/lib/sis/dashboard';
 import { getSystemHealth } from '@/lib/sis/health';
+import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
+import {
+  computeLevelDemand,
+  type LevelDemandRow,
+} from '@/lib/sis/level-demand';
 import { getAyReadiness } from '@/lib/sis/readiness';
 import { getSessionUser } from '@/lib/supabase/server';
+import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 
-// SIS Admin Hub — status + launch, not a menu (SIS Admin IA redesign, Phase
-// 2). Reachable only by school_admin + superadmin (guard below); the audit
-// BI tab that used to live behind `?view=audit` here was relocated to the
-// "Overview" view on `/sis/audit-log` in Phase 3 (a stale `?view=audit`
-// link just renders this hub, unaffected by the param). The Organisation /
-// Access / Related card grids and the staffing + lifecycle cards were
-// removed: their destinations are one click away via the SIS sidebar
-// (regrouped this phase) or, for staffing, the Staff page itself.
+// SIS Admin Hub — a command centre, not a menu (Task V1 of the visual
+// redesign, `docs/superpowers/specs/2026-07-11-sis-admin-visual-redesign.html`
+// Screen 1). Reachable only by school_admin + superadmin (guard below).
+// Layout: hero → year band (signature element) → stat band → 3:2
+// "Needs attention" / "Coming up" → quick actions. Everything below the
+// hero is status or a launch point — nothing here duplicates the sidebar.
 export default async function SisAdminHub() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -44,7 +55,7 @@ export default async function SisAdminHub() {
 
   // System-health strip is superadmin-only (approver counts are sensitive to
   // their operational awareness). school_admin sees the hub without it.
-  const [health, hubKpis, unassignedStudents, upcomingEvents] =
+  const [health, hubKpis, unassignedStudents, upcomingEvents, levelDemand] =
     await Promise.all([
       role === 'superadmin' ? getSystemHealth() : Promise.resolve(null),
       ayCode ? getHubKpis(ayCode).catch(() => null) : Promise.resolve(null),
@@ -62,7 +73,16 @@ export default async function SisAdminHub() {
         : Promise.resolve(
             [] as Awaited<ReturnType<typeof getUpcomingCalendarEvents>>
           ),
+      currentAy
+        ? loadLevelDemand(currentAy.ay_code, currentAy.id)
+        : Promise.resolve([] as LevelDemandRow[]),
     ]);
+
+  const attentionRows = buildAttentionRows({
+    unassigned: unassignedStudents,
+    pendingChangeRequests: hubKpis?.pendingChangeRequests ?? 0,
+    levelDemand,
+  });
 
   return (
     <PageShell>
@@ -75,73 +95,73 @@ export default async function SisAdminHub() {
             ? 'System administration'
             : 'Academic administration'
         }
-        description="Run the school year — setup progress, today's numbers, and what needs attention."
-        badges={ayCode ? [{ label: ayCode }] : []}
+        description="Setup progress, today's numbers, and what needs attention — everything else is one click in the sidebar."
+        badges={
+          ayCode
+            ? [
+                {
+                  label: isTestAyCode(ayCode) ? 'Test' : 'Production',
+                  tone: isTestAyCode(ayCode) ? 'amber' : 'mint',
+                },
+                { label: ayCode },
+              ]
+            : []
+        }
       />
 
       {health && <SystemHealthStrip health={health} />}
 
-      {/* At-a-glance KPI strip — enrolled headcount, sections, pending
-          change requests, and currently-open report card windows. */}
+      <HubYearBand readiness={ayReadiness} />
+
       {hubKpis && (
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <HubStat
             label="Enrolled students"
             value={hubKpis.enrolledStudents}
             icon={Users}
-            intent="default"
+            tone="brand"
           />
-          <MetricCard
+          <HubStat
             label="Active sections"
             value={hubKpis.activeSections}
             icon={LayoutGrid}
-            intent="default"
+            tone="sky"
           />
-          <MetricCard
-            label="Pending change requests"
+          <HubStat
+            label="Grade changes waiting"
             value={hubKpis.pendingChangeRequests}
             icon={GitBranch}
-            intent={hubKpis.pendingChangeRequests > 0 ? 'warning' : 'default'}
+            tone={hubKpis.pendingChangeRequests > 0 ? 'amber' : 'muted'}
             subtext={
               hubKpis.pendingChangeRequests > 0
                 ? 'Awaiting approval'
-                : 'All clear'
+                : 'No changes waiting'
             }
           />
-          <MetricCard
-            label="Open report card windows"
+          <HubStat
+            label="Report cards open to parents"
             value={hubKpis.openPublicationWindows}
             icon={BookOpen}
-            intent={hubKpis.openPublicationWindows > 0 ? 'good' : 'default'}
+            tone={hubKpis.openPublicationWindows > 0 ? 'mint' : 'muted'}
             subtext={
               hubKpis.openPublicationWindows > 0
-                ? 'Parents can view now'
-                : 'None active'
+                ? 'Open to parents now'
+                : 'None open right now'
             }
           />
         </section>
       )}
 
-      {/* Enrolled-but-unplaced students callout — actionable amber alert. */}
-      {unassignedStudents.length > 0 && (
-        <HubClassAssignmentCallout
-          count={unassignedStudents.length}
-          ayLabel={currentAy?.label}
-        />
-      )}
-
-      {/* Year Setup — single guided entry point (the steps live in /sis/ay-setup). */}
-      <section className="space-y-3">
-        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Year Setup
-        </h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          <HubYearSetupCard readiness={ayReadiness} />
+      <section className="grid gap-3 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <HubAttentionFeed rows={attentionRows} />
+        </div>
+        <div className="lg:col-span-2">
+          <HubUpcomingEventsCard events={upcomingEvents} />
         </div>
       </section>
 
-      {/* Upcoming calendar events — next few events for the current AY. */}
-      <HubUpcomingEventsCard events={upcomingEvents} />
+      <HubQuickActions />
 
       {/* Trust strip */}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
@@ -152,4 +172,47 @@ export default async function SisAdminHub() {
       </div>
     </PageShell>
   );
+}
+
+// Demand for a level the accepting AY doesn't offer — same source + pattern
+// as `/sis/admin/levels` (KD #118: the "accepting" AY is the open early-bird
+// upcoming year if one exists, else the operationally current year). Kept
+// local to this page since the hub only needs the un-offered/unknown rows
+// (filtered downstream by `buildAttentionRows`), not the full manager UI.
+async function loadLevelDemand(
+  currentAyCode: string,
+  currentAyId: string
+): Promise<LevelDemandRow[]> {
+  try {
+    const service = createServiceClient();
+    const [levels, upcoming] = await Promise.all([
+      getLevelRows(service),
+      getUpcomingAcademicYear(),
+    ]);
+    const acceptingAyId = upcoming?.id ?? currentAyId;
+    const acceptingAyCode = upcoming?.ay_code ?? currentAyCode;
+    const offeredSet = await getOfferedLevelIds(service, acceptingAyId);
+
+    const admissions = createAdmissionsClient();
+    const prefix = `ay${acceptingAyCode.replace(/^AY/i, '').toLowerCase()}`;
+    type AppLevelRow = { levelApplied: string | null };
+    type PageResult<T> = PromiseLike<{
+      data: T[] | null;
+      error: { message: string } | null;
+    }>;
+    const apps = await fetchAllPages<AppLevelRow>(
+      (from, to) =>
+        admissions
+          .from(`${prefix}_enrolment_applications`)
+          .select('levelApplied')
+          .range(from, to) as unknown as PageResult<AppLevelRow>
+    );
+    return computeLevelDemand(apps, levels, offeredSet);
+  } catch (err) {
+    console.warn(
+      '[sis hub] level demand fetch failed:',
+      err instanceof Error ? err.message : err
+    );
+    return [];
+  }
 }
