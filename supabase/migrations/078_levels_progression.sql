@@ -3,11 +3,23 @@
 -- Spec: docs/superpowers/specs/2026-07-11-levels-and-progression-design.md
 --
 -- create_academic_year is re-emitted from its NEWEST live body (migration 074,
--- KD #119 hazard — never re-emit from a stale body). Only ONE new statement is
--- added: copying volatile-level offerings from the source AY, placed in the
--- legacy-fallback branch (the only branch with a source AY id — the
--- template-driven branch inserts nothing, so a template-sourced new AY starts
--- with core levels only).
+-- KD #119 hazard — never re-emit from a stale body). One new BRANCH-AGNOSTIC
+-- statement is added after step 4 (sections copy): it derives volatile-level
+-- offerings from whatever sections rows now exist for the new AY, regardless
+-- of which branch created them (template / legacy-fallback / pre-existing).
+-- An earlier draft placed this insert only inside the legacy-fallback branch
+-- (`elsif v_source_ay_id is not null`) — but every real environment takes the
+-- template branch (`v_use_template`), so that draft silently gave zero
+-- offerings to every future AY. Fixed here.
+--
+-- IDEMPOTENT / SAFE TO RE-RUN: every DDL statement uses `if not exists` /
+-- `add column if not exists` / `create table if not exists`, every data
+-- backfill guards on `is null` or `on conflict ... do nothing`, and the
+-- function is `create or replace`. Because this migration (078) was already
+-- applied to the shared dev/prod Supabase project before this fix, the
+-- corrected file must be RE-APPLIED (the whole file, or just the
+-- `create_academic_year` function block from the second `begin;` onward) —
+-- re-running it is safe and will not duplicate or corrupt existing rows.
 
 begin;
 
@@ -92,11 +104,9 @@ on conflict (academic_year_id, level_id) do nothing;
 commit;
 
 -- ─── create_academic_year re-emit (newest live body: migration 074) ──────────
--- Identical to 074's body except for the one new offerings-copy insert added
--- inside the legacy-fallback sections branch (step 4, `elsif v_source_ay_id is
--- not null then`) — the only branch that has a source AY. The template branch
--- (step 4's `if v_use_template and v_template_sections_count > 0`) inserts no
--- offerings: a template-sourced new AY starts with core levels only.
+-- Identical to 074's body except for one new branch-agnostic offerings insert
+-- added right after step 4 (sections copy, both branches) — see the step-4b
+-- comment inline below for why it isn't nested inside either branch.
 
 begin;
 
@@ -192,15 +202,21 @@ begin
       select ay_code into v_source
       from public.academic_years
       where id = v_source_ay_id;
-
-      -- Copy volatile-level offerings from the source AY (levels & progression, spec 2026-07-11).
-      insert into public.ay_level_offerings (academic_year_id, level_id)
-      select v_ay_id, o.level_id
-      from public.ay_level_offerings o
-      where o.academic_year_id = v_source_ay_id
-      on conflict (academic_year_id, level_id) do nothing;
     end if;
   end if;
+
+  -- 4b. Volatile-level offerings — branch-agnostic, runs regardless of
+  -- which step-4 branch fired (template / legacy-fallback / sections
+  -- already existed). A volatile level is offered in this AY iff it has at
+  -- least one section here. Fixes the original draft, which placed this
+  -- insert only inside the legacy-fallback branch and so gave zero
+  -- offerings on the template path — the one every real environment uses.
+  insert into public.ay_level_offerings (academic_year_id, level_id)
+  select distinct s.academic_year_id, s.level_id
+  from public.sections s
+  join public.levels l on l.id = s.level_id
+  where s.academic_year_id = v_ay_id and l.is_core = false
+  on conflict (academic_year_id, level_id) do nothing;
 
   -- 5. subject_configs
   if not exists (select 1 from public.subject_configs where academic_year_id = v_ay_id) then
