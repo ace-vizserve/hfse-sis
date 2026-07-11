@@ -8,8 +8,8 @@ import { UpdateUserSchema } from '@/lib/schemas/user-admin';
 // PATCH /api/sis/admin/users/[id] — update role, enabled state, and/or
 // identity fields.
 //
-// `role` + `disabled` are available to school_admin and superadmin.
-// `displayName`, `email`, and `password` require superadmin (identity edits).
+// Superadmin-only (requireRole below) — the staff directory renders these
+// actions disabled for school_admin (read-only accounts view, KD #154).
 //
 // `role` writes to `app_metadata.role` (KD #2). `disabled: true` bans the
 // user for 100 years (effectively indefinite); `disabled: false` clears the
