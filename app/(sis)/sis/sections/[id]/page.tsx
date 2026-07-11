@@ -26,13 +26,16 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GenerateSheetsDialog } from '@/components/sis/generate-sheets-dialog';
+import { HubStat } from '@/components/sis/hub-stat';
 import { SectionRenameDialog } from '@/components/sis/section-rename-dialog';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { TeacherAssignmentsPanel } from '@/components/sis/section-teachers-tab';
 import {
   SectionRosterTable,
   type SectionRosterRow,
 } from '@/components/sis/section-roster-table';
 import type { SiblingSection } from '@/components/sis/section-transfer-dialog';
+import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 
 type LevelLite = {
   id: string;
@@ -78,11 +81,13 @@ export default async function SisSectionDetailPage({
   const { data: section } = await supabase
     .from('sections')
     .select(
-      'id, name, academic_year_id, level:levels(id, code, label, level_type), academic_year:academic_years(ay_code, label)'
+      'id, name, schedule, academic_year_id, level:levels(id, code, label, level_type), academic_year:academic_years(ay_code, label)'
     )
     .eq('id', id)
     .single();
   if (!section) notFound();
+
+  const schedule = (section as { schedule?: Schedule | null }).schedule ?? null;
 
   // Synchronous derivations from the already-resolved section row.
   const level = (
@@ -326,22 +331,30 @@ export default async function SisSectionDetailPage({
         Sections
       </Link>
 
-      {/* Hero */}
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            SIS Admin · Section
-          </p>
-          <div className="flex flex-wrap items-baseline gap-3">
-            <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-              {section.name}
-            </h1>
+      <SisPageHeader
+        group="This year"
+        title={section.name}
+        description={`${onRosterCount} on the roster${
+          withdrawnCount > 0
+            ? ` · ${withdrawnCount} withdrawn (kept for audit)`
+            : ''
+        }.`}
+        chips={
+          <>
             {level && (
               <Badge
                 variant="outline"
                 className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
               >
                 {level.label}
+              </Badge>
+            )}
+            {schedule && (
+              <Badge
+                variant="outline"
+                className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+              >
+                {SCHEDULE_LABELS[schedule]}
               </Badge>
             )}
             {ay && (
@@ -352,39 +365,35 @@ export default async function SisSectionDetailPage({
                 {ay.ay_code}
               </Badge>
             )}
-          </div>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            {onRosterCount} on the roster
-            {withdrawnCount > 0 &&
-              ` · ${withdrawnCount} withdrawn (kept for audit)`}
-            .
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <SectionRenameDialog
-            sectionId={section.id}
-            currentName={section.name}
-          />
-          <GenerateIndexButton
-            sectionId={section.id}
-            sectionName={section.name}
-            termStarted={termStarted}
-          />
-          <GenerateSheetsDialog
-            scope={{
-              kind: 'section',
-              sectionId: section.id,
-              sectionLabel: section.name,
-            }}
-          />
-          <Button asChild size="sm" variant="outline" className="gap-1.5">
-            <Link href={`/markbook/sections/${section.id}`}>
-              Roster &amp; grading
-              <ArrowUpRight className="size-3.5" />
-            </Link>
-          </Button>
-        </div>
-      </header>
+          </>
+        }
+        actions={
+          <>
+            <SectionRenameDialog
+              sectionId={section.id}
+              currentName={section.name}
+            />
+            <GenerateIndexButton
+              sectionId={section.id}
+              sectionName={section.name}
+              termStarted={termStarted}
+            />
+            <GenerateSheetsDialog
+              scope={{
+                kind: 'section',
+                sectionId: section.id,
+                sectionLabel: section.name,
+              }}
+            />
+            <Button asChild size="sm" variant="outline" className="gap-1.5">
+              <Link href={`/markbook/sections/${section.id}`}>
+                Roster &amp; grading
+                <ArrowUpRight className="size-3.5" />
+              </Link>
+            </Button>
+          </>
+        }
+      />
 
       <Tabs defaultValue={initialTab}>
         <TabsList>
@@ -400,34 +409,32 @@ export default async function SisSectionDetailPage({
 
         <TabsContent value="overview" className="mt-4 space-y-5">
           {/* Stat cards */}
-          <div className="@container/main">
-            <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-3">
-              <StatCard
-                description="Active"
-                value={activeCount}
-                icon={UserCheck}
-                footerTitle="On the roster"
-                footerDetail="Currently enrolled"
-              />
-              <StatCard
-                description="Late enrollees"
-                value={lateCount}
-                icon={Users}
-                footerTitle={
-                  lateCount === 0 ? 'None' : 'Started after term began'
-                }
-                footerDetail="Pre-enrolment scores marked N/A"
-              />
-              <StatCard
-                description="Withdrawn"
-                value={withdrawnCount}
-                icon={UserMinus}
-                footerTitle={
-                  withdrawnCount === 0 ? 'None this year' : 'Retained for audit'
-                }
-                footerDetail="Kept in the roster permanently"
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <HubStat
+              label="Active"
+              value={activeCount}
+              icon={UserCheck}
+              tone="mint"
+              subtext="On the roster, currently enrolled"
+            />
+            <HubStat
+              label="Late enrollees"
+              value={lateCount}
+              icon={Users}
+              tone={lateCount > 0 ? 'amber' : 'muted'}
+              subtext={
+                lateCount === 0
+                  ? 'None'
+                  : 'Started after term began — pre-enrolment scores N/A'
+              }
+            />
+            <HubStat
+              label="Withdrawn"
+              value={withdrawnCount}
+              icon={UserMinus}
+              tone={withdrawnCount > 0 ? 'amber' : 'muted'}
+              subtext="Kept in the roster permanently for audit"
+            />
           </div>
 
           {/* Roster — admin lens with the Move action. The full grading
@@ -483,41 +490,5 @@ export default async function SisSectionDetailPage({
         </TabsContent>
       </Tabs>
     </PageShell>
-  );
-}
-
-function StatCard({
-  description,
-  value,
-  icon: Icon,
-  footerTitle,
-  footerDetail,
-}: {
-  description: string;
-  value: number;
-  icon: React.ComponentType<{ className?: string }>;
-  footerTitle: string;
-  footerDetail: string;
-}) {
-  return (
-    <Card className="@container/card">
-      <CardHeader>
-        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          {description}
-        </CardDescription>
-        <CardTitle className="font-serif text-[32px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]">
-          {value.toLocaleString('en-SG')}
-        </CardTitle>
-        <CardAction>
-          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <Icon className="size-4" />
-          </div>
-        </CardAction>
-      </CardHeader>
-      <CardFooter className="flex-col items-start gap-1 text-sm">
-        <p className="font-medium text-foreground">{footerTitle}</p>
-        <p className="text-xs text-muted-foreground">{footerDetail}</p>
-      </CardFooter>
-    </Card>
   );
 }

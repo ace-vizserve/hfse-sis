@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { CalendarAdminClient } from '@/components/attendance/calendar/calendar-admin-client';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import {
   Card,
   CardContent,
@@ -118,25 +119,11 @@ export default async function SisCalendarPage({
         SIS Admin
       </Link>
 
-      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            SIS Admin · School calendar
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            School days &amp; events.
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Configure which dates are school days, which are closed (greyed out,
-            so attendance can&rsquo;t be marked), and overlay informational
-            events. The attendance grid uses this to render only the days
-            students can be marked. Pick a term, then view it by month or switch
-            to List for a chronological view of every closure and event in that
-            term. Filter by Primary or Secondary to manage level-specific
-            overrides alongside the shared (All) baseline.
-          </p>
-        </div>
-      </header>
+      <SisPageHeader
+        group="This year"
+        title="School days & events."
+        description="Mark school days, closures, and calendar events per term — the attendance grid follows this calendar."
+      />
 
       {terms.length === 0 ? (
         <Card className="items-center py-12 text-center">

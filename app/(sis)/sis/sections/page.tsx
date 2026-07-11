@@ -1,20 +1,13 @@
-import type React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ArrowLeft, LayoutGrid, Users, UserX } from 'lucide-react';
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { NewSectionButton } from '@/components/markbook/new-section-button';
+import { HubStat } from '@/components/sis/hub-stat';
 import { SisSectionsDataTable } from '@/components/sis/sections-data-table';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { Badge } from '@/components/ui/badge';
-import {
-  Card,
-  CardAction,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { sgToday } from '@/lib/dates';
@@ -177,64 +170,51 @@ export default async function SisSectionsListPage() {
         SIS Admin
       </Link>
 
-      {/* Hero */}
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            SIS Admin · Section setup
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Sections & advisers.
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Every section for the current academic year. Structural config lives
-            here; day-to-day roster / grading / attendance for each section are
-            in the Markbook module.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {ay && (
+      <SisPageHeader
+        group="This year"
+        title="Sections & advisers."
+        description="Every section for the current academic year. Structural config lives here; day-to-day roster / grading / attendance for each section are in the Markbook module."
+        chips={
+          ay && (
             <Badge
               variant="outline"
               className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
             >
               {ay.ay_code}
             </Badge>
-          )}
+          )
+        }
+        actions={
           <NewSectionButton
             levels={levelOptions}
             ayCode={ay?.ay_code ?? null}
           />
-        </div>
-      </header>
+        }
+      />
 
       {/* Stats */}
-      <div className="@container/main">
-        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-3">
-          <SummaryCard
-            description="Total sections"
-            value={totalSections}
-            icon={LayoutGrid}
-            footerTitle={`${levels.length} ${levels.length === 1 ? 'level' : 'levels'}`}
-            footerDetail={ay?.label ?? 'No current AY'}
-          />
-          <SummaryCard
-            description="Active students"
-            value={totalActive}
-            icon={Users}
-            footerTitle="Currently enrolled"
-            footerDetail="Across every section in the current AY"
-          />
-          <SummaryCard
-            description="Withdrawn"
-            value={totalWithdrawn}
-            icon={UserX}
-            footerTitle={
-              totalWithdrawn === 0 ? 'None this year' : 'Still on the roster'
-            }
-            footerDetail="Kept for audit trail"
-          />
-        </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <HubStat
+          label="Total sections"
+          value={totalSections}
+          icon={LayoutGrid}
+          tone="brand"
+          subtext={`${levels.length} ${levels.length === 1 ? 'level' : 'levels'} · ${ay?.label ?? 'No current AY'}`}
+        />
+        <HubStat
+          label="Active students"
+          value={totalActive}
+          icon={Users}
+          tone="mint"
+          subtext="Currently enrolled, across every section"
+        />
+        <HubStat
+          label="Withdrawn"
+          value={totalWithdrawn}
+          icon={UserX}
+          tone={totalWithdrawn > 0 ? 'amber' : 'muted'}
+          subtext="Kept on the roster for the audit trail"
+        />
       </div>
 
       {/* Sections DataTable — replaces the pill grid. Level facet + search +
@@ -248,41 +228,5 @@ export default async function SisSectionsListPage() {
         sections={sectionsList}
       />
     </PageShell>
-  );
-}
-
-function SummaryCard({
-  description,
-  value,
-  icon: Icon,
-  footerTitle,
-  footerDetail,
-}: {
-  description: string;
-  value: number;
-  icon: React.ComponentType<{ className?: string }>;
-  footerTitle: string;
-  footerDetail: string;
-}) {
-  return (
-    <Card className="@container/card">
-      <CardHeader>
-        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          {description}
-        </CardDescription>
-        <CardTitle className="font-serif text-[32px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]">
-          {value.toLocaleString('en-SG')}
-        </CardTitle>
-        <CardAction>
-          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <Icon className="size-4" />
-          </div>
-        </CardAction>
-      </CardHeader>
-      <CardFooter className="flex-col items-start gap-1 text-sm">
-        <p className="font-medium text-foreground">{footerTitle}</p>
-        <p className="text-xs text-muted-foreground">{footerDetail}</p>
-      </CardFooter>
-    </Card>
   );
 }

@@ -1,13 +1,15 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, CalendarRange } from 'lucide-react';
+import { ArrowLeft, CalendarRange, CheckCircle2 } from 'lucide-react';
 
 import { NewAyButton } from '@/components/sis/ay-setup-wizard';
 import {
   AySetupDataTable,
   type AyTableRow,
 } from '@/components/sis/ay-setup-data-table';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { YearSetupChecklist } from '@/components/sis/year-setup/year-setup-checklist';
+import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -89,23 +91,39 @@ export default async function AySetupPage({
         Dashboard
       </Link>
 
-      <header className="mt-4 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            SIS Admin · Year Setup
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Year setup.
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            See how ready an academic year is and configure it in one place —
-            term dates, calendar, sections, grading sheets, and more.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <NewAyButton preview={preview} />
-        </div>
-      </header>
+      <SisPageHeader
+        group="This year"
+        title="Year setup."
+        description="See how ready an academic year is and configure it in one place — term dates, calendar, sections, grading sheets, and more."
+        chips={
+          selectedAy && (
+            <>
+              <Badge
+                variant="outline"
+                className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+              >
+                {selectedAy.ay_code}
+              </Badge>
+              {readiness && (
+                <Badge
+                  variant="outline"
+                  className={
+                    readiness.complete === readiness.total
+                      ? 'h-7 gap-1 border-brand-mint bg-brand-mint/30 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink'
+                      : 'h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground'
+                  }
+                >
+                  {readiness.complete === readiness.total && (
+                    <CheckCircle2 className="size-3" />
+                  )}
+                  {readiness.complete}/{readiness.total} ready
+                </Badge>
+              )}
+            </>
+          )
+        }
+        actions={<NewAyButton preview={preview} />}
+      />
 
       <Tabs defaultValue="setup" className="mt-8">
         <TabsList>
