@@ -309,7 +309,7 @@ export function buildSyncPlan(
 // Deliberately narrow: does NOT detect withdrawals from other sections.
 // If a student moves from P1 Patience to P1 Obedience mid-year via admissions,
 // this helper enrols them in Obedience but leaves the Patience row untouched.
-// Bulk sync (registrar, /markbook/sync-students) handles that reconciliation.
+// Bulk sync (POST /api/students/sync) handles that reconciliation.
 // ──────────────────────────────────────────────────────────────────────────
 
 export type SyncOneResult = {

@@ -349,12 +349,6 @@ const NAV_ENTRIES: NavEntry[] = [
     group: 'Admin',
     icon: Settings2Icon,
   },
-  {
-    href: '/sis/sync-students',
-    label: 'Sync from Admissions',
-    group: 'Admin',
-    icon: UsersIcon,
-  },
 ];
 
 // Roles that can search students via /api/sis/search.

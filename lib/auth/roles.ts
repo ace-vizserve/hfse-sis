@@ -133,14 +133,6 @@ const RECORDS_NAV: NavSection[] = [
         label: 'Students needing setup',
         badgeKey: 'unsyncedStudents',
       },
-      // Bulk admissions→SIS sync lives in SIS Admin (2026-04-23). Cross-module
-      // link kept here for registrar convenience — they own roster ingest and
-      // mostly work out of Records.
-      {
-        href: '/sis/sync-students',
-        label: 'Sync from Admissions',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
-      },
       // Section setup lives in SIS Admin, but the registrar can't reach the SIS
       // module (its /sis hub is school_admin+). Cross-link kept here so she can
       // get to the section rosters — incl. the Generate-class-index action,
@@ -466,11 +458,6 @@ const SIS_NAV: NavSection[] = [
         label: 'Class Template',
         requiresRoles: ['school_admin', 'superadmin'],
       },
-      {
-        href: '/sis/sync-students',
-        label: 'Sync from Admissions',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
-      },
     ],
   },
   {
@@ -677,10 +664,6 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
     allowed: ['registrar', 'school_admin', 'superadmin'],
   },
   { prefix: '/sis/audit-log', allowed: ['school_admin', 'superadmin'] },
-  {
-    prefix: '/sis/sync-students',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
-  },
   {
     prefix: '/admin/admissions',
     allowed: ['registrar', 'school_admin', 'superadmin'],

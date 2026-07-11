@@ -5,7 +5,6 @@ import {
   FileText,
   History,
   Lock,
-  RefreshCw,
   TrendingUp,
   Users,
   type LucideIcon,
@@ -73,15 +72,6 @@ type Tool = {
 };
 
 const ADMIN_TOOLS: Tool[] = [
-  {
-    icon: RefreshCw,
-    eyebrow: 'Admissions',
-    title: 'Sync Students',
-    description:
-      'Pull new, updated, and withdrawn students from the admissions tables. Lives in SIS Admin (KD #48) — opens the canonical surface.',
-    href: '/sis/sync-students',
-    cta: 'Open sync',
-  },
   {
     icon: Users,
     eyebrow: 'Rosters',

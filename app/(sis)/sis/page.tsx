@@ -3,7 +3,6 @@ import {
   ArrowUpRight,
   BookOpen,
   Building2,
-  Database,
   FolderCog,
   GitBranch,
   LayoutGrid,
@@ -357,16 +356,6 @@ export default async function SisAdminHub({
                 cta="Manage codes"
                 role={role}
                 allowedRoles={['school_admin', 'superadmin']}
-              />
-              <AdminCard
-                href="/sis/sync-students"
-                icon={Database}
-                eyebrow="Admissions ingest"
-                title="Sync from Admissions"
-                description="Preview then commit a bulk sync of students, enrolments, withdrawals, and reactivations from the admissions database. Individual students sync automatically on stage→Assigned; this tool handles the catch-up pass."
-                cta="Open sync tool"
-                role={role}
-                allowedRoles={['registrar', 'school_admin', 'superadmin']}
               />
             </div>
           </section>

@@ -77,7 +77,7 @@ export function buildWithdrawalAdmissionsPatch({
 //   - enrollment_status       ('active' | 'late_enrollee' | 'withdrawn')
 //
 // Doesn't change index_number (immutable per KD) or the underlying student row
-// (edit those via /markbook/sync-students or /records/students/[enroleeNumber]).
+// (edit those via POST /api/students/sync or /records/students/[enroleeNumber]).
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; enrolmentId: string }> }
