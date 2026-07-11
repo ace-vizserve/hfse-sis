@@ -315,7 +315,7 @@ function LevelRowItem({
     <li className="flex flex-wrap items-center gap-3 px-5 py-4">
       <Badge
         variant="outline"
-        className="h-6 shrink-0 border-border bg-white px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+        className="h-6 shrink-0 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
       >
         {level.code}
       </Badge>

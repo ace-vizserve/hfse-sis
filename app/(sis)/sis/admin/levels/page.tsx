@@ -11,6 +11,7 @@ import {
 } from '@/lib/academic-year';
 import { PageShell } from '@/components/ui/page-shell';
 import { Card, CardContent } from '@/components/ui/card';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
 import {
   computeLevelDemand,
@@ -131,21 +132,11 @@ export default async function GradeLevelsPage({
         SIS Admin
       </Link>
 
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="space-y-3">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            SIS Admin · Organisation
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Grade levels.
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Primary 1 to Secondary 4 are permanent. Other levels can be offered
-            or shelved per school year. &ldquo;Next level&rdquo; only suggests
-            what a returning student applies for — it never moves anyone.
-          </p>
-        </div>
-      </header>
+      <SisPageHeader
+        group="Structure"
+        title="Grade levels."
+        description="Primary 1 to Secondary 4 are permanent. Other levels can be offered or shelved per school year. “Next level” only suggests what a returning student applies for — it never moves anyone."
+      />
 
       {!currentAy ? (
         <Card className="items-center py-12 text-center">

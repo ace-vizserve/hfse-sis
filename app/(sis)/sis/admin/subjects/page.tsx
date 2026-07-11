@@ -1,18 +1,13 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, BookOpenCheck } from 'lucide-react';
+import { ArrowLeft, BookOpenCheck, ShieldAlert } from 'lucide-react';
 
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { PageShell } from '@/components/ui/page-shell';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import {
   listLevels,
   listSubjects,
@@ -82,36 +77,48 @@ export default async function SubjectConfigPage({
         SIS Admin
       </Link>
 
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="space-y-3">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            SIS Admin · Subject weights
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Subject weights &amp; slots.
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            WW / PT / QA weights and max slot counts per subject + level + AY.
-            Changes here apply to
-            <strong> every grading sheet</strong> for that subject + level —
-            handle with care.
-          </p>
+      <SisPageHeader
+        group="Structure"
+        title="Subject weights & slots."
+        description="WW / PT / QA weights and max slot counts per subject, level, and academic year."
+        chips={
+          <>
+            {currentAy && (
+              <Badge
+                variant="outline"
+                className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+              >
+                {currentAy.ay_code}
+              </Badge>
+            )}
+            <SubjectAySwitcher
+              current={currentAy?.ay_code ?? ''}
+              options={ayOptions}
+            />
+          </>
+        }
+      />
+
+      {currentAy && (
+        <div className="flex items-start gap-4 rounded-xl border border-brand-indigo-soft/40 bg-accent p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-indigo text-white shadow-brand-tile">
+            <ShieldAlert className="size-4" />
+          </div>
+          <div className="flex-1 space-y-1.5">
+            <p className="font-serif text-base font-semibold text-foreground">
+              Changes here reach every grading sheet
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Editing a subject&apos;s weights or slot count applies to{' '}
+              <strong className="font-semibold text-foreground">
+                every grading sheet
+              </strong>{' '}
+              for that subject and level in {currentAy.ay_code} — handle with
+              care.
+            </p>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {currentAy && (
-            <Badge
-              variant="outline"
-              className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-            >
-              {currentAy.ay_code}
-            </Badge>
-          )}
-          <SubjectAySwitcher
-            current={currentAy?.ay_code ?? ''}
-            options={ayOptions}
-          />
-        </div>
-      </header>
+      )}
 
       {!currentAy ? (
         <Card className="items-center py-12 text-center">

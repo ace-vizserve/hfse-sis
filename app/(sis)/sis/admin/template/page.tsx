@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Info } from 'lucide-react';
 
 import { TemplateManagerClient } from '@/components/sis/template-manager-client';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import {
   listEligibleAysForApply,
   listTemplateSections,
@@ -46,31 +47,29 @@ export default async function TemplateAdminPage() {
         SIS Admin
       </Link>
 
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-3">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            SIS Admin · Class template
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Class template.
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            The master sections + subject weights every new academic year copies
-            from on creation. Edits stay in the template until you propagate
-            them. New AYs created after a template change inherit the new values
-            automatically; existing AYs only get them when you explicitly
-            propagate.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <SisPageHeader
+        group="Structure"
+        title="Structure defaults."
+        description="The master sections and subject weights every new academic year copies from on creation."
+        chips={
           <Badge
             variant="outline"
-            className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+            className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
           >
             Template
           </Badge>
-        </div>
-      </header>
+        }
+      />
+
+      <div className="flex items-center gap-2.5 rounded-lg border border-border bg-muted/30 px-4 py-2.5">
+        <Info className="size-3.5 shrink-0 text-muted-foreground" />
+        <p className="text-[13px] text-muted-foreground">
+          Changes here touch no year until you push them.{' '}
+          <span className="text-foreground">
+            Edit freely, then use Propagate to update existing academic years.
+          </span>
+        </p>
+      </div>
 
       <TemplateManagerClient
         templateSections={templateSections}

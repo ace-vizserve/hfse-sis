@@ -204,13 +204,16 @@ function SubjectCard({
         </div>
         <div className="min-w-0 flex-1 leading-tight">
           <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className="h-6 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+            >
+              {subject.code}
+            </Badge>
             <span className="font-serif text-[16px] font-semibold tracking-tight text-foreground">
               {subject.name}
             </span>
             {!subject.is_examinable && <Badge variant="muted">Non-exam</Badge>}
-          </div>
-          <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-            {subject.code}
           </div>
         </div>
       </div>

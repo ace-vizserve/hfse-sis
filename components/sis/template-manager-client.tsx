@@ -327,7 +327,7 @@ function LevelGroup({
       <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-5 py-3">
         <Badge
           variant="outline"
-          className="h-6 border-border bg-white px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+          className="h-6 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
         >
           {level.code}
         </Badge>
@@ -702,7 +702,7 @@ function SubjectCard({
                       >
                         <Badge
                           variant="outline"
-                          className="h-5 border-border bg-white px-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-foreground"
+                          className="h-5 border-border bg-card px-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-foreground"
                         >
                           {level.code}
                         </Badge>
@@ -1924,7 +1924,7 @@ function SubjectsCatalogTab({
                     <div className="flex items-center gap-2">
                       <Badge
                         variant="outline"
-                        className="h-6 border-border bg-white px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+                        className="h-6 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
                       >
                         {subject.code}
                       </Badge>
