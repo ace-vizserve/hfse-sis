@@ -90,6 +90,7 @@ export function StaffTable({
         <AssignmentChips
           fcaSection={row.original.fcaSection}
           subjectAssignments={row.original.subjectAssignments}
+          align="start"
         />
       ),
     },

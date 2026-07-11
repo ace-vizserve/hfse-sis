@@ -1,5 +1,4 @@
-import { ArrowLeft, Building2 } from 'lucide-react';
-import Link from 'next/link';
+import { Building2 } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
 import { SchoolConfigForm } from '@/components/sis/school-config-form';
@@ -31,14 +30,6 @@ export default async function SchoolConfigPage() {
 
   return (
     <PageShell>
-      <Link
-        href="/sis"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        SIS Admin
-      </Link>
-
       <SisPageHeader
         group="Access & system"
         title="School-wide settings."

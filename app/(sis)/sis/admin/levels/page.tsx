@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, Layers } from 'lucide-react';
+import { Layers } from 'lucide-react';
 
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -124,14 +123,6 @@ export default async function GradeLevelsPage({
 
   return (
     <PageShell>
-      <Link
-        href="/sis"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        SIS Admin
-      </Link>
-
       <SisPageHeader
         group="Structure"
         title="Grade levels."

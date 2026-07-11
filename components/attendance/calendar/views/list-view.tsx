@@ -54,8 +54,6 @@ import {
 type ListRow = {
   /** yyyy-MM-dd — primary sort key. Events use startDate. */
   iso: string;
-  /** Human-readable date, e.g. "Mon, 15 Jan 2026" */
-  dateLabel: string;
   /** Short weekday, e.g. "Mon" — paired with the DateBox in the Date cell. */
   weekday: string;
   kind: 'closure' | 'event';
@@ -89,22 +87,6 @@ export type ListViewProps = {
 
 // ─── Date formatting ──────────────────────────────────────────────────────────
 
-/** yyyy-MM-dd → "Mon, 15 Jan 2026" (local, tz-safe — no UTC shift). */
-function formatReadableDate(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return iso;
-  return new Date(
-    Number(m[1]),
-    Number(m[2]) - 1,
-    Number(m[3])
-  ).toLocaleDateString('en-SG', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
 /** yyyy-MM-dd → "Mon" (local, tz-safe — no UTC shift). Pairs with DateBox,
  *  which already carries the day number + month. */
 function formatWeekday(iso: string): string {
@@ -134,7 +116,6 @@ function buildClosureRows(days: SchoolCalendarRow[]): ListRow[] {
         status.kind === 'closed' ? status.reason : ('no_class' as const);
       return {
         iso: d.date,
-        dateLabel: formatReadableDate(d.date),
         weekday: formatWeekday(d.date),
         kind: 'closure',
         typeLabel: CLOSED_REASON_LABELS[reason],
@@ -149,7 +130,6 @@ function buildEventRows(events: CalendarEventRow[]): ListRow[] {
   return events.map(
     (e): ListRow => ({
       iso: e.startDate,
-      dateLabel: formatReadableDate(e.startDate),
       weekday: formatWeekday(e.startDate),
       kind: 'event',
       typeLabel: EVENT_CATEGORY_LABELS[e.category],

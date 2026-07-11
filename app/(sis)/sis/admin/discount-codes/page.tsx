@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, CalendarClock, Check, Tag, X } from 'lucide-react';
+import { CalendarClock, Check, Tag, X } from 'lucide-react';
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { DiscountCodesDataTable } from '@/components/sis/discount-codes-data-table';
@@ -71,14 +70,6 @@ export default async function SisDiscountCodesPage({
 
   return (
     <PageShell>
-      <Link
-        href="/sis"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        SIS Admin
-      </Link>
-
       <SisPageHeader
         group="This year"
         title="Promotion codes."

@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarDays } from 'lucide-react';
+import { CalendarDays } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -113,14 +113,6 @@ export default async function SisCalendarPage({
 
   return (
     <PageShell className="max-w-[1400px]">
-      <Link
-        href="/sis"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        SIS Admin
-      </Link>
-
       <SisPageHeader
         group="This year"
         title="School days & events."

@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, LayoutGrid, Users, UserX } from 'lucide-react';
+import { LayoutGrid, Users, UserX } from 'lucide-react';
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { NewSectionButton } from '@/components/markbook/new-section-button';
@@ -162,14 +161,6 @@ export default async function SisSectionsListPage() {
 
   return (
     <PageShell>
-      <Link
-        href="/sis"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        SIS Admin
-      </Link>
-
       <SisPageHeader
         group="This year"
         title="Sections & advisers."
@@ -178,7 +169,7 @@ export default async function SisSectionsListPage() {
           ay && (
             <Badge
               variant="outline"
-              className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+              className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
             >
               {ay.ay_code}
             </Badge>

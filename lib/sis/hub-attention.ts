@@ -27,6 +27,12 @@ export function buildAttentionRows(input: {
   unassigned: ClassAssignmentReadinessRow[];
   pendingChangeRequests: number;
   levelDemand: LevelDemandRow[];
+  // The AY `levelDemand` was actually computed against — the accepting AY
+  // (KD #118: the open early-bird upcoming year when one exists, else the
+  // operationally current year), NOT necessarily "this year." Threaded
+  // through so the row text can't lie about which AY doesn't offer the
+  // level.
+  acceptingAyCode: string;
 }): AttentionRow[] {
   const rows: AttentionRow[] = [];
 
@@ -68,7 +74,8 @@ export function buildAttentionRows(input: {
     rows.push({
       id: `level-demand-${row.label}`,
       severity: 'amber',
-      text: `${row.count} ${row.count === 1 ? 'applicant chose' : 'applicants chose'} ${row.label} — not offered this year`,
+      text: `${row.count} ${row.count === 1 ? 'applicant chose' : 'applicants chose'} ${row.label} — not offered in ${input.acceptingAyCode}`,
+      meta: input.acceptingAyCode,
       href: '/sis/admin/levels',
       actionLabel: 'Grade levels',
     });

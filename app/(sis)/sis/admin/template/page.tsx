@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, Info } from 'lucide-react';
+import { Info } from 'lucide-react';
 
 import { TemplateManagerClient } from '@/components/sis/template-manager-client';
 import { Badge } from '@/components/ui/badge';
@@ -39,14 +38,6 @@ export default async function TemplateAdminPage() {
 
   return (
     <PageShell>
-      <Link
-        href="/sis"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        SIS Admin
-      </Link>
-
       <SisPageHeader
         group="Structure"
         title="Structure defaults."

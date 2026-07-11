@@ -1,3 +1,5 @@
+import { ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 /**
@@ -8,6 +10,15 @@ import type { ReactNode } from 'react';
  * just scoped to "SIS Admin · {group}" so every SIS Admin page's eyebrow
  * reads consistently against its sidebar group ("This year" / "Structure" /
  * "Access & system").
+ *
+ * Also single-sources the "back to hub" link (final-review fix, minor #5):
+ * every SIS Admin page used to render its own `<Link href="/sis">` above
+ * this header with an inconsistent label ("Dashboard" / "SIS Admin" /
+ * "Admin Hub") — three names for the same destination. Now every page just
+ * passes `backHref`/`backLabel` (or omits them for the default "Admin Hub"
+ * → `/sis`) so the label can't drift again. `/sis/sections/[id]` is the one
+ * legitimate exception — it backs up one level to `/sis/sections`, not the
+ * hub — via an explicit override.
  *
  * Presentation only — no data fetching, no client state. `chips` is the
  * right-side status/identity row (badges, AY pickers, etc.); `actions` is
@@ -22,34 +33,48 @@ export function SisPageHeader({
   description,
   chips,
   actions,
+  backHref = '/sis',
+  backLabel = 'Admin Hub',
 }: {
   group: string;
   title: string;
   description?: string;
   chips?: ReactNode;
   actions?: ReactNode;
+  backHref?: string;
+  backLabel?: string;
 }) {
   return (
-    <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-      <div className="space-y-4">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          SIS Admin · {group}
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          {title}
-        </h1>
-        {description && (
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            {description}
+    <div className="flex flex-col gap-5">
+      <Link
+        href={backHref}
+        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        {backLabel}
+      </Link>
+
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-4">
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            SIS Admin · {group}
           </p>
-        )}
-      </div>
-      {(chips || actions) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {chips}
-          {actions}
+          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+            {title}
+          </h1>
+          {description && (
+            <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+              {description}
+            </p>
+          )}
         </div>
-      )}
-    </header>
+        {(chips || actions) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {chips}
+            {actions}
+          </div>
+        )}
+      </header>
+    </div>
   );
 }

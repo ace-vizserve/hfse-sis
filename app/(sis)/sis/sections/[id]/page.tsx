@@ -1,12 +1,6 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  UserCheck,
-  UserMinus,
-  Users,
-} from 'lucide-react';
+import { ArrowUpRight, UserCheck, UserMinus, Users } from 'lucide-react';
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -323,14 +317,6 @@ export default async function SisSectionDetailPage({
 
   return (
     <PageShell>
-      <Link
-        href="/sis/sections"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Sections
-      </Link>
-
       <SisPageHeader
         group="This year"
         title={section.name}
@@ -339,12 +325,14 @@ export default async function SisSectionDetailPage({
             ? ` · ${withdrawnCount} withdrawn (kept for audit)`
             : ''
         }.`}
+        backHref="/sis/sections"
+        backLabel="Sections"
         chips={
           <>
             {level && (
               <Badge
                 variant="outline"
-                className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+                className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
               >
                 {level.label}
               </Badge>
@@ -352,7 +340,7 @@ export default async function SisSectionDetailPage({
             {schedule && (
               <Badge
                 variant="outline"
-                className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+                className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
               >
                 {SCHEDULE_LABELS[schedule]}
               </Badge>
@@ -360,7 +348,7 @@ export default async function SisSectionDetailPage({
             {ay && (
               <Badge
                 variant="outline"
-                className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+                className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
               >
                 {ay.ay_code}
               </Badge>

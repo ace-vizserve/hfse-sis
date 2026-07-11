@@ -48,9 +48,20 @@ export function HubStat({
         <p className="font-serif text-[21px] font-semibold leading-tight tabular-nums text-foreground">
           {typeof value === 'number' ? value.toLocaleString('en-SG') : value}
         </p>
-        <p className="truncate text-[11.5px] text-muted-foreground">
-          {subtext ?? label}
-        </p>
+        {/* `label` names the metric and always renders — a `subtext` used to
+            replace it outright, silently erasing what the number counts
+            (e.g. "Awaiting approval" with no "Grade changes waiting"
+            anywhere on the tile). `subtext`, when present, is a second,
+            smaller muted line underneath rather than folded into one line —
+            the tile's fixed p-3.5/gap-3 sizing has room for a two-line
+            caption without growing the card, and a dash-joined single line
+            reads worse at this width once both label + status are present. */}
+        <p className="truncate text-[11.5px] text-muted-foreground">{label}</p>
+        {subtext && (
+          <p className="truncate text-[10.5px] text-muted-foreground/75">
+            {subtext}
+          </p>
+        )}
       </div>
     </Card>
   );

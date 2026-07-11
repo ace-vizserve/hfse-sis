@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation';
 import {
   Activity,
   AlertTriangle,
-  ArrowLeft,
   LayoutGrid,
   ListChecks,
   Settings2,
@@ -359,14 +358,6 @@ export default async function SisAuditLogPage({
 
   return (
     <PageShell>
-      <Link
-        href="/sis"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Admin Hub
-      </Link>
-
       <SisPageHeader
         group="Access & system"
         title="Audit log."

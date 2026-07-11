@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
   UserCog,
   Users2,
@@ -111,14 +110,6 @@ export default async function StaffPage({
 
   return (
     <PageShell>
-      <Link
-        href="/sis"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        SIS Admin
-      </Link>
-
       <SisPageHeader
         group="This year"
         title="Staff."
@@ -126,7 +117,7 @@ export default async function StaffPage({
         chips={
           <Badge
             variant="outline"
-            className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+            className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
           >
             {staffCount} people · {teachingCount} teaching
           </Badge>

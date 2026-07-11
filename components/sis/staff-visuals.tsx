@@ -139,11 +139,18 @@ export function AssignmentChips({
   fcaSection,
   subjectAssignments,
   maxSubjects = 3,
+  align = 'start',
   className,
 }: {
   fcaSection: AssignmentChipFca;
   subjectAssignments: AssignmentChipSubject[];
   maxSubjects?: number;
+  // Alignment of the chip row within its container — 'start' matches a
+  // left-aligned column header (StaffTable's "Assignments" cell); 'end' is
+  // for a trailing chip cluster in a right-flushed row layout. Was
+  // hardcoded to justify-end; made a prop so each caller can match its own
+  // layout instead of inheriting the first caller's assumption.
+  align?: 'start' | 'end';
   className?: string;
 }) {
   const hasAny = Boolean(fcaSection) || subjectAssignments.length > 0;
@@ -165,7 +172,11 @@ export function AssignmentChips({
 
   return (
     <div
-      className={cn('flex flex-wrap items-center justify-end gap-1', className)}
+      className={cn(
+        'flex flex-wrap items-center gap-1',
+        align === 'end' ? 'justify-end' : 'justify-start',
+        className
+      )}
     >
       {fcaSection && (
         <Link
@@ -183,9 +194,15 @@ export function AssignmentChips({
           href={`/sis/sections/${a.sectionId}`}
           onClick={(e) => e.stopPropagation()}
           title={a.sectionName}
+          // Section identity, not level — two sections of the same level
+          // (HFSE runs 2-3 per level) otherwise render byte-identical chips
+          // for a teacher taking the same subject in each (e.g. two "ENG P3"
+          // chips with no way to tell them apart). The section name is the
+          // virtue name (short, e.g. "Obedience"), matching the pre-makeover
+          // cell's "ENG · Obedience" format.
           className="inline-flex items-center rounded-md border border-hairline bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-opacity hover:opacity-80"
         >
-          {a.subjectCode} {a.levelCode}
+          {a.subjectCode}&thinsp;·&thinsp;{a.sectionName}
         </Link>
       ))}
       {extra > 0 && (

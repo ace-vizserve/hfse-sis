@@ -34,6 +34,7 @@ describe('buildAttentionRows', () => {
         unassigned: [],
         pendingChangeRequests: 0,
         levelDemand: [],
+        acceptingAyCode: 'AY2026',
       })
     ).toEqual([]);
   });
@@ -47,6 +48,7 @@ describe('buildAttentionRows', () => {
       ],
       pendingChangeRequests: 0,
       levelDemand: [],
+      acceptingAyCode: 'AY2026',
     });
     expect(rows).toHaveLength(1);
     expect(rows[0].severity).toBe('destructive');
@@ -61,6 +63,7 @@ describe('buildAttentionRows', () => {
       unassigned: [unplaced()],
       pendingChangeRequests: 0,
       levelDemand: [],
+      acceptingAyCode: 'AY2026',
     });
     expect(rows[0].text).toBe('1 enrolled student has no class yet');
   });
@@ -70,6 +73,7 @@ describe('buildAttentionRows', () => {
       unassigned: [],
       pendingChangeRequests: 0,
       levelDemand: [],
+      acceptingAyCode: 'AY2026',
     });
     expect(none).toEqual([]);
 
@@ -77,6 +81,7 @@ describe('buildAttentionRows', () => {
       unassigned: [],
       pendingChangeRequests: 4,
       levelDemand: [],
+      acceptingAyCode: 'AY2026',
     });
     expect(some).toHaveLength(1);
     expect(some[0].severity).toBe('amber');
@@ -93,6 +98,7 @@ describe('buildAttentionRows', () => {
         demandRow({ label: 'Primary Three', offered: true, count: 40 }), // offered — excluded
         demandRow({ label: 'Grade 99', offered: false, count: 0 }), // zero — excluded
       ],
+      acceptingAyCode: 'AY2027',
     });
     expect(rows).toHaveLength(1);
     expect(rows[0].severity).toBe('amber');
@@ -100,11 +106,27 @@ describe('buildAttentionRows', () => {
     expect(rows[0].href).toBe('/sis/admin/levels');
   });
 
+  it('level demand text + meta carry the accepting AY code, not a generic "this year"', () => {
+    const rows = buildAttentionRows({
+      unassigned: [],
+      pendingChangeRequests: 0,
+      levelDemand: [
+        demandRow({ label: 'Cambridge Stage 1', offered: false, count: 2 }),
+      ],
+      acceptingAyCode: 'AY2027',
+    });
+    expect(rows[0].text).toBe(
+      '2 applicants chose Cambridge Stage 1 — not offered in AY2027'
+    );
+    expect(rows[0].meta).toBe('AY2027');
+  });
+
   it('merges all three signal kinds in one list', () => {
     const rows = buildAttentionRows({
       unassigned: [unplaced()],
       pendingChangeRequests: 1,
       levelDemand: [demandRow()],
+      acceptingAyCode: 'AY2026',
     });
     expect(rows.map((r) => r.id)).toEqual([
       'unplaced-students',

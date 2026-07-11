@@ -1,4 +1,5 @@
 import { Activity, BookOpen, GitBranch, LayoutGrid, Users } from 'lucide-react';
+import { unstable_cache } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
@@ -75,13 +76,17 @@ export default async function SisAdminHub() {
           ),
       currentAy
         ? loadLevelDemand(currentAy.ay_code, currentAy.id)
-        : Promise.resolve([] as LevelDemandRow[]),
+        : Promise.resolve({
+            rows: [] as LevelDemandRow[],
+            acceptingAyCode: ayCode,
+          }),
     ]);
 
   const attentionRows = buildAttentionRows({
     unassigned: unassignedStudents,
     pendingChangeRequests: hubKpis?.pendingChangeRequests ?? 0,
-    levelDemand,
+    levelDemand: levelDemand.rows,
+    acceptingAyCode: levelDemand.acceptingAyCode,
   });
 
   return (
@@ -179,40 +184,75 @@ export default async function SisAdminHub() {
 // upcoming year if one exists, else the operationally current year). Kept
 // local to this page since the hub only needs the un-offered/unknown rows
 // (filtered downstream by `buildAttentionRows`), not the full manager UI.
+// Returns the resolved `acceptingAyCode` alongside the rows so the caller
+// (and `buildAttentionRows`, final-review fix #2) can say which AY a level
+// isn't offered in, instead of a generic "this year."
 async function loadLevelDemand(
   currentAyCode: string,
   currentAyId: string
-): Promise<LevelDemandRow[]> {
+): Promise<{ rows: LevelDemandRow[]; acceptingAyCode: string }> {
   try {
-    const service = createServiceClient();
-    const [levels, upcoming] = await Promise.all([
-      getLevelRows(service),
-      getUpcomingAcademicYear(),
-    ]);
+    // getUpcomingAcademicYear() uses a cookie-scoped server client (per its
+    // own module doc) — per KD #54's gotcha, that must run here in the RSC
+    // body, never inside unstable_cache. Only the resulting fetch (levels +
+    // offered ids + admissions applications, all service-client) is cached.
+    const upcoming = await getUpcomingAcademicYear();
     const acceptingAyId = upcoming?.id ?? currentAyId;
     const acceptingAyCode = upcoming?.ay_code ?? currentAyCode;
-    const offeredSet = await getOfferedLevelIds(service, acceptingAyId);
-
-    const admissions = createAdmissionsClient();
-    const prefix = `ay${acceptingAyCode.replace(/^AY/i, '').toLowerCase()}`;
-    type AppLevelRow = { levelApplied: string | null };
-    type PageResult<T> = PromiseLike<{
-      data: T[] | null;
-      error: { message: string } | null;
-    }>;
-    const apps = await fetchAllPages<AppLevelRow>(
-      (from, to) =>
-        admissions
-          .from(`${prefix}_enrolment_applications`)
-          .select('levelApplied')
-          .range(from, to) as unknown as PageResult<AppLevelRow>
+    const rows = await loadLevelDemandRowsCached(
+      acceptingAyId,
+      acceptingAyCode
     );
-    return computeLevelDemand(apps, levels, offeredSet);
+    return { rows, acceptingAyCode };
   } catch (err) {
     console.warn(
       '[sis hub] level demand fetch failed:',
       err instanceof Error ? err.message : err
     );
-    return [];
+    return { rows: [], acceptingAyCode: currentAyCode };
   }
+}
+
+// Hoisted-uncached + per-call unstable_cache idiom (KD #46) — mirrors the
+// caching already established for getLevelRows/getOfferedLevelIds
+// (lib/sis/levels.ts), which this composes. Tagged both 'levels' (so a
+// levels/offerings edit invalidates it, same tag those two use) and
+// `sis:${acceptingAyCode}` (so an admissions-side write for that AY does
+// too, per the existing `revalidateTag('sis:${ayCode}')` convention).
+async function loadLevelDemandRowsUncached(
+  acceptingAyId: string,
+  acceptingAyCode: string
+): Promise<LevelDemandRow[]> {
+  const service = createServiceClient();
+  const [levels, offeredSet] = await Promise.all([
+    getLevelRows(service),
+    getOfferedLevelIds(service, acceptingAyId),
+  ]);
+
+  const admissions = createAdmissionsClient();
+  const prefix = `ay${acceptingAyCode.replace(/^AY/i, '').toLowerCase()}`;
+  type AppLevelRow = { levelApplied: string | null };
+  type PageResult<T> = PromiseLike<{
+    data: T[] | null;
+    error: { message: string } | null;
+  }>;
+  const apps = await fetchAllPages<AppLevelRow>(
+    (from, to) =>
+      admissions
+        .from(`${prefix}_enrolment_applications`)
+        .select('levelApplied')
+        .range(from, to) as unknown as PageResult<AppLevelRow>
+  );
+  return computeLevelDemand(apps, levels, offeredSet);
+}
+
+function loadLevelDemandRowsCached(
+  acceptingAyId: string,
+  acceptingAyCode: string
+): Promise<LevelDemandRow[]> {
+  return unstable_cache(
+    () => loadLevelDemandRowsUncached(acceptingAyId, acceptingAyCode),
+    ['sis-hub-level-demand', acceptingAyId],
+    { revalidate: 60, tags: ['levels', `sis:${acceptingAyCode}`] }
+  )();
 }

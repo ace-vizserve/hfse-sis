@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, CalendarRange, CheckCircle2 } from 'lucide-react';
+import { CalendarRange, CheckCircle2 } from 'lucide-react';
 
 import { NewAyButton } from '@/components/sis/ay-setup-wizard';
 import {
@@ -83,14 +82,6 @@ export default async function AySetupPage({
 
   return (
     <PageShell>
-      <Link
-        href="/sis"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" />
-        Dashboard
-      </Link>
-
       <SisPageHeader
         group="This year"
         title="Year setup."
