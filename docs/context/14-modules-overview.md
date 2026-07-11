@@ -38,7 +38,7 @@ The post-enrolment operational hub. Enrolled-student directory, cross-year acade
 
 ### SIS Admin — configuration surface (`/sis/*`)
 
-AY setup + rollover, school calendar, sections, teacher assignments, approvers, discount codes (accessible also to admissions role, KD #133), school config, users, template. The Year Setup Workbench at `/sis/ay-setup` (school_admin + superadmin) manages AY creation, early-bird toggle (KD #118), and the 4-step AY Readiness Pill (KD #109). **Operational modules consume config from here; they do not define it (KD #48).** Audience: school_admin, superadmin (registrar reaches only calendar, sections, sync-students, and discount codes via cross-links — not the hub or AY Setup).
+AY setup + rollover, school calendar, sections, teacher assignments, approvers, discount codes (accessible also to admissions role, KD #133), school config, staff directory (accounts + assignments, KD #154 — `/sis/admin/users` redirects here), template. The Year Setup Workbench at `/sis/ay-setup` (school_admin + superadmin) manages AY creation, early-bird toggle (KD #118), and the 4-step AY Readiness Pill (KD #109). **Operational modules consume config from here; they do not define it (KD #48).** Audience: school_admin, superadmin (registrar reaches only calendar, sections, staff, and discount codes via cross-links — not the hub or AY Setup).
 
 ### Academic Summary (under Records)
 

@@ -309,7 +309,10 @@ export function buildSyncPlan(
 // Deliberately narrow: does NOT detect withdrawals from other sections.
 // If a student moves from P1 Patience to P1 Obedience mid-year via admissions,
 // this helper enrols them in Obedience but leaves the Patience row untouched.
-// Bulk sync (POST /api/students/sync) handles that reconciliation.
+// Bulk sync (POST /api/students/sync) handles that reconciliation — kept as
+// an admin/script escape hatch; no UI trigger since the sync page was
+// removed (KD #154). Day-to-day reconciliation runs via the daily cron
+// (POST /api/sis/students/auto-sync) + the Records unsynced-students queue.
 // ──────────────────────────────────────────────────────────────────────────
 
 export type SyncOneResult = {

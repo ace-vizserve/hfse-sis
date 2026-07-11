@@ -129,6 +129,13 @@ type NavEntry = {
   group: 'Modules' | 'Cohorts' | 'Admin';
   icon: LucideIcon;
   shortcut?: string;
+  // Explicit role gate, bypassing the href→isRouteAllowed() lookup below.
+  // Only needed when an entry's href carries a query string that would
+  // otherwise resolve to the WRONG ROUTE_ACCESS row once the query is
+  // stripped for matching (see "Staff accounts" below) — every other entry
+  // should omit this and let isRouteAllowed() (the same gate the proxy +
+  // sidebar use) decide.
+  requiresRoles?: Role[];
 };
 
 const NAV_ENTRIES: NavEntry[] = [
@@ -337,19 +344,28 @@ const NAV_ENTRIES: NavEntry[] = [
     icon: Settings2Icon,
   },
   {
+    href: '/sis/admin/staff',
+    label: 'Staff — teaching assignments',
+    group: 'Admin',
+    icon: UsersIcon,
+  },
+  {
     // Staff accounts merged into /sis/admin/staff (SIS Admin IA Phase 4,
-    // KD #154) — deep-links straight to the Accounts cut. The query string
-    // makes isRouteAllowed() below fall through /sis/admin/staff's own
-    // ROUTE_ACCESS row (its prefix match requires an exact pathname or a
-    // trailing "/", which "?view=accounts" isn't) onto the broader `/sis`
-    // catch-all (school_admin/superadmin) — which happens to be exactly the
-    // visibility this entry wants, since the Accounts cut isn't for
-    // registrar. If that coincidence ever needs to be exact, check
-    // pathname-only (strip the query) before calling isRouteAllowed.
+    // KD #154) — deep-links straight to the Accounts cut. isRouteAllowed()
+    // is now called on the QUERY-STRIPPED pathname (see below), so on its
+    // own this href would resolve to /sis/admin/staff's own ROUTE_ACCESS row
+    // — registrar included. That's wrong for THIS entry: the Accounts cut
+    // isn't for registrar (account management is school_admin+/superadmin
+    // territory), even though the server-rendered page itself is registrar-
+    // tolerant (an unrecognised/unauthorized ?view= falls back to the
+    // Assignments tab, so a registrar who somehow lands here isn't broken —
+    // just redundant). Explicit `requiresRoles` pins the intended gate
+    // instead of relying on query-string-vs-ROUTE_ACCESS-row coincidence.
     href: '/sis/admin/staff?view=accounts',
     label: 'Staff accounts',
     group: 'Admin',
     icon: UsersIcon,
+    requiresRoles: ['school_admin', 'superadmin'],
   },
   {
     href: '/sis/admin/approvers',
@@ -363,7 +379,24 @@ const NAV_ENTRIES: NavEntry[] = [
     group: 'Admin',
     icon: Settings2Icon,
   },
+  {
+    href: '/sis/audit-log',
+    label: 'Audit Log',
+    group: 'Admin',
+    icon: ClipboardListIcon,
+  },
 ];
+
+// isRouteAllowed()'s ROUTE_ACCESS matching is pathname-only (exact match or
+// prefix + "/") — a raw href with a query string (e.g. "?view=accounts")
+// never matches its own route's row and silently falls through to a
+// broader/less-specific one. Strip the query before gating so every entry's
+// visibility reflects the route it actually points at, not an accident of
+// which catch-all rule the unstripped string happens to hit.
+function pathnameOnly(href: string): string {
+  const qIndex = href.indexOf('?');
+  return qIndex === -1 ? href : href.slice(0, qIndex);
+}
 
 // Roles that can search students via /api/sis/search.
 // Teachers need it for student navigation; admissions officers need it for
@@ -459,9 +492,17 @@ export function CommandPalette({ role }: { role: Role | null }) {
   const loading = searchEnabled && studentsQuery.isFetching;
 
   // Filter nav entries by role gate. isRouteAllowed lives in lib/auth/roles
-  // so the palette uses the SAME gate as the proxy + sidebar.
+  // so the palette uses the SAME gate as the proxy + sidebar — called on the
+  // query-stripped pathname (see pathnameOnly() above). An entry with an
+  // explicit `requiresRoles` (only "Staff accounts" today) bypasses the
+  // href lookup entirely.
   const visibleNav = React.useMemo(
-    () => NAV_ENTRIES.filter((entry) => isRouteAllowed(entry.href, role)),
+    () =>
+      NAV_ENTRIES.filter((entry) =>
+        entry.requiresRoles
+          ? !!role && entry.requiresRoles.includes(role)
+          : isRouteAllowed(pathnameOnly(entry.href), role)
+      ),
     [role]
   );
 

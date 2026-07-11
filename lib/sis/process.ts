@@ -6,7 +6,6 @@ import {
   STAGE_LABELS,
   STAGE_COLUMN_MAP,
   STAGE_TERMINAL_STATUS,
-  ENROLLED_PREREQ_STAGES,
   type StageKey,
 } from '@/lib/schemas/sis';
 import { WITHDRAWAL_REASON_LABELS } from '@/lib/schemas/enrolment';
@@ -53,19 +52,19 @@ function tag(ayCode: string): string[] {
 
 /**
  * Per-row scan over a documents row's slot status columns. Returns four
- * orthogonal action flags used by both the cohort aggregate
- * (loadLifecycleBlockerBucketsUncached) and the chase-queue loader
+ * orthogonal action flags used by the chase-queue loader
  * (lib/sis/document-chase-queue.ts). Overlap allowed — a row with both an
  * 'Uploaded' slot and a 'To follow' slot lights up multiple flags.
+ *
+ * (Historical note: this was also used by the now-deleted per-AY lifecycle
+ * blocker aggregate — see the comment above `isAwaitingStpCompletion` below.)
  *
  * Optional `options` parameter controls the expiring-soon threshold and
  * the revalidation discriminator:
  * - `todayMs`: current time in milliseconds (defaults to Date.now())
  * - `expiringSoonThresholdDays`: window in days (defaults to 30)
  * - `kindFilter.revalidation`: which statuses light up `hasRevalidation`:
- *   - 'both' (default): 'Rejected' OR 'Expired' — original behavior, used
- *     by the lifecycle aggregate so the cohort widget keeps a single
- *     "needs re-upload" bucket regardless of cause.
+ *   - 'both' (default): 'Rejected' OR 'Expired' — original behavior.
  *   - 'rejected': only 'Rejected' — admissions cares about parent uploads
  *     the registrar bounced back. 'Expired' is rare pre-enrolment and
  *     belongs to P-Files anyway.
@@ -199,18 +198,6 @@ export type StudentLifecycleSnapshot = {
   // missing AY-prefixed table, etc). The renderer can surface a soft
   // notice without tearing down the whole timeline.
   fetchWarnings: string[];
-};
-
-export type LifecycleBlockerBucket = {
-  key: string;
-  label: string;
-  description: string;
-  count: number;
-  severity: 'good' | 'warn' | 'bad' | 'info';
-  // String drill-target name consumed by the existing `lib/sis/drill.ts`
-  // framework (KD #56). Wave 3 wires the API route — this layer just
-  // declares what each bucket asks the drill router to render.
-  drillTarget: string;
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -860,7 +847,16 @@ export async function getStudentLifecycle(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Aggregate per-AY blocker counts — getLifecycleAggregate
+// STP completion predicate — kept for future reuse + regression coverage.
+//
+// The card-feeding aggregate this predicate originally fed
+// (`loadLifecycleAggregateUncached` / `getLifecycleAggregate`, plus the
+// `<LifecycleAggregateCard>` / `<LifecycleAggregateRow>` UI it rendered into)
+// was deleted as dead code during the SIS Admin IA final review (KD #154) —
+// zero consumers. `LifecycleBlockerBucket` and the per-AY blocker-bucket
+// aggregate went with it; the per-student lifecycle DRILL stack
+// (`lib/sis/drill.ts::LifecycleDrillTarget` + `LifecycleDrillSheet`) is
+// unrelated and stays.
 // ──────────────────────────────────────────────────────────────────────────
 
 /**
@@ -880,302 +876,4 @@ export function isAwaitingStpCompletion(
   if (!stpApplicationType) return false;
   const s = (stpApplicationStatus ?? '').trim();
   return s !== 'Approved' && s !== 'Rejected';
-}
-
-async function loadLifecycleAggregateUncached(
-  ayCode: string
-): Promise<LifecycleBlockerBucket[]> {
-  const prefix = prefixFor(ayCode);
-  const supabase = createServiceClient();
-
-  // We need the status row + every document slot status for the cohort, so
-  // pull both tables in parallel keyed by enroleeNumber.
-  const statusColumns = [
-    'enroleeNumber',
-    'applicationStatus',
-    'feeStatus',
-    'assessmentStatus',
-    'assessmentSchedule',
-    'contractStatus',
-    'classSection',
-    // Plus all stage status cols so we can detect ENROLLED_PREREQ_STAGES at terminal.
-    ...ENROLLED_PREREQ_STAGES.map((s) => STAGE_COLUMN_MAP[s].statusCol),
-  ];
-  // De-dupe (feeStatus + assessmentStatus + contractStatus already overlap with prereq columns).
-  const uniqStatusColumns = Array.from(new Set(statusColumns));
-
-  const docColumns = [
-    'enroleeNumber',
-    ...DOCUMENT_SLOTS.map((s) => s.statusCol),
-  ];
-
-  // Apps row — pull only the columns that drive bucket predicates today
-  // (`stpApplicationType` + `stpApplicationStatus` for the STP completion
-  // bucket). Add to this list when a future bucket needs another column
-  // off the apps table.
-  const appColumns = [
-    'enroleeNumber',
-    'stpApplicationType',
-    'stpApplicationStatus',
-  ];
-
-  const [statusRes, docsRes, appsRes] = await Promise.all([
-    supabase
-      .from(`${prefix}_enrolment_status`)
-      .select(uniqStatusColumns.join(', ')),
-    supabase
-      .from(`${prefix}_enrolment_documents`)
-      .select(docColumns.join(', ')),
-    supabase
-      .from(`${prefix}_enrolment_applications`)
-      .select(appColumns.join(', ')),
-  ]);
-
-  if (statusRes.error) {
-    console.warn(
-      '[sis/process] aggregate status fetch failed:',
-      statusRes.error.message
-    );
-    return [];
-  }
-  if (appsRes.error) {
-    console.warn(
-      '[sis/process] aggregate apps fetch failed:',
-      appsRes.error.message
-    );
-  }
-
-  type StatusRow = Record<string, string | null> & {
-    enroleeNumber: string | null;
-  };
-  type DocRow = Record<string, string | null> & {
-    enroleeNumber: string | null;
-  };
-  type AppRow = {
-    enroleeNumber: string | null;
-    stpApplicationType: string | null;
-    stpApplicationStatus: string | null;
-  };
-
-  const statusRows = ((statusRes.data ?? []) as unknown as StatusRow[]).filter(
-    (r) => !!r.enroleeNumber
-  );
-  const docRows = ((docsRes.data ?? []) as unknown as DocRow[]).filter(
-    (r) => !!r.enroleeNumber
-  );
-  const appRows = ((appsRes.data ?? []) as unknown as AppRow[]).filter(
-    (r) => !!r.enroleeNumber
-  );
-
-  const docsByEnrolee = new Map<string, DocRow>();
-  for (const d of docRows) {
-    if (d.enroleeNumber) docsByEnrolee.set(d.enroleeNumber, d);
-  }
-  const appsByEnrolee = new Map<string, AppRow>();
-  for (const a of appRows) {
-    if (a.enroleeNumber) appsByEnrolee.set(a.enroleeNumber, a);
-  }
-
-  let awaitingFeePayment = 0;
-  let awaitingDocRevalidation = 0;
-  let awaitingDocValidation = 0;
-  let awaitingPromisedDocs = 0; // NEW: any slot at 'To follow'
-  let awaitingStpCompletion = 0;
-  let awaitingAssessmentSchedule = 0;
-  let awaitingContractSignature = 0;
-  let missingClassAssignment = 0;
-  let ungatedToEnroll = 0;
-  let newApplications = 0;
-
-  for (const r of statusRows) {
-    const appStatus = (r.applicationStatus ?? '').trim();
-
-    // 1. Awaiting fee payment — feeStatus !== 'Paid' AND in active funnel.
-    if (
-      r.feeStatus !== 'Paid' &&
-      ['Submitted', 'Ongoing Verification', 'Processing'].includes(appStatus)
-    ) {
-      awaitingFeePayment += 1;
-    }
-
-    // 2. Awaiting document revalidation — any slot at 'Rejected' or 'Expired'.
-    //    Revalidation buckets the "registrar/system rejected, parent must re-upload"
-    //    population (severity bad).
-    // 3. Awaiting document validation — any slot at 'Uploaded' (parent uploaded,
-    //    registrar hasn't validated yet — only meaningful for non-expiring slots).
-    //    A row with both 'Uploaded' and 'Rejected' slots counts in BOTH buckets;
-    //    that's intentional — they're orthogonal action queues for the registrar.
-    // 3.5. Awaiting promised documents — any slot at 'To follow' (parent
-    //      acknowledged but file not yet sent).
-    const docs = docsByEnrolee.get(r.enroleeNumber!);
-    const docFlags = scanDocStatusForActionFlags(docs);
-    if (docFlags.hasRevalidation) awaitingDocRevalidation += 1;
-    if (docFlags.hasValidation) awaitingDocValidation += 1;
-    if (docFlags.hasPromised) awaitingPromisedDocs += 1;
-
-    // 4. Awaiting STP completion — the parent opted into the Singapore
-    //    Student Pass sub-flow (`stpApplicationType IS NOT NULL`) AND the
-    //    application itself hasn't reached a terminal outcome
-    //    (`stpApplicationStatus` not 'Approved' / 'Rejected'; null counts
-    //    as awaiting — declared but not progressed). Document-slot state is
-    //    deliberately NOT consulted: the 3 STP doc slots were removed from
-    //    DOCUMENT_SLOTS in migration 050 (KD #96 — parents upload those
-    //    files directly to ICA; the school never receives them). What the
-    //    SIS still tracks is the STP application status pair on the apps
-    //    row (KD #61). See docs/context/21-stp-application.md.
-    const appRow = appsByEnrolee.get(r.enroleeNumber!);
-    if (
-      isAwaitingStpCompletion(
-        appRow?.stpApplicationType ?? null,
-        appRow?.stpApplicationStatus ?? null
-      )
-    ) {
-      awaitingStpCompletion += 1;
-    }
-
-    // 5. Awaiting assessment schedule.
-    if (r.assessmentStatus === 'Pending' && !r.assessmentSchedule) {
-      awaitingAssessmentSchedule += 1;
-    }
-
-    // 6. Awaiting contract signature.
-    if (r.contractStatus === 'Generated' || r.contractStatus === 'Sent') {
-      awaitingContractSignature += 1;
-    }
-
-    // 7. Missing class assignment — enrolled but no section.
-    if (
-      (appStatus === 'Enrolled' || appStatus === 'Enrolled (Conditional)') &&
-      (!r.classSection || r.classSection.trim().length === 0)
-    ) {
-      missingClassAssignment += 1;
-    }
-
-    // 8. Ungated to enroll — all 5 prereqs at terminal but applicationStatus
-    //    is not 'Enrolled'. Positive signal — one click away.
-    const allPrereqsTerminal = ENROLLED_PREREQ_STAGES.every((s) => {
-      const col = STAGE_COLUMN_MAP[s].statusCol;
-      const terminal = STAGE_TERMINAL_STATUS[s];
-      return terminal && (r[col] ?? '').toString().trim() === terminal;
-    });
-    if (
-      allPrereqsTerminal &&
-      appStatus !== 'Enrolled' &&
-      appStatus !== 'Enrolled (Conditional)' &&
-      appStatus !== 'Cancelled' &&
-      appStatus !== 'Withdrawn'
-    ) {
-      ungatedToEnroll += 1;
-    }
-
-    // 9. New applications.
-    if (appStatus === 'Submitted') {
-      newApplications += 1;
-    }
-  }
-
-  const buckets: LifecycleBlockerBucket[] = [
-    {
-      key: 'awaiting-fee-payment',
-      label: 'Awaiting fee payment',
-      description:
-        'School fee has not been confirmed — enrolment cannot be finalised until payment is received.',
-      count: awaitingFeePayment,
-      severity: 'warn',
-      drillTarget: 'awaiting-fee-payment',
-    },
-    {
-      key: 'awaiting-document-revalidation',
-      label: 'Awaiting document revalidation',
-      description:
-        'One or more documents were rejected or have expired — the parent needs to re-upload before validation can proceed.',
-      count: awaitingDocRevalidation,
-      severity: 'bad',
-      drillTarget: 'awaiting-document-revalidation',
-    },
-    {
-      key: 'awaiting-document-validation',
-      label: 'Awaiting document validation',
-      description:
-        'Documents have been uploaded by the parent and are waiting for staff review and approval.',
-      count: awaitingDocValidation,
-      severity: 'warn',
-      drillTarget: 'awaiting-document-validation',
-    },
-    {
-      key: 'awaiting-promised-documents',
-      label: 'Awaiting promised documents',
-      description:
-        'Parent has committed to submitting these documents but they have not been received yet.',
-      count: awaitingPromisedDocs,
-      severity: 'warn',
-      drillTarget: 'awaiting-promised-documents',
-    },
-    {
-      key: 'awaiting-stp-completion',
-      label: 'Awaiting STP completion',
-      description:
-        'Student Pass application has been submitted to ICA and is still being processed.',
-      count: awaitingStpCompletion,
-      severity: 'warn',
-      drillTarget: 'awaiting-stp-completion',
-    },
-    {
-      key: 'awaiting-assessment-schedule',
-      label: 'Awaiting assessment schedule',
-      description:
-        'Entrance assessment has not yet been booked — a schedule must be set before the application can progress.',
-      count: awaitingAssessmentSchedule,
-      severity: 'info',
-      drillTarget: 'awaiting-assessment-schedule',
-    },
-    {
-      key: 'awaiting-contract-signature',
-      label: 'Awaiting contract signature',
-      description:
-        'Enrolment contract has been issued but not yet signed by the parent.',
-      count: awaitingContractSignature,
-      severity: 'info',
-      drillTarget: 'awaiting-contract-signature',
-    },
-    {
-      key: 'missing-class-assignment',
-      label: 'Missing class assignment',
-      description:
-        'Student has been enrolled but has not been placed in a class section yet — assign one from the enrolment record.',
-      count: missingClassAssignment,
-      severity: 'bad',
-      drillTarget: 'missing-class-assignment',
-    },
-    {
-      key: 'ungated-to-enroll',
-      label: 'Ready to enrol',
-      description:
-        'All requirements have been met — enrolment can be finalised for these applicants.',
-      count: ungatedToEnroll,
-      severity: 'good',
-      drillTarget: 'ungated-to-enroll',
-    },
-    {
-      key: 'new-applications',
-      label: 'New applications',
-      description:
-        'Recently submitted applications that have not yet been actioned by the admissions team.',
-      count: newApplications,
-      severity: 'info',
-      drillTarget: 'new-applications',
-    },
-  ];
-
-  return buckets;
-}
-
-export async function getLifecycleAggregate(
-  ayCode: string
-): Promise<LifecycleBlockerBucket[]> {
-  return unstable_cache(
-    () => loadLifecycleAggregateUncached(ayCode),
-    ['sis', 'lifecycle-aggregate', ayCode],
-    { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS }
-  )();
 }

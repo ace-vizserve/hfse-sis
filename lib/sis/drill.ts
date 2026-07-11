@@ -1089,9 +1089,24 @@ export function modulePrefixFor(slug: string): string {
 }
 
 // ─── Lifecycle aggregate drill ──────────────────────────────────────────────
-// Drives the LifecycleAggregateCard's 8 buckets. Predicates mirror
-// `lib/sis/process.ts::loadLifecycleAggregateUncached` exactly — each target's
-// loader applies the same filter that increments that bucket's count.
+// Originally fed the LifecycleAggregateCard's 8 buckets (SIS hub). That card
+// + its feeding aggregate (`lib/sis/process.ts::getLifecycleAggregate` /
+// `loadLifecycleAggregateUncached`) were deleted as dead code during the SIS
+// Admin IA final review (KD #154) — zero consumers.
+//
+// 4 targets are still UI-reachable via `<DocumentChaseQueueStrip>`
+// (components/sis/document-chase-queue-strip.tsx): 'awaiting-document-revalidation',
+// 'awaiting-document-validation', 'awaiting-promised-documents',
+// 'awaiting-expiring-documents'.
+//
+// The other 6 — 'awaiting-fee-payment', 'awaiting-assessment-schedule',
+// 'awaiting-contract-signature', 'missing-class-assignment',
+// 'ungated-to-enroll', 'new-applications' — have no UI trigger left. Kept in
+// the union + `app/api/sis/drill/[target]/route.ts` for API back-compat
+// (KD #56's unified drill-route contract) and because a future admissions
+// funnel widget is a plausible re-consumer; delete only alongside a
+// deliberate audit confirming no external/bookmarked callers hit
+// `/api/sis/drill/<target>` for these.
 
 export type LifecycleDrillTarget =
   | 'awaiting-fee-payment'

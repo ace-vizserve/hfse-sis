@@ -472,9 +472,12 @@ const SIS_NAV: NavSection[] = [
   {
     // Break-glass — superadmin by default; School Config + Audit Log are
     // school_admin+ per KD #39. Gates unchanged from the pre-regroup tree.
-    // "Users" was dropped from this group in the same pass that merges it
-    // into the Staff page (sub-project 2 Phase 4) — still reachable via the
-    // command palette / direct URL until that lands.
+    // "Users" has no entry here — user accounts were merged into the Staff
+    // page's Accounts cut (`/sis/admin/staff?view=accounts`, sub-project 2
+    // Phase 4 / KD #154). `/sis/admin/users` is now a redirect stub to that
+    // URL (kept superadmin-only so the gate fires before the redirect for
+    // any other role); reachable via the "Staff accounts" command-palette
+    // entry or the Staff row's Accounts tab, not a standalone nav item.
     label: 'Access & system',
     items: [
       {
