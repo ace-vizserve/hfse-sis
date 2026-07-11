@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { weightProfileFor } from '@/lib/sis/level-profiles';
+import {
+  LEVEL_WEIGHT_PROFILES,
+  weightProfileFor,
+} from '@/lib/sis/level-profiles';
 
 import {
   buildCannedCalendar,
@@ -160,11 +163,8 @@ export async function ensureTestStructure(
         if (subj.level_type !== lv.level_type) continue;
         const s = subjectByCode.get(subj.code);
         if (!s) continue;
-        const profile = weightProfileFor(lv.level_type) ?? {
-          ww: 0.3,
-          pt: 0.5,
-          qa: 0.2,
-        };
+        const profile =
+          weightProfileFor(lv.level_type) ?? LEVEL_WEIGHT_PROFILES.secondary;
         rows.push({
           academic_year_id: testAy.id,
           subject_id: s.id,

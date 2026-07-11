@@ -9,23 +9,44 @@ insert into public.academic_years (ay_code, label, is_current) values
 on conflict (ay_code) do nothing;
 
 -- ---------- Levels ----------
-insert into public.levels (code, label, level_type) values
-  ('YS-L', 'Youngstarters | Little Stars',     'preschool'),
-  ('YS-J', 'Youngstarters | Junior Stars',     'preschool'),
-  ('YS-S', 'Youngstarters | Senior Stars',     'preschool'),
-  ('P1',   'Primary One',                       'primary'),
-  ('P2',   'Primary Two',                       'primary'),
-  ('P3',   'Primary Three',                     'primary'),
-  ('P4',   'Primary Four',                      'primary'),
-  ('P5',   'Primary Five',                      'primary'),
-  ('P6',   'Primary Six',                       'primary'),
-  ('S1',   'Secondary One',                     'secondary'),
-  ('S2',   'Secondary Two',                     'secondary'),
-  ('S3',   'Secondary Three',                   'secondary'),
-  ('S4',   'Secondary Four',                    'secondary'),
-  ('CS1',  'Cambridge Secondary One (Year 8)',  'secondary'),
-  ('CS2',  'Cambridge Secondary Two (Year 9)',  'secondary')
+-- sort_order + is_core are NOT NULL as of migration 078 (Levels & Grade
+-- Progression) — sort_order has no column default, so a fresh install that
+-- omitted it here would 400 on this insert. is_core marks the permanent
+-- P1-P6/S1-S4 band (mirrors migration 078's backfill).
+insert into public.levels (code, label, level_type, sort_order, is_core) values
+  ('YS-L', 'Youngstarters | Little Stars',     'preschool',   1, false),
+  ('YS-J', 'Youngstarters | Junior Stars',     'preschool',   2, false),
+  ('YS-S', 'Youngstarters | Senior Stars',     'preschool',   3, false),
+  ('P1',   'Primary One',                       'primary',    4, true),
+  ('P2',   'Primary Two',                       'primary',    5, true),
+  ('P3',   'Primary Three',                     'primary',    6, true),
+  ('P4',   'Primary Four',                      'primary',    7, true),
+  ('P5',   'Primary Five',                      'primary',    8, true),
+  ('P6',   'Primary Six',                       'primary',    9, true),
+  ('S1',   'Secondary One',                     'secondary', 10, true),
+  ('S2',   'Secondary Two',                     'secondary', 11, true),
+  ('S3',   'Secondary Three',                   'secondary', 12, true),
+  ('S4',   'Secondary Four',                    'secondary', 13, true),
+  ('CS1',  'Cambridge Secondary One (Year 8)',  'secondary', 14, false),
+  ('CS2',  'Cambridge Secondary Two (Year 9)',  'secondary', 15, false)
 on conflict (code) do nothing;
+
+-- Seed the progression chain (mirrors migration 078's chain seed exactly).
+-- On a fresh install this is the only place next_level_id gets populated;
+-- on the shared/already-migrated project the insert above is a no-op
+-- (on conflict) and every row's next_level_id is already set by 078, so
+-- the `next_level_id is null` guard makes this safely idempotent either way.
+with chain(code, next_code) as (
+  values ('YS-L','YS-J'),('YS-J','YS-S'),('YS-S','P1'),
+         ('P1','P2'),('P2','P3'),('P3','P4'),('P4','P5'),('P5','P6'),('P6','S1'),
+         ('S1','S2'),('S2','S3'),('S3','S4'),
+         ('CS1','CS2')
+)
+update public.levels l
+set next_level_id = n.id
+from chain c
+join public.levels n on n.code = c.next_code
+where l.code = c.code and l.next_level_id is null;
 
 -- ---------- Subjects — Primary ----------
 -- Music / Arts / PE / Health / Christian Living are non-examinable per
