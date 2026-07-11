@@ -336,7 +336,21 @@ const NAV_ENTRIES: NavEntry[] = [
     group: 'Admin',
     icon: Settings2Icon,
   },
-  { href: '/sis/admin/users', label: 'Users', group: 'Admin', icon: UsersIcon },
+  {
+    // Staff accounts merged into /sis/admin/staff (SIS Admin IA Phase 4,
+    // KD #154) — deep-links straight to the Accounts cut. The query string
+    // makes isRouteAllowed() below fall through /sis/admin/staff's own
+    // ROUTE_ACCESS row (its prefix match requires an exact pathname or a
+    // trailing "/", which "?view=accounts" isn't) onto the broader `/sis`
+    // catch-all (school_admin/superadmin) — which happens to be exactly the
+    // visibility this entry wants, since the Accounts cut isn't for
+    // registrar. If that coincidence ever needs to be exact, check
+    // pathname-only (strip the query) before calling isRouteAllowed.
+    href: '/sis/admin/staff?view=accounts',
+    label: 'Staff accounts',
+    group: 'Admin',
+    icon: UsersIcon,
+  },
   {
     href: '/sis/admin/approvers',
     label: 'Approvers',

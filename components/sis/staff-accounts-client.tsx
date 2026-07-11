@@ -60,7 +60,7 @@ const ROLE_LABEL: Record<Role, string> = {
 
 function buildColumns(
   currentUserId: string,
-  isSuperadmin: boolean
+  canManage: boolean
 ): ColumnDef<AdminUserRow>[] {
   return [
     {
@@ -90,6 +90,7 @@ function buildColumns(
         <RoleSelect
           user={row.original}
           isSelf={row.original.id === currentUserId}
+          canManage={canManage}
         />
       ),
       filterFn: (row, _id, value) => {
@@ -176,7 +177,7 @@ function buildColumns(
       header: '',
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-2">
-          {isSuperadmin && (
+          {canManage && (
             <EditUserButton
               user={row.original}
               isSelf={row.original.id === currentUserId}
@@ -185,6 +186,7 @@ function buildColumns(
           <ToggleDisabledButton
             user={row.original}
             isSelf={row.original.id === currentUserId}
+            canManage={canManage}
           />
         </div>
       ),
@@ -196,7 +198,15 @@ function buildColumns(
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function RoleSelect({ user, isSelf }: { user: AdminUserRow; isSelf: boolean }) {
+function RoleSelect({
+  user,
+  isSelf,
+  canManage,
+}: {
+  user: AdminUserRow;
+  isSelf: boolean;
+  canManage: boolean;
+}) {
   const router = useRouter();
 
   const roleMutation = useMutation({
@@ -224,9 +234,18 @@ function RoleSelect({ user, isSelf }: { user: AdminUserRow; isSelf: boolean }) {
     <Select
       value={user.role ?? undefined}
       onValueChange={(v) => setRole(v as Role)}
-      disabled={busy || isSelf}
+      disabled={busy || isSelf || !canManage}
     >
-      <SelectTrigger className="h-8 w-[160px]">
+      <SelectTrigger
+        className="h-8 w-[160px]"
+        title={
+          !canManage
+            ? 'Only superadmins can change staff roles'
+            : isSelf
+              ? 'You cannot change your own role here'
+              : undefined
+        }
+      >
         <SelectValue placeholder="— no role —" />
       </SelectTrigger>
       <SelectContent>
@@ -243,9 +262,11 @@ function RoleSelect({ user, isSelf }: { user: AdminUserRow; isSelf: boolean }) {
 function ToggleDisabledButton({
   user,
   isSelf,
+  canManage,
 }: {
   user: AdminUserRow;
   isSelf: boolean;
+  canManage: boolean;
 }) {
   const router = useRouter();
 
@@ -276,10 +297,16 @@ function ToggleDisabledButton({
       type="button"
       size="sm"
       variant={user.disabled ? 'default' : 'destructive'}
-      disabled={busy || isSelf}
+      disabled={busy || isSelf || !canManage}
       onClick={toggleDisabled}
       className="gap-1.5"
-      title={isSelf ? 'You cannot disable your own account here' : undefined}
+      title={
+        !canManage
+          ? 'Only superadmins can enable or disable accounts'
+          : isSelf
+            ? 'You cannot disable your own account here'
+            : undefined
+      }
     >
       {busy ? (
         <Loader2 className="size-3.5 animate-spin" />
@@ -515,21 +542,32 @@ function EditUserDialog({
 
 // ─── Main client component ───────────────────────────────────────────────────
 
-export function UsersAdminClient({
+// Staff account directory — the Accounts cut of /sis/admin/staff (formerly
+// the standalone /sis/admin/users page, KD #87 direct-create-only semantics
+// unchanged). `canManage` is true for superadmin only — every mutating
+// route behind these actions (POST/PATCH /api/sis/admin/users/**) is
+// superadmin-gated server-side; school_admin sees the same directory but
+// every action renders disabled with a plain-English hint instead of being
+// omitted from the table, so the read-only view still shows what exists.
+export function StaffAccountsClient({
   users,
   currentUserId,
-  isSuperadmin,
+  canManage,
 }: {
   users: AdminUserRow[];
   currentUserId: string;
-  isSuperadmin: boolean;
+  canManage: boolean;
 }) {
   const [inviteOpen, setInviteOpen] = useState(false);
 
-  const columns = buildColumns(currentUserId, isSuperadmin);
+  const columns = buildColumns(currentUserId, canManage);
 
-  const toolbarTrailing = (
+  const toolbarTrailing = canManage ? (
     <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} />
+  ) : (
+    <p className="font-mono text-[11px] text-muted-foreground">
+      Read-only — ask a superadmin to add or edit accounts.
+    </p>
   );
 
   return (
@@ -573,10 +611,16 @@ export function UsersAdminClient({
       emptyState={{
         icon: Users,
         title: 'No staff users yet.',
-        cta: {
-          label: 'Invite user',
-          onClick: () => setInviteOpen(true),
-        },
+        ...(canManage
+          ? {
+              cta: {
+                label: 'Invite user',
+                onClick: () => setInviteOpen(true),
+              },
+            }
+          : {
+              body: 'Ask a superadmin to add the first staff account.',
+            }),
       }}
       emptyFilteredState={{
         title: 'No users match.',
@@ -654,20 +698,36 @@ function InviteUserDialog({
   }
 
   const createMutation = useMutation({
-    mutationFn: (vars: { email: string }) =>
+    mutationFn: (vars: { email: string; role: Role }) =>
       apiFetch(
         '/api/sis/admin/users',
         jsonInit('POST', {
           email: vars.email,
-          role,
+          role: vars.role,
           displayName: displayName.trim() || undefined,
           password,
         })
       ),
     onSuccess: (_data, vars) => {
-      toast.success(
-        `Account created for ${vars.email}. Share the password securely.`
-      );
+      // The "account + teacher assignment" job used to span two pages
+      // (KD #154 / SIS Admin IA Phase 4). When the new account is a
+      // teacher, point straight at the Assignments cut of this same page
+      // so the registrar/superadmin can finish the job in one visit.
+      if (vars.role === 'teacher') {
+        toast.success(
+          `Account created for ${vars.email}. Share the password securely.`,
+          {
+            action: {
+              label: 'Now assign their classes →',
+              onClick: () => router.push('/sis/admin/staff'),
+            },
+          }
+        );
+      } else {
+        toast.success(
+          `Account created for ${vars.email}. Share the password securely.`
+        );
+      }
       onOpenChange(false);
       resetForm();
       router.refresh();
@@ -688,7 +748,7 @@ function InviteUserDialog({
       toast.error('Password must be at least 8 characters');
       return;
     }
-    createMutation.mutate({ email: trimmedEmail });
+    createMutation.mutate({ email: trimmedEmail, role });
   }
 
   return (

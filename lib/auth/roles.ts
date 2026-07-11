@@ -647,6 +647,10 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
     prefix: '/sis/admin/school-config',
     allowed: ['school_admin', 'superadmin'],
   },
+  // /sis/admin/users is now a redirect stub → /sis/admin/staff?view=accounts
+  // (SIS Admin IA Phase 4, KD #154 — staff accounts merged into the staff
+  // directory). Kept superadmin-only so the gate still fires before the
+  // redirect for any role that isn't allowed to see the page at all.
   { prefix: '/sis/admin/users', allowed: ['superadmin'] },
   { prefix: '/sis/admin/settings', allowed: ['superadmin'] },
   {
