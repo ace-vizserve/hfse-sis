@@ -9,9 +9,10 @@ import {
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { DashboardHero } from '@/components/dashboard/dashboard-hero';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { StaffAccountsClient } from '@/components/sis/staff-accounts-client';
 import { StaffTable } from '@/components/sis/staff-table';
+import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardAction,
@@ -118,16 +119,18 @@ export default async function StaffPage({
         SIS Admin
       </Link>
 
-      <DashboardHero
-        eyebrow="SIS Admin · This year"
+      <SisPageHeader
+        group="This year"
         title="Staff."
         description="Everyone who works in the school — their accounts, roles, and what they teach."
-        badges={[
-          {
-            label: `${staffCount} people · ${teachingCount} teaching`,
-            tone: 'muted',
-          },
-        ]}
+        chips={
+          <Badge
+            variant="outline"
+            className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+          >
+            {staffCount} people · {teachingCount} teaching
+          </Badge>
+        }
       />
 
       {canSeeAccounts && (
