@@ -12,10 +12,20 @@ export default function Loading() {
         <Skeleton className="h-4 w-[32rem] max-w-full" />
       </header>
 
+      <Skeleton className="h-9 w-48 rounded-lg" />
+
       <div className="grid grid-cols-1 gap-4 @xl/main:grid-cols-3">
         {Array.from({ length: 3 }).map((_, i) => (
           <Skeleton key={i} className="h-28 rounded-xl" />
         ))}
+      </div>
+
+      {/* Shared by both Log (table rows) and Overview (chart cards) — the
+          view param isn't known at this Suspense boundary, so this shape
+          reads reasonably for either. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Skeleton className="h-64 rounded-xl" />
+        <Skeleton className="h-64 rounded-xl" />
       </div>
 
       <div className="space-y-2">

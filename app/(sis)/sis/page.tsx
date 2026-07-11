@@ -21,12 +21,12 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 // SIS Admin Hub — status + launch, not a menu (SIS Admin IA redesign, Phase
 // 2). Reachable only by school_admin + superadmin (guard below); the audit
-// BI tab that used to live behind `?view=audit` here moves to
-// `/sis/audit-log` in Phase 3 — a stale `?view=audit` link just renders this
-// hub in the meantime. The Organisation / Access / Related card grids and
-// the staffing + lifecycle cards were removed: their destinations are one
-// click away via the SIS sidebar (regrouped this phase) or, for staffing,
-// the Staff page itself.
+// BI tab that used to live behind `?view=audit` here was relocated to the
+// "Overview" view on `/sis/audit-log` in Phase 3 (a stale `?view=audit`
+// link just renders this hub, unaffected by the param). The Organisation /
+// Access / Related card grids and the staffing + lifecycle cards were
+// removed: their destinations are one click away via the SIS sidebar
+// (regrouped this phase) or, for staffing, the Staff page itself.
 export default async function SisAdminHub() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
