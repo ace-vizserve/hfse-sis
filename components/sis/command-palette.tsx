@@ -308,7 +308,7 @@ const NAV_ENTRIES: NavEntry[] = [
   },
   {
     href: '/sis/admin/template',
-    label: 'Class Template (Sections & Subjects)',
+    label: 'Structure Defaults (Sections & Subjects)',
     group: 'Admin',
     icon: GraduationCapIcon,
   },

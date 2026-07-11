@@ -414,7 +414,10 @@ const SIS_NAV: NavSection[] = [
     ],
   },
   {
-    label: 'Year Setup',
+    // Recurring, day-to-day work — the things a registrar or school_admin
+    // touches through the school year. Per-item requiresRoles preserved
+    // from the pre-regroup tree; registrar keeps every entry she had.
+    label: 'This year',
     items: [
       {
         href: '/sis/ay-setup',
@@ -436,16 +439,17 @@ const SIS_NAV: NavSection[] = [
         label: 'Staff',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
-    ],
-  },
-  {
-    label: 'Organisation',
-    items: [
       {
         href: '/sis/admin/discount-codes',
         label: 'Discount Codes',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
+    ],
+  },
+  {
+    // Once-a-year structural config — school_admin + superadmin only.
+    label: 'Structure',
+    items: [
       {
         href: '/sis/admin/levels',
         label: 'Grade Levels',
@@ -457,30 +461,27 @@ const SIS_NAV: NavSection[] = [
         requiresRoles: ['school_admin', 'superadmin'],
       },
       {
+        // Label-only rename (was "Class Template"); href unchanged. Full
+        // reframe of this surface is sub-project 3, out of scope here.
         href: '/sis/admin/template',
-        label: 'Class Template',
+        label: 'Structure Defaults',
         requiresRoles: ['school_admin', 'superadmin'],
       },
     ],
   },
   {
-    label: 'Access',
+    // Break-glass — superadmin by default; School Config + Audit Log are
+    // school_admin+ per KD #39. Gates unchanged from the pre-regroup tree.
+    // "Users" was dropped from this group in the same pass that merges it
+    // into the Staff page (sub-project 2 Phase 4) — still reachable via the
+    // command palette / direct URL until that lands.
+    label: 'Access & system',
     items: [
       {
         href: '/sis/admin/approvers',
         label: 'Approvers',
         requiresRoles: ['superadmin'],
       },
-      {
-        href: '/sis/admin/users',
-        label: 'Users',
-        requiresRoles: ['superadmin'],
-      },
-    ],
-  },
-  {
-    label: 'System',
-    items: [
       {
         href: '/sis/admin/school-config',
         label: 'School Config',
