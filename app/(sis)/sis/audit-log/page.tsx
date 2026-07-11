@@ -49,6 +49,11 @@ const SIS_AUDIT_ALLOWLIST = [
   'section.realphabetize',
   'assignment.create',
   'assignment.delete',
+  // Grade levels & progression (migration 078)
+  'level.create',
+  'level.update',
+  'level.delete',
+  'level.offering.toggle',
   // School calendar (/sis/calendar) — full trail incl. events + auto-seed
   'attendance.calendar.upsert',
   'attendance.calendar.delete',
