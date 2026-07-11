@@ -1,0 +1,198 @@
+import Link from 'next/link';
+
+import type { Role } from '@/lib/auth/roles';
+import { TABLE_COPY } from '@/lib/copy/data-table';
+import { cn } from '@/lib/utils';
+
+/**
+ * Staff directory presentational vocabulary — initial-tile avatars, role
+ * chips, assignment chips — shared by both cuts of `/sis/admin/staff`
+ * (Assignments' `StaffTable` + Accounts' `StaffAccountsClient`), per the SIS
+ * Admin visual pass Task V3
+ * (`docs/superpowers/specs/2026-07-11-sis-admin-visual-redesign.html`
+ * Screen 2). Solid tints only — no gradients on content, per the
+ * standing rule already established by Task V1/V2's `hub-stat.tsx` /
+ * `hub-quick-actions.tsx` tone maps. Presentation-only: none of these read
+ * or write data — callers still own their own queries/mutations.
+ */
+
+// ─── Avatar ───────────────────────────────────────────────────────────────
+
+// First letter of the first two whitespace-separated name parts (e.g.
+// "Maria T." → "MT", "Joann R." → "JR"). Single-word names fall back to
+// their first two characters; empty names render an em dash.
+export function staffInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '—';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+const AVATAR_SIZE_CLASS = {
+  8: 'size-8 text-[12px]',
+  9: 'size-9 text-[13px]',
+  10: 'size-10 text-[14px]',
+} as const;
+
+export function StaffAvatar({
+  name,
+  size = 9,
+  className,
+}: {
+  name: string;
+  size?: 8 | 9 | 10;
+  className?: string;
+}) {
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        // bg-brand-indigo/10 + text-brand-indigo (not the mockup's literal
+        // text-brand-navy) — brand-navy is a fixed near-black hex with no
+        // .dark override (app/globals.css), so navy text on a translucent
+        // tint would go low-contrast in dark mode. text-brand-indigo is the
+        // same "indigo" identity, already the established tone-map pairing
+        // for bg-brand-indigo/10 in hub-quick-actions.tsx (Task V1).
+        'flex shrink-0 items-center justify-center rounded-xl bg-brand-indigo/10 font-serif font-bold text-brand-indigo',
+        AVATAR_SIZE_CLASS[size],
+        className
+      )}
+    >
+      {staffInitials(name)}
+    </div>
+  );
+}
+
+// ─── Role chip ────────────────────────────────────────────────────────────
+
+// Tone recipes mirror hub-stat.tsx's already-shipped V1 map exactly
+// (bg-X/N + text-X for indigo/sky, bg-X/N + text-ink for mint/amber — the
+// lighter/brighter colors read poorly as their own text, so they fall back
+// to dark ink) rather than inventing a new palette for this pass.
+const ROLE_CHIP_TONE: Record<Role, string> = {
+  teacher: 'bg-brand-sky/15 text-brand-sky',
+  registrar: 'bg-brand-mint/25 text-ink',
+  school_admin: 'bg-brand-indigo/10 text-brand-indigo',
+  superadmin: 'bg-brand-indigo/10 text-brand-indigo',
+  'p-file': 'bg-muted text-muted-foreground',
+  admissions: 'bg-muted text-muted-foreground',
+};
+
+const ROLE_CHIP_LABEL: Record<Role, string> = {
+  teacher: 'Teacher',
+  registrar: 'Registrar',
+  school_admin: TABLE_COPY.schoolAdmin,
+  superadmin: 'Superadmin',
+  'p-file': 'P-Files',
+  admissions: 'Admissions',
+};
+
+export function RoleChip({
+  role,
+  className,
+}: {
+  role: Role | null;
+  className?: string;
+}) {
+  if (!role) {
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground',
+          className
+        )}
+      >
+        No role
+      </span>
+    );
+  }
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold',
+        ROLE_CHIP_TONE[role],
+        className
+      )}
+    >
+      {ROLE_CHIP_LABEL[role]}
+    </span>
+  );
+}
+
+// ─── Assignment chips ─────────────────────────────────────────────────────
+
+export type AssignmentChipFca = {
+  id: string;
+  name: string;
+  levelCode: string;
+} | null;
+
+export type AssignmentChipSubject = {
+  assignmentId: string;
+  subjectCode: string;
+  sectionId: string;
+  sectionName: string;
+  levelCode: string;
+};
+
+export function AssignmentChips({
+  fcaSection,
+  subjectAssignments,
+  maxSubjects = 3,
+  className,
+}: {
+  fcaSection: AssignmentChipFca;
+  subjectAssignments: AssignmentChipSubject[];
+  maxSubjects?: number;
+  className?: string;
+}) {
+  const hasAny = Boolean(fcaSection) || subjectAssignments.length > 0;
+  if (!hasAny) {
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center rounded-md border border-hairline bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground',
+          className
+        )}
+      >
+        No assignments
+      </span>
+    );
+  }
+
+  const visible = subjectAssignments.slice(0, maxSubjects);
+  const extra = subjectAssignments.length - visible.length;
+
+  return (
+    <div
+      className={cn('flex flex-wrap items-center justify-end gap-1', className)}
+    >
+      {fcaSection && (
+        <Link
+          href={`/sis/sections/${fcaSection.id}`}
+          onClick={(e) => e.stopPropagation()}
+          title={fcaSection.name}
+          className="inline-flex items-center rounded-md border border-brand-amber/30 bg-brand-amber/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-brand-amber transition-opacity hover:opacity-80"
+        >
+          FCA&thinsp;·&thinsp;{fcaSection.name}
+        </Link>
+      )}
+      {visible.map((a) => (
+        <Link
+          key={a.assignmentId}
+          href={`/sis/sections/${a.sectionId}`}
+          onClick={(e) => e.stopPropagation()}
+          title={a.sectionName}
+          className="inline-flex items-center rounded-md border border-hairline bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-opacity hover:opacity-80"
+        >
+          {a.subjectCode} {a.levelCode}
+        </Link>
+      ))}
+      {extra > 0 && (
+        <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+          +{extra} more
+        </span>
+      )}
+    </div>
+  );
+}

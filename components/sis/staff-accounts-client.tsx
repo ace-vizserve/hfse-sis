@@ -19,6 +19,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { StaffAvatar } from '@/components/sis/staff-visuals';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
@@ -71,12 +72,15 @@ function buildColumns(
       ),
       // No identifier link — no canonical user-detail page
       cell: ({ row }) => (
-        <div>
-          <div className="font-medium text-foreground">
-            {row.original.display_name}
-          </div>
-          <div className="font-mono text-[11px] text-muted-foreground">
-            {row.original.email}
+        <div className="flex items-center gap-3">
+          <StaffAvatar name={row.original.display_name} />
+          <div className="min-w-0">
+            <div className="truncate font-medium text-foreground">
+              {row.original.display_name}
+            </div>
+            <div className="truncate font-mono text-[11px] text-muted-foreground">
+              {row.original.email}
+            </div>
           </div>
         </div>
       ),

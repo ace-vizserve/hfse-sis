@@ -9,6 +9,7 @@ import {
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { StaffAccountsClient } from '@/components/sis/staff-accounts-client';
 import { StaffTable } from '@/components/sis/staff-table';
 import {
@@ -21,6 +22,7 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { getStaffCount, getTeacherList } from '@/lib/auth/staff-list';
 import { getSectionStaffingCoverage } from '@/lib/sis/dashboard';
 import { loadStaffAssignments } from '@/lib/sis/staff';
 import { listStaffUsers } from '@/lib/sis/users/queries';
@@ -72,8 +74,11 @@ export default async function StaffPage({
 
   // Only fetch what the active cut needs — mirrors the audit-log Overview |
   // Log split (Phase 3) so switching tabs never pays for the other cut's
-  // queries.
-  const [assignments, accounts] = await Promise.all([
+  // queries. staffCount + teacherList are fetched unconditionally for the
+  // header chip + tab counts (Task V3) — both are cheap: they share the
+  // single 5-min-cached listUsers() call underlying every helper in
+  // lib/auth/staff-list.ts, so this adds no new backend round-trip.
+  const [assignments, accounts, staffCount, teacherList] = await Promise.all([
     view === 'assignments'
       ? Promise.all([
           loadStaffAssignments(ayCode),
@@ -81,6 +86,8 @@ export default async function StaffPage({
         ])
       : null,
     view === 'accounts' ? listStaffUsers() : null,
+    getStaffCount(),
+    getTeacherList(),
   ]);
 
   const [rows, coverage] = assignments ?? [[], null];
@@ -89,6 +96,17 @@ export default async function StaffPage({
   const sectionsMissingFca = coverage
     ? coverage.total - coverage.withAdviser
     : 0;
+
+  // Header chip + tab counts (Task V3). "Teaching" = active role='teacher'
+  // accounts (getTeacherList excludes disabled by default — same population
+  // as totalTeachers above, whichever cut loaded it). Accounts-tab count
+  // prefers the real loaded list; when Assignments is the active cut (so
+  // `accounts` is null) it falls back to the free staffCount — an
+  // approximation (staffCount excludes disabled accounts; the live
+  // Accounts-cut count includes them), acceptable per the task's own
+  // guidance since it avoids a second query on every Assignments load.
+  const teachingCount = teacherList.length;
+  const accountsTabCount = accounts ? accounts.length : staffCount;
 
   return (
     <PageShell>
@@ -100,28 +118,42 @@ export default async function StaffPage({
         SIS Admin
       </Link>
 
-      <header className="space-y-3">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          SIS Admin · Staff
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          Staff.
-        </h1>
-        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          {canSeeAccounts
-            ? `Everyone who works at HFSE — their accounts, roles, and what they teach for ${ayCode}.`
-            : `Form class adviser and subject teaching assignments for ${ayCode}. Click a teacher row to edit their assignments.`}
-        </p>
-      </header>
+      <DashboardHero
+        eyebrow="SIS Admin · This year"
+        title="Staff."
+        description="Everyone who works in the school — their accounts, roles, and what they teach."
+        badges={[
+          {
+            label: `${staffCount} people · ${teachingCount} teaching`,
+            tone: 'muted',
+          },
+        ]}
+      />
 
       {canSeeAccounts && (
         <Tabs value={view} className="w-full">
           <TabsList variant="segmented">
             <TabsTrigger value="assignments" asChild>
-              <Link href="/sis/admin/staff">Teaching assignments</Link>
+              <Link
+                href="/sis/admin/staff"
+                className="inline-flex items-center gap-1.5"
+              >
+                Teaching assignments
+                <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                  {teachingCount}
+                </span>
+              </Link>
             </TabsTrigger>
             <TabsTrigger value="accounts" asChild>
-              <Link href="/sis/admin/staff?view=accounts">Accounts</Link>
+              <Link
+                href="/sis/admin/staff?view=accounts"
+                className="inline-flex items-center gap-1.5"
+              >
+                Accounts
+                <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                  {accountsTabCount}
+                </span>
+              </Link>
             </TabsTrigger>
           </TabsList>
         </Tabs>

@@ -2,14 +2,17 @@
 
 import type { ColumnDef } from '@tanstack/react-table';
 import { ChevronRight } from 'lucide-react';
-import Link from 'next/link';
 import { useState } from 'react';
 
 import {
   StaffAssignmentSheet,
   type StaffSheetTeacher,
 } from '@/components/sis/staff-assignment-sheet';
-import { Badge } from '@/components/ui/badge';
+import {
+  AssignmentChips,
+  RoleChip,
+  StaffAvatar,
+} from '@/components/sis/staff-visuals';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -50,67 +53,45 @@ export function StaffTable({
         <SortableHeader column={column}>Teacher</SortableHeader>
       ),
       cell: ({ row }) => (
-        <div>
-          <p
-            className={
-              row.original.disabled
-                ? 'text-sm text-muted-foreground line-through'
-                : 'text-sm font-medium text-foreground'
-            }
-          >
-            {row.original.name}
-          </p>
-          <p className="text-xs text-muted-foreground">{row.original.email}</p>
+        <div className="flex items-center gap-3">
+          <StaffAvatar name={row.original.name} className="opacity-90" />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p
+                className={
+                  row.original.disabled
+                    ? 'truncate text-sm text-muted-foreground line-through'
+                    : 'truncate text-sm font-medium text-foreground'
+                }
+              >
+                {row.original.name}
+              </p>
+              {/* Every row in this cut is role='teacher' by construction —
+                  loadStaffAssignments only ever pulls from getTeacherList()
+                  (lib/sis/staff.ts), which filters role === 'teacher'. */}
+              <RoleChip role="teacher" />
+            </div>
+            <p className="truncate font-mono text-[11px] text-muted-foreground">
+              {row.original.email}
+            </p>
+          </div>
         </div>
       ),
     },
     {
-      id: 'fcaSection',
-      header: 'FCA Section',
-      cell: ({ row }) => {
-        const fca = row.original.fcaSection;
-        if (!fca)
-          return <span className="text-sm text-muted-foreground">—</span>;
-        return (
-          <Link
-            href={`/sis/sections/${fca.id}`}
-            className="transition-opacity hover:opacity-80"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Badge variant="secondary">{fca.name}</Badge>
-          </Link>
-        );
-      },
-    },
-    {
-      id: 'subjectAssignments',
-      header: 'Subjects Taught',
-      cell: ({ row }) => {
-        const subs = row.original.subjectAssignments;
-        if (subs.length === 0)
-          return <span className="text-sm text-muted-foreground">—</span>;
-        const visible = subs.slice(0, 3);
-        const extra = subs.length - 3;
-        return (
-          <div className="flex flex-wrap gap-1">
-            {visible.map((a) => (
-              <Link
-                key={a.assignmentId}
-                href={`/sis/sections/${a.sectionId}`}
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center rounded-md border border-hairline bg-muted px-2 py-0.5 font-mono text-[11px] transition-opacity hover:opacity-80"
-              >
-                {a.subjectCode}&thinsp;·&thinsp;{a.sectionName}
-              </Link>
-            ))}
-            {extra > 0 && (
-              <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                +{extra} more
-              </span>
-            )}
-          </div>
-        );
-      },
+      // Merged FCA-section + subject-assignments into one chip-set column
+      // (Task V3 — the mockup's single "assign" area). Both source fields
+      // stay on StaffRow unchanged; statusTabs predicates below still read
+      // row.original.fcaSection / .subjectAssignments directly, unaffected
+      // by this column's presentation.
+      id: 'assignments',
+      header: 'Assignments',
+      cell: ({ row }) => (
+        <AssignmentChips
+          fcaSection={row.original.fcaSection}
+          subjectAssignments={row.original.subjectAssignments}
+        />
+      ),
     },
     {
       id: 'load',
@@ -225,7 +206,7 @@ export function StaffTable({
         hidePagination={rows.length <= 20}
         emptyState={{
           title: 'No teachers found',
-          body: 'Add staff accounts via Users.',
+          body: 'Add staff accounts from the Accounts tab.',
         }}
         emptyFilteredState={{
           title: 'No teachers match.',
