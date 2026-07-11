@@ -16,6 +16,9 @@ import {
   EVENT_CATEGORY_LEGEND_COLOR,
 } from '@/components/attendance/calendar/calendar-cell';
 import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
+// Same date-box anatomy as the hub's "Coming up" card and the List view —
+// one visual grammar for "a specific date" across the calendar module.
+import { DateBox } from '@/components/sis/hub-upcoming-events-card';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -166,9 +169,12 @@ export function DayActionSheet({
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             School calendar
           </p>
-          <SheetTitle className="leading-snug">
-            {iso ? formatIso(iso) : '—'}
-          </SheetTitle>
+          <div className="flex items-center gap-3">
+            {iso && <DateBox iso={iso} />}
+            <SheetTitle className="leading-snug">
+              {iso ? formatIso(iso) : '—'}
+            </SheetTitle>
+          </div>
         </SheetHeader>
 
         {/* Body — scrollable */}

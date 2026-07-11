@@ -8,7 +8,9 @@
 //                 + "+ Add" DropdownMenu (primary CTA, one per view).
 //
 // Design system: §4.1 shadcn primitives (Select + Tabs); §9.2 one default Button
-// per view (the "+ Add" button); Filters = outline; Tabs = default variant;
+// per view (the "+ Add" button); Filters = outline; Tabs = segmented variant
+// (the audit-log / staff-directory idiom for a view switcher — see
+// app/(sis)/sis/audit-log/page.tsx and app/(sis)/sis/admin/staff/page.tsx);
 // Badge §9.3 secondary count pill. Tokens only; no raw hex.
 
 import { CalendarPlus, ChevronDown, ListFilter } from 'lucide-react';
@@ -120,7 +122,7 @@ export function CalendarToolbar({
         </Select>
 
         <Tabs value={view} onValueChange={(v) => onView(v as CalendarView)}>
-          <TabsList variant="default" aria-label="Calendar view">
+          <TabsList variant="segmented" aria-label="Calendar view">
             {VIEWS.map((v) => (
               <TabsTrigger key={v} value={v}>
                 {VIEW_LABELS[v]}

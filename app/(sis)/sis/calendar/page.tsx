@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation';
 
 import { CalendarAdminClient } from '@/components/attendance/calendar/calendar-admin-client';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -123,18 +125,34 @@ export default async function SisCalendarPage({
         group="This year"
         title="School days & events."
         description="Mark school days, closures, and calendar events per term — the attendance grid follows this calendar."
+        chips={
+          ay && (
+            <Badge
+              variant="outline"
+              className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+            >
+              {ay.ay_code}
+            </Badge>
+          )
+        }
       />
 
       {terms.length === 0 ? (
         <Card className="items-center py-12 text-center">
           <CardContent className="flex flex-col items-center gap-3">
-            <CalendarDays className="size-6 text-muted-foreground" />
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-b from-accent/20 to-accent/5 text-accent-foreground ring-1 ring-inset ring-accent/30">
+              <CalendarDays className="size-5" aria-hidden />
+            </span>
             <div className="font-serif text-lg font-semibold text-foreground">
               No terms configured
             </div>
-            <p className="text-sm text-muted-foreground">
-              Seed terms for the current academic year first (AY Setup).
+            <p className="max-w-sm text-sm text-muted-foreground">
+              Seed terms for the current academic year first, then come back
+              here to mark school days and events.
             </p>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/sis/ay-setup">Go to AY Setup</Link>
+            </Button>
           </CardContent>
         </Card>
       ) : dated.length === 0 ? (

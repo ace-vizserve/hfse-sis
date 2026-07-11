@@ -29,7 +29,11 @@ function isEventCategory(value: string): value is EventCategory {
 // `start_date`/`end_date` are date-only SGT calendar strings (KD #32) —
 // parsed as UTC components so the displayed day/month never shift with the
 // rendering machine's local timezone.
-function DateBox({ iso }: { iso: string }) {
+//
+// Exported so other calendar surfaces (e.g. the school-calendar List view)
+// reuse the exact same date-box anatomy instead of hand-rolling a lookalike —
+// one visual source for "serif day / mono month" across the module.
+export function DateBox({ iso }: { iso: string }) {
   const [, m, d] = iso.split('-').map(Number);
   const day = d;
   const month = new Date(Date.UTC(2000, (m ?? 1) - 1, 1))

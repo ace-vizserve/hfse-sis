@@ -320,6 +320,9 @@ export function EventEditorDialog({
       <Dialog open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              School calendar
+            </p>
             <DialogTitle className="font-serif text-[18px] font-semibold tracking-tight">
               {isEdit ? 'Edit event' : 'Add to the calendar'}
             </DialogTitle>

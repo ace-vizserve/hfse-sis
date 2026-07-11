@@ -25,6 +25,12 @@ import {
   ChartLegendChip,
   type ChartLegendChipColor,
 } from '@/components/dashboard/chart-legend-chip';
+// Reused verbatim from the SIS Admin hub's "Coming up" card — same date-box
+// anatomy (serif day / mono month) for every calendar surface, per the
+// module vocabulary in docs/superpowers/specs/2026-07-11-sis-admin-visual-
+// redesign.html. Single source: change the box once, both surfaces update.
+import { DateBox } from '@/components/sis/hub-upcoming-events-card';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -50,6 +56,8 @@ type ListRow = {
   iso: string;
   /** Human-readable date, e.g. "Mon, 15 Jan 2026" */
   dateLabel: string;
+  /** Short weekday, e.g. "Mon" — paired with the DateBox in the Date cell. */
+  weekday: string;
   kind: 'closure' | 'event';
   typeLabel: string;
   /** Gradient color keyed from the same map the calendar grid cells use (§10.2). */
@@ -97,6 +105,18 @@ function formatReadableDate(iso: string): string {
   });
 }
 
+/** yyyy-MM-dd → "Mon" (local, tz-safe — no UTC shift). Pairs with DateBox,
+ *  which already carries the day number + month. */
+function formatWeekday(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return '';
+  return new Date(
+    Number(m[1]),
+    Number(m[2]) - 1,
+    Number(m[3])
+  ).toLocaleDateString('en-SG', { weekday: 'short' });
+}
+
 // ─── Row builders ─────────────────────────────────────────────────────────────
 
 function buildClosureRows(days: SchoolCalendarRow[]): ListRow[] {
@@ -115,6 +135,7 @@ function buildClosureRows(days: SchoolCalendarRow[]): ListRow[] {
       return {
         iso: d.date,
         dateLabel: formatReadableDate(d.date),
+        weekday: formatWeekday(d.date),
         kind: 'closure',
         typeLabel: CLOSED_REASON_LABELS[reason],
         typeColor: DAY_TYPE_LEGEND_COLOR[d.dayType],
@@ -129,6 +150,7 @@ function buildEventRows(events: CalendarEventRow[]): ListRow[] {
     (e): ListRow => ({
       iso: e.startDate,
       dateLabel: formatReadableDate(e.startDate),
+      weekday: formatWeekday(e.startDate),
       kind: 'event',
       typeLabel: EVENT_CATEGORY_LABELS[e.category],
       typeColor: EVENT_CATEGORY_LEGEND_COLOR[e.category],
@@ -150,10 +172,16 @@ const DATA_COLUMNS: ColumnDef<ListRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Date</SortableHeader>
     ),
+    // Date-box anatomy (serif day / mono month) — same component as the SIS
+    // Admin hub's "Coming up" card, so a date reads identically everywhere
+    // in the calendar module (§10.2-style single source for the box itself).
     cell: ({ row }) => (
-      <span className="font-mono text-[12px] tabular-nums text-foreground">
-        {row.original.dateLabel}
-      </span>
+      <div className="flex items-center gap-2.5">
+        <DateBox iso={row.original.iso} />
+        <span className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+          {row.original.weekday}
+        </span>
+      </div>
     ),
     // iso yyyy-MM-dd strings sort lexicographically == chronologically.
     sortingFn: 'alphanumeric',
@@ -182,10 +210,14 @@ const DATA_COLUMNS: ColumnDef<ListRow>[] = [
     id: 'level',
     accessorFn: (row) => AUDIENCE_LABELS[row.level],
     header: 'Level',
+    // Audience chip — plain neutral Badge (§9.3 "informational/neutral"
+    // recipe), pairing with the Type column's colored ChartLegendChip so a
+    // row reads as two distinct affordances rather than a pill next to
+    // plain text.
     cell: ({ row }) => (
-      <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+      <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
         {AUDIENCE_LABELS[row.original.level]}
-      </span>
+      </Badge>
     ),
   },
 ];
