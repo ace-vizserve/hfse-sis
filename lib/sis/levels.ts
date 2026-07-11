@@ -1,9 +1,15 @@
 // NOTE: this module is imported by both server code (RSC loaders, API
 // routes) and 'use client' components (e.g. records-drill-sheet.tsx, for
 // compareLevelLabels) — never add a top-level `import 'server-only'` guard
-// here. The DB-backed loaders below rely on tree-shaking to drop
-// unstable_cache/createServiceClient from client bundles that never call
-// them (same pattern as lib/sis/dashboard.ts).
+// here. The DB-backed loaders below import `unstable_cache` from
+// `next/cache`, which is safe to include in a client bundle (Next ships it
+// as a plain function that only throws if actually *called* outside a
+// server context, not on import) — client components here only ever import
+// the pure label helpers above and never call `getLevelRows`/
+// `getOfferedLevelIds`, so the unreachable branch never executes. Same
+// pattern as lib/sis/dashboard.ts. Note there is no `createServiceClient`
+// (or any Supabase client construction) in this file at all — every loader
+// below takes an already-constructed client as a parameter.
 import { unstable_cache } from 'next/cache';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -191,7 +197,8 @@ async function getLevelRowsUncached(
   const { data, error } = await service
     .from('levels')
     .select('id, code, label, level_type, sort_order, next_level_id, is_core')
-    .order('sort_order', { ascending: true });
+    .order('sort_order', { ascending: true })
+    .order('code', { ascending: true });
 
   if (error) throw error;
 

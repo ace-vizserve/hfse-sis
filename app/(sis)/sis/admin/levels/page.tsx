@@ -16,6 +16,7 @@ import {
   computeLevelDemand,
   type LevelDemandRow,
 } from '@/lib/sis/level-demand';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import { LevelsManagerClient } from '@/components/sis/levels-manager-client';
 
 // Grade Levels admin — Levels & Grade Progression, Phase 3 (migration 078).
@@ -95,19 +96,26 @@ export default async function GradeLevelsPage({
 
       const admissions = createAdmissionsClient();
       const prefix = `ay${acceptingAy.ay_code.replace(/^AY/i, '').toLowerCase()}`;
-      const { data: apps, error: appsErr } = await admissions
-        .from(`${prefix}_enrolment_applications`)
-        .select('levelApplied');
-      if (appsErr) {
+      type AppLevelRow = { levelApplied: string | null };
+      // Cast required: Supabase can't infer row shapes for dynamic table
+      // names (same pattern as lib/sis/cohorts.ts).
+      type PageResult<T> = PromiseLike<{
+        data: T[] | null;
+        error: { message: string } | null;
+      }>;
+      try {
+        const apps = await fetchAllPages<AppLevelRow>(
+          (from, to) =>
+            admissions
+              .from(`${prefix}_enrolment_applications`)
+              .select('levelApplied')
+              .range(from, to) as unknown as PageResult<AppLevelRow>
+        );
+        demandRows = computeLevelDemand(apps, levels, acceptingOfferedSet);
+      } catch (err) {
         console.warn(
           '[sis/admin/levels] demand fetch failed:',
-          appsErr.message
-        );
-      } else {
-        demandRows = computeLevelDemand(
-          (apps ?? []) as Array<{ levelApplied: string | null }>,
-          levels,
-          acceptingOfferedSet
+          err instanceof Error ? err.message : err
         );
       }
     }
