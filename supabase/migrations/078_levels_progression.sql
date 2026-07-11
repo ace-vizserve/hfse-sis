@@ -58,6 +58,11 @@ create table if not exists public.ay_level_offerings (
 -- only; the deny policies fail closed if a cookie-bound client ever tries.
 alter table public.ay_level_offerings enable row level security;
 
+-- Insurance: an earlier draft of this migration created a permissive
+-- `ay_level_offerings_read` policy; drop it in case any environment ran it
+-- (permissive policies OR together and would silently defeat the role gate).
+drop policy if exists ay_level_offerings_read on public.ay_level_offerings;
+
 drop policy if exists ay_level_offerings_role_read on public.ay_level_offerings;
 create policy ay_level_offerings_role_read
   on public.ay_level_offerings for select to authenticated
