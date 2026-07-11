@@ -7,6 +7,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { LEVEL_WEIGHT_PROFILES } from '@/lib/sis/level-profiles';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -46,9 +47,14 @@ export function SubjectConfigEditDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [ww, setWw] = useState('40');
-  const [pt, setPt] = useState('40');
-  const [qa, setQa] = useState('20');
+  // No level is in context before a draft loads (the dialog only edits
+  // existing cells — `draft` is always non-null by the time inputs render),
+  // so the pre-load placeholder falls back to the Primary profile — the
+  // same 40/40/20 default as before, now sourced from the shared map.
+  const defaultProfile = LEVEL_WEIGHT_PROFILES.primary;
+  const [ww, setWw] = useState(String(defaultProfile.ww * 100));
+  const [pt, setPt] = useState(String(defaultProfile.pt * 100));
+  const [qa, setQa] = useState(String(defaultProfile.qa * 100));
   const [wwSlots, setWwSlots] = useState('5');
   const [ptSlots, setPtSlots] = useState('5');
   const [qaMax, setQaMax] = useState('30');

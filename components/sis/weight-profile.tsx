@@ -1,5 +1,6 @@
 'use client';
 
+import { LEVEL_WEIGHT_PROFILES } from '@/lib/sis/level-profiles';
 import { cn } from '@/lib/utils';
 
 // Shared weight-profile classification + chip styling. Used by both the
@@ -18,14 +19,33 @@ export type WeightProfile = 'primary' | 'secondary' | 'custom' | 'invalid';
 // Classifies (ww, pt, qa) integer percentages (0-100) into a profile.
 // Sum must be exactly 100 — `'invalid'` covers any drift, including the
 // rare case where a partial DB write left an unbalanced row behind.
+// Percentage (0-100) equivalents of `LEVEL_WEIGHT_PROFILES`, derived once
+// at module load so the classifier never drifts from the shared source.
+const PRIMARY_PCT = {
+  ww: LEVEL_WEIGHT_PROFILES.primary.ww * 100,
+  pt: LEVEL_WEIGHT_PROFILES.primary.pt * 100,
+  qa: LEVEL_WEIGHT_PROFILES.primary.qa * 100,
+};
+const SECONDARY_PCT = {
+  ww: LEVEL_WEIGHT_PROFILES.secondary.ww * 100,
+  pt: LEVEL_WEIGHT_PROFILES.secondary.pt * 100,
+  qa: LEVEL_WEIGHT_PROFILES.secondary.qa * 100,
+};
+
 export function classifyProfile(
   ww: number,
   pt: number,
   qa: number
 ): WeightProfile {
   if (ww + pt + qa !== 100) return 'invalid';
-  if (ww === 40 && pt === 40 && qa === 20) return 'primary';
-  if (ww === 30 && pt === 50 && qa === 20) return 'secondary';
+  if (ww === PRIMARY_PCT.ww && pt === PRIMARY_PCT.pt && qa === PRIMARY_PCT.qa)
+    return 'primary';
+  if (
+    ww === SECONDARY_PCT.ww &&
+    pt === SECONDARY_PCT.pt &&
+    qa === SECONDARY_PCT.qa
+  )
+    return 'secondary';
   return 'custom';
 }
 

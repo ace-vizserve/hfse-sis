@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { weightProfileFor } from '@/lib/sis/level-profiles';
+
 import {
   buildCannedCalendar,
   buildCannedEvents,
@@ -158,13 +160,18 @@ export async function ensureTestStructure(
         if (subj.level_type !== lv.level_type) continue;
         const s = subjectByCode.get(subj.code);
         if (!s) continue;
+        const profile = weightProfileFor(lv.level_type) ?? {
+          ww: 0.3,
+          pt: 0.5,
+          qa: 0.2,
+        };
         rows.push({
           academic_year_id: testAy.id,
           subject_id: s.id,
           level_id: lv.id,
-          ww_weight: lv.level_type === 'primary' ? 0.4 : 0.3,
-          pt_weight: lv.level_type === 'primary' ? 0.4 : 0.5,
-          qa_weight: 0.2,
+          ww_weight: profile.ww,
+          pt_weight: profile.pt,
+          qa_weight: profile.qa,
           ww_max_slots: 5,
           pt_max_slots: 5,
         });
