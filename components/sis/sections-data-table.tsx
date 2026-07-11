@@ -113,7 +113,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Adviser</SortableHeader>
       ),
-      cell: ({ row }) => <AdviserCell name={row.original.fcaName} />,
+      cell: ({ row }) => <AdviserCell name={row.original.fcaName} showAvatar />,
     },
     {
       accessorKey: 'active',

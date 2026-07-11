@@ -121,8 +121,16 @@ export function SectionRosterTable({
               <EnrollmentStatusBadge status={r.enrollmentStatus} />
               {r.enrollmentStatus === 'late_enrollee' &&
                 r.lateEnrolleTermNumber != null && (
+                  // A non-null late_enrollee_term_number IS the registrar's
+                  // explicit override by definition (KD #111 — the
+                  // date-derived path only fires when it's null), so every
+                  // suffix rendered here is a corrected value. Wording
+                  // matches the Records student-detail placement row.
                   <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-brand-amber">
                     · T{r.lateEnrolleTermNumber}
+                    <span className="ml-1 text-muted-foreground">
+                      (corrected)
+                    </span>
                   </span>
                 )}
             </span>
