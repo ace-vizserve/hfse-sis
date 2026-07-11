@@ -52,10 +52,29 @@ create table if not exists public.ay_level_offerings (
   created_at timestamptz not null default now(),
   unique (academic_year_id, level_id)
 );
+-- RLS — same role-gated read + explicit write-deny pattern as 004/013/031
+-- (levels itself reads via levels_role_read + levels_no_insert/_no_update/
+-- _no_delete from migration 004). Writes go through service-role API routes
+-- only; the deny policies fail closed if a cookie-bound client ever tries.
 alter table public.ay_level_offerings enable row level security;
-create policy ay_level_offerings_read on public.ay_level_offerings
-  for select to authenticated using (true);
--- Writes go through the service role only (same posture as levels itself).
+
+drop policy if exists ay_level_offerings_role_read on public.ay_level_offerings;
+create policy ay_level_offerings_role_read
+  on public.ay_level_offerings for select to authenticated
+  using (public.current_user_role() is not null);
+
+drop policy if exists ay_level_offerings_no_insert on public.ay_level_offerings;
+create policy ay_level_offerings_no_insert
+  on public.ay_level_offerings for insert to authenticated with check (false);
+
+drop policy if exists ay_level_offerings_no_update on public.ay_level_offerings;
+create policy ay_level_offerings_no_update
+  on public.ay_level_offerings for update to authenticated
+  using (false) with check (false);
+
+drop policy if exists ay_level_offerings_no_delete on public.ay_level_offerings;
+create policy ay_level_offerings_no_delete
+  on public.ay_level_offerings for delete to authenticated using (false);
 
 -- Backfill: a volatile level is offered in an AY iff it has sections there.
 insert into public.ay_level_offerings (academic_year_id, level_id)
