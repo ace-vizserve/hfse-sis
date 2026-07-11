@@ -1,3 +1,12 @@
+// NOTE: this module is imported by both server code (RSC loaders, API
+// routes) and 'use client' components (e.g. records-drill-sheet.tsx, for
+// compareLevelLabels) — never add a top-level `import 'server-only'` guard
+// here. The DB-backed loaders below rely on tree-shaking to drop
+// unstable_cache/createServiceClient from client bundles that never call
+// them (same pattern as lib/sis/dashboard.ts).
+import { unstable_cache } from 'next/cache';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
 // Canonical level codes (short internal identifiers used in levels.code FK).
 export const LEVEL_CODES = [
   'YS-L',
@@ -139,4 +148,119 @@ export function compareLevelLabels(
   if (ai === -1) return 1;
   if (bi === -1) return -1;
   return ai - bi;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// DB-backed level rows + per-AY offerings (migration 078 — Levels & Grade
+// Progression, Phase 2). `levels` is a small, AY-agnostic managed table:
+// `sort_order` drives display order, `next_level_id` is the progression
+// pointer, `is_core` marks P1-P6/S1-S4 (permanent, always offered). Volatile
+// (non-core) levels are offered in a given AY only when an `ay_level_offerings`
+// row exists for that (academic_year_id, level_id) pair.
+//
+// Follows the hoisted-uncached + per-call unstable_cache idiom (KD #46; see
+// lib/sis/readiness.ts) — the service client is captured via closure so it
+// is never passed as an argument into the cached function invocation itself
+// (unstable_cache would otherwise try to fold a non-serializable Supabase
+// client into its cache key).
+// ─────────────────────────────────────────────────────────────────────────
+
+export type LevelRow = {
+  id: string;
+  code: string;
+  label: string;
+  levelType: 'preschool' | 'primary' | 'secondary';
+  sortOrder: number;
+  nextLevelId: string | null;
+  isCore: boolean;
+};
+
+type LevelRowDb = {
+  id: string;
+  code: string;
+  label: string;
+  level_type: 'preschool' | 'primary' | 'secondary';
+  sort_order: number;
+  next_level_id: string | null;
+  is_core: boolean;
+};
+
+async function getLevelRowsUncached(
+  service: SupabaseClient
+): Promise<LevelRow[]> {
+  const { data, error } = await service
+    .from('levels')
+    .select('id, code, label, level_type, sort_order, next_level_id, is_core')
+    .order('sort_order', { ascending: true });
+
+  if (error) throw error;
+
+  return ((data ?? []) as LevelRowDb[]).map((row) => ({
+    id: row.id,
+    code: row.code,
+    label: row.label,
+    levelType: row.level_type,
+    sortOrder: row.sort_order,
+    nextLevelId: row.next_level_id,
+    isCore: row.is_core,
+  }));
+}
+
+// All levels, ordered by sort_order. Cached 60s under the shared 'levels'
+// tag — any write path that mutates `levels` should `revalidateTag('levels')`.
+export function getLevelRows(service: SupabaseClient): Promise<LevelRow[]> {
+  return unstable_cache(
+    () => getLevelRowsUncached(service),
+    ['sis-levels-rows'],
+    {
+      revalidate: 60,
+      tags: ['levels'],
+    }
+  )();
+}
+
+// Returns a plain array (not a Set) — unstable_cache persists its return
+// value (e.g. to the filesystem cache handler in production), which requires
+// JSON-serializable data; `JSON.stringify(new Set(...))` collapses to `{}`,
+// silently losing every id. The public `getOfferedLevelIds` wrapper below
+// converts to a Set only after the cached call returns.
+async function getOfferedLevelIdsUncached(
+  service: SupabaseClient,
+  academicYearId: string
+): Promise<string[]> {
+  const [
+    { data: coreRows, error: coreError },
+    { data: offeringRows, error: offeringError },
+  ] = await Promise.all([
+    service.from('levels').select('id').eq('is_core', true),
+    service
+      .from('ay_level_offerings')
+      .select('level_id')
+      .eq('academic_year_id', academicYearId),
+  ]);
+
+  if (coreError) throw coreError;
+  if (offeringError) throw offeringError;
+
+  const ids = new Set<string>(
+    ((coreRows ?? []) as Array<{ id: string }>).map((r) => r.id)
+  );
+  for (const row of (offeringRows ?? []) as Array<{ level_id: string }>) {
+    ids.add(row.level_id);
+  }
+  return Array.from(ids);
+}
+
+// Level ids offered in a given AY: every core level id (always offered) plus
+// any volatile level id with an `ay_level_offerings` row for that AY.
+export async function getOfferedLevelIds(
+  service: SupabaseClient,
+  academicYearId: string
+): Promise<Set<string>> {
+  const ids = await unstable_cache(
+    () => getOfferedLevelIdsUncached(service, academicYearId),
+    ['sis-offered-level-ids', academicYearId],
+    { revalidate: 60, tags: ['levels'] }
+  )();
+  return new Set(ids);
 }
