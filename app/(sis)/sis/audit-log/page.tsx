@@ -19,16 +19,10 @@ import { AuditDailyTrendCard } from '@/components/sis/audit-daily-trend-card';
 import { AuditTopActionsCard } from '@/components/sis/audit-top-actions-card';
 import { AuditByModuleDrillCard } from '@/components/sis/drills/audit-by-module-drill-card';
 import { GradeChangePipelineCard } from '@/components/sis/grade-change-pipeline-card';
+import { HubStat } from '@/components/sis/hub-stat';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { StructuralChangesFeedCard } from '@/components/sis/structural-changes-feed-card';
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
@@ -373,20 +367,11 @@ export default async function SisAuditLogPage({
         Admin Hub
       </Link>
 
-      <header className="space-y-4">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          SIS Admin · Activity
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          Audit log.
-        </h1>
-        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          A history of every administrative change — sections created, teachers
-          assigned, templates applied, approvers managed, school config edited,
-          users added, and environment operations. Past entries are kept on the
-          record.
-        </p>
-      </header>
+      <SisPageHeader
+        group="Access & system"
+        title="Audit log."
+        description="A history of every administrative change — sections created, teachers assigned, templates applied, approvers managed, school config edited, users added, and environment operations. Past entries are kept on the record."
+      />
 
       <Tabs value={view} className="w-full">
         <TabsList variant="segmented">
@@ -401,42 +386,32 @@ export default async function SisAuditLogPage({
 
       {view === 'log' && logView ? (
         <>
-          <div className="@container/main">
-            <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-3">
-              <StatCard
-                description="Entries loaded"
-                value={logView.rows.length.toLocaleString('en-SG')}
-                icon={ListChecks}
-                footerTitle={
-                  logView.count != null
-                    ? `${logView.count.toLocaleString('en-SG')} total entries`
-                    : `${logView.rows.length.toLocaleString('en-SG')} entries`
-                }
-                footerDetail={`Page ${logView.page} of ${logView.totalPages} · ${logView.pageSize} per page`}
-              />
-              <StatCard
-                description="Unique actors"
-                value={logView.uniqueActors.toLocaleString('en-SG')}
-                icon={Users}
-                footerTitle={
-                  logView.uniqueActors === 1
-                    ? '1 user'
-                    : `${logView.uniqueActors} users`
-                }
-                footerDetail="Distinct accounts on this page"
-              />
-              <StatCard
-                description="Config changes"
-                value={logView.configChanges.toLocaleString('en-SG')}
-                icon={Settings2}
-                footerTitle={
-                  logView.configChanges === 0
-                    ? 'None on this page'
-                    : 'High-impact operations'
-                }
-                footerDetail="School config, template applies, env switches"
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <HubStat
+              label="Entries loaded"
+              value={logView.rows.length}
+              icon={ListChecks}
+              tone="brand"
+              subtext={
+                logView.count != null
+                  ? `${logView.count.toLocaleString('en-SG')} total · page ${logView.page}/${logView.totalPages}`
+                  : `Page ${logView.page} of ${logView.totalPages}`
+              }
+            />
+            <HubStat
+              label="Unique actors"
+              value={logView.uniqueActors}
+              icon={Users}
+              tone="sky"
+              subtext="Distinct accounts on this page"
+            />
+            <HubStat
+              label="Config changes"
+              value={logView.configChanges}
+              icon={Settings2}
+              tone={logView.configChanges > 0 ? 'amber' : 'muted'}
+              subtext="School config, template applies, env switches"
+            />
           </div>
 
           {logView.error && (
@@ -581,41 +556,5 @@ export default async function SisAuditLogPage({
         </>
       ) : null}
     </PageShell>
-  );
-}
-
-function StatCard({
-  description,
-  value,
-  icon: Icon,
-  footerTitle,
-  footerDetail,
-}: {
-  description: string;
-  value: string;
-  icon: React.ComponentType<{ className?: string }>;
-  footerTitle: string;
-  footerDetail: string;
-}) {
-  return (
-    <Card className="@container/card">
-      <CardHeader>
-        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          {description}
-        </CardDescription>
-        <CardTitle className="font-serif text-[28px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[34px]">
-          {value}
-        </CardTitle>
-        <CardAction>
-          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <Icon className="size-4" />
-          </div>
-        </CardAction>
-      </CardHeader>
-      <CardFooter className="flex-col items-start gap-1 text-sm">
-        <p className="font-medium text-foreground">{footerTitle}</p>
-        <p className="text-xs text-muted-foreground">{footerDetail}</p>
-      </CardFooter>
-    </Card>
   );
 }

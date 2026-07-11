@@ -9,6 +9,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { ApproverAssignDialog } from '@/components/sis/approver-assign-dialog';
+import { StaffAvatar } from '@/components/sis/staff-visuals';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -125,18 +126,22 @@ const columns: ColumnDef<ApproverRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Approver</SortableHeader>
     ),
-    cell: ({ row }) => (
-      <div>
-        <div className="font-medium text-foreground">
-          {row.original.display_name ?? row.original.email}
-        </div>
-        {row.original.display_name && (
-          <div className="font-mono text-[11px] text-muted-foreground">
-            {row.original.email}
+    cell: ({ row }) => {
+      const name = row.original.display_name ?? row.original.email;
+      return (
+        <div className="flex items-center gap-2.5">
+          <StaffAvatar name={name} size={8} />
+          <div className="min-w-0">
+            <div className="truncate font-medium text-foreground">{name}</div>
+            {row.original.display_name && (
+              <div className="truncate font-mono text-[11px] text-muted-foreground">
+                {row.original.email}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    ),
+        </div>
+      );
+    },
     enableHiding: false,
   },
   {

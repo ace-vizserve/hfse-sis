@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { EnvironmentCard } from '@/components/sis/environment-card';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { SisUrlMissingBanner } from '@/components/sis/sis-url-missing-banner';
 import {
   Card,
@@ -54,19 +55,11 @@ export default async function SettingsPage() {
         SIS Admin
       </Link>
 
-      <header className="space-y-3">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          SIS Admin · Settings
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          System settings.
-        </h1>
-        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          System-level controls that aren&apos;t tied to a specific academic
-          year. School-wide details (principal, registration number) live on
-          School Config.
-        </p>
-      </header>
+      <SisPageHeader
+        group="Access & system"
+        title="System settings."
+        description="System-level controls that aren’t tied to a specific academic year. School-wide details such as the principal name and registration number live on School Config."
+      />
 
       <SisUrlMissingBanner />
 

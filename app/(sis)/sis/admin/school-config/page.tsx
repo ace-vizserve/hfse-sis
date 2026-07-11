@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { SchoolConfigForm } from '@/components/sis/school-config-form';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import {
   Card,
   CardContent,
@@ -38,19 +39,11 @@ export default async function SchoolConfigPage() {
         SIS Admin
       </Link>
 
-      <header className="space-y-3">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          SIS Admin · School config
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          School-wide settings.
-        </h1>
-        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Report-card signature names, PEI registration number, and the default
-          publication window. One singleton row; changes reflect on every new
-          report-card render.
-        </p>
-      </header>
+      <SisPageHeader
+        group="Access & system"
+        title="School-wide settings."
+        description="Report-card signature names, letterhead, and school-wide defaults. One record; changes reflect on every new report-card render."
+      />
 
       <Card>
         <CardHeader>

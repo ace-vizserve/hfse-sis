@@ -1,9 +1,10 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Info } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { ApproversDataTable } from '@/components/sis/approvers-data-table';
 import { PageShell } from '@/components/ui/page-shell';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { APPROVER_FLOWS, type ApproverFlow } from '@/lib/schemas/approvers';
 import {
   listAllApproverAssignments,
@@ -42,49 +43,56 @@ export default async function ApproversPage() {
         Dashboard
       </Link>
 
-      <header className="space-y-3">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          SIS Admin · Access
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          Approver assignments.
-        </h1>
-        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Designate which school admins are approvers for each approval flow.
-          When a teacher files a locked-sheet change request, they pick a
-          primary + secondary from the flow&apos;s list; only those two see and
-          act on it.
-        </p>
-      </header>
+      <SisPageHeader
+        group="Access & system"
+        title="Approver assignments."
+        description="Designate which school admins are approvers for each approval flow. When a teacher files a locked-sheet change request, they pick a primary and secondary from the flow’s list; only those two see and act on it."
+      />
 
       <ApproversDataTable byFlow={byFlow} candidatesByFlow={candidatesByFlow} />
 
-      <section className="rounded-xl border border-hairline bg-card p-4 text-xs leading-relaxed text-muted-foreground">
-        <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
-          How this works
-        </p>
-        <ul className="ml-4 list-disc space-y-1">
+      <section className="rounded-xl border border-border bg-muted/30 p-5">
+        <div className="mb-3 flex items-center gap-2">
+          <Info className="size-4 text-brand-indigo" />
+          <p className="font-serif text-[15px] font-semibold text-foreground">
+            How this works
+          </p>
+        </div>
+        <ul className="ml-4 list-disc space-y-1.5 text-[13px] leading-relaxed text-muted-foreground">
           <li>
-            <strong>At least 2 approvers per flow</strong> — teachers must pick
-            both primary and secondary. Fewer than 2 = the request form is
-            blocked with a message telling them to contact you.
+            <strong className="font-medium text-foreground">
+              At least 2 approvers per flow
+            </strong>{' '}
+            — teachers must pick both primary and secondary. Fewer than 2 means
+            the request form is blocked with a message telling them to contact
+            you.
           </li>
           <li>
-            <strong>First to act wins</strong> — primary and secondary both see
-            every request in their inbox and can approve/reject independently.
-            There&apos;s no escalation timer.
+            <strong className="font-medium text-foreground">
+              First to act wins
+            </strong>{' '}
+            — primary and secondary both see every request in their inbox and
+            can approve or reject independently. There&apos;s no escalation
+            timer.
           </li>
           <li>
-            <strong>Revocation is forward-only</strong> — removing an approver
-            here does NOT pull them from in-flight requests where they&apos;re
-            already designated. They can still act on those until the request is
-            resolved.
+            <strong className="font-medium text-foreground">
+              Revocation is forward-only
+            </strong>{' '}
+            — removing an approver here does not pull them from in-flight
+            requests where they&apos;re already designated. They can still act
+            on those until the request is resolved.
           </li>
           <li>
-            <strong>Only school admins are eligible</strong> as approvers —
-            superadmins manage this list but don&apos;t approve change requests
-            themselves. If you need someone as an approver, set their role to{' '}
-            <code className="rounded bg-muted px-1 py-0.5">school_admin</code>{' '}
+            <strong className="font-medium text-foreground">
+              Only school admins are eligible
+            </strong>{' '}
+            as approvers — superadmins manage this list but don&apos;t approve
+            change requests themselves. If you need someone as an approver, set
+            their role to{' '}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">
+              school_admin
+            </code>{' '}
             in Supabase Auth first.
           </li>
         </ul>

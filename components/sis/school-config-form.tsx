@@ -175,64 +175,81 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
         </TabsList>
 
         {/* ── General ── */}
-        <TabsContent value="general" className="mt-6 space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="principal">School Principal name</Label>
-              <Input
-                id="principal"
-                value={principal}
-                onChange={(e) => setPrincipal(e.target.value)}
-                maxLength={120}
-                placeholder="e.g. Dr Jane Smith"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Shown under the Principal signature line on final (T4) report
-                cards.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ceo">Founder &amp; CEO name</Label>
-              <Input
-                id="ceo"
-                value={ceo}
-                onChange={(e) => setCeo(e.target.value)}
-                maxLength={120}
-                placeholder="e.g. John Doe"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Shown under the Founder &amp; CEO signature line on final (T4)
-                report cards.
-              </p>
+        <TabsContent value="general" className="mt-6 space-y-6">
+          <div className="space-y-4">
+            <p className="font-serif text-[17px] font-semibold tracking-tight text-foreground">
+              Report-card signatures
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="principal">School Principal name</Label>
+                <Input
+                  id="principal"
+                  value={principal}
+                  onChange={(e) => setPrincipal(e.target.value)}
+                  maxLength={120}
+                  placeholder="e.g. Dr Jane Smith"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Shown under the Principal signature line on final (T4) report
+                  cards.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ceo">Founder &amp; CEO name</Label>
+                <Input
+                  id="ceo"
+                  value={ceo}
+                  onChange={(e) => setCeo(e.target.value)}
+                  maxLength={120}
+                  placeholder="e.g. John Doe"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Shown under the Founder &amp; CEO signature line on final (T4)
+                  report cards.
+                </p>
+              </div>
             </div>
           </div>
-          <div className="max-w-xs space-y-1.5">
-            <Label htmlFor="windowDays">Default publish window (days)</Label>
-            <Input
-              id="windowDays"
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={windowDays}
-              onChange={(e) =>
-                setWindowDays(e.target.value.replace(/[^0-9]/g, '').slice(0, 3))
-              }
-              className="text-right font-mono tabular-nums"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              Default for the publication window (1–365). Registrar can override
-              per publish.
+          <div className="space-y-3 border-t border-border pt-5">
+            <p className="font-serif text-[17px] font-semibold tracking-tight text-foreground">
+              Publishing default
             </p>
+            <div className="max-w-xs space-y-1.5">
+              <Label htmlFor="windowDays">Default publish window (days)</Label>
+              <Input
+                id="windowDays"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={windowDays}
+                onChange={(e) =>
+                  setWindowDays(
+                    e.target.value.replace(/[^0-9]/g, '').slice(0, 3)
+                  )
+                }
+                className="text-right font-mono tabular-nums"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Default for the publication window (1–365). Registrar can
+                override per publish.
+              </p>
+            </div>
           </div>
         </TabsContent>
 
         {/* ── Letterhead ── */}
         <TabsContent value="letterhead" className="mt-6 space-y-5">
-          <p className="text-[13px] text-muted-foreground">
-            These values appear on every printed report card and the
-            parent-portal preview. Changes take effect immediately on the next
-            report-card render.
-          </p>
+          <div className="space-y-1.5">
+            <p className="font-serif text-[17px] font-semibold tracking-tight text-foreground">
+              Organisation details
+            </p>
+            <p className="text-[13px] text-muted-foreground">
+              These values appear on every printed report card and the
+              parent-portal preview. Changes take effect immediately on the next
+              report-card render.
+            </p>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5 md:col-span-2">
               <Label htmlFor="orgName">Organisation name</Label>
@@ -355,11 +372,16 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
         </TabsContent>
 
         {/* ── Attendance ── */}
-        <TabsContent value="attendance" className="mt-6 space-y-4">
-          <p className="text-[13px] text-muted-foreground">
-            School-wide defaults for how many leave days each student gets.
-            Individual students can be adjusted from their attendance profile.
-          </p>
+        <TabsContent value="attendance" className="mt-6 space-y-5">
+          <div className="space-y-1.5">
+            <p className="font-serif text-[17px] font-semibold tracking-tight text-foreground">
+              Leave allowances
+            </p>
+            <p className="text-[13px] text-muted-foreground">
+              School-wide defaults for how many leave days each student gets.
+              Individual students can be adjusted from their attendance profile.
+            </p>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="compassionateDefault">
@@ -407,13 +429,18 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
         </TabsContent>
 
         {/* ── Awards ── */}
-        <TabsContent value="awards" className="mt-6 space-y-4">
-          <p className="text-[13px] text-muted-foreground">
-            Score cut-offs for the Subject Award (per subject) and Overall
-            Academic Award (per student). The same ladder applies to both.
-            Thresholds must be strictly increasing: Bronze &lt; Silver &lt; Gold
-            ≤ Max.
-          </p>
+        <TabsContent value="awards" className="mt-6 space-y-5">
+          <div className="space-y-1.5">
+            <p className="font-serif text-[17px] font-semibold tracking-tight text-foreground">
+              Award thresholds
+            </p>
+            <p className="text-[13px] text-muted-foreground">
+              Score cut-offs for the Subject Award (per subject) and Overall
+              Academic Award (per student). The same ladder applies to both.
+              Thresholds must be strictly increasing: Bronze &lt; Silver &lt;
+              Gold ≤ Max.
+            </p>
+          </div>
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-1.5">
               <Label htmlFor="bronzeMin">Bronze (min)</Label>
