@@ -16,6 +16,7 @@ import {
   type OverallAwardLabel,
   type SubjectAwardLabel,
 } from '@/lib/compute/awards';
+import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -187,6 +188,28 @@ export function resolveLateEnrolleeTerm(
   return null;
 }
 
+// Pure — batch-resolves each section's LIVE form-adviser display name, given
+// the section's `teacher_assignments` row (role='form_adviser') and the
+// staff id→name lookup. Extracted so the resolution logic is unit-testable
+// without mocking the surrounding Supabase call graph.
+//
+// Reads teacher_assignments, never the denormalized `sections.form_class_adviser`
+// mirror — that column is best-effort-written on assign and never cleared on
+// unassign (app/api/teacher-assignments/*), so it can silently drift from
+// who's actually assigned. Matches lib/markbook/publish-readiness.ts's
+// existing rationale for the same authoritative-vs-mirror choice.
+export function buildFormAdviserNameMap(
+  assignments: Array<{ section_id: string; teacher_user_id: string }>,
+  staffNameEntries: Array<[string, string]>
+): Map<string, string> {
+  const nameById = new Map(staffNameEntries);
+  const out = new Map<string, string>();
+  for (const a of assignments) {
+    out.set(a.section_id, nameById.get(a.teacher_user_id) ?? a.teacher_user_id);
+  }
+  return out;
+}
+
 export async function loadMasterfile(
   input: MasterfileInput
 ): Promise<MasterfilePayload | null> {
@@ -225,6 +248,7 @@ async function loadMasterfileUncached(
     { data: sectionsRaw },
     { data: termsRaw },
     schoolConfig,
+    staffNameEntries,
   ] = await Promise.all([
     service
       .from('levels')
@@ -243,6 +267,7 @@ async function loadMasterfileUncached(
       .eq('academic_year_id', ayId)
       .order('term_number'),
     getSchoolConfig(),
+    getStaffDisplayNameById(),
   ]);
 
   if (!levelRow) return null;
@@ -255,6 +280,30 @@ async function loadMasterfileUncached(
   const sections = (sectionsRaw ?? []) as SectionRow[];
   const sectionByIid = new Map<string, SectionRow>();
   for (const s of sections) sectionByIid.set(s.id, s);
+
+  // Form advisers — resolved LIVE from teacher_assignments, never the
+  // denormalized `sections.form_class_adviser` mirror selected above (kept
+  // only because over-fetching it is harmless; see buildFormAdviserNameMap).
+  const adviserAssignmentsRaw =
+    sections.length === 0
+      ? []
+      : ((
+          await service
+            .from('teacher_assignments')
+            .select('section_id, teacher_user_id')
+            .in(
+              'section_id',
+              sections.map((s) => s.id)
+            )
+            .eq('role', 'form_adviser')
+        ).data ?? []);
+  const adviserNameBySection = buildFormAdviserNameMap(
+    adviserAssignmentsRaw as Array<{
+      section_id: string;
+      teacher_user_id: string;
+    }>,
+    staffNameEntries
+  );
 
   type TermRow = {
     id: string;
@@ -764,7 +813,7 @@ async function loadMasterfileUncached(
       fullName: group.fullName,
       sectionId: primary.sectionId,
       sectionName: primarySection.name,
-      formClassAdviser: primarySection.form_class_adviser,
+      formClassAdviser: adviserNameBySection.get(primary.sectionId) ?? null,
       enrollmentStatus: primary.enrollmentStatus,
       indexNumber: primary.indexNumber ?? null,
       subjectRows,

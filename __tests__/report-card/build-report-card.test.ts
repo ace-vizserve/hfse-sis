@@ -59,6 +59,14 @@ vi.mock('@/lib/attendance/calendar', () => ({
   getEncodableDatesForTerm: vi.fn().mockResolvedValue([]),
 }));
 
+// Form-adviser name resolution (dual-source-drift fix) — configurable per
+// test via mockResolvedValue; defaults to no staff (empty map), matching
+// "no adviser assigned" for tests that don't seed teacher_assignments.
+const getStaffDisplayNameByIdMock = vi.fn().mockResolvedValue([]);
+vi.mock('@/lib/auth/staff-list', () => ({
+  getStaffDisplayNameById: () => getStaffDisplayNameByIdMock(),
+}));
+
 // ─── Fake SupabaseClient factory ──────────────────────────────────────────────
 
 /**
@@ -81,6 +89,7 @@ function makeClient(tables: {
   'attendance_records:presence'?: unknown[]; // term_id, days_present, days_late
   'attendance_records:school_days'?: unknown[]; // term_id, school_days
   evaluation_writeups?: unknown[];
+  teacher_assignments?: unknown[]; // { teacher_user_id } — role='form_adviser' row
 }) {
   function makeChain(table: string, sel: string = ''): Record<string, unknown> {
     const chain: Record<string, unknown> = {
@@ -488,6 +497,88 @@ describe('buildReportCard', () => {
 
       const t1Comment = result.payload.comments.find((c) => c.term_id === 't1');
       expect(t1Comment?.comment).toBeNull();
+    });
+  });
+
+  describe('Form class adviser — resolved from teacher_assignments, not the sections mirror', () => {
+    it('reads the LIVE teacher_assignments row, ignoring a stale sections.form_class_adviser value', async () => {
+      // Seed the two sources with DIFFERENT names on purpose — if the fix
+      // regresses to reading the denormalized mirror, this assertion catches
+      // it immediately (dual-source drift, KD publish-readiness.ts pattern).
+      const staleSection = {
+        ...SECTION,
+        form_class_adviser: 'Old Adviser Name',
+      };
+      getStaffDisplayNameByIdMock.mockResolvedValueOnce([
+        ['user-adviser-1', 'Current Adviser Name'],
+      ]);
+      const supabase = makeClient({
+        students: [
+          {
+            id: STUDENT_ID,
+            student_number: 'SN-001',
+            last_name: 'Dela Cruz',
+            first_name: 'Juan',
+            middle_name: null,
+          },
+        ],
+        academic_years: [{ id: 'ay-1', label: 'AY2026' }],
+        terms: TERMS,
+        section_students: [{ ...makeEnrolment(), section: staleSection }],
+        subject_configs: [{ subject: SUBJECT_MATH }],
+        grading_sheets: SHEETS,
+        grade_entries: makeGradeEntries([93, 90, 88, 85]),
+        'attendance_records:presence': [],
+        'attendance_records:school_days': [],
+        evaluation_writeups: [],
+        teacher_assignments: [{ teacher_user_id: 'user-adviser-1' }],
+      });
+
+      const result = await buildReportCard(
+        supabase as unknown as SupabaseClient,
+        STUDENT_ID
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.payload.section.form_class_adviser).toBe(
+        'Current Adviser Name'
+      );
+    });
+
+    it('is null when no teacher_assignments row exists for the section, even if the stale mirror has a name', async () => {
+      const staleSection = {
+        ...SECTION,
+        form_class_adviser: 'Old Adviser Name',
+      };
+      const supabase = makeClient({
+        students: [
+          {
+            id: STUDENT_ID,
+            student_number: 'SN-001',
+            last_name: 'Dela Cruz',
+            first_name: 'Juan',
+            middle_name: null,
+          },
+        ],
+        academic_years: [{ id: 'ay-1', label: 'AY2026' }],
+        terms: TERMS,
+        section_students: [{ ...makeEnrolment(), section: staleSection }],
+        subject_configs: [{ subject: SUBJECT_MATH }],
+        grading_sheets: SHEETS,
+        grade_entries: makeGradeEntries([93, 90, 88, 85]),
+        'attendance_records:presence': [],
+        'attendance_records:school_days': [],
+        evaluation_writeups: [],
+        teacher_assignments: [],
+      });
+
+      const result = await buildReportCard(
+        supabase as unknown as SupabaseClient,
+        STUDENT_ID
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.payload.section.form_class_adviser).toBeNull();
     });
   });
 

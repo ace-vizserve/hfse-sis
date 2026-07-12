@@ -254,6 +254,27 @@ export async function buildReportCard(
   const level = first(section.level);
   if (!level) return { ok: false, error: { kind: 'level_not_found' } };
 
+  // Form class adviser — resolved LIVE from teacher_assignments, matching
+  // lib/markbook/publish-readiness.ts's existing rationale: the denormalized
+  // `sections.form_class_adviser` mirror is best-effort-written on assign
+  // and never cleared on unassign (app/api/teacher-assignments/*), so it can
+  // silently drift from who's actually assigned. Do not reach for the
+  // mirror column here even though it's still selected above.
+  const { data: adviserRow } = await supabase
+    .from('teacher_assignments')
+    .select('teacher_user_id')
+    .eq('section_id', section.id)
+    .eq('role', 'form_adviser')
+    .maybeSingle();
+  let formClassAdviser: string | null = null;
+  if (adviserRow?.teacher_user_id) {
+    const { getStaffDisplayNameById } = await import('@/lib/auth/staff-list');
+    const nameById = new Map(await getStaffDisplayNameById());
+    formClassAdviser =
+      nameById.get(adviserRow.teacher_user_id as string) ??
+      (adviserRow.teacher_user_id as string);
+  }
+
   // For grade-entry / attendance / writeup union: collect every distinct
   // section_student_id and section_id this student touched in the current AY.
   const allEnrolmentIds = ayEnrolments.map((e) => e.id);
@@ -592,7 +613,7 @@ export async function buildReportCard(
       section: {
         id: section.id,
         name: section.name,
-        form_class_adviser: section.form_class_adviser,
+        form_class_adviser: formClassAdviser,
       },
       level,
       enrollment_status: primary.enrollment_status,

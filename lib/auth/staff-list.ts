@@ -137,6 +137,20 @@ export async function getStaffDisplayEntries(): Promise<
 }
 
 /**
+ * Returns userId → display-name entries for all staff — used to resolve a
+ * `teacher_assignments.teacher_user_id` to a human name (e.g. the form
+ * adviser on a report card or masterfile row) without a separate Auth Admin
+ * call per lookup. Returns Array (not Map) to survive unstable_cache JSON
+ * serialization; callers do `new Map(entries)`.
+ */
+export async function getStaffDisplayNameById(): Promise<
+  Array<[string, string]>
+> {
+  const all = await _loadAllStaff();
+  return all.map((u) => [u.id, u.name]);
+}
+
+/**
  * Returns a count of active (non-disabled) staff accounts — used by the SIS
  * Admin sidebar's Staff count chip (SIS Admin visual pass, Task V2). Shares
  * the same 5-min cached listUsers() call as every other helper in this file
