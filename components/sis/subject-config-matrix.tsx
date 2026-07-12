@@ -1,6 +1,6 @@
 'use client';
 
-import { Scale, Search, X } from 'lucide-react';
+import { ChevronDown, Scale, Search, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import {
@@ -15,6 +15,11 @@ import {
 } from '@/components/sis/weight-profile';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
@@ -36,6 +41,51 @@ type Config = {
   pt_max_slots: number;
   qa_max: number;
 };
+
+// Renders the ACTUAL grading-sheet columns a teacher would see (WW/PT slot
+// count + QA denominator), matching the approved mockup's artifact-preview
+// direction — this is the same information that was previously only in the
+// chip's `title` tooltip (invisible at a glance).
+export function GradingSheetPreview({
+  config,
+}: {
+  config: Pick<Config, 'ww_max_slots' | 'pt_max_slots' | 'qa_max'>;
+}) {
+  return (
+    <div className="flex gap-1 overflow-x-auto py-1">
+      {Array.from({ length: config.ww_max_slots }, (_, i) => (
+        <div key={`ww${i}`} className="w-11 flex-none text-center">
+          <div className="rounded-t-md bg-brand-sky/15 py-1 font-mono text-[9px] font-semibold uppercase text-brand-indigo-deep">
+            WW{i + 1}
+          </div>
+          <div className="rounded-b-md border border-t-0 border-border bg-card py-1 font-mono text-[10px] text-ink-3">
+            /10
+          </div>
+        </div>
+      ))}
+      <div className="w-2 flex-none" aria-hidden />
+      {Array.from({ length: config.pt_max_slots }, (_, i) => (
+        <div key={`pt${i}`} className="w-11 flex-none text-center">
+          <div className="rounded-t-md bg-brand-mint/20 py-1 font-mono text-[9px] font-semibold uppercase text-ink">
+            PT{i + 1}
+          </div>
+          <div className="rounded-b-md border border-t-0 border-border bg-card py-1 font-mono text-[10px] text-ink-3">
+            /10
+          </div>
+        </div>
+      ))}
+      <div className="w-2 flex-none" aria-hidden />
+      <div className="w-12 flex-none text-center">
+        <div className="rounded-t-md bg-brand-amber-light py-1 font-mono text-[9px] font-semibold uppercase text-brand-amber">
+          QA
+        </div>
+        <div className="rounded-b-md border border-t-0 border-border bg-card py-1 font-mono text-[10px] text-ink-3">
+          /{config.qa_max}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Per-AY subject weights matrix. Mirrors the visual language of the
 // /sis/admin/template Subjects tab — card-per-subject with a chip row of
@@ -196,6 +246,22 @@ function SubjectCard({
   configByKey: Map<string, Config>;
   onOpenCell: (subject: Subject, level: Level, config: Config) => void;
 }) {
+  // Which (subject × level) chips have their grading-sheet-column preview
+  // expanded. Keyed by level id — scoped per-card since level ids are
+  // unique within a subject's visible set.
+  const [expandedLevelIds, setExpandedLevelIds] = useState<Set<string>>(
+    new Set()
+  );
+
+  function togglePreview(levelId: string) {
+    setExpandedLevelIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(levelId)) next.delete(levelId);
+      else next.add(levelId);
+      return next;
+    });
+  }
+
   return (
     <Card className="gap-0 py-0">
       <div className="flex items-center gap-3 border-b border-border px-5 py-3">
@@ -241,36 +307,74 @@ function SubjectCard({
             const pt = Math.round(cfg.pt_weight * 100);
             const qa = Math.round(cfg.qa_weight * 100);
             const profile = classifyProfile(ww, pt, qa);
+            const isPreviewOpen = expandedLevelIds.has(level.id);
             return (
-              <button
+              <Collapsible
                 key={level.id}
-                type="button"
-                onClick={() => onOpenCell(subject, level, cfg)}
-                className={cn(
-                  'inline-flex flex-col items-start gap-0.5 rounded-md px-3 py-1.5 transition-all',
-                  'hover:-translate-y-0.5 hover:shadow-md',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40',
-                  PROFILE_CLASS[profile]
-                )}
-                title={`${subject.name} · ${level.label} — ${ww}·${pt}·${qa} · slots ${cfg.ww_max_slots}/${cfg.pt_max_slots} · QA/${cfg.qa_max}. Click to edit.`}
+                open={isPreviewOpen}
+                onOpenChange={() => togglePreview(level.id)}
               >
-                <span
+                {/* The chip is now two independent click targets sharing one
+                    visual footprint: the original edit button (unchanged
+                    onOpenCell behavior) plus a small caret that expands the
+                    grading-sheet-column preview below. Hover-lift + profile
+                    color live on the shared wrapper so the chip still reads
+                    as one unit. */}
+                <div
                   className={cn(
-                    'font-serif text-[12px] font-semibold leading-tight tracking-tight',
-                    PROFILE_TEXT[profile].code
+                    'inline-flex items-stretch overflow-hidden rounded-md transition-all',
+                    'hover:-translate-y-0.5 hover:shadow-md',
+                    PROFILE_CLASS[profile]
                   )}
                 >
-                  {level.label}
-                </span>
-                <span
-                  className={cn(
-                    'font-mono text-[10px] tabular-nums',
-                    PROFILE_TEXT[profile].ratio
-                  )}
-                >
-                  {ww} · {pt} · {qa}
-                </span>
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenCell(subject, level, cfg)}
+                    className="inline-flex flex-col items-start gap-0.5 py-1.5 pl-3 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40"
+                    title={`${subject.name} · ${level.label} — ${ww}·${pt}·${qa} · slots ${cfg.ww_max_slots}/${cfg.pt_max_slots} · QA/${cfg.qa_max}. Click to edit.`}
+                  >
+                    <span
+                      className={cn(
+                        'font-serif text-[12px] font-semibold leading-tight tracking-tight',
+                        PROFILE_TEXT[profile].code
+                      )}
+                    >
+                      {level.label}
+                    </span>
+                    <span
+                      className={cn(
+                        'font-mono text-[10px] tabular-nums',
+                        PROFILE_TEXT[profile].ratio
+                      )}
+                    >
+                      {ww} · {pt} · {qa}
+                    </span>
+                  </button>
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        'flex items-center self-stretch pl-1 pr-2 opacity-60 transition-opacity hover:opacity-100',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40'
+                      )}
+                      aria-label={`${isPreviewOpen ? 'Hide' : 'Show'} grading sheet columns for ${subject.name} · ${level.label}`}
+                    >
+                      <ChevronDown
+                        className={cn(
+                          'size-3.5 transition-transform',
+                          PROFILE_TEXT[profile].code,
+                          isPreviewOpen && 'rotate-180'
+                        )}
+                      />
+                    </button>
+                  </CollapsibleTrigger>
+                </div>
+                <CollapsibleContent>
+                  <div className="mt-1 w-fit rounded-md border border-border bg-muted/20 px-2 py-1">
+                    <GradingSheetPreview config={cfg} />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
             );
           });
         })()}
