@@ -13,7 +13,7 @@ SIS Admin = **"run the school year."** A guided AY lifecycle (setup checklist �
 ## Design principles (binding for all sub-projects)
 
 - **Benchmark existing SIS products** (Gibbon / openSIS / PowerSchool class) for each surface's conventions; adapt to HFSE's vocabulary rather than inventing. Web research is part of each sub-project's design phase.
-- **KD #48 boundary holds:** SIS defines structure, modules consume. Ownership of structure stays registrar/school_admin; _creation_ becomes available at point of need, but is never relocated to the admissions role.
+- **KD #48 boundary holds:** SIS defines structure, modules consume. Ownership of structure stays registrar/school*admin; \_creation* becomes available at point of need, but is never relocated to the admissions role.
 - **Plain-English UI**; the mental model of every surface stated on the surface itself.
 - After SIS Admin, the same interview → decompose → spec → build loop runs through every other module.
 

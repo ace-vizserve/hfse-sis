@@ -1,188 +1,825 @@
 <title>SIS Admin — Visual Redesign Preview</title>
 <style>
   :root {
-    --bg: #f5f6f9; --surface: #ffffff; --surface-2: #fbfcfe;
-    --ink: #101828; --muted: #616d86; --faint: #8a93a8;
-    --border: #e4e8f0; --border-strong: #d3d9e4;
-    --brand: #213098; --brand-ink: #1a266f; --brand-soft: rgba(33,48,152,.09);
+    --bg: #f5f6f9;
+    --surface: #ffffff;
+    --surface-2: #fbfcfe;
+    --ink: #101828;
+    --muted: #616d86;
+    --faint: #8a93a8;
+    --border: #e4e8f0;
+    --border-strong: #d3d9e4;
+    --brand: #213098;
+    --brand-ink: #1a266f;
+    --brand-soft: rgba(33, 48, 152, 0.09);
     --navy: #141c54;
-    --mint: #0d8a5f; --mint-soft: rgba(13,138,95,.11);
-    --amber: #b06d10; --amber-soft: rgba(176,109,16,.13);
-    --red: #b3261e; --red-soft: rgba(179,38,30,.10);
-    --sky: #2591c9; --sky-soft: rgba(37,145,201,.12);
-    --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px -12px rgba(16,24,40,.14);
+    --mint: #0d8a5f;
+    --mint-soft: rgba(13, 138, 95, 0.11);
+    --amber: #b06d10;
+    --amber-soft: rgba(176, 109, 16, 0.13);
+    --red: #b3261e;
+    --red-soft: rgba(179, 38, 30, 0.1);
+    --sky: #2591c9;
+    --sky-soft: rgba(37, 145, 201, 0.12);
+    --shadow:
+      0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -12px rgba(16, 24, 40, 0.14);
     --radius: 14px;
-    --serif: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+    --serif:
+      'Iowan Old Style', 'Palatino Linotype', Georgia, 'Times New Roman', serif;
+    --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
   }
-  @media (prefers-color-scheme: dark) { :root {
-    --bg: #080b14; --surface: #10141f; --surface-2: #141926;
-    --ink: #eef1f8; --muted: #9aa4bd; --faint: #6d7791;
-    --border: #212839; --border-strong: #2c344a;
-    --brand: #7684f2; --brand-ink: #97a2f7; --brand-soft: rgba(118,132,242,.13);
-    --navy: #97a2f7;
-    --mint: #34d399; --mint-soft: rgba(52,211,153,.13);
-    --amber: #f0b13b; --amber-soft: rgba(240,177,59,.14);
-    --red: #f2716a; --red-soft: rgba(242,113,106,.13);
-    --sky: #38bdf8; --sky-soft: rgba(56,189,248,.13);
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.6);
-  }}
-  :root[data-theme="light"] {
-    --bg: #f5f6f9; --surface: #ffffff; --surface-2: #fbfcfe;
-    --ink: #101828; --muted: #616d86; --faint: #8a93a8;
-    --border: #e4e8f0; --border-strong: #d3d9e4;
-    --brand: #213098; --brand-ink: #1a266f; --brand-soft: rgba(33,48,152,.09);
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #080b14;
+      --surface: #10141f;
+      --surface-2: #141926;
+      --ink: #eef1f8;
+      --muted: #9aa4bd;
+      --faint: #6d7791;
+      --border: #212839;
+      --border-strong: #2c344a;
+      --brand: #7684f2;
+      --brand-ink: #97a2f7;
+      --brand-soft: rgba(118, 132, 242, 0.13);
+      --navy: #97a2f7;
+      --mint: #34d399;
+      --mint-soft: rgba(52, 211, 153, 0.13);
+      --amber: #f0b13b;
+      --amber-soft: rgba(240, 177, 59, 0.14);
+      --red: #f2716a;
+      --red-soft: rgba(242, 113, 106, 0.13);
+      --sky: #38bdf8;
+      --sky-soft: rgba(56, 189, 248, 0.13);
+      --shadow:
+        0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -14px rgba(0, 0, 0, 0.6);
+    }
+  }
+  :root[data-theme='light'] {
+    --bg: #f5f6f9;
+    --surface: #ffffff;
+    --surface-2: #fbfcfe;
+    --ink: #101828;
+    --muted: #616d86;
+    --faint: #8a93a8;
+    --border: #e4e8f0;
+    --border-strong: #d3d9e4;
+    --brand: #213098;
+    --brand-ink: #1a266f;
+    --brand-soft: rgba(33, 48, 152, 0.09);
     --navy: #141c54;
-    --mint: #0d8a5f; --mint-soft: rgba(13,138,95,.11);
-    --amber: #b06d10; --amber-soft: rgba(176,109,16,.13);
-    --red: #b3261e; --red-soft: rgba(179,38,30,.10);
-    --sky: #2591c9; --sky-soft: rgba(37,145,201,.12);
-    --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px -12px rgba(16,24,40,.14);
+    --mint: #0d8a5f;
+    --mint-soft: rgba(13, 138, 95, 0.11);
+    --amber: #b06d10;
+    --amber-soft: rgba(176, 109, 16, 0.13);
+    --red: #b3261e;
+    --red-soft: rgba(179, 38, 30, 0.1);
+    --sky: #2591c9;
+    --sky-soft: rgba(37, 145, 201, 0.12);
+    --shadow:
+      0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -12px rgba(16, 24, 40, 0.14);
   }
-  :root[data-theme="dark"] {
-    --bg: #080b14; --surface: #10141f; --surface-2: #141926;
-    --ink: #eef1f8; --muted: #9aa4bd; --faint: #6d7791;
-    --border: #212839; --border-strong: #2c344a;
-    --brand: #7684f2; --brand-ink: #97a2f7; --brand-soft: rgba(118,132,242,.13);
+  :root[data-theme='dark'] {
+    --bg: #080b14;
+    --surface: #10141f;
+    --surface-2: #141926;
+    --ink: #eef1f8;
+    --muted: #9aa4bd;
+    --faint: #6d7791;
+    --border: #212839;
+    --border-strong: #2c344a;
+    --brand: #7684f2;
+    --brand-ink: #97a2f7;
+    --brand-soft: rgba(118, 132, 242, 0.13);
     --navy: #97a2f7;
-    --mint: #34d399; --mint-soft: rgba(52,211,153,.13);
-    --amber: #f0b13b; --amber-soft: rgba(240,177,59,.14);
-    --red: #f2716a; --red-soft: rgba(242,113,106,.13);
-    --sky: #38bdf8; --sky-soft: rgba(56,189,248,.13);
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.6);
+    --mint: #34d399;
+    --mint-soft: rgba(52, 211, 153, 0.13);
+    --amber: #f0b13b;
+    --amber-soft: rgba(240, 177, 59, 0.14);
+    --red: #f2716a;
+    --red-soft: rgba(242, 113, 106, 0.13);
+    --sky: #38bdf8;
+    --sky-soft: rgba(56, 189, 248, 0.13);
+    --shadow:
+      0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -14px rgba(0, 0, 0, 0.6);
   }
 
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); line-height: 1.5; -webkit-font-smoothing: antialiased; }
-  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 80px; }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
 
-  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 8px; }
-  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin: 0 0 8px; }
-  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(26px,3.2vw,34px); line-height: 1.1; margin: 0; max-width: 24ch; text-wrap: balance; }
-  .lede { color: var(--muted); font-size: 15px; max-width: 68ch; margin: 12px 0 0; }
-  .theme-toggle { flex: none; background: var(--surface); border: 1px solid var(--border-strong); color: var(--muted); border-radius: 999px; padding: 8px 14px; font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
-  .theme-toggle:hover { color: var(--ink); border-color: var(--brand); }
-  .theme-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .masthead {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0 0 8px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(26px, 3.2vw, 34px);
+    line-height: 1.1;
+    margin: 0;
+    max-width: 24ch;
+    text-wrap: balance;
+  }
+  .lede {
+    color: var(--muted);
+    font-size: 15px;
+    max-width: 68ch;
+    margin: 12px 0 0;
+  }
+  .theme-toggle {
+    flex: none;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .theme-toggle:hover {
+    color: var(--ink);
+    border-color: var(--brand);
+  }
+  .theme-toggle:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
 
-  .rule { display: flex; align-items: center; gap: 14px; margin: 44px 0 18px; }
-  .rule::after { content: ""; flex: 1; height: 1px; background: var(--border); }
-  .rule span { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
-  .note-under { color: var(--muted); font-size: 13.5px; max-width: 74ch; margin: 0 0 18px; }
+  .rule {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 44px 0 18px;
+  }
+  .rule::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .rule span {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .note-under {
+    color: var(--muted);
+    font-size: 13.5px;
+    max-width: 74ch;
+    margin: 0 0 18px;
+  }
 
   /* ===== app frame (sidebar + screen) ===== */
-  .frame { display: grid; grid-template-columns: 232px 1fr; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); }
-  @media (max-width: 860px) { .frame { grid-template-columns: 1fr; } .sidebar { display: none; } }
+  .frame {
+    display: grid;
+    grid-template-columns: 232px 1fr;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  @media (max-width: 860px) {
+    .frame {
+      grid-template-columns: 1fr;
+    }
+    .sidebar {
+      display: none;
+    }
+  }
 
-  .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 14px 10px 18px; display: flex; flex-direction: column; gap: 2px; }
-  .sb-brand { display: flex; align-items: center; gap: 9px; padding: 6px 8px 14px; }
-  .sb-brand .tile { width: 30px; height: 30px; border-radius: 8px; background: var(--brand); color: #fff; display: grid; place-items: center; font-family: var(--serif); font-size: 14px; font-weight: 700; flex: none; }
-  .sb-brand b { font-size: 13px; letter-spacing: -.01em; }
-  .sb-brand small { display: block; font-family: var(--mono); font-size: 9.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .1em; }
-  .sb-group { margin-top: 12px; padding: 0 8px 5px; display: flex; align-items: baseline; justify-content: space-between; }
-  .sb-group span { font-family: var(--mono); font-size: 9.5px; letter-spacing: .13em; text-transform: uppercase; color: var(--faint); }
-  .sb-group em { font-style: normal; font-size: 9.5px; color: var(--faint); opacity: .75; }
-  .sb-item { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 8px; font-size: 12.5px; color: var(--muted); }
-  .sb-item svg { width: 15px; height: 15px; flex: none; opacity: .8; }
-  .sb-item.active { background: var(--brand-soft); color: var(--brand-ink); box-shadow: inset 0 0 0 1px var(--brand-soft); font-weight: 600; }
-  .sb-item .count { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--faint); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 0 5px; }
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 14px 10px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .sb-brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 6px 8px 14px;
+  }
+  .sb-brand .tile {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: var(--brand);
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-family: var(--serif);
+    font-size: 14px;
+    font-weight: 700;
+    flex: none;
+  }
+  .sb-brand b {
+    font-size: 13px;
+    letter-spacing: -0.01em;
+  }
+  .sb-brand small {
+    display: block;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    color: var(--faint);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .sb-group {
+    margin-top: 12px;
+    padding: 0 8px 5px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .sb-group span {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .sb-group em {
+    font-style: normal;
+    font-size: 9.5px;
+    color: var(--faint);
+    opacity: 0.75;
+  }
+  .sb-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 9px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .sb-item svg {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    opacity: 0.8;
+  }
+  .sb-item.active {
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+    box-shadow: inset 0 0 0 1px var(--brand-soft);
+    font-weight: 600;
+  }
+  .sb-item .count {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--faint);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0 5px;
+  }
 
-  .screen { padding: 22px 26px 28px; min-width: 0; }
-  .scr-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
-  .scr-head .eyebrow { margin-bottom: 5px; }
-  .scr-head h2 { font-family: var(--serif); font-size: 26px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
-  .scr-head p { margin: 5px 0 0; color: var(--muted); font-size: 13px; max-width: 56ch; }
-  .chips { display: flex; gap: 8px; align-items: center; flex: none; padding-top: 4px; }
-  .chip { font-family: var(--mono); font-size: 10.5px; letter-spacing: .05em; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--muted); background: var(--surface); }
-  .chip.live { color: var(--mint); border-color: var(--mint-soft); background: var(--mint-soft); }
+  .screen {
+    padding: 22px 26px 28px;
+    min-width: 0;
+  }
+  .scr-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .scr-head .eyebrow {
+    margin-bottom: 5px;
+  }
+  .scr-head h2 {
+    font-family: var(--serif);
+    font-size: 26px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .scr-head p {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    max-width: 56ch;
+  }
+  .chips {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex: none;
+    padding-top: 4px;
+  }
+  .chip {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    color: var(--muted);
+    background: var(--surface);
+  }
+  .chip.live {
+    color: var(--mint);
+    border-color: var(--mint-soft);
+    background: var(--mint-soft);
+  }
 
   /* signature: the year band */
-  .yearband { margin-top: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; box-shadow: var(--shadow); }
-  .yb-frac { font-family: var(--serif); font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; flex: none; }
-  .yb-frac small { font-size: 15px; color: var(--faint); font-family: var(--sans); font-weight: 500; }
-  .yb-mid { flex: 1 1 260px; min-width: 220px; }
-  .yb-label { font-size: 12.5px; color: var(--muted); margin: 0 0 7px; }
-  .yb-label b { color: var(--ink); font-weight: 600; }
-  .segbar { display: flex; gap: 4px; }
-  .seg { height: 8px; flex: 1; border-radius: 4px; background: var(--mint); }
-  .seg[data-s="warn"] { background: var(--amber); }
-  .seg[data-s="off"] { background: var(--border-strong); }
-  .yb-cta { flex: none; display: inline-flex; align-items: center; gap: 7px; background: var(--brand); color: #fff; border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 600; text-decoration: none; }
-  .yb-cta:hover { background: var(--brand-ink); }
-  .yb-cta:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .yearband {
+    margin-top: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    box-shadow: var(--shadow);
+  }
+  .yb-frac {
+    font-family: var(--serif);
+    font-size: 30px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    flex: none;
+  }
+  .yb-frac small {
+    font-size: 15px;
+    color: var(--faint);
+    font-family: var(--sans);
+    font-weight: 500;
+  }
+  .yb-mid {
+    flex: 1 1 260px;
+    min-width: 220px;
+  }
+  .yb-label {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin: 0 0 7px;
+  }
+  .yb-label b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .segbar {
+    display: flex;
+    gap: 4px;
+  }
+  .seg {
+    height: 8px;
+    flex: 1;
+    border-radius: 4px;
+    background: var(--mint);
+  }
+  .seg[data-s='warn'] {
+    background: var(--amber);
+  }
+  .seg[data-s='off'] {
+    background: var(--border-strong);
+  }
+  .yb-cta {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--brand);
+    color: #fff;
+    border-radius: 10px;
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .yb-cta:hover {
+    background: var(--brand-ink);
+  }
+  .yb-cta:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
 
   /* stat band */
-  .stats { margin-top: 14px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  @media (max-width: 760px) { .stats { grid-template-columns: repeat(2, 1fr); } }
-  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 14px; display: flex; gap: 11px; align-items: center; }
-  .stat .tile { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; flex: none; }
-  .stat .tile svg { width: 19px; height: 19px; }
-  .t-brand { background: var(--brand-soft); color: var(--brand); }
-  .t-mint { background: var(--mint-soft); color: var(--mint); }
-  .t-amber { background: var(--amber-soft); color: var(--amber); }
-  .t-sky { background: var(--sky-soft); color: var(--sky); }
-  .stat b { display: block; font-family: var(--serif); font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; }
-  .stat span { font-size: 11.5px; color: var(--muted); }
+  .stats {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  @media (max-width: 760px) {
+    .stats {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 13px 14px;
+    display: flex;
+    gap: 11px;
+    align-items: center;
+  }
+  .stat .tile {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+  .stat .tile svg {
+    width: 19px;
+    height: 19px;
+  }
+  .t-brand {
+    background: var(--brand-soft);
+    color: var(--brand);
+  }
+  .t-mint {
+    background: var(--mint-soft);
+    color: var(--mint);
+  }
+  .t-amber {
+    background: var(--amber-soft);
+    color: var(--amber);
+  }
+  .t-sky {
+    background: var(--sky-soft);
+    color: var(--sky);
+  }
+  .stat b {
+    display: block;
+    font-family: var(--serif);
+    font-size: 21px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+  }
+  .stat span {
+    font-size: 11.5px;
+    color: var(--muted);
+  }
 
   /* two-column: attention + week */
-  .cols { margin-top: 14px; display: grid; grid-template-columns: 3fr 2fr; gap: 12px; }
-  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
-  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-  .panel-h { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
-  .panel-h b { font-family: var(--serif); font-size: 15.5px; font-weight: 600; }
-  .panel-h span { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); }
-  .row { display: flex; align-items: center; gap: 11px; padding: 11px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
-  .row:last-child { border-bottom: 0; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-  .d-red { background: var(--red); } .d-amber { background: var(--amber); } .d-mint { background: var(--mint); }
-  .row .grow { flex: 1; min-width: 0; }
-  .row .meta { font-family: var(--mono); font-size: 10.5px; color: var(--faint); flex: none; }
-  .row .go { color: var(--brand); font-size: 12px; font-weight: 600; flex: none; text-decoration: none; }
-  .row .go:hover { text-decoration: underline; }
-  .datebox { flex: none; width: 40px; text-align: center; border: 1px solid var(--border); border-radius: 8px; padding: 3px 0 4px; background: var(--surface-2); }
-  .datebox b { display: block; font-family: var(--serif); font-size: 15px; line-height: 1.1; font-variant-numeric: tabular-nums; }
-  .datebox small { font-family: var(--mono); font-size: 8.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
-  .tag { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; padding: 2px 7px; border-radius: 6px; flex: none; }
-  .tag.hol { color: var(--red); background: var(--red-soft); }
-  .tag.ev { color: var(--sky); background: var(--sky-soft); }
-  .tag.exam { color: var(--amber); background: var(--amber-soft); }
+  .cols {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 12px;
+  }
+  @media (max-width: 860px) {
+    .cols {
+      grid-template-columns: 1fr;
+    }
+  }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .panel-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-h b {
+    font-family: var(--serif);
+    font-size: 15.5px;
+    font-weight: 600;
+  }
+  .panel-h span {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--faint);
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .row:last-child {
+    border-bottom: 0;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .d-red {
+    background: var(--red);
+  }
+  .d-amber {
+    background: var(--amber);
+  }
+  .d-mint {
+    background: var(--mint);
+  }
+  .row .grow {
+    flex: 1;
+    min-width: 0;
+  }
+  .row .meta {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--faint);
+    flex: none;
+  }
+  .row .go {
+    color: var(--brand);
+    font-size: 12px;
+    font-weight: 600;
+    flex: none;
+    text-decoration: none;
+  }
+  .row .go:hover {
+    text-decoration: underline;
+  }
+  .datebox {
+    flex: none;
+    width: 40px;
+    text-align: center;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 3px 0 4px;
+    background: var(--surface-2);
+  }
+  .datebox b {
+    display: block;
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .datebox small {
+    font-family: var(--mono);
+    font-size: 8.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--faint);
+  }
+  .tag {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    padding: 2px 7px;
+    border-radius: 6px;
+    flex: none;
+  }
+  .tag.hol {
+    color: var(--red);
+    background: var(--red-soft);
+  }
+  .tag.ev {
+    color: var(--sky);
+    background: var(--sky-soft);
+  }
+  .tag.exam {
+    color: var(--amber);
+    background: var(--amber-soft);
+  }
 
   /* quick actions */
-  .quick { margin-top: 14px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-  @media (max-width: 860px) { .quick { grid-template-columns: repeat(2, 1fr); } }
-  .qa { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 11px 13px; font-size: 12.5px; font-weight: 600; color: var(--ink); text-decoration: none; }
-  .qa:hover { border-color: var(--brand); box-shadow: var(--shadow); }
-  .qa .tile { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; flex: none; }
-  .qa .tile svg { width: 16px; height: 16px; }
-  .qa small { display: block; font-weight: 400; font-size: 10.5px; color: var(--faint); }
+  .quick {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+  }
+  @media (max-width: 860px) {
+    .quick {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  .qa {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 11px 13px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .qa:hover {
+    border-color: var(--brand);
+    box-shadow: var(--shadow);
+  }
+  .qa .tile {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+  .qa .tile svg {
+    width: 16px;
+    height: 16px;
+  }
+  .qa small {
+    display: block;
+    font-weight: 400;
+    font-size: 10.5px;
+    color: var(--faint);
+  }
 
   /* staff screen */
-  .tabs { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 2px; margin-top: 18px; }
-  .tab { font-size: 12.5px; padding: 6px 14px; border-radius: 8px; color: var(--muted); font-weight: 500; }
-  .tab.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
-  .tab .n { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-left: 5px; }
-  .staff-list { margin-top: 12px; }
-  .person { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
-  .person:last-child { border-bottom: 0; }
-  .avatar { width: 36px; height: 36px; border-radius: 10px; background: var(--brand-soft); color: var(--brand-ink); display: grid; place-items: center; font-family: var(--serif); font-weight: 700; font-size: 13.5px; flex: none; }
-  .person .who { flex: 1; min-width: 0; }
-  .person .who b { font-size: 13.5px; display: block; }
-  .person .who small { font-family: var(--mono); font-size: 10px; color: var(--faint); }
-  .rolechip { font-size: 10.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; flex: none; }
-  .r-teach { color: var(--sky); background: var(--sky-soft); }
-  .r-reg { color: var(--mint); background: var(--mint-soft); }
-  .r-admin { color: var(--brand-ink); background: var(--brand-soft); }
-  .assign { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; max-width: 300px; }
-  .aschip { font-family: var(--mono); font-size: 9.5px; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--border); color: var(--muted); background: var(--surface-2); }
-  .aschip.fca { color: var(--amber); border-color: var(--amber-soft); background: var(--amber-soft); }
+  .tabs {
+    display: inline-flex;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 2px;
+    margin-top: 18px;
+  }
+  .tab {
+    font-size: 12.5px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .tab.active {
+    background: var(--surface);
+    color: var(--ink);
+    font-weight: 600;
+    box-shadow: var(--shadow);
+  }
+  .tab .n {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--faint);
+    margin-left: 5px;
+  }
+  .staff-list {
+    margin-top: 12px;
+  }
+  .person {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .person:last-child {
+    border-bottom: 0;
+  }
+  .avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+    display: grid;
+    place-items: center;
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 13.5px;
+    flex: none;
+  }
+  .person .who {
+    flex: 1;
+    min-width: 0;
+  }
+  .person .who b {
+    font-size: 13.5px;
+    display: block;
+  }
+  .person .who small {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--faint);
+  }
+  .rolechip {
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 999px;
+    flex: none;
+  }
+  .r-teach {
+    color: var(--sky);
+    background: var(--sky-soft);
+  }
+  .r-reg {
+    color: var(--mint);
+    background: var(--mint-soft);
+  }
+  .r-admin {
+    color: var(--brand-ink);
+    background: var(--brand-soft);
+  }
+  .assign {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 300px;
+  }
+  .aschip {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    padding: 2px 7px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: var(--surface-2);
+  }
+  .aschip.fca {
+    color: var(--amber);
+    border-color: var(--amber-soft);
+    background: var(--amber-soft);
+  }
 
   /* design notes */
-  .notes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
-  @media (max-width: 760px) { .notes { grid-template-columns: 1fr; } }
-  .note { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 15px 17px; }
-  .note h3 { font-family: var(--serif); font-size: 15.5px; margin: 0 0 6px; font-weight: 600; }
-  .note p { margin: 0; font-size: 12.5px; color: var(--muted); }
-  footer { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--faint); font-size: 12.5px; max-width: 76ch; }
+  .notes {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+  @media (max-width: 760px) {
+    .notes {
+      grid-template-columns: 1fr;
+    }
+  }
+  .note {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 15px 17px;
+  }
+  .note h3 {
+    font-family: var(--serif);
+    font-size: 15.5px;
+    margin: 0 0 6px;
+    font-weight: 600;
+  }
+  .note p {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  footer {
+    margin-top: 44px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    color: var(--faint);
+    font-size: 12.5px;
+    max-width: 76ch;
+  }
 </style>
 
 <div class="wrap">
@@ -191,36 +828,215 @@
       <p class="eyebrow">HFSE SIS · SIS Admin · Visual redesign</p>
       <h1>The admin hub as a command centre, not a menu</h1>
     </div>
-    <button class="theme-toggle" id="themeBtn" type="button" aria-label="Toggle light and dark theme"><span id="themeLabel">Dark</span></button>
+    <button
+      class="theme-toggle"
+      id="themeBtn"
+      type="button"
+      aria-label="Toggle light and dark theme"
+    >
+      <span id="themeLabel">Dark</span>
+    </button>
   </div>
   <p class="lede">
-    The navigation restructure already shipped (3 sidebar tiers, merged pages, one audit surface). This preview adds the missing layer:
-    the <b>look</b>. The hub opens with the year's state as one glance — a segmented readiness band, a tight stat row, an attention feed —
-    and puts the five most common tasks one click away. Modeled on how Veracross builds its admin homepages (status + launchpad), kept in
-    HFSE's own visual language: serif headlines, mono eyebrows, solid tints, hairline borders. No gradients, no centered heroes.
+    The navigation restructure already shipped (3 sidebar tiers, merged pages,
+    one audit surface). This preview adds the missing layer: the <b>look</b>.
+    The hub opens with the year's state as one glance — a segmented readiness
+    band, a tight stat row, an attention feed — and puts the five most common
+    tasks one click away. Modeled on how Veracross builds its admin homepages
+    (status + launchpad), kept in HFSE's own visual language: serif headlines,
+    mono eyebrows, solid tints, hairline borders. No gradients, no centered
+    heroes.
   </p>
 
   <div class="rule"><span>Screen 1 · The hub — /sis</span></div>
-  <p class="note-under">The signature element: the <b>year band</b> — setup readiness as a segmented bar with a serif fraction and the page's single primary button. Below it, everything is status or a launch point. Nothing here duplicates the sidebar.</p>
+  <p class="note-under">
+    The signature element: the <b>year band</b> — setup readiness as a segmented
+    bar with a serif fraction and the page's single primary button. Below it,
+    everything is status or a launch point. Nothing here duplicates the sidebar.
+  </p>
 
   <div class="frame">
     <aside class="sidebar" aria-label="SIS Admin navigation">
-      <div class="sb-brand"><span class="tile">H</span><span><b>SIS Admin</b><small>HFSE International</small></span></div>
-      <div class="sb-item active"><svg viewBox="0 0 24 24" fill="none"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6h-6v6H4a1 1 0 01-1-1v-9z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Admin Hub</div>
+      <div class="sb-brand">
+        <span class="tile">H</span
+        ><span><b>SIS Admin</b><small>HFSE International</small></span>
+      </div>
+      <div class="sb-item active">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6h-6v6H4a1 1 0 01-1-1v-9z"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linejoin="round"
+          /></svg
+        >Admin Hub
+      </div>
       <div class="sb-group"><span>This year</span><em>weekly</em></div>
-      <div class="sb-item"><svg viewBox="0 0 24 24" fill="none"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>AY Setup<span class="count">6/7</span></div>
-      <div class="sb-item"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M3 9h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>School Calendar</div>
-      <div class="sb-item"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Sections<span class="count">28</span></div>
-      <div class="sb-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M3.5 19c.8-3 3-4.5 5.5-4.5S13.7 16 14.5 19M15 5.5a3 3 0 011.5 5.6M17 14.7c1.9.5 3.2 1.9 3.7 4.3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>Staff<span class="count">21</span></div>
-      <div class="sb-item"><svg viewBox="0 0 24 24" fill="none"><path d="M20 12l-8.5 8.5a2.1 2.1 0 01-3 0L4 16a2.1 2.1 0 010-3L12.5 4.5 20 12z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="9" cy="15" r="1.3" fill="currentColor"/></svg>Discount Codes</div>
+      <div class="sb-item">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          /></svg
+        >AY Setup<span class="count">6/7</span>
+      </div>
+      <div class="sb-item">
+        <svg viewBox="0 0 24 24" fill="none">
+          <rect
+            x="3"
+            y="5"
+            width="18"
+            height="16"
+            rx="2"
+            stroke="currentColor"
+            stroke-width="1.7"
+          />
+          <path
+            d="M3 9h18M8 3v4M16 3v4"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          /></svg
+        >School Calendar
+      </div>
+      <div class="sb-item">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M4 6h16M4 12h16M4 18h10"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          /></svg
+        >Sections<span class="count">28</span>
+      </div>
+      <div class="sb-item">
+        <svg viewBox="0 0 24 24" fill="none">
+          <circle
+            cx="9"
+            cy="8"
+            r="3.2"
+            stroke="currentColor"
+            stroke-width="1.7"
+          />
+          <path
+            d="M3.5 19c.8-3 3-4.5 5.5-4.5S13.7 16 14.5 19M15 5.5a3 3 0 011.5 5.6M17 14.7c1.9.5 3.2 1.9 3.7 4.3"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          /></svg
+        >Staff<span class="count">21</span>
+      </div>
+      <div class="sb-item">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M20 12l-8.5 8.5a2.1 2.1 0 01-3 0L4 16a2.1 2.1 0 010-3L12.5 4.5 20 12z"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linejoin="round"
+          />
+          <circle cx="9" cy="15" r="1.3" fill="currentColor" /></svg
+        >Discount Codes
+      </div>
       <div class="sb-group"><span>Structure</span><em>yearly</em></div>
-      <div class="sb-item"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7l8-4 8 4-8 4-8-4zM4 12l8 4 8-4M4 17l8 4 8-4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>Grade Levels</div>
-      <div class="sb-item"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v18M5 8l7-5 7 5M7 21V11m10 10V11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Subject Weights</div>
-      <div class="sb-item"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7"/><rect x="13" y="4" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="13" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7"/><path d="M16.5 13v7M13 16.5h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>Structure Defaults</div>
+      <div class="sb-item">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M4 7l8-4 8 4-8 4-8-4zM4 12l8 4 8-4M4 17l8 4 8-4"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linejoin="round"
+          /></svg
+        >Grade Levels
+      </div>
+      <div class="sb-item">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 3v18M5 8l7-5 7 5M7 21V11m10 10V11"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          /></svg
+        >Subject Weights
+      </div>
+      <div class="sb-item">
+        <svg viewBox="0 0 24 24" fill="none">
+          <rect
+            x="4"
+            y="4"
+            width="7"
+            height="7"
+            rx="1.5"
+            stroke="currentColor"
+            stroke-width="1.7"
+          />
+          <rect
+            x="13"
+            y="4"
+            width="7"
+            height="7"
+            rx="1.5"
+            stroke="currentColor"
+            stroke-width="1.7"
+          />
+          <rect
+            x="4"
+            y="13"
+            width="7"
+            height="7"
+            rx="1.5"
+            stroke="currentColor"
+            stroke-width="1.7"
+          />
+          <path
+            d="M16.5 13v7M13 16.5h7"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          /></svg
+        >Structure Defaults
+      </div>
       <div class="sb-group"><span>Access &amp; system</span><em>rare</em></div>
-      <div class="sb-item"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>Approvers</div>
-      <div class="sb-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M19 12a7 7 0 00-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 00-2-1.2L14.2 3h-4l-.4 2.7a7 7 0 00-2 1.2l-2.3-1-2 3.4 2 1.5A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-1a7 7 0 002 1.2l.4 2.7h4l.4-2.7a7 7 0 002-1.2l2.3 1 2-3.4-2-1.5c0-.4.1-.8.1-1.2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>School Config</div>
-      <div class="sb-item"><svg viewBox="0 0 24 24" fill="none"><path d="M4 17V7a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2zM8 9h8M8 13h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>Audit Log</div>
+      <div class="sb-item">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linejoin="round"
+          /></svg
+        >Approvers
+      </div>
+      <div class="sb-item">
+        <svg viewBox="0 0 24 24" fill="none">
+          <circle
+            cx="12"
+            cy="12"
+            r="3"
+            stroke="currentColor"
+            stroke-width="1.7"
+          />
+          <path
+            d="M19 12a7 7 0 00-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 00-2-1.2L14.2 3h-4l-.4 2.7a7 7 0 00-2 1.2l-2.3-1-2 3.4 2 1.5A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-1a7 7 0 002 1.2l.4 2.7h4l.4-2.7a7 7 0 002-1.2l2.3 1 2-3.4-2-1.5c0-.4.1-.8.1-1.2z"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linejoin="round"
+          /></svg
+        >School Config
+      </div>
+      <div class="sb-item">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M4 17V7a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2zM8 9h8M8 13h5"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          /></svg
+        >Audit Log
+      </div>
     </aside>
 
     <div class="screen">
@@ -228,106 +1044,378 @@
         <div>
           <p class="eyebrow">SIS Admin · Academic Year 2026</p>
           <h2>Run the school year.</h2>
-          <p>Setup progress, today's numbers, and what needs attention — everything else is one click in the sidebar.</p>
+          <p>
+            Setup progress, today's numbers, and what needs attention —
+            everything else is one click in the sidebar.
+          </p>
         </div>
-        <div class="chips"><span class="chip live">Production</span><span class="chip">AY2026 · Term 3</span></div>
+        <div class="chips">
+          <span class="chip live">Production</span
+          ><span class="chip">AY2026 · Term 3</span>
+        </div>
       </div>
 
       <div class="yearband" role="group" aria-label="Year setup readiness">
         <div class="yb-frac">6<small> / 7 ready</small></div>
         <div class="yb-mid">
-          <p class="yb-label"><b>Year setup is almost done.</b> Report-card letterhead still needs the signatures.</p>
+          <p class="yb-label">
+            <b>Year setup is almost done.</b> Report-card letterhead still needs
+            the signatures.
+          </p>
           <div class="segbar" aria-hidden="true">
-            <span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg" data-s="warn"></span>
+            <span class="seg"></span><span class="seg"></span
+            ><span class="seg"></span><span class="seg"></span
+            ><span class="seg"></span><span class="seg"></span
+            ><span class="seg" data-s="warn"></span>
           </div>
         </div>
         <a class="yb-cta" href="#">Finish setup →</a>
       </div>
 
       <div class="stats">
-        <div class="stat"><span class="tile t-brand"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.5" stroke="currentColor" stroke-width="1.8"/><path d="M5 20c1-3.8 3.8-5.5 7-5.5s6 1.7 7 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><span><b>356</b><span>Enrolled students</span></span></div>
-        <div class="stat"><span class="tile t-sky"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><span><b>28</b><span>Active sections</span></span></div>
-        <div class="stat"><span class="tile t-amber"><svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/></svg></span><span><b>4</b><span>Grade changes waiting</span></span></div>
-        <div class="stat"><span class="tile t-mint"><svg viewBox="0 0 24 24" fill="none"><path d="M6 4h9l5 5v11a1 1 0 01-1 1H6a1 1 0 01-1-1V5a1 1 0 011-1z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 14l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>12</b><span>Report cards open to parents</span></span></div>
+        <div class="stat">
+          <span class="tile t-brand"
+            ><svg viewBox="0 0 24 24" fill="none">
+              <circle
+                cx="12"
+                cy="8"
+                r="3.5"
+                stroke="currentColor"
+                stroke-width="1.8"
+              />
+              <path
+                d="M5 20c1-3.8 3.8-5.5 7-5.5s6 1.7 7 5.5"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              /></svg></span
+          ><span><b>356</b><span>Enrolled students</span></span>
+        </div>
+        <div class="stat">
+          <span class="tile t-sky"
+            ><svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M4 6h16M4 12h16M4 18h10"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              /></svg></span
+          ><span><b>28</b><span>Active sections</span></span>
+        </div>
+        <div class="stat">
+          <span class="tile t-amber"
+            ><svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 8v5l3 2"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+              <circle
+                cx="12"
+                cy="12"
+                r="8.5"
+                stroke="currentColor"
+                stroke-width="1.8"
+              /></svg></span
+          ><span><b>4</b><span>Grade changes waiting</span></span>
+        </div>
+        <div class="stat">
+          <span class="tile t-mint"
+            ><svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M6 4h9l5 5v11a1 1 0 01-1 1H6a1 1 0 01-1-1V5a1 1 0 011-1z"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M9 14l2 2 4-4"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              /></svg></span
+          ><span><b>12</b><span>Report cards open to parents</span></span>
+        </div>
       </div>
 
       <div class="cols">
         <div class="panel">
           <div class="panel-h"><b>Needs attention</b><span>3 items</span></div>
-          <div class="row"><span class="dot d-red"></span><span class="grow">3 enrolled students have no class yet</span><span class="meta">P3 ×2 · S1</span><a class="go" href="#">Assign →</a></div>
-          <div class="row"><span class="dot d-amber"></span><span class="grow">4 grade changes waiting on an approver</span><span class="meta">oldest 6d</span><a class="go" href="#">Review →</a></div>
-          <div class="row"><span class="dot d-amber"></span><span class="grow">2 applicants chose Cambridge Stage 1 — not offered this year</span><span class="meta">AY2027</span><a class="go" href="#">Grade levels →</a></div>
+          <div class="row">
+            <span class="dot d-red"></span
+            ><span class="grow">3 enrolled students have no class yet</span
+            ><span class="meta">P3 ×2 · S1</span
+            ><a class="go" href="#">Assign →</a>
+          </div>
+          <div class="row">
+            <span class="dot d-amber"></span
+            ><span class="grow">4 grade changes waiting on an approver</span
+            ><span class="meta">oldest 6d</span
+            ><a class="go" href="#">Review →</a>
+          </div>
+          <div class="row">
+            <span class="dot d-amber"></span
+            ><span class="grow"
+              >2 applicants chose Cambridge Stage 1 — not offered this
+              year</span
+            ><span class="meta">AY2027</span
+            ><a class="go" href="#">Grade levels →</a>
+          </div>
         </div>
         <div class="panel">
           <div class="panel-h"><b>Coming up</b><span>Next 14 days</span></div>
-          <div class="row"><span class="datebox"><b>13</b><small>Jul</small></span><span class="grow">Moving up photoshoot</span><span class="tag ev">Event</span></div>
-          <div class="row"><span class="datebox"><b>17</b><small>Jul</small></span><span class="grow">Homebased Learning day</span><span class="tag exam">HBL</span></div>
-          <div class="row"><span class="datebox"><b>21</b><small>Jul</small></span><span class="grow">Racial Harmony Day Celebration</span><span class="tag ev">Event</span></div>
+          <div class="row">
+            <span class="datebox"><b>13</b><small>Jul</small></span
+            ><span class="grow">Moving up photoshoot</span
+            ><span class="tag ev">Event</span>
+          </div>
+          <div class="row">
+            <span class="datebox"><b>17</b><small>Jul</small></span
+            ><span class="grow">Homebased Learning day</span
+            ><span class="tag exam">HBL</span>
+          </div>
+          <div class="row">
+            <span class="datebox"><b>21</b><small>Jul</small></span
+            ><span class="grow">Racial Harmony Day Celebration</span
+            ><span class="tag ev">Event</span>
+          </div>
         </div>
       </div>
 
       <div class="quick" role="group" aria-label="Quick actions">
-        <a class="qa" href="#"><span class="tile t-brand"><svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span><span>New section<small>Sections</small></span></a>
-        <a class="qa" href="#"><span class="tile t-red" style="background:var(--red-soft);color:var(--red)"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M3 9h18M8 3v4M16 3v4M10 14l4 4m0-4l-4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><span>Add a closure<small>Calendar</small></span></a>
-        <a class="qa" href="#"><span class="tile t-sky"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M5 19.5c.9-3.3 3.4-5 7-5s6.1 1.7 7 5M19 8h.01" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><span>New staff member<small>Staff</small></span></a>
-        <a class="qa" href="#"><span class="tile t-mint"><svg viewBox="0 0 24 24" fill="none"><path d="M6 4h9l5 5v11a1 1 0 01-1 1H6a1 1 0 01-1-1V5a1 1 0 011-1z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 13h6M9 17h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><span>Generate sheets<small>Grading</small></span></a>
-        <a class="qa" href="#"><span class="tile t-amber"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7l8-4 8 4-8 4-8-4zM4 12l8 4 8-4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></span><span>Grade levels<small>Structure</small></span></a>
+        <a class="qa" href="#"
+          ><span class="tile t-brand"
+            ><svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 5v14M5 12h14"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              /></svg></span
+          ><span>New section<small>Sections</small></span></a
+        >
+        <a class="qa" href="#"
+          ><span
+            class="tile t-red"
+            style="background: var(--red-soft); color: var(--red)"
+            ><svg viewBox="0 0 24 24" fill="none">
+              <rect
+                x="3"
+                y="5"
+                width="18"
+                height="16"
+                rx="2"
+                stroke="currentColor"
+                stroke-width="1.7"
+              />
+              <path
+                d="M3 9h18M8 3v4M16 3v4M10 14l4 4m0-4l-4 4"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+              /></svg></span
+          ><span>Add a closure<small>Calendar</small></span></a
+        >
+        <a class="qa" href="#"
+          ><span class="tile t-sky"
+            ><svg viewBox="0 0 24 24" fill="none">
+              <circle
+                cx="12"
+                cy="8"
+                r="3.2"
+                stroke="currentColor"
+                stroke-width="1.7"
+              />
+              <path
+                d="M5 19.5c.9-3.3 3.4-5 7-5s6.1 1.7 7 5M19 8h.01"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+              /></svg></span
+          ><span>New staff member<small>Staff</small></span></a
+        >
+        <a class="qa" href="#"
+          ><span class="tile t-mint"
+            ><svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M6 4h9l5 5v11a1 1 0 01-1 1H6a1 1 0 01-1-1V5a1 1 0 011-1z"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M9 13h6M9 17h4"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+              /></svg></span
+          ><span>Generate sheets<small>Grading</small></span></a
+        >
+        <a class="qa" href="#"
+          ><span class="tile t-amber"
+            ><svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M4 7l8-4 8 4-8 4-8-4zM4 12l8 4 8-4"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linejoin="round"
+              /></svg></span
+          ><span>Grade levels<small>Structure</small></span></a
+        >
       </div>
     </div>
   </div>
 
-  <div class="rule"><span>Screen 2 · Staff directory — /sis/admin/staff</span></div>
-  <p class="note-under">The merged directory gets a header worth the merge: segmented tabs with live counts, initial-tile avatars, role chips, and assignment chips readable at a glance — FCA in amber, subjects in mono. Accounts actions stay superadmin-only exactly as shipped.</p>
+  <div class="rule">
+    <span>Screen 2 · Staff directory — /sis/admin/staff</span>
+  </div>
+  <p class="note-under">
+    The merged directory gets a header worth the merge: segmented tabs with live
+    counts, initial-tile avatars, role chips, and assignment chips readable at a
+    glance — FCA in amber, subjects in mono. Accounts actions stay
+    superadmin-only exactly as shipped.
+  </p>
 
-  <div class="frame" style="grid-template-columns: 1fr;">
+  <div class="frame" style="grid-template-columns: 1fr">
     <div class="screen">
       <div class="scr-head">
         <div>
           <p class="eyebrow">SIS Admin · This year</p>
           <h2>Staff.</h2>
-          <p>Everyone who works in the school — their accounts, roles, and what they teach.</p>
+          <p>
+            Everyone who works in the school — their accounts, roles, and what
+            they teach.
+          </p>
         </div>
-        <div class="chips"><span class="chip">21 people · 18 teaching</span></div>
+        <div class="chips">
+          <span class="chip">21 people · 18 teaching</span>
+        </div>
       </div>
-      <div class="tabs" role="tablist"><span class="tab active" role="tab" aria-selected="true">Teaching assignments<span class="n">18</span></span><span class="tab" role="tab" aria-selected="false">Accounts<span class="n">21</span></span></div>
+      <div class="tabs" role="tablist">
+        <span class="tab active" role="tab" aria-selected="true"
+          >Teaching assignments<span class="n">18</span></span
+        ><span class="tab" role="tab" aria-selected="false"
+          >Accounts<span class="n">21</span></span
+        >
+      </div>
       <div class="panel staff-list">
-        <div class="person"><span class="avatar">JR</span><span class="who"><b>Joann R.</b><small>joann@hfse.edu.sg</small></span><span class="rolechip r-reg">Registrar</span><span class="assign"><span class="aschip">oversight — no classes</span></span></div>
-        <div class="person"><span class="avatar">MT</span><span class="who"><b>Maria T.</b><small>maria.t@hfse.edu.sg</small></span><span class="rolechip r-teach">Teacher</span><span class="assign"><span class="aschip fca">FCA · P3 Courtesy</span><span class="aschip">ENG P3</span><span class="aschip">ENG P4</span></span></div>
-        <div class="person"><span class="avatar">DL</span><span class="who"><b>Daniel L.</b><small>daniel.l@hfse.edu.sg</small></span><span class="rolechip r-teach">Teacher</span><span class="assign"><span class="aschip fca">FCA · S2 Integrity</span><span class="aschip">MATH S1</span><span class="aschip">MATH S2</span><span class="aschip">SCI S2</span></span></div>
-        <div class="person"><span class="avatar">CT</span><span class="who"><b>Chandana T.</b><small>chandana@hfse.edu.sg</small></span><span class="rolechip r-admin">School admin</span><span class="assign"><span class="aschip">coordinator</span></span></div>
+        <div class="person">
+          <span class="avatar">JR</span
+          ><span class="who"
+            ><b>Joann R.</b><small>joann@hfse.edu.sg</small></span
+          ><span class="rolechip r-reg">Registrar</span
+          ><span class="assign"
+            ><span class="aschip">oversight — no classes</span></span
+          >
+        </div>
+        <div class="person">
+          <span class="avatar">MT</span
+          ><span class="who"
+            ><b>Maria T.</b><small>maria.t@hfse.edu.sg</small></span
+          ><span class="rolechip r-teach">Teacher</span
+          ><span class="assign"
+            ><span class="aschip fca">FCA · P3 Courtesy</span
+            ><span class="aschip">ENG P3</span
+            ><span class="aschip">ENG P4</span></span
+          >
+        </div>
+        <div class="person">
+          <span class="avatar">DL</span
+          ><span class="who"
+            ><b>Daniel L.</b><small>daniel.l@hfse.edu.sg</small></span
+          ><span class="rolechip r-teach">Teacher</span
+          ><span class="assign"
+            ><span class="aschip fca">FCA · S2 Integrity</span
+            ><span class="aschip">MATH S1</span
+            ><span class="aschip">MATH S2</span
+            ><span class="aschip">SCI S2</span></span
+          >
+        </div>
+        <div class="person">
+          <span class="avatar">CT</span
+          ><span class="who"
+            ><b>Chandana T.</b><small>chandana@hfse.edu.sg</small></span
+          ><span class="rolechip r-admin">School admin</span
+          ><span class="assign"><span class="aschip">coordinator</span></span>
+        </div>
       </div>
     </div>
   </div>
 
   <div class="rule"><span>What changes in code</span></div>
   <div class="notes">
-    <div class="note"><h3>Hub rebuild — one file</h3><p>`app/(sis)/sis/page.tsx` recomposes the kept blocks into this layout: the year band replaces the Year-Setup card (same `getAyReadiness` data), the stat band restyles the four existing KPIs, "Needs attention" merges the class-assignment callout + pending change requests + level-demand signals into one feed, "Coming up" restyles the events card, and the quick-actions row is new (links + one dialog trigger). All existing loaders — no new queries except reusing `computeLevelDemand`.</p></div>
-    <div class="note"><h3>Sidebar polish — group chrome only</h3><p>Cadence hints (<i>weekly / yearly / rare</i>) on the three group headers and count badges on AY Setup readiness, Sections, and Staff — data the sidebar's realtime-badge slot already supports. Item styling unchanged (existing active-wash recipe).</p></div>
-    <div class="note"><h3>Staff header — presentation only</h3><p>The shipped two-cut page keeps its logic; the header gains the count-badged segmented tabs, and rows gain initial-tile avatars + role chips + assignment chips (data already loaded by StaffTable). The table keeps sorting/filtering underneath.</p></div>
-    <div class="note"><h3>Bindings & references</h3><p>Everything uses existing Aurora Vault tokens — no new colors, no gradients on content, solid tints on size-8/10 tiles, serif/mono voices per the design system. Pattern reference: Veracross Axiom admin homepages (status + launchpad); click-depth norm ≤2 from the benchmark study.</p></div>
+    <div class="note">
+      <h3>Hub rebuild — one file</h3>
+      <p>
+        `app/(sis)/sis/page.tsx` recomposes the kept blocks into this layout:
+        the year band replaces the Year-Setup card (same `getAyReadiness` data),
+        the stat band restyles the four existing KPIs, "Needs attention" merges
+        the class-assignment callout + pending change requests + level-demand
+        signals into one feed, "Coming up" restyles the events card, and the
+        quick-actions row is new (links + one dialog trigger). All existing
+        loaders — no new queries except reusing `computeLevelDemand`.
+      </p>
+    </div>
+    <div class="note">
+      <h3>Sidebar polish — group chrome only</h3>
+      <p>
+        Cadence hints (<i>weekly / yearly / rare</i>) on the three group headers
+        and count badges on AY Setup readiness, Sections, and Staff — data the
+        sidebar's realtime-badge slot already supports. Item styling unchanged
+        (existing active-wash recipe).
+      </p>
+    </div>
+    <div class="note">
+      <h3>Staff header — presentation only</h3>
+      <p>
+        The shipped two-cut page keeps its logic; the header gains the
+        count-badged segmented tabs, and rows gain initial-tile avatars + role
+        chips + assignment chips (data already loaded by StaffTable). The table
+        keeps sorting/filtering underneath.
+      </p>
+    </div>
+    <div class="note">
+      <h3>Bindings & references</h3>
+      <p>
+        Everything uses existing Aurora Vault tokens — no new colors, no
+        gradients on content, solid tints on size-8/10 tiles, serif/mono voices
+        per the design system. Pattern reference: Veracross Axiom admin
+        homepages (status + launchpad); click-depth norm ≤2 from the benchmark
+        study.
+      </p>
+    </div>
   </div>
 
   <footer>
-    Preview only — links are inert. All values shown are illustrative. The standing rule applies: colors are never the only signal (every status carries an icon or text), and the page keeps exactly one primary button (the year band's CTA).
+    Preview only — links are inert. All values shown are illustrative. The
+    standing rule applies: colors are never the only signal (every status
+    carries an icon or text), and the page keeps exactly one primary button (the
+    year band's CTA).
   </footer>
 </div>
 
 <script>
-(function () {
-  "use strict";
-  var root = document.documentElement;
-  var btn = document.getElementById("themeBtn");
-  var lbl = document.getElementById("themeLabel");
-  function current() {
-    var attr = root.getAttribute("data-theme");
-    if (attr) return attr;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  }
-  function sync() { lbl.textContent = current() === "dark" ? "Light" : "Dark"; }
-  btn.addEventListener("click", function () {
-    root.setAttribute("data-theme", current() === "dark" ? "light" : "dark");
+  (function () {
+    'use strict';
+    var root = document.documentElement;
+    var btn = document.getElementById('themeBtn');
+    var lbl = document.getElementById('themeLabel');
+    function current() {
+      var attr = root.getAttribute('data-theme');
+      if (attr) return attr;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light';
+    }
+    function sync() {
+      lbl.textContent = current() === 'dark' ? 'Light' : 'Dark';
+    }
+    btn.addEventListener('click', function () {
+      root.setAttribute('data-theme', current() === 'dark' ? 'light' : 'dark');
+      sync();
+    });
     sync();
-  });
-  sync();
-})();
+  })();
 </script>
