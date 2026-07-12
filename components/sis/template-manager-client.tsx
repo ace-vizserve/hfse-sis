@@ -944,6 +944,7 @@ function PropagateDialog({
                 variant="ghost"
                 size="sm"
                 className="h-6 px-1.5 text-xs"
+                aria-label="Dismiss preview"
                 onClick={() => setPreviewAyCode(null)}
               >
                 <X className="size-3" />
