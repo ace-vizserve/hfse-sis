@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { BookOpenCheck, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, BookOpenCheck, ShieldAlert } from 'lucide-react';
 
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -12,6 +12,7 @@ import {
   listSubjects,
   listSubjectConfigsForAy,
 } from '@/lib/sis/subjects/queries';
+import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
 import { SubjectConfigMatrix } from '@/components/sis/subject-config-matrix';
 import { SubjectAySwitcher } from '@/components/sis/subject-ay-switcher';
 
@@ -59,6 +60,19 @@ export default async function SubjectConfigPage({
         listSubjectConfigsForAy(currentAy.id),
       ])
     : [[], [], []];
+
+  // Structure Defaults is the "what SHOULD be configured" reference — a
+  // level missing one of its template subjects silently drops that subject
+  // from grading-sheet creation AND the report card, with no error visible
+  // anywhere. Compare against it here so the gap is visible where it's fixed.
+  const { data: templateRows } = currentAy
+    ? await service
+        .from('template_subject_configs')
+        .select('level_id, subject_id')
+    : { data: [] };
+  const subjectConfigGaps = currentAy
+    ? computeSubjectConfigGaps(levels, subjects, templateRows ?? [], configs)
+    : [];
 
   const ayOptions = ayList.map((a) => ({
     ayCode: a.ay_code,
@@ -110,6 +124,36 @@ export default async function SubjectConfigPage({
           </div>
         </div>
       )}
+
+      {subjectConfigGaps.length > 0 &&
+        (() => {
+          const totalMissing = subjectConfigGaps.reduce(
+            (n, g) => n + g.missingSubjectCodes.length,
+            0
+          );
+          return (
+            <div className="flex items-start gap-4 rounded-xl border border-brand-amber/30 bg-brand-amber-light p-5">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-amber text-ink shadow-brand-tile-amber">
+                <AlertTriangle className="size-4" />
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <p className="font-serif text-base font-semibold text-foreground">
+                  {totalMissing} subject{totalMissing === 1 ? '' : 's'} missing
+                  from Structure Defaults
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {subjectConfigGaps
+                    .map(
+                      (g) =>
+                        `${g.levelLabel}: ${g.missingSubjectCodes.join(', ')}`
+                    )
+                    .join(' · ')}{' '}
+                  — add them below or they won&apos;t appear on the report card.
+                </p>
+              </div>
+            </div>
+          );
+        })()}
 
       {!currentAy ? (
         <Card className="items-center py-12 text-center">

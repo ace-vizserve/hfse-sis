@@ -163,15 +163,31 @@ export function resolveCalendarStep(input: {
 
 export function resolveClassesStep(input: {
   sectionCount: number;
-  subjectConfigCount: number;
+  levelsInUse: number;
+  levelsFullyConfigured: number;
+  missingCount: number;
 }): ReadinessStep {
-  const status =
-    input.sectionCount > 0 && input.subjectConfigCount > 0
-      ? 'done'
-      : 'not_started';
+  const { sectionCount, levelsInUse, levelsFullyConfigured } = input;
+  let status: ReadinessStatus;
+  let fraction: { done: number; total: number } | undefined;
+
+  if (sectionCount === 0 || levelsInUse === 0) {
+    status = 'not_started';
+  } else if (levelsFullyConfigured === levelsInUse) {
+    status = 'done';
+    fraction = { done: levelsFullyConfigured, total: levelsInUse };
+  } else if (levelsFullyConfigured > 0) {
+    status = 'partial';
+    fraction = { done: levelsFullyConfigured, total: levelsInUse };
+  } else {
+    status = 'not_started';
+    fraction = { done: 0, total: levelsInUse };
+  }
+
   return {
     ...STEP_META['classes'],
     status,
+    fraction,
   };
 }
 
@@ -423,28 +439,103 @@ async function fetchCalendar(
   return { totalTerms, coveredTerms };
 }
 
+// Real completeness, not just "any subject_configs row exists" — a level
+// missing even one of its template's subjects silently drops that subject
+// from grading-sheet creation AND the report card (build-report-card.ts
+// scopes subjects by subject_configs; no error, no visible signal). This
+// compares each in-use level's actual subject_configs against
+// template_subject_configs (Structure Defaults — the canonical "what
+// SHOULD be configured" reference, KD #66). A level with zero template
+// rows (e.g. a volatile/manually-managed level with no template entry) is
+// treated as complete — nothing to compare against, avoids false negatives.
 async function fetchClasses(
   db: SupabaseClient,
   ayId: string
-): Promise<{ sectionCount: number; subjectConfigCount: number }> {
-  const { count: sectionCount, error: sectionsError } = await db
+): Promise<{
+  sectionCount: number;
+  levelsInUse: number;
+  levelsFullyConfigured: number;
+  missingCount: number;
+}> {
+  const { data: sectionRows, error: sectionsError } = await db
     .from('sections')
-    .select('id', { count: 'exact', head: true })
+    .select('id, level_id')
     .not('level_id', 'is', null)
     .eq('academic_year_id', ayId);
 
   if (sectionsError) throw sectionsError;
+  const sectionCount = sectionRows?.length ?? 0;
+  const levelIds = Array.from(
+    new Set((sectionRows as any[])?.map((s) => s.level_id) ?? [])
+  ) as string[];
 
-  const { count: subjectConfigCount, error: configsError } = await db
-    .from('subject_configs')
-    .select('id', { count: 'exact', head: true })
-    .eq('academic_year_id', ayId);
+  if (levelIds.length === 0) {
+    return {
+      sectionCount,
+      levelsInUse: 0,
+      levelsFullyConfigured: 0,
+      missingCount: 0,
+    };
+  }
 
-  if (configsError) throw configsError;
+  const [
+    { data: templateRows, error: templateError },
+    { data: actualRows, error: actualError },
+  ] = await Promise.all([
+    db
+      .from('template_subject_configs')
+      .select('level_id, subject_id')
+      .in('level_id', levelIds),
+    db
+      .from('subject_configs')
+      .select('level_id, subject_id')
+      .eq('academic_year_id', ayId)
+      .in('level_id', levelIds),
+  ]);
+
+  if (templateError) throw templateError;
+  if (actualError) throw actualError;
+
+  const templateByLevel = new Map<string, Set<string>>();
+  for (const r of (templateRows as any[]) ?? []) {
+    const set = templateByLevel.get(r.level_id) ?? new Set<string>();
+    set.add(r.subject_id);
+    templateByLevel.set(r.level_id, set);
+  }
+
+  const actualByLevel = new Map<string, Set<string>>();
+  for (const r of (actualRows as any[]) ?? []) {
+    const set = actualByLevel.get(r.level_id) ?? new Set<string>();
+    set.add(r.subject_id);
+    actualByLevel.set(r.level_id, set);
+  }
+
+  let levelsFullyConfigured = 0;
+  let missingCount = 0;
+  for (const levelId of levelIds) {
+    const templateSubjects = templateByLevel.get(levelId);
+    if (!templateSubjects || templateSubjects.size === 0) {
+      // No template reference for this level — can't fault it.
+      levelsFullyConfigured += 1;
+      continue;
+    }
+    const actualSubjects = actualByLevel.get(levelId) ?? new Set<string>();
+    let missingForLevel = 0;
+    for (const subjectId of templateSubjects) {
+      if (!actualSubjects.has(subjectId)) missingForLevel += 1;
+    }
+    if (missingForLevel === 0) {
+      levelsFullyConfigured += 1;
+    } else {
+      missingCount += missingForLevel;
+    }
+  }
 
   return {
-    sectionCount: sectionCount ?? 0,
-    subjectConfigCount: subjectConfigCount ?? 0,
+    sectionCount,
+    levelsInUse: levelIds.length,
+    levelsFullyConfigured,
+    missingCount,
   };
 }
 
@@ -574,7 +665,12 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
     return buildReadiness(ayCode, [
       resolveAySetupStep({ datedTermCount: 0, totalTermCount: 0 }),
       resolveCalendarStep({ totalTerms: 0, coveredTerms: 0 }),
-      resolveClassesStep({ sectionCount: 0, subjectConfigCount: 0 }),
+      resolveClassesStep({
+        sectionCount: 0,
+        levelsInUse: 0,
+        levelsFullyConfigured: 0,
+        missingCount: 0,
+      }),
       resolveAdvisersStep({ sectionCount: 0, advisedSectionCount: 0 }),
       resolveGradingSheetsStep({ totalSections: 0, sectionsWithSheets: 0 }),
       resolveVirtueThemesStep({ termsRequiringTheme: 0, termsWithTheme: 0 }),

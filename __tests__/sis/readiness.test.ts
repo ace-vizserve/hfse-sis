@@ -66,18 +66,43 @@ describe('resolveCalendarStep', () => {
 describe('resolveClassesStep', () => {
   it('not_started when no sections', () => {
     expect(
-      resolveClassesStep({ sectionCount: 0, subjectConfigCount: 10 }).status
+      resolveClassesStep({
+        sectionCount: 0,
+        levelsInUse: 0,
+        levelsFullyConfigured: 0,
+        missingCount: 0,
+      }).status
     ).toBe('not_started');
   });
-  it('not_started when sections but no subject configs', () => {
+  it('not_started when sections exist but no levels have subject configs', () => {
     expect(
-      resolveClassesStep({ sectionCount: 18, subjectConfigCount: 0 }).status
+      resolveClassesStep({
+        sectionCount: 18,
+        levelsInUse: 3,
+        levelsFullyConfigured: 0,
+        missingCount: 24,
+      }).status
     ).toBe('not_started');
   });
-  it('done when both present', () => {
+  it('done when every in-use level is fully configured against the template', () => {
     expect(
-      resolveClassesStep({ sectionCount: 18, subjectConfigCount: 82 }).status
+      resolveClassesStep({
+        sectionCount: 18,
+        levelsInUse: 3,
+        levelsFullyConfigured: 3,
+        missingCount: 0,
+      }).status
     ).toBe('done');
+  });
+  it('partial when some but not all levels are missing subjects the template defines — the bug this fix closes (previously read as done)', () => {
+    const step = resolveClassesStep({
+      sectionCount: 18,
+      levelsInUse: 3,
+      levelsFullyConfigured: 2,
+      missingCount: 4,
+    });
+    expect(step.status).toBe('partial');
+    expect(step.fraction).toEqual({ done: 2, total: 3 });
   });
 });
 
@@ -207,7 +232,12 @@ describe('buildReadiness', () => {
     const steps = [
       resolveAySetupStep({ datedTermCount: 4, totalTermCount: 4 }), // done, required
       resolveCalendarStep({ totalTerms: 4, coveredTerms: 4 }), // done, required
-      resolveClassesStep({ sectionCount: 18, subjectConfigCount: 82 }), // done, required
+      resolveClassesStep({
+        sectionCount: 18,
+        levelsInUse: 3,
+        levelsFullyConfigured: 3,
+        missingCount: 0,
+      }), // done, required
       resolveAdvisersStep({ sectionCount: 18, advisedSectionCount: 12 }), // partial, required
       resolveGradingSheetsStep({ totalSections: 18, sectionsWithSheets: 0 }), // not_started, required
       resolveVirtueThemesStep({ termsRequiringTheme: 3, termsWithTheme: 3 }), // done, required
@@ -224,7 +254,12 @@ describe('buildReadiness', () => {
     const steps = [
       resolveAySetupStep({ datedTermCount: 0, totalTermCount: 0 }),
       resolveCalendarStep({ totalTerms: 0, coveredTerms: 0 }),
-      resolveClassesStep({ sectionCount: 0, subjectConfigCount: 0 }),
+      resolveClassesStep({
+        sectionCount: 0,
+        levelsInUse: 0,
+        levelsFullyConfigured: 0,
+        missingCount: 0,
+      }),
       resolveAdvisersStep({ sectionCount: 0, advisedSectionCount: 0 }),
       resolveGradingSheetsStep({ totalSections: 0, sectionsWithSheets: 0 }),
       resolveVirtueThemesStep({ termsRequiringTheme: 0, termsWithTheme: 0 }),
@@ -307,7 +342,12 @@ describe('describeYearBandStatus', () => {
     const r = readinessWith([
       resolveAySetupStep({ datedTermCount: 4, totalTermCount: 4 }), // done
       resolveCalendarStep({ totalTerms: 4, coveredTerms: 0 }), // not done, next up
-      resolveClassesStep({ sectionCount: 0, subjectConfigCount: 0 }), // not done
+      resolveClassesStep({
+        sectionCount: 0,
+        levelsInUse: 0,
+        levelsFullyConfigured: 0,
+        missingCount: 0,
+      }), // not done
       resolveAdvisersStep({ sectionCount: 0, advisedSectionCount: 0 }), // not done
     ]);
     const s = describeYearBandStatus(r);
