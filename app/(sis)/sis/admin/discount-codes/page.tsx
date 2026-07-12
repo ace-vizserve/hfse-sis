@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { CalendarClock, Check, Tag, X } from 'lucide-react';
+import { Ban, CalendarClock, Check, Tag, X } from 'lucide-react';
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { DiscountCodesDataTable } from '@/components/sis/discount-codes-data-table';
@@ -7,8 +7,10 @@ import { NewDiscountCodeButton } from '@/components/sis/edit-discount-code-dialo
 import { HubStat } from '@/components/sis/hub-stat';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { Badge } from '@/components/ui/badge';
+import { classifyCodeStatus } from '@/components/ui/discount-code-status-badge';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+import { summarizeDiscountCodeStatuses } from '@/lib/sis/discount-codes-summary';
 import { listDiscountCodes } from '@/lib/sis/queries';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -49,24 +51,10 @@ export default async function SisDiscountCodesPage({
 
   const codes = await listDiscountCodes(selectedAy);
 
-  // Single-pass status derivation. `Date.parse(iso)` returns ms directly —
-  // no `Date` allocation per code. Pre-compute `todayMs` once.
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayMs = todayStart.getTime();
-
-  let activeCount = 0;
-  let scheduledCount = 0;
-  let expiredCount = 0;
-  for (const c of codes) {
-    if (!c.startDate || !c.endDate) continue;
-    const startMs = Date.parse(c.startDate);
-    const endMs = Date.parse(c.endDate);
-    if (Number.isNaN(startMs) || Number.isNaN(endMs)) continue;
-    if (endMs < todayMs) expiredCount += 1;
-    else if (startMs > todayMs) scheduledCount += 1;
-    else activeCount += 1;
-  }
+  // Same classifier the table's per-row badges use (classifyCodeStatus) —
+  // keeps the summary tiles and the table in agreement, including the
+  // "inactive" bucket for codes missing a start or end date.
+  const statusCounts = summarizeDiscountCodeStatuses(codes, classifyCodeStatus);
 
   return (
     <PageShell>
@@ -112,24 +100,31 @@ export default async function SisDiscountCodesPage({
         />
         <HubStat
           label="Active today"
-          value={activeCount}
+          value={statusCounts.active}
           icon={Check}
           tone="mint"
           subtext="Within start/end window"
         />
         <HubStat
           label="Scheduled"
-          value={scheduledCount}
+          value={statusCounts.scheduled}
           icon={CalendarClock}
           tone="sky"
           subtext="Start date is in the future"
         />
         <HubStat
           label="Expired"
-          value={expiredCount}
+          value={statusCounts.expired}
           icon={X}
           tone="muted"
           subtext="End date has passed"
+        />
+        <HubStat
+          label="Inactive"
+          value={statusCounts.inactive}
+          icon={Ban}
+          tone="amber"
+          subtext="Missing a start or end date"
         />
       </div>
 
