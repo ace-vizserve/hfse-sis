@@ -135,3 +135,74 @@ describe('buildAttentionRows', () => {
     ]);
   });
 });
+
+describe('buildAttentionRows — Phase 7 additions', () => {
+  const BASE_INPUT = {
+    unassigned: [],
+    pendingChangeRequests: 0,
+    levelDemand: [],
+    acceptingAyCode: 'AY2027',
+  };
+
+  it('adds a destructive row per section with no form adviser', () => {
+    const rows = buildAttentionRows({
+      ...BASE_INPUT,
+      unassignedAdviserSections: [{ id: 'sec-1', name: 'S4 Excellence' }],
+    });
+    const row = rows.find((r) => r.id === 'unassigned-adviser-sec-1');
+    expect(row).toMatchObject({
+      severity: 'destructive',
+      text: expect.stringContaining('S4 Excellence'),
+    });
+  });
+
+  it('adds a destructive row when an approver flow is under-resourced', () => {
+    const rows = buildAttentionRows({
+      ...BASE_INPUT,
+      approverFlowCounts: { 'markbook.change_request': 1 },
+    });
+    const row = rows.find(
+      (r) => r.id === 'approver-flow-markbook.change_request'
+    );
+    expect(row?.severity).toBe('destructive'); // 1 approver = destructive per classifyApproverReadiness
+  });
+
+  it('omits an approver-flow row when the flow already has 2+ approvers', () => {
+    const rows = buildAttentionRows({
+      ...BASE_INPUT,
+      approverFlowCounts: { 'markbook.change_request': 2 },
+    });
+    expect(
+      rows.some((r) => r.id === 'approver-flow-markbook.change_request')
+    ).toBe(false);
+  });
+
+  it('adds an amber row per level missing subjects from Structure Defaults', () => {
+    const rows = buildAttentionRows({
+      ...BASE_INPUT,
+      subjectConfigGaps: [
+        {
+          levelId: 's1',
+          levelLabel: 'Secondary 1',
+          missingSubjectCodes: ['SCI', 'PE'],
+        },
+      ],
+    });
+    const row = rows.find((r) => r.id === 'subject-config-gap-s1');
+    expect(row).toMatchObject({
+      severity: 'amber',
+      text: expect.stringContaining('Secondary 1'),
+    });
+  });
+
+  it('omits all three new row types when their inputs are absent (backward compatible)', () => {
+    const rows = buildAttentionRows(BASE_INPUT);
+    expect(rows.some((r) => r.id.startsWith('unassigned-adviser-'))).toBe(
+      false
+    );
+    expect(rows.some((r) => r.id.startsWith('approver-flow-'))).toBe(false);
+    expect(rows.some((r) => r.id.startsWith('subject-config-gap-'))).toBe(
+      false
+    );
+  });
+});

@@ -11,6 +11,8 @@
 
 import type { ClassAssignmentReadinessRow } from '@/lib/sis/dashboard';
 import type { LevelDemandRow } from '@/lib/sis/level-demand';
+import { classifyApproverReadiness } from '@/lib/sis/approver-readiness';
+import type { SubjectConfigGap } from '@/lib/sis/subject-config-gaps';
 
 export type AttentionSeverity = 'destructive' | 'amber';
 
@@ -33,6 +35,21 @@ export function buildAttentionRows(input: {
   // through so the row text can't lie about which AY doesn't offer the
   // level.
   acceptingAyCode: string;
+  // Sections in the current AY with zero `form_adviser` teacher_assignments
+  // row. Optional — the hub page fetches these separately; other callers
+  // (tests, future consumers) can omit it and get the pre-existing 3-signal
+  // behaviour untouched.
+  unassignedAdviserSections?: Array<{ id: string; name: string }>;
+  // Per-flow assigned-approver count (e.g. { 'markbook.change_request': 1 }).
+  // Superadmin-only signal — the hub page only fetches this for that role
+  // (mirrors the /sis/admin/approvers ROUTE_ACCESS gate + the system-health
+  // strip's existing superadmin-only framing).
+  approverFlowCounts?: Record<string, number>;
+  // Levels whose Structure Defaults template lists subjects this AY's
+  // subject_configs is missing — same computation that powers the warning
+  // banner on /sis/admin/subjects, surfaced here so the gap doesn't require
+  // a visit to that page to notice.
+  subjectConfigGaps?: SubjectConfigGap[];
 }): AttentionRow[] {
   const rows: AttentionRow[] = [];
 
@@ -78,6 +95,42 @@ export function buildAttentionRows(input: {
       meta: input.acceptingAyCode,
       href: '/sis/admin/levels',
       actionLabel: 'Grade levels',
+    });
+  }
+
+  for (const section of input.unassignedAdviserSections ?? []) {
+    rows.push({
+      id: `unassigned-adviser-${section.id}`,
+      severity: 'destructive',
+      text: `${section.name} has no form adviser`,
+      meta: 'Blocks FCA write-ups and report-card publishing',
+      href: '/sis/sections',
+      actionLabel: 'Assign',
+    });
+  }
+
+  for (const [flow, count] of Object.entries(input.approverFlowCounts ?? {})) {
+    const readiness = classifyApproverReadiness(count);
+    if (readiness.tone === 'mint') continue; // ready, nothing to flag
+    rows.push({
+      id: `approver-flow-${flow}`,
+      severity: 'destructive',
+      text: readiness.warning ?? readiness.label,
+      meta: readiness.label,
+      href: '/sis/admin/approvers',
+      actionLabel: 'Add approver',
+    });
+  }
+
+  for (const gap of input.subjectConfigGaps ?? []) {
+    const n = gap.missingSubjectCodes.length;
+    rows.push({
+      id: `subject-config-gap-${gap.levelId}`,
+      severity: 'amber',
+      text: `${gap.levelLabel} is missing ${n} subject${n === 1 ? '' : 's'} from Structure Defaults`,
+      meta: gap.missingSubjectCodes.join(', '),
+      href: '/sis/admin/subjects',
+      actionLabel: 'Fix',
     });
   }
 
