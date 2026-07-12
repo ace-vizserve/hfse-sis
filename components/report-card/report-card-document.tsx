@@ -1,4 +1,5 @@
 import { ReportCardLetterhead } from '@/components/report-card/report-card-letterhead';
+import { ReportCardSignatureBlock } from '@/components/report-card/report-card-signature-block';
 import {
   computeAttendancePercentage,
   computeGeneralAverage,
@@ -328,48 +329,12 @@ export function ReportCardDocument({
           );
         })()}
 
-        {/* Signatures */}
-        <section className="pt-2 text-xs text-ink-3 print:break-inside-avoid">
-          {isFinal ? (
-            <div className="grid grid-cols-3 gap-6 sm:gap-8">
-              <div>
-                <div className="h-12 border-b border-ink-5"></div>
-                <p className="mt-2 font-medium text-ink">
-                  {section.form_class_adviser ?? 'Form Teacher'}
-                </p>
-                <p className="text-[10px] uppercase tracking-wider text-ink-4">
-                  Form Teacher
-                </p>
-              </div>
-              <div>
-                <div className="h-12 border-b border-ink-5"></div>
-                <p className="mt-2 font-medium text-ink">
-                  {schoolConfig.principalName || ' '}
-                </p>
-                <p className="text-[10px] uppercase tracking-wider text-ink-4">
-                  School Principal
-                </p>
-              </div>
-              <div>
-                <div className="h-12 border-b border-ink-5"></div>
-                <p className="mt-2 font-medium text-ink">
-                  {schoolConfig.ceoName || ' '}
-                </p>
-                <p className="text-[10px] uppercase tracking-wider text-ink-4">
-                  Founder &amp; CEO
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="mx-auto max-w-xs">
-              <div className="h-12 border-b border-ink-5"></div>
-              <p className="mt-2 text-center font-medium text-ink">&nbsp;</p>
-              <p className="text-center text-[10px] uppercase tracking-wider text-ink-4">
-                Parent&apos;s Signature
-              </p>
-            </div>
-          )}
-        </section>
+        <ReportCardSignatureBlock
+          isFinal={isFinal}
+          formClassAdviser={section.form_class_adviser}
+          principalName={schoolConfig.principalName}
+          ceoName={schoolConfig.ceoName}
+        />
       </div>
 
       {/* eslint-disable-next-line @next/next/no-img-element */}
