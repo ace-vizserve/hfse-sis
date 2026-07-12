@@ -6,11 +6,14 @@
 // The bulk "Generate all indexes" button lives in toolbarTrailing (registrar+).
 
 import { type ColumnDef } from '@tanstack/react-table';
-import { Layers } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Layers } from 'lucide-react';
 
 import { AdviserCell } from '@/components/sections/adviser-cell';
 import { SectionRowActions } from '@/components/sections/section-row-actions';
-import { GenerateAllIndexButton } from '@/components/sis/generate-index-button';
+import {
+  GenerateAllIndexButton,
+  GenerateIndexButton,
+} from '@/components/sis/generate-index-button';
 import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -18,6 +21,8 @@ import { type FacetConfig } from '@/components/ui/data-table/types';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import type { Role } from '@/lib/auth/roles';
 import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
+import { cn } from '@/lib/utils';
+import type { IndexStatus } from '@/lib/sis/section-index-status';
 
 // ─── Row type ────────────────────────────────────────────────────────────────
 
@@ -28,6 +33,7 @@ export type SisSectionRow = {
   schedule: Schedule | null;
   active: number;
   withdrawn: number;
+  indexStatus: IndexStatus;
   fcaName: string | null;
 };
 
@@ -136,6 +142,38 @@ function buildColumns(
           {row.original.withdrawn}
         </span>
       ),
+    },
+    {
+      id: 'indexStatus',
+      header: 'Index',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const s = row.original.indexStatus;
+        const Icon = s.tone === 'mint' ? CheckCircle2 : AlertTriangle;
+        return (
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                'inline-flex h-6 items-center gap-1 rounded-full border px-2.5 font-sans text-[11px] font-semibold',
+                s.tone === 'mint'
+                  ? 'border-brand-mint bg-brand-mint/20 text-ink'
+                  : 'border-brand-amber bg-brand-amber-light text-brand-amber'
+              )}
+            >
+              <Icon className="size-3" />
+              {s.label}
+            </span>
+            {s.tone === 'amber' && (
+              <GenerateIndexButton
+                sectionId={row.original.id}
+                sectionName={row.original.name}
+                termStarted={termStarted}
+                variant="compact"
+              />
+            )}
+          </div>
+        );
+      },
     },
     {
       id: 'actions',

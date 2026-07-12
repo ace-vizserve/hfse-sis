@@ -11,6 +11,7 @@ import { PageShell } from '@/components/ui/page-shell';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { sgToday } from '@/lib/dates';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
+import { computeIndexStatus } from '@/lib/sis/section-index-status';
 import type { Schedule } from '@/lib/schemas/section';
 
 type LevelLite = {
@@ -28,6 +29,7 @@ type SectionCard = {
   schedule: Schedule | null;
   active: number;
   withdrawn: number;
+  unnumbered: number;
 };
 
 export default async function SisSectionsListPage() {
@@ -96,16 +98,26 @@ export default async function SisSectionsListPage() {
   }));
 
   const ids = (sections ?? []).map((s) => s.id);
-  const counts: Record<string, { active: number; withdrawn: number }> = {};
+  const counts: Record<
+    string,
+    { active: number; withdrawn: number; unnumbered: number }
+  > = {};
   if (ids.length > 0) {
     const { data: enrolments } = await supabase
       .from('section_students')
-      .select('section_id, enrollment_status')
+      .select('section_id, enrollment_status, index_number')
       .in('section_id', ids);
     for (const row of enrolments ?? []) {
-      const b = (counts[row.section_id] ??= { active: 0, withdrawn: 0 });
+      const b = (counts[row.section_id] ??= {
+        active: 0,
+        withdrawn: 0,
+        unnumbered: 0,
+      });
       if (row.enrollment_status === 'withdrawn') b.withdrawn++;
-      else b.active++;
+      else {
+        b.active++;
+        if (row.index_number == null) b.unnumbered++;
+      }
     }
   }
 
@@ -128,6 +140,7 @@ export default async function SisSectionsListPage() {
         null) as Schedule | null,
       active: counts[s.id]?.active ?? 0,
       withdrawn: counts[s.id]?.withdrawn ?? 0,
+      unnumbered: counts[s.id]?.unnumbered ?? 0,
     };
   });
 
@@ -153,6 +166,7 @@ export default async function SisSectionsListPage() {
     schedule: c.schedule,
     active: c.active,
     withdrawn: c.withdrawn,
+    indexStatus: computeIndexStatus(c.active, c.unnumbered),
     fcaName: adviserMap[c.id]?.name ?? null,
   }));
 
