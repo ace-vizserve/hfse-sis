@@ -419,6 +419,14 @@ const EVALUATION_NAV: NavSection[] = [
 // superadmin own the full hub (Sprint 33 consolidation — the old `admin`
 // twin was retired and school_admin is now the cross-cutting generalist).
 // Groups mirror the landing-page sections on /sis (page.tsx).
+// Group structure restored to the production sidebar (Year Setup /
+// Organisation / Access / System) per user request (2026-07-12), carrying
+// the post-KD #154 item set and names: "Structure Defaults" (renamed from
+// Class Template), Grade Levels (new page, KD #153), no "Sync from
+// Admissions" (page deleted — auto-sync cron per KD #90/#154), and no
+// "Users" (accounts merged into Staff's Accounts cut; /sis/admin/users is
+// a superadmin-gated redirect stub reachable via the "Staff accounts"
+// command-palette entry or the Staff page's Accounts tab).
 const SIS_NAV: NavSection[] = [
   {
     items: [
@@ -436,11 +444,7 @@ const SIS_NAV: NavSection[] = [
     ],
   },
   {
-    // Recurring, day-to-day work — the things a registrar or school_admin
-    // touches through the school year. Per-item requiresRoles preserved
-    // from the pre-regroup tree; registrar keeps every entry she had.
-    label: 'This year',
-    hint: 'weekly',
+    label: 'Year Setup',
     items: [
       {
         href: '/sis/ay-setup',
@@ -465,18 +469,16 @@ const SIS_NAV: NavSection[] = [
         countKey: 'staffCount',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
+    ],
+  },
+  {
+    label: 'Organisation',
+    items: [
       {
         href: '/sis/admin/discount-codes',
         label: 'Discount Codes',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
-    ],
-  },
-  {
-    // Once-a-year structural config — school_admin + superadmin only.
-    label: 'Structure',
-    hint: 'yearly',
-    items: [
       {
         href: '/sis/admin/levels',
         label: 'Grade Levels',
@@ -497,22 +499,18 @@ const SIS_NAV: NavSection[] = [
     ],
   },
   {
-    // Break-glass — superadmin by default; School Config + Audit Log are
-    // school_admin+ per KD #39. Gates unchanged from the pre-regroup tree.
-    // "Users" has no entry here — user accounts were merged into the Staff
-    // page's Accounts cut (`/sis/admin/staff?view=accounts`, sub-project 2
-    // Phase 4 / KD #154). `/sis/admin/users` is now a redirect stub to that
-    // URL (kept superadmin-only so the gate fires before the redirect for
-    // any other role); reachable via the "Staff accounts" command-palette
-    // entry or the Staff row's Accounts tab, not a standalone nav item.
-    label: 'Access & system',
-    hint: 'rare',
+    label: 'Access',
     items: [
       {
         href: '/sis/admin/approvers',
         label: 'Approvers',
         requiresRoles: ['superadmin'],
       },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
       {
         href: '/sis/admin/school-config',
         label: 'School Config',
