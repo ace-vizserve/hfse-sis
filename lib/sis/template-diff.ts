@@ -38,15 +38,19 @@ export type TemplateDiff = {
   newConfigs: Array<{ subjectId: string; levelId: string }>;
 };
 
-const FIELD_MAP: Array<[TemplateConfigField, keyof TemplateSubjectConfigRow]> =
-  [
-    ['wwWeight', 'ww_weight'],
-    ['ptWeight', 'pt_weight'],
-    ['qaWeight', 'qa_weight'],
-    ['wwMaxSlots', 'ww_max_slots'],
-    ['ptMaxSlots', 'pt_max_slots'],
-    ['qaMax', 'qa_max'],
-  ];
+type NumericField = Exclude<
+  keyof TemplateSubjectConfigRow,
+  'subject_id' | 'level_id'
+>;
+
+const FIELD_MAP: Array<[TemplateConfigField, NumericField]> = [
+  ['wwWeight', 'ww_weight'],
+  ['ptWeight', 'pt_weight'],
+  ['qaWeight', 'qa_weight'],
+  ['wwMaxSlots', 'ww_max_slots'],
+  ['ptMaxSlots', 'pt_max_slots'],
+  ['qaMax', 'qa_max'],
+];
 
 function configKey(r: { subject_id: string; level_id: string }): string {
   return `${r.subject_id}|${r.level_id}`;
