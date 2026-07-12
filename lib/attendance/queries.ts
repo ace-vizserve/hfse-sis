@@ -516,14 +516,21 @@ export async function getCompassionateUsage(
 ): Promise<CompassionateUsage> {
   const service = createServiceClient();
 
-  // 1. Student's allowance.
-  const { data: studentRow } = await service
-    .from('students')
-    .select('urgent_compassionate_allowance')
-    .eq('id', studentId)
-    .maybeSingle();
+  // 1. Student's allowance override + school default fallback (mirrors
+  // getVacationLeaveUsage's override ?? schoolConfig pattern — previously
+  // hardcoded ?? 5 here, which made school_config's
+  // defaultCompassionateAllowancePerYear field inert).
+  const [{ data: studentRow }, schoolConfig] = await Promise.all([
+    service
+      .from('students')
+      .select('urgent_compassionate_allowance')
+      .eq('id', studentId)
+      .maybeSingle(),
+    getSchoolConfig(),
+  ]);
   const allowance =
-    (studentRow?.urgent_compassionate_allowance as number | undefined) ?? 5;
+    (studentRow?.urgent_compassionate_allowance as number | undefined) ??
+    schoolConfig.defaultCompassionateAllowancePerYear;
 
   // 2. All section_students rows for this student in the target AY.
   const { data: ssRows } = await service
@@ -590,6 +597,8 @@ export async function getCompassionateUsageForSection(
   academicYearId: string
 ): Promise<Map<string, CompassionateUsage>> {
   const service = createServiceClient();
+  const schoolConfig = await getSchoolConfig();
+  const defaultAllowance = schoolConfig.defaultCompassionateAllowancePerYear;
 
   // 1. Section roster + allowances (one query).
   const { data: enrolments } = await service
@@ -619,7 +628,10 @@ export async function getCompassionateUsageForSection(
     enrolmentToStudent.set(r.id, s.id);
     studentIds.add(s.id);
     if (!allowanceByStudent.has(s.id)) {
-      allowanceByStudent.set(s.id, s.urgent_compassionate_allowance ?? 5);
+      allowanceByStudent.set(
+        s.id,
+        s.urgent_compassionate_allowance ?? defaultAllowance
+      );
     }
   }
   if (studentIds.size === 0) return out;
@@ -653,7 +665,7 @@ export async function getCompassionateUsageForSection(
     for (const r of enrolmentList) {
       const s = Array.isArray(r.student) ? r.student[0] : r.student;
       if (!s) continue;
-      const allowance = allowanceByStudent.get(s.id) ?? 5;
+      const allowance = allowanceByStudent.get(s.id) ?? defaultAllowance;
       out.set(r.id, { allowance, used: 0, remaining: allowance });
     }
     return out;
@@ -702,7 +714,7 @@ export async function getCompassionateUsageForSection(
   }
 
   for (const [enrolmentId, studentId] of enrolmentToStudent.entries()) {
-    const allowance = allowanceByStudent.get(studentId) ?? 5;
+    const allowance = allowanceByStudent.get(studentId) ?? defaultAllowance;
     const used = usedByStudent.get(studentId) ?? 0;
     out.set(enrolmentId, {
       allowance,
