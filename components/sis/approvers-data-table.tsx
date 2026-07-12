@@ -1,6 +1,6 @@
 'use client';
 
-import { Trash2, Users } from 'lucide-react';
+import { AlertCircle, Trash2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
@@ -25,6 +25,8 @@ import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { TABLE_COPY } from '@/lib/copy/data-table';
+import { cn } from '@/lib/utils';
+import { classifyApproverReadiness } from '@/lib/sis/approver-readiness';
 import {
   APPROVER_FLOW_LABELS,
   type ApproverFlow,
@@ -33,6 +35,67 @@ import type {
   AllApproversByFlow,
   ApproverUser,
 } from '@/lib/sis/approvers/queries';
+
+// ─── Per-flow readiness summary (above the flat table) ────────────────────────
+// One card per flow (today: exactly one, markbook.change_request — the
+// component is Record-shaped for future flows without changing). Matches the
+// approved mockup's healthy/destructive card treatment, driven by the real
+// per-flow approver count via classifyApproverReadiness (Task 9).
+export function ApproverReadinessCards({
+  byFlow,
+}: {
+  byFlow: AllApproversByFlow;
+}) {
+  return (
+    <div className="space-y-3">
+      {(Object.keys(byFlow) as Array<keyof AllApproversByFlow>).map((flow) => {
+        const approvers = byFlow[flow];
+        const readiness = classifyApproverReadiness(approvers.length);
+        const destructive = readiness.tone === 'destructive';
+        return (
+          <div
+            key={flow}
+            className={cn(
+              'overflow-hidden rounded-xl border',
+              destructive ? 'border-2 border-destructive/40' : 'border-border'
+            )}
+          >
+            <div
+              className={cn(
+                'flex items-center justify-between border-b px-5 py-3',
+                destructive
+                  ? 'border-destructive/30 bg-destructive/5'
+                  : 'border-border bg-muted/60'
+              )}
+            >
+              <p className="font-serif text-[15px] font-semibold text-foreground">
+                {APPROVER_FLOW_LABELS[flow]}
+              </p>
+              <span
+                className={cn(
+                  'inline-flex h-6 items-center gap-1 rounded-full border px-2.5 font-sans text-[11px] font-semibold',
+                  destructive
+                    ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                    : 'border-brand-mint bg-brand-mint/20 text-ink'
+                )}
+              >
+                {readiness.label}
+              </span>
+            </div>
+            {readiness.warning && (
+              <div className="flex items-start gap-3 bg-destructive/5 px-5 py-3.5">
+                <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                <p className="text-[12.5px] leading-relaxed text-destructive">
+                  {readiness.warning}
+                </p>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // ─── Per-row actions (revoke via overflow menu) ───────────────────────────────
 

@@ -1,7 +1,10 @@
 import { Info } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
-import { ApproversDataTable } from '@/components/sis/approvers-data-table';
+import {
+  ApproverReadinessCards,
+  ApproversDataTable,
+} from '@/components/sis/approvers-data-table';
 import { PageShell } from '@/components/ui/page-shell';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { APPROVER_FLOWS, type ApproverFlow } from '@/lib/schemas/approvers';
@@ -39,6 +42,8 @@ export default async function ApproversPage() {
         title="Approver assignments."
         description="Designate which school admins are approvers for each approval flow. When a teacher files a locked-sheet change request, they pick a primary and secondary from the flow’s list; only those two see and act on it."
       />
+
+      <ApproverReadinessCards byFlow={byFlow} />
 
       <ApproversDataTable byFlow={byFlow} candidatesByFlow={candidatesByFlow} />
 
