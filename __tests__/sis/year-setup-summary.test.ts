@@ -142,7 +142,14 @@ describe('checklistSummary', () => {
       ).toBe('Set term dates first.');
     });
 
-    it('falls back to "set term dates first" when the fraction total is 0', () => {
+    // NOTE: `resolveCalendarStep` (lib/sis/readiness.ts) never actually
+    // produces a `fraction` object when `totalTerms === 0` — it returns
+    // `fraction: undefined` in that case, same as the "no fraction" branch
+    // above. So `{ done: 0, total: 0 }` is a synthetic/unreachable-in-prod
+    // state; it's still exercised here for defensive coverage, with its
+    // expectation updated to match the Phase 2 branch (which has no special
+    // `total === 0` guard — it falls through to the done===total case).
+    it('reports full coverage (0/0) for the unreachable-in-prod all-zero fraction', () => {
       expect(
         checklistSummary('calendar', {
           step: makeStep({
@@ -153,10 +160,10 @@ describe('checklistSummary', () => {
           ay: makeAy(),
           terms: [],
         })
-      ).toBe('Set term dates first.');
+      ).toBe('School days cover all 0 terms.');
     });
 
-    it('reports no school days generated yet when done is 0 but terms exist', () => {
+    it('names the blocking consequence when done is 0 but terms exist', () => {
       expect(
         checklistSummary('calendar', {
           step: makeStep({
@@ -167,21 +174,25 @@ describe('checklistSummary', () => {
           ay: makeAy(),
           terms: [],
         })
-      ).toBe('No school days generated yet (4 terms).');
+      ).toBe(
+        "4 terms still have unmarked dates — attendance entry will be blocked there until they're set."
+      );
     });
 
-    it('reports partial coverage', () => {
-      expect(
-        checklistSummary('calendar', {
-          step: makeStep({
-            id: 'calendar',
-            status: 'partial',
-            fraction: { done: 3, total: 4 },
-          }),
-          ay: makeAy(),
-          terms: [],
-        })
-      ).toBe('School days cover 3 of 4 terms.');
+    it('partial state names the blocking consequence, not just a fraction (Phase 2 consequence-first copy)', () => {
+      const summary = checklistSummary('calendar', {
+        step: makeStep({
+          id: 'calendar',
+          status: 'partial',
+          fraction: { done: 3, total: 4 },
+        }),
+        ay: makeAy(),
+        terms: [],
+      });
+      expect(summary).toBe(
+        "1 term still has unmarked dates — attendance entry will be blocked there until they're set."
+      );
+      expect(summary).toContain('will be blocked');
     });
 
     it('reports full coverage', () => {
@@ -195,60 +206,92 @@ describe('checklistSummary', () => {
           ay: makeAy(),
           terms: [],
         })
-      ).toBe('School days cover 4 of 4 terms.');
+      ).toBe('School days cover all 4 terms.');
     });
   });
 
   describe('classes', () => {
-    it('reports no classes created yet when both counts are 0', () => {
+    // NOTE: this branch was rewired from raw `ay.counts` (a meaningless
+    // total — "12 classes · 48 subject weights" said nothing about
+    // completeness) to `step.fraction`, which `lib/sis/readiness.ts`'s
+    // `resolveClassesStep` now computes as levels-fully-configured vs
+    // levels-in-use (comparing each in-use level's `subject_configs`
+    // against `template_subject_configs`, i.e. Structure Defaults). The two
+    // tests below that used to assert on the old `ay.counts`-derived copy
+    // were deliberately rewritten to assert on the new fraction-derived,
+    // consequence-first copy — not silently left to bit-rot.
+    it('reports no classes created yet when there is no fraction', () => {
       expect(
         checklistSummary('classes', {
-          step: makeStep({ id: 'classes', status: 'not_started' }),
-          ay: makeAy({
-            counts: {
-              terms: 4,
-              sections: 0,
-              subject_configs: 0,
-              section_students: 0,
-            },
+          step: makeStep({
+            id: 'classes',
+            status: 'not_started',
+            fraction: undefined,
           }),
+          ay: makeAy(),
           terms: [],
         })
       ).toBe('No classes created yet.');
     });
 
-    it('reports sections and subject weight counts, pluralized', () => {
+    it('reports no classes created yet when the fraction total is 0', () => {
       expect(
         checklistSummary('classes', {
-          step: makeStep({ id: 'classes', status: 'done' }),
-          ay: makeAy({
-            counts: {
-              terms: 4,
-              sections: 12,
-              subject_configs: 48,
-              section_students: 0,
-            },
+          step: makeStep({
+            id: 'classes',
+            status: 'not_started',
+            fraction: { done: 0, total: 0 },
           }),
+          ay: makeAy(),
           terms: [],
         })
-      ).toBe('12 classes · 48 subject weights.');
+      ).toBe('No classes created yet.');
     });
 
-    it('singularizes for a single section', () => {
+    it('reports full completion when every level is configured', () => {
       expect(
         checklistSummary('classes', {
-          step: makeStep({ id: 'classes', status: 'done' }),
-          ay: makeAy({
-            counts: {
-              terms: 4,
-              sections: 1,
-              subject_configs: 1,
-              section_students: 0,
-            },
+          step: makeStep({
+            id: 'classes',
+            status: 'done',
+            fraction: { done: 3, total: 3 },
           }),
+          ay: makeAy(),
           terms: [],
         })
-      ).toBe('1 class · 1 subject weight.');
+      ).toBe("Every level's subjects are configured (3/3).");
+    });
+
+    it('partial state names what disappears from the report card (Phase 2 consequence-first copy)', () => {
+      const summary = checklistSummary('classes', {
+        step: makeStep({
+          id: 'classes',
+          status: 'partial',
+          fraction: { done: 2, total: 3 },
+        }),
+        ay: makeAy(),
+        terms: [],
+      });
+      expect(summary).toBe(
+        "1 level is missing subjects from Structure Defaults — those subjects won't appear on report cards."
+      );
+      expect(summary).toContain("won't appear on report cards");
+    });
+
+    it('pluralizes the gap for multiple missing levels', () => {
+      expect(
+        checklistSummary('classes', {
+          step: makeStep({
+            id: 'classes',
+            status: 'partial',
+            fraction: { done: 1, total: 3 },
+          }),
+          ay: makeAy(),
+          terms: [],
+        })
+      ).toBe(
+        "2 levels are missing subjects from Structure Defaults — those subjects won't appear on report cards."
+      );
     });
   });
 

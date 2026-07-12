@@ -83,16 +83,20 @@ export function checklistSummary(
     case 'calendar': {
       if (!step.fraction) return 'Set term dates first.';
       const { done, total } = step.fraction;
-      if (total === 0) return 'Set term dates first.';
-      if (done === 0)
-        return `No school days generated yet (${total} term${total === 1 ? '' : 's'}).`;
-      return `School days cover ${done} of ${total} term${total === 1 ? '' : 's'}.`;
+      if (done === total)
+        return `School days cover all ${total} term${total === 1 ? '' : 's'}.`;
+      const remaining = total - done;
+      return `${remaining} term${remaining === 1 ? '' : 's'} still ${remaining === 1 ? 'has' : 'have'} unmarked dates — attendance entry will be blocked there until they're set.`;
     }
 
     case 'classes': {
-      const { sections, subject_configs: configs } = ay.counts;
-      if (sections === 0 && configs === 0) return 'No classes created yet.';
-      return `${sections} class${sections === 1 ? '' : 'es'} · ${configs} subject weight${configs === 1 ? '' : 's'}.`;
+      if (!step.fraction) return 'No classes created yet.';
+      const { done, total } = step.fraction;
+      if (total === 0) return 'No classes created yet.';
+      if (done === total)
+        return `Every level's subjects are configured (${total}/${total}).`;
+      const gap = total - done;
+      return `${gap} level${gap === 1 ? '' : 's'} ${gap === 1 ? 'is' : 'are'} missing subjects from Structure Defaults — those subjects won't appear on report cards.`;
     }
 
     case 'advisers': {
