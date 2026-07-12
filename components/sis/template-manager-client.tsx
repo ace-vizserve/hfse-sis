@@ -5,6 +5,7 @@ import {
   AlertCircle,
   BookOpen,
   CheckCircle2,
+  Eye,
   GraduationCap,
   LayoutGrid,
   Loader2,
@@ -27,7 +28,7 @@ import {
   type FieldValues,
   type Path,
 } from 'react-hook-form';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
@@ -113,6 +114,10 @@ import type {
   TemplateSubjectConfigRow,
 } from '@/lib/sis/template/queries';
 import type { LevelRow, SubjectRow } from '@/lib/sis/subjects/queries';
+import type {
+  TemplateConfigField,
+  TemplateDiff,
+} from '@/lib/sis/template-diff';
 import { cn } from '@/lib/utils';
 
 type Props = {
@@ -726,6 +731,15 @@ function SubjectCard({
 // Propagate-to-AYs dialog
 // =====================================================================
 
+const TEMPLATE_FIELD_LABEL: Record<TemplateConfigField, string> = {
+  wwWeight: 'WW weight',
+  ptWeight: 'PT weight',
+  qaWeight: 'QA weight',
+  wwMaxSlots: 'WW slots',
+  ptMaxSlots: 'PT slots',
+  qaMax: 'QA max',
+};
+
 function PropagateDialog({
   eligibleAys,
   disabled,
@@ -736,6 +750,7 @@ function PropagateDialog({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [previewAyCode, setPreviewAyCode] = useState<string | null>(null);
 
   const allSelected =
     eligibleAys.length > 0 && selected.size === eligibleAys.length;
@@ -755,6 +770,24 @@ function PropagateDialog({
     });
   }
 
+  // Read-only preview (Task 2) — computed the same way the apply RPC would
+  // resolve the UPSERT, but never writes. Re-fetches whenever the previewed
+  // AY changes; `enabled` keeps it idle until a row's "Preview" is clicked.
+  const diffQuery = useQuery({
+    queryKey: ['template-diff', previewAyCode],
+    queryFn: () =>
+      apiFetch<{ diff: TemplateDiff }>(
+        `/api/sis/admin/template/diff?ay_code=${previewAyCode}`
+      ),
+    enabled: !!previewAyCode,
+  });
+  const diff = diffQuery.data?.diff;
+  const changeCount = diff
+    ? diff.newSections.length +
+      diff.newConfigs.length +
+      diff.configChanges.length
+    : 0;
+
   type ApplyResult = {
     ok?: boolean;
     results?: Array<{
@@ -770,7 +803,9 @@ function PropagateDialog({
 
   // Tier-2 mutation: useMutation owns the pending/error UX. The bespoke
   // success-body handling (results → summary; failures → toast.warning vs
-  // toast.success) is preserved exactly.
+  // toast.success) is preserved exactly. Task 2 only adds a preview step in
+  // front of this — the mutation itself, its request shape, and its
+  // success/error handling are unchanged.
   const applyMutation = useMutation({
     mutationFn: (ayCodes: string[]) =>
       apiFetch<ApplyResult>(
@@ -795,6 +830,7 @@ function PropagateDialog({
       }
       setOpen(false);
       setSelected(new Set());
+      setPreviewAyCode(null);
       router.refresh();
     },
     onError: (e) => {
@@ -807,12 +843,20 @@ function PropagateDialog({
     applyMutation.mutate(Array.from(selected));
   }
 
+  function onConfirmPreview() {
+    if (!previewAyCode) return;
+    applyMutation.mutate([previewAyCode]);
+  }
+
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) setSelected(new Set());
+        if (!next) {
+          setSelected(new Set());
+          setPreviewAyCode(null);
+        }
       }}
     >
       <DialogTrigger asChild>
@@ -851,26 +895,133 @@ function PropagateDialog({
             </label>
             <div className="space-y-1">
               {eligibleAys.map((ay) => (
-                <label
+                <div
                   key={ay.ay_code}
-                  className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-muted/40"
+                  className="flex items-center gap-1 rounded-md px-3 py-2 text-sm hover:bg-muted/40"
                 >
-                  <Checkbox
-                    checked={selected.has(ay.ay_code)}
-                    onCheckedChange={(c) => toggleOne(ay.ay_code, c === true)}
-                  />
-                  <span className="font-mono text-xs font-semibold text-foreground">
-                    {ay.ay_code}
-                  </span>
-                  <span className="text-muted-foreground">{ay.label}</span>
-                  {ay.is_current && (
-                    <Badge variant="muted" className="ml-auto">
-                      Current
-                    </Badge>
-                  )}
-                </label>
+                  <label className="flex flex-1 cursor-pointer items-center gap-2">
+                    <Checkbox
+                      checked={selected.has(ay.ay_code)}
+                      onCheckedChange={(c) => toggleOne(ay.ay_code, c === true)}
+                    />
+                    <span className="font-mono text-xs font-semibold text-foreground">
+                      {ay.ay_code}
+                    </span>
+                    <span className="text-muted-foreground">{ay.label}</span>
+                    {ay.is_current && (
+                      <Badge variant="muted" className="ml-auto">
+                        Current
+                      </Badge>
+                    )}
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      'h-7 shrink-0 gap-1 px-2 text-xs',
+                      previewAyCode === ay.ay_code && 'bg-muted text-foreground'
+                    )}
+                    onClick={() => setPreviewAyCode(ay.ay_code)}
+                  >
+                    <Eye className="size-3.5" />
+                    Preview
+                  </Button>
+                </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {previewAyCode && (
+          <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Preview — {previewAyCode}
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-xs"
+                onClick={() => setPreviewAyCode(null)}
+              >
+                <X className="size-3" />
+              </Button>
+            </div>
+
+            {diffQuery.isLoading ? (
+              <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin" />
+                Computing changes…
+              </div>
+            ) : diffQuery.isError ? (
+              <div className="flex items-center gap-2 py-2 text-sm text-destructive">
+                <AlertCircle className="size-3.5" />
+                {diffQuery.error instanceof Error
+                  ? diffQuery.error.message
+                  : 'Could not load the preview.'}
+              </div>
+            ) : !diff ? null : changeCount === 0 ? (
+              <p className="py-2 text-sm text-muted-foreground">
+                {previewAyCode} already matches the template — nothing to apply.
+              </p>
+            ) : (
+              <div className="max-h-56 space-y-1.5 overflow-y-auto">
+                {diff.newSections.map((s, i) => (
+                  <div
+                    key={`sec-${i}`}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <Badge variant="success">+ NEW</Badge>
+                    <span className="text-foreground">
+                      Section <span className="font-medium">{s.name}</span> (
+                      {s.levelId})
+                    </span>
+                  </div>
+                ))}
+                {diff.newConfigs.map((c, i) => (
+                  <div
+                    key={`cfg-${i}`}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <Badge variant="success">+ NEW</Badge>
+                    <span className="text-foreground">
+                      Subject config{' '}
+                      <span className="font-medium">{c.subjectId}</span> (
+                      {c.levelId})
+                    </span>
+                  </div>
+                ))}
+                {diff.configChanges.map((c, i) => (
+                  <div
+                    key={`chg-${i}`}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <Badge variant="warning">~ UPDATE</Badge>
+                    <span className="text-foreground">
+                      {c.subjectId} ({c.levelId}) ·{' '}
+                      {TEMPLATE_FIELD_LABEL[c.field]}
+                    </span>
+                    <span className="ml-auto flex items-center">
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono line-through decoration-destructive/60">
+                        {c.from}
+                      </span>
+                      <span className="mx-1 text-ink-5">→</span>
+                      <span className="rounded bg-brand-mint/20 px-1.5 py-0.5 font-mono text-ink">
+                        {c.to}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Apply never removes. If a section or subject was deleted from the
+              template, it stays in {previewAyCode} untouched — remove it there
+              directly.
+            </p>
           </div>
         )}
 
@@ -882,21 +1033,43 @@ function PropagateDialog({
           >
             Cancel
           </Button>
-          <Button
-            type="button"
-            onClick={onConfirm}
-            disabled={selected.size === 0 || applyMutation.isPending}
-            className="gap-1.5"
-          >
-            {applyMutation.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Send className="size-3.5" />
-            )}
-            {applyMutation.isPending
-              ? 'Propagating…'
-              : `Propagate to ${selected.size}`}
-          </Button>
+          {previewAyCode ? (
+            <Button
+              type="button"
+              onClick={onConfirmPreview}
+              disabled={
+                diffQuery.isLoading ||
+                applyMutation.isPending ||
+                changeCount === 0
+              }
+              className="gap-1.5"
+            >
+              {applyMutation.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Send className="size-3.5" />
+              )}
+              {applyMutation.isPending
+                ? 'Applying…'
+                : `Apply ${changeCount} change${changeCount === 1 ? '' : 's'} to ${previewAyCode}`}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={onConfirm}
+              disabled={selected.size === 0 || applyMutation.isPending}
+              className="gap-1.5"
+            >
+              {applyMutation.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Send className="size-3.5" />
+              )}
+              {applyMutation.isPending
+                ? 'Propagating…'
+                : `Propagate to ${selected.size}`}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

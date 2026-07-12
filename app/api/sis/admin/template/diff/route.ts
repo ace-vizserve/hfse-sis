@@ -6,9 +6,16 @@ import { computeTemplateDiff } from '@/lib/sis/template-diff';
 // GET /api/sis/admin/template/diff?ay_code=AY2027 — read-only preview of
 // what "Propagate to AYs" would change for ONE AY, computed the same way
 // apply_template_to_ay's UPSERT would resolve it, but never writes.
-export async function GET(request: Request) {
+export async function GET(request: Request): Promise<NextResponse> {
   const auth = await requireRole(['school_admin', 'superadmin']);
-  if ('error' in auth) return auth.error;
+  // Truthiness check (not `'error' in auth`) — with this route's explicit
+  // `Promise<NextResponse>` return annotation, `'error' in auth` narrows
+  // `auth.error` to `NextResponse | undefined` (TS synthesizes an implicit
+  // `error?: undefined` on the success branch), which tsc then rejects as
+  // not assignable to `NextResponse`. Checking truthiness narrows out
+  // `undefined` too and is equivalent at runtime (`auth.error` is always a
+  // real NextResponse when present).
+  if (auth.error) return auth.error;
 
   const { searchParams } = new URL(request.url);
   const ayCode = searchParams.get('ay_code');
