@@ -65,13 +65,21 @@ export default async function SubjectConfigPage({
   // level missing one of its template subjects silently drops that subject
   // from grading-sheet creation AND the report card, with no error visible
   // anywhere. Compare against it here so the gap is visible where it's fixed.
-  const { data: templateRows } = currentAy
+  //
+  // Full rows now (not just level/subject ids) so the inline "Structure
+  // Defaults" tab (SubjectConfigMatrix) can render actual weight/slot
+  // values, not just a presence gap. computeSubjectConfigGaps only reads
+  // {level_id, subject_id} off each row, so the wider select is a strict
+  // superset and leaves that presence-only check unaffected.
+  const { data: templateConfigs } = currentAy
     ? await service
         .from('template_subject_configs')
-        .select('level_id, subject_id')
+        .select(
+          'subject_id, level_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
+        )
     : { data: [] };
   const subjectConfigGaps = currentAy
-    ? computeSubjectConfigGaps(levels, subjects, templateRows ?? [], configs)
+    ? computeSubjectConfigGaps(levels, subjects, templateConfigs ?? [], configs)
     : [];
 
   const ayOptions = ayList.map((a) => ({
@@ -172,6 +180,7 @@ export default async function SubjectConfigPage({
           subjects={subjects}
           levels={levels}
           configs={configs}
+          templateConfigs={templateConfigs ?? []}
           ayCode={currentAy.ay_code}
         />
       )}
