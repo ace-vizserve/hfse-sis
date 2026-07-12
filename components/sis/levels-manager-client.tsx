@@ -43,6 +43,7 @@ import {
 } from '@/components/ui/dialog';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { RowActionsMenu } from '@/components/ui/data-table';
+import { cn } from '@/lib/utils';
 import {
   Form,
   FormControl,
@@ -204,6 +205,11 @@ export function LevelsManagerClient({
         )}
       </Card>
 
+      <ApplicationFormLevelPreview
+        levels={levels}
+        offeredLevelIds={offeredLevelIds}
+      />
+
       {unmatchedDemand.length > 0 && (
         <div className="flex flex-wrap items-start gap-2 rounded-xl border border-brand-amber/30 bg-brand-amber/5 px-4 py-3">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-brand-amber" />
@@ -238,6 +244,79 @@ export function LevelsManagerClient({
         {levels.length === 1 ? '' : 's'} · {coreCount} permanent · every change
         is audit-logged
       </p>
+    </div>
+  );
+}
+
+// =====================================================================
+// Application-form level-picker preview — renders exactly what a parent
+// sees on the application-form level picker for the accepting AY, derived
+// from the SAME props already loaded for the toggle list above (no new API
+// call; mirrors the shape GET /api/parent/v2/levels returns: code, label,
+// nextCode, offered). "Offered" here MUST replicate the main list's
+// `level.isCore || offeredSet.has(level.id)` check (see LevelRowItem's
+// call site above) — core levels (P1-P6/S1-S4) never get an
+// ay_level_offerings row (KD #153: "core levels need no rows"), so
+// checking offeredLevelIds alone would incorrectly render every core level
+// as shelved whenever the offerings list is empty or doesn't name them.
+// =====================================================================
+
+export function ApplicationFormLevelPreview({
+  levels,
+  offeredLevelIds,
+  returningFromLevelId,
+}: {
+  levels: LevelRow[];
+  offeredLevelIds: string[];
+  returningFromLevelId?: string;
+}) {
+  const offeredSet = React.useMemo(
+    () => new Set(offeredLevelIds),
+    [offeredLevelIds]
+  );
+  const suggestedNextId = returningFromLevelId
+    ? levels.find((l) => l.id === returningFromLevelId)?.nextLevelId
+    : null;
+
+  return (
+    <div className="rounded-xl border-2 border-hairline-strong bg-card p-4 shadow-sm">
+      <p className="mb-1 text-[11px] font-medium text-ink-4">
+        Which level are you applying for?
+      </p>
+      <div className="space-y-1.5">
+        {levels.map((level) => {
+          const offered = level.isCore || offeredSet.has(level.id);
+          const suggested = level.id === suggestedNextId;
+          if (!offered) {
+            return (
+              <div
+                key={level.id}
+                className="rounded-md border border-dashed border-hairline-strong bg-muted/40 px-3 py-2 text-[13px] text-ink-5 line-through"
+              >
+                {level.label} — not shown
+              </div>
+            );
+          }
+          return (
+            <div
+              key={level.id}
+              className={cn(
+                'rounded-md border px-3 py-2 text-[13px]',
+                suggested
+                  ? 'border-brand-indigo bg-accent font-medium text-brand-indigo-deep'
+                  : 'border-border bg-card text-ink-3'
+              )}
+            >
+              {level.label}
+              {suggested && (
+                <span className="ml-1 rounded bg-brand-indigo/10 px-1.5 py-0.5 font-mono text-[9px]">
+                  suggested
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
