@@ -22,6 +22,8 @@ export type CalendarIndex = {
   entriesByIso: Map<string, CalendarChip[]>;
   /** Per date: events whose span includes it (used by the day sheet). */
   eventsByIso: Map<string, CalendarEventRow[]>;
+  /** Every date with at least one school_calendar row (any audience). */
+  hasRowByIso: Set<string>;
 };
 
 function statusOf(row: SchoolCalendarRow) {
@@ -44,10 +46,15 @@ export function useCalendarIndex(
       string,
       Partial<Record<Audience, SchoolCalendarRow>>
     >();
+    // A date is "present" if it has ANY row, any audience, any day_type —
+    // used by the Phase 2 redesign to flag dates that will block attendance
+    // entry (no row = the grid has nothing to render for that date).
+    const hasRowByIso = new Set<string>();
     for (const r of calendar) {
       const cur = byDateAud.get(r.date) ?? {};
       cur[r.audience] = r;
       byDateAud.set(r.date, cur);
+      hasRowByIso.add(r.date);
     }
 
     const entriesByIso = new Map<string, CalendarChip[]>();
@@ -129,6 +136,6 @@ export function useCalendarIndex(
       }
     }
 
-    return { entriesByIso, eventsByIso };
+    return { entriesByIso, eventsByIso, hasRowByIso };
   }, [calendar, events]);
 }
