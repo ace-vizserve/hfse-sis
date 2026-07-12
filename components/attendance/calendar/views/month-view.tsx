@@ -288,6 +288,19 @@ export function MonthView({
                 // as spillover). Days in no term (gaps) render faded + inert.
                 const clickable = cellInTerm;
 
+                // Weekday-only: `isNonSchoolDay` (app/api/attendance/daily/
+                // route.ts) technically fail-closes ANY unlisted date once a
+                // term has rows, but `ensureTermSeeded`/`weekdaysBetween` only
+                // ever auto-seed weekdays — weekends structurally never carry
+                // a row (see this file's header comment: "Weekends are
+                // shown... but carry no 'School day' badge"). Flagging every
+                // Sat/Sun as "Unmarked" would be permanent noise, not a real
+                // gap, so the flag is scoped to weekdays only.
+                const cellDow = cell.date.getDay();
+                const isWeekday = cellDow >= 1 && cellDow <= 5;
+                const missingRow =
+                  cellInTerm && isWeekday && !index.hasRowByIso.has(cell.iso);
+
                 const cellProps: CalendarCellProps = {
                   iso: cell.iso,
                   dayNumber: cell.dayNumber,
@@ -298,6 +311,7 @@ export function MonthView({
                   outOfMonth: cell.outOfMonth || !cellInTerm,
                   selected: selectedIsos.has(cell.iso),
                   clickable,
+                  missingRow,
                   maxVisibleChips: 3,
                   onClick: () => onDayClick(cell.iso),
                 };

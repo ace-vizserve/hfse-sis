@@ -1,4 +1,4 @@
-import { CalendarDays } from 'lucide-react';
+import { AlertTriangle, CalendarDays } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -18,6 +18,7 @@ import {
   ensureTermSeeded,
   getCalendarEventsForAy,
   getSchoolCalendarForAy,
+  weekdaysBetween,
 } from '@/lib/attendance/calendar';
 import { logAction } from '@/lib/audit/log-action';
 import { AUDIENCE_VALUES, type Audience } from '@/lib/schemas/attendance';
@@ -26,6 +27,16 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 function parseAudience(raw: string | undefined): Audience {
   return AUDIENCE_VALUES.includes(raw as Audience) ? (raw as Audience) : 'all';
+}
+
+// Compact "Jul 23" headline date — mirrors calendar-cell.tsx's
+// formatHumanDate local-date-safe parse pattern, without the weekday/year.
+function formatShortDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-SG', {
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 export default async function SisCalendarPage({
@@ -111,6 +122,28 @@ export default async function SisCalendarPage({
         ])
       : [[], []];
 
+  // Mirrors the fail-closed gate in app/api/attendance/daily/route.ts's
+  // isNonSchoolDay: a date inside a term that has ANY calendar rows, but no
+  // row of its own, will be blocked. Surfaced here so a registrar sees it
+  // before a teacher hits the 409.
+  //
+  // Weekday-scoped (via the same `weekdaysBetween` helper `ensureTermSeeded`
+  // uses to auto-seed above): `isNonSchoolDay` itself has no day-of-week
+  // check, but weekends structurally never carry a school_calendar row (only
+  // weekdays get auto-seeded, and HFSE doesn't hold weekday-style classes on
+  // Sat/Sun), so scanning every day of the term would flag every weekend as
+  // "missing" — always non-empty, not actionable. Scoping to weekdays keeps
+  // the panel honest for the gap it's meant to catch: a school day nobody
+  // ever categorised.
+  const datesWithRows = new Set(calendar.map((c) => c.date));
+  const missingDates = dated.flatMap((t) => {
+    const termHasAnyRows = calendar.some((c) => c.termId === t.id);
+    if (!termHasAnyRows) return [];
+    return weekdaysBetween(t.start_date as string, t.end_date as string).filter(
+      (d) => !datesWithRows.has(d)
+    );
+  });
+
   return (
     <PageShell className="max-w-[1400px]">
       <SisPageHeader
@@ -178,23 +211,44 @@ export default async function SisCalendarPage({
           </CardContent>
         </Card>
       ) : (
-        <CalendarAdminClient
-          ayId={ay!.id}
-          terms={dated.map((t) => ({
-            id: t.id,
-            label: t.label,
-            termNumber: t.term_number,
-            startDate: t.start_date as string,
-            endDate: t.end_date as string,
-          }))}
-          level={audience}
-          calendar={calendar}
-          events={events}
-          // Copy-from-prior-AY is per-term (single target term + year); it
-          // doesn't map cleanly onto the AY-wide surface. Passed null for now —
-          // to be re-wired as a follow-up once the target-term picker lands.
-          copyFromPriorAyProps={null}
-        />
+        <>
+          {missingDates.length > 0 && (
+            <div className="flex items-start gap-4 rounded-xl border border-destructive/30 bg-destructive/5 p-5">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive text-destructive-foreground shadow-brand-tile">
+                <AlertTriangle className="size-4" />
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <p className="font-serif text-base font-semibold leading-tight text-foreground">
+                  {formatShortDate(missingDates[0])} will block attendance entry
+                  {missingDates.length > 1 &&
+                    ` (+${missingDates.length - 1} more)`}
+                </p>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  This term already has other days marked, so an unlisted date
+                  reads as a holiday and teachers get blocked when they try to
+                  mark it.
+                </p>
+              </div>
+            </div>
+          )}
+          <CalendarAdminClient
+            ayId={ay!.id}
+            terms={dated.map((t) => ({
+              id: t.id,
+              label: t.label,
+              termNumber: t.term_number,
+              startDate: t.start_date as string,
+              endDate: t.end_date as string,
+            }))}
+            level={audience}
+            calendar={calendar}
+            events={events}
+            // Copy-from-prior-AY is per-term (single target term + year); it
+            // doesn't map cleanly onto the AY-wide surface. Passed null for now —
+            // to be re-wired as a follow-up once the target-term picker lands.
+            copyFromPriorAyProps={null}
+          />
+        </>
       )}
     </PageShell>
   );

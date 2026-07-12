@@ -79,6 +79,15 @@ export type CalendarCellProps = {
   selected?: boolean;
   /** Whether this cell accepts clicks. */
   clickable: boolean;
+  /**
+   * True when this date has NO `school_calendar` row despite belonging to a
+   * term that has other rows — i.e. it will fail-closed 409 a teacher trying
+   * to mark attendance (`isNonSchoolDay` in
+   * app/api/attendance/daily/route.ts). Renders a destructive "Unmarked" tag
+   * ahead of the normal chip stack so the registrar can catch the gap before
+   * a teacher hits the block.
+   */
+  missingRow?: boolean;
   /** Max chips before collapsing to "+N more". Defaults to 3. */
   maxVisibleChips?: number;
   onClick: () => void;
@@ -93,6 +102,7 @@ export function CalendarCell({
   isBreak = false,
   selected = false,
   clickable,
+  missingRow = false,
   maxVisibleChips = 3,
   onClick,
 }: CalendarCellProps) {
@@ -114,6 +124,7 @@ export function CalendarCell({
         selected && 'bg-accent',
         isInteractive && 'cursor-pointer hover:bg-muted/40',
         !isInteractive && 'cursor-not-allowed',
+        missingRow && 'ring-1 ring-inset ring-destructive/40',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -145,6 +156,13 @@ export function CalendarCell({
           />
         ) : (
           <>
+            {missingRow && (
+              <ChartLegendChip
+                color="very-stale"
+                label="Unmarked"
+                className="flex w-full justify-center"
+              />
+            )}
             {visible.map((c) => (
               <ChartLegendChip
                 key={c.key}
