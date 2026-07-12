@@ -246,6 +246,15 @@ export function WeekView({
             const chips = index.entriesByIso.get(d.iso) ?? EMPTY_CHIPS;
             const cellInTerm = inTerm(d.iso);
 
+            // Weekday-only, mirroring MonthView: weekends structurally never
+            // carry a school_calendar row (ensureTermSeeded/weekdaysBetween
+            // only ever auto-seed weekdays), so flagging every Sat/Sun as
+            // "Unmarked" would be permanent noise, not a real gap. weekDays
+            // is built Mon-first, so colIdx 0-4 are the weekdays.
+            const isWeekday = colIdx < 5;
+            const missingRow =
+              cellInTerm && isWeekday && !index.hasRowByIso.has(d.iso);
+
             const cellProps: CalendarCellProps = {
               iso: d.iso,
               dayNumber: d.dayNumber,
@@ -255,6 +264,7 @@ export function WeekView({
               // MonthView's outOfMonth rendering (same §10.2 semantics).
               outOfMonth: !cellInTerm,
               clickable: cellInTerm,
+              missingRow,
               // Taller cells: show up to 6 chips before collapsing.
               maxVisibleChips: 6,
               onClick: () => onDayClick(d.iso),
