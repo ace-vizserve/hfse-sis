@@ -10,6 +10,7 @@ import { z } from 'zod';
 import {
   AlertTriangle,
   CalendarRange,
+  Info,
   Layers,
   Loader2,
   Pencil,
@@ -205,10 +206,19 @@ export function LevelsManagerClient({
         )}
       </Card>
 
-      <ApplicationFormLevelPreview
-        levels={levels}
-        offeredLevelIds={offeredLevelIds}
-      />
+      {/* "Live preview" eyebrow + card — same labeled treatment School
+          Config's letterhead preview uses (school-config-form.tsx), so this
+          reads as the same "what the end user actually sees" pattern
+          instead of an unlabeled inline block. */}
+      <div>
+        <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Live preview
+        </p>
+        <ApplicationFormLevelPreview
+          levels={levels}
+          offeredLevelIds={offeredLevelIds}
+        />
+      </div>
 
       {unmatchedDemand.length > 0 && (
         <div className="flex flex-wrap items-start gap-2 rounded-xl border border-brand-amber/30 bg-brand-amber/5 px-4 py-3">
@@ -390,55 +400,64 @@ function LevelRowItem({
 }) {
   const showDemandChip = demand !== null && !demand.offered && demand.count > 0;
 
+  // Sub-grouped into 4 visual clusters (Miller's-Law fix) — identity /
+  // progression / offering / actions — separated by a thin border-l instead
+  // of one undifferentiated flex-wrap line of 7-8 elements.
   return (
     <li className="flex flex-wrap items-center gap-3 px-5 py-4">
-      <Badge
-        variant="outline"
-        className="h-6 shrink-0 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-      >
-        {level.code}
-      </Badge>
+      {/* Identity: code / label / type / weight-profile */}
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+        <Badge
+          variant="outline"
+          className="h-6 shrink-0 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+        >
+          {level.code}
+        </Badge>
 
-      <div className="min-w-[9rem] flex-1 font-serif text-[15px] font-semibold tracking-tight text-foreground">
-        {level.label}
+        <div className="min-w-[9rem] flex-1 font-serif text-[15px] font-semibold tracking-tight text-foreground">
+          {level.label}
+        </div>
+
+        <Badge variant="secondary" className="shrink-0">
+          {LEVEL_TYPE_LABEL[level.levelType]}
+        </Badge>
+
+        {level.levelType === 'preschool' ? (
+          <Badge variant="muted" className="shrink-0">
+            No grading profile
+          </Badge>
+        ) : (
+          <ProfileLegendChip
+            profile={level.levelType}
+            label={PROFILE_LABEL[level.levelType]}
+          />
+        )}
       </div>
 
-      <Badge variant="secondary" className="shrink-0">
-        {LEVEL_TYPE_LABEL[level.levelType]}
-      </Badge>
+      {/* Progression: next-level picker */}
+      <div className="flex shrink-0 items-center gap-2 border-l border-border pl-3">
+        <NextLevelSelect level={level} levels={levels} />
+      </div>
 
-      {level.levelType === 'preschool' ? (
-        <Badge variant="muted" className="shrink-0">
-          No grading profile
-        </Badge>
-      ) : (
-        <ProfileLegendChip
-          profile={level.levelType}
-          label={PROFILE_LABEL[level.levelType]}
-        />
-      )}
-
-      <NextLevelSelect level={level} levels={levels} />
-
-      {showDemandChip && demand && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge variant="warning" className="shrink-0 gap-1">
-              <Users className="size-3" />
-              <span className="tabular-nums">{demand.count}</span> applicant
-              {demand.count === 1 ? '' : 's'} — not offered
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent>
-            {demand.count} application{demand.count === 1 ? '' : 's'} for{' '}
-            {level.label}
-            {acceptingAyCode ? ` in ${acceptingAyCode}` : ''}, but this level
-            isn&apos;t offered that year.
-          </TooltipContent>
-        </Tooltip>
-      )}
-
-      <div className="ml-auto flex shrink-0 items-center gap-2">
+      {/* Offering: demand signal + Core badge / offered Switch */}
+      <div className="ml-auto flex shrink-0 items-center gap-2 border-l border-border pl-3">
+        {showDemandChip && demand && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="warning" className="shrink-0 gap-1">
+                <Users className="size-3" />
+                <span className="tabular-nums">{demand.count}</span> applicant
+                {demand.count === 1 ? '' : 's'} — not offered
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              {demand.count} application{demand.count === 1 ? '' : 's'} for{' '}
+              {level.label}
+              {acceptingAyCode ? ` in ${acceptingAyCode}` : ''}, but this level
+              isn&apos;t offered that year.
+            </TooltipContent>
+          </Tooltip>
+        )}
         {level.isCore ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -454,6 +473,10 @@ function LevelRowItem({
             currentAyCode={currentAyCode}
           />
         )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex shrink-0 items-center border-l border-border pl-2">
         <LevelRowActions level={level} />
       </div>
     </li>
@@ -510,25 +533,39 @@ function NextLevelSelect({
 
   const options = levels.filter((l) => l.id !== level.id);
 
+  // The page's own copy already reassures that this control "never moves
+  // anyone" — a lighter visual cue (info-tone icon + tooltip, same pattern
+  // the Core badge above already uses) so it doesn't read identically to
+  // the AY switcher or any other picker that DOES change something on save.
   return (
-    <Select
-      value={value}
-      onValueChange={onChange}
-      disabled={mutation.isPending}
-    >
-      <SelectTrigger className="h-8 w-60 shrink-0 text-[13px]">
-        <SelectValue placeholder="Next level" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={NEXT_LEVEL_NONE}>None — final level</SelectItem>
-        {options.map((l) => (
-          <SelectItem key={l.id} value={l.id}>
-            <span className="font-mono text-xs">{l.code}</span>
-            <span className="ml-2 text-muted-foreground">{l.label}</span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Info className="size-3.5 shrink-0 text-brand-indigo/70" />
+        </TooltipTrigger>
+        <TooltipContent>
+          Suggestion only — saving this never moves or re-enrols anyone.
+        </TooltipContent>
+      </Tooltip>
+      <Select
+        value={value}
+        onValueChange={onChange}
+        disabled={mutation.isPending}
+      >
+        <SelectTrigger className="h-8 w-60 shrink-0 text-[13px]">
+          <SelectValue placeholder="Next level" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NEXT_LEVEL_NONE}>None — final level</SelectItem>
+          {options.map((l) => (
+            <SelectItem key={l.id} value={l.id}>
+              <span className="font-mono text-xs">{l.code}</span>
+              <span className="ml-2 text-muted-foreground">{l.label}</span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
   );
 }
 

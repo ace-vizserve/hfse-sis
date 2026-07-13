@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { Layers } from 'lucide-react';
+import { Layers, ShieldAlert } from 'lucide-react';
 
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -128,6 +128,31 @@ export default async function GradeLevelsPage({
         title="Grade levels."
         description="Primary 1 to Secondary 4 are permanent. Other levels can be offered or shelved per school year. “Next level” only suggests what a returning student applies for — it never moves anyone."
       />
+
+      {/* Risk banner (Phase-0.4 convention) — Levels shares group="Structure"
+          with Subjects/Template but had none, despite Offered-switch edits
+          reaching the live parent-facing Admissions application form for
+          the accepting AY. Same §9.4 recipe as Subjects'/Template's amber
+          banners. */}
+      {currentAy && (
+        <div className="flex items-start gap-4 rounded-xl border border-brand-amber/30 bg-brand-amber/5 p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-brand-tile-amber">
+            <ShieldAlert className="size-4" />
+          </div>
+          <div className="flex-1 space-y-1.5">
+            <p className="font-serif text-base font-semibold text-foreground">
+              Offering changes reach the live application form
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Turning a level&apos;s{' '}
+              <strong className="font-semibold text-foreground">Offered</strong>{' '}
+              switch off removes it from what applicants can choose on the
+              admissions portal immediately — &ldquo;Next level&rdquo; edits are
+              lower-stakes (a suggestion only, never an enrolment change).
+            </p>
+          </div>
+        </div>
+      )}
 
       {!currentAy ? (
         <Card className="items-center py-12 text-center">
