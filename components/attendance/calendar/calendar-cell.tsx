@@ -39,6 +39,26 @@ export const EVENT_CATEGORY_LEGEND_COLOR: Record<
   other: 'neutral',
 };
 
+// Groups the 9 flat EVENT_CATEGORY_VALUES into 3 clusters (layout redesign
+// pass, Miller's Law) — the legend and the filter bar's category-multi
+// checklist both rendered all 9 as one undifferentiated row/list. Single
+// source of truth here (§10.2) so both surfaces group identically and can't
+// drift.
+export const EVENT_CATEGORY_GROUPS: Array<{
+  label: string;
+  categories: EventCategory[];
+}> = [
+  {
+    label: 'Academic',
+    categories: ['term_exam', 'term_break', 'start_of_term', 'subject_week'],
+  },
+  {
+    label: 'Engagement',
+    categories: ['parents_dialogue', 'pfe', 'ptc', 'school_event'],
+  },
+  { label: 'Other', categories: ['other'] },
+];
+
 // ─── Chip model ───────────────────────────────────────────────────────────────
 // A single readable thing shown on a day — a school-status override or an event.
 // Built in useCalendarIndex so cells stay presentational.

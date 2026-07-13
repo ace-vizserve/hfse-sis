@@ -22,7 +22,6 @@ import {
   AUDIENCE_LABELS,
   AUDIENCE_VALUES,
   EVENT_CATEGORY_LABELS,
-  EVENT_CATEGORY_VALUES,
 } from '@/lib/schemas/attendance';
 import {
   CALENDAR_FILTERS,
@@ -30,7 +29,10 @@ import {
   type CalendarFilterState,
   type StatusFilter,
 } from '@/lib/attendance/calendar-filters';
-import { EVENT_CATEGORY_LEGEND_COLOR } from '@/components/attendance/calendar/calendar-cell';
+import {
+  EVENT_CATEGORY_GROUPS,
+  EVENT_CATEGORY_LEGEND_COLOR,
+} from '@/components/attendance/calendar/calendar-cell';
 
 export type CalendarFilterBarProps = {
   value: CalendarFilterState;
@@ -87,35 +89,47 @@ export function CalendarFilterBar({ value, onChange }: CalendarFilterBarProps) {
               <p className="text-[13px] font-medium text-foreground">
                 {def.label}
               </p>
-              <div className="flex flex-col gap-2">
-                {EVENT_CATEGORY_VALUES.map((cat) => {
-                  const checked = value.categories.includes(cat);
-                  return (
-                    <label
-                      key={cat}
-                      className="flex cursor-pointer items-center gap-2.5"
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={(v) => {
-                          if (v) {
-                            emit({ categories: [...value.categories, cat] });
-                          } else {
-                            emit({
-                              categories: value.categories.filter(
-                                (c) => c !== cat
-                              ),
-                            });
-                          }
-                        }}
-                      />
-                      <ChartLegendChip
-                        color={EVENT_CATEGORY_LEGEND_COLOR[cat]}
-                        label={EVENT_CATEGORY_LABELS[cat]}
-                      />
-                    </label>
-                  );
-                })}
+              {/* Grouped into the same 3 clusters as the Legend (layout
+                  redesign pass, Miller's Law + §10.2 single source) instead
+                  of one flat 9-checkbox list. */}
+              <div className="flex flex-col gap-3">
+                {EVENT_CATEGORY_GROUPS.map((group) => (
+                  <div key={group.label} className="flex flex-col gap-1.5">
+                    <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                      {group.label}
+                    </span>
+                    {group.categories.map((cat) => {
+                      const checked = value.categories.includes(cat);
+                      return (
+                        <label
+                          key={cat}
+                          className="flex cursor-pointer items-center gap-2.5"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(v) => {
+                              if (v) {
+                                emit({
+                                  categories: [...value.categories, cat],
+                                });
+                              } else {
+                                emit({
+                                  categories: value.categories.filter(
+                                    (c) => c !== cat
+                                  ),
+                                });
+                              }
+                            }}
+                          />
+                          <ChartLegendChip
+                            color={EVENT_CATEGORY_LEGEND_COLOR[cat]}
+                            label={EVENT_CATEGORY_LABELS[cat]}
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
               {value.categories.length > 0 && (
                 <button

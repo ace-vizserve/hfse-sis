@@ -24,6 +24,7 @@
 
 import {
   DAY_TYPE_LEGEND_COLOR,
+  EVENT_CATEGORY_GROUPS,
   EVENT_CATEGORY_LEGEND_COLOR,
 } from '@/components/attendance/calendar/calendar-cell';
 import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
@@ -32,7 +33,6 @@ import {
   DAY_TYPE_LABELS,
   DAY_TYPE_VALUES,
   EVENT_CATEGORY_LABELS,
-  EVENT_CATEGORY_VALUES,
 } from '@/lib/schemas/attendance';
 
 export function Legend() {
@@ -71,13 +71,28 @@ export function Legend() {
       <p className="mt-4 mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
         Event categories
       </p>
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-foreground">
-        {EVENT_CATEGORY_VALUES.map((category) => (
-          <ChartLegendChip
-            key={category}
-            color={EVENT_CATEGORY_LEGEND_COLOR[category]}
-            label={EVENT_CATEGORY_LABELS[category]}
-          />
+      {/* Grouped into 3 clusters (layout redesign pass, Miller's Law) instead
+          of one flat 9-chip row — EVENT_CATEGORY_GROUPS is the single source
+          both this legend and the filter bar's category checklist read. */}
+      <div className="space-y-2.5">
+        {EVENT_CATEGORY_GROUPS.map((group) => (
+          <div
+            key={group.label}
+            className="flex flex-wrap items-baseline gap-x-3 gap-y-2"
+          >
+            <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+              {group.label}
+            </span>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-foreground">
+              {group.categories.map((category) => (
+                <ChartLegendChip
+                  key={category}
+                  color={EVENT_CATEGORY_LEGEND_COLOR[category]}
+                  label={EVENT_CATEGORY_LABELS[category]}
+                />
+              ))}
+            </div>
+          </div>
         ))}
       </div>
     </Card>

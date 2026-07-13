@@ -106,8 +106,13 @@ export function CalendarToolbar({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      {/* Left — Term selector THEN view-switcher tabs (Month/Week/Day/List) */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Left — Term selector (which term's days are editable) separated
+          from the view-switcher (how dates render) with a visible divider —
+          layout redesign pass, Law of Proximity. They control genuinely
+          different things: Month/Week/Day are cursor-based over the whole
+          AY, only List is term-scoped, so grouping them as one flex cluster
+          implied a relationship that isn't there. */}
+      <div className="flex flex-wrap items-center gap-3">
         <Select value={selectedTermId} onValueChange={onSelectTerm}>
           <SelectTrigger className="h-8 w-max" aria-label="Term">
             <SelectValue placeholder="Select term" />
@@ -120,6 +125,8 @@ export function CalendarToolbar({
             ))}
           </SelectContent>
         </Select>
+
+        <div className="h-6 w-px bg-border" aria-hidden />
 
         <Tabs value={view} onValueChange={(v) => onView(v as CalendarView)}>
           <TabsList variant="segmented" aria-label="Calendar view">
