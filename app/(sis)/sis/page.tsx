@@ -2,13 +2,14 @@ import { Activity, BookOpen, GitBranch, LayoutGrid, Users } from 'lucide-react';
 import { unstable_cache } from 'next/cache';
 import { redirect } from 'next/navigation';
 
-import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { HubAttentionFeed } from '@/components/sis/hub-attention-feed';
 import { HubQuickActions } from '@/components/sis/hub-quick-actions';
 import { HubStat } from '@/components/sis/hub-stat';
 import { HubUpcomingEventsCard } from '@/components/sis/hub-upcoming-events-card';
 import { HubYearBand } from '@/components/sis/hub-year-band';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { SystemHealthStrip } from '@/components/sis/system-health-strip';
+import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
 import {
   getCurrentAcademicYear,
@@ -125,26 +126,36 @@ export default async function SisAdminHub() {
 
   return (
     <PageShell>
-      <DashboardHero
-        eyebrow={
-          role === 'superadmin' ? 'SIS · Admin hub' : 'SIS · Academic admin'
-        }
+      <SisPageHeader
+        showBackLink={false}
+        group={role === 'superadmin' ? 'Admin hub' : 'Academic admin'}
         title={
           role === 'superadmin'
             ? 'System administration'
             : 'Academic administration'
         }
         description="Setup progress, today's numbers, and what needs attention — everything else is one click in the sidebar."
-        badges={
-          ayCode
-            ? [
-                {
-                  label: isTestAyCode(ayCode) ? 'Test' : 'Production',
-                  tone: isTestAyCode(ayCode) ? 'amber' : 'mint',
-                },
-                { label: ayCode },
-              ]
-            : []
+        chips={
+          ayCode && (
+            <>
+              <Badge
+                variant="outline"
+                className={
+                  isTestAyCode(ayCode)
+                    ? 'h-7 border-brand-amber bg-brand-amber-light px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink'
+                    : 'h-7 border-brand-mint bg-brand-mint/30 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink'
+                }
+              >
+                {isTestAyCode(ayCode) ? 'Test' : 'Production'}
+              </Badge>
+              <Badge
+                variant="outline"
+                className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+              >
+                {ayCode}
+              </Badge>
+            </>
+          )
         }
       />
 

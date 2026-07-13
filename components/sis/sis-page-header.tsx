@@ -18,7 +18,10 @@ import type { ReactNode } from 'react';
  * passes `backHref`/`backLabel` (or omits them for the default "Admin Hub"
  * → `/sis`) so the label can't drift again. `/sis/sections/[id]` is the one
  * legitimate exception — it backs up one level to `/sis/sections`, not the
- * hub — via an explicit override.
+ * hub — via an explicit override. The Hub itself (`/sis`) is the one page
+ * with no "back" destination at all — `showBackLink={false}` (layout
+ * redesign pass, Phase 0) omits the link entirely rather than pointing it
+ * at itself.
  *
  * Presentation only — no data fetching, no client state. `chips` is the
  * right-side status/identity row (badges, AY pickers, etc.); `actions` is
@@ -35,6 +38,7 @@ export function SisPageHeader({
   actions,
   backHref = '/sis',
   backLabel = 'Admin Hub',
+  showBackLink = true,
 }: {
   group: string;
   title: string;
@@ -43,16 +47,19 @@ export function SisPageHeader({
   actions?: ReactNode;
   backHref?: string;
   backLabel?: string;
+  showBackLink?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-5">
-      <Link
-        href={backHref}
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        {backLabel}
-      </Link>
+      {showBackLink && (
+        <Link
+          href={backHref}
+          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          {backLabel}
+        </Link>
+      )}
 
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div className="space-y-4">

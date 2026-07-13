@@ -98,12 +98,14 @@ export function buildAttentionRows(input: {
     });
   }
 
-  for (const section of input.unassignedAdviserSections ?? []) {
+  const unadvised = input.unassignedAdviserSections ?? [];
+  if (unadvised.length > 0) {
+    const count = unadvised.length;
     rows.push({
-      id: `unassigned-adviser-${section.id}`,
+      id: 'unassigned-adviser-sections',
       severity: 'destructive',
-      text: `${section.name} has no form adviser`,
-      meta: 'Blocks FCA write-ups and report-card publishing',
+      text: `${count} ${count === 1 ? 'section has' : 'sections have'} no form adviser`,
+      meta: unadvised.map((s) => s.name).join(' · '),
       href: '/sis/sections',
       actionLabel: 'Assign',
     });
@@ -134,5 +136,15 @@ export function buildAttentionRows(input: {
     });
   }
 
-  return rows;
+  // Severity-sorted, not arrival-order (Serial Position Effect — the first
+  // slot in the feed should hold the most urgent item, not whichever signal
+  // happened to be computed first). Array.prototype.sort is stable per spec,
+  // so rows within the same severity keep their original relative order.
+  const SEVERITY_RANK: Record<AttentionSeverity, number> = {
+    destructive: 0,
+    amber: 1,
+  };
+  return rows.sort(
+    (a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
+  );
 }

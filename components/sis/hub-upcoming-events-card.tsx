@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { CalendarDays } from 'lucide-react';
+import { ArrowRightIcon, CalendarDays } from 'lucide-react';
 
 import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 import { Card } from '@/components/ui/card';
@@ -109,9 +109,10 @@ export function HubUpcomingEventsCard({
 
       <Link
         href="/sis/calendar"
-        className="block border-t border-border px-4 py-2.5 text-center text-[12px] font-semibold text-brand-indigo hover:underline"
+        className="group/action flex items-center justify-center gap-1 border-t border-border px-4 py-2.5 text-center text-[12px] font-semibold text-brand-indigo hover:underline"
       >
-        Open school calendar →
+        Open school calendar
+        <ArrowRightIcon className="size-3 transition-transform group-hover/action:translate-x-0.5" />
       </Link>
     </Card>
   );

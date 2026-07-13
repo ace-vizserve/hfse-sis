@@ -144,15 +144,36 @@ describe('buildAttentionRows — Phase 7 additions', () => {
     acceptingAyCode: 'AY2027',
   };
 
-  it('adds a destructive row per section with no form adviser', () => {
+  it('adds one destructive row for a section with no form adviser', () => {
     const rows = buildAttentionRows({
       ...BASE_INPUT,
       unassignedAdviserSections: [{ id: 'sec-1', name: 'S4 Excellence' }],
     });
-    const row = rows.find((r) => r.id === 'unassigned-adviser-sec-1');
+    const row = rows.find((r) => r.id === 'unassigned-adviser-sections');
     expect(row).toMatchObject({
       severity: 'destructive',
-      text: expect.stringContaining('S4 Excellence'),
+      text: '1 section has no form adviser',
+      meta: 'S4 Excellence',
+    });
+  });
+
+  it('collapses multiple no-adviser sections into ONE row, not one per section', () => {
+    const rows = buildAttentionRows({
+      ...BASE_INPUT,
+      unassignedAdviserSections: [
+        { id: 'sec-1', name: 'P3 Obedience' },
+        { id: 'sec-2', name: 'S1 Discipline' },
+        { id: 'sec-3', name: 'S2 Integrity' },
+      ],
+    });
+    const adviserRows = rows.filter((r) =>
+      r.id.startsWith('unassigned-adviser')
+    );
+    expect(adviserRows).toHaveLength(1);
+    expect(adviserRows[0]).toMatchObject({
+      severity: 'destructive',
+      text: '3 sections have no form adviser',
+      meta: 'P3 Obedience · S1 Discipline · S2 Integrity',
     });
   });
 
@@ -204,5 +225,38 @@ describe('buildAttentionRows — Phase 7 additions', () => {
     expect(rows.some((r) => r.id.startsWith('subject-config-gap-'))).toBe(
       false
     );
+  });
+});
+
+describe('buildAttentionRows — severity-sorted (Serial Position Effect)', () => {
+  it('sorts destructive rows before amber rows regardless of computation order', () => {
+    // pendingChangeRequests (amber) is computed before unassignedAdviserSections
+    // (destructive) in the function body — the sort must still put the
+    // destructive row first in the returned array.
+    const rows = buildAttentionRows({
+      unassigned: [],
+      pendingChangeRequests: 2,
+      levelDemand: [],
+      acceptingAyCode: 'AY2027',
+      unassignedAdviserSections: [{ id: 'sec-1', name: 'P3 Obedience' }],
+    });
+    expect(rows.map((r) => r.severity)).toEqual(['destructive', 'amber']);
+    expect(rows[0].id).toBe('unassigned-adviser-sections');
+  });
+
+  it('preserves relative order within the same severity (stable sort)', () => {
+    const rows = buildAttentionRows({
+      unassigned: [unplaced()],
+      pendingChangeRequests: 1,
+      levelDemand: [demandRow()],
+      acceptingAyCode: 'AY2026',
+    });
+    // unplaced-students (destructive) first; the two amber rows keep their
+    // original relative order (pending-change-requests before level-demand).
+    expect(rows.map((r) => r.id)).toEqual([
+      'unplaced-students',
+      'pending-change-requests',
+      'level-demand-Cambridge Stage 1',
+    ]);
   });
 });

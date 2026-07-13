@@ -5,6 +5,13 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { AttentionRow } from '@/lib/sis/hub-attention';
 
+// Max rows rendered before truncating — Miller's Law (7±2). `buildAttentionRows`
+// already severity-sorts (destructive first) and collapses same-cause signals
+// into one row each, so the rows that get cut are the least urgent ones. The
+// header count and the "+N more" line both use the TRUE total, never the
+// capped length — nothing is hidden without a trace.
+const MAX_VISIBLE_ROWS = 6;
+
 /**
  * HubAttentionFeed — the SIS Admin hub's "Needs attention" panel (Task V1,
  * `docs/superpowers/specs/2026-07-11-sis-admin-visual-redesign.html` Screen
@@ -13,9 +20,15 @@ import type { AttentionRow } from '@/lib/sis/hub-attention';
  * un-offered level demand. Rows are built by the pure
  * `lib/sis/hub-attention.ts::buildAttentionRows` so the component stays
  * presentational. Severity dots are always paired with text — color is
- * never the only signal.
+ * never the only signal. Capped at MAX_VISIBLE_ROWS (layout redesign pass,
+ * Miller's Law) — no "view all" link because no dedicated cross-module
+ * attention page exists; the "+N more" line is honest, not a fake
+ * affordance to nowhere.
  */
 export function HubAttentionFeed({ rows }: { rows: AttentionRow[] }) {
+  const visibleRows = rows.slice(0, MAX_VISIBLE_ROWS);
+  const hiddenCount = rows.length - visibleRows.length;
+
   return (
     <Card className="gap-0 overflow-hidden py-0">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -40,7 +53,7 @@ export function HubAttentionFeed({ rows }: { rows: AttentionRow[] }) {
         </div>
       ) : (
         <ul className="divide-y divide-border">
-          {rows.map((row) => (
+          {visibleRows.map((row) => (
             <li
               key={row.id}
               className="flex items-center gap-3 px-4 py-3 text-[13px]"
@@ -72,6 +85,11 @@ export function HubAttentionFeed({ rows }: { rows: AttentionRow[] }) {
             </li>
           ))}
         </ul>
+      )}
+      {hiddenCount > 0 && (
+        <p className="border-t border-border px-4 py-2.5 text-center font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">
+          +{hiddenCount} more, lower priority
+        </p>
       )}
     </Card>
   );

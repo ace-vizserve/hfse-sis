@@ -20,6 +20,12 @@ import { cn } from '@/lib/utils';
  * anywhere in this app for varying a tile's hue across non-semantic
  * actions); "Add a closure"/"Generate sheets"/"Grade levels" keep their
  * semantic destructive/mint/amber tones.
+ *
+ * Order is frequency-weighted, not arbitrary (layout redesign pass, Pareto
+ * Principle) — "New section"/"Generate sheets"/"New staff member" are the
+ * recurring "This year"-cadence actions (KD #154's sidebar cadence hints);
+ * "Add a closure" is occasional; "Grade levels" is once-a-year Structure
+ * config, so it sits last.
  */
 
 type QuickAction = {
@@ -42,12 +48,12 @@ const ACTIONS: QuickAction[] = [
     toneClass: NEUTRAL_TILE,
   },
   {
-    label: 'Add a closure',
-    sublabel: 'Calendar',
-    href: '/sis/calendar',
-    icon: CalendarOff,
+    label: 'Generate sheets',
+    sublabel: 'Grading',
+    href: '/markbook/sections',
+    icon: ClipboardList,
     toneClass:
-      'bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-brand-tile-destructive',
+      'bg-gradient-to-br from-brand-mint to-brand-sky text-ink shadow-brand-tile-mint',
   },
   {
     label: 'New staff member',
@@ -57,12 +63,12 @@ const ACTIONS: QuickAction[] = [
     toneClass: NEUTRAL_TILE,
   },
   {
-    label: 'Generate sheets',
-    sublabel: 'Grading',
-    href: '/markbook/sections',
-    icon: ClipboardList,
+    label: 'Add a closure',
+    sublabel: 'Calendar',
+    href: '/sis/calendar',
+    icon: CalendarOff,
     toneClass:
-      'bg-gradient-to-br from-brand-mint to-brand-sky text-ink shadow-brand-tile-mint',
+      'bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-brand-tile-destructive',
   },
   {
     label: 'Grade levels',

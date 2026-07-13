@@ -167,12 +167,9 @@ export function SystemHealthStrip({ health }: { health: SystemHealth }) {
               >
                 Approver assignments <ArrowUpRight className="size-3.5" />
               </Link>
-              <Link
-                href="/sis/ay-setup"
-                className="block text-xs text-muted-foreground hover:text-foreground"
-              >
-                AY setup
-              </Link>
+              {/* No "AY setup" link here (layout redesign pass, Phase 1) — it
+                  duplicated HubYearBand's primary CTA to the same
+                  /sis/ay-setup destination; that button is the sole path now. */}
             </div>
           </div>
         </CardContent>
