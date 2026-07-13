@@ -15,7 +15,12 @@ import {
  * visual redesign, `docs/superpowers/specs/2026-07-11-sis-admin-visual-redesign.html`
  * Screen 1). Replaces `HubYearSetupCard`: one horizontal readiness card —
  * serif fraction, segmented bar, a live plain-English status line, and the
- * page's ONE primary CTA. Solid tints only, no gradients on content.
+ * page's ONE primary CTA. The band itself carries no icon tile (matches the
+ * approved mockup); the empty-state tile below stays flat `bg-muted` — the
+ * neutral "nothing set up yet" absence state, not a semantic color (see
+ * `components/sis/hub-stat.tsx` and the visual-consistency pass,
+ * `docs/superpowers/specs/2026-07-13-sis-admin-visual-consistency-mockups.html`,
+ * which reversed the earlier "no gradients on content" rule everywhere else).
  */
 export function HubYearBand({ readiness }: { readiness: AyReadiness | null }) {
   if (!readiness || readiness.total === 0) {

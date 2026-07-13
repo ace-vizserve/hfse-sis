@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { CheckCircle2 } from 'lucide-react';
+import { ArrowRightIcon, CheckCircle2 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -64,9 +64,10 @@ export function HubAttentionFeed({ rows }: { rows: AttentionRow[] }) {
               )}
               <Link
                 href={row.href}
-                className="shrink-0 text-[12px] font-semibold text-brand-indigo hover:underline"
+                className="group/action inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-brand-indigo hover:underline"
               >
-                {row.actionLabel} →
+                {row.actionLabel}
+                <ArrowRightIcon className="size-3 transition-transform group-hover/action:translate-x-0.5" />
               </Link>
             </li>
           ))}

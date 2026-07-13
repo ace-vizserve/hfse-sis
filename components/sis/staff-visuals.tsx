@@ -10,10 +10,13 @@ import { cn } from '@/lib/utils';
  * (Assignments' `StaffTable` + Accounts' `StaffAccountsClient`), per the SIS
  * Admin visual pass Task V3
  * (`docs/superpowers/specs/2026-07-11-sis-admin-visual-redesign.html`
- * Screen 2). Solid tints only — no gradients on content, per the
- * standing rule already established by Task V1/V2's `hub-stat.tsx` /
- * `hub-quick-actions.tsx` tone maps. Presentation-only: none of these read
- * or write data — callers still own their own queries/mutations.
+ * Screen 2). Solid tints here are NOT the (now-reversed, see
+ * `components/sis/hub-stat.tsx`) icon-tile rule — avatars and badges/chips
+ * are their own §9.3 pattern, which is flat by design (`Badge
+ * className="border-brand-mint bg-brand-mint/30 text-ink"`, never a
+ * gradient); only §7.4 icon tiles (CardAction squares, hero/stat/status
+ * tiles) use the gradient recipe. Presentation-only: none of these read or
+ * write data — callers still own their own queries/mutations.
  */
 
 // ─── Avatar ───────────────────────────────────────────────────────────────

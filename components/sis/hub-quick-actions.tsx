@@ -13,8 +13,13 @@ import { cn } from '@/lib/utils';
 /**
  * HubQuickActions — the SIS Admin hub's five-tile launchpad row (Task V1,
  * `docs/superpowers/specs/2026-07-11-sis-admin-visual-redesign.html` Screen
- * 1). Plain link-tiles, no icon-tile gradients (solid tints per the
- * standing no-gradients-on-content rule) — hover lift per §7.3.
+ * 1). Gradient icon tiles per the app's real signature (visual-consistency
+ * pass — the earlier "no gradients on content" rule was reversed, see
+ * `components/sis/hub-stat.tsx`) — hover lift per §7.3. "New section" and
+ * "New staff member" share the one neutral indigo/navy tile (no precedent
+ * anywhere in this app for varying a tile's hue across non-semantic
+ * actions); "Add a closure"/"Generate sheets"/"Grade levels" keep their
+ * semantic destructive/mint/amber tones.
  */
 
 type QuickAction = {
@@ -25,41 +30,47 @@ type QuickAction = {
   toneClass: string;
 };
 
+const NEUTRAL_TILE =
+  'bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile';
+
 const ACTIONS: QuickAction[] = [
   {
     label: 'New section',
     sublabel: 'Sections',
     href: '/sis/sections',
     icon: LayoutGrid,
-    toneClass: 'bg-brand-indigo/10 text-brand-indigo',
+    toneClass: NEUTRAL_TILE,
   },
   {
     label: 'Add a closure',
     sublabel: 'Calendar',
     href: '/sis/calendar',
     icon: CalendarOff,
-    toneClass: 'bg-destructive/10 text-destructive',
+    toneClass:
+      'bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-brand-tile-destructive',
   },
   {
     label: 'New staff member',
     sublabel: 'Staff',
     href: '/sis/admin/staff?view=accounts',
     icon: UserPlus,
-    toneClass: 'bg-brand-sky/15 text-brand-sky',
+    toneClass: NEUTRAL_TILE,
   },
   {
     label: 'Generate sheets',
     sublabel: 'Grading',
     href: '/markbook/sections',
     icon: ClipboardList,
-    toneClass: 'bg-brand-mint/25 text-ink',
+    toneClass:
+      'bg-gradient-to-br from-brand-mint to-brand-sky text-ink shadow-brand-tile-mint',
   },
   {
     label: 'Grade levels',
     sublabel: 'Structure',
     href: '/sis/admin/levels',
     icon: Layers,
-    toneClass: 'bg-brand-amber/25 text-ink',
+    toneClass:
+      'bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-brand-tile-amber',
   },
 ];
 
