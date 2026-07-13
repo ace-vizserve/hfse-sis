@@ -52,14 +52,18 @@ export default async function TemplateAdminPage() {
         }
       />
 
-      <div className="flex items-center gap-2.5 rounded-lg border border-border bg-muted/30 px-4 py-2.5">
-        <Info className="size-3.5 shrink-0 text-muted-foreground" />
-        <p className="text-[13px] text-muted-foreground">
-          Changes here touch no year until you push them.{' '}
-          <span className="text-foreground">
+      <div className="flex items-start gap-4 rounded-xl border border-brand-indigo/30 bg-brand-indigo/5 p-5">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+          <Info className="size-4" />
+        </div>
+        <div className="flex-1 space-y-1.5">
+          <p className="font-serif text-base font-semibold text-foreground">
+            Changes here touch no year until you push them.
+          </p>
+          <p className="text-sm text-muted-foreground">
             Edit freely, then use Propagate to update existing academic years.
-          </span>
-        </p>
+          </p>
+        </div>
       </div>
 
       <TemplateManagerClient

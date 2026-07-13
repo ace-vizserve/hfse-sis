@@ -113,8 +113,8 @@ export default async function SubjectConfigPage({
       />
 
       {currentAy && (
-        <div className="flex items-start gap-4 rounded-xl border border-brand-indigo-soft/40 bg-accent p-5">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-indigo text-white shadow-brand-tile">
+        <div className="flex items-start gap-4 rounded-xl border border-brand-amber/30 bg-brand-amber/5 p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-brand-tile-amber">
             <ShieldAlert className="size-4" />
           </div>
           <div className="flex-1 space-y-1.5">
