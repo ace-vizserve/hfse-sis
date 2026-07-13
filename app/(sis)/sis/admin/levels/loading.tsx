@@ -17,7 +17,7 @@ export default function Loading() {
         <Skeleton className="h-9 w-56 rounded-md" />
       </div>
 
-      <div className="space-y-2 rounded-xl border border-hairline bg-white p-0">
+      <div className="space-y-2 rounded-xl border border-hairline bg-card p-0">
         <div className="space-y-2 border-b border-hairline bg-muted/40 px-6 py-4">
           <Skeleton className="h-5 w-56" />
         </div>
