@@ -610,7 +610,10 @@ export function StaffAccountsClient({
       // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
       url={{ enabled: true, namespace: 'users' }}
       initialSort={[{ id: 'user', desc: false }]}
-      initialColumnVisibility={{ created_at: false }}
+      // "Member since" shown by default now (layout redesign pass) — hiding
+      // one of only 6 columns behind the Columns menu on a table this
+      // narrow was complexity added, not removed (Tesler's Law/Choice
+      // Overload); the menu itself stays for anyone who wants to hide it.
       pageSize={25}
       emptyState={{
         icon: Users,
