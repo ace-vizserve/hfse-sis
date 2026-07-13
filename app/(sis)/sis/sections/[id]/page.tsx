@@ -11,9 +11,7 @@ import { GenerateIndexButton } from '@/components/sis/generate-index-button';
 import { sgToday } from '@/lib/dates';
 import {
   Card,
-  CardAction,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -356,16 +354,19 @@ export default async function SisSectionDetailPage({
           </>
         }
         actions={
+          // Order + weight are frequency-driven, not arbitrary (layout
+          // redesign pass, Serial Position/Pareto) — "Roster & grading" is
+          // the daily-work cross-link into Markbook and is now the one
+          // default-variant (primary) button, first; Rename is the rarest
+          // of the four and moves last. Generate sheets/index keep their
+          // own components' outline styling unchanged.
           <>
-            <SectionRenameDialog
-              sectionId={section.id}
-              currentName={section.name}
-            />
-            <GenerateIndexButton
-              sectionId={section.id}
-              sectionName={section.name}
-              termStarted={termStarted}
-            />
+            <Button asChild size="sm" className="gap-1.5">
+              <Link href={`/markbook/sections/${section.id}`}>
+                Roster &amp; grading
+                <ArrowUpRight className="size-3.5" />
+              </Link>
+            </Button>
             <GenerateSheetsDialog
               scope={{
                 kind: 'section',
@@ -373,12 +374,15 @@ export default async function SisSectionDetailPage({
                 sectionLabel: section.name,
               }}
             />
-            <Button asChild size="sm" variant="outline" className="gap-1.5">
-              <Link href={`/markbook/sections/${section.id}`}>
-                Roster &amp; grading
-                <ArrowUpRight className="size-3.5" />
-              </Link>
-            </Button>
+            <GenerateIndexButton
+              sectionId={section.id}
+              sectionName={section.name}
+              termStarted={termStarted}
+            />
+            <SectionRenameDialog
+              sectionId={section.id}
+              currentName={section.name}
+            />
           </>
         }
       />
@@ -441,31 +445,12 @@ export default async function SisSectionDetailPage({
             </div>
           )}
 
-          {/* Pointer card to operational surface */}
-          <Card className="border-dashed">
-            <CardHeader>
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Operational surface
-              </CardDescription>
-              <CardTitle className="font-serif text-lg font-semibold tracking-tight text-foreground">
-                Roster, grading sheets, report cards
-              </CardTitle>
-              <CardAction>
-                <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-                  <Users className="size-5" />
-                </div>
-              </CardAction>
-            </CardHeader>
-            <CardFooter>
-              <Link
-                href={`/markbook/sections/${section.id}`}
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground hover:underline"
-              >
-                Open in Markbook
-                <ArrowUpRight className="size-3.5" />
-              </Link>
-            </CardFooter>
-          </Card>
+          {/* The former "Operational surface" pointer card (dashed Card
+              linking to /markbook/sections/[id]) was removed here (layout
+              redesign pass, Law of Proximity) — it pointed at the exact same
+              destination as the header's "Roster & grading" button above,
+              which is now the page's one primary action instead of a low-
+              weight outline button, so this second path added nothing. */}
         </TabsContent>
 
         <TabsContent value="teachers" className="mt-4">
