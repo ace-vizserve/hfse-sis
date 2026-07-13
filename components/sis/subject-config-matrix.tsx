@@ -425,7 +425,7 @@ function SubjectCard({
           </div>
         </div>
       </div>
-      <div className="flex flex-wrap gap-2 p-4">
+      <div className="space-y-3 p-4">
         {/* Per-AY surface: only render levels that actually have a config
             in this AY. Dashed/inert placeholders for missing pairs are
             noise here — adding a new (subject × level) is a template-side
@@ -443,7 +443,25 @@ function SubjectCard({
               </p>
             );
           }
-          return visibleLevels.map((level) => {
+          // Split into Primary/Secondary sub-rows (Miller's-Law fix) — a
+          // subject taught at 10+ levels otherwise renders one flat wrapped
+          // row. Only shown as two labeled rows when the subject actually
+          // spans both tiers; a primary-only or secondary-only subject
+          // stays one plain row (no label needed when there's nothing to
+          // distinguish — Occam's Razor).
+          const primaryLevels = visibleLevels.filter(
+            (l) => l.level_type === 'primary'
+          );
+          const secondaryLevels = visibleLevels.filter(
+            (l) => l.level_type === 'secondary'
+          );
+          const otherLevels = visibleLevels.filter(
+            (l) => l.level_type !== 'primary' && l.level_type !== 'secondary'
+          );
+          const showGroupLabels =
+            primaryLevels.length > 0 && secondaryLevels.length > 0;
+
+          const chip = (level: Level) => {
             const cfg = configByKey.get(`${subject.id}|${level.id}`)!;
             const ww = Math.round(cfg.ww_weight * 100);
             const pt = Math.round(cfg.pt_weight * 100);
@@ -461,7 +479,10 @@ function SubjectCard({
                     onOpenCell behavior) plus a small caret that expands the
                     grading-sheet-column preview below. Hover-lift + profile
                     color live on the shared wrapper so the chip still reads
-                    as one unit. */}
+                    as one unit. The caret gets its own min-w-9 hit target
+                    and a visible rest-state opacity (was 60%, easy to miss
+                    against the edit button beside it) so the two click
+                    zones don't read as one accidental target. */}
                 <div
                   className={cn(
                     'inline-flex items-stretch overflow-hidden rounded-md transition-all',
@@ -472,7 +493,7 @@ function SubjectCard({
                   <button
                     type="button"
                     onClick={() => onOpenCell(subject, level, cfg)}
-                    className="inline-flex flex-col items-start gap-0.5 py-1.5 pl-3 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40"
+                    className="inline-flex flex-col items-start gap-0.5 py-1.5 pl-3 pr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40"
                     title={`${subject.name} · ${level.label} — ${ww}·${pt}·${qa} · slots ${cfg.ww_max_slots}/${cfg.pt_max_slots} · QA/${cfg.qa_max}. Click to edit.`}
                   >
                     <span
@@ -492,11 +513,12 @@ function SubjectCard({
                       {ww} · {pt} · {qa}
                     </span>
                   </button>
+                  <div className="w-px self-stretch bg-border/60" aria-hidden />
                   <CollapsibleTrigger asChild>
                     <button
                       type="button"
                       className={cn(
-                        'flex items-center self-stretch pl-1 pr-2 opacity-60 transition-opacity hover:opacity-100',
+                        'flex min-w-9 items-center justify-center self-stretch opacity-80 transition-opacity hover:opacity-100',
                         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40'
                       )}
                       aria-label={`${isPreviewOpen ? 'Hide' : 'Show'} grading sheet columns for ${subject.name} · ${level.label}`}
@@ -518,7 +540,45 @@ function SubjectCard({
                 </CollapsibleContent>
               </Collapsible>
             );
-          });
+          };
+
+          if (!showGroupLabels) {
+            return (
+              <div className="flex flex-wrap gap-2">
+                {visibleLevels.map(chip)}
+              </div>
+            );
+          }
+
+          return (
+            <>
+              {primaryLevels.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    Primary levels
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {primaryLevels.map(chip)}
+                  </div>
+                </div>
+              )}
+              {secondaryLevels.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    Secondary levels
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {secondaryLevels.map(chip)}
+                  </div>
+                </div>
+              )}
+              {otherLevels.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {otherLevels.map(chip)}
+                </div>
+              )}
+            </>
+          );
         })()}
       </div>
     </Card>

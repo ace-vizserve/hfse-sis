@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { AlertTriangle, BookOpenCheck, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, BookOpenCheck, Info } from 'lucide-react';
 
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -112,10 +112,14 @@ export default async function SubjectConfigPage({
         }
       />
 
+      {/* Always-on boilerplate reminder — recolored indigo/informational
+          (Phase-0.4 convention) so it doesn't dilute the actionable amber
+          gap banner below when both render together. This one has no
+          specific detected problem to act on; the gap banner does. */}
       {currentAy && (
-        <div className="flex items-start gap-4 rounded-xl border border-brand-amber/30 bg-brand-amber/5 p-5">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-brand-tile-amber">
-            <ShieldAlert className="size-4" />
+        <div className="flex items-start gap-4 rounded-xl border border-brand-indigo/30 bg-brand-indigo/5 p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <Info className="size-4" />
           </div>
           <div className="flex-1 space-y-1.5">
             <p className="font-serif text-base font-semibold text-foreground">

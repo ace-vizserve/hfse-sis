@@ -611,7 +611,7 @@ function SubjectCard({
           </div>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2 p-4">
+      <div className="space-y-3 p-4">
         {/* Hide empty cells (preschool + not-yet-enabled markbook levels)
             so the chip row only shows what's actually configured. The
             "+ Add level" picker at the end takes the dashed-cell affordance
@@ -627,97 +627,147 @@ function SubjectCard({
           const availableLevels = markbookLevels.filter(
             (l) => !configByKey.has(`${subject.id}|${l.id}`)
           );
-          return (
-            <>
-              {visibleLevels.length === 0 && availableLevels.length > 0 && (
-                <p className="px-1 py-1 text-[12px] text-muted-foreground">
-                  Not enabled at any level yet. Click{' '}
-                  <strong>+ Add level</strong> to start.
-                </p>
-              )}
-              {visibleLevels.length === 0 && availableLevels.length === 0 && (
-                <p className="px-1 py-1 text-[12px] text-muted-foreground">
-                  No markbook levels available (only preschool levels exist).
-                </p>
-              )}
-              {visibleLevels.map((level) => {
-                const cfg = configByKey.get(`${subject.id}|${level.id}`)!;
-                const ww = Math.round(cfg.ww_weight * 100);
-                const pt = Math.round(cfg.pt_weight * 100);
-                const qa = Math.round(cfg.qa_weight * 100);
-                const profile = classifyProfile(ww, pt, qa);
-                return (
-                  <button
+
+          const chip = (level: LevelRow) => {
+            const cfg = configByKey.get(`${subject.id}|${level.id}`)!;
+            const ww = Math.round(cfg.ww_weight * 100);
+            const pt = Math.round(cfg.pt_weight * 100);
+            const qa = Math.round(cfg.qa_weight * 100);
+            const profile = classifyProfile(ww, pt, qa);
+            return (
+              <button
+                key={level.id}
+                type="button"
+                onClick={() => onOpenCell(subject, level, cfg)}
+                className={cn(
+                  'inline-flex flex-col items-start gap-0.5 rounded-md px-3 py-1.5 transition-all',
+                  'hover:-translate-y-0.5 hover:shadow-md',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40',
+                  PROFILE_CLASS[profile]
+                )}
+                title={`${subject.name} · ${level.label} — ${PROFILE_LABEL[profile]} (WW ${ww} · PT ${pt} · QA ${qa}). Click to edit.`}
+              >
+                <span
+                  className={cn(
+                    'font-serif text-[12px] font-semibold leading-tight tracking-tight',
+                    PROFILE_TEXT[profile].code
+                  )}
+                >
+                  {level.label}
+                </span>
+                <span
+                  className={cn(
+                    'font-mono text-[10px] tabular-nums',
+                    PROFILE_TEXT[profile].ratio
+                  )}
+                >
+                  {ww} · {pt} · {qa}
+                </span>
+              </button>
+            );
+          };
+
+          const addLevelMenu = availableLevels.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-all',
+                    'hover:-translate-y-0.5 hover:border-brand-indigo/60 hover:bg-accent/40 hover:text-foreground hover:shadow-md',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40'
+                  )}
+                  title={`Enable ${subject.name} at a new level`}
+                >
+                  <Plus className="size-3.5" />
+                  Add level
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuLabel>Enable {subject.code} at…</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {availableLevels.map((level) => (
+                  <DropdownMenuItem
                     key={level.id}
-                    type="button"
-                    onClick={() => onOpenCell(subject, level, cfg)}
-                    className={cn(
-                      'inline-flex flex-col items-start gap-0.5 rounded-md px-3 py-1.5 transition-all',
-                      'hover:-translate-y-0.5 hover:shadow-md',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40',
-                      PROFILE_CLASS[profile]
-                    )}
-                    title={`${subject.name} · ${level.label} — ${PROFILE_LABEL[profile]} (WW ${ww} · PT ${pt} · QA ${qa}). Click to edit.`}
+                    onSelect={() => onOpenCreate(subject, level)}
+                    className="gap-2"
                   >
-                    <span
-                      className={cn(
-                        'font-serif text-[12px] font-semibold leading-tight tracking-tight',
-                        PROFILE_TEXT[profile].code
-                      )}
+                    <Badge
+                      variant="outline"
+                      className="h-5 border-border bg-card px-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-foreground"
                     >
+                      {level.code}
+                    </Badge>
+                    <span className="font-serif text-[13px] font-medium">
                       {level.label}
                     </span>
-                    <span
-                      className={cn(
-                        'font-mono text-[10px] tabular-nums',
-                        PROFILE_TEXT[profile].ratio
-                      )}
-                    >
-                      {ww} · {pt} · {qa}
-                    </span>
-                  </button>
-                );
-              })}
-              {availableLevels.length > 0 && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className={cn(
-                        'inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-all',
-                        'hover:-translate-y-0.5 hover:border-brand-indigo/60 hover:bg-accent/40 hover:text-foreground hover:shadow-md',
-                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40'
-                      )}
-                      title={`Enable ${subject.name} at a new level`}
-                    >
-                      <Plus className="size-3.5" />
-                      Add level
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-56">
-                    <DropdownMenuLabel>
-                      Enable {subject.code} at…
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {availableLevels.map((level) => (
-                      <DropdownMenuItem
-                        key={level.id}
-                        onSelect={() => onOpenCreate(subject, level)}
-                        className="gap-2"
-                      >
-                        <Badge
-                          variant="outline"
-                          className="h-5 border-border bg-card px-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-foreground"
-                        >
-                          {level.code}
-                        </Badge>
-                        <span className="font-serif text-[13px] font-medium">
-                          {level.label}
-                        </span>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          );
+
+          if (visibleLevels.length === 0) {
+            return (
+              <div className="flex flex-wrap items-center gap-2">
+                {availableLevels.length > 0 ? (
+                  <p className="px-1 py-1 text-[12px] text-muted-foreground">
+                    Not enabled at any level yet. Click{' '}
+                    <strong>+ Add level</strong> to start.
+                  </p>
+                ) : (
+                  <p className="px-1 py-1 text-[12px] text-muted-foreground">
+                    No markbook levels available (only preschool levels exist).
+                  </p>
+                )}
+                {addLevelMenu}
+              </div>
+            );
+          }
+
+          // Primary/Secondary sub-grouping (Miller's-Law fix) — same
+          // pattern as the per-AY matrix's SubjectCard; only splits into
+          // two labeled rows when the subject spans both tiers.
+          const primaryLevels = visibleLevels.filter(
+            (l) => l.level_type === 'primary'
+          );
+          const secondaryLevels = visibleLevels.filter(
+            (l) => l.level_type === 'secondary'
+          );
+          const showGroupLabels =
+            primaryLevels.length > 0 && secondaryLevels.length > 0;
+
+          if (!showGroupLabels) {
+            return (
+              <div className="flex flex-wrap items-center gap-2">
+                {visibleLevels.map(chip)}
+                {addLevelMenu}
+              </div>
+            );
+          }
+
+          return (
+            <>
+              {primaryLevels.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    Primary levels
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {primaryLevels.map(chip)}
+                  </div>
+                </div>
+              )}
+              {secondaryLevels.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    Secondary levels
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {secondaryLevels.map(chip)}
+                    {addLevelMenu}
+                  </div>
+                </div>
               )}
             </>
           );
