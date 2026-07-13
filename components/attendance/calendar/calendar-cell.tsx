@@ -11,6 +11,7 @@ import {
   ChartLegendChip,
   type ChartLegendChipColor,
 } from '@/components/dashboard/chart-legend-chip';
+import { Badge } from '@/components/ui/badge';
 import type { DayType, EventCategory } from '@/lib/schemas/attendance';
 
 // ─── Color maps (single source of truth; Legend + List read the same maps) ────
@@ -157,11 +158,18 @@ export function CalendarCell({
         ) : (
           <>
             {missingRow && (
-              <ChartLegendChip
-                color="very-stale"
-                label="Unmarked"
-                className="flex w-full justify-center"
-              />
+              // Deliberately NOT a ChartLegendChip — 'Unmarked' is a data-quality
+              // flag (absence of a school_calendar row), not a day-type or event
+              // category, and 'very-stale' is already claimed by public_holiday
+              // in DAY_TYPE_LEGEND_COLOR above. An outlined destructive badge is
+              // structurally distinct from every filled gradient chip a real
+              // day-type/event renders, so the two states can never be confused.
+              <Badge
+                variant="outline"
+                className="h-5 w-fit border-destructive/50 bg-destructive/5 px-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-destructive"
+              >
+                Unmarked
+              </Badge>
             )}
             {visible.map((c) => (
               <ChartLegendChip

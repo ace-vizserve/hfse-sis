@@ -309,7 +309,7 @@ export function ApplicationFormLevelPreview({
             >
               {level.label}
               {suggested && (
-                <span className="ml-1 rounded bg-brand-indigo/10 px-1.5 py-0.5 font-mono text-[9px]">
+                <span className="ml-1 rounded bg-brand-indigo/10 px-1.5 py-0.5 font-mono text-[10px]">
                   suggested
                 </span>
               )}

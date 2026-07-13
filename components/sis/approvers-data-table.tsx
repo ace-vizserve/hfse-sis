@@ -71,21 +71,14 @@ export function ApproverReadinessCards({
               <p className="font-serif text-[15px] font-semibold text-foreground">
                 {APPROVER_FLOW_LABELS[flow]}
               </p>
-              <span
-                className={cn(
-                  'inline-flex h-6 items-center gap-1 rounded-full border px-2.5 font-sans text-[11px] font-semibold',
-                  destructive
-                    ? 'border-destructive/40 bg-destructive/10 text-destructive'
-                    : 'border-brand-mint bg-brand-mint/20 text-ink'
-                )}
-              >
+              <StatusBadge tone={destructive ? 'locked' : 'healthy'}>
                 {readiness.label}
-              </span>
+              </StatusBadge>
             </div>
             {readiness.warning && (
               <div className="flex items-start gap-3 bg-destructive/5 px-5 py-3.5">
                 <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
-                <p className="text-[12.5px] leading-relaxed text-destructive">
+                <p className="text-[12px] leading-relaxed text-destructive">
                   {readiness.warning}
                 </p>
               </div>
