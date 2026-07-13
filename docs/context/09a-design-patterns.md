@@ -252,6 +252,8 @@ Don't use the default `<Alert>` for high-visibility status. Build a bordered sta
 
 Swap the color family (`destructive` / `accent` + `brand-indigo-soft` / `brand-mint`) to match severity. Reference implementation: `app/(dashboard)/grading/[id]/page.tsx`.
 
+**Flat here, gradient in §7.4 — two different tile contexts, not an inconsistency.** This panel's tile is flat (`bg-destructive`, no gradient stop) — that's the canonical §9.4 shape, distinct from §7.4's gradient icon tile (`bg-gradient-to-br from-X to-Y`). Rule of thumb: a **blocking/hard-stop state** (locked, will-block-on-save, under-resourced-and-nothing-can-proceed) uses the flat §9.4 tile; an **advisory/informational banner** (a caution note, a reversible warning) may use the §7.4 gradient tile instead — both are correct, pick by whether the reader can act around it or must resolve it first. Don't ping-pong a banner between the two on aesthetic preference.
+
 ### 9.5 Review checklist per page
 
 - [ ] Exactly one `default` `Button` above the fold?
