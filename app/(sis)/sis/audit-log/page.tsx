@@ -48,6 +48,21 @@ import {
   type MergedRow,
 } from '@/app/(markbook)/markbook/audit-log/audit-log-data-table';
 
+// Section divider for the Overview tab's flat stack (Miller's-Law grouping,
+// layout redesign pass, Phase 8). Same typography as the AY-Setup
+// checklist's cluster/optional dividers (year-setup-checklist.tsx) — copied
+// verbatim rather than inventing a new label treatment; wrapped in a plain
+// rounded block instead of a <li> since this page's sections aren't a list.
+function OverviewSectionDivider({ label }: { label: string }) {
+  return (
+    <div role="presentation" className="rounded-lg bg-muted/30 px-4 py-2">
+      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        {label}
+      </p>
+    </div>
+  );
+}
+
 // Config-axis actions owned by SIS Admin. Student-record-axis actions
 // (sis.profile.update, student.section.transfer, ay.*, pfile.*, etc.)
 // live on /records/audit-log — this page covers the structural admin tier.
@@ -364,19 +379,27 @@ export default async function SisAuditLogPage({
         description="A history of every administrative change — sections created, teachers assigned, templates applied, approvers managed, school config edited, users added, and environment operations. Past entries are kept on the record."
       />
 
+      {/* Log first — it's the actual default view (Serial Position Effect:
+          tab order should match visit frequency, not alphabetical/build
+          order). Overview is the deliberate second stop for BI review. */}
       <Tabs value={view} className="w-full">
         <TabsList variant="segmented">
-          <TabsTrigger value="overview" asChild>
-            <Link href="/sis/audit-log?view=overview">Overview</Link>
-          </TabsTrigger>
           <TabsTrigger value="log" asChild>
             <Link href="/sis/audit-log">Log</Link>
+          </TabsTrigger>
+          <TabsTrigger value="overview" asChild>
+            <Link href="/sis/audit-log?view=overview">Overview</Link>
           </TabsTrigger>
         </TabsList>
       </Tabs>
 
       {view === 'log' && logView ? (
         <>
+          {/* HubStat here (vs. MetricCard on Overview below) is a deliberate,
+              documented split, not a silent inconsistency: this is a live
+              paginated-page glance with no delta/comparison need, the exact
+              case HubStat was built for; Overview's KPIs carry a real
+              period-over-period delta chip, which only MetricCard supports. */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <HubStat
               label="Entries loaded"
@@ -438,6 +461,7 @@ export default async function SisAuditLogPage({
         <>
           {overview.rangeInput && overview.auditResult ? (
             <>
+              <OverviewSectionDivider label="Volume" />
               <ComparisonToolbar
                 ayCode={overview.ayCode}
                 ayCodes={overview.ayCodes}
@@ -505,6 +529,7 @@ export default async function SisAuditLogPage({
                 />
               )}
 
+              <OverviewSectionDivider label="Who" />
               <section className="grid gap-4 lg:grid-cols-2">
                 <AuditByModuleDrillCard
                   data={chartData}
@@ -518,6 +543,7 @@ export default async function SisAuditLogPage({
                 />
               </section>
 
+              <OverviewSectionDivider label="What changed" />
               <section className="grid gap-4 lg:grid-cols-2">
                 {overview.gradeChangePipeline && (
                   <GradeChangePipelineCard
