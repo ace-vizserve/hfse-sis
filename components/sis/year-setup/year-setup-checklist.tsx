@@ -174,14 +174,19 @@ function ChecklistRow({
       <div className="flex shrink-0 items-center">
         <StepStatusBadge step={step} />
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>
+      {/* gap-3 (was gap-2) — Fitts's Law: the ghost secondary button sat too
+          close to the primary CTA's click zone in rows with two actions
+          (calendar/classes/grading-sheets). */}
+      <div className="flex shrink-0 flex-wrap items-center gap-3">{action}</div>
     </div>
   );
 
   return (
     <li
       data-testid={`checklist-row-${step.id}`}
-      className={cn(isNextUp && 'border-l-2 border-l-brand-indigo')}
+      className={cn(
+        isNextUp && 'border-l-2 border-l-brand-indigo bg-accent/30'
+      )}
     >
       {collapsible ? (
         <Collapsible
@@ -235,10 +240,6 @@ export function YearSetupChecklist({
   }
 
   const tone = ayStatusTone(selectedAy);
-  const pct =
-    readiness.total > 0
-      ? Math.round((readiness.complete / readiness.total) * 100)
-      : 0;
   const allDone = readiness.complete === readiness.total;
   // Only ever points at a required-but-incomplete step — `nextIncompleteStepId`
   // falls back to steps[0] when everything required is done, which would
@@ -259,30 +260,28 @@ export function YearSetupChecklist({
 
   const firstOptionalId = steps.find((s) => !s.required)?.id ?? null;
 
+  // Sub-group the 8 flat rows into 3 clusters (Miller's Law — layout redesign
+  // pass): the ids genuinely span different domains (dates/calendar/staffing
+  // vs grading vs branding/admissions) with no visual grouping today. Purely
+  // a label inserted between rows, same mechanism as the existing "Optional"
+  // divider below — not a new pattern.
+  const CLUSTER_LABEL_BEFORE: Partial<Record<ReadinessStepId, string>> = {
+    'ay-setup': 'Core setup',
+    advisers: 'Grading & staffing',
+    'virtue-themes': 'Branding & admissions',
+  };
+
   return (
     <div className="space-y-4">
-      {/* Header strip — the only progress indicator on the page. */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <AyPicker ays={ays} selected={selectedAy.ay_code} />
-          <Badge variant="outline" className={STATUS_BADGE_CLASS[tone]}>
-            {AY_STATUS_LABEL[tone]}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Readiness
-          </span>
-          <div className="h-2 w-32 overflow-hidden rounded-full bg-brand-indigo/10 sm:w-40">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-sky transition-all duration-500"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-            {readiness.complete} of {readiness.total} ready
-          </span>
-        </div>
+      {/* AY picker + status only — the page header's own "N/M ready" badge
+          (ay-setup/page.tsx) is the readiness glance now; this strip used to
+          duplicate that exact number in a second progress bar right below it
+          (layout redesign pass — signal dilution, Von Restorff). */}
+      <div className="flex flex-wrap items-center gap-2">
+        <AyPicker ays={ays} selected={selectedAy.ay_code} />
+        <Badge variant="outline" className={STATUS_BADGE_CLASS[tone]}>
+          {AY_STATUS_LABEL[tone]}
+        </Badge>
       </div>
 
       <Card className="gap-0 py-0">
@@ -471,8 +470,21 @@ export function YearSetupChecklist({
                 action = null;
             }
 
+            const clusterLabel = CLUSTER_LABEL_BEFORE[step.id];
+
             return (
               <Fragment key={step.id}>
+                {clusterLabel && (
+                  <li
+                    role="presentation"
+                    data-testid={`cluster-divider-${step.id}`}
+                    className="bg-muted/30 px-6 py-2"
+                  >
+                    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      {clusterLabel}
+                    </p>
+                  </li>
+                )}
                 {step.id === firstOptionalId && (
                   <li
                     role="presentation"

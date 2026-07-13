@@ -183,7 +183,7 @@ describe('YearSetupChecklist', () => {
     }
   });
 
-  it('shows the readiness fraction', () => {
+  it('does not duplicate the readiness fraction (that lives in the page header now)', () => {
     renderWithClient(
       <YearSetupChecklist
         ays={PICKER_AYS}
@@ -192,7 +192,11 @@ describe('YearSetupChecklist', () => {
         readiness={READINESS}
       />
     );
-    expect(screen.getByText('2 of 7 ready')).toBeInTheDocument();
+    // The checklist previously rendered its own "N of M ready" progress bar,
+    // duplicating the page header's badge with the same number (Von Restorff
+    // — signal dilution). Layout redesign pass: removed, header is now the
+    // one place this number renders.
+    expect(screen.queryByText('2 of 7 ready')).not.toBeInTheDocument();
   });
 
   it('shows the Optional divider before the app-window row', () => {
@@ -205,6 +209,20 @@ describe('YearSetupChecklist', () => {
       />
     );
     expect(screen.getByTestId('optional-divider')).toBeInTheDocument();
+  });
+
+  it('groups the 8 rows into 3 labeled clusters', () => {
+    renderWithClient(
+      <YearSetupChecklist
+        ays={PICKER_AYS}
+        selectedAy={makeAy()}
+        selectedTerms={[]}
+        readiness={READINESS}
+      />
+    );
+    expect(screen.getByText('Core setup')).toBeInTheDocument();
+    expect(screen.getByText('Grading & staffing')).toBeInTheDocument();
+    expect(screen.getByText('Branding & admissions')).toBeInTheDocument();
   });
 
   it('renders exactly one default-variant (primary CTA) button — on the next-up row', () => {
