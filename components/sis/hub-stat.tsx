@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import Link from 'next/link';
 
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -40,15 +41,26 @@ export function HubStat({
   icon: Icon,
   tone = 'brand',
   subtext,
+  href,
+  emphasize,
 }: {
   label: string;
   value: string | number;
   icon: LucideIcon;
   tone?: HubStatTone;
   subtext?: string;
+  /** When set, the whole tile is a real navigation target (e.g. a status
+   * filter deep-link) — not a look-alike control. Uses the same
+   * hover-lift/border/shadow recipe as `hub-quick-actions.tsx`'s clickable
+   * tiles, so a linked HubStat reads as clickable by the same visual
+   * language the module already uses elsewhere, not a novel treatment. */
+  href?: string;
+  /** Pareto-primary tile — the one number checked day-to-day gets a
+   * stronger border + slightly larger value type than its siblings. */
+  emphasize?: boolean;
 }) {
-  return (
-    <Card className="flex flex-row items-center gap-3 p-3.5">
+  const content = (
+    <>
       <div
         className={cn(
           'flex size-10 shrink-0 items-center justify-center rounded-xl',
@@ -58,7 +70,12 @@ export function HubStat({
         <Icon className="size-[19px]" />
       </div>
       <div className="min-w-0">
-        <p className="font-serif text-[21px] font-semibold leading-tight tabular-nums text-foreground">
+        <p
+          className={cn(
+            'font-serif font-semibold leading-tight tabular-nums text-foreground',
+            emphasize ? 'text-[24px]' : 'text-[21px]'
+          )}
+        >
           {typeof value === 'number' ? value.toLocaleString('en-SG') : value}
         </p>
         {/* `label` names the metric and always renders — a `subtext` used to
@@ -76,6 +93,32 @@ export function HubStat({
           </p>
         )}
       </div>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        scroll={false}
+        className={cn(
+          'group flex flex-row items-center gap-3 rounded-xl border bg-card p-3.5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-indigo/40 hover:shadow-md',
+          emphasize ? 'border-brand-indigo/30' : 'border-border'
+        )}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <Card
+      className={cn(
+        'flex flex-row items-center gap-3 p-3.5',
+        emphasize && 'border-brand-indigo/30'
+      )}
+    >
+      {content}
     </Card>
   );
 }
