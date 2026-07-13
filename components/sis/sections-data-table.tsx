@@ -103,9 +103,11 @@ function buildColumns(
       ),
       cell: ({ row }) =>
         row.original.schedule ? (
+          // Same chip recipe as the Level column above — bg-card (not
+          // bg-white) per the no-new-bg-white rule; renders identically.
           <Badge
             variant="outline"
-            className="h-6 border-border bg-white px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-foreground"
+            className="h-6 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-foreground"
           >
             {SCHEDULE_LABELS[row.original.schedule]}
           </Badge>
