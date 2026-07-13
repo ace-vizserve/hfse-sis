@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, Loader2, Save } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, Save } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -295,80 +295,106 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
                 next report-card render.
               </p>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="orgName">Organisation name</Label>
-                <Input
-                  id="orgName"
-                  value={orgName}
-                  onChange={(e) => setOrgName(e.target.value)}
-                  maxLength={200}
-                  placeholder="e.g. HFSE Global Education Group"
-                />
+            {/* Sub-grouped into Identity / Contact / Branding clusters
+                (Miller's-Law fix) — matches the "PEI registration"
+                eyebrow's own already-correct pattern just below in this
+                same tab; the 7 fields no longer sit in one undifferentiated
+                grid. */}
+            <div className="space-y-4">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Identity
+              </p>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor="orgName">Organisation name</Label>
+                  <Input
+                    id="orgName"
+                    value={orgName}
+                    onChange={(e) => setOrgName(e.target.value)}
+                    maxLength={200}
+                    placeholder="e.g. HFSE Global Education Group"
+                  />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor="addr1">Address line 1</Label>
+                  <Input
+                    id="addr1"
+                    value={addr1}
+                    onChange={(e) => setAddr1(e.target.value)}
+                    maxLength={200}
+                    placeholder="e.g. 223 Mountbatten Road, #01-08, 223@Mountbatten"
+                  />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor="addr2">Address line 2</Label>
+                  <Input
+                    id="addr2"
+                    value={addr2}
+                    onChange={(e) => setAddr2(e.target.value)}
+                    maxLength={200}
+                    placeholder="e.g. Singapore 398008"
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="addr1">Address line 1</Label>
-                <Input
-                  id="addr1"
-                  value={addr1}
-                  onChange={(e) => setAddr1(e.target.value)}
-                  maxLength={200}
-                  placeholder="e.g. 223 Mountbatten Road, #01-08, 223@Mountbatten"
-                />
+            </div>
+
+            <div className="space-y-4 border-t border-border pt-4">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Contact
+              </p>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="phone">Phone number</Label>
+                  <Input
+                    id="phone"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    maxLength={200}
+                    placeholder="e.g. +65 6451 0080"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="website">Website URL</Label>
+                  <Input
+                    id="website"
+                    value={website}
+                    onChange={(e) => setWebsite(e.target.value)}
+                    maxLength={200}
+                    placeholder="e.g. https://hfse.edu.sg"
+                  />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor="contactEmail">Contact email</Label>
+                  <Input
+                    id="contactEmail"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    maxLength={200}
+                    placeholder="e.g. enquiry@hfse.edu.sg"
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="addr2">Address line 2</Label>
-                <Input
-                  id="addr2"
-                  value={addr2}
-                  onChange={(e) => setAddr2(e.target.value)}
-                  maxLength={200}
-                  placeholder="e.g. Singapore 398008"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="phone">Phone number</Label>
-                <Input
-                  id="phone"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  maxLength={200}
-                  placeholder="e.g. +65 6451 0080"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="website">Website URL</Label>
-                <Input
-                  id="website"
-                  value={website}
-                  onChange={(e) => setWebsite(e.target.value)}
-                  maxLength={200}
-                  placeholder="e.g. https://hfse.edu.sg"
-                />
-              </div>
-              <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="contactEmail">Contact email</Label>
-                <Input
-                  id="contactEmail"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  maxLength={200}
-                  placeholder="e.g. enquiry@hfse.edu.sg"
-                />
-              </div>
-              <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="logoUrl">Logo image URL</Label>
-                <Input
-                  id="logoUrl"
-                  value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
-                  maxLength={500}
-                  placeholder="https://…  (leave blank to use the bundled HFSE wordmark)"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Paste a publicly accessible image URL. Leave blank to use the
-                  default HFSE wordmark.
-                </p>
+            </div>
+
+            <div className="space-y-4 border-t border-border pt-4">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Branding
+              </p>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor="logoUrl">Logo image URL</Label>
+                  <Input
+                    id="logoUrl"
+                    value={logoUrl}
+                    onChange={(e) => setLogoUrl(e.target.value)}
+                    maxLength={500}
+                    placeholder="https://…  (leave blank to use the bundled HFSE wordmark)"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Paste a publicly accessible image URL. Leave blank to use
+                    the default HFSE wordmark.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -488,6 +514,16 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
                 Thresholds must be strictly increasing: Bronze &lt; Silver &lt;
                 Gold ≤ Max.
               </p>
+              {/* Lighter than a full risk banner (not destructive — a
+                  standard config save), but these 4 fields re-grade every
+                  student instantly, unlike every other field on this page,
+                  so they get a visible high-consequence flag the others
+                  don't. */}
+              <p className="flex items-center gap-1.5 text-[11px] font-medium text-brand-amber">
+                <AlertTriangle className="size-3.5 shrink-0" />
+                Changes apply immediately to every student&apos;s award tier on
+                save.
+              </p>
             </div>
             <div className="grid gap-4 md:grid-cols-4">
               <div className="space-y-1.5">
@@ -574,7 +610,12 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
+      {/* Sticky to the viewport bottom (not the content bottom) — a 4-tab
+          form with a live preview column runs well past one screen, and
+          Save was previously reachable only by scrolling to the end
+          (Fitts's-Law fix). bg-card + border-t so it reads as a footer bar
+          over the scrolling content behind it, not a floating fragment. */}
+      <div className="sticky bottom-0 z-10 -mx-6 flex items-center justify-end gap-2 border-t border-border bg-card px-6 py-4">
         {justSaved && (
           <span className="inline-flex items-center gap-1 font-mono text-[11px] text-primary">
             <CheckCircle2 className="size-3.5" /> Saved
