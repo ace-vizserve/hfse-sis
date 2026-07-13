@@ -3,10 +3,12 @@ import { redirect } from 'next/navigation';
 import {
   Activity,
   AlertTriangle,
+  History,
   LayoutGrid,
   ListChecks,
   Settings2,
   Users,
+  type LucideIcon,
 } from 'lucide-react';
 
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
@@ -49,13 +51,25 @@ import {
 } from '@/app/(markbook)/markbook/audit-log/audit-log-data-table';
 
 // Section divider for the Overview tab's flat stack (Miller's-Law grouping,
-// layout redesign pass, Phase 8). Same typography as the AY-Setup
-// checklist's cluster/optional dividers (year-setup-checklist.tsx) — copied
-// verbatim rather than inventing a new label treatment; wrapped in a plain
-// rounded block instead of a <li> since this page's sections aren't a list.
-function OverviewSectionDivider({ label }: { label: string }) {
+// layout redesign pass, Phase 8). A bare text-only version of this read as
+// a stray flat box next to real Cards on the same page — gives it the
+// app's actual size-7 inline gradient-tile recipe (template-manager-client
+// .tsx's SectionPill, sidebar-header.tsx) instead. Neutral indigo/navy tile
+// throughout: these are organisational groupings, not semantic states, and
+// there's no precedent anywhere in this app for varying a tile's hue across
+// non-semantic groupings (same rule hub-quick-actions.tsx documents).
+function OverviewSectionDivider({
+  label,
+  icon: Icon,
+}: {
+  label: string;
+  icon: LucideIcon;
+}) {
   return (
-    <div role="presentation" className="rounded-lg bg-muted/30 px-4 py-2">
+    <div role="presentation" className="flex items-center gap-2.5 pt-2">
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+        <Icon className="size-3.5" />
+      </div>
       <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {label}
       </p>
@@ -461,7 +475,7 @@ export default async function SisAuditLogPage({
         <>
           {overview.rangeInput && overview.auditResult ? (
             <>
-              <OverviewSectionDivider label="Volume" />
+              <OverviewSectionDivider label="Volume" icon={Activity} />
               <ComparisonToolbar
                 ayCode={overview.ayCode}
                 ayCodes={overview.ayCodes}
@@ -529,7 +543,7 @@ export default async function SisAuditLogPage({
                 />
               )}
 
-              <OverviewSectionDivider label="Who" />
+              <OverviewSectionDivider label="Who" icon={Users} />
               <section className="grid gap-4 lg:grid-cols-2">
                 <AuditByModuleDrillCard
                   data={chartData}
@@ -543,7 +557,7 @@ export default async function SisAuditLogPage({
                 />
               </section>
 
-              <OverviewSectionDivider label="What changed" />
+              <OverviewSectionDivider label="What changed" icon={History} />
               <section className="grid gap-4 lg:grid-cols-2">
                 {overview.gradeChangePipeline && (
                   <GradeChangePipelineCard

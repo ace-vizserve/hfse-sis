@@ -2,7 +2,17 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, CheckCircle2, Loader2, Save } from 'lucide-react';
+import {
+  AlertTriangle,
+  Building2,
+  CheckCircle2,
+  Eye,
+  ImageIcon,
+  Loader2,
+  Phone,
+  Save,
+  ShieldCheck,
+} from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -32,6 +42,28 @@ export function SchoolConfigPreview({ config }: { config: SchoolConfig }) {
         ceoName={config.ceoName}
       />
     </div>
+  );
+}
+
+// Icon-prefixed sub-group label — used for the 4 Letterhead-tab clusters
+// (Identity/Contact/Branding/PEI registration). A bare text label read as
+// flat next to the rest of the app's icon-anchored headers; a small inline
+// icon (not a full gradient tile — these sub-groups already live inside one
+// tiled Card, and stacking 4 more tiles in a single card would be noisy)
+// matches the same "icon + text" idiom already used for e.g. the Grade
+// Levels page's "Offerings shown for" row.
+function ClusterLabel({
+  icon: Icon,
+  children,
+}: {
+  icon: typeof Building2;
+  children: React.ReactNode;
+}) {
+  return (
+    <p className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+      <Icon className="size-3.5 text-brand-indigo/70" />
+      {children}
+    </p>
   );
 }
 
@@ -301,9 +333,7 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
                 same tab; the 7 fields no longer sit in one undifferentiated
                 grid. */}
             <div className="space-y-4">
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Identity
-              </p>
+              <ClusterLabel icon={Building2}>Identity</ClusterLabel>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5 md:col-span-2">
                   <Label htmlFor="orgName">Organisation name</Label>
@@ -339,9 +369,7 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
             </div>
 
             <div className="space-y-4 border-t border-border pt-4">
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Contact
-              </p>
+              <ClusterLabel icon={Phone}>Contact</ClusterLabel>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="phone">Phone number</Label>
@@ -377,9 +405,7 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
             </div>
 
             <div className="space-y-4 border-t border-border pt-4">
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Branding
-              </p>
+              <ClusterLabel icon={ImageIcon}>Branding</ClusterLabel>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5 md:col-span-2">
                   <Label htmlFor="logoUrl">Logo image URL</Label>
@@ -400,9 +426,7 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
 
             <div className="space-y-4 border-t border-border pt-4">
               <div className="space-y-1">
-                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  PEI registration
-                </p>
+                <ClusterLabel icon={ShieldCheck}>PEI registration</ClusterLabel>
                 <p className="text-[13px] text-muted-foreground">
                   The registration number and period shown on the bottom row of
                   the letterhead. Leave the dates blank to omit the period from
@@ -603,7 +627,8 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
         </Tabs>
 
         <div className="lg:sticky lg:top-4 lg:self-start">
-          <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          <p className="mb-2 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            <Eye className="size-3.5 text-brand-indigo/70" />
             Live preview
           </p>
           <SchoolConfigPreview config={liveConfig} />

@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertCircle, Trash2, Users } from 'lucide-react';
+import { AlertTriangle, Trash2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
@@ -92,7 +92,7 @@ export function ApproverReadinessCards({
             </div>
             {readiness.warning && (
               <div className="flex items-start gap-3 bg-destructive/5 px-5 py-3.5">
-                <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
                 <p className="text-[12px] leading-relaxed text-destructive">
                   {readiness.warning}
                 </p>

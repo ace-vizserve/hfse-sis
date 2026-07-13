@@ -10,6 +10,7 @@ import { z } from 'zod';
 import {
   AlertTriangle,
   CalendarRange,
+  Eye,
   Info,
   Layers,
   Loader2,
@@ -209,10 +210,16 @@ export function LevelsManagerClient({
       {/* "Live preview" eyebrow + card — same labeled treatment School
           Config's letterhead preview uses (school-config-form.tsx), so this
           reads as the same "what the end user actually sees" pattern
-          instead of an unlabeled inline block. */}
+          instead of an unlabeled inline block. Added a one-line purpose
+          caption too — the box alone didn't explain why it's here. */}
       <div>
-        <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        <p className="mb-1 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          <Eye className="size-3.5 text-brand-indigo/70" />
           Live preview
+        </p>
+        <p className="mb-2 text-[12px] text-muted-foreground">
+          What applicants actually see on the admissions application form —
+          sanity-check an Offered switch here before saving it.
         </p>
         <ApplicationFormLevelPreview
           levels={levels}
