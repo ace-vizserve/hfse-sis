@@ -43,10 +43,11 @@ export default async function ApproversPage() {
         description="Designate which school admins are approvers for each approval flow. When a teacher files a locked-sheet change request, they pick a primary and secondary from the flow’s list; only those two see and act on it."
       />
 
-      <ApproverReadinessCards byFlow={byFlow} />
-
-      <ApproversDataTable byFlow={byFlow} candidatesByFlow={candidatesByFlow} />
-
+      {/* Moved above the readiness cards + table (layout redesign pass, Law
+          of Proximity) — this explainer covers rules a superadmin needs
+          BEFORE assigning/removing approvers (2-minimum, first-to-act,
+          forward-only revocation), so it needs to be read before the action,
+          not discovered by scrolling past the table afterward. */}
       <section className="rounded-xl border border-border bg-muted/30 p-5">
         <div className="mb-3 flex items-center gap-2">
           <Info className="size-4 text-brand-indigo" />
@@ -93,6 +94,10 @@ export default async function ApproversPage() {
           </li>
         </ul>
       </section>
+
+      <ApproverReadinessCards byFlow={byFlow} />
+
+      <ApproversDataTable byFlow={byFlow} candidatesByFlow={candidatesByFlow} />
     </PageShell>
   );
 }
