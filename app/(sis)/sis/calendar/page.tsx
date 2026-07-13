@@ -165,9 +165,10 @@ export default async function SisCalendarPage({
       {terms.length === 0 ? (
         <Card className="items-center py-12 text-center">
           <CardContent className="flex flex-col items-center gap-3">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-b from-accent/20 to-accent/5 text-accent-foreground ring-1 ring-inset ring-accent/30">
-              <CalendarDays className="size-5" aria-hidden />
-            </span>
+            <CalendarDays
+              className="size-6 text-muted-foreground"
+              aria-hidden
+            />
             <div className="font-serif text-lg font-semibold text-foreground">
               No terms configured
             </div>
@@ -191,22 +192,27 @@ export default async function SisCalendarPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="rounded-xl border border-brand-amber/40 bg-brand-amber-light/40 p-4 text-sm text-foreground">
-              <p className="font-medium">
-                The terms for {ay?.label ?? 'this academic year'} don&apos;t
-                have start &amp; end dates yet.
-              </p>
-              <p className="mt-1 text-muted-foreground">
-                The calendar can&apos;t render a month view without them. Set
-                the dates in{' '}
-                <Link
-                  href="/sis/ay-setup"
-                  className="font-medium text-primary underline underline-offset-2"
-                >
-                  AY Setup
-                </Link>{' '}
-                (superadmin), then come back here.
-              </p>
+            <div className="flex items-start gap-4 rounded-xl border border-brand-amber/40 bg-brand-amber-light/40 p-5">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-amber text-white shadow-brand-tile">
+                <CalendarDays className="size-4" />
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <p className="font-serif text-base font-semibold leading-tight text-foreground">
+                  The terms for {ay?.label ?? 'this academic year'} don&apos;t
+                  have start &amp; end dates yet.
+                </p>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  The calendar can&apos;t render a month view without them. Set
+                  the dates in{' '}
+                  <Link
+                    href="/sis/ay-setup"
+                    className="font-medium text-primary underline underline-offset-2"
+                  >
+                    AY Setup
+                  </Link>{' '}
+                  (superadmin), then come back here.
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>

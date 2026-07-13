@@ -106,21 +106,21 @@ function StepStatusBadge({ step }: { step: ReadinessStep }) {
   );
 }
 
-// Solid tint status tile (deliberately not gradient, per the user's
-// data-density aesthetic memory) — mint done / amber partial / muted tile
-// with the item's own icon when not started.
+// Gradient status tile — mint/amber use the app's semantic gradient recipe
+// (matches `components/sis/environment-card.tsx` etc.); muted `not-started`
+// stays flat as the neutral absence state, not a semantic color.
 function StatusTile({ step }: { step: ReadinessStep }) {
   const Icon = ITEM_ICONS[step.id];
   if (step.status === 'done') {
     return (
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-mint/30 text-ink">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-mint to-brand-sky text-ink shadow-brand-tile-mint">
         <CheckCircle2 className="size-5" />
       </div>
     );
   }
   if (step.status === 'partial') {
     return (
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-amber/20 text-ink">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-brand-tile-amber">
         <Clock className="size-5" />
       </div>
     );
