@@ -20,6 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Card } from '@/components/ui/card';
 import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -40,7 +41,11 @@ import type {
 // One card per flow (today: exactly one, markbook.change_request — the
 // component is Record-shaped for future flows without changing). Matches the
 // approved mockup's healthy/destructive card treatment, driven by the real
-// per-flow approver count via classifyApproverReadiness (Task 9).
+// per-flow approver count via classifyApproverReadiness (Task 9). Restyled
+// (visual-consistency pass) onto a real shadcn Card + gradient icon tile —
+// was a raw bordered <div> with no tile at all. The destructive
+// under-resourced state stays a solid semantic-destructive gradient tile,
+// never the brand indigo/navy tile — that color IS the warning.
 export function ApproverReadinessCards({
   byFlow,
 }: {
@@ -53,22 +58,32 @@ export function ApproverReadinessCards({
         const readiness = classifyApproverReadiness(approvers.length);
         const destructive = readiness.tone === 'destructive';
         return (
-          <div
+          <Card
             key={flow}
             className={cn(
-              'overflow-hidden rounded-xl border',
-              destructive ? 'border-2 border-destructive/40' : 'border-border'
+              'gap-0 overflow-hidden py-0',
+              destructive && 'border-2 border-destructive/40'
             )}
           >
             <div
               className={cn(
-                'flex items-center justify-between border-b px-5 py-3',
+                'flex items-center gap-3 border-b px-5 py-3.5',
                 destructive
                   ? 'border-destructive/30 bg-destructive/5'
                   : 'border-border bg-muted/60'
               )}
             >
-              <p className="font-serif text-[15px] font-semibold text-foreground">
+              <div
+                className={cn(
+                  'flex size-9 shrink-0 items-center justify-center rounded-xl',
+                  destructive
+                    ? 'bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-brand-tile-destructive'
+                    : 'bg-gradient-to-br from-brand-mint to-brand-sky text-ink shadow-brand-tile-mint'
+                )}
+              >
+                <Users className="size-4" />
+              </div>
+              <p className="flex-1 font-serif text-[15px] font-semibold text-foreground">
                 {APPROVER_FLOW_LABELS[flow]}
               </p>
               <StatusBadge tone={destructive ? 'locked' : 'healthy'}>
@@ -83,7 +98,7 @@ export function ApproverReadinessCards({
                 </p>
               </div>
             )}
-          </div>
+          </Card>
         );
       })}
     </div>
