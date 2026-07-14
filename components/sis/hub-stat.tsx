@@ -1,26 +1,34 @@
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 
-import { Card } from '@/components/ui/card';
+import {
+  Card,
+  CardAction,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 /**
- * HubStat — compact stat tile for the SIS Admin hub's stat band (Task V1,
+ * HubStat — the SIS Admin hub's stat-band tile (Task V1,
  * `docs/superpowers/specs/2026-07-11-sis-admin-visual-redesign.html` Screen
- * 1), also reused by Discount Codes' summary row. Deliberately smaller/
- * denser than `<MetricCard>` (no delta chip, no sparkline, no drill) — this
- * is a status glance, not an analytical KPI.
+ * 1), also reused by Sections/Discount Codes/Audit Log's summary rows.
  *
- * Gradient icon tile per the app's real signature (visual-consistency pass,
- * `docs/superpowers/specs/2026-07-13-sis-admin-visual-consistency-mockups.html`
- * — the earlier "no gradients on content" rule was reversed after a design
- * review; it had made the Hub the one flat-tile outlier against 10+ other
- * files, e.g. `components/sis/environment-card.tsx`). `brand`/`sky` are both
- * non-semantic/navigational counts and share the one neutral tile — nothing
- * in this app varies an icon tile's hue across neutral metrics (see
- * `components/dashboard/metric-card.tsx`); only real semantic state
- * (healthy/warning) gets a distinct hue. `muted` stays flat — the neutral
- * "deprioritized" absence state, not a semantic color.
+ * Restructured onto the exact same `Card`/`CardHeader`/`CardDescription`/
+ * `CardTitle`/`CardAction` shape as `components/dashboard/metric-card.tsx`
+ * — the real canonical KPI card used on every operational dashboard
+ * (Records/Admissions/Markbook/Attendance) — after a review found the
+ * original compact flex-row (`p-3.5`, 21px value, tile inline before the
+ * text) read as a flat, thin outlier against the rest of the app the
+ * moment it sat on the same screen as anything using MetricCard. Same
+ * gradient card wash (`from-primary/5 to-card`), same 32px serif value,
+ * same size-9 icon tile positioned top-right via `CardAction`, same mono
+ * eyebrow ABOVE the value. Kept as its own component (not swapped for
+ * MetricCard directly) only because every call site needs `tone` — a
+ * mint/amber icon-tile color swap on nonzero counts MetricCard has no
+ * equivalent for and every consumer already depends on.
  */
 
 export type HubStatTone = 'brand' | 'sky' | 'mint' | 'amber' | 'muted';
@@ -50,75 +58,59 @@ export function HubStat({
   tone?: HubStatTone;
   subtext?: string;
   /** When set, the whole tile is a real navigation target (e.g. a status
-   * filter deep-link) — not a look-alike control. Uses the same
-   * hover-lift/border/shadow recipe as `hub-quick-actions.tsx`'s clickable
-   * tiles, so a linked HubStat reads as clickable by the same visual
-   * language the module already uses elsewhere, not a novel treatment. */
+   * filter deep-link) — not a look-alike control. */
   href?: string;
   /** Pareto-primary tile — the one number checked day-to-day gets a
    * stronger border + slightly larger value type than its siblings. */
   emphasize?: boolean;
 }) {
-  const content = (
-    <>
-      <div
-        className={cn(
-          'flex size-10 shrink-0 items-center justify-center rounded-xl',
-          TONE_CLASS[tone]
-        )}
-      >
-        <Icon className="size-[19px]" />
-      </div>
-      <div className="min-w-0">
-        <p
+  const inner = (
+    <Card
+      className={cn(
+        '@container/card bg-gradient-to-t from-primary/5 to-card shadow-xs',
+        href &&
+          'group transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md',
+        emphasize && 'border-brand-indigo/30'
+      )}
+    >
+      <CardHeader>
+        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+          {label}
+        </CardDescription>
+        <CardTitle
           className={cn(
-            'font-serif font-semibold leading-tight tabular-nums text-foreground',
-            emphasize ? 'text-[24px]' : 'text-[21px]'
+            'font-serif font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]',
+            emphasize ? 'text-[34px]' : 'text-[32px]'
           )}
         >
           {typeof value === 'number' ? value.toLocaleString('en-SG') : value}
-        </p>
-        {/* `label` names the metric and always renders — a `subtext` used to
-            replace it outright, silently erasing what the number counts
-            (e.g. "Awaiting approval" with no "Grade changes waiting"
-            anywhere on the tile). `subtext`, when present, is a second,
-            smaller muted line underneath rather than folded into one line —
-            the tile's fixed p-3.5/gap-3 sizing has room for a two-line
-            caption without growing the card, and a dash-joined single line
-            reads worse at this width once both label + status are present. */}
-        <p className="truncate text-[11.5px] text-muted-foreground">{label}</p>
-        {subtext && (
-          <p className="truncate text-[10.5px] text-muted-foreground/75">
-            {subtext}
-          </p>
-        )}
-      </div>
-    </>
+        </CardTitle>
+        <CardAction>
+          <div
+            className={cn(
+              'flex size-9 items-center justify-center rounded-xl',
+              TONE_CLASS[tone]
+            )}
+          >
+            <Icon className="size-4" />
+          </div>
+        </CardAction>
+      </CardHeader>
+      {subtext && (
+        <CardFooter>
+          <p className="text-xs text-muted-foreground">{subtext}</p>
+        </CardFooter>
+      )}
+    </Card>
   );
 
   if (href) {
     return (
-      <Link
-        href={href}
-        scroll={false}
-        className={cn(
-          'group flex flex-row items-center gap-3 rounded-xl border bg-card p-3.5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-indigo/40 hover:shadow-md',
-          emphasize ? 'border-brand-indigo/30' : 'border-border'
-        )}
-      >
-        {content}
+      <Link href={href} scroll={false} className="block">
+        {inner}
       </Link>
     );
   }
 
-  return (
-    <Card
-      className={cn(
-        'flex flex-row items-center gap-3 p-3.5',
-        emphasize && 'border-brand-indigo/30'
-      )}
-    >
-      {content}
-    </Card>
-  );
+  return inner;
 }
