@@ -3,6 +3,7 @@
 import { useMutation } from '@tanstack/react-query';
 import {
   ArrowUpRight,
+  BookOpen,
   CalendarCog,
   CalendarDays,
   CheckCircle2,
@@ -10,6 +11,7 @@ import {
   CircleDashed,
   ClipboardList,
   Clock,
+  Layers,
   LayoutGrid,
   ListChecks,
   Loader2,
@@ -63,8 +65,10 @@ import {
 const ITEM_ICONS: Record<ReadinessStepId, LucideIcon> = {
   'ay-setup': CalendarCog,
   calendar: CalendarDays,
+  'grade-levels': Layers,
   classes: LayoutGrid,
   advisers: Users,
+  'section-subjects': BookOpen,
   'grading-sheets': ClipboardList,
   'virtue-themes': Sparkles,
   letterhead: Stamp,
@@ -267,7 +271,7 @@ export function YearSetupChecklist({
   // divider below — not a new pattern.
   const CLUSTER_LABEL_BEFORE: Partial<Record<ReadinessStepId, string>> = {
     'ay-setup': 'Core setup',
-    advisers: 'Grading & staffing',
+    classes: 'Grading & staffing',
     'virtue-themes': 'Branding & admissions',
   };
 
@@ -359,6 +363,16 @@ export function YearSetupChecklist({
                 );
                 break;
 
+              case 'grade-levels':
+                action = (
+                  <Button variant={primaryVariant} size="sm" asChild>
+                    <Link href={step.href}>
+                      Open Grade levels <ArrowUpRight className="size-3.5" />
+                    </Link>
+                  </Button>
+                );
+                break;
+
               case 'classes':
                 action = (
                   <>
@@ -376,6 +390,16 @@ export function YearSetupChecklist({
                 break;
 
               case 'advisers':
+                action = (
+                  <Button variant={primaryVariant} size="sm" asChild>
+                    <Link href={step.href}>
+                      Open Sections <ArrowUpRight className="size-3.5" />
+                    </Link>
+                  </Button>
+                );
+                break;
+
+              case 'section-subjects':
                 action = (
                   <Button variant={primaryVariant} size="sm" asChild>
                     <Link href={step.href}>

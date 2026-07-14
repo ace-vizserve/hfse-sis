@@ -46,7 +46,8 @@ function facetFilterFn(
 
 function buildColumns(
   role: Role | null,
-  termStarted: boolean
+  termStarted: boolean,
+  ayId: string
 ): ColumnDef<MarkbookSectionRow>[] {
   return [
     {
@@ -102,6 +103,7 @@ function buildColumns(
           sectionName={row.original.name}
           role={role}
           termStarted={termStarted}
+          ayId={ayId}
         />
       ),
     },
@@ -115,13 +117,15 @@ export function MarkbookSectionsDataTable({
   levels,
   role,
   termStarted,
+  ayId,
 }: {
   rows: MarkbookSectionRow[];
   levels: { id: string; code: string; label: string }[];
   role: Role | null;
   termStarted: boolean;
+  ayId: string;
 }) {
-  const columns = buildColumns(role, termStarted);
+  const columns = buildColumns(role, termStarted, ayId);
 
   const facets: FacetConfig[] =
     levels.length > 1

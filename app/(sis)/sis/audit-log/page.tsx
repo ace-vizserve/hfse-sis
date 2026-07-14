@@ -101,6 +101,9 @@ const SIS_AUDIT_ALLOWLIST = [
   'section.create',
   'section.rename',
   'section.realphabetize',
+  'section.subject.assign',
+  'section.subject.remove',
+  'section.subjects.load_defaults',
   'assignment.create',
   'assignment.delete',
   // Grade levels & progression (migration 078)

@@ -119,6 +119,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }
 
+  // Seed section_subjects defaults for the new section (every subject
+  // currently configured at its level) — best-effort, matches today's
+  // "subjects derive from level" behaviour until the registrar customizes
+  // this section via the Section Subjects panel. Must run BEFORE the
+  // grading-sheet bulk-create below so bulk-create/route.ts's
+  // section_subjects intersection (Phase 3) has something to intersect with.
+  const { error: syncErr } = await service.rpc('sync_section_subjects_for_ay', {
+    p_ay_code: ay.ay_code,
+  });
+  if (syncErr) {
+    console.error(
+      '[sections POST] section_subjects sync RPC failed:',
+      syncErr.message
+    );
+  }
+
   // Bulk-create the grading sheets that should exist for this new section
   // (one per subject in the level Ã— every term in the AY). Best-effort â€” if
   // the RPC fails we still keep the section and log the hiccup; registrar

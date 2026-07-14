@@ -5,12 +5,22 @@ import { requireRole } from '@/lib/auth/require-role';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import { logAction } from '@/lib/audit/log-action';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
+import { buildGradingSheetScopes } from '@/lib/markbook/grading-sheet-scope';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // POST /api/grading-sheets/bulk-create
-// Body: either { ay_id: uuid } or { section_id: uuid } (exactly one).
+// Body: either { ay_id: uuid } or { section_id: uuid } (exactly one) — the
+// original single-scope shape, still used by the AY-Setup checklist row and
+// the section-detail header button.
 //
-// Creates grading sheets for all (section × subject × term) scopes.
+// Optionally narrow that scope further: `section_ids: uuid[]` restricts to
+// a specific subset of sections within the ay_id scope (used by the
+// rebuilt Generate Sheets dialog's multi-select), and `term_ids: uuid[]`
+// restricts to specific terms instead of every term in the AY.
+//
+// Creates grading sheets for all (section × subject × term) scopes, where a
+// (section, subject) pair is only in scope when a section_subjects row
+// exists for it (migration 079) — see lib/markbook/grading-sheet-scope.ts.
 //
 // Registrar+ only.
 export async function POST(request: NextRequest) {
@@ -20,6 +30,8 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as {
     ay_id?: string;
     section_id?: string;
+    section_ids?: string[];
+    term_ids?: string[];
   } | null;
 
   const ayId = body?.ay_id ?? null;
@@ -61,6 +73,13 @@ export async function POST(request: NextRequest) {
     resolvedAyId = (sec as { academic_year_id: string }).academic_year_id;
   }
 
+  // Narrow to an explicit section subset when provided (the rebuilt dialog's
+  // multi-select) — intersect, don't trust the client's list wholesale.
+  if (Array.isArray(body?.section_ids) && body.section_ids.length > 0) {
+    const requested = new Set(body.section_ids);
+    targetSectionIds = targetSectionIds.filter((id) => requested.has(id));
+  }
+
   if (!targetSectionIds.length) {
     return NextResponse.json({ ok: true, inserted: 0, reason: 'no_sections' });
   }
@@ -86,15 +105,34 @@ export async function POST(request: NextRequest) {
       ),
     ];
 
-    // 2. Load subject configs + terms in parallel
-    const [{ data: configs }, { data: terms }] = await Promise.all([
-      service
-        .from('subject_configs')
-        .select('subject_id, level_id')
-        .eq('academic_year_id', resolvedAyId)
-        .in('level_id', levelIds),
-      service.from('terms').select('id').eq('academic_year_id', resolvedAyId),
-    ]);
+    // 2. Load subject configs + terms + this section's subject overrides in
+    //    parallel. section_subjects (migration 079) decides WHICH of a
+    //    level's configured subjects apply to a given section — a
+    //    (section, subject) pair only gets a sheet when a section_subjects
+    //    row exists for it. Every section was backfilled with its level's
+    //    full subject list at migration time, so existing sections behave
+    //    identically unless someone has since customized them.
+    let termsQuery = service
+      .from('terms')
+      .select('id')
+      .eq('academic_year_id', resolvedAyId);
+    if (Array.isArray(body?.term_ids) && body.term_ids.length > 0) {
+      termsQuery = termsQuery.in('id', body.term_ids);
+    }
+
+    const [{ data: configs }, { data: terms }, { data: sectionSubjectRows }] =
+      await Promise.all([
+        service
+          .from('subject_configs')
+          .select('id, subject_id, level_id')
+          .eq('academic_year_id', resolvedAyId)
+          .in('level_id', levelIds),
+        termsQuery,
+        service
+          .from('section_subjects')
+          .select('section_id, subject_config_id')
+          .in('section_id', targetSectionIds),
+      ]);
 
     if (!configs?.length) {
       return NextResponse.json({
@@ -107,37 +145,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, inserted: 0, reason: 'no_terms' });
     }
 
-    // 3. Build flat scope list: one entry per (section × subject × term)
-    const allScopes: {
-      section_id: string;
-      subject_id: string;
-      term_id: string;
-    }[] = [];
-    for (const sec of sections as { id: string; level_id: string }[]) {
-      const secSubjects = (
-        configs as { subject_id: string; level_id: string }[]
-      ).filter((c) => c.level_id === sec.level_id);
-      for (const term of terms as { id: string }[]) {
-        for (const cfg of secSubjects) {
-          allScopes.push({
-            section_id: sec.id,
-            subject_id: cfg.subject_id,
-            term_id: term.id,
-          });
-        }
-      }
+    const allScopes = buildGradingSheetScopes(
+      sections as { id: string; level_id: string }[],
+      configs as { id: string; subject_id: string; level_id: string }[],
+      (sectionSubjectRows ?? []) as {
+        section_id: string;
+        subject_config_id: string;
+      }[],
+      terms as { id: string }[]
+    );
+
+    if (allScopes.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        inserted: 0,
+        reason: 'no_subjects_assigned',
+      });
     }
 
-    // 4. Create sheets for ALL scopes (no gate)
-    if (allScopes.length > 0) {
-      const { data: rpcResult } = await service.rpc(
-        'create_grading_sheets_for_scopes',
-        {
-          p_scopes: allScopes,
-        }
-      );
-      inserted = (rpcResult as { inserted?: number } | null)?.inserted ?? 0;
-    }
+    // 4. Create sheets for ALL scopes (no gate) — the RPC only wants
+    //    section_id/subject_id/term_id, so drop the extra subject_config_id
+    //    the pure builder carries for the preview route's benefit.
+    const { data: rpcResult } = await service.rpc(
+      'create_grading_sheets_for_scopes',
+      {
+        p_scopes: allScopes.map(({ section_id, subject_id, term_id }) => ({
+          section_id,
+          subject_id,
+          term_id,
+        })),
+      }
+    );
+    inserted = (rpcResult as { inserted?: number } | null)?.inserted ?? 0;
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'internal error' },
@@ -155,6 +194,8 @@ export async function POST(request: NextRequest) {
       scope: hasAy ? 'ay' : 'section',
       ay_id: ayId,
       section_id: sectionId,
+      section_ids: body?.section_ids ?? null,
+      term_ids: body?.term_ids ?? null,
       inserted,
     },
   });

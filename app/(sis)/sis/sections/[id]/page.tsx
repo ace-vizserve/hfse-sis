@@ -8,6 +8,10 @@ import { getTeacherList } from '@/lib/auth/staff-list';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { GenerateIndexButton } from '@/components/sis/generate-index-button';
+import {
+  SectionSubjectsPanel,
+  type SectionSubjectChip,
+} from '@/components/sis/section-subjects-panel';
 import { sgToday } from '@/lib/dates';
 import {
   Card,
@@ -100,6 +104,7 @@ export default async function SisSectionDetailPage({
     teacherList,
     { data: rawAssignments },
     { data: termRows },
+    { data: sectionSubjectRows },
   ] = await Promise.all([
     supabase
       .from('section_students')
@@ -111,7 +116,7 @@ export default async function SisSectionDetailPage({
     level
       ? supabase
           .from('subject_configs')
-          .select('subject:subjects(id, code, name, is_examinable)')
+          .select('id, subject:subjects(id, code, name, is_examinable)')
           .eq('academic_year_id', section.academic_year_id)
           .eq('level_id', level.id)
       : Promise.resolve({ data: [] as unknown[] }),
@@ -137,6 +142,12 @@ export default async function SisSectionDetailPage({
       .select('start_date')
       .eq('academic_year_id', section.academic_year_id)
       .order('start_date', { ascending: true }),
+    // Per-section subject overrides (migration 079) — which of the level's
+    // configured subjects apply to THIS section.
+    supabase
+      .from('section_subjects')
+      .select('subject_config_id')
+      .eq('section_id', id),
   ]);
 
   const today = sgToday();
@@ -185,6 +196,7 @@ export default async function SisSectionDetailPage({
   const onRosterCount = activeCount + lateCount;
 
   type CfgRow = {
+    id: string;
     subject:
       | { id: string; code: string; name: string; is_examinable: boolean }
       | { id: string; code: string; name: string; is_examinable: boolean }[]
@@ -203,6 +215,36 @@ export default async function SisSectionDetailPage({
       } => !!s
     )
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Per-section subject overrides (KD ... section_subjects, migration 079)
+  // — every subject configured at this level, split into assigned vs.
+  // available-to-add by whether a section_subjects row exists for it.
+  const levelSubjectConfigs: SectionSubjectChip[] = (
+    (configs ?? []) as CfgRow[]
+  )
+    .map((c) => {
+      const s = Array.isArray(c.subject) ? c.subject[0] : c.subject;
+      if (!s) return null;
+      return {
+        subjectConfigId: c.id,
+        code: s.code,
+        name: s.name,
+        isExaminable: s.is_examinable,
+      };
+    })
+    .filter((c): c is SectionSubjectChip => !!c)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const assignedConfigIds = new Set(
+    ((sectionSubjectRows ?? []) as Array<{ subject_config_id: string }>).map(
+      (r) => r.subject_config_id
+    )
+  );
+  const assignedSubjectChips = levelSubjectConfigs.filter((c) =>
+    assignedConfigIds.has(c.subjectConfigId)
+  );
+  const availableSubjectChips = levelSubjectConfigs.filter(
+    (c) => !assignedConfigIds.has(c.subjectConfigId)
+  );
 
   // Map StaffMember.name → display_name to match the Teacher type in the component.
   const initialTeachers = teacherList.map((t) => ({
@@ -372,6 +414,7 @@ export default async function SisSectionDetailPage({
                 kind: 'section',
                 sectionId: section.id,
                 sectionLabel: section.name,
+                ayId: section.academic_year_id,
               }}
             />
             <GenerateIndexButton
@@ -428,6 +471,17 @@ export default async function SisSectionDetailPage({
               subtext="Kept in the roster permanently for audit"
             />
           </div>
+
+          {/* Per-section subject overrides — decides which of the level's
+              configured subjects apply to THIS section (migration 079).
+              Grading-sheet generation reads this list, so it sits above the
+              roster: get subjects right before generating sheets. */}
+          <SectionSubjectsPanel
+            sectionId={section.id}
+            levelLabel={level?.label ?? null}
+            assigned={assignedSubjectChips}
+            availableToAdd={availableSubjectChips}
+          />
 
           {/* Roster — admin lens with the Move action. The full grading
               roster (with edit-enrolment metadata: bus, classroom officer,

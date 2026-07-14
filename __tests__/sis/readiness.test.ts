@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveAySetupStep,
   resolveCalendarStep,
+  resolveGradeLevelsStep,
   resolveClassesStep,
   resolveAdvisersStep,
+  resolveSectionSubjectsStep,
   resolveGradingSheetsStep,
   resolveVirtueThemesStep,
   resolveLetterheadStep,
@@ -60,6 +62,75 @@ describe('resolveCalendarStep', () => {
     expect(resolveCalendarStep({ totalTerms: 4, coveredTerms: 4 }).status).toBe(
       'done'
     );
+  });
+});
+
+describe('resolveGradeLevelsStep', () => {
+  it('not_started when no applications exist yet, no fraction key', () => {
+    const s = resolveGradeLevelsStep({
+      totalDistinctApplied: 0,
+      unmatchedCount: 0,
+    });
+    expect(s.status).toBe('not_started');
+    expect(s.fraction).toBeUndefined();
+  });
+  it('done when every applied-for level matches the catalog', () => {
+    const s = resolveGradeLevelsStep({
+      totalDistinctApplied: 5,
+      unmatchedCount: 0,
+    });
+    expect(s.status).toBe('done');
+    expect(s.fraction).toEqual({ done: 5, total: 5 });
+  });
+  it('partial when some applied-for levels have no catalog match', () => {
+    const s = resolveGradeLevelsStep({
+      totalDistinctApplied: 5,
+      unmatchedCount: 2,
+    });
+    expect(s.status).toBe('partial');
+    expect(s.fraction).toEqual({ done: 3, total: 5 });
+  });
+  it('partial (never not_started) when every applied-for level is unmatched', () => {
+    const s = resolveGradeLevelsStep({
+      totalDistinctApplied: 3,
+      unmatchedCount: 3,
+    });
+    expect(s.status).toBe('partial');
+    expect(s.fraction).toEqual({ done: 0, total: 3 });
+  });
+});
+
+describe('resolveSectionSubjectsStep', () => {
+  it('not_started when no sections, no fraction key omitted (fraction always present)', () => {
+    const s = resolveSectionSubjectsStep({
+      totalSections: 0,
+      sectionsWithSubjects: 0,
+    });
+    expect(s.status).toBe('not_started');
+    expect(s.fraction).toEqual({ done: 0, total: 0 });
+  });
+  it('not_started when sections exist but none have subjects assigned', () => {
+    const s = resolveSectionSubjectsStep({
+      totalSections: 18,
+      sectionsWithSubjects: 0,
+    });
+    expect(s.status).toBe('not_started');
+    expect(s.fraction).toEqual({ done: 0, total: 18 });
+  });
+  it('partial when some sections have subjects assigned', () => {
+    const s = resolveSectionSubjectsStep({
+      totalSections: 18,
+      sectionsWithSubjects: 5,
+    });
+    expect(s.status).toBe('partial');
+  });
+  it('done when every section has at least one subject assigned', () => {
+    expect(
+      resolveSectionSubjectsStep({
+        totalSections: 18,
+        sectionsWithSubjects: 18,
+      }).status
+    ).toBe('done');
   });
 });
 

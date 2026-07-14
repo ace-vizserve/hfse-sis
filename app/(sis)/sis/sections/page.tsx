@@ -312,6 +312,7 @@ export default async function SisSectionsListPage({
         role={sessionUser.role}
         termStarted={termStarted}
         sections={sectionsList}
+        ayId={ay?.id ?? ''}
       />
     </PageShell>
   );

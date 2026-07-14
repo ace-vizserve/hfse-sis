@@ -213,6 +213,7 @@ export default async function SectionsListPage() {
         levels={levels}
         role={sessionUser?.role ?? null}
         termStarted={termStarted}
+        ayId={ay?.id ?? ''}
       />
     </PageShell>
   );

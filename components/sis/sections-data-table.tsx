@@ -54,7 +54,8 @@ function facetFilterFn(
 
 function buildColumns(
   role: Role | null,
-  termStarted: boolean
+  termStarted: boolean,
+  ayId: string
 ): ColumnDef<SisSectionRow>[] {
   return [
     {
@@ -187,6 +188,7 @@ function buildColumns(
           role={role}
           termStarted={termStarted}
           hasAdviser={!!row.original.fcaName}
+          ayId={ayId}
         />
       ),
     },
@@ -201,14 +203,16 @@ export function SisSectionsDataTable({
   role,
   termStarted,
   sections,
+  ayId,
 }: {
   rows: SisSectionRow[];
   levels: { id: string; code: string; label: string }[];
   role: Role | null;
   termStarted: boolean;
   sections: { id: string; name: string }[];
+  ayId: string;
 }) {
-  const columns = buildColumns(role, termStarted);
+  const columns = buildColumns(role, termStarted, ayId);
 
   const facets: FacetConfig[] = [
     ...(levels.length > 1

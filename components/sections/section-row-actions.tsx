@@ -42,6 +42,9 @@ export type SectionRowActionsProps = {
   /** True when the AY's first term has started — escalates the generate-index
    *  warning (KD #136). Only relevant for sis + markbook. */
   termStarted: boolean;
+  /** Academic year id, for GenerateSheetsDialog's scope. Only relevant for
+   *  sis + markbook (attendance never renders that dialog). */
+  ayId?: string;
   /** Attendance only: the href for "Open daily" (e.g. /attendance/[id]?date=…).
    *  Falls back to '#' when omitted. */
   todayHref?: string;
@@ -60,6 +63,7 @@ export function SectionRowActions({
   termStarted,
   todayHref,
   hasAdviser,
+  ayId,
 }: SectionRowActionsProps) {
   const isRegistrarPlus =
     role === 'registrar' || role === 'school_admin' || role === 'superadmin';
@@ -179,7 +183,12 @@ export function SectionRowActions({
               suppresses its default trigger button (line 118: the
               AlertDialogTrigger is gated on `children || !isControlled`). */}
           <GenerateSheetsDialog
-            scope={{ kind: 'section', sectionId, sectionLabel: sectionName }}
+            scope={{
+              kind: 'section',
+              sectionId,
+              sectionLabel: sectionName,
+              ayId: ayId ?? '',
+            }}
             open={sheetsOpen}
             onOpenChange={setSheetsOpen}
           />

@@ -60,6 +60,24 @@ export async function POST(request: NextRequest) {
       continue;
     }
     results.push(result);
+
+    // Grant section_subjects defaults for any subject the template apply
+    // just added/updated on this AY — best-effort, additive-only (ON
+    // CONFLICT DO NOTHING never removes an existing per-section
+    // customization). Keeps already-populated AYs' sections in sync with a
+    // newly-added template subject without requiring a manual "Load
+    // default subject set" click per section.
+    const { error: syncErr } = await service.rpc(
+      'sync_section_subjects_for_ay',
+      { p_ay_code: ayCode }
+    );
+    if (syncErr) {
+      console.error(
+        `[template.apply] ${ayCode} section_subjects sync failed:`,
+        syncErr.message
+      );
+    }
+
     revalidateTag(`sis:${ayCode}`, 'max');
   }
 

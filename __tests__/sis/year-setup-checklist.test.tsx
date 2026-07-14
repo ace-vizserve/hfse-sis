@@ -38,8 +38,8 @@ vi.mock('@/components/sis/year-setup/ay-picker', () => ({
 
 const READINESS: AyReadiness = {
   ayCode: 'AY2026',
-  complete: 2,
-  total: 7,
+  complete: 3,
+  total: 9,
   steps: [
     {
       id: 'ay-setup',
@@ -60,8 +60,17 @@ const READINESS: AyReadiness = {
       required: true,
     },
     {
-      id: 'classes',
+      id: 'grade-levels',
       step: 3,
+      label: 'Grade levels',
+      description: 'Every applied-for level matches the catalog',
+      href: '/sis/admin/levels',
+      status: 'done',
+      required: true,
+    },
+    {
+      id: 'classes',
+      step: 4,
       label: 'Classes',
       description: 'No sections created for this AY',
       href: '/sis/admin/template',
@@ -70,7 +79,7 @@ const READINESS: AyReadiness = {
     },
     {
       id: 'advisers',
-      step: 4,
+      step: 5,
       label: 'Form advisers',
       description: '0 of 3 sections have a form adviser',
       href: '/sis/sections',
@@ -78,8 +87,17 @@ const READINESS: AyReadiness = {
       required: true,
     },
     {
+      id: 'section-subjects',
+      step: 6,
+      label: 'Section subjects',
+      description: '3 of 3 sections have subjects assigned',
+      href: '/sis/sections',
+      status: 'done',
+      required: true,
+    },
+    {
       id: 'grading-sheets',
-      step: 5,
+      step: 7,
       label: 'Grading sheets',
       description: '1 of 3 sections have grading sheets',
       href: '/markbook/sections',
@@ -89,7 +107,7 @@ const READINESS: AyReadiness = {
     },
     {
       id: 'virtue-themes',
-      step: 6,
+      step: 8,
       label: 'Virtue themes',
       description: '0 of 3 terms have a virtue theme set',
       href: '/evaluation/virtue-themes',
@@ -98,7 +116,7 @@ const READINESS: AyReadiness = {
     },
     {
       id: 'letterhead',
-      step: 7,
+      step: 9,
       label: 'Report-card letterhead',
       description: 'Organization name is set',
       href: '/sis/admin/school-config',
@@ -107,7 +125,7 @@ const READINESS: AyReadiness = {
     },
     {
       id: 'app-window',
-      step: 8,
+      step: 10,
       label: 'Application window',
       description: 'Applications are not open for this year',
       href: '/sis/ay-setup',
@@ -138,8 +156,10 @@ function makeAy(overrides: Record<string, unknown> = {}) {
 const STEP_IDS = [
   'ay-setup',
   'calendar',
+  'grade-levels',
   'classes',
   'advisers',
+  'section-subjects',
   'grading-sheets',
   'virtue-themes',
   'letterhead',
@@ -169,7 +189,7 @@ describe('YearSetupChecklist', () => {
     expect(screen.getByText('No academic year yet')).toBeInTheDocument();
   });
 
-  it('renders all 8 checklist rows', () => {
+  it('renders all 10 checklist rows', () => {
     renderWithClient(
       <YearSetupChecklist
         ays={PICKER_AYS}
@@ -211,7 +231,7 @@ describe('YearSetupChecklist', () => {
     expect(screen.getByTestId('optional-divider')).toBeInTheDocument();
   });
 
-  it('groups the 8 rows into 3 labeled clusters', () => {
+  it('groups the 10 rows into 3 labeled clusters', () => {
     renderWithClient(
       <YearSetupChecklist
         ays={PICKER_AYS}
@@ -256,7 +276,7 @@ describe('YearSetupChecklist', () => {
             }
           : s
       ),
-      complete: 7,
+      complete: 9,
     };
     renderWithClient(
       <YearSetupChecklist
