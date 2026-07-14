@@ -8,8 +8,20 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
   ArrowRight,
   CalendarRange,
+  GripVertical,
   Layers,
   Loader2,
   Pencil,
@@ -81,7 +93,7 @@ import {
   groupTransitionsByFromLevel,
   type LevelTransitionRow,
 } from '@/lib/sis/level-transitions';
-import { computeLevelTree, type LevelTreeBranch } from '@/lib/sis/level-tree';
+import { computeLevelTree, type LevelTreeNode } from '@/lib/sis/level-tree';
 import {
   PROFILE_LABEL,
   ProfileLegendChip,
@@ -219,12 +231,26 @@ export function LevelsManagerClient({
 
 // =====================================================================
 // LevelTree — the catalog rendered as its real shape: a spine of the
-// permanent core levels (P1..S4), with volatile levels attached as
-// branches (lib/sis/level-tree.ts::computeLevelTree — solid connector
-// when the attachment is backed by real applications data, dashed when
-// it's a sort_order-proximity fallback with no observed data yet). Every
-// row is the same LevelRowItem used before — this only changes the shell
-// around it, not the row content or its actions.
+// permanent core levels (P1..S4), with every other level attached as a
+// branch — recursively (lib/sis/level-tree.ts::computeLevelTree; a branch
+// can itself have branches, e.g. a non-core "Youngstarters | Junior
+// Stars" splitting to both "Primary One" and an HFSE Global Education
+// Programme track). Solid connector when the attachment is backed by
+// real applications data, dashed when it's a sort_order-proximity
+// fallback with no observed data yet.
+//
+// Drag-and-drop reattachment: grab any non-core level's handle and drop
+// it onto any other level (spine or branch) to reattach it there —
+// "after" the drop target, computed via computeSortOrderFromAnchor, the
+// same math the Attach-near dropdown uses. Core levels are never
+// draggable (they're permanent spine roots by definition) but are always
+// valid drop targets. Uses @dnd-kit/core directly (useDraggable/
+// useDroppable), not @dnd-kit/sortable's list-reorder helpers — this is a
+// drop-onto-a-target reparenting interaction, not reordering a flat list
+// (the one other DnD surface in this app, components/ui/data-table/
+// export-sheet.tsx, IS a flat reorder, so its pattern doesn't fit here).
+// Pointer-only for now — the Attach-near dropdown in the Edit dialog is
+// the fully keyboard/screen-reader-accessible equivalent path.
 // =====================================================================
 
 type RowSharedProps = {
@@ -248,6 +274,8 @@ function LevelTree({
   levels: LevelRow[];
   transitionRows: LevelTransitionRow[];
 } & Omit<RowSharedProps, 'levels'>) {
+  const router = useRouter();
+  const [activeId, setActiveId] = React.useState<string | null>(null);
   const nodes = React.useMemo(
     () => computeLevelTree(levels, transitionRows),
     [levels, transitionRows]
@@ -260,6 +288,51 @@ function LevelTree({
     currentAyCode,
     acceptingAyCode,
   };
+  const activeLevel = activeId
+    ? (levels.find((l) => l.id === activeId) ?? null)
+    : null;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  );
+
+  const reattachMutation = useMutation({
+    mutationFn: ({
+      levelId,
+      sortOrder,
+    }: {
+      levelId: string;
+      sortOrder: number;
+      label: string;
+      targetLabel: string;
+    }) =>
+      apiFetch(
+        `/api/sis/admin/levels/${levelId}`,
+        jsonInit('PATCH', { sortOrder })
+      ),
+    onSuccess: (_data, vars) => {
+      toast.success(`Moved ${vars.label} to attach after ${vars.targetLabel}`);
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'Could not move this level');
+    },
+  });
+
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const draggedLevel = levels.find((l) => l.id === active.id);
+    const target = levels.find((l) => l.id === over.id);
+    if (!draggedLevel || draggedLevel.isCore || !target) return;
+    reattachMutation.mutate({
+      levelId: draggedLevel.id,
+      sortOrder: computeSortOrderFromAnchor(levels, target.id, 'after'),
+      label: draggedLevel.label,
+      targetLabel: target.label,
+    });
+  }
 
   if (nodes.length === 0) {
     // No core levels at all — shouldn't happen (they're seeded and
@@ -284,114 +357,225 @@ function LevelTree({
   }
 
   return (
-    <div className="divide-y divide-border" role="tree">
-      {nodes.map((node, i) => (
-        <React.Fragment key={node.level.id}>
-          {node.branchesBefore.map((b) => (
-            <BranchRow key={b.level.id} branch={b} {...rowProps} />
-          ))}
-          <div className="relative flex items-stretch">
-            <div className="flex w-8 shrink-0 flex-col items-center">
-              <div
-                className={cn(
-                  'w-px flex-1 bg-border',
-                  i === 0 && node.branchesBefore.length === 0 && 'invisible'
-                )}
-                aria-hidden
-              />
-              <div
-                className="size-2.5 shrink-0 rounded-full bg-brand-indigo ring-4 ring-card"
-                aria-hidden
-              />
-              <div
-                className={cn(
-                  'w-px flex-1 bg-border',
-                  i === nodes.length - 1 &&
-                    node.branchesAfter.length === 0 &&
-                    'invisible'
-                )}
-                aria-hidden
-              />
-            </div>
-            <div className="flex-1 py-1" role="treeitem">
-              <LevelRowItem
-                level={node.level}
-                levels={levels}
-                offered
-                demand={demandByLevelId.get(node.level.id) ?? null}
-                currentAyId={currentAyId}
-                currentAyCode={currentAyCode}
-                acceptingAyCode={acceptingAyCode}
-              />
-            </div>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={(e) => setActiveId(String(e.active.id))}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => setActiveId(null)}
+    >
+      <div className="divide-y divide-border" role="tree">
+        {nodes.map((node, i) => (
+          <TreeNodeRow
+            key={node.level.id}
+            node={node}
+            depth={0}
+            isFirstRoot={i === 0}
+            isLastRoot={i === nodes.length - 1}
+            {...rowProps}
+          />
+        ))}
+      </div>
+      <DragOverlay>
+        {activeLevel && (
+          <div className="flex items-center gap-2 rounded-lg border border-brand-indigo/40 bg-card px-3 py-2 shadow-lg">
+            <GripVertical className="size-3.5 text-muted-foreground" />
+            <Badge
+              variant="outline"
+              className="h-6 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+            >
+              {activeLevel.code}
+            </Badge>
+            <span className="font-serif text-sm font-semibold text-foreground">
+              {activeLevel.label}
+            </span>
           </div>
-          {node.branchesAfter.map((b) => (
-            <BranchRow key={b.level.id} branch={b} {...rowProps} />
-          ))}
-        </React.Fragment>
-      ))}
-    </div>
+        )}
+      </DragOverlay>
+    </DndContext>
   );
 }
 
-function BranchRow({
-  branch,
+function TreeNodeRow({
+  node,
+  depth,
+  isFirstRoot,
+  isLastRoot,
   levels,
   offeredSet,
   demandByLevelId,
   currentAyId,
   currentAyCode,
   acceptingAyCode,
-}: { branch: LevelTreeBranch } & RowSharedProps) {
-  return (
-    <div className="flex items-stretch pl-8" role="treeitem">
-      {/* Elbow connector — a corner drawn from border-left + border-bottom,
-          the standard plain-CSS "tree view" indent guide (VS Code's file
-          explorer uses the same trick). Solid indigo when the attachment
-          is backed by real applications data; dashed muted when it's a
-          sort_order-proximity guess — the one visual fact this whole page
-          exists to communicate. */}
-      <div className="flex w-8 shrink-0 items-start justify-center">
-        <div
-          className={cn(
-            'mt-5 h-5 w-4 rounded-bl-lg border-b-2 border-l-2',
-            branch.evidenced
-              ? 'border-brand-indigo/50'
-              : 'border-dashed border-muted-foreground/30'
-          )}
-          aria-hidden
-        />
-      </div>
-      <div className="min-w-0 flex-1 py-1.5">
-        <div className="mb-1 flex items-center gap-1.5 pl-1">
-          {branch.evidenced ? (
-            <Badge
-              variant="outline"
-              className="h-5 gap-1 border-brand-indigo/40 bg-brand-indigo/5 px-1.5 font-mono text-[9px] font-medium text-brand-indigo-deep"
-            >
-              <TrendingUp className="size-2.5" />
-              {branch.observedCount} observed
-            </Badge>
-          ) : (
-            <Badge
-              variant="muted"
-              className="h-5 px-1.5 font-mono text-[9px] font-medium"
-            >
-              structural — no applications yet
-            </Badge>
-          )}
-        </div>
+}: {
+  node: LevelTreeNode;
+  depth: number;
+  isFirstRoot?: boolean;
+  isLastRoot?: boolean;
+} & RowSharedProps) {
+  const isSpine = depth === 0;
+  const draggable = useDraggable({
+    id: node.level.id,
+    disabled: node.level.isCore,
+  });
+  const droppable = useDroppable({ id: node.level.id });
+  const rowProps: RowSharedProps = {
+    levels,
+    offeredSet,
+    demandByLevelId,
+    currentAyId,
+    currentAyCode,
+    acceptingAyCode,
+  };
+
+  const content = (
+    <div
+      ref={droppable.setNodeRef}
+      className={cn(
+        'flex items-stretch gap-1.5 rounded-lg transition-colors',
+        droppable.isOver &&
+          'bg-brand-indigo/5 ring-2 ring-inset ring-brand-indigo/40'
+      )}
+    >
+      {node.level.isCore ? (
+        <div className="w-6 shrink-0" aria-hidden />
+      ) : (
+        <button
+          ref={draggable.setNodeRef}
+          {...draggable.listeners}
+          {...draggable.attributes}
+          type="button"
+          className="flex w-6 shrink-0 cursor-grab touch-none items-center justify-center self-stretch rounded text-muted-foreground/40 hover:bg-accent hover:text-foreground active:cursor-grabbing"
+          aria-label={`Drag ${node.level.label} to reattach it to a different level`}
+        >
+          <GripVertical className="size-3.5" />
+        </button>
+      )}
+      <div className="min-w-0 flex-1">
+        {!isSpine && (
+          <div className="mb-1 flex items-center gap-1.5 pl-1 pt-1.5">
+            {node.evidenced ? (
+              <Badge
+                variant="outline"
+                className="h-5 gap-1 border-brand-indigo/40 bg-brand-indigo/5 px-1.5 font-mono text-[9px] font-medium text-brand-indigo-deep"
+              >
+                <TrendingUp className="size-2.5" />
+                {node.observedCount} observed
+              </Badge>
+            ) : (
+              <Badge
+                variant="muted"
+                className="h-5 px-1.5 font-mono text-[9px] font-medium"
+              >
+                structural — no applications yet
+              </Badge>
+            )}
+          </div>
+        )}
         <LevelRowItem
-          level={branch.level}
+          level={node.level}
           levels={levels}
-          offered={branch.level.isCore || offeredSet.has(branch.level.id)}
-          demand={demandByLevelId.get(branch.level.id) ?? null}
+          offered={isSpine || offeredSet.has(node.level.id)}
+          demand={demandByLevelId.get(node.level.id) ?? null}
           currentAyId={currentAyId}
           currentAyCode={currentAyCode}
           acceptingAyCode={acceptingAyCode}
         />
       </div>
     </div>
+  );
+
+  if (isSpine) {
+    return (
+      <>
+        {node.childrenBefore.map((child) => (
+          <TreeNodeRow
+            key={child.level.id}
+            node={child}
+            depth={1}
+            {...rowProps}
+          />
+        ))}
+        <div className="relative flex items-stretch">
+          <div className="flex w-8 shrink-0 flex-col items-center">
+            <div
+              className={cn(
+                'w-px flex-1 bg-border',
+                isFirstRoot && node.childrenBefore.length === 0 && 'invisible'
+              )}
+              aria-hidden
+            />
+            <div
+              className="size-2.5 shrink-0 rounded-full bg-brand-indigo ring-4 ring-card"
+              aria-hidden
+            />
+            <div
+              className={cn(
+                'w-px flex-1 bg-border',
+                isLastRoot && node.childrenAfter.length === 0 && 'invisible'
+              )}
+              aria-hidden
+            />
+          </div>
+          <div className="flex-1 py-1" role="treeitem">
+            {content}
+          </div>
+        </div>
+        {node.childrenAfter.map((child) => (
+          <TreeNodeRow
+            key={child.level.id}
+            node={child}
+            depth={1}
+            {...rowProps}
+          />
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {node.childrenBefore.map((child) => (
+        <TreeNodeRow
+          key={child.level.id}
+          node={child}
+          depth={depth + 1}
+          {...rowProps}
+        />
+      ))}
+      <div
+        className="flex items-stretch"
+        style={{ paddingLeft: `${depth * 2}rem` }}
+        role="treeitem"
+      >
+        {/* Elbow connector — a corner drawn from border-left + border-bottom,
+            the standard plain-CSS "tree view" indent guide (VS Code's file
+            explorer uses the same trick). Solid indigo when the attachment
+            is backed by real applications data; dashed muted when it's a
+            sort_order-proximity guess — the one visual fact this whole page
+            exists to communicate. */}
+        <div className="flex w-8 shrink-0 items-start justify-center">
+          <div
+            className={cn(
+              'mt-5 h-5 w-4 rounded-bl-lg border-b-2 border-l-2',
+              node.evidenced
+                ? 'border-brand-indigo/50'
+                : 'border-dashed border-muted-foreground/30'
+            )}
+            aria-hidden
+          />
+        </div>
+        <div className="min-w-0 flex-1 py-1.5">{content}</div>
+      </div>
+      {node.childrenAfter.map((child) => (
+        <TreeNodeRow
+          key={child.level.id}
+          node={child}
+          depth={depth + 1}
+          {...rowProps}
+        />
+      ))}
+    </>
   );
 }
 
