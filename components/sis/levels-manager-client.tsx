@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -23,6 +24,7 @@ import {
   CalendarRange,
   GripVertical,
   Layers,
+  LayoutGrid,
   Loader2,
   Pencil,
   Plus,
@@ -1021,6 +1023,12 @@ function LevelRowActions({
         >
           <Pencil className="size-4" />
           Edit
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href={`/sis/sections?addSectionLevel=${level.id}`}>
+            <LayoutGrid className="size-4" />
+            Add section
+          </Link>
         </DropdownMenuItem>
         {level.isCore ? (
           <DropdownMenuItem

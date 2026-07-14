@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -44,25 +44,56 @@ import {
 
 type LevelOption = { id: string; code: string; label: string };
 
-const BLANK: SectionCreateInput = {
-  name: '',
-  level_id: '',
-  class_type: null,
-};
+function blankValues(initialLevelId?: string): SectionCreateInput {
+  return {
+    name: '',
+    level_id: initialLevelId ?? '',
+    class_type: null,
+  };
+}
 
 export function NewSectionButton({
   levels,
   ayCode,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  initialLevelId,
 }: {
   levels: LevelOption[];
   ayCode: string | null;
+  /** Dual-mode, same pattern as AddLevelDialog (components/sis/levels-
+   * manager-client.tsx): uncontrolled with its own trigger button by
+   * default (the page header CTA), or controlled + pre-filled for a
+   * cross-module "add a section for THIS level" quick action (e.g. from
+   * Grade Levels' row menu, or the "Levels with no section yet" callout
+   * on this page). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  initialLevelId?: string;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  // Auto-opens on first render when an initialLevelId arrives while
+  // uncontrolled — e.g. Grade Levels' row menu deep-links here via
+  // ?addSectionLevel=<id>, and the page resolves that into initialLevelId
+  // server-side. Only affects the very first mount (a later initialLevelId
+  // change while already open/closed doesn't reopen it).
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(
+    () => !isControlled && Boolean(initialLevelId)
+  );
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = isControlled
+    ? (controlledOnOpenChange ?? (() => {}))
+    : setUncontrolledOpen;
   const form = useForm<SectionCreateInput>({
     resolver: zodResolver(SectionCreateSchema),
-    defaultValues: BLANK,
+    defaultValues: blankValues(initialLevelId),
   });
+
+  useEffect(() => {
+    if (open) form.reset(blankValues(initialLevelId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialLevelId]);
 
   // Tier-2 mutation (Model A): the POST is routed through useMutation; we keep
   // onSubmit async + mutateAsync so RHF's isSubmitting still drives `busy`, and
@@ -86,7 +117,7 @@ export function NewSectionButton({
       const body = await createMutation.mutateAsync(values);
       toast.success(`Created ${values.name}`);
       setOpen(false);
-      form.reset(BLANK);
+      form.reset(blankValues());
       // Section setup lives in SIS Admin now (2026-04-22).
       router.push(`/sis/sections/${body.id}`);
       router.refresh();
@@ -102,15 +133,17 @@ export function NewSectionButton({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) form.reset(BLANK);
+        if (!next) form.reset(blankValues(initialLevelId));
       }}
     >
-      <DialogTrigger asChild>
-        <Button size="sm" className="gap-1.5">
-          <Plus className="size-3.5" />
-          New section
-        </Button>
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <Button size="sm" className="gap-1.5">
+            <Plus className="size-3.5" />
+            New section
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

@@ -4,11 +4,13 @@ import { LayoutGrid, Users, UserX } from 'lucide-react';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { NewSectionButton } from '@/components/markbook/new-section-button';
 import { HubStat } from '@/components/sis/hub-stat';
+import { SectionsByLevelTree } from '@/components/sis/sections-by-level-tree';
+import { SectionsNeededPanel } from '@/components/sis/sections-needed-panel';
 import { SisSectionsDataTable } from '@/components/sis/sections-data-table';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
-import { compareLevelLabels } from '@/lib/sis/levels';
+import { compareLevelLabels, getOfferedLevelIds } from '@/lib/sis/levels';
 import { sgToday } from '@/lib/dates';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { computeIndexStatus } from '@/lib/sis/section-index-status';
@@ -23,6 +25,7 @@ type LevelLite = {
 type SectionCard = {
   id: string;
   name: string;
+  level_id: string;
   level_code: string;
   level_label: string;
   level_type: 'primary' | 'secondary' | 'unknown';
@@ -32,7 +35,15 @@ type SectionCard = {
   unnumbered: number;
 };
 
-export default async function SisSectionsListPage() {
+export default async function SisSectionsListPage({
+  searchParams,
+}: {
+  // Grade Levels' row menu deep-links here (?addSectionLevel=<id>) so
+  // "Add section" from that page opens this page's New Section dialog
+  // pre-filled, instead of landing the registrar on a blank page to
+  // re-find the level they just came from.
+  searchParams: Promise<{ addSectionLevel?: string }>;
+}) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
@@ -43,6 +54,7 @@ export default async function SisSectionsListPage() {
     redirect('/');
   }
 
+  const sp = await searchParams;
   const supabase = await createClient();
 
   const { data: ay } = await supabase
@@ -86,16 +98,36 @@ export default async function SisSectionsListPage() {
         }>,
       };
 
-  // Level catalogue for the "New section" dialog.
+  // Level catalogue for the "New section" dialog + the "Sections by level"
+  // hierarchy below.
+  type LevelCatalogRow = LevelLite & { is_core: boolean; sort_order: number };
   const { data: levelRows } = await supabase
     .from('levels')
-    .select('id, code, label, level_type')
-    .order('code');
-  const levelOptions = ((levelRows ?? []) as LevelLite[]).map((l) => ({
+    .select('id, code, label, level_type, is_core, sort_order')
+    .order('sort_order');
+  const levelCatalog = (levelRows ?? []) as LevelCatalogRow[];
+  const levelOptions = levelCatalog.map((l) => ({
     id: l.id,
     code: l.code,
     label: l.label,
   }));
+
+  // Validate against the real catalog — never trust a raw query param as a
+  // level id.
+  const initialAddSectionLevelId = levelOptions.some(
+    (l) => l.id === sp.addSectionLevel
+  )
+    ? sp.addSectionLevel
+    : undefined;
+
+  // Which levels are actually meant to run this AY — core levels always
+  // are; volatile levels need an ay_level_offerings row (KD #153). Feeds
+  // the "Sections needed" gap below: a SHELVED level with no section is
+  // fine (deliberately not running), an OFFERED one with no section is a
+  // real gap — nobody can be enrolled there this year.
+  const offeredLevelIds = ay
+    ? await getOfferedLevelIds(supabase, ay.id)
+    : new Set<string>();
 
   const ids = (sections ?? []).map((s) => s.id);
   const counts: Record<
@@ -133,6 +165,7 @@ export default async function SisSectionsListPage() {
     return {
       id: s.id,
       name: s.name,
+      level_id: lvl?.id ?? '',
       level_code: lvl?.code ?? '',
       level_label: lvl?.label ?? 'Unknown',
       level_type: (lvl?.level_type ?? 'unknown') as SectionCard['level_type'],
@@ -147,6 +180,43 @@ export default async function SisSectionsListPage() {
   const totalSections = cards.length;
   const totalActive = cards.reduce((n, c) => n + c.active, 0);
   const totalWithdrawn = cards.reduce((n, c) => n + c.withdrawn, 0);
+
+  // Offered levels (core, or volatile-and-switched-on) with zero sections
+  // in this AY — the real "capture the grade level, make it easy to add a
+  // section" gap.
+  const levelIdsWithSections = new Set(
+    cards.map((c) => c.level_id).filter(Boolean)
+  );
+  const levelsNeedingSection = levelCatalog
+    .filter(
+      (l) =>
+        (l.is_core || offeredLevelIds.has(l.id)) &&
+        !levelIdsWithSections.has(l.id)
+    )
+    .map((l) => ({ id: l.id, code: l.code, label: l.label }));
+
+  // "Sections by level" hierarchy — how many sections exist under each
+  // level, in catalog order.
+  const sectionsByLevelId = new Map<
+    string,
+    Array<{ id: string; name: string; active: number }>
+  >();
+  for (const c of cards) {
+    if (!c.level_id) continue;
+    const arr = sectionsByLevelId.get(c.level_id) ?? [];
+    arr.push({ id: c.id, name: c.name, active: c.active });
+    sectionsByLevelId.set(c.level_id, arr);
+  }
+  for (const arr of sectionsByLevelId.values()) {
+    arr.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  const levelsForTree = levelCatalog.map((l) => ({
+    id: l.id,
+    code: l.code,
+    label: l.label,
+    isCore: l.is_core,
+    sortOrder: l.sort_order,
+  }));
 
   // Derive unique level options sorted in canonical pedagogical order.
   const uniqueLevelLabels = Array.from(
@@ -193,6 +263,7 @@ export default async function SisSectionsListPage() {
           <NewSectionButton
             levels={levelOptions}
             ayCode={ay?.ay_code ?? null}
+            initialLevelId={initialAddSectionLevelId}
           />
         }
       />
@@ -221,6 +292,16 @@ export default async function SisSectionsListPage() {
           subtext="Kept on the roster for the audit trail"
         />
       </div>
+
+      <SectionsNeededPanel
+        levels={levelsNeedingSection}
+        ayCode={ay?.ay_code ?? null}
+      />
+
+      <SectionsByLevelTree
+        levels={levelsForTree}
+        sectionsByLevelId={sectionsByLevelId}
+      />
 
       {/* Sections DataTable — replaces the pill grid. Level facet + search +
           per-row ⋯ actions (Open roster / Generate index / Generate sheets).
