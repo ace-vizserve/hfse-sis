@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { EVENT_CATEGORY_LEGEND_COLOR } from '@/components/attendance/calendar/calendar-cell';
 import {
   EVENT_CATEGORY_LABELS,
@@ -82,11 +83,27 @@ export function HubUpcomingEventsCard({
           </div>
         </CardAction>
       </CardHeader>
-      <CardContent className="space-y-0 p-0">
+      <CardContent
+        className={cn('space-y-0 p-0', events.length === 0 && 'flex-1')}
+      >
         {events.length === 0 ? (
-          <div className="flex h-32 flex-col items-center justify-center gap-2 text-center">
-            <p className="text-sm font-medium text-foreground">
-              Nothing scheduled in the next two weeks.
+          // Richer than a one-line empty state (same icon-tile + serif
+          // heading + description recipe as the Grade Levels catalog's
+          // "No grade levels yet" state), and `flex-1` on CardContent above
+          // so it actually grows to fill whatever height the grid gives
+          // this card (it sits `h-full` next to "Needs attention", whose
+          // height varies with row count) instead of leaving dead space
+          // below a fixed-height box.
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-5 py-10 text-center">
+            <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+              <CalendarDays className="size-5" />
+            </div>
+            <div className="font-serif text-lg font-semibold text-foreground">
+              Nothing scheduled
+            </div>
+            <p className="max-w-xs text-sm text-muted-foreground">
+              No events in the next two weeks. Term dates, exams, and closures
+              you add to the school calendar will show up here as they approach.
             </p>
           </div>
         ) : (

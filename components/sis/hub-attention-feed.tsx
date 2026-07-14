@@ -1,6 +1,10 @@
+'use client';
+
+import { useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowRightIcon, CheckCircle2 } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardAction,
@@ -13,12 +17,17 @@ import {
 import { cn } from '@/lib/utils';
 import type { AttentionRow } from '@/lib/sis/hub-attention';
 
-// Max rows rendered before truncating — Miller's Law (7±2). `buildAttentionRows`
-// already severity-sorts (destructive first) and collapses same-cause signals
-// into one row each, so the rows that get cut are the least urgent ones. The
-// header count and the "+N more" line both use the TRUE total, never the
-// capped length — nothing is hidden without a trace.
+// Initial row count before "Load more" — Miller's Law (7±2).
+// `buildAttentionRows` already severity-sorts (destructive first) and
+// collapses same-cause signals into one row each, so the rows held back
+// are the least urgent ones. The header count always uses the TRUE total,
+// never the visible length — nothing is hidden without a trace, and
+// clicking "Load more" reveals everything (no second page, no dead end).
 const MAX_VISIBLE_ROWS = 6;
+// Caps the row list at roughly MAX_VISIBLE_ROWS worth of height so a bad
+// month (13+ rows once expanded) scrolls inside the card instead of
+// pushing the whole hub layout taller than "Coming up" beside it.
+const LIST_MAX_HEIGHT = 'max-h-96';
 
 /**
  * HubAttentionFeed — the SIS Admin hub's "Needs attention" panel (Task V1,
@@ -26,18 +35,16 @@ const MAX_VISIBLE_ROWS = 6;
  * 1). Rebuilt onto the same real Card/CardHeader/CardAction shape as
  * `components/dashboard/action-list.tsx` — the app's actual "list of
  * actionable rows" card (gradient icon tile, mono eyebrow, serif title,
- * divided rows with a hover state) — after a review found this panel was a
- * hand-rolled flat header + bare `<ul>` with no icon tile at all, unlike
- * every real list-card elsewhere in the app. Rows are built by the pure
- * `lib/sis/hub-attention.ts::buildAttentionRows` so the component stays
- * presentational. Severity dots are always paired with text — color is
- * never the only signal. Capped at MAX_VISIBLE_ROWS (layout redesign pass,
- * Miller's Law) — no "view all" link because no dedicated cross-module
- * attention page exists; the "+N more" line is honest, not a fake
- * affordance to nowhere.
+ * divided rows with a hover state). Rows are built by the pure
+ * `lib/sis/hub-attention.ts::buildAttentionRows` so severity-sorting stays
+ * server-side; this component only owns the reveal/scroll interaction.
+ * Severity dots are always paired with text — color is never the only
+ * signal. Starts capped at MAX_VISIBLE_ROWS; "Load more" reveals the rest
+ * inside a max-height scroll area rather than growing the card unbounded.
  */
 export function HubAttentionFeed({ rows }: { rows: AttentionRow[] }) {
-  const visibleRows = rows.slice(0, MAX_VISIBLE_ROWS);
+  const [showAll, setShowAll] = useState(false);
+  const visibleRows = showAll ? rows : rows.slice(0, MAX_VISIBLE_ROWS);
   const hiddenCount = rows.length - visibleRows.length;
 
   return (
@@ -57,16 +64,35 @@ export function HubAttentionFeed({ rows }: { rows: AttentionRow[] }) {
           </div>
         </CardAction>
       </CardHeader>
-      <CardContent className="space-y-0 p-0">
+      <CardContent
+        className={cn('space-y-0 p-0', rows.length === 0 && 'flex-1')}
+      >
         {rows.length === 0 ? (
-          <div className="flex h-32 flex-col items-center justify-center gap-2 text-center">
-            <CheckCircle2 className="size-5 text-brand-mint" />
-            <p className="text-sm font-medium text-foreground">
-              All clear — nothing needs attention.
+          // Same flex-1 + rich empty-state recipe as HubUpcomingEventsCard's
+          // "Nothing scheduled" — grows to fill whatever height the grid
+          // gives this card instead of leaving dead space below a
+          // fixed-height box. Mint tile since "all clear" is a genuine
+          // positive state, not a neutral absence (contrast the calendar
+          // card's flat muted tile).
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-5 py-10 text-center">
+            <div className="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-mint to-brand-sky text-ink shadow-brand-tile-mint">
+              <CheckCircle2 className="size-5" />
+            </div>
+            <div className="font-serif text-lg font-semibold text-foreground">
+              All clear
+            </div>
+            <p className="max-w-xs text-sm text-muted-foreground">
+              Nothing needs attention right now — unassigned advisers, pending
+              change requests, and level-demand gaps all show up here.
             </p>
           </div>
         ) : (
-          <ul className="divide-y divide-border border-t border-border">
+          <ul
+            className={cn(
+              'divide-y divide-border overflow-y-auto border-t border-border',
+              showAll && LIST_MAX_HEIGHT
+            )}
+          >
             {visibleRows.map((row) => (
               <li key={row.id}>
                 <Link
@@ -103,10 +129,16 @@ export function HubAttentionFeed({ rows }: { rows: AttentionRow[] }) {
         )}
       </CardContent>
       {hiddenCount > 0 && (
-        <CardFooter className="justify-center border-t border-border py-3 text-xs">
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">
-            +{hiddenCount} more, lower priority
-          </span>
+        <CardFooter className="justify-center border-t border-border py-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setShowAll(true)}
+          >
+            Load {hiddenCount} more
+          </Button>
         </CardFooter>
       )}
     </Card>
