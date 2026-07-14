@@ -8,15 +8,15 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import {
-  AlertTriangle,
+  ArrowRight,
   CalendarRange,
-  Eye,
-  Info,
   Layers,
   Loader2,
   Pencil,
   Plus,
+  Sparkles,
   Trash2,
+  TrendingUp,
   Users,
 } from 'lucide-react';
 
@@ -78,15 +78,23 @@ import {
 import type { LevelRow } from '@/lib/sis/levels';
 import type { LevelDemandRow } from '@/lib/sis/level-demand';
 import {
+  groupTransitionsByFromLevel,
+  type LevelTransitionRow,
+} from '@/lib/sis/level-transitions';
+import {
   PROFILE_LABEL,
   ProfileLegendChip,
 } from '@/components/sis/weight-profile';
 
 // Grade Levels admin — Levels & Grade Progression, Phase 3 (migration 078).
 // One Card of ordered rows (sort_order, already sorted by getLevelRows).
-// Each row: code / label / type chip / weight-profile chip / "Next level"
-// picker (immediate-save, mirrors the offering Switch's Tier-1 optimistic
-// pattern, KD #24) / Core badge OR offered Switch / demand chip / delete.
+// Each row: code / label / type chip / weight-profile chip / Core badge OR
+// offered Switch / demand chip / ⋯ actions.
+//
+// The "Next level" picker was removed (2026-07-14) — see page.tsx's header
+// comment for why. "Smart sync" (unmatched levelApplied names → one-click
+// add to catalog) and "Observed progression" (real cross-AY transition
+// report) replace it below the catalog card.
 
 const LEVEL_TYPE_LABEL: Record<LevelType, string> = {
   primary: 'Primary',
@@ -94,29 +102,26 @@ const LEVEL_TYPE_LABEL: Record<LevelType, string> = {
   preschool: 'Preschool',
 };
 
-// Sentinel for the "no next level" Select option — Radix disallows an empty
-// string SelectItem value (same pattern as SCHEDULE_NONE in
-// template-manager-client.tsx).
-const NEXT_LEVEL_NONE = '__none__';
-
 type Props = {
   levels: LevelRow[];
   offeredLevelIds: string[];
   demandRows: LevelDemandRow[];
-  ayOptions: Array<{ ayCode: string; label: string; isCurrent: boolean }>;
+  transitionRows: LevelTransitionRow[];
   currentAyCode: string;
   currentAyId: string;
   acceptingAyCode: string | null;
+  priorAyCode: string | null;
 };
 
 export function LevelsManagerClient({
   levels,
   offeredLevelIds,
   demandRows,
-  ayOptions,
+  transitionRows,
   currentAyCode,
   currentAyId,
   acceptingAyCode,
+  priorAyCode,
 }: Props) {
   const offeredSet = React.useMemo(
     () => new Set(offeredLevelIds),
@@ -130,11 +135,12 @@ export function LevelsManagerClient({
     return m;
   }, [demandRows]);
 
-  // Demand rows that matched no level in the catalog at all — typos or
-  // levels applicants named that don't exist yet. Highest-value signal in
-  // the demand data (a real level being under-offered is visible via the
-  // per-row chip above; an unmatched label is invisible unless surfaced
-  // here), so these are never silently dropped.
+  // Demand rows that matched no level in the catalog at all — typos, or a
+  // level applicants are naming that genuinely doesn't exist here yet
+  // (e.g. the portal's "HFSE Global Education Programme – Year 8" not
+  // matching the catalog's differently-worded label). Highest-value signal
+  // in the demand data — surfaced as one-click "Sync" actions below, not a
+  // passive banner.
   const unmatchedDemand = React.useMemo(
     () => demandRows.filter((d) => d.levelId === null && d.count > 0),
     [demandRows]
@@ -144,124 +150,66 @@ export function LevelsManagerClient({
 
   return (
     <div className="space-y-4">
-      {/* Left = catalog (governs the data), right = a sticky "what this
-          produces" preview — same 2-column proximity School Config uses
-          for its own live preview (school-config-form.tsx), so the
-          preview's purpose (sanity-check an Offered switch without leaving
-          the page) is obvious from where it sits, not just from a caption.
-          A full-width block below the whole catalog read as a disconnected
-          leftover; this doesn't. */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
-        <div className="space-y-4">
-          {/* AY switcher strip — governs which AY's offering Switches the
-              list below reads/writes. Demand (below) is scoped separately,
-              to the accepting AY, regardless of this selection. */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              <CalendarRange className="size-3.5" />
-              Offerings shown for
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <LevelsAySwitcher current={currentAyCode} options={ayOptions} />
-              <AddLevelDialog levels={levels} />
-            </div>
+      <Card className="@container/card gap-0 overflow-hidden py-0">
+        <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-5 py-4">
+          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <Layers className="size-4" />
           </div>
-
-          <Card className="@container/card gap-0 overflow-hidden py-0">
-            <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-5 py-4">
-              <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-                <Layers className="size-4" />
-              </div>
-              <div className="leading-tight">
-                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Grade level catalog
-                </p>
-                <p className="font-serif text-[16px] font-semibold tabular-nums text-foreground">
-                  {levels.length} levels
-                  <span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground">
-                    {coreCount} permanent
-                  </span>
-                </p>
-              </div>
-            </div>
-
-            {levels.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 px-5 py-14 text-center">
-                <div className="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-                  <Layers className="size-5" />
-                </div>
-                <div className="font-serif text-lg font-semibold text-foreground">
-                  No grade levels yet
-                </div>
-                <p className="max-w-md text-sm text-muted-foreground">
-                  Core levels (Primary 1 – Secondary 4) are seeded
-                  automatically. If this list is empty, something went wrong
-                  with setup — contact IT.
-                </p>
-              </div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {levels.map((level) => (
-                  <LevelRowItem
-                    key={level.id}
-                    level={level}
-                    levels={levels}
-                    offered={level.isCore || offeredSet.has(level.id)}
-                    demand={demandByLevelId.get(level.id) ?? null}
-                    currentAyId={currentAyId}
-                    currentAyCode={currentAyCode}
-                    acceptingAyCode={acceptingAyCode}
-                  />
-                ))}
-              </ul>
-            )}
-          </Card>
-        </div>
-
-        <div className="lg:sticky lg:top-4 lg:self-start">
-          <p className="mb-1 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            <Eye className="size-3.5 text-brand-indigo/70" />
-            Live preview
-          </p>
-          <p className="mb-2 text-[12px] text-muted-foreground">
-            What applicants actually see on the admissions application form —
-            flip an Offered switch on the left and this updates.
-          </p>
-          <ApplicationFormLevelPreview
-            levels={levels}
-            offeredLevelIds={offeredLevelIds}
-          />
-        </div>
-      </div>
-
-      {unmatchedDemand.length > 0 && (
-        <div className="flex flex-wrap items-start gap-2 rounded-xl border border-brand-amber/30 bg-brand-amber/5 px-4 py-3">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-brand-amber" />
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <p className="text-xs font-medium text-foreground">
-              Applied-for levels that match nothing
-              {acceptingAyCode ? ` in ${acceptingAyCode}` : ''}
+          <div className="leading-tight">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Grade level catalog · offerings shown for {currentAyCode}
             </p>
-            <div className="flex flex-wrap gap-1.5">
-              {unmatchedDemand.map((d) => (
-                <Badge
-                  key={d.label}
-                  variant="warning"
-                  className="gap-1 font-normal"
-                >
-                  &ldquo;{d.label}&rdquo;
-                  <span className="tabular-nums">· {d.count}</span>
-                </Badge>
-              ))}
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Likely typos in applicant-entered level names, or a level not yet
-              in this catalog. Add the level above, or correct the application
-              record.
+            <p className="font-serif text-[16px] font-semibold tabular-nums text-foreground">
+              {levels.length} levels
+              <span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground">
+                {coreCount} permanent
+              </span>
             </p>
           </div>
         </div>
-      )}
+
+        {levels.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 px-5 py-14 text-center">
+            <div className="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <Layers className="size-5" />
+            </div>
+            <div className="font-serif text-lg font-semibold text-foreground">
+              No grade levels yet
+            </div>
+            <p className="max-w-md text-sm text-muted-foreground">
+              Core levels (Primary 1 – Secondary 4) are seeded automatically. If
+              this list is empty, something went wrong with setup — contact IT.
+            </p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {levels.map((level) => (
+              <LevelRowItem
+                key={level.id}
+                level={level}
+                offered={level.isCore || offeredSet.has(level.id)}
+                demand={demandByLevelId.get(level.id) ?? null}
+                currentAyId={currentAyId}
+                currentAyCode={currentAyCode}
+                acceptingAyCode={acceptingAyCode}
+              />
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <SmartSyncPanel
+        unmatchedDemand={unmatchedDemand}
+        levels={levels}
+        acceptingAyCode={acceptingAyCode}
+      />
+
+      <ObservedProgressionPanel
+        transitionRows={transitionRows}
+        levels={levels}
+        priorAyCode={priorAyCode}
+        acceptingAyCode={acceptingAyCode}
+      />
 
       <p className="text-center font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         {currentAyCode || '—'} · {levels.length} level
@@ -273,83 +221,200 @@ export function LevelsManagerClient({
 }
 
 // =====================================================================
-// Application-form level-picker preview — renders exactly what a parent
-// sees on the application-form level picker for the accepting AY, derived
-// from the SAME props already loaded for the toggle list above (no new API
-// call; mirrors the shape GET /api/parent/v2/levels returns: code, label,
-// nextCode, offered). "Offered" here MUST replicate the main list's
-// `level.isCore || offeredSet.has(level.id)` check (see LevelRowItem's
-// call site above) — core levels (P1-P6/S1-S4) never get an
-// ay_level_offerings row (KD #153: "core levels need no rows"), so
-// checking offeredLevelIds alone would incorrectly render every core level
-// as shelved whenever the offerings list is empty or doesn't name them.
+// Smart sync — applied-for level names with zero catalog match. Each row
+// is a real, one-click path to fixing the gap: click Sync, the Add-level
+// dialog opens pre-filled with the observed label, the registrar confirms
+// code/type/position and saves. Not a blind auto-create — code and level
+// type need a human call (they drive the grading profile), so "synced"
+// here means "friction removed," not "silently created."
 // =====================================================================
 
-export function ApplicationFormLevelPreview({
+function SmartSyncPanel({
+  unmatchedDemand,
   levels,
-  offeredLevelIds,
-  returningFromLevelId,
+  acceptingAyCode,
 }: {
+  unmatchedDemand: LevelDemandRow[];
   levels: LevelRow[];
-  offeredLevelIds: string[];
-  returningFromLevelId?: string;
+  acceptingAyCode: string | null;
 }) {
-  const offeredSet = React.useMemo(
-    () => new Set(offeredLevelIds),
-    [offeredLevelIds]
-  );
-  const suggestedNextId = returningFromLevelId
-    ? levels.find((l) => l.id === returningFromLevelId)?.nextLevelId
-    : null;
+  const [syncLabel, setSyncLabel] = React.useState<string | null>(null);
+
+  if (unmatchedDemand.length === 0) return null;
 
   return (
-    <div className="rounded-xl border-2 border-hairline-strong bg-card p-4 shadow-sm">
-      <p className="mb-1 text-[11px] font-medium text-ink-4">
-        Which level are you applying for?
-      </p>
-      <div className="space-y-1.5">
-        {levels.map((level) => {
-          const offered = level.isCore || offeredSet.has(level.id);
-          const suggested = level.id === suggestedNextId;
-          if (!offered) {
-            return (
-              <div
-                key={level.id}
-                className="rounded-md border border-dashed border-hairline-strong bg-muted/40 px-3 py-2 text-[13px] text-ink-5 line-through"
-              >
-                {level.label} — not shown
-              </div>
-            );
-          }
-          return (
-            <div
-              key={level.id}
-              className={cn(
-                'rounded-md border px-3 py-2 text-[13px]',
-                suggested
-                  ? 'border-brand-indigo bg-accent font-medium text-brand-indigo-deep'
-                  : 'border-border bg-card text-ink-3'
-              )}
-            >
-              {level.label}
-              {suggested && (
-                <span className="ml-1 rounded bg-brand-indigo/10 px-1.5 py-0.5 font-mono text-[10px]">
-                  suggested
-                </span>
-              )}
-            </div>
-          );
-        })}
+    <Card className="@container/card gap-0 overflow-hidden py-0">
+      <div className="flex items-center gap-3 border-b border-border bg-brand-amber/5 px-5 py-4">
+        <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-brand-tile-amber">
+          <Sparkles className="size-4" />
+        </div>
+        <div className="leading-tight">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Smart sync
+          </p>
+          <p className="font-serif text-[16px] font-semibold text-foreground">
+            {unmatchedDemand.length} level name
+            {unmatchedDemand.length === 1 ? '' : 's'} not in the catalog
+          </p>
+        </div>
       </div>
-    </div>
+      <ul className="divide-y divide-border">
+        {unmatchedDemand.map((d) => (
+          <li
+            key={d.label}
+            className="flex items-center justify-between gap-3 px-5 py-3"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-foreground">
+                &ldquo;{d.label}&rdquo;
+              </p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                {d.count} applicant{d.count === 1 ? '' : 's'}
+                {acceptingAyCode ? ` in ${acceptingAyCode}` : ''}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              onClick={() => setSyncLabel(d.label)}
+            >
+              <Sparkles className="size-3.5" />
+              Sync
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <p className="border-t border-border px-5 py-3 text-[12px] text-muted-foreground">
+        Likely a level applicants are naming that isn&apos;t in the catalog yet
+        — or a typo. Sync to add it, or correct the application record.
+      </p>
+
+      <AddLevelDialog
+        levels={levels}
+        open={syncLabel !== null}
+        onOpenChange={(open) => {
+          if (!open) setSyncLabel(null);
+        }}
+        initialLabel={syncLabel ?? undefined}
+      />
+    </Card>
   );
 }
 
 // =====================================================================
-// AY switcher — same idiom as SubjectAySwitcher, scoped to this route.
+// Observed progression — real, evidence-based transition report. For each
+// level, shows what returning students who were placed there LAST AY
+// actually applied for THIS AY (cross-referenced by studentNumber, Hard
+// Rule #4). Naturally one-to-many: a level branches into every destination
+// that actually happened, not a single hand-picked "next level." Nothing
+// here is editable — it's a report, computed fresh every load.
 // =====================================================================
 
-function LevelsAySwitcher({
+function ObservedProgressionPanel({
+  transitionRows,
+  levels,
+  priorAyCode,
+  acceptingAyCode,
+}: {
+  transitionRows: LevelTransitionRow[];
+  levels: LevelRow[];
+  priorAyCode: string | null;
+  acceptingAyCode: string | null;
+}) {
+  const levelById = React.useMemo(
+    () => new Map(levels.map((l) => [l.id, l])),
+    [levels]
+  );
+  const grouped = React.useMemo(
+    () => groupTransitionsByFromLevel(transitionRows),
+    [transitionRows]
+  );
+  const fromLevelIds = React.useMemo(
+    () =>
+      Array.from(grouped.keys()).sort(
+        (a, b) =>
+          (levelById.get(a)?.sortOrder ?? 999) -
+          (levelById.get(b)?.sortOrder ?? 999)
+      ),
+    [grouped, levelById]
+  );
+
+  return (
+    <Card className="@container/card gap-0 overflow-hidden py-0">
+      <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-5 py-4">
+        <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+          <TrendingUp className="size-4" />
+        </div>
+        <div className="leading-tight">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Observed progression
+          </p>
+          <p className="font-serif text-[16px] font-semibold text-foreground">
+            Where {priorAyCode ?? 'last AY'}&apos;s students actually applied
+          </p>
+        </div>
+      </div>
+
+      {fromLevelIds.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 px-5 py-10 text-center">
+          <p className="max-w-md text-sm text-muted-foreground">
+            No returning-student applications matched against{' '}
+            {priorAyCode ?? 'a prior AY'}&apos;s roster yet
+            {acceptingAyCode ? ` for ${acceptingAyCode}` : ''}.
+          </p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-border">
+          {fromLevelIds.map((fromId) => {
+            const fromLevel = levelById.get(fromId);
+            const destinations = grouped.get(fromId) ?? [];
+            return (
+              <li
+                key={fromId}
+                className="flex flex-wrap items-center gap-3 px-5 py-3"
+              >
+                <span className="w-40 shrink-0 font-serif text-[14px] font-semibold text-foreground">
+                  {fromLevel?.label ?? fromId}
+                </span>
+                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/60" />
+                <div className="flex flex-1 flex-wrap items-center gap-1.5">
+                  {destinations.map((d) => (
+                    <Badge
+                      key={d.toLabel}
+                      variant={d.toLevelId ? 'outline' : 'warning'}
+                      className="gap-1 font-normal"
+                    >
+                      {d.toLabel}
+                      <span className="tabular-nums">· {d.count}</span>
+                    </Badge>
+                  ))}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <p className="border-t border-border px-5 py-3 text-[12px] text-muted-foreground">
+        Computed from real applications, not a maintained list — a level
+        genuinely branches to every destination its own students actually chose.
+        Amber chips are level names not yet in the catalog (see Smart sync
+        above).
+      </p>
+    </Card>
+  );
+}
+
+// =====================================================================
+// AY switcher — same idiom as SubjectAySwitcher. Exported so page.tsx's
+// SisPageHeader can render it in the header chips slot (matching how
+// Subjects' page already puts its own AY badge + switcher in the header,
+// not a separate floating strip).
+// =====================================================================
+
+export function LevelsAySwitcher({
   current,
   options,
 }: {
@@ -369,7 +434,7 @@ function LevelsAySwitcher({
 
   return (
     <Select value={current} onValueChange={onChange}>
-      <SelectTrigger className="h-9 w-56">
+      <SelectTrigger className="h-7 w-auto gap-1.5 border-border bg-card px-3 text-[10px] font-semibold uppercase tracking-[0.14em]">
         <SelectValue placeholder="Pick AY" />
       </SelectTrigger>
       <SelectContent>
@@ -392,12 +457,13 @@ function LevelsAySwitcher({
 }
 
 // =====================================================================
-// Row
+// Row — 3 clusters (Identity / Offering / Actions), separated by a thin
+// border-l divider. The "Progression" cluster (Next-level picker) was
+// removed 2026-07-14 — see page.tsx's header comment.
 // =====================================================================
 
 function LevelRowItem({
   level,
-  levels,
   offered,
   demand,
   currentAyId,
@@ -405,7 +471,6 @@ function LevelRowItem({
   acceptingAyCode,
 }: {
   level: LevelRow;
-  levels: LevelRow[];
   offered: boolean;
   demand: LevelDemandRow | null;
   currentAyId: string;
@@ -414,9 +479,6 @@ function LevelRowItem({
 }) {
   const showDemandChip = demand !== null && !demand.offered && demand.count > 0;
 
-  // Sub-grouped into 4 visual clusters (Miller's-Law fix) — identity /
-  // progression / offering / actions — separated by a thin border-l instead
-  // of one undifferentiated flex-wrap line of 7-8 elements.
   return (
     <li className="flex flex-wrap items-center gap-3 px-5 py-4">
       {/* Identity: code / label / type / weight-profile */}
@@ -446,11 +508,6 @@ function LevelRowItem({
             label={PROFILE_LABEL[level.levelType]}
           />
         )}
-      </div>
-
-      {/* Progression: next-level picker */}
-      <div className="flex shrink-0 items-center gap-2 border-l border-border pl-3">
-        <NextLevelSelect level={level} levels={levels} />
       </div>
 
       {/* Offering: demand signal + Core badge / offered Switch */}
@@ -494,92 +551,6 @@ function LevelRowItem({
         <LevelRowActions level={level} />
       </div>
     </li>
-  );
-}
-
-// =====================================================================
-// "Next level" picker — Tier-1 optimistic immediate-save (KD #24).
-// =====================================================================
-
-function NextLevelSelect({
-  level,
-  levels,
-}: {
-  level: LevelRow;
-  levels: LevelRow[];
-}) {
-  const router = useRouter();
-  const [value, setValue] = React.useState(
-    level.nextLevelId ?? NEXT_LEVEL_NONE
-  );
-
-  // Re-seed when the server row changes underneath us (e.g. after a
-  // router.refresh() from another row's edit).
-  React.useEffect(() => {
-    setValue(level.nextLevelId ?? NEXT_LEVEL_NONE);
-  }, [level.nextLevelId]);
-
-  const mutation = useMutation({
-    mutationFn: (nextLevelId: string | null) =>
-      apiFetch(
-        `/api/sis/admin/levels/${level.id}`,
-        jsonInit('PATCH', { nextLevelId })
-      ),
-    onError: (e) => {
-      // Roll back to the last-known-good server value — the route's
-      // plain-English message (progression_cycle / self_reference / FK)
-      // surfaces verbatim per KD #24's error-preservation rule.
-      setValue(level.nextLevelId ?? NEXT_LEVEL_NONE);
-      toast.error(
-        e instanceof Error ? e.message : 'Could not update the next level'
-      );
-    },
-    onSuccess: () => {
-      toast.success(`Updated ${level.label}'s next level`);
-      router.refresh();
-    },
-  });
-
-  function onChange(next: string) {
-    setValue(next); // optimistic
-    mutation.mutate(next === NEXT_LEVEL_NONE ? null : next);
-  }
-
-  const options = levels.filter((l) => l.id !== level.id);
-
-  // The page's own copy already reassures that this control "never moves
-  // anyone" — a lighter visual cue (info-tone icon + tooltip, same pattern
-  // the Core badge above already uses) so it doesn't read identically to
-  // the AY switcher or any other picker that DOES change something on save.
-  return (
-    <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Info className="size-3.5 shrink-0 text-brand-indigo/70" />
-        </TooltipTrigger>
-        <TooltipContent>
-          Suggestion only — saving this never moves or re-enrols anyone.
-        </TooltipContent>
-      </Tooltip>
-      <Select
-        value={value}
-        onValueChange={onChange}
-        disabled={mutation.isPending}
-      >
-        <SelectTrigger className="h-8 w-60 shrink-0 text-[13px]">
-          <SelectValue placeholder="Next level" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={NEXT_LEVEL_NONE}>None — final level</SelectItem>
-          {options.map((l) => (
-            <SelectItem key={l.id} value={l.id}>
-              <span className="font-mono text-xs">{l.code}</span>
-              <span className="ml-2 text-muted-foreground">{l.label}</span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </>
   );
 }
 
@@ -756,8 +727,7 @@ function LevelRowActions({ level }: { level: LevelRow }) {
 // =====================================================================
 // Edit level — label + position. `code` and `levelType` aren't editable
 // here (mirrors LevelAdminUpdateSchema — the route doesn't accept them
-// either); "Next level" already has its own always-visible inline picker
-// (NextLevelSelect above) so it isn't duplicated in this dialog.
+// either).
 // =====================================================================
 
 const EditLevelFormSchema = z.object({
@@ -919,25 +889,46 @@ function EditLevelDialog({
 }
 
 // =====================================================================
-// Add level — the page's one primary CTA, RHF+zod mirror of
-// LevelAdminCreateSchema (the route's actual validator — see the schema's
-// own header comment distinguishing it from the pre-existing, differently
-// shaped LevelCreateSchema used by the admissions-level-review flow).
+// Add level — the page's one primary CTA (rendered via SisPageHeader's
+// actions slot), RHF+zod mirror of LevelAdminCreateSchema. Exported and
+// dual-mode: uncontrolled with its own trigger button (the header CTA), or
+// controlled (`open`/`onOpenChange`, no visible trigger) for SmartSyncPanel
+// to drive with a pre-filled label. `nextLevelId` is still sent as `null`
+// on every create (the schema requires the key) but has no visible field —
+// the "Next level" concept was removed from the UI 2026-07-14.
 // =====================================================================
 
-function blankLevelValues(sortOrder: number): LevelAdminCreateInput {
+function blankLevelValues(
+  sortOrder: number,
+  label?: string
+): LevelAdminCreateInput {
   return {
     code: '',
-    label: '',
+    label: label ?? '',
     levelType: 'primary',
     sortOrder,
     nextLevelId: null,
   };
 }
 
-function AddLevelDialog({ levels }: { levels: LevelRow[] }) {
+export function AddLevelDialog({
+  levels,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  initialLabel,
+}: {
+  levels: LevelRow[];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  initialLabel?: string;
+}) {
   const router = useRouter();
-  const [open, setOpen] = React.useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = isControlled
+    ? (controlledOnOpenChange ?? (() => {}))
+    : setUncontrolledOpen;
 
   const nextSortOrder = React.useMemo(() => {
     const max = levels.reduce((m, l) => Math.max(m, l.sortOrder), 0);
@@ -946,13 +937,13 @@ function AddLevelDialog({ levels }: { levels: LevelRow[] }) {
 
   const form = useForm<LevelAdminCreateInput>({
     resolver: zodResolver(LevelAdminCreateSchema),
-    defaultValues: blankLevelValues(nextSortOrder),
+    defaultValues: blankLevelValues(nextSortOrder, initialLabel),
   });
 
   React.useEffect(() => {
-    if (open) form.reset(blankLevelValues(nextSortOrder));
+    if (open) form.reset(blankLevelValues(nextSortOrder, initialLabel));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, nextSortOrder]);
+  }, [open, nextSortOrder, initialLabel]);
 
   const createMutation = useMutation({
     mutationFn: (payload: LevelAdminCreateInput) =>
@@ -988,15 +979,17 @@ function AddLevelDialog({ levels }: { levels: LevelRow[] }) {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) form.reset(blankLevelValues(nextSortOrder));
+        if (!next) form.reset(blankLevelValues(nextSortOrder, initialLabel));
       }}
     >
-      <DialogTrigger asChild>
-        <Button className="gap-1.5">
-          <Plus className="size-3.5" />
-          Add level
-        </Button>
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <Button className="gap-1.5">
+            <Plus className="size-3.5" />
+            Add level
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add a grade level</DialogTitle>
@@ -1095,45 +1088,6 @@ function AddLevelDialog({ levels }: { levels: LevelRow[] }) {
                   </FormControl>
                   <FormDescription>
                     Where this level sits in display order (1–99).
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="nextLevelId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Next level</FormLabel>
-                  <Select
-                    value={field.value ?? NEXT_LEVEL_NONE}
-                    onValueChange={(v) =>
-                      field.onChange(v === NEXT_LEVEL_NONE ? null : v)
-                    }
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value={NEXT_LEVEL_NONE}>
-                        None — final level
-                      </SelectItem>
-                      {levels.map((l) => (
-                        <SelectItem key={l.id} value={l.id}>
-                          <span className="font-mono text-xs">{l.code}</span>
-                          <span className="ml-2 text-muted-foreground">
-                            {l.label}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    What a returning student applies for next. A suggestion only
-                    — it never moves anyone automatically.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

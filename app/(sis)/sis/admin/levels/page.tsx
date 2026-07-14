@@ -9,6 +9,7 @@ import {
   getUpcomingAcademicYear,
 } from '@/lib/academic-year';
 import { PageShell } from '@/components/ui/page-shell';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
@@ -16,15 +17,36 @@ import {
   computeLevelDemand,
   type LevelDemandRow,
 } from '@/lib/sis/level-demand';
+import {
+  computeLevelTransitions,
+  type LevelTransitionRow,
+} from '@/lib/sis/level-transitions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
-import { LevelsManagerClient } from '@/components/sis/levels-manager-client';
+import {
+  AddLevelDialog,
+  LevelsAySwitcher,
+  LevelsManagerClient,
+} from '@/components/sis/levels-manager-client';
 
 // Grade Levels admin — Levels & Grade Progression, Phase 3 (migration 078).
 // school_admin/superadmin manage the level catalog (core P1-S4 are
 // permanent; volatile levels like YS tiers or CS1/CS2 can be offered or
-// shelved per AY) + the `next_level_id` progression pointer, which only
-// SUGGESTS what a returning student applies for next (Records/Admissions
-// stay the source of truth for actually moving anyone).
+// shelved per AY).
+//
+// The `next_level_id` column + its editable "Next level" picker were
+// REMOVED (2026-07-14) after confirming with the school that the real
+// progression logic is one-to-many (a level can branch to more than one
+// destination — e.g. Primary Six students split between "Secondary One"
+// and an HFSE Global Education Programme track) and already lives,
+// correctly, in the separate admissions portal's own hardcoded map — the
+// portal never read this SIS field. A one-to-one FK couldn't represent
+// that anyway. Replaced with `lib/sis/level-transitions.ts`'s
+// `computeLevelTransitions` — a real, evidence-based report cross-
+// referencing each returning applicant's PRIOR-AY placement
+// (section_students/students, Hard Rule #4 studentNumber) against their
+// CURRENT-AY `levelApplied`, so the one-to-many split shows up naturally
+// from what actually happened, nothing hand-maintained. `next_level_id`
+// itself is left in the schema, dormant — no migration, no API change.
 export default async function GradeLevelsPage({
   searchParams,
 }: {
@@ -73,17 +95,20 @@ export default async function GradeLevelsPage({
 
   let offeredLevelIds: string[] = [];
   let demandRows: LevelDemandRow[] = [];
+  let transitionRows: LevelTransitionRow[] = [];
   let acceptingAyCode: string | null = null;
+  let priorAyCode: string | null = null;
 
   if (currentAy) {
     const offeredSet = await getOfferedLevelIds(service, currentAy.id);
     offeredLevelIds = Array.from(offeredSet);
 
-    // Demand is scoped to the AY prospective/returning applicants are
-    // actually applying into: the upcoming early-bird AY if one is open
-    // (KD #118), else the operationally current AY. These two AY calls use
-    // a cookie-scoped server client (per their own module doc), so they run
-    // here in the RSC body rather than inside any unstable_cache.
+    // Demand + transitions are scoped to the AY prospective/returning
+    // applicants are actually applying into: the upcoming early-bird AY if
+    // one is open (KD #118), else the operationally current AY. These two
+    // AY calls use a cookie-scoped server client (per their own module
+    // doc), so they run here in the RSC body rather than inside any
+    // unstable_cache.
     const upcoming = await getUpcomingAcademicYear();
     const acceptingAy = upcoming ?? (await getCurrentAcademicYear());
 
@@ -96,7 +121,10 @@ export default async function GradeLevelsPage({
 
       const admissions = createAdmissionsClient();
       const prefix = `ay${acceptingAy.ay_code.replace(/^AY/i, '').toLowerCase()}`;
-      type AppLevelRow = { levelApplied: string | null };
+      type AppLevelRow = {
+        studentNumber: string | null;
+        levelApplied: string | null;
+      };
       // Cast required: Supabase can't infer row shapes for dynamic table
       // names (same pattern as lib/sis/cohorts.ts).
       type PageResult<T> = PromiseLike<{
@@ -108,13 +136,73 @@ export default async function GradeLevelsPage({
           (from, to) =>
             admissions
               .from(`${prefix}_enrolment_applications`)
-              .select('levelApplied')
+              .select('studentNumber, levelApplied')
               .range(from, to) as unknown as PageResult<AppLevelRow>
         );
         demandRows = computeLevelDemand(apps, levels, acceptingOfferedSet);
+
+        // Prior AY = the year immediately before the accepting AY (numeric
+        // year - 1) — whoever was placed there last AY is who could be
+        // "returning" into the accepting AY's applications. Falls back to
+        // no transitions (empty array) when that AY isn't in the system —
+        // e.g. the very first AY the school ever ran.
+        const acceptingYear = Number(acceptingAy.ay_code.replace(/^AY/i, ''));
+        const priorAy = ayList.find(
+          (a) => Number(a.ay_code.replace(/^AY/i, '')) === acceptingYear - 1
+        );
+
+        if (priorAy) {
+          priorAyCode = priorAy.ay_code;
+          const { data: sectionRows } = await service
+            .from('sections')
+            .select('id, level_id')
+            .eq('academic_year_id', priorAy.id);
+          const priorSections = (sectionRows ?? []) as Array<{
+            id: string;
+            level_id: string;
+          }>;
+          const levelIdBySection = new Map(
+            priorSections.map((s) => [s.id, s.level_id])
+          );
+          const priorSectionIds = priorSections.map((s) => s.id);
+
+          if (priorSectionIds.length > 0) {
+            const { data: ssRows } = await service
+              .from('section_students')
+              .select(
+                'section_id, enrollment_status, student:students(student_number)'
+              )
+              .in('section_id', priorSectionIds)
+              .neq('enrollment_status', 'withdrawn');
+            // Supabase's JS client types a to-one embed as an array (it
+            // can't statically know section_students.student_id -> students
+            // is many-to-one without generated types, which this project
+            // doesn't use) — each row genuinely embeds exactly one student,
+            // so take [0].
+            type SsRow = {
+              section_id: string;
+              student: Array<{ student_number: string }> | null;
+            };
+            const priorEnrollments = ((ssRows ?? []) as SsRow[])
+              .map((r) => ({
+                studentNumber: r.student?.[0]?.student_number ?? null,
+                levelId: levelIdBySection.get(r.section_id) ?? null,
+              }))
+              .filter(
+                (e): e is { studentNumber: string; levelId: string } =>
+                  e.studentNumber != null && e.levelId != null
+              );
+
+            transitionRows = computeLevelTransitions(
+              priorEnrollments,
+              apps,
+              levels
+            );
+          }
+        }
       } catch (err) {
         console.warn(
-          '[sis/admin/levels] demand fetch failed:',
+          '[sis/admin/levels] demand/transitions fetch failed:',
           err instanceof Error ? err.message : err
         );
       }
@@ -126,7 +214,24 @@ export default async function GradeLevelsPage({
       <SisPageHeader
         group="Structure"
         title="Grade levels."
-        description="Primary 1 to Secondary 4 are permanent. Other levels can be offered or shelved per school year. “Next level” only suggests what a returning student applies for — it never moves anyone."
+        description="Primary 1 to Secondary 4 are permanent. Other levels can be offered or shelved per school year."
+        chips={
+          currentAy && (
+            <>
+              <Badge
+                variant="outline"
+                className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+              >
+                {currentAy.ay_code}
+              </Badge>
+              <LevelsAySwitcher
+                current={currentAy.ay_code}
+                options={ayOptions}
+              />
+            </>
+          )
+        }
+        actions={currentAy && <AddLevelDialog levels={levels} />}
       />
 
       {/* Risk banner (Phase-0.4 convention) — Levels shares group="Structure"
@@ -147,8 +252,7 @@ export default async function GradeLevelsPage({
               Turning a level&apos;s{' '}
               <strong className="font-semibold text-foreground">Offered</strong>{' '}
               switch off removes it from what applicants can choose on the
-              admissions portal immediately — &ldquo;Next level&rdquo; edits are
-              lower-stakes (a suggestion only, never an enrolment change).
+              admissions portal immediately.
             </p>
           </div>
         </div>
@@ -171,10 +275,11 @@ export default async function GradeLevelsPage({
           levels={levels}
           offeredLevelIds={offeredLevelIds}
           demandRows={demandRows}
-          ayOptions={ayOptions}
+          transitionRows={transitionRows}
           currentAyCode={currentAy.ay_code}
           currentAyId={currentAy.id}
           acceptingAyCode={acceptingAyCode}
+          priorAyCode={priorAyCode}
         />
       )}
     </PageShell>
