@@ -81,6 +81,7 @@ import {
   groupTransitionsByFromLevel,
   type LevelTransitionRow,
 } from '@/lib/sis/level-transitions';
+import { computeLevelTree, type LevelTreeBranch } from '@/lib/sis/level-tree';
 import {
   PROFILE_LABEL,
   ProfileLegendChip,
@@ -182,19 +183,15 @@ export function LevelsManagerClient({
             </p>
           </div>
         ) : (
-          <ul className="divide-y divide-border">
-            {levels.map((level) => (
-              <LevelRowItem
-                key={level.id}
-                level={level}
-                offered={level.isCore || offeredSet.has(level.id)}
-                demand={demandByLevelId.get(level.id) ?? null}
-                currentAyId={currentAyId}
-                currentAyCode={currentAyCode}
-                acceptingAyCode={acceptingAyCode}
-              />
-            ))}
-          </ul>
+          <LevelTree
+            levels={levels}
+            transitionRows={transitionRows}
+            offeredSet={offeredSet}
+            demandByLevelId={demandByLevelId}
+            currentAyId={currentAyId}
+            currentAyCode={currentAyCode}
+            acceptingAyCode={acceptingAyCode}
+          />
         )}
       </Card>
 
@@ -216,6 +213,184 @@ export function LevelsManagerClient({
         {levels.length === 1 ? '' : 's'} · {coreCount} permanent · every change
         is audit-logged
       </p>
+    </div>
+  );
+}
+
+// =====================================================================
+// LevelTree — the catalog rendered as its real shape: a spine of the
+// permanent core levels (P1..S4), with volatile levels attached as
+// branches (lib/sis/level-tree.ts::computeLevelTree — solid connector
+// when the attachment is backed by real applications data, dashed when
+// it's a sort_order-proximity fallback with no observed data yet). Every
+// row is the same LevelRowItem used before — this only changes the shell
+// around it, not the row content or its actions.
+// =====================================================================
+
+type RowSharedProps = {
+  levels: LevelRow[];
+  offeredSet: Set<string>;
+  demandByLevelId: Map<string, LevelDemandRow>;
+  currentAyId: string;
+  currentAyCode: string;
+  acceptingAyCode: string | null;
+};
+
+function LevelTree({
+  levels,
+  transitionRows,
+  offeredSet,
+  demandByLevelId,
+  currentAyId,
+  currentAyCode,
+  acceptingAyCode,
+}: {
+  levels: LevelRow[];
+  transitionRows: LevelTransitionRow[];
+} & Omit<RowSharedProps, 'levels'>) {
+  const nodes = React.useMemo(
+    () => computeLevelTree(levels, transitionRows),
+    [levels, transitionRows]
+  );
+  const rowProps: RowSharedProps = {
+    levels,
+    offeredSet,
+    demandByLevelId,
+    currentAyId,
+    currentAyCode,
+    acceptingAyCode,
+  };
+
+  if (nodes.length === 0) {
+    // No core levels at all — shouldn't happen (they're seeded and
+    // permanent), but render every level flat rather than silently
+    // dropping rows if it ever does.
+    return (
+      <ul className="divide-y divide-border">
+        {levels.map((level) => (
+          <LevelRowItem
+            key={level.id}
+            level={level}
+            levels={levels}
+            offered={level.isCore || offeredSet.has(level.id)}
+            demand={demandByLevelId.get(level.id) ?? null}
+            currentAyId={currentAyId}
+            currentAyCode={currentAyCode}
+            acceptingAyCode={acceptingAyCode}
+          />
+        ))}
+      </ul>
+    );
+  }
+
+  return (
+    <div className="divide-y divide-border" role="tree">
+      {nodes.map((node, i) => (
+        <React.Fragment key={node.level.id}>
+          {node.branchesBefore.map((b) => (
+            <BranchRow key={b.level.id} branch={b} {...rowProps} />
+          ))}
+          <div className="relative flex items-stretch">
+            <div className="flex w-8 shrink-0 flex-col items-center">
+              <div
+                className={cn(
+                  'w-px flex-1 bg-border',
+                  i === 0 && node.branchesBefore.length === 0 && 'invisible'
+                )}
+                aria-hidden
+              />
+              <div
+                className="size-2.5 shrink-0 rounded-full bg-brand-indigo ring-4 ring-card"
+                aria-hidden
+              />
+              <div
+                className={cn(
+                  'w-px flex-1 bg-border',
+                  i === nodes.length - 1 &&
+                    node.branchesAfter.length === 0 &&
+                    'invisible'
+                )}
+                aria-hidden
+              />
+            </div>
+            <div className="flex-1 py-1" role="treeitem">
+              <LevelRowItem
+                level={node.level}
+                levels={levels}
+                offered
+                demand={demandByLevelId.get(node.level.id) ?? null}
+                currentAyId={currentAyId}
+                currentAyCode={currentAyCode}
+                acceptingAyCode={acceptingAyCode}
+              />
+            </div>
+          </div>
+          {node.branchesAfter.map((b) => (
+            <BranchRow key={b.level.id} branch={b} {...rowProps} />
+          ))}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+function BranchRow({
+  branch,
+  levels,
+  offeredSet,
+  demandByLevelId,
+  currentAyId,
+  currentAyCode,
+  acceptingAyCode,
+}: { branch: LevelTreeBranch } & RowSharedProps) {
+  return (
+    <div className="flex items-stretch pl-8" role="treeitem">
+      {/* Elbow connector — a corner drawn from border-left + border-bottom,
+          the standard plain-CSS "tree view" indent guide (VS Code's file
+          explorer uses the same trick). Solid indigo when the attachment
+          is backed by real applications data; dashed muted when it's a
+          sort_order-proximity guess — the one visual fact this whole page
+          exists to communicate. */}
+      <div className="flex w-8 shrink-0 items-start justify-center">
+        <div
+          className={cn(
+            'mt-5 h-5 w-4 rounded-bl-lg border-b-2 border-l-2',
+            branch.evidenced
+              ? 'border-brand-indigo/50'
+              : 'border-dashed border-muted-foreground/30'
+          )}
+          aria-hidden
+        />
+      </div>
+      <div className="min-w-0 flex-1 py-1.5">
+        <div className="mb-1 flex items-center gap-1.5 pl-1">
+          {branch.evidenced ? (
+            <Badge
+              variant="outline"
+              className="h-5 gap-1 border-brand-indigo/40 bg-brand-indigo/5 px-1.5 font-mono text-[9px] font-medium text-brand-indigo-deep"
+            >
+              <TrendingUp className="size-2.5" />
+              {branch.observedCount} observed
+            </Badge>
+          ) : (
+            <Badge
+              variant="muted"
+              className="h-5 px-1.5 font-mono text-[9px] font-medium"
+            >
+              structural — no applications yet
+            </Badge>
+          )}
+        </div>
+        <LevelRowItem
+          level={branch.level}
+          levels={levels}
+          offered={branch.level.isCore || offeredSet.has(branch.level.id)}
+          demand={demandByLevelId.get(branch.level.id) ?? null}
+          currentAyId={currentAyId}
+          currentAyCode={currentAyCode}
+          acceptingAyCode={acceptingAyCode}
+        />
+      </div>
     </div>
   );
 }
@@ -464,6 +639,7 @@ export function LevelsAySwitcher({
 
 function LevelRowItem({
   level,
+  levels,
   offered,
   demand,
   currentAyId,
@@ -471,6 +647,7 @@ function LevelRowItem({
   acceptingAyCode,
 }: {
   level: LevelRow;
+  levels: LevelRow[];
   offered: boolean;
   demand: LevelDemandRow | null;
   currentAyId: string;
@@ -480,7 +657,7 @@ function LevelRowItem({
   const showDemandChip = demand !== null && !demand.offered && demand.count > 0;
 
   return (
-    <li className="flex flex-wrap items-center gap-3 px-5 py-4">
+    <div className="flex flex-wrap items-center gap-3 px-5 py-4">
       {/* Identity: code / label / type / weight-profile */}
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
         <Badge
@@ -548,9 +725,9 @@ function LevelRowItem({
 
       {/* Actions */}
       <div className="flex shrink-0 items-center border-l border-border pl-2">
-        <LevelRowActions level={level} />
+        <LevelRowActions level={level} levels={levels} />
       </div>
-    </li>
+    </div>
   );
 }
 
@@ -622,7 +799,13 @@ function OfferedSwitch({
 // reason on core).
 // =====================================================================
 
-function LevelRowActions({ level }: { level: LevelRow }) {
+function LevelRowActions({
+  level,
+  levels,
+}: {
+  level: LevelRow;
+  levels: LevelRow[];
+}) {
   const router = useRouter();
   const [editOpen, setEditOpen] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -684,6 +867,7 @@ function LevelRowActions({ level }: { level: LevelRow }) {
 
       <EditLevelDialog
         level={level}
+        levels={levels}
         open={editOpen}
         onOpenChange={setEditOpen}
       />
@@ -725,9 +909,110 @@ function LevelRowActions({ level }: { level: LevelRow }) {
 }
 
 // =====================================================================
-// Edit level — label + position. `code` and `levelType` aren't editable
-// here (mirrors LevelAdminUpdateSchema — the route doesn't accept them
-// either).
+// Attach-near picker — replaces a raw "type a number 1-99" position field
+// with a relative anchor (fits the tree metaphor: you're placing this
+// level next to a real neighbor, not guessing a magic number). Still
+// drives the same underlying sort_order — computed here, not typed.
+// =====================================================================
+
+function nearestOtherLevel(
+  levels: LevelRow[],
+  self: { id: string; sortOrder: number }
+): LevelRow | null {
+  let nearest: LevelRow | null = null;
+  let nearestDist = Infinity;
+  for (const l of levels) {
+    if (l.id === self.id) continue;
+    const dist = Math.abs(l.sortOrder - self.sortOrder);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearest = l;
+    }
+  }
+  return nearest;
+}
+
+function computeSortOrderFromAnchor(
+  levels: LevelRow[],
+  anchorId: string,
+  position: 'before' | 'after'
+): number {
+  const anchor = levels.find((l) => l.id === anchorId);
+  if (!anchor) return 1;
+  return position === 'after'
+    ? Math.min(99, anchor.sortOrder + 1)
+    : Math.max(1, anchor.sortOrder);
+}
+
+function AttachNearField({
+  levels,
+  excludeLevelId,
+  anchorId,
+  position,
+  onAnchorChange,
+  onPositionChange,
+}: {
+  levels: LevelRow[];
+  excludeLevelId?: string;
+  anchorId: string;
+  position: 'before' | 'after';
+  onAnchorChange: (id: string) => void;
+  onPositionChange: (position: 'before' | 'after') => void;
+}) {
+  const options = React.useMemo(
+    () =>
+      levels
+        .filter((l) => l.id !== excludeLevelId)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [levels, excludeLevelId]
+  );
+
+  return (
+    <FormItem>
+      <FormLabel>Attach near</FormLabel>
+      <div className="flex gap-2">
+        <Select value={anchorId} onValueChange={onAnchorChange}>
+          <FormControl>
+            <SelectTrigger className="flex-1">
+              <SelectValue placeholder="Choose a level" />
+            </SelectTrigger>
+          </FormControl>
+          <SelectContent>
+            {options.map((l) => (
+              <SelectItem key={l.id} value={l.id}>
+                <span className="font-mono text-xs">{l.code}</span>
+                <span className="ml-2 text-muted-foreground">{l.label}</span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={position}
+          onValueChange={(v) => onPositionChange(v as 'before' | 'after')}
+        >
+          <FormControl>
+            <SelectTrigger className="w-28">
+              <SelectValue />
+            </SelectTrigger>
+          </FormControl>
+          <SelectContent>
+            <SelectItem value="before">Before</SelectItem>
+            <SelectItem value="after">After</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <FormDescription>
+        Where this level sits in the catalog tree, relative to an existing
+        level.
+      </FormDescription>
+    </FormItem>
+  );
+}
+
+// =====================================================================
+// Edit level — label + attach-near position. `code` and `levelType`
+// aren't editable here (mirrors LevelAdminUpdateSchema — the route
+// doesn't accept them either).
 // =====================================================================
 
 const EditLevelFormSchema = z.object({
@@ -746,10 +1031,12 @@ type EditLevelFormInput = z.infer<typeof EditLevelFormSchema>;
 
 function EditLevelDialog({
   level,
+  levels,
   open,
   onOpenChange,
 }: {
   level: LevelRow;
+  levels: LevelRow[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -760,12 +1047,41 @@ function EditLevelDialog({
     defaultValues: { label: level.label, sortOrder: level.sortOrder },
   });
 
+  // Attach-near picker state — seeds from the level's CURRENT nearest
+  // neighbor (so opening Edit on an already-placed level doesn't silently
+  // jump it elsewhere) rather than defaulting to the first level in the
+  // list.
+  const [anchorId, setAnchorId] = React.useState(
+    () => nearestOtherLevel(levels, level)?.id ?? ''
+  );
+  const [position, setPosition] = React.useState<'before' | 'after'>(() => {
+    const anchor = nearestOtherLevel(levels, level);
+    return anchor && level.sortOrder > anchor.sortOrder ? 'after' : 'before';
+  });
+
   // Re-seed whenever the dialog opens (in case another edit changed this
   // row underneath us) or the row's own values move.
   React.useEffect(() => {
-    if (open) form.reset({ label: level.label, sortOrder: level.sortOrder });
+    if (open) {
+      form.reset({ label: level.label, sortOrder: level.sortOrder });
+      const anchor = nearestOtherLevel(levels, level);
+      setAnchorId(anchor?.id ?? '');
+      setPosition(
+        anchor && level.sortOrder > anchor.sortOrder ? 'after' : 'before'
+      );
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, level.label, level.sortOrder]);
+  }, [open, level.label, level.sortOrder, level.id]);
+
+  React.useEffect(() => {
+    if (!anchorId) return;
+    form.setValue(
+      'sortOrder',
+      computeSortOrderFromAnchor(levels, anchorId, position),
+      { shouldValidate: true }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchorId, position, levels]);
 
   const mutation = useMutation({
     mutationFn: (payload: { label?: string; sortOrder: number }) =>
@@ -839,30 +1155,13 @@ function EditLevelDialog({
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="sortOrder"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Position</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={99}
-                      value={field.value}
-                      onChange={(e) =>
-                        field.onChange(Number(e.target.value) || 0)
-                      }
-                      className="tabular-nums"
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Where this level sits in display order (1–99).
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
+            <AttachNearField
+              levels={levels}
+              excludeLevelId={level.id}
+              anchorId={anchorId}
+              position={position}
+              onAnchorChange={setAnchorId}
+              onPositionChange={setPosition}
             />
             <DialogFooter>
               <Button
@@ -930,10 +1229,21 @@ export function AddLevelDialog({
     ? (controlledOnOpenChange ?? (() => {}))
     : setUncontrolledOpen;
 
-  const nextSortOrder = React.useMemo(() => {
-    const max = levels.reduce((m, l) => Math.max(m, l.sortOrder), 0);
-    return Math.min(99, max + 1);
-  }, [levels]);
+  // Default anchor = the last level in the catalog, "after" — matches the
+  // old "max sort_order + 1" default, just expressed relative to a real
+  // neighbor instead of a bare computed number.
+  const lastLevel = React.useMemo(
+    () =>
+      levels.length === 0
+        ? null
+        : levels.reduce((m, l) => (l.sortOrder > m.sortOrder ? l : m)),
+    [levels]
+  );
+  const [anchorId, setAnchorId] = React.useState(() => lastLevel?.id ?? '');
+  const [position, setPosition] = React.useState<'before' | 'after'>('after');
+  const nextSortOrder = anchorId
+    ? computeSortOrderFromAnchor(levels, anchorId, position)
+    : 1;
 
   const form = useForm<LevelAdminCreateInput>({
     resolver: zodResolver(LevelAdminCreateSchema),
@@ -941,9 +1251,23 @@ export function AddLevelDialog({
   });
 
   React.useEffect(() => {
-    if (open) form.reset(blankLevelValues(nextSortOrder, initialLabel));
+    if (open) {
+      form.reset(blankLevelValues(nextSortOrder, initialLabel));
+      setAnchorId(lastLevel?.id ?? '');
+      setPosition('after');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, nextSortOrder, initialLabel]);
+  }, [open, initialLabel]);
+
+  React.useEffect(() => {
+    if (!anchorId) return;
+    form.setValue(
+      'sortOrder',
+      computeSortOrderFromAnchor(levels, anchorId, position),
+      { shouldValidate: true }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchorId, position, levels]);
 
   const createMutation = useMutation({
     mutationFn: (payload: LevelAdminCreateInput) =>
@@ -1068,31 +1392,15 @@ export function AddLevelDialog({
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="sortOrder"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Position</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={99}
-                      value={field.value}
-                      onChange={(e) =>
-                        field.onChange(Number(e.target.value) || 0)
-                      }
-                      className="tabular-nums"
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Where this level sits in display order (1–99).
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {levels.length > 0 && (
+              <AttachNearField
+                levels={levels}
+                anchorId={anchorId}
+                position={position}
+                onAnchorChange={setAnchorId}
+                onPositionChange={setPosition}
+              />
+            )}
             <DialogFooter>
               <Button
                 type="button"
