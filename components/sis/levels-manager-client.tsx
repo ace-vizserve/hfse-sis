@@ -144,87 +144,94 @@ export function LevelsManagerClient({
 
   return (
     <div className="space-y-4">
-      {/* AY switcher strip — governs which AY's offering Switches the list
-          below reads/writes. Demand (below) is scoped separately, to the
-          accepting AY, regardless of this selection. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          <CalendarRange className="size-3.5" />
-          Offerings shown for
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <LevelsAySwitcher current={currentAyCode} options={ayOptions} />
-          <AddLevelDialog levels={levels} />
-        </div>
-      </div>
-
-      <Card className="@container/card gap-0 overflow-hidden py-0">
-        <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-5 py-4">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <Layers className="size-4" />
-          </div>
-          <div className="leading-tight">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Grade level catalog
+      {/* Left = catalog (governs the data), right = a sticky "what this
+          produces" preview — same 2-column proximity School Config uses
+          for its own live preview (school-config-form.tsx), so the
+          preview's purpose (sanity-check an Offered switch without leaving
+          the page) is obvious from where it sits, not just from a caption.
+          A full-width block below the whole catalog read as a disconnected
+          leftover; this doesn't. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
+        <div className="space-y-4">
+          {/* AY switcher strip — governs which AY's offering Switches the
+              list below reads/writes. Demand (below) is scoped separately,
+              to the accepting AY, regardless of this selection. */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              <CalendarRange className="size-3.5" />
+              Offerings shown for
             </p>
-            <p className="font-serif text-[16px] font-semibold tabular-nums text-foreground">
-              {levels.length} levels
-              <span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground">
-                {coreCount} permanent
-              </span>
-            </p>
-          </div>
-        </div>
-
-        {levels.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 px-5 py-14 text-center">
-            <div className="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              <Layers className="size-5" />
+            <div className="flex flex-wrap items-center gap-2">
+              <LevelsAySwitcher current={currentAyCode} options={ayOptions} />
+              <AddLevelDialog levels={levels} />
             </div>
-            <div className="font-serif text-lg font-semibold text-foreground">
-              No grade levels yet
-            </div>
-            <p className="max-w-md text-sm text-muted-foreground">
-              Core levels (Primary 1 – Secondary 4) are seeded automatically. If
-              this list is empty, something went wrong with setup — contact IT.
-            </p>
           </div>
-        ) : (
-          <ul className="divide-y divide-border">
-            {levels.map((level) => (
-              <LevelRowItem
-                key={level.id}
-                level={level}
-                levels={levels}
-                offered={level.isCore || offeredSet.has(level.id)}
-                demand={demandByLevelId.get(level.id) ?? null}
-                currentAyId={currentAyId}
-                currentAyCode={currentAyCode}
-                acceptingAyCode={acceptingAyCode}
-              />
-            ))}
-          </ul>
-        )}
-      </Card>
 
-      {/* "Live preview" eyebrow + card — same labeled treatment School
-          Config's letterhead preview uses (school-config-form.tsx), so this
-          reads as the same "what the end user actually sees" pattern
-          instead of an unlabeled inline block. Added a one-line purpose
-          caption too — the box alone didn't explain why it's here. */}
-      <div>
-        <p className="mb-1 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          <Eye className="size-3.5 text-brand-indigo/70" />
-          Live preview
-        </p>
-        <p className="mb-2 text-[12px] text-muted-foreground">
-          What applicants actually see on the admissions application form —
-          sanity-check an Offered switch here before saving it.
-        </p>
-        <ApplicationFormLevelPreview
-          levels={levels}
-          offeredLevelIds={offeredLevelIds}
-        />
+          <Card className="@container/card gap-0 overflow-hidden py-0">
+            <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-5 py-4">
+              <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                <Layers className="size-4" />
+              </div>
+              <div className="leading-tight">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Grade level catalog
+                </p>
+                <p className="font-serif text-[16px] font-semibold tabular-nums text-foreground">
+                  {levels.length} levels
+                  <span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground">
+                    {coreCount} permanent
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {levels.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 px-5 py-14 text-center">
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                  <Layers className="size-5" />
+                </div>
+                <div className="font-serif text-lg font-semibold text-foreground">
+                  No grade levels yet
+                </div>
+                <p className="max-w-md text-sm text-muted-foreground">
+                  Core levels (Primary 1 – Secondary 4) are seeded
+                  automatically. If this list is empty, something went wrong
+                  with setup — contact IT.
+                </p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-border">
+                {levels.map((level) => (
+                  <LevelRowItem
+                    key={level.id}
+                    level={level}
+                    levels={levels}
+                    offered={level.isCore || offeredSet.has(level.id)}
+                    demand={demandByLevelId.get(level.id) ?? null}
+                    currentAyId={currentAyId}
+                    currentAyCode={currentAyCode}
+                    acceptingAyCode={acceptingAyCode}
+                  />
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
+
+        <div className="lg:sticky lg:top-4 lg:self-start">
+          <p className="mb-1 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            <Eye className="size-3.5 text-brand-indigo/70" />
+            Live preview
+          </p>
+          <p className="mb-2 text-[12px] text-muted-foreground">
+            What applicants actually see on the admissions application form —
+            flip an Offered switch on the left and this updates.
+          </p>
+          <ApplicationFormLevelPreview
+            levels={levels}
+            offeredLevelIds={offeredLevelIds}
+          />
+        </div>
       </div>
 
       {unmatchedDemand.length > 0 && (

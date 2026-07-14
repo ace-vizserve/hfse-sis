@@ -85,27 +85,27 @@ export function HubQuickActions() {
     <div
       role="group"
       aria-label="Quick actions"
-      className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5"
+      className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
     >
       {ACTIONS.map((action) => (
         <Link
           key={action.href}
           href={action.href}
-          className="group flex items-center gap-2.5 rounded-xl border border-border bg-card p-3 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-indigo/40 hover:shadow-md"
+          className="group flex items-center gap-3 rounded-xl border border-border bg-gradient-to-b from-card to-muted/20 p-3.5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-indigo/40 hover:shadow-md"
         >
           <div
             className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-lg',
+              'flex size-9 shrink-0 items-center justify-center rounded-xl',
               action.toneClass
             )}
           >
             <action.icon className="size-4" />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-[12.5px] font-semibold text-foreground">
+            <p className="truncate text-[13px] font-semibold text-foreground">
               {action.label}
             </p>
-            <p className="truncate text-[10.5px] text-muted-foreground">
+            <p className="truncate font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
               {action.sublabel}
             </p>
           </div>
