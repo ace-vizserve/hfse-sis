@@ -2702,11 +2702,14 @@ async function seedTeacherAssignments(
   const specialistsForLevel = (levelCode: string) =>
     levelCode === SECONDARY_LEVEL ? secondarySpecialists : primarySpecialists;
 
-  // Subject ids per level from subject_configs (operational levels only — P6/S1),
-  // sorted deterministically so subject[i] maps to the level's specialist[i] stably.
+  // Subject ids per level from subject_level_offerings (operational levels
+  // only — P6/S1), sorted deterministically so subject[i] maps to the
+  // level's specialist[i] stably. Migration 080 dropped
+  // subject_configs.level_id — level-membership now lives on
+  // subject_level_offerings (Pattern A).
   const operationalLevelIds = [...new Set(sectionRows.map((s) => s.level_id))];
   const { data: configs } = await service
-    .from('subject_configs')
+    .from('subject_level_offerings')
     .select('subject_id, level_id')
     .eq('academic_year_id', testAy.id)
     .in('level_id', operationalLevelIds);

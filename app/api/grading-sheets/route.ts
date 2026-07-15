@@ -133,12 +133,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'section not found' }, { status: 404 });
   }
 
+  // Migration 080 dropped subject_configs.level_id — a config row is now
+  // unique per (academic_year_id, subject_id) alone (Pattern B).
   const { data: config, error: cfgErr } = await service
     .from('subject_configs')
     .select('id, ww_max_slots, pt_max_slots, ww_weight, pt_weight, qa_weight')
     .eq('academic_year_id', section.academic_year_id)
     .eq('subject_id', subject_id)
-    .eq('level_id', section.level_id)
     .maybeSingle();
   if (cfgErr)
     return NextResponse.json({ error: cfgErr.message }, { status: 500 });

@@ -282,8 +282,11 @@ export async function buildReportCard(
     new Set(ayEnrolments.map((e) => e.section.id))
   );
 
+  // "Which subjects appear on this report card" is a level-membership
+  // question — migration 080 dropped subject_configs.level_id, so this
+  // resolves via subject_level_offerings instead (Pattern A).
   const { data: configs } = await supabase
-    .from('subject_configs')
+    .from('subject_level_offerings')
     .select('subject:subjects(id, code, name, is_examinable)')
     .eq('academic_year_id', ay.id)
     .eq('level_id', level.id);

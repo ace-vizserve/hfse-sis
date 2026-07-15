@@ -113,12 +113,31 @@ export default async function SisSectionDetailPage({
       )
       .eq('section_id', id)
       .order('index_number', { ascending: true }),
+    // Migration 080 dropped subject_configs.level_id, so "which subjects
+    // are configured at this level" (Pattern A) and "the real
+    // subject_configs.id + subject embed for each" (Pattern B) are two
+    // separate lookups now — the config `id` is still needed downstream
+    // as `subject_config_id` (section_subjects FK, migration 079), so this
+    // can't be a single-table swap. Resolve the level's subject_ids from
+    // subject_level_offerings, then fetch their subject_configs rows
+    // (unique per subject × AY post-collapse) by subject_id IN (...).
     level
-      ? supabase
-          .from('subject_configs')
-          .select('id, subject:subjects(id, code, name, is_examinable)')
-          .eq('academic_year_id', section.academic_year_id)
-          .eq('level_id', level.id)
+      ? (async () => {
+          const { data: offeringRows } = await supabase
+            .from('subject_level_offerings')
+            .select('subject_id')
+            .eq('academic_year_id', section.academic_year_id)
+            .eq('level_id', level.id);
+          const subjectIds = (
+            (offeringRows ?? []) as Array<{ subject_id: string }>
+          ).map((o) => o.subject_id);
+          if (subjectIds.length === 0) return { data: [] as unknown[] };
+          return supabase
+            .from('subject_configs')
+            .select('id, subject:subjects(id, code, name, is_examinable)')
+            .eq('academic_year_id', section.academic_year_id)
+            .in('subject_id', subjectIds);
+        })()
       : Promise.resolve({ data: [] as unknown[] }),
     level && ay
       ? supabase

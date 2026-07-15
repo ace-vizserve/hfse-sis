@@ -328,9 +328,11 @@ async function loadMasterfileUncached(
       : sections.map((s) => s.id);
   const sectionIdSet = new Set(filterIds);
 
-  // 4. Subject configs at this level — drives the column set.
+  // 4. Subjects offered at this level — drives the column set. This is a
+  // level-membership question, so it resolves via subject_level_offerings
+  // (migration 080 dropped subject_configs.level_id — Pattern A).
   const { data: cfgRows } = await service
-    .from('subject_configs')
+    .from('subject_level_offerings')
     .select('subject:subjects(id, code, name, is_examinable)')
     .eq('academic_year_id', ayId)
     .eq('level_id', input.levelId);

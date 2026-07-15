@@ -533,10 +533,12 @@ export async function seedEdgeCases(
   // ── EC10 — PE 'E' letter-grade override (non-examinable) ──────────────────
   try {
     if (t4 && peStudentRow) {
+      // Migration 080 dropped subject_configs.level_id — a config row is
+      // now unique per (subject_id, academic_year_id) alone, so the
+      // .eq('subjects.code', 'PE') filter is already sufficient (Pattern B).
       const { data: peConfig } = await service
         .from('subject_configs')
         .select('id, subjects!inner(code)')
-        .eq('level_id', excellence.level_id)
         .eq('subjects.code', 'PE')
         .maybeSingle();
       const peConfigId = (peConfig as { id: string } | null)?.id;
@@ -573,13 +575,14 @@ export async function seedEdgeCases(
   // General average = ROUND(AVG(88.4, ...), 1) = 88.4  — just below Bronze (88.5)
   try {
     if (gaStudent) {
-      // Fetch subject configs for S4 including weights
+      // Fetch subject configs for S4 including weights. Migration 080
+      // dropped subject_configs.level_id — there's exactly one config row
+      // per subject per AY now, so no level filter is needed (Pattern B).
       const { data: allConfigs } = await service
         .from('subject_configs')
         .select(
           'id, ww_weight, pt_weight, qa_weight, subjects!inner(is_examinable)'
-        )
-        .eq('level_id', excellence.level_id);
+        );
 
       type ConfigRow = {
         id: string;
@@ -841,12 +844,15 @@ export async function seedEdgeCases(
       Boolean
     ) as (typeof terms)[number][];
 
+    // Migration 080 dropped subject_configs.level_id — there's exactly one
+    // config row per subject per AY now, so no level filter is needed
+    // (Pattern B); the downstream section/term/subject_config_id match
+    // against grading_sheets below skips anything that doesn't apply.
     const { data: cfgRows } = await service
       .from('subject_configs')
       .select(
         'id, ww_weight, pt_weight, qa_weight, subjects!inner(is_examinable)'
-      )
-      .eq('level_id', excellence.level_id);
+      );
     type Cfg = {
       id: string;
       ww_weight: number;

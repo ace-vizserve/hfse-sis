@@ -335,12 +335,16 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+    // Migration 080 dropped subject_configs.level_id — a config row is now
+    // unique per (academic_year_id, subject_id) alone (Pattern B). The
+    // stale .eq('level_id', ...) filter here used to error against the
+    // dropped column, so configRow silently resolved null and this whole
+    // ceiling guard was a no-op — restored below.
     const { data: configRow } = await service
       .from('subject_configs')
       .select('ww_max_slots, pt_max_slots')
       .eq('academic_year_id', sectionRow.academic_year_id)
       .eq('subject_id', sheet.subject_id)
-      .eq('level_id', sectionRow.level_id)
       .maybeSingle();
     if (configRow) {
       const max =

@@ -83,7 +83,10 @@ function makeClient(tables: {
   academic_years?: unknown[];
   terms?: unknown[];
   section_students?: unknown[];
-  subject_configs?: unknown[];
+  // Migration 080 dropped subject_configs.level_id — the "which subjects
+  // appear on this card" query in build-report-card.ts now reads
+  // subject_level_offerings instead (Pattern A). Keyed here to match.
+  subject_level_offerings?: unknown[];
   grading_sheets?: unknown[];
   grade_entries?: unknown[];
   'attendance_records:presence'?: unknown[]; // term_id, days_present, days_late
@@ -264,7 +267,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [makeEnrolment()],
-        subject_configs: [{ subject: SUBJECT_MATH }],
+        subject_level_offerings: [{ subject: SUBJECT_MATH }],
         grading_sheets: SHEETS,
         // Hard Rule #1: quarterly for T1 = 93 (already computed + stored by the
         // server when the teacher saved scores; this test proves the card reads the
@@ -302,7 +305,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [makeEnrolment()],
-        subject_configs: [{ subject: SUBJECT_MATH }],
+        subject_level_offerings: [{ subject: SUBJECT_MATH }],
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
         'attendance_records:presence': [],
@@ -351,7 +354,7 @@ describe('buildReportCard', () => {
             enrollment_status: 'late_enrollee',
           }),
         ],
-        subject_configs: [{ subject: SUBJECT_MATH }],
+        subject_level_offerings: [{ subject: SUBJECT_MATH }],
         grading_sheets: SHEETS,
         // A T1 entry exists (maybe backfilled in error), but student wasn't enrolled
         // for T1 → the coverage override must null it and mark is_na=true.
@@ -394,7 +397,7 @@ describe('buildReportCard', () => {
             enrollment_status: 'late_enrollee',
           }),
         ],
-        subject_configs: [{ subject: SUBJECT_MATH }],
+        subject_level_offerings: [{ subject: SUBJECT_MATH }],
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([80, 90, 88, 85]),
         'attendance_records:presence': [],
@@ -430,7 +433,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [makeEnrolment()],
-        subject_configs: [{ subject: SUBJECT_MATH }],
+        subject_level_offerings: [{ subject: SUBJECT_MATH }],
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
         'attendance_records:presence': [],
@@ -480,7 +483,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [makeEnrolment()],
-        subject_configs: [{ subject: SUBJECT_MATH }],
+        subject_level_offerings: [{ subject: SUBJECT_MATH }],
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
         'attendance_records:presence': [],
@@ -525,7 +528,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [{ ...makeEnrolment(), section: staleSection }],
-        subject_configs: [{ subject: SUBJECT_MATH }],
+        subject_level_offerings: [{ subject: SUBJECT_MATH }],
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
         'attendance_records:presence': [],
@@ -563,7 +566,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [{ ...makeEnrolment(), section: staleSection }],
-        subject_configs: [{ subject: SUBJECT_MATH }],
+        subject_level_offerings: [{ subject: SUBJECT_MATH }],
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
         'attendance_records:presence': [],

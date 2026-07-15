@@ -42,39 +42,88 @@ export default async function NewGradingSheetPage() {
   }
   const ayId = ay.id as string;
 
-  const [termsRes, sectionsRes, subjectsRes, configsRes, teachers] =
-    await Promise.all([
-      supabase
-        .from('terms')
-        .select('id, term_number, label, is_current, start_date, end_date')
-        .eq('academic_year_id', ayId)
-        .order('term_number'),
-      supabase
-        .from('sections')
-        .select('id, name, level:levels(id, code, label, level_type)')
-        .eq('academic_year_id', ayId)
-        .order('name'),
-      supabase
-        .from('subjects')
-        .select('id, code, name, is_examinable')
-        .order('name'),
-      supabase
-        .from('subject_configs')
-        .select('subject_id, level_id, ww_max_slots, pt_max_slots, qa_max')
-        .eq('academic_year_id', ayId),
-      getTeacherList(),
-    ]);
+  // Migration 080 dropped subject_configs.level_id, so "which subjects are
+  // offered at a level" (Pattern A) and "what are this subject's WW/PT/QA
+  // maxes" (Pattern B) are now two separate queries. NewSheetForm's subject
+  // picker still needs a per-(subject × level) row shape to filter the
+  // subject list by the selected section's level, so the two are joined
+  // below into the same Config[] shape the form already expects — no
+  // change needed to new-sheet-form.tsx.
+  const [
+    termsRes,
+    sectionsRes,
+    subjectsRes,
+    offeringsRes,
+    subjectConfigsRes,
+    teachers,
+  ] = await Promise.all([
+    supabase
+      .from('terms')
+      .select('id, term_number, label, is_current, start_date, end_date')
+      .eq('academic_year_id', ayId)
+      .order('term_number'),
+    supabase
+      .from('sections')
+      .select('id, name, level:levels(id, code, label, level_type)')
+      .eq('academic_year_id', ayId)
+      .order('name'),
+    supabase
+      .from('subjects')
+      .select('id, code, name, is_examinable')
+      .order('name'),
+    supabase
+      .from('subject_level_offerings')
+      .select('subject_id, level_id')
+      .eq('academic_year_id', ayId),
+    supabase
+      .from('subject_configs')
+      .select('subject_id, ww_max_slots, pt_max_slots, qa_max')
+      .eq('academic_year_id', ayId),
+    getTeacherList(),
+  ]);
 
   for (const [key, res] of [
     ['terms', termsRes],
     ['sections', sectionsRes],
     ['subjects', subjectsRes],
-    ['configs', configsRes],
+    ['offerings', offeringsRes],
+    ['subjectConfigs', subjectConfigsRes],
   ] as const) {
     if (res.error) {
       console.error(`[new-sheet] ${key} query failed:`, res.error.message);
     }
   }
+
+  type OfferingRow = { subject_id: string; level_id: string };
+  type SubjectConfigRow = {
+    subject_id: string;
+    ww_max_slots: number;
+    pt_max_slots: number;
+    qa_max: number;
+  };
+  const configBySubjectId = new Map(
+    ((subjectConfigsRes.data ?? []) as SubjectConfigRow[]).map((c) => [
+      c.subject_id,
+      c,
+    ])
+  );
+  // Rebuild the (subject × level) rows the picker needs, cross-referencing
+  // the level-membership table against the weight-config table by
+  // subject_id — an offering with no matching config is skipped (no
+  // slot/max data to seed the form with).
+  const mergedConfigs = ((offeringsRes.data ?? []) as OfferingRow[])
+    .map((o) => {
+      const cfg = configBySubjectId.get(o.subject_id);
+      if (!cfg) return null;
+      return {
+        subject_id: o.subject_id,
+        level_id: o.level_id,
+        ww_max_slots: cfg.ww_max_slots,
+        pt_max_slots: cfg.pt_max_slots,
+        qa_max: cfg.qa_max,
+      };
+    })
+    .filter((c): c is NonNullable<typeof c> => c != null);
 
   // Pick the default term by today's date (matches getTermForDate semantics
   // from lib/sis/terms.ts), falling back to terms.is_current, then term 1.
@@ -135,7 +184,7 @@ export default async function NewGradingSheetPage() {
           >[0]['sections']
         }
         subjects={subjectsRes.data ?? []}
-        configs={configsRes.data ?? []}
+        configs={mergedConfigs}
         teachers={teachers}
         defaultTermId={defaultTermId}
       />
