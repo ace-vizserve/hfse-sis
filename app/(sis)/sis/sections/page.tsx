@@ -4,12 +4,14 @@ import { LayoutGrid, Users, UserX } from 'lucide-react';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { NewSectionButton } from '@/components/markbook/new-section-button';
 import { HubStat } from '@/components/sis/hub-stat';
-import { SectionsNeededPanel } from '@/components/sis/sections-needed-panel';
-import { SisSectionsDataTable } from '@/components/sis/sections-data-table';
+import {
+  SisSectionsDataTable,
+  type SisSectionRow,
+} from '@/components/sis/sections-data-table';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
-import { compareLevelLabels, getOfferedLevelIds } from '@/lib/sis/levels';
+import { getOfferedLevelIds } from '@/lib/sis/levels';
 import { sgToday } from '@/lib/dates';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { computeIndexStatus } from '@/lib/sis/section-index-status';
@@ -97,8 +99,8 @@ export default async function SisSectionsListPage({
         }>,
       };
 
-  // Level catalogue for the "New section" dialog + the "Sections needed"
-  // gap panel below.
+  // Level catalogue for the "New section" dialog + the "needed" gap rows
+  // merged into the sections table below.
   type LevelCatalogRow = LevelLite & { is_core: boolean; sort_order: number };
   const { data: levelRows } = await supabase
     .from('levels')
@@ -121,9 +123,9 @@ export default async function SisSectionsListPage({
 
   // Which levels are actually meant to run this AY — core levels always
   // are; volatile levels need an ay_level_offerings row (KD #153). Feeds
-  // the "Sections needed" gap below: a SHELVED level with no section is
-  // fine (deliberately not running), an OFFERED one with no section is a
-  // real gap — nobody can be enrolled there this year.
+  // the "needed" gap rows below: a SHELVED level with no section is fine
+  // (deliberately not running), an OFFERED one with no section is a real
+  // gap — nobody can be enrolled there this year.
   const offeredLevelIds = ay
     ? await getOfferedLevelIds(supabase, ay.id)
     : new Set<string>();
@@ -194,19 +196,28 @@ export default async function SisSectionsListPage({
     )
     .map((l) => ({ id: l.id, code: l.code, label: l.label }));
 
-  // Derive unique level options sorted in canonical pedagogical order.
-  const uniqueLevelLabels = Array.from(
-    new Map(cards.map((c) => [c.level_label, c])).entries()
-  ).sort(([a], [b]) => compareLevelLabels(a, b));
-  const levels = uniqueLevelLabels.map(([, c]) => ({
-    id: c.level_code,
-    code: c.level_code,
-    label: c.level_label,
+  // Level facet options — every level relevant to this AY (core, or
+  // volatile-and-offered), not just ones with an existing section. A level
+  // needing a section (below) must still be filterable/findable, so the
+  // facet vocabulary has to include it even though no section row carries
+  // its label yet. Already in catalog (sort_order) order.
+  const relevantLevelCatalog = levelCatalog.filter(
+    (l) => l.is_core || offeredLevelIds.has(l.id)
+  );
+  const levels = relevantLevelCatalog.map((l) => ({
+    id: l.code,
+    code: l.code,
+    label: l.label,
   }));
 
-  // Flat rows for the DataTable.
-  const rows = cards.map((c) => ({
+  // Flat rows for the DataTable — real sections plus one "needed" row per
+  // gap level (folded in here instead of a separate panel, so a registrar
+  // works from a single sortable/filterable list, not a list plus a
+  // duplicate-in-spirit summary above it).
+  const sectionRows: SisSectionRow[] = cards.map((c) => ({
+    kind: 'section',
     id: c.id,
+    levelId: c.level_id,
     name: c.name,
     levelLabel: c.level_label,
     schedule: c.schedule,
@@ -215,6 +226,19 @@ export default async function SisSectionsListPage({
     indexStatus: computeIndexStatus(c.active, c.unnumbered),
     fcaName: adviserMap[c.id]?.name ?? null,
   }));
+  const neededRows: SisSectionRow[] = levelsNeedingSection.map((l) => ({
+    kind: 'needed',
+    id: `needed:${l.id}`,
+    levelId: l.id,
+    name: '',
+    levelLabel: l.label,
+    schedule: null,
+    active: 0,
+    withdrawn: 0,
+    indexStatus: null,
+    fcaName: null,
+  }));
+  const rows: SisSectionRow[] = [...sectionRows, ...neededRows];
 
   // Section list for the bulk "Generate all indexes" button in the toolbar.
   const sectionsList = cards.map((c) => ({ id: c.id, name: c.name }));
@@ -269,17 +293,16 @@ export default async function SisSectionsListPage({
         />
       </div>
 
-      <SectionsNeededPanel
-        levels={levelsNeedingSection}
-        ayCode={ay?.ay_code ?? null}
-      />
-
       {/* Sections DataTable — replaces the pill grid. Level facet + search +
-          per-row ⋯ actions (Open roster / Generate index / Generate sheets).
-          The bulk "Generate all indexes" button lives in toolbarTrailing. */}
+          per-row ⋯ actions (Open roster / Generate index / Generate sheets),
+          plus a "needed" row per gap level with its own "Add section"
+          action. The bulk "Generate all indexes" button lives in
+          toolbarTrailing. */}
       <SisSectionsDataTable
         rows={rows}
         levels={levels}
+        levelOptions={levelOptions}
+        ayCode={ay?.ay_code ?? null}
         role={sessionUser.role}
         termStarted={termStarted}
         sections={sectionsList}
