@@ -1,6 +1,7 @@
 -- HFSE Markbook — seed data
 -- Contents: AY2026, 10 levels, 18 subjects, AY2026 sections,
--- AY2026 terms (T1–T4), and subject_configs (weights per subject × level).
+-- AY2026 terms (T1–T4), subject_configs (weights per subject), and
+-- subject_level_offerings (which levels each subject is taught at).
 -- Idempotent: safe to re-run.
 
 -- ---------- Academic year ----------
@@ -78,6 +79,16 @@ insert into public.subjects (code, name, is_examinable) values
   ('CCA',  'Co-curricular Activities',                 false)
 on conflict (code) do nothing;
 
+-- ---------- Subject report map (self-map) ----------
+-- Migration 080 seeds a 1:1 self-map for every subject that exists AT
+-- MIGRATION-RUN TIME — on a fresh install, seed.sql runs after migrations,
+-- so the 18 subjects inserted just above never got a row. Re-affirm here
+-- (idempotent no-op on an already-migrated project, since every subject
+-- there already has its self-map from 080).
+insert into public.subject_report_map (subject_id, report_subject_id)
+select id, id from public.subjects
+on conflict (subject_id, report_subject_id) do nothing;
+
 -- ---------- Sections (AY2026) ----------
 -- Source: docs/context/03-workflow-and-roles.md
 -- Canonical spellings (sync normalizes admissions typos like "Courageos" → "Courageous").
@@ -121,18 +132,41 @@ where ay.ay_code = 'AY2026'
 on conflict (academic_year_id, term_number) do nothing;
 
 -- ---------- Subject configs (AY2026) ----------
--- Primary (all 10 subjects) × P1–P6: 40 / 40 / 20
--- Secondary (all 8 subjects) × S1–S4: 30 / 50 / 20
--- These weights are constant for the whole AY per the grading spec.
+-- Migration 080 collapsed subject_configs off the level dimension — weight
+-- is a property of the subject, not the level, since every subject in this
+-- seed is taught exclusively at one tier (the primary/secondary code lists
+-- below are disjoint), so this is a like-for-like re-expression of the
+-- original level_type-keyed case, not a new decision.
+-- Primary-taught subjects (all 10): 40 / 40 / 20
+-- Secondary-taught subjects (all 8): 30 / 50 / 20
 -- Non-examinable subjects (CL, PMPD, CCA) still get a row for schema completeness,
 -- but the grade entry UI uses the letter-grade path and skips the weights.
 insert into public.subject_configs (
-  academic_year_id, subject_id, level_id, ww_weight, pt_weight, qa_weight
+  academic_year_id, subject_id, ww_weight, pt_weight, qa_weight
 )
-select ay.id, sub.id, lv.id,
-       case when lv.level_type = 'primary' then 0.40 else 0.30 end,
-       case when lv.level_type = 'primary' then 0.40 else 0.50 end,
+select ay.id, sub.id,
+       case when sub.code in ('ENG','MATH','MT','SCI','SS','MUSIC','ARTS','PE','HE','CL')
+         then 0.40 else 0.30 end,
+       case when sub.code in ('ENG','MATH','MT','SCI','SS','MUSIC','ARTS','PE','HE','CL')
+         then 0.40 else 0.50 end,
        0.20
+from public.academic_years ay
+cross join public.subjects sub
+where ay.ay_code = 'AY2026'
+  and sub.code in (
+    'ENG','MATH','MT','SCI','SS','MUSIC','ARTS','PE','HE','CL',
+    'HIST','LIT','HUM','ECON','CA','PEH','PMPD','CCA'
+  )
+on conflict (academic_year_id, subject_id) do nothing;
+
+-- ---------- Subject level offerings (AY2026) ----------
+-- Migration 080's new source of truth for "which levels teach this
+-- subject" — the level dimension weight config used to carry before the
+-- collapse above. Same primary/secondary partition as the weights.
+insert into public.subject_level_offerings (
+  subject_id, level_id, academic_year_id
+)
+select sub.id, lv.id, ay.id
 from public.academic_years ay
 cross join public.subjects sub
 cross join public.levels lv
@@ -144,4 +178,4 @@ where ay.ay_code = 'AY2026'
     (lv.level_type = 'secondary'
       and sub.code in ('HIST','LIT','HUM','ECON','CA','PEH','PMPD','CCA'))
   )
-on conflict (academic_year_id, subject_id, level_id) do nothing;
+on conflict (subject_id, level_id, academic_year_id) do nothing;
