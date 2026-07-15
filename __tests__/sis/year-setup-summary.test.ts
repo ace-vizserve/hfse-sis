@@ -210,21 +210,83 @@ describe('checklistSummary', () => {
     });
   });
 
-  describe('classes', () => {
+  describe('sections', () => {
+    // NEW (Task 5, migration-080 follow-up) — split out of the old combined
+    // 'classes' step. Pattern-matches the 'advisers' case's shape.
+    it('falls back to plain-English when there is no fraction', () => {
+      expect(
+        checklistSummary('sections', {
+          step: makeStep({
+            id: 'sections',
+            status: 'not_started',
+            fraction: undefined,
+          }),
+          ay: makeAy(),
+          terms: [],
+        })
+      ).toBe('No grade levels in use yet.');
+    });
+
+    it('reports no grade levels in use yet when the fraction total is 0', () => {
+      expect(
+        checklistSummary('sections', {
+          step: makeStep({
+            id: 'sections',
+            status: 'not_started',
+            fraction: { done: 0, total: 0 },
+          }),
+          ay: makeAy(),
+          terms: [],
+        })
+      ).toBe('No grade levels in use yet.');
+    });
+
+    it('reports the sections fraction', () => {
+      expect(
+        checklistSummary('sections', {
+          step: makeStep({
+            id: 'sections',
+            status: 'partial',
+            fraction: { done: 2, total: 5 },
+          }),
+          ay: makeAy(),
+          terms: [],
+        })
+      ).toBe('2 of 5 grade levels have at least one class section.');
+    });
+
+    it('singularizes for a single grade level', () => {
+      expect(
+        checklistSummary('sections', {
+          step: makeStep({
+            id: 'sections',
+            status: 'done',
+            fraction: { done: 1, total: 1 },
+          }),
+          ay: makeAy(),
+          terms: [],
+        })
+      ).toBe('1 of 1 grade level have at least one class section.');
+    });
+  });
+
+  describe('subject-weights', () => {
     // NOTE: this branch was rewired from raw `ay.counts` (a meaningless
     // total — "12 classes · 48 subject weights" said nothing about
     // completeness) to `step.fraction`, which `lib/sis/readiness.ts`'s
-    // `resolveClassesStep` now computes as levels-fully-configured vs
-    // levels-in-use (comparing each in-use level's `subject_configs`
-    // against `template_subject_configs`, i.e. Structure Defaults). The two
-    // tests below that used to assert on the old `ay.counts`-derived copy
-    // were deliberately rewritten to assert on the new fraction-derived,
-    // consequence-first copy — not silently left to bit-rot.
+    // `resolveSubjectWeightsStep` (renamed from `resolveClassesStep`, Task 5
+    // — decoupled from section existence) now computes as levels-fully-
+    // configured vs levels-in-use (comparing each in-use level's
+    // subject_level_offerings against template_subject_level_offerings,
+    // i.e. Structure Defaults). The two tests below that used to assert on
+    // the old `ay.counts`-derived copy were deliberately rewritten to
+    // assert on the new fraction-derived, consequence-first copy — not
+    // silently left to bit-rot.
     it('reports no classes created yet when there is no fraction', () => {
       expect(
-        checklistSummary('classes', {
+        checklistSummary('subject-weights', {
           step: makeStep({
-            id: 'classes',
+            id: 'subject-weights',
             status: 'not_started',
             fraction: undefined,
           }),
@@ -236,9 +298,9 @@ describe('checklistSummary', () => {
 
     it('reports no classes created yet when the fraction total is 0', () => {
       expect(
-        checklistSummary('classes', {
+        checklistSummary('subject-weights', {
           step: makeStep({
-            id: 'classes',
+            id: 'subject-weights',
             status: 'not_started',
             fraction: { done: 0, total: 0 },
           }),
@@ -250,9 +312,9 @@ describe('checklistSummary', () => {
 
     it('reports full completion when every level is configured', () => {
       expect(
-        checklistSummary('classes', {
+        checklistSummary('subject-weights', {
           step: makeStep({
-            id: 'classes',
+            id: 'subject-weights',
             status: 'done',
             fraction: { done: 3, total: 3 },
           }),
@@ -263,9 +325,9 @@ describe('checklistSummary', () => {
     });
 
     it('partial state names what disappears from the report card (Phase 2 consequence-first copy)', () => {
-      const summary = checklistSummary('classes', {
+      const summary = checklistSummary('subject-weights', {
         step: makeStep({
-          id: 'classes',
+          id: 'subject-weights',
           status: 'partial',
           fraction: { done: 2, total: 3 },
         }),
@@ -280,9 +342,9 @@ describe('checklistSummary', () => {
 
     it('pluralizes the gap for multiple missing levels', () => {
       expect(
-        checklistSummary('classes', {
+        checklistSummary('subject-weights', {
           step: makeStep({
-            id: 'classes',
+            id: 'subject-weights',
             status: 'partial',
             fraction: { done: 1, total: 3 },
           }),

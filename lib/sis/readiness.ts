@@ -3,19 +3,27 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/service';
 import { computeLevelDemand } from '@/lib/sis/level-demand';
 import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
+import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
 
-// Order matches the user-approved 7-step AY-Setup workflow (2026-07-14):
-// Academic Year -> Terms -> Calendar -> Grade Levels -> Sections ->
-// Section Subjects -> Generate Grading Sheets, with 'classes' (subject
-// weights applied via the class template) slotted in between grade-levels
-// and advisers — it depends on sections+levels existing but isn't one of
-// the user's named 7 steps, so it wasn't dropped, just repositioned.
-// virtue-themes/letterhead/app-window stay after the core 7 (unchanged).
+// Order matches the user-approved 11-step AY-Setup workflow (2026-07-15,
+// Task 5 of the migration-080 subject_configs collapse plan): Academic Year
+// -> Calendar -> Grade Levels -> Sections -> Subject Weights -> Form
+// Advisers -> Section Subjects -> Grading Sheets -> Virtue Themes ->
+// Report-card Letterhead, with 'app-window' (early-bird applications) as
+// the lone optional item after the core 10.
+//
+// 'sections' and 'subject-weights' are a split/decouple of the prior single
+// 'classes' step: 'sections' asks "does every grade level in use have at
+// least one class section," while 'subject-weights' asks "is every grade
+// level in use fully configured against Structure Defaults" — a genuinely
+// independent, parallel task that no longer depends on sections existing
+// (a registrar can configure subject weights before creating a section).
 export type ReadinessStepId =
   | 'ay-setup'
   | 'calendar'
   | 'grade-levels'
-  | 'classes'
+  | 'sections'
+  | 'subject-weights'
   | 'advisers'
   | 'section-subjects'
   | 'grading-sheets'
@@ -72,17 +80,26 @@ const STEP_META: Record<
     href: '/sis/admin/levels',
     required: true,
   },
-  classes: {
-    id: 'classes',
+  sections: {
+    id: 'sections',
     step: 4,
-    label: 'Classes & subjects',
-    description: 'Create classes and subject assignments',
-    href: '/sis/admin/template',
+    label: 'Sections',
+    description:
+      'Create at least one class section for each grade level in use',
+    href: '/sis/sections',
+    required: true,
+  },
+  'subject-weights': {
+    id: 'subject-weights',
+    step: 5,
+    label: 'Subject weights',
+    description: 'Attach subjects and weights to every grade level in use',
+    href: '/sis/admin/subjects',
     required: true,
   },
   advisers: {
     id: 'advisers',
-    step: 5,
+    step: 6,
     label: 'Form advisers',
     description: 'Assign form class advisers',
     href: '/sis/sections',
@@ -90,7 +107,7 @@ const STEP_META: Record<
   },
   'section-subjects': {
     id: 'section-subjects',
-    step: 6,
+    step: 7,
     label: 'Section subjects',
     description: 'Confirm which subjects each section teaches',
     href: '/sis/sections',
@@ -98,7 +115,7 @@ const STEP_META: Record<
   },
   'grading-sheets': {
     id: 'grading-sheets',
-    step: 7,
+    step: 8,
     label: 'Grading sheets',
     description: 'Create grading sheets for all sections',
     href: '/markbook/sections',
@@ -106,7 +123,7 @@ const STEP_META: Record<
   },
   'virtue-themes': {
     id: 'virtue-themes',
-    step: 8,
+    step: 9,
     label: 'Virtue themes',
     description: 'Set virtue themes for each term',
     href: '/evaluation/virtue-themes',
@@ -114,7 +131,7 @@ const STEP_META: Record<
   },
   letterhead: {
     id: 'letterhead',
-    step: 9,
+    step: 10,
     label: 'Report-card letterhead',
     description: 'Configure school letterhead and branding',
     href: '/sis/admin/school-config',
@@ -122,7 +139,7 @@ const STEP_META: Record<
   },
   'app-window': {
     id: 'app-window',
-    step: 10,
+    step: 11,
     label: 'Application window',
     description: 'Open early-bird application window (optional)',
     href: '/sis/ay-setup',
@@ -222,17 +239,54 @@ export function resolveGradeLevelsStep(input: {
   };
 }
 
-export function resolveClassesStep(input: {
-  sectionCount: number;
+// "Done" once every grade level genuinely in use this AY (core levels +
+// any volatile level with an ay_level_offerings row — same relevant-level
+// set fetchSections uses) has at least one class section. Sections are a
+// prerequisite the registrar can't skip, but whether they've been created
+// yet is a distinct question from whether the levels are correctly
+// configured — see resolveSubjectWeightsStep below, which used to fold
+// this section-existence question into its own fraction (the bug this
+// split closes: with 0 sections, subject weights silently read as
+// not_started even when the weights themselves were fully configured).
+export function resolveSectionsStep(input: {
+  relevantLevelCount: number;
+  levelsWithSectionCount: number;
+}): ReadinessStep {
+  const { relevantLevelCount, levelsWithSectionCount } = input;
+  let status: ReadinessStatus;
+  let fraction: { done: number; total: number } | undefined;
+
+  if (relevantLevelCount === 0) {
+    status = 'not_started';
+  } else if (levelsWithSectionCount === relevantLevelCount) {
+    status = 'done';
+    fraction = { done: levelsWithSectionCount, total: relevantLevelCount };
+  } else {
+    status = 'partial';
+    fraction = { done: levelsWithSectionCount, total: relevantLevelCount };
+  }
+
+  return {
+    ...STEP_META['sections'],
+    status,
+    fraction,
+  };
+}
+
+// Decoupled from section existence (Task 5, migration-080 follow-up) — a
+// registrar can configure subject weights before a single section exists,
+// so `not_started` is gated on `levelsInUse === 0` alone (levelsInUse here
+// = the relevant-level set, not a section-derived count).
+export function resolveSubjectWeightsStep(input: {
   levelsInUse: number;
   levelsFullyConfigured: number;
   missingCount: number;
 }): ReadinessStep {
-  const { sectionCount, levelsInUse, levelsFullyConfigured } = input;
+  const { levelsInUse, levelsFullyConfigured } = input;
   let status: ReadinessStatus;
   let fraction: { done: number; total: number } | undefined;
 
-  if (sectionCount === 0 || levelsInUse === 0) {
+  if (levelsInUse === 0) {
     status = 'not_started';
   } else if (levelsFullyConfigured === levelsInUse) {
     status = 'done';
@@ -246,7 +300,7 @@ export function resolveClassesStep(input: {
   }
 
   return {
-    ...STEP_META['classes'],
+    ...STEP_META['subject-weights'],
     status,
     fraction,
   };
@@ -594,101 +648,132 @@ async function fetchSectionSubjects(
   return { totalSections, sectionsWithSubjects };
 }
 
-// Real completeness, not just "any subject_configs row exists" — a level
-// missing even one of its template's subjects silently drops that subject
-// from grading-sheet creation AND the report card (build-report-card.ts
-// scopes subjects by subject_configs; no error, no visible signal). This
-// compares each in-use level's actual subject_configs against
-// template_subject_configs (Structure Defaults — the canonical "what
-// SHOULD be configured" reference, KD #66). A level with zero template
-// rows (e.g. a volatile/manually-managed level with no template entry) is
-// treated as complete — nothing to compare against, avoids false negatives.
-async function fetchClasses(
+// Shared by fetchSections + fetchSubjectWeights below — the AY's "relevant
+// levels" set: every core level, plus every volatile level with an
+// ay_level_offerings row for this AY. getOfferedLevelIds already returns
+// core-level ids unioned with offered-volatile ids, so filtering the full
+// level catalog against it is the complete relevant set (mirrors the same
+// computation on /sis/admin/subjects, lib/sis/subject-config-gaps.ts's
+// call site). One query pair, reused by both fetchers rather than
+// duplicated.
+async function fetchRelevantLevels(
   db: SupabaseClient,
   ayId: string
-): Promise<{
-  sectionCount: number;
-  levelsInUse: number;
-  levelsFullyConfigured: number;
-  missingCount: number;
-}> {
+): Promise<Array<{ id: string; label: string }>> {
+  const [levels, offeredIds] = await Promise.all([
+    getLevelRows(db),
+    getOfferedLevelIds(db, ayId),
+  ]);
+  return levels
+    .filter((l) => offeredIds.has(l.id))
+    .map((l) => ({ id: l.id, label: l.label }));
+}
+
+// "Done" once every relevant level (see fetchRelevantLevels) has at least
+// one class section for this AY. Split out of the old combined 'classes'
+// step (Task 5) — this is purely "have sections been created," independent
+// of whether those sections' subjects are correctly weighted.
+async function fetchSections(
+  db: SupabaseClient,
+  ayId: string
+): Promise<{ relevantLevelCount: number; levelsWithSectionCount: number }> {
+  const relevantLevels = await fetchRelevantLevels(db, ayId);
+  if (relevantLevels.length === 0) {
+    return { relevantLevelCount: 0, levelsWithSectionCount: 0 };
+  }
+
+  const relevantLevelIds = new Set(relevantLevels.map((l) => l.id));
+
   const { data: sectionRows, error: sectionsError } = await db
     .from('sections')
-    .select('id, level_id')
+    .select('level_id')
     .not('level_id', 'is', null)
     .eq('academic_year_id', ayId);
 
   if (sectionsError) throw sectionsError;
-  const sectionCount = sectionRows?.length ?? 0;
-  const levelIds = Array.from(
-    new Set((sectionRows as any[])?.map((s) => s.level_id) ?? [])
-  ) as string[];
 
-  if (levelIds.length === 0) {
-    return {
-      sectionCount,
-      levelsInUse: 0,
-      levelsFullyConfigured: 0,
-      missingCount: 0,
-    };
+  const levelsWithSectionIds = new Set(
+    ((sectionRows as any[]) ?? [])
+      .map((s) => s.level_id as string)
+      .filter((id) => relevantLevelIds.has(id))
+  );
+
+  return {
+    relevantLevelCount: relevantLevels.length,
+    levelsWithSectionCount: levelsWithSectionIds.size,
+  };
+}
+
+// Real completeness, not just "any subject_level_offerings row exists" — a
+// level missing even one of its template's subjects silently drops that
+// subject from grading-sheet creation AND the report card
+// (build-report-card.ts scopes subjects by subject_configs; no error, no
+// visible signal). Reuses computeSubjectConfigGaps (lib/sis/subject-config-
+// gaps.ts) — the exact same pure comparison the /sis/admin/subjects gap
+// banner uses — so this readiness step can never drift from what the
+// registrar actually sees there (count==drill discipline, KD #124/#128).
+//
+// Post migration-080 (subject_configs collapse): weight configs no longer
+// carry a level dimension. "Which levels SHOULD teach a subject" now lives
+// on template_subject_level_offerings; "which levels DO" lives on
+// subject_level_offerings (scoped to this AY). Deliberately queried here
+// with the raw `db` client rather than importing lib/sis/subjects/queries.ts
+// or lib/sis/template/queries.ts — both declare `import 'server-only'`,
+// and this file's pure resolvers/types are consumed by client components
+// (year-setup-checklist.tsx, ay-readiness-pill.tsx import real functions,
+// not just types) — pulling a server-only module in here would break the
+// client bundle (the exact KD #94 gotcha: "server-only module reaching a
+// client component via a value import in any transitively-imported file").
+//
+// A level with no template rows at all is treated as complete — nothing to
+// compare against, avoids false negatives for volatile/manually-managed
+// levels (same rule computeSubjectConfigGaps already applies).
+async function fetchSubjectWeights(
+  db: SupabaseClient,
+  ayId: string
+): Promise<{
+  levelsInUse: number;
+  levelsFullyConfigured: number;
+  missingCount: number;
+}> {
+  const relevantLevels = await fetchRelevantLevels(db, ayId);
+
+  if (relevantLevels.length === 0) {
+    return { levelsInUse: 0, levelsFullyConfigured: 0, missingCount: 0 };
   }
 
   const [
+    { data: subjectRows, error: subjectsError },
     { data: templateRows, error: templateError },
     { data: actualRows, error: actualError },
   ] = await Promise.all([
+    db.from('subjects').select('id, code'),
+    db.from('template_subject_level_offerings').select('subject_id, level_id'),
     db
-      .from('template_subject_configs')
-      .select('level_id, subject_id')
-      .in('level_id', levelIds),
-    db
-      .from('subject_configs')
-      .select('level_id, subject_id')
-      .eq('academic_year_id', ayId)
-      .in('level_id', levelIds),
+      .from('subject_level_offerings')
+      .select('subject_id, level_id')
+      .eq('academic_year_id', ayId),
   ]);
 
+  if (subjectsError) throw subjectsError;
   if (templateError) throw templateError;
   if (actualError) throw actualError;
 
-  const templateByLevel = new Map<string, Set<string>>();
-  for (const r of (templateRows as any[]) ?? []) {
-    const set = templateByLevel.get(r.level_id) ?? new Set<string>();
-    set.add(r.subject_id);
-    templateByLevel.set(r.level_id, set);
-  }
+  const gaps = computeSubjectConfigGaps(
+    relevantLevels,
+    (subjectRows as any[]) ?? [],
+    (templateRows as any[]) ?? [],
+    (actualRows as any[]) ?? []
+  );
 
-  const actualByLevel = new Map<string, Set<string>>();
-  for (const r of (actualRows as any[]) ?? []) {
-    const set = actualByLevel.get(r.level_id) ?? new Set<string>();
-    set.add(r.subject_id);
-    actualByLevel.set(r.level_id, set);
-  }
-
-  let levelsFullyConfigured = 0;
-  let missingCount = 0;
-  for (const levelId of levelIds) {
-    const templateSubjects = templateByLevel.get(levelId);
-    if (!templateSubjects || templateSubjects.size === 0) {
-      // No template reference for this level — can't fault it.
-      levelsFullyConfigured += 1;
-      continue;
-    }
-    const actualSubjects = actualByLevel.get(levelId) ?? new Set<string>();
-    let missingForLevel = 0;
-    for (const subjectId of templateSubjects) {
-      if (!actualSubjects.has(subjectId)) missingForLevel += 1;
-    }
-    if (missingForLevel === 0) {
-      levelsFullyConfigured += 1;
-    } else {
-      missingCount += missingForLevel;
-    }
-  }
+  const levelsFullyConfigured = relevantLevels.length - gaps.length;
+  const missingCount = gaps.reduce(
+    (sum, g) => sum + g.missingSubjectCodes.length,
+    0
+  );
 
   return {
-    sectionCount,
-    levelsInUse: levelIds.length,
+    levelsInUse: relevantLevels.length,
     levelsFullyConfigured,
     missingCount,
   };
@@ -821,8 +906,8 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
       resolveAySetupStep({ datedTermCount: 0, totalTermCount: 0 }),
       resolveCalendarStep({ totalTerms: 0, coveredTerms: 0 }),
       resolveGradeLevelsStep({ totalDistinctApplied: 0, unmatchedCount: 0 }),
-      resolveClassesStep({
-        sectionCount: 0,
+      resolveSectionsStep({ relevantLevelCount: 0, levelsWithSectionCount: 0 }),
+      resolveSubjectWeightsStep({
         levelsInUse: 0,
         levelsFullyConfigured: 0,
         missingCount: 0,
@@ -842,12 +927,13 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   const ayId = (ayRow as any).id;
   const accepting = (ayRow as any).accepting_applications ?? false;
 
-  // Fan out 9 fetchers
+  // Fan out 10 fetchers
   const [
     aySetup,
     calendar,
     gradeLevels,
-    classes,
+    sections,
+    subjectWeights,
     advisers,
     sectionSubjects,
     gradingSheets,
@@ -857,7 +943,8 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
     fetchAySetup(db, ayId),
     fetchCalendar(db, ayId),
     fetchGradeLevels(db, ayCode, ayId),
-    fetchClasses(db, ayId),
+    fetchSections(db, ayId),
+    fetchSubjectWeights(db, ayId),
     fetchAdvisers(db, ayId),
     fetchSectionSubjects(db, ayId),
     fetchGradingSheets(db, ayId),
@@ -869,13 +956,14 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   const step1 = resolveAySetupStep(aySetup);
   const step2 = resolveCalendarStep(calendar);
   const step3 = resolveGradeLevelsStep(gradeLevels);
-  const step4 = resolveClassesStep(classes);
-  const step5 = resolveAdvisersStep(advisers);
-  const step6 = resolveSectionSubjectsStep(sectionSubjects);
-  const step7 = resolveGradingSheetsStep(gradingSheets);
-  const step8 = resolveVirtueThemesStep(virtueThemes);
-  const step9 = resolveLetterheadStep(letterhead);
-  const step10 = resolveAppWindowStep({ accepting });
+  const step4 = resolveSectionsStep(sections);
+  const step5 = resolveSubjectWeightsStep(subjectWeights);
+  const step6 = resolveAdvisersStep(advisers);
+  const step7 = resolveSectionSubjectsStep(sectionSubjects);
+  const step8 = resolveGradingSheetsStep(gradingSheets);
+  const step9 = resolveVirtueThemesStep(virtueThemes);
+  const step10 = resolveLetterheadStep(letterhead);
+  const step11 = resolveAppWindowStep({ accepting });
 
   return buildReadiness(ayCode, [
     step1,
@@ -888,6 +976,7 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
     step8,
     step9,
     step10,
+    step11,
   ]);
 }
 

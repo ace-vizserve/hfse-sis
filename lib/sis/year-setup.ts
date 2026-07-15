@@ -89,7 +89,14 @@ export function checklistSummary(
       return `${remaining} term${remaining === 1 ? '' : 's'} still ${remaining === 1 ? 'has' : 'have'} unmarked dates — attendance entry will be blocked there until they're set.`;
     }
 
-    case 'classes': {
+    case 'sections': {
+      if (!step.fraction) return 'No grade levels in use yet.';
+      const { done, total } = step.fraction;
+      if (total === 0) return 'No grade levels in use yet.';
+      return `${done} of ${total} grade level${total === 1 ? '' : 's'} have at least one class section.`;
+    }
+
+    case 'subject-weights': {
       if (!step.fraction) return 'No classes created yet.';
       const { done, total } = step.fraction;
       if (total === 0) return 'No classes created yet.';

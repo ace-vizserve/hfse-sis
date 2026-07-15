@@ -15,6 +15,7 @@ import {
   LayoutGrid,
   ListChecks,
   Loader2,
+  School,
   Sparkles,
   Stamp,
   Users,
@@ -66,7 +67,8 @@ const ITEM_ICONS: Record<ReadinessStepId, LucideIcon> = {
   'ay-setup': CalendarCog,
   calendar: CalendarDays,
   'grade-levels': Layers,
-  classes: LayoutGrid,
+  sections: School,
+  'subject-weights': LayoutGrid,
   advisers: Users,
   'section-subjects': BookOpen,
   'grading-sheets': ClipboardList,
@@ -264,14 +266,17 @@ export function YearSetupChecklist({
 
   const firstOptionalId = steps.find((s) => !s.required)?.id ?? null;
 
-  // Sub-group the 8 flat rows into 3 clusters (Miller's Law — layout redesign
-  // pass): the ids genuinely span different domains (dates/calendar/staffing
-  // vs grading vs branding/admissions) with no visual grouping today. Purely
-  // a label inserted between rows, same mechanism as the existing "Optional"
-  // divider below — not a new pattern.
+  // Sub-group the 11 flat rows into 3 clusters (Miller's Law — layout
+  // redesign pass): the ids genuinely span different domains (dates/
+  // calendar/staffing vs grading vs branding/admissions) with no visual
+  // grouping today. Purely a label inserted between rows, same mechanism
+  // as the existing "Optional" divider below — not a new pattern. The
+  // label sits before 'sections' (Task 5: split out of the old combined
+  // 'classes' step) since sections/subject-weights/advisers/section-
+  // subjects/grading-sheets all belong to the same cluster.
   const CLUSTER_LABEL_BEFORE: Partial<Record<ReadinessStepId, string>> = {
     'ay-setup': 'Core setup',
-    classes: 'Grading & staffing',
+    sections: 'Grading & staffing',
     'virtue-themes': 'Branding & admissions',
   };
 
@@ -373,7 +378,17 @@ export function YearSetupChecklist({
                 );
                 break;
 
-              case 'classes':
+              case 'sections':
+                action = (
+                  <Button variant={primaryVariant} size="sm" asChild>
+                    <Link href={step.href}>
+                      Open Sections <ArrowUpRight className="size-3.5" />
+                    </Link>
+                  </Button>
+                );
+                break;
+
+              case 'subject-weights':
                 action = (
                   <>
                     <ApplyTemplateButton
@@ -382,7 +397,8 @@ export function YearSetupChecklist({
                     />
                     <Button variant="ghost" size="sm" asChild>
                       <Link href={step.href}>
-                        Open template <ArrowUpRight className="size-3.5" />
+                        Open Subject weights{' '}
+                        <ArrowUpRight className="size-3.5" />
                       </Link>
                     </Button>
                   </>

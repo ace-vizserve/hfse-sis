@@ -43,7 +43,7 @@ const READINESS: AyReadiness = {
       required: true,
     },
     {
-      id: 'classes',
+      id: 'subject-weights',
       step: 3,
       label: 'Classes',
       description: 'd',

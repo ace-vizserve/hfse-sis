@@ -18,8 +18,8 @@
 // instead of `template_subject_configs`/`subject_configs` (which no
 // longer have a level to pair against).
 //
-// Same underlying comparison as lib/sis/readiness.ts's fetchClasses step —
-// that one aggregates to a fraction for the readiness pill, this one
+// Same underlying comparison as lib/sis/readiness.ts's fetchSubjectWeights
+// step — that one aggregates to a fraction for the readiness pill, this one
 // produces a human-readable per-level breakdown for the warning banner.
 // Kept as two call sites reading the same tables rather than one shared
 // function because their outputs serve different shapes (aggregate count

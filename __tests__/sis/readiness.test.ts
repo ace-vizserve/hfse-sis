@@ -3,7 +3,8 @@ import {
   resolveAySetupStep,
   resolveCalendarStep,
   resolveGradeLevelsStep,
-  resolveClassesStep,
+  resolveSectionsStep,
+  resolveSubjectWeightsStep,
   resolveAdvisersStep,
   resolveSectionSubjectsStep,
   resolveGradingSheetsStep,
@@ -100,6 +101,41 @@ describe('resolveGradeLevelsStep', () => {
   });
 });
 
+describe('resolveSectionsStep', () => {
+  it('not_started when no relevant grade levels are in use, no fraction key', () => {
+    const s = resolveSectionsStep({
+      relevantLevelCount: 0,
+      levelsWithSectionCount: 0,
+    });
+    expect(s.status).toBe('not_started');
+    expect(s.fraction).toBeUndefined();
+  });
+  it('done when every relevant level has at least one section', () => {
+    const s = resolveSectionsStep({
+      relevantLevelCount: 5,
+      levelsWithSectionCount: 5,
+    });
+    expect(s.status).toBe('done');
+    expect(s.fraction).toEqual({ done: 5, total: 5 });
+  });
+  it('partial when some relevant levels have a section', () => {
+    const s = resolveSectionsStep({
+      relevantLevelCount: 5,
+      levelsWithSectionCount: 2,
+    });
+    expect(s.status).toBe('partial');
+    expect(s.fraction).toEqual({ done: 2, total: 5 });
+  });
+  it('partial (never not_started) when no relevant level has a section yet', () => {
+    const s = resolveSectionsStep({
+      relevantLevelCount: 5,
+      levelsWithSectionCount: 0,
+    });
+    expect(s.status).toBe('partial');
+    expect(s.fraction).toEqual({ done: 0, total: 5 });
+  });
+});
+
 describe('resolveSectionSubjectsStep', () => {
   it('not_started when no sections, no fraction key omitted (fraction always present)', () => {
     const s = resolveSectionSubjectsStep({
@@ -134,21 +170,19 @@ describe('resolveSectionSubjectsStep', () => {
   });
 });
 
-describe('resolveClassesStep', () => {
-  it('not_started when no sections', () => {
+describe('resolveSubjectWeightsStep', () => {
+  it('not_started when no levels are in use', () => {
     expect(
-      resolveClassesStep({
-        sectionCount: 0,
+      resolveSubjectWeightsStep({
         levelsInUse: 0,
         levelsFullyConfigured: 0,
         missingCount: 0,
       }).status
     ).toBe('not_started');
   });
-  it('not_started when sections exist but no levels have subject configs', () => {
+  it('not_started when levels are in use but none have subject configs (decoupled from sections — no sectionCount input anymore)', () => {
     expect(
-      resolveClassesStep({
-        sectionCount: 18,
+      resolveSubjectWeightsStep({
         levelsInUse: 3,
         levelsFullyConfigured: 0,
         missingCount: 24,
@@ -157,8 +191,7 @@ describe('resolveClassesStep', () => {
   });
   it('done when every in-use level is fully configured against the template', () => {
     expect(
-      resolveClassesStep({
-        sectionCount: 18,
+      resolveSubjectWeightsStep({
         levelsInUse: 3,
         levelsFullyConfigured: 3,
         missingCount: 0,
@@ -166,8 +199,7 @@ describe('resolveClassesStep', () => {
     ).toBe('done');
   });
   it('partial when some but not all levels are missing subjects the template defines — the bug this fix closes (previously read as done)', () => {
-    const step = resolveClassesStep({
-      sectionCount: 18,
+    const step = resolveSubjectWeightsStep({
       levelsInUse: 3,
       levelsFullyConfigured: 2,
       missingCount: 4,
@@ -303,8 +335,7 @@ describe('buildReadiness', () => {
     const steps = [
       resolveAySetupStep({ datedTermCount: 4, totalTermCount: 4 }), // done, required
       resolveCalendarStep({ totalTerms: 4, coveredTerms: 4 }), // done, required
-      resolveClassesStep({
-        sectionCount: 18,
+      resolveSubjectWeightsStep({
         levelsInUse: 3,
         levelsFullyConfigured: 3,
         missingCount: 0,
@@ -325,8 +356,7 @@ describe('buildReadiness', () => {
     const steps = [
       resolveAySetupStep({ datedTermCount: 0, totalTermCount: 0 }),
       resolveCalendarStep({ totalTerms: 0, coveredTerms: 0 }),
-      resolveClassesStep({
-        sectionCount: 0,
+      resolveSubjectWeightsStep({
         levelsInUse: 0,
         levelsFullyConfigured: 0,
         missingCount: 0,
@@ -413,8 +443,7 @@ describe('describeYearBandStatus', () => {
     const r = readinessWith([
       resolveAySetupStep({ datedTermCount: 4, totalTermCount: 4 }), // done
       resolveCalendarStep({ totalTerms: 4, coveredTerms: 0 }), // not done, next up
-      resolveClassesStep({
-        sectionCount: 0,
+      resolveSubjectWeightsStep({
         levelsInUse: 0,
         levelsFullyConfigured: 0,
         missingCount: 0,

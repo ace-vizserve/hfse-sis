@@ -8,8 +8,8 @@
  * build-report-card.ts fix.
  *
  * Extracted as a pure function (no Supabase mocking needed) — same spirit
- * as readiness.ts's resolveClassesStep/resolveAdvisersStep split from their
- * DB-fetching siblings.
+ * as readiness.ts's resolveSubjectWeightsStep/resolveAdvisersStep split
+ * from their DB-fetching siblings.
  */
 
 import { describe, expect, it } from 'vitest';
