@@ -15,7 +15,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { GripVertical, Inbox, Scale, X } from 'lucide-react';
+import { Scale, X } from 'lucide-react';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
@@ -32,7 +32,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { computeLevelTree, type LevelTreeNode } from '@/lib/sis/level-tree';
+import { computeLevelTree, flattenLevelTree } from '@/lib/sis/level-tree';
 import type { LevelRow } from '@/lib/sis/levels';
 import {
   computeTemplateDiff,
@@ -41,27 +41,26 @@ import {
 } from '@/lib/sis/template-diff';
 
 // Replaces the old subject × level matrix (components/sis/subject-config-
-// matrix.tsx, deleted) with a Level-rooted tree, mirroring the visual
-// language of components/sis/levels-manager-client.tsx's LevelTree/
-// TreeNodeRow (spine dot + connectors, @dnd-kit DndContext + closestCenter
-// + PointerSensor 6px activation + DragOverlay) — but the drag semantics
-// differ: here a SUBJECT CHIP is dragged onto a LEVEL NODE to attach it
-// there (two different entity types, additive — not a level-onto-level
-// reparent). The level tree's own shape is read-only on this page; only
-// subject attachment is editable here.
+// matrix.tsx, deleted) with a Level-rooted tree — but rendered as a flat,
+// flush list of level groups rather than a literal org-chart (dot-and-line
+// spine + dashed elbow connectors). The level tree's own SHAPE is still
+// computed via computeLevelTree/flattenLevelTree (so display order matches
+// the real spine+branch structure), but it's read-only on this page — only
+// subject attachment is editable here, so there's no reader-facing reason
+// to draw the family-tree geometry that components/sis/levels-manager-
+// client.tsx's tree needs (that page's connectors carry real information:
+// evidenced-vs-fallback attachment; this page's connectors carried none).
 //
-// `computeLevelTree` is reused for the spine/branch shape, but called with
-// an empty transitionRows array — the "evidenced vs fallback" distinction
-// it computes from real admissions transition data has no meaning for
-// subject attachment, so every branch here renders with the plain
-// nearest-spine dashed connector. `levels` is expected to already be
-// filtered to LEVELS OFFERED THIS AY (core + any volatile level with an
-// ay_level_offerings row) by the page — attaching a subject to a level
-// with no sections this year has no operational meaning.
+// Drag semantics: a SUBJECT CHIP is dragged onto a LEVEL GROUP to attach it
+// there (two different entity types, additive — not a level reparent).
+// `useDraggable` lives on the whole chip (not a separate grip sub-element)
+// — a plain click still resolves as a click because @dnd-kit's PointerSensor
+// activation constraint (6px) only starts a drag once the pointer has
+// actually moved past that threshold.
 //
 // Since migration 080, one `subject_configs` row now applies to a subject
 // across EVERY level it's attached to in an AY (no more per-level configs)
-// — so any chip for a given subject, regardless of which level row it's
+// — so any chip for a given subject, regardless of which level it's
 // rendered under, opens the SAME weights dialog.
 
 type Subject = {
@@ -161,7 +160,13 @@ export function SubjectLevelTree({
     [templateConfigs, configs]
   );
 
-  const tree = React.useMemo(() => computeLevelTree(levels, []), [levels]);
+  // Flattened to a plain ordered list — same spine+branch ORDER
+  // computeLevelTree produces, minus the recursive depth/connector
+  // structure this page has no use for (see file header).
+  const flatLevels = React.useMemo(
+    () => flattenLevelTree(computeLevelTree(levels, [])).map((n) => n.level),
+    [levels]
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
@@ -285,34 +290,32 @@ export function SubjectLevelTree({
           onDragCancel={() => setActiveDragSubjectId(null)}
         >
           <Card className="gap-0 overflow-hidden py-0">
-            <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-5 py-4">
+            <div className="flex items-center gap-3 px-5 pb-4 pt-5">
               <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
                 <Scale className="size-4" />
               </div>
               <div className="leading-tight">
                 <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Grade level tree · {ayCode}
+                  {ayCode} · {levels.length} level
+                  {levels.length === 1 ? '' : 's'} offered
                 </p>
                 <p className="font-serif text-[16px] font-semibold text-foreground">
-                  {levels.length} level{levels.length === 1 ? '' : 's'} offered
-                  — drag a subject onto one to attach it
+                  Drag a subject onto a level to attach it
                 </p>
               </div>
             </div>
 
-            {tree.length === 0 ? (
-              <div className="px-5 py-10 text-center text-sm text-muted-foreground">
+            {flatLevels.length === 0 ? (
+              <div className="px-5 pb-10 text-center text-sm text-muted-foreground">
                 No levels are offered in {ayCode} yet.
               </div>
             ) : (
-              <div className="divide-y divide-border" role="tree">
-                {tree.map((node, i) => (
-                  <LevelDropRow
-                    key={node.level.id}
-                    node={node}
-                    depth={0}
-                    isFirstRoot={i === 0}
-                    isLastRoot={i === tree.length - 1}
+              <div className="px-5 pb-1" role="list">
+                {flatLevels.map((level, i) => (
+                  <LevelGroup
+                    key={level.id}
+                    level={level}
+                    isFirst={i === 0}
                     subjectsById={subjectsById}
                     configBySubjectId={configBySubjectId}
                     subjectIdsByLevelId={subjectIdsByLevelId}
@@ -323,26 +326,22 @@ export function SubjectLevelTree({
                 ))}
               </div>
             )}
-          </Card>
 
-          <UnassignedTray
-            subjects={unassignedSubjects}
-            configBySubjectId={configBySubjectId}
-            onOpenEdit={openEdit}
-            onOpenCreate={openCreate}
-          />
+            <UnassignedBand
+              subjects={unassignedSubjects}
+              configBySubjectId={configBySubjectId}
+              onOpenEdit={openEdit}
+              onOpenCreate={openCreate}
+            />
+          </Card>
 
           <DragOverlay>
             {activeDragSubject && (
-              <div className="flex items-center gap-2 rounded-lg border border-brand-indigo/40 bg-card px-3 py-2 shadow-lg">
-                <GripVertical className="size-3.5 text-muted-foreground" />
-                <Badge
-                  variant="outline"
-                  className="h-6 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-                >
+              <div className="inline-flex items-center gap-2 rounded-md bg-card px-3 py-1.5 shadow-lg ring-1 ring-brand-indigo/30">
+                <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                   {activeDragSubject.code}
-                </Badge>
-                <span className="font-serif text-sm font-semibold text-foreground">
+                </span>
+                <span className="font-serif text-[13px] font-semibold text-foreground">
                   {activeDragSubject.name}
                 </span>
               </div>
@@ -373,15 +372,17 @@ export function SubjectLevelTree({
 }
 
 // =====================================================================
-// LevelDropRow — one level's row in the tree, spine (depth 0) or branch
-// (depth 1+). Connector rendering mirrors levels-manager-client.tsx's
-// TreeNodeRow exactly (dot + line for the spine root, elbow border for
-// branches); the "evidenced vs fallback" solid/dashed distinction that
-// component makes is dropped here since transitionRows is always [] for
-// this tree (see file header). The row itself is a `useDroppable` target.
+// LevelGroup — one level's row: a slim header (a small colored dot marks
+// core/spine levels vs branch levels — indigo vs muted, replacing the old
+// dot-and-line spine + dashed elbow connector geometry, which on this page
+// carried no information beyond "this level is core" that the dot alone
+// doesn't already say) followed directly by its attached-subject chips,
+// flush with no enclosing box. Groups are separated by a single top
+// hairline rather than a divider after every row, so the page reads as one
+// continuous surface. The row itself is a `useDroppable` target.
 // =====================================================================
 
-type RowSharedProps = {
+type SharedProps = {
   subjectsById: Map<string, Subject>;
   configBySubjectId: Map<string, Config>;
   subjectIdsByLevelId: Map<string, Set<string>>;
@@ -390,71 +391,64 @@ type RowSharedProps = {
   onDetach: (subjectId: string, levelId: string) => void;
 };
 
-function LevelDropRow({
-  node,
-  depth,
-  isFirstRoot,
-  isLastRoot,
+function LevelGroup({
+  level,
+  isFirst,
   subjectsById,
   configBySubjectId,
   subjectIdsByLevelId,
   onOpenEdit,
   onOpenCreate,
   onDetach,
-}: {
-  node: LevelTreeNode;
-  depth: number;
-  isFirstRoot?: boolean;
-  isLastRoot?: boolean;
-} & RowSharedProps) {
-  const isSpine = depth === 0;
+}: { level: LevelRow; isFirst: boolean } & SharedProps) {
   const droppable = useDroppable({
-    id: `level:${node.level.id}`,
-    data: { levelId: node.level.id },
+    id: `level:${level.id}`,
+    data: { levelId: level.id },
   });
-  const rowProps: RowSharedProps = {
-    subjectsById,
-    configBySubjectId,
-    subjectIdsByLevelId,
-    onOpenEdit,
-    onOpenCreate,
-    onDetach,
-  };
 
-  const attachedSubjects = Array.from(
-    subjectIdsByLevelId.get(node.level.id) ?? []
-  )
+  const attachedSubjects = Array.from(subjectIdsByLevelId.get(level.id) ?? [])
     .map((id) => subjectsById.get(id))
     .filter((s): s is Subject => !!s)
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const content = (
+  return (
     <div
       ref={droppable.setNodeRef}
       className={cn(
-        'rounded-lg transition-colors',
+        'rounded-lg py-3.5 transition-colors',
+        !isFirst && 'border-t border-border',
         droppable.isOver &&
           'bg-brand-indigo/5 ring-2 ring-inset ring-brand-indigo/40'
       )}
+      role="listitem"
     >
-      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-        <Badge
-          variant="outline"
-          className="h-6 shrink-0 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+      <div className="flex flex-wrap items-center gap-2 px-2">
+        <span
+          className={cn(
+            'size-[5px] shrink-0 rounded-full',
+            level.isCore ? 'bg-brand-indigo' : 'bg-muted-foreground/40'
+          )}
+          aria-hidden
+        />
+        <span
+          className={cn(
+            'font-mono text-[11px] font-bold tracking-[0.1em]',
+            level.isCore ? 'text-brand-indigo' : 'text-muted-foreground'
+          )}
         >
-          {node.level.code}
-        </Badge>
-        <span className="font-serif text-[14px] font-semibold tracking-tight text-foreground">
-          {node.level.label}
+          {level.code}
         </span>
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+        <span className="font-serif text-[15px] font-semibold text-foreground">
+          {level.label}
+        </span>
+        <span className="ml-auto font-mono text-[10.5px] text-muted-foreground">
           {attachedSubjects.length} subject
           {attachedSubjects.length === 1 ? '' : 's'}
         </span>
       </div>
-      <div className="flex flex-wrap gap-1.5 px-3 pb-2.5 pl-[3.25rem]">
+      <div className="flex flex-wrap gap-1.5 px-2 pl-[15px] pt-2.5">
         {attachedSubjects.length === 0 ? (
-          <p className="py-1 text-[12px] text-muted-foreground/70">
+          <p className="py-0.5 text-[12px] text-muted-foreground/70">
             Nothing attached — drag a subject here.
           </p>
         ) : (
@@ -463,110 +457,35 @@ function LevelDropRow({
               key={subject.id}
               subject={subject}
               config={configBySubjectId.get(subject.id) ?? null}
-              dragId={`chip:${subject.id}:${node.level.id}`}
+              dragId={`chip:${subject.id}:${level.id}`}
               onOpen={() => {
                 const cfg = configBySubjectId.get(subject.id);
                 if (cfg) onOpenEdit(subject, cfg);
                 else onOpenCreate(subject);
               }}
-              onDetach={() => onDetach(subject.id, node.level.id)}
+              onDetach={() => onDetach(subject.id, level.id)}
             />
           ))
         )}
       </div>
     </div>
   );
-
-  if (isSpine) {
-    return (
-      <>
-        {node.childrenBefore.map((child) => (
-          <LevelDropRow
-            key={child.level.id}
-            node={child}
-            depth={1}
-            {...rowProps}
-          />
-        ))}
-        <div className="relative flex items-stretch">
-          <div className="flex w-8 shrink-0 flex-col items-center">
-            <div
-              className={cn(
-                'w-px flex-1 bg-border',
-                isFirstRoot && node.childrenBefore.length === 0 && 'invisible'
-              )}
-              aria-hidden
-            />
-            <div
-              className="size-2.5 shrink-0 rounded-full bg-brand-indigo ring-4 ring-card"
-              aria-hidden
-            />
-            <div
-              className={cn(
-                'w-px flex-1 bg-border',
-                isLastRoot && node.childrenAfter.length === 0 && 'invisible'
-              )}
-              aria-hidden
-            />
-          </div>
-          <div className="flex-1 py-1" role="treeitem">
-            {content}
-          </div>
-        </div>
-        {node.childrenAfter.map((child) => (
-          <LevelDropRow
-            key={child.level.id}
-            node={child}
-            depth={1}
-            {...rowProps}
-          />
-        ))}
-      </>
-    );
-  }
-
-  return (
-    <>
-      {node.childrenBefore.map((child) => (
-        <LevelDropRow
-          key={child.level.id}
-          node={child}
-          depth={depth + 1}
-          {...rowProps}
-        />
-      ))}
-      <div
-        className="flex items-stretch"
-        style={{ paddingLeft: `${depth * 2}rem` }}
-        role="treeitem"
-      >
-        <div className="flex w-8 shrink-0 items-start justify-center">
-          <div
-            className="mt-4 h-4 w-4 rounded-bl-lg border-b-2 border-l-2 border-dashed border-muted-foreground/30"
-            aria-hidden
-          />
-        </div>
-        <div className="min-w-0 flex-1 py-1.5">{content}</div>
-      </div>
-      {node.childrenAfter.map((child) => (
-        <LevelDropRow
-          key={child.level.id}
-          node={child}
-          depth={depth + 1}
-          {...rowProps}
-        />
-      ))}
-    </>
-  );
 }
 
 // =====================================================================
-// SubjectChip — the draggable unit. Two visual states: configured
-// (PROFILE_CLASS from weight-profile.tsx, same recipe the old matrix
-// used) vs no-weights-yet (dashed amber outline + amber dot — visibly
-// distinct from the solid-filled amber "custom" profile so the two amber
-// signals don't collide). Detach ("×") only shows when a `onDetach`
-// handler is supplied — tray chips omit it (nothing to detach from).
+// SubjectChip — the draggable + clickable unit, now a single flat pill
+// (no more grip / label / detach welded into three separately-bordered
+// segments). `useDraggable`'s listeners live on the whole chip; a plain
+// click still resolves as a click because @dnd-kit's PointerSensor only
+// starts a drag once the pointer has moved past its 6px activation
+// distance (the same sensor config the parent DndContext already uses),
+// so no separate hit-target is needed to disambiguate the two gestures.
+// Two visual states: configured (PROFILE_CLASS from weight-profile.tsx —
+// shared with the Structure Defaults editor so the two surfaces keep
+// identical chip semantics) vs no-weights-yet (dashed amber outline).
+// Detach ("×") only renders when `onDetach` is supplied — tray chips omit
+// it (nothing to detach from) — and stops the pointerdown/click from
+// reaching the chip's own drag/open handlers.
 // =====================================================================
 
 function SubjectChip({
@@ -598,67 +517,70 @@ function SubjectChip({
   return (
     <div
       ref={draggable.setNodeRef}
+      {...draggable.listeners}
+      {...draggable.attributes}
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
       className={cn(
-        'group inline-flex items-stretch overflow-hidden rounded-md transition-all',
-        'hover:-translate-y-0.5 hover:shadow-md',
+        'group relative inline-flex cursor-grab touch-none items-center gap-1.5 rounded-md py-1.5 pl-2.5 pr-2.5 transition-all',
+        'hover:-translate-y-0.5 hover:shadow-sm active:cursor-grabbing',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40',
         draggable.isDragging && 'opacity-30',
         hasConfig
           ? PROFILE_CLASS[profile!]
-          : 'border-2 border-dashed border-brand-amber/50 bg-transparent hover:bg-brand-amber/5'
+          : 'border border-dashed border-brand-amber/50 bg-transparent hover:bg-brand-amber/5'
       )}
+      title={
+        hasConfig
+          ? `${subject.name} — drag to attach elsewhere, click to edit weights`
+          : `${subject.name} — no weights set yet, click to configure`
+      }
+      aria-label={
+        hasConfig
+          ? `${subject.name} — drag to attach elsewhere, click to edit weights`
+          : `${subject.name} — no weights set yet, click to configure`
+      }
     >
-      <button
-        type="button"
-        {...draggable.listeners}
-        {...draggable.attributes}
-        className="flex w-5 shrink-0 cursor-grab touch-none items-center justify-center text-muted-foreground/40 hover:text-foreground active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40"
-        aria-label={`Drag ${subject.name} to attach it to another level`}
+      <span
+        className={cn(
+          'inline-flex items-center gap-1.5 font-serif text-[12px] font-semibold leading-tight tracking-tight',
+          hasConfig ? PROFILE_TEXT[profile!].code : 'text-brand-amber'
+        )}
       >
-        <GripVertical className="size-3" />
-      </button>
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex flex-col items-start gap-0.5 py-1.5 pr-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40"
-        title={
-          hasConfig
-            ? `${subject.name} — click to edit weights`
-            : `${subject.name} — no weights set yet, click to configure`
-        }
+        {!hasConfig && (
+          <span
+            className="size-1.5 shrink-0 rounded-full bg-brand-amber"
+            aria-hidden
+          />
+        )}
+        {subject.code}
+      </span>
+      <span
+        className={cn(
+          'font-mono text-[10px] tabular-nums',
+          hasConfig ? PROFILE_TEXT[profile!].ratio : 'text-brand-amber/80'
+        )}
       >
-        <span
-          className={cn(
-            'inline-flex items-center gap-1.5 font-serif text-[12px] font-semibold leading-tight tracking-tight',
-            hasConfig ? PROFILE_TEXT[profile!].code : 'text-brand-amber'
-          )}
-        >
-          {!hasConfig && (
-            <span
-              className="size-1.5 shrink-0 rounded-full bg-brand-amber"
-              aria-hidden
-            />
-          )}
-          {subject.code}
-        </span>
-        <span
-          className={cn(
-            'font-mono text-[10px] tabular-nums',
-            hasConfig ? PROFILE_TEXT[profile!].ratio : 'text-brand-amber/80'
-          )}
-        >
-          {hasConfig
-            ? `${Math.round(config!.ww_weight * 100)}·${Math.round(config!.pt_weight * 100)}·${Math.round(config!.qa_weight * 100)}`
-            : 'No weights set'}
-        </span>
-      </button>
+        {hasConfig
+          ? `${Math.round(config!.ww_weight * 100)}·${Math.round(config!.pt_weight * 100)}·${Math.round(config!.qa_weight * 100)}`
+          : 'No weights set'}
+      </span>
       {onDetach && (
         <button
           type="button"
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onDetach();
           }}
-          className="flex w-6 shrink-0 items-center justify-center text-muted-foreground/40 opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40 group-hover:opacity-100"
+          className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40 group-hover:opacity-100"
           aria-label={`Detach ${subject.name} from this level`}
         >
           <X className="size-3" />
@@ -669,15 +591,14 @@ function SubjectChip({
 }
 
 // =====================================================================
-// Unassigned tray — subjects with zero `subject_level_offerings` rows for
-// this AY. Mirrors the visual language of levels-manager-client.tsx's
-// SmartSyncPanel (amber gradient-tile header for "needs attention"), and
-// the design system's quiet-clean-state convention for the empty case
-// (plain caption, no big tile) matching TemplateDriftList's own empty
-// state below.
+// Unassigned band — subjects with zero `subject_level_offerings` rows for
+// this AY. Lives inside the SAME Card as the level groups (a tinted band
+// at the bottom) rather than a second separately-bordered Card with its
+// own gradient icon-tile header — the two "boxes" that used to stack here
+// read as one continuous surface now.
 // =====================================================================
 
-function UnassignedTray({
+function UnassignedBand({
   subjects,
   configBySubjectId,
   onOpenEdit,
@@ -690,33 +611,24 @@ function UnassignedTray({
 }) {
   if (subjects.length === 0) {
     return (
-      <Card className="items-center py-8 text-center">
-        <div className="flex flex-col items-center gap-2 px-6 py-2">
-          <p className="text-sm text-muted-foreground">
-            Every subject is attached to at least one level.
-          </p>
-        </div>
-      </Card>
+      <p className="border-t border-border px-5 py-3 text-center text-[12px] text-muted-foreground">
+        Every subject is attached to at least one level.
+      </p>
     );
   }
 
   return (
-    <Card className="gap-0 overflow-hidden py-0">
-      <div className="flex items-center gap-3 border-b border-border bg-brand-amber/5 px-5 py-4">
-        <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-brand-tile-amber">
-          <Inbox className="size-4" />
-        </div>
-        <div className="leading-tight">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Unassigned
-          </p>
-          <p className="font-serif text-[16px] font-semibold text-foreground">
-            {subjects.length} subject{subjects.length === 1 ? '' : 's'} not
-            attached to any level
-          </p>
-        </div>
+    <div className="border-t border-border bg-brand-amber/5 px-5 py-4">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-brand-amber">
+          Unassigned
+        </span>
+        <span className="font-mono text-[10px] text-muted-foreground">
+          {subjects.length} subject{subjects.length === 1 ? '' : 's'} not
+          attached to any level — drag one onto a level above
+        </span>
       </div>
-      <div className="flex flex-wrap gap-1.5 p-4">
+      <div className="flex flex-wrap gap-1.5">
         {subjects
           .slice()
           .sort((a, b) => a.name.localeCompare(b.name))
@@ -734,10 +646,7 @@ function UnassignedTray({
             />
           ))}
       </div>
-      <p className="border-t border-border px-5 py-3 text-[12px] text-muted-foreground">
-        Drag a subject onto a level above to attach it there.
-      </p>
-    </Card>
+    </div>
   );
 }
 

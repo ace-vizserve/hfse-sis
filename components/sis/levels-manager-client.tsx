@@ -237,9 +237,13 @@ export function LevelsManagerClient({
 // branch — recursively (lib/sis/level-tree.ts::computeLevelTree; a branch
 // can itself have branches, e.g. a non-core "Youngstarters | Junior
 // Stars" splitting to both "Primary One" and an HFSE Global Education
-// Programme track). Solid connector when the attachment is backed by
-// real applications data, dashed when it's a sort_order-proximity
-// fallback with no observed data yet.
+// Programme track). Depth alone (indentation, no connector-line geometry)
+// shows a branch's position in the tree; the per-branch badge above its
+// row ("N observed" vs "structural — no applications yet") carries the
+// evidenced-vs-fallback distinction, which is the one visual fact this
+// whole page exists to communicate — a dot-and-line spine + dashed elbow
+// connector used to duplicate that same signal via line style, which
+// only added chrome without adding information.
 //
 // Drag-and-drop reattachment: grab any non-core level's handle and drop
 // it onto any other level (spine or branch) to reattach it there —
@@ -367,13 +371,11 @@ function LevelTree({
       onDragCancel={() => setActiveId(null)}
     >
       <div className="divide-y divide-border" role="tree">
-        {nodes.map((node, i) => (
+        {nodes.map((node) => (
           <TreeNodeRow
             key={node.level.id}
             node={node}
             depth={0}
-            isFirstRoot={i === 0}
-            isLastRoot={i === nodes.length - 1}
             {...rowProps}
           />
         ))}
@@ -401,8 +403,6 @@ function LevelTree({
 function TreeNodeRow({
   node,
   depth,
-  isFirstRoot,
-  isLastRoot,
   levels,
   offeredSet,
   demandByLevelId,
@@ -412,8 +412,6 @@ function TreeNodeRow({
 }: {
   node: LevelTreeNode;
   depth: number;
-  isFirstRoot?: boolean;
-  isLastRoot?: boolean;
 } & RowSharedProps) {
   const isSpine = depth === 0;
   const draggable = useDraggable({
@@ -498,30 +496,8 @@ function TreeNodeRow({
             {...rowProps}
           />
         ))}
-        <div className="relative flex items-stretch">
-          <div className="flex w-8 shrink-0 flex-col items-center">
-            <div
-              className={cn(
-                'w-px flex-1 bg-border',
-                isFirstRoot && node.childrenBefore.length === 0 && 'invisible'
-              )}
-              aria-hidden
-            />
-            <div
-              className="size-2.5 shrink-0 rounded-full bg-brand-indigo ring-4 ring-card"
-              aria-hidden
-            />
-            <div
-              className={cn(
-                'w-px flex-1 bg-border',
-                isLastRoot && node.childrenAfter.length === 0 && 'invisible'
-              )}
-              aria-hidden
-            />
-          </div>
-          <div className="flex-1 py-1" role="treeitem">
-            {content}
-          </div>
+        <div className="py-1" role="treeitem">
+          {content}
         </div>
         {node.childrenAfter.map((child) => (
           <TreeNodeRow
@@ -546,28 +522,11 @@ function TreeNodeRow({
         />
       ))}
       <div
-        className="flex items-stretch"
-        style={{ paddingLeft: `${depth * 2}rem` }}
+        className="py-1.5"
+        style={{ paddingLeft: `${depth * 1.5}rem` }}
         role="treeitem"
       >
-        {/* Elbow connector — a corner drawn from border-left + border-bottom,
-            the standard plain-CSS "tree view" indent guide (VS Code's file
-            explorer uses the same trick). Solid indigo when the attachment
-            is backed by real applications data; dashed muted when it's a
-            sort_order-proximity guess — the one visual fact this whole page
-            exists to communicate. */}
-        <div className="flex w-8 shrink-0 items-start justify-center">
-          <div
-            className={cn(
-              'mt-5 h-5 w-4 rounded-bl-lg border-b-2 border-l-2',
-              node.evidenced
-                ? 'border-brand-indigo/50'
-                : 'border-dashed border-muted-foreground/30'
-            )}
-            aria-hidden
-          />
-        </div>
-        <div className="min-w-0 flex-1 py-1.5">{content}</div>
+        {content}
       </div>
       {node.childrenAfter.map((child) => (
         <TreeNodeRow
