@@ -112,6 +112,7 @@ import type {
   EligibleAyRow,
   TemplateSectionRow,
   TemplateSubjectConfigRow,
+  TemplateSubjectLevelOfferingRow,
 } from '@/lib/sis/template/queries';
 import type { LevelRow, SubjectRow } from '@/lib/sis/subjects/queries';
 import type {
@@ -123,6 +124,7 @@ import { cn } from '@/lib/utils';
 type Props = {
   templateSections: TemplateSectionRow[];
   templateConfigs: TemplateSubjectConfigRow[];
+  templateOfferings: TemplateSubjectLevelOfferingRow[];
   subjects: SubjectRow[];
   levels: LevelRow[];
   eligibleAys: EligibleAyRow[];
@@ -135,6 +137,7 @@ type Props = {
 export function TemplateManagerClient({
   templateSections,
   templateConfigs,
+  templateOfferings,
   subjects,
   levels,
   eligibleAys,
@@ -171,10 +174,16 @@ export function TemplateManagerClient({
             icon={LayoutGrid}
           />
           <StatBlock
-            label="Subject configs"
+            label="Weight configs"
             value={templateConfigs.length}
-            sub={`${subjects.length} subj × ${levels.length} levels`}
+            sub={`of ${subjects.length} subject${subjects.length === 1 ? '' : 's'}`}
             icon={Scale}
+          />
+          <StatBlock
+            label="Level attachments"
+            value={templateOfferings.length}
+            sub={`across ${levels.length} level${levels.length === 1 ? '' : 's'}`}
+            icon={GraduationCap}
           />
           {!hasTemplate && (
             <p className="ml-auto max-w-md text-right text-[12px] text-muted-foreground">
@@ -210,12 +219,17 @@ export function TemplateManagerClient({
         </TabsContent>
 
         <TabsContent value="subjects" className="space-y-5">
-          <SubjectsCatalogTab subjects={subjects} configs={templateConfigs} />
+          <SubjectsCatalogTab
+            subjects={subjects}
+            configs={templateConfigs}
+            offerings={templateOfferings}
+          />
         </TabsContent>
 
         <TabsContent value="weights" className="space-y-5">
           <SubjectsTab
             configs={templateConfigs}
+            offerings={templateOfferings}
             subjects={subjects}
             levels={levels}
           />
@@ -410,15 +424,17 @@ function AddSectionPill({
 }
 
 // =====================================================================
-// Subjects tab — searchable subject list with compact level chips
+// Subjects tab — searchable subject list. Two independent controls per
+// card since migration 080: weight editing is subject-scoped only (no
+// level dimension), and level attachment (which levels the subject is
+// taught at) is a separate control reading/writing
+// template_subject_level_offerings.
 // =====================================================================
 
 type ConfigDraft = {
   configId: string;
   subjectCode: string;
   subjectName: string;
-  levelCode: string;
-  levelLabel: string;
   ww_weight: number;
   pt_weight: number;
   qa_weight: number;
@@ -429,10 +445,12 @@ type ConfigDraft = {
 
 function SubjectsTab({
   configs,
+  offerings,
   subjects,
   levels,
 }: {
   configs: TemplateSubjectConfigRow[];
+  offerings: TemplateSubjectLevelOfferingRow[];
   subjects: SubjectRow[];
   levels: LevelRow[];
 }) {
@@ -440,25 +458,32 @@ function SubjectsTab({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
-  // Dashed-cell create flow — opens a separate POST dialog. Decoupled from
-  // the edit dialog state so the two never race; clicking a chip opens
-  // edit, clicking a dashed cell opens create.
+  // "Set weights" create flow — opens a separate POST dialog. Decoupled
+  // from the edit dialog state so the two never race; clicking the weight
+  // chip opens edit, clicking "Set weights" opens create.
   const [createSubject, setCreateSubject] = useState<SubjectRow | null>(null);
-  const [createLevel, setCreateLevel] = useState<LevelRow | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
-  function openCreate(subject: SubjectRow, level: LevelRow) {
-    if ((level.level_type as string) === 'preschool') return; // Markbook excludes preschool.
+  function openCreate(subject: SubjectRow) {
     setCreateSubject(subject);
-    setCreateLevel(level);
     setCreateOpen(true);
   }
 
-  const byKey = useMemo(() => {
+  const configBySubject = useMemo(() => {
     const m = new Map<string, TemplateSubjectConfigRow>();
-    for (const c of configs) m.set(`${c.subject_id}|${c.level_id}`, c);
+    for (const c of configs) m.set(c.subject_id, c);
     return m;
   }, [configs]);
+
+  const offeredLevelIdsBySubject = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const o of offerings) {
+      const set = m.get(o.subject_id) ?? new Set<string>();
+      set.add(o.level_id);
+      m.set(o.subject_id, set);
+    }
+    return m;
+  }, [offerings]);
 
   const filteredSubjects = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -469,17 +494,11 @@ function SubjectsTab({
     );
   }, [subjects, query]);
 
-  function openCell(
-    subject: SubjectRow,
-    level: LevelRow,
-    config: TemplateSubjectConfigRow
-  ) {
+  function openCell(subject: SubjectRow, config: TemplateSubjectConfigRow) {
     setDraft({
       configId: config.id,
       subjectCode: subject.code,
       subjectName: subject.name,
-      levelCode: level.code,
-      levelLabel: level.label,
       ww_weight: Math.round(config.ww_weight * 100),
       pt_weight: Math.round(config.pt_weight * 100),
       qa_weight: Math.round(config.qa_weight * 100),
@@ -523,9 +542,11 @@ function SubjectsTab({
           </div>
         </div>
         <div className="px-5 py-3 text-[12px] text-muted-foreground">
-          Each chip below is one (subject × level) weight profile. Click any
-          chip to edit. The color tells you at a glance which profile that pair
-          uses — Primary 40·40·20, Secondary 30·50·20, anything else is Custom.
+          Each subject has one WW/PT/QA weight profile, used at every level
+          it&apos;s taught. Click a subject&apos;s weight chip to edit; use{' '}
+          <strong>Taught at</strong> below it to attach or detach levels. The
+          color tells you at a glance which profile a subject uses — Primary
+          40·40·20, Secondary 30·50·20, anything else is Custom.
         </div>
       </Card>
 
@@ -555,8 +576,11 @@ function SubjectsTab({
           key={subject.id}
           subject={subject}
           levels={levels}
-          configByKey={byKey}
-          onOpenCell={openCell}
+          config={configBySubject.get(subject.id) ?? null}
+          offeredLevelIds={
+            offeredLevelIdsBySubject.get(subject.id) ?? new Set<string>()
+          }
+          onOpenWeights={openCell}
           onOpenCreate={openCreate}
         />
       ))}
@@ -570,7 +594,6 @@ function SubjectsTab({
         open={createOpen}
         onOpenChange={setCreateOpen}
         subject={createSubject}
-        level={createLevel}
       />
     </div>
   );
@@ -579,20 +602,26 @@ function SubjectsTab({
 function SubjectCard({
   subject,
   levels,
-  configByKey,
-  onOpenCell,
+  config,
+  offeredLevelIds,
+  onOpenWeights,
   onOpenCreate,
 }: {
   subject: SubjectRow;
   levels: LevelRow[];
-  configByKey: Map<string, TemplateSubjectConfigRow>;
-  onOpenCell: (
+  config: TemplateSubjectConfigRow | null;
+  offeredLevelIds: Set<string>;
+  onOpenWeights: (
     subject: SubjectRow,
-    level: LevelRow,
     config: TemplateSubjectConfigRow
   ) => void;
-  onOpenCreate: (subject: SubjectRow, level: LevelRow) => void;
+  onOpenCreate: (subject: SubjectRow) => void;
 }) {
+  const ww = config ? Math.round(config.ww_weight * 100) : 0;
+  const pt = config ? Math.round(config.pt_weight * 100) : 0;
+  const qa = config ? Math.round(config.qa_weight * 100) : 0;
+  const profile = config ? classifyProfile(ww, pt, qa) : null;
+
   return (
     <Card className="gap-0 py-0">
       <div className="flex items-center gap-3 border-b border-border px-5 py-3">
@@ -612,168 +641,214 @@ function SubjectCard({
         </div>
       </div>
       <div className="space-y-3 p-4">
-        {/* Hide empty cells (preschool + not-yet-enabled markbook levels)
-            so the chip row only shows what's actually configured. The
-            "+ Add level" picker at the end takes the dashed-cell affordance
-            and turns it into a single contextual menu listing every
-            markbook-eligible level not yet enabled for this subject. */}
-        {(() => {
-          const markbookLevels = levels.filter(
-            (l) => (l.level_type as string) !== 'preschool'
-          );
-          const visibleLevels = markbookLevels.filter((l) =>
-            configByKey.has(`${subject.id}|${l.id}`)
-          );
-          const availableLevels = markbookLevels.filter(
-            (l) => !configByKey.has(`${subject.id}|${l.id}`)
-          );
-
-          const chip = (level: LevelRow) => {
-            const cfg = configByKey.get(`${subject.id}|${level.id}`)!;
-            const ww = Math.round(cfg.ww_weight * 100);
-            const pt = Math.round(cfg.pt_weight * 100);
-            const qa = Math.round(cfg.qa_weight * 100);
-            const profile = classifyProfile(ww, pt, qa);
-            return (
-              <button
-                key={level.id}
-                type="button"
-                onClick={() => onOpenCell(subject, level, cfg)}
+        {/* Weights — subject-scoped, no level dimension (migration 080). */}
+        <div className="space-y-1.5">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Weights
+          </p>
+          {config && profile ? (
+            <button
+              type="button"
+              onClick={() => onOpenWeights(subject, config)}
+              className={cn(
+                'inline-flex flex-col items-start gap-0.5 rounded-md px-3 py-1.5 transition-all',
+                'hover:-translate-y-0.5 hover:shadow-md',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40',
+                PROFILE_CLASS[profile]
+              )}
+              title={`${subject.name} — ${PROFILE_LABEL[profile]} (WW ${ww} · PT ${pt} · QA ${qa}). Click to edit.`}
+            >
+              <span
                 className={cn(
-                  'inline-flex flex-col items-start gap-0.5 rounded-md px-3 py-1.5 transition-all',
-                  'hover:-translate-y-0.5 hover:shadow-md',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40',
-                  PROFILE_CLASS[profile]
+                  'font-serif text-[12px] font-semibold leading-tight tracking-tight',
+                  PROFILE_TEXT[profile].code
                 )}
-                title={`${subject.name} · ${level.label} — ${PROFILE_LABEL[profile]} (WW ${ww} · PT ${pt} · QA ${qa}). Click to edit.`}
               >
-                <span
-                  className={cn(
-                    'font-serif text-[12px] font-semibold leading-tight tracking-tight',
-                    PROFILE_TEXT[profile].code
-                  )}
-                >
-                  {level.label}
-                </span>
-                <span
-                  className={cn(
-                    'font-mono text-[10px] tabular-nums',
-                    PROFILE_TEXT[profile].ratio
-                  )}
-                >
-                  {ww} · {pt} · {qa}
-                </span>
-              </button>
-            );
-          };
-
-          const addLevelMenu = availableLevels.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-all',
-                    'hover:-translate-y-0.5 hover:border-brand-indigo/60 hover:bg-accent/40 hover:text-foreground hover:shadow-md',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40'
-                  )}
-                  title={`Enable ${subject.name} at a new level`}
-                >
-                  <Plus className="size-3.5" />
-                  Add level
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuLabel>Enable {subject.code} at…</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {availableLevels.map((level) => (
-                  <DropdownMenuItem
-                    key={level.id}
-                    onSelect={() => onOpenCreate(subject, level)}
-                    className="gap-2"
-                  >
-                    <Badge
-                      variant="outline"
-                      className="h-5 border-border bg-card px-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-foreground"
-                    >
-                      {level.code}
-                    </Badge>
-                    <span className="font-serif text-[13px] font-medium">
-                      {level.label}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          );
-
-          if (visibleLevels.length === 0) {
-            return (
-              <div className="flex flex-wrap items-center gap-2">
-                {availableLevels.length > 0 ? (
-                  <p className="px-1 py-1 text-[12px] text-muted-foreground">
-                    Not enabled at any level yet. Click{' '}
-                    <strong>+ Add level</strong> to start.
-                  </p>
-                ) : (
-                  <p className="px-1 py-1 text-[12px] text-muted-foreground">
-                    No markbook levels available (only preschool levels exist).
-                  </p>
+                {PROFILE_LABEL[profile]}
+              </span>
+              <span
+                className={cn(
+                  'font-mono text-[10px] tabular-nums',
+                  PROFILE_TEXT[profile].ratio
                 )}
-                {addLevelMenu}
-              </div>
-            );
-          }
-
-          // Primary/Secondary sub-grouping (Miller's-Law fix) — same
-          // pattern as the per-AY matrix's SubjectCard; only splits into
-          // two labeled rows when the subject spans both tiers.
-          const primaryLevels = visibleLevels.filter(
-            (l) => l.level_type === 'primary'
-          );
-          const secondaryLevels = visibleLevels.filter(
-            (l) => l.level_type === 'secondary'
-          );
-          const showGroupLabels =
-            primaryLevels.length > 0 && secondaryLevels.length > 0;
-
-          if (!showGroupLabels) {
-            return (
-              <div className="flex flex-wrap items-center gap-2">
-                {visibleLevels.map(chip)}
-                {addLevelMenu}
-              </div>
-            );
-          }
-
-          return (
-            <>
-              {primaryLevels.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    Primary levels
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {primaryLevels.map(chip)}
-                  </div>
-                </div>
+              >
+                {ww} · {pt} · {qa}
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onOpenCreate(subject)}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-all',
+                'hover:-translate-y-0.5 hover:border-brand-indigo/60 hover:bg-accent/40 hover:text-foreground hover:shadow-md',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40'
               )}
-              {secondaryLevels.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    Secondary levels
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {secondaryLevels.map(chip)}
-                    {addLevelMenu}
-                  </div>
-                </div>
-              )}
-            </>
-          );
-        })()}
+              title={`Set weights for ${subject.name}`}
+            >
+              <Plus className="size-3.5" />
+              Set weights
+            </button>
+          )}
+        </div>
+
+        {/* Level attachment — separate control, template_subject_level_
+            offerings. Independent of the weight config above; a subject
+            can be attached to levels before its weights are set (the
+            "Set weights" chip above stays visible as a reminder either
+            way, since grading sheets need both). */}
+        <div className="space-y-1.5 border-t border-hairline pt-3">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Taught at
+          </p>
+          <LevelAttachmentRow
+            subjectId={subject.id}
+            subjectCode={subject.code}
+            levels={levels}
+            offeredLevelIds={offeredLevelIds}
+          />
+        </div>
       </div>
     </Card>
+  );
+}
+
+// Per-subject level-attachment control — chips for attached levels (each
+// with a direct-fire detach button, low-friction/reversible like the
+// AY-level-offering Switch at /sis/admin/levels) + a "+ Add level"
+// dropdown for unattached markbook-eligible levels. Fires
+// PUT /api/sis/admin/template/subject-level-offerings directly per action;
+// no intermediate confirm dialog since detaching never loses weight data.
+function LevelAttachmentRow({
+  subjectId,
+  subjectCode,
+  levels,
+  offeredLevelIds,
+}: {
+  subjectId: string;
+  subjectCode: string;
+  levels: LevelRow[];
+  offeredLevelIds: Set<string>;
+}) {
+  const router = useRouter();
+
+  const toggleMutation = useMutation({
+    mutationFn: (vars: { levelId: string; offered: boolean }) =>
+      apiFetch(
+        '/api/sis/admin/template/subject-level-offerings',
+        jsonInit('PUT', {
+          subject_id: subjectId,
+          level_id: vars.levelId,
+          offered: vars.offered,
+        })
+      ),
+    onSuccess: (_data, vars) => {
+      const level = levels.find((l) => l.id === vars.levelId);
+      toast.success(
+        vars.offered
+          ? `${subjectCode} now taught at ${level?.label ?? 'level'}`
+          : `${subjectCode} detached from ${level?.label ?? 'level'}`
+      );
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'update failed');
+    },
+  });
+
+  // Markbook excludes preschool levels — same exclusion the old per-level
+  // create flow applied.
+  const markbookLevels = levels.filter(
+    (l) => (l.level_type as string) !== 'preschool'
+  );
+  const attachedLevels = markbookLevels.filter((l) =>
+    offeredLevelIds.has(l.id)
+  );
+  const availableLevels = markbookLevels.filter(
+    (l) => !offeredLevelIds.has(l.id)
+  );
+
+  if (markbookLevels.length === 0) {
+    return (
+      <p className="px-1 py-1 text-[12px] text-muted-foreground">
+        No markbook levels available (only preschool levels exist).
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {attachedLevels.length === 0 && (
+        <p className="px-1 py-1 text-[12px] text-muted-foreground">
+          Not attached to any level yet.
+        </p>
+      )}
+      {attachedLevels.map((level) => (
+        <span
+          key={level.id}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 py-1 pl-2.5 pr-1 text-[12px] font-medium text-foreground"
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+            {level.code}
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              toggleMutation.mutate({ levelId: level.id, offered: false })
+            }
+            disabled={toggleMutation.isPending}
+            aria-label={`Detach ${subjectCode} from ${level.label}`}
+            title={`Detach from ${level.label}`}
+            className="flex size-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-50"
+          >
+            <X className="size-3" />
+          </button>
+        </span>
+      ))}
+      {availableLevels.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              disabled={toggleMutation.isPending}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1 text-[12px] font-medium text-muted-foreground transition-all',
+                'hover:-translate-y-0.5 hover:border-brand-indigo/60 hover:bg-accent/40 hover:text-foreground hover:shadow-sm',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/40',
+                'disabled:pointer-events-none disabled:opacity-50'
+              )}
+              title={`Attach ${subjectCode} to a new level`}
+            >
+              <Plus className="size-3.5" />
+              Add level
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuLabel>Teach {subjectCode} at…</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {availableLevels.map((level) => (
+              <DropdownMenuItem
+                key={level.id}
+                onSelect={() =>
+                  toggleMutation.mutate({ levelId: level.id, offered: true })
+                }
+                className="gap-2"
+              >
+                <Badge
+                  variant="outline"
+                  className="h-5 border-border bg-card px-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-foreground"
+                >
+                  {level.code}
+                </Badge>
+                <span className="font-serif text-[13px] font-medium">
+                  {level.label}
+                </span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
   );
 }
 
@@ -835,7 +910,8 @@ function PropagateDialog({
   const changeCount = diff
     ? diff.newSections.length +
       diff.newConfigs.length +
-      diff.configChanges.length
+      diff.configChanges.length +
+      diff.newOfferings.length
     : 0;
 
   type ApplyResult = {
@@ -1038,9 +1114,20 @@ function PropagateDialog({
                   >
                     <Badge variant="success">+ NEW</Badge>
                     <span className="text-foreground">
-                      Subject config{' '}
-                      <span className="font-medium">{c.subjectId}</span> (
-                      {c.levelId})
+                      Weight config for{' '}
+                      <span className="font-medium">{c.subjectId}</span>
+                    </span>
+                  </div>
+                ))}
+                {diff.newOfferings.map((o, i) => (
+                  <div
+                    key={`off-${i}`}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <Badge variant="success">+ NEW</Badge>
+                    <span className="text-foreground">
+                      <span className="font-medium">{o.subjectId}</span>{' '}
+                      attached to level {o.levelId}
                     </span>
                   </div>
                 ))}
@@ -1051,8 +1138,7 @@ function PropagateDialog({
                   >
                     <Badge variant="warning">~ UPDATE</Badge>
                     <span className="text-foreground">
-                      {c.subjectId} ({c.levelId}) ·{' '}
-                      {TEMPLATE_FIELD_LABEL[c.field]}
+                      {c.subjectId} · {TEMPLATE_FIELD_LABEL[c.field]}
                     </span>
                     <span className="ml-auto flex items-center">
                       <span className="rounded bg-muted px-1.5 py-0.5 font-mono line-through decoration-destructive/60">
@@ -1669,7 +1755,7 @@ function TemplateSubjectConfigEditDialog({
         jsonInit('DELETE')
       ),
     onSuccess: () => {
-      toast.success(`Removed ${draft?.subjectName} from ${draft?.levelLabel}`);
+      toast.success(`Cleared weights for ${draft?.subjectName}`);
       onOpenChange(false);
       router.refresh();
     },
@@ -1719,7 +1805,7 @@ function TemplateSubjectConfigEditDialog({
       ),
     onSuccess: () => {
       toast.success(
-        `${draft?.subjectName} · ${draft?.levelCode}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
+        `${draft?.subjectName}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
       );
       onOpenChange(false);
       router.refresh();
@@ -1750,12 +1836,10 @@ function TemplateSubjectConfigEditDialog({
             </div>
             <div className="min-w-0 flex-1 space-y-1">
               <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                {draft ? `Template · ${draft.levelLabel}` : 'Subject weights'}
+                Structure Defaults
               </p>
               <DialogTitle className="font-serif text-xl font-semibold leading-tight tracking-tight text-foreground">
-                {draft
-                  ? `${draft.subjectName} · ${draft.levelCode}`
-                  : 'Subject weights'}
+                {draft ? draft.subjectName : 'Subject weights'}
               </DialogTitle>
               <DialogDescription className="text-[13px] leading-relaxed text-muted-foreground">
                 Updates the master template only. Use Propagate to push the new
@@ -1893,10 +1977,11 @@ function TemplateSubjectConfigEditDialog({
           </div>
         )}
 
-        {/* Footer with destructive "Remove from this level" action on the
+        {/* Footer with destructive "Clear weight config" action on the
             left + Save/Cancel on the right. The remove flow is two-step
             (click → inline confirm → click again to commit) so a stray
-            click doesn't drop a config. */}
+            click doesn't drop a config. Only clears this subject's WW/PT/QA
+            settings — level attachment (Taught at) is untouched. */}
         <DialogFooter className="sm:justify-between">
           {confirmRemove ? (
             <div className="flex items-center gap-2">
@@ -1933,10 +2018,10 @@ function TemplateSubjectConfigEditDialog({
               onClick={() => setConfirmRemove(true)}
               disabled={!draft || saving || removing}
               className="gap-1.5 text-muted-foreground hover:text-destructive"
-              title="Remove this (subject × level) from the template"
+              title="Clear this subject's weight config"
             >
               <Trash2 className="size-3.5" />
-              Remove from this level
+              Clear weight config
             </Button>
           )}
           <div className="flex items-center gap-2">
@@ -2042,20 +2127,33 @@ function NumberField({
 function SubjectsCatalogTab({
   subjects,
   configs,
+  offerings,
 }: {
   subjects: SubjectRow[];
   configs: TemplateSubjectConfigRow[];
+  offerings: TemplateSubjectLevelOfferingRow[];
 }) {
   const [query, setQuery] = useState('');
 
-  // Per-subject count of (subject × level) configs in the template — drives
-  // the "Used at N levels" subtext and gates the "Drop from all levels"
-  // button (only visible when count > 0).
-  const configCountBySubject = useMemo(() => {
+  // Per-subject count of level attachments in the template — drives the
+  // "Used at N levels" subtext and gates the "Drop from all levels" button
+  // (only visible when count > 0). Sourced from offerings, not configs:
+  // migration 080 collapsed weight configs to one row per subject, so
+  // configs.length can no longer stand in for "how many levels."
+  const offeredCountBySubject = useMemo(() => {
     const m = new Map<string, number>();
-    for (const c of configs)
-      m.set(c.subject_id, (m.get(c.subject_id) ?? 0) + 1);
+    for (const o of offerings)
+      m.set(o.subject_id, (m.get(o.subject_id) ?? 0) + 1);
     return m;
+  }, [offerings]);
+
+  // Subjects attached to ≥1 level but with no weight config yet — a silent
+  // gap (grading sheets for that subject won't be created, mirroring the
+  // gap `computeSubjectConfigGaps` surfaces on /sis/admin/subjects).
+  const hasConfigBySubject = useMemo(() => {
+    const s = new Set<string>();
+    for (const c of configs) s.add(c.subject_id);
+    return s;
   }, [configs]);
 
   const filtered = useMemo(() => {
@@ -2136,7 +2234,9 @@ function SubjectsCatalogTab({
       {/* Subject rows */}
       <div className="space-y-2">
         {sorted.map((subject) => {
-          const usedAtCount = configCountBySubject.get(subject.id) ?? 0;
+          const usedAtCount = offeredCountBySubject.get(subject.id) ?? 0;
+          const missingWeights =
+            usedAtCount > 0 && !hasConfigBySubject.has(subject.id);
           return (
             <Card key={subject.id} className="gap-0 py-0">
               <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -2158,6 +2258,9 @@ function SubjectsCatalogTab({
                       {!subject.is_examinable && (
                         <Badge variant="muted">Non-exam</Badge>
                       )}
+                      {missingWeights && (
+                        <Badge variant="warning">No weights set</Badge>
+                      )}
                     </div>
                     <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                       Used at {usedAtCount} level{usedAtCount === 1 ? '' : 's'}
@@ -2169,7 +2272,7 @@ function SubjectsCatalogTab({
                     subjectId={subject.id}
                     subjectCode={subject.code}
                     subjectName={subject.name}
-                    configCount={usedAtCount}
+                    levelCount={usedAtCount}
                   />
                 )}
               </div>
@@ -2332,19 +2435,21 @@ function NewSubjectButton() {
 }
 
 // =====================================================================
-// Drop from all levels — bulk DELETE for a subject's configs
+// Drop from all levels — bulk-detach a subject from every level's
+// offering. Weight config (if any) is untouched (migration 080: level
+// attachment and weights are independent tables now).
 // =====================================================================
 
 function DropFromAllLevelsButton({
   subjectId,
   subjectCode,
   subjectName,
-  configCount,
+  levelCount,
 }: {
   subjectId: string;
   subjectCode: string;
   subjectName: string;
-  configCount: number;
+  levelCount: number;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -2359,7 +2464,7 @@ function DropFromAllLevelsButton({
       ),
     onSuccess: () => {
       toast.success(
-        `Dropped ${subjectCode} from ${configCount} level${configCount === 1 ? '' : 's'}`
+        `Detached ${subjectCode} from ${levelCount} level${levelCount === 1 ? '' : 's'}`
       );
       setOpen(false);
       router.refresh();
@@ -2399,16 +2504,16 @@ function DropFromAllLevelsButton({
             Drop {subjectCode} from all levels?
           </DialogTitle>
           <DialogDescription>
-            Removes the (subject × level) configs for{' '}
-            <strong>{subjectName}</strong> from <strong>{configCount}</strong>{' '}
-            level{configCount === 1 ? '' : 's'} in the template. The subject row
-            stays in the catalogue.
+            Detaches <strong>{subjectName}</strong> from{' '}
+            <strong>{levelCount}</strong> level{levelCount === 1 ? '' : 's'} in
+            the template. The subject row and its weight config (if set) stay in
+            the catalogue — only the level attachments are removed.
           </DialogDescription>
         </DialogHeader>
         <p className="text-[13px] text-muted-foreground">
-          Existing AYs are unaffected — they keep their current configs until
-          you remove the subject from each AY separately. New AYs created after
-          this point won&apos;t include {subjectCode}.
+          Existing AYs are unaffected — they keep their current level
+          attachments until you remove the subject from each AY separately. New
+          AYs created after this point won&apos;t include {subjectCode}.
         </p>
         <DialogFooter>
           <Button
@@ -2435,66 +2540,57 @@ function DropFromAllLevelsButton({
 }
 
 // =====================================================================
-// Enable (subject × level) dialog — opens when clicking a dashed matrix
-// cell. Mirrors TemplateSubjectConfigEditDialog's form layout but POSTs
-// instead of PATCHes, with weights pre-filled by level type.
+// Set weights dialog — opens from the "Set weights" chip on a subject
+// with no template config yet. Mirrors TemplateSubjectConfigEditDialog's
+// form layout but POSTs instead of PATCHes. No level dimension (migration
+// 080 collapse — a subject's weights apply at every level it's attached
+// to) and no default-fill: the fields start blank rather than guessing a
+// primary/secondary split, per the same "kill the bad weight default"
+// reasoning that removed the level-type default elsewhere (weight is a
+// property of the subject, not any one level, so there's no level context
+// here to derive a default from even if one were still wanted).
 // =====================================================================
 
 function TemplateSubjectConfigCreateDialog({
   open,
   onOpenChange,
   subject,
-  level,
 }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
   subject: SubjectRow | null;
-  level: LevelRow | null;
 }) {
   const router = useRouter();
 
-  // Default weights based on level type. Matches the seeder convention
-  // (lib/sis/seeder/structural.ts:129-132).
-  const defaults = useMemo(() => {
-    const isPrimary = level?.level_type === 'primary';
-    return {
-      ww: isPrimary ? '40' : '30',
-      pt: isPrimary ? '40' : '50',
-      qa: '20',
-      ww_max: '5',
-      pt_max: '5',
-      qa_max: '30',
-    };
-  }, [level]);
+  const [ww, setWw] = useState('');
+  const [pt, setPt] = useState('');
+  const [qa, setQa] = useState('');
+  const [wwMax, setWwMax] = useState('5');
+  const [ptMax, setPtMax] = useState('5');
+  const [qaMax, setQaMax] = useState('30');
 
-  const [ww, setWw] = useState(defaults.ww);
-  const [pt, setPt] = useState(defaults.pt);
-  const [qa, setQa] = useState(defaults.qa);
-  const [wwMax, setWwMax] = useState(defaults.ww_max);
-  const [ptMax, setPtMax] = useState(defaults.pt_max);
-  const [qaMax, setQaMax] = useState(defaults.qa_max);
-
-  // Re-prime defaults when the cell context changes (different level type).
+  // Reset to blank whenever the dialog opens for a (possibly different)
+  // subject — never carry a prior subject's typed values forward.
   useEffect(() => {
     if (open) {
-      setWw(defaults.ww);
-      setPt(defaults.pt);
-      setQa(defaults.qa);
-      setWwMax(defaults.ww_max);
-      setPtMax(defaults.pt_max);
-      setQaMax(defaults.qa_max);
+      setWw('');
+      setPt('');
+      setQa('');
+      setWwMax('5');
+      setPtMax('5');
+      setQaMax('30');
     }
-  }, [open, defaults]);
+  }, [open, subject?.id]);
 
-  const wwN = Number(ww);
-  const ptN = Number(pt);
-  const qaN = Number(qa);
+  const wwN = Number(ww) || 0;
+  const ptN = Number(pt) || 0;
+  const qaN = Number(qa) || 0;
   const sum = wwN + ptN + qaN;
   const sumOk = sum === 100;
   const profile = sumOk ? classifyProfile(wwN, ptN, qaN) : 'invalid';
 
   // Tier-2 POST. Bespoke `Save failed (${status})` fallback reconstructed
-  // from ApiError; the success toast reads subject/level so it's built in
+  // from ApiError; the success toast reads subject so it's built in
   // onSuccess from the closure.
   const createMutation = useMutation({
     mutationFn: (payload: TemplateSubjectConfigCreateInput) =>
@@ -2503,7 +2599,7 @@ function TemplateSubjectConfigCreateDialog({
         jsonInit('POST', payload)
       ),
     onSuccess: () => {
-      toast.success(`Enabled ${subject?.code} at ${level?.label}`);
+      toast.success(`Set weights for ${subject?.code}`);
       onOpenChange(false);
       router.refresh();
     },
@@ -2518,10 +2614,9 @@ function TemplateSubjectConfigCreateDialog({
   });
 
   function submit() {
-    if (!subject || !level || !sumOk) return;
+    if (!subject || !sumOk) return;
     const payload: TemplateSubjectConfigCreateInput = {
       subject_id: subject.id,
-      level_id: level.id,
       ww_weight: wwN,
       pt_weight: ptN,
       qa_weight: qaN,
@@ -2544,12 +2639,13 @@ function TemplateSubjectConfigCreateDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-serif text-xl">
-            Enable {subject?.code} at {level?.label}
+            Set weights for {subject?.code}
           </DialogTitle>
           <DialogDescription>
-            {subject?.name} will be added to {level?.label} grading sheets
-            generated for new AYs (and any existing AY when you click{' '}
-            <strong>Apply template</strong>).
+            Applies to every level {subject?.name} is attached to (see{' '}
+            <strong>Taught at</strong> on its card). Used in grading sheets
+            generated for new AYs, and any existing AY when you click{' '}
+            <strong>Apply template</strong>.
           </DialogDescription>
         </DialogHeader>
 

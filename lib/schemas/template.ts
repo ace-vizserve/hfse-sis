@@ -53,14 +53,14 @@ export type TemplateSubjectConfigUpdateInput = z.infer<
   typeof TemplateSubjectConfigUpdateSchema
 >;
 
-// POST /api/sis/admin/template/subject-configs — enable a (subject × level)
-// in the template. Mirrors `TemplateSubjectConfigUpdateSchema` but adds the
-// foreign-key fields the INSERT needs. Same percent → numeric(4,2)
+// POST /api/sis/admin/template/subject-configs — create the master weight
+// config for a subject (migration 080 collapse: one row per subject, no
+// level dimension). Mirrors `TemplateSubjectConfigUpdateSchema` but adds the
+// foreign-key field the INSERT needs. Same percent → numeric(4,2)
 // conversion + sum-constraint guard.
 export const TemplateSubjectConfigCreateSchema = z
   .object({
     subject_id: uuidString,
-    level_id: uuidString,
     ww_weight: z.number().int().min(0).max(100),
     pt_weight: z.number().int().min(0).max(100),
     qa_weight: z.number().int().min(0).max(100),
@@ -74,6 +74,20 @@ export const TemplateSubjectConfigCreateSchema = z
   });
 export type TemplateSubjectConfigCreateInput = z.infer<
   typeof TemplateSubjectConfigCreateSchema
+>;
+
+// PUT /api/sis/admin/template/subject-level-offerings — attach/detach a
+// subject to/from a level in the master template
+// (`template_subject_level_offerings`, migration 080). AY-agnostic sibling
+// of `LevelOfferingSchema` (lib/schemas/level.ts) — no `academicYearId`
+// since the template itself has no AY dimension.
+export const TemplateSubjectLevelOfferingToggleSchema = z.object({
+  subject_id: uuidString,
+  level_id: uuidString,
+  offered: z.boolean(),
+});
+export type TemplateSubjectLevelOfferingToggleInput = z.infer<
+  typeof TemplateSubjectLevelOfferingToggleSchema
 >;
 
 // POST /api/sis/admin/template/apply — propagate template to selected AYs.

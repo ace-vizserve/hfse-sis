@@ -45,7 +45,7 @@ export async function PATCH(
   const { data: before, error: loadErr } = await service
     .from('template_subject_configs')
     .select(
-      'id, subject_id, level_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
+      'id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
     )
     .eq('id', id)
     .maybeSingle();
@@ -85,7 +85,6 @@ export async function PATCH(
     entityId: id,
     context: {
       subject_id: before.subject_id,
-      level_id: before.level_id,
       before: {
         ww_weight: Number(before.ww_weight),
         pt_weight: Number(before.pt_weight),
@@ -110,10 +109,14 @@ export async function PATCH(
 
 // DELETE /api/sis/admin/template/subject-configs/[id]
 //
-// Removes a (subject × level) entry from the template — used by the
-// "Remove from this level" action in the matrix's edit dialog. Existing
-// AYs are unaffected (template propagation is UPSERT-only per KD #66);
-// only NEW AYs created after this point will skip the (subject × level).
+// Clears a subject's master weight config entirely — used by the "Clear
+// weight config" action in the edit dialog. Since migration 080 collapsed
+// this table to one row per subject, this removes the subject's ONLY
+// template config (not "from this level" — level attachment is a separate
+// concern on `template_subject_level_offerings`, untouched by this route).
+// Existing AYs are unaffected (template propagation is UPSERT-only per
+// KD #66); only NEW AYs created after this point will skip this subject's
+// weights.
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -124,12 +127,12 @@ export async function DELETE(
   const { id } = await params;
   const service = createServiceClient();
 
-  // Pre-fetch the row joined to subjects + levels so the audit context
-  // captures the human-readable identifiers (codes), not just UUIDs.
+  // Pre-fetch the row joined to subjects so the audit context captures the
+  // human-readable subject code, not just its UUID.
   const { data: before, error: loadErr } = await service
     .from('template_subject_configs')
     .select(
-      'id, subject_id, level_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, subject:subjects(code, name), level:levels(code, label)'
+      'id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, subject:subjects(code, name)'
     )
     .eq('id', id)
     .maybeSingle();
@@ -149,12 +152,9 @@ export async function DELETE(
   if (deleteErr)
     return NextResponse.json({ error: deleteErr.message }, { status: 500 });
 
-  type Joined = { code: string; name?: string; label?: string };
+  type Joined = { code: string; name?: string };
   const subj = (
     Array.isArray(before.subject) ? before.subject[0] : before.subject
-  ) as Joined | null;
-  const lvl = (
-    Array.isArray(before.level) ? before.level[0] : before.level
   ) as Joined | null;
 
   await logAction({
@@ -165,9 +165,7 @@ export async function DELETE(
     entityId: id,
     context: {
       subject_id: before.subject_id,
-      level_id: before.level_id,
       subject_code: subj?.code ?? null,
-      level_code: lvl?.code ?? null,
       removed: {
         ww_weight: Number(before.ww_weight),
         pt_weight: Number(before.pt_weight),

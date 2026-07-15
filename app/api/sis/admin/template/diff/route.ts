@@ -39,16 +39,18 @@ export async function GET(request: Request): Promise<NextResponse> {
     { data: actualConfigs },
     { data: templateSections },
     { data: actualSections },
+    { data: templateOfferings },
+    { data: actualOfferings },
   ] = await Promise.all([
     service
       .from('template_subject_configs')
       .select(
-        'subject_id, level_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
+        'subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
       ),
     service
       .from('subject_configs')
       .select(
-        'subject_id, level_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
+        'subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
       )
       .eq('academic_year_id', ay.id),
     service.from('template_sections').select('level_id, name'),
@@ -56,13 +58,22 @@ export async function GET(request: Request): Promise<NextResponse> {
       .from('sections')
       .select('level_id, name')
       .eq('academic_year_id', ay.id),
+    service
+      .from('template_subject_level_offerings')
+      .select('subject_id, level_id'),
+    service
+      .from('subject_level_offerings')
+      .select('subject_id, level_id')
+      .eq('academic_year_id', ay.id),
   ]);
 
   const diff = computeTemplateDiff(
     templateConfigs ?? [],
     actualConfigs ?? [],
     templateSections ?? [],
-    actualSections ?? []
+    actualSections ?? [],
+    templateOfferings ?? [],
+    actualOfferings ?? []
   );
 
   return NextResponse.json({ diff });

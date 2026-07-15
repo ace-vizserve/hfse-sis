@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { computeTemplateDiff } from '@/lib/sis/template-diff';
 
+// Migration 080 collapsed subject_configs to one row per subject — no more
+// level_id on config rows. Level-applicability is a separate axis now,
+// covered by the templateOfferings/actualOfferings params.
 const TEMPLATE_CONFIGS = [
   {
     subject_id: 'sci',
-    level_id: 'p3',
     ww_weight: 0.35,
     pt_weight: 0.45,
     qa_weight: 0.2,
@@ -14,7 +16,6 @@ const TEMPLATE_CONFIGS = [
   },
   {
     subject_id: 'math',
-    level_id: 'p3',
     ww_weight: 0.4,
     pt_weight: 0.4,
     qa_weight: 0.2,
@@ -26,7 +27,6 @@ const TEMPLATE_CONFIGS = [
 const ACTUAL_CONFIGS = [
   {
     subject_id: 'sci',
-    level_id: 'p3',
     ww_weight: 0.4,
     pt_weight: 0.4,
     qa_weight: 0.2,
@@ -36,7 +36,6 @@ const ACTUAL_CONFIGS = [
   },
   {
     subject_id: 'math',
-    level_id: 'p3',
     ww_weight: 0.4,
     pt_weight: 0.4,
     qa_weight: 0.2,
@@ -62,14 +61,12 @@ describe('computeTemplateDiff', () => {
     expect(diff.configChanges).toEqual([
       {
         subjectId: 'sci',
-        levelId: 'p3',
         field: 'wwWeight',
         from: 0.4,
         to: 0.35,
       },
       {
         subjectId: 'sci',
-        levelId: 'p3',
         field: 'ptWeight',
         from: 0.4,
         to: 0.45,
@@ -87,7 +84,7 @@ describe('computeTemplateDiff', () => {
     expect(diff.newSections).toEqual([{ levelId: 's3', name: 'Consistency' }]);
   });
 
-  it('reports a new config for a (subject, level) with no existing row', () => {
+  it('reports a new config for a subject with no existing row in the target AY', () => {
     const diff = computeTemplateDiff(
       [
         { ...TEMPLATE_CONFIGS[0], ww_weight: 0.4, pt_weight: 0.4 }, // sci, matching actual
@@ -97,7 +94,7 @@ describe('computeTemplateDiff', () => {
       [],
       []
     );
-    expect(diff.newConfigs).toEqual([{ subjectId: 'math', levelId: 'p3' }]);
+    expect(diff.newConfigs).toEqual([{ subjectId: 'math' }]);
     expect(diff.configChanges).toEqual([]);
   });
 
@@ -112,6 +109,37 @@ describe('computeTemplateDiff', () => {
       newSections: [],
       configChanges: [],
       newConfigs: [],
+      newOfferings: [],
     });
+  });
+
+  it('reports a level offering the template has that the target AY is missing', () => {
+    const diff = computeTemplateDiff(
+      [],
+      [],
+      [],
+      [],
+      [
+        { subject_id: 'sci', level_id: 'p3' },
+        { subject_id: 'math', level_id: 'p3' },
+      ],
+      [{ subject_id: 'sci', level_id: 'p3' }] // math|p3 is missing
+    );
+    expect(diff.newOfferings).toEqual([{ subjectId: 'math', levelId: 'p3' }]);
+  });
+
+  it('never reports an offering removal — the RPC is additive-only', () => {
+    // The target AY has an offering the template no longer lists (e.g. the
+    // subject was detached from the template's level). apply_template_to_ay
+    // never deletes, so the diff must not surface this as a "change."
+    const diff = computeTemplateDiff(
+      [],
+      [],
+      [],
+      [],
+      [], // template no longer offers anything
+      [{ subject_id: 'sci', level_id: 'p3' }] // but the AY still has it
+    );
+    expect(diff.newOfferings).toEqual([]);
   });
 });

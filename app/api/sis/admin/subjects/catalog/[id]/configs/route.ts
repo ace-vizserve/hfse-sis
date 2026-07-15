@@ -6,15 +6,23 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 // DELETE /api/sis/admin/subjects/catalog/[id]/configs
 //
-// Bulk-removes every (subject × level) template config for the given
-// subject. Used by the Subjects-tab "Drop from all levels" action when
-// a school is fully retiring a subject. The subject row itself stays in
-// the catalog (FK integrity to historical grade entries). Existing AYs
-// are unaffected — only NEW AYs created after this point will skip the
-// subject (template propagation is UPSERT-only per KD #66).
+// Bulk-detaches a subject from every level in the master template — used
+// by the Subjects-tab "Drop from all levels" action when a school is fully
+// retiring a subject from teaching (while keeping it in the catalogue for
+// FK integrity to historical grade entries).
 //
-// Audit pre-image captures the full list of (level_code, weights) being
-// dropped so the action is recoverable if needed.
+// Migration 080 collapsed weights to one row per subject
+// (`template_subject_configs`) and moved level-applicability to
+// `template_subject_level_offerings` — so "drop from all levels" now means
+// deleting every offering row for this subject. The subject's weight
+// config (if any) is left untouched: it's a separate concern and staying
+// in place lets the school re-attach the subject to a level later without
+// re-entering its WW/PT/QA split. Existing AYs are unaffected — only NEW
+// AYs created after this point will skip the subject (template propagation
+// is UPSERT/additive-only per KD #66).
+//
+// Audit pre-image captures the full list of level codes being detached so
+// the action is recoverable if needed.
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -25,9 +33,6 @@ export async function DELETE(
   const { id: subjectId } = await params;
   const service = createServiceClient();
 
-  // Pre-fetch subject row + its template configs joined to levels, so the
-  // audit captures the human-readable code list and the route can return
-  // a useful "nothing to drop" message when the subject has no configs.
   const { data: subjectRow, error: subjErr } = await service
     .from('subjects')
     .select('id, code, name')
@@ -39,69 +44,54 @@ export async function DELETE(
     return NextResponse.json({ error: 'subject not found' }, { status: 404 });
   const subject = subjectRow as { id: string; code: string; name: string };
 
-  const { data: configs, error: cfgErr } = await service
-    .from('template_subject_configs')
-    .select(
-      'id, level_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, level:levels(code, label)'
-    )
+  const { data: offerings, error: offErr } = await service
+    .from('template_subject_level_offerings')
+    .select('level_id, level:levels(code, label)')
     .eq('subject_id', subjectId);
-  if (cfgErr)
-    return NextResponse.json({ error: cfgErr.message }, { status: 500 });
-  const configList = (configs ?? []) as Array<{
-    id: string;
+  if (offErr)
+    return NextResponse.json({ error: offErr.message }, { status: 500 });
+  const offeringList = (offerings ?? []) as Array<{
     level_id: string;
-    ww_weight: number;
-    pt_weight: number;
-    qa_weight: number;
-    ww_max_slots: number;
-    pt_max_slots: number;
-    qa_max: number;
     level:
       | { code: string; label: string }
       | { code: string; label: string }[]
       | null;
   }>;
 
-  if (configList.length === 0) {
-    return NextResponse.json({ ok: true, deletedCount: 0 });
+  if (offeringList.length === 0) {
+    return NextResponse.json({ ok: true, detachedCount: 0 });
   }
 
   const { error: deleteErr } = await service
-    .from('template_subject_configs')
+    .from('template_subject_level_offerings')
     .delete()
     .eq('subject_id', subjectId);
   if (deleteErr)
     return NextResponse.json({ error: deleteErr.message }, { status: 500 });
 
-  const droppedConfigs = configList.map((c) => {
-    const lvl = Array.isArray(c.level) ? c.level[0] : c.level;
+  const detachedLevels = offeringList.map((o) => {
+    const lvl = Array.isArray(o.level) ? o.level[0] : o.level;
     return {
-      level_id: c.level_id,
+      level_id: o.level_id,
       level_code: lvl?.code ?? null,
       level_label: lvl?.label ?? null,
-      ww_weight: Number(c.ww_weight),
-      pt_weight: Number(c.pt_weight),
-      qa_weight: Number(c.qa_weight),
-      ww_max_slots: c.ww_max_slots,
-      pt_max_slots: c.pt_max_slots,
-      qa_max: c.qa_max,
     };
   });
 
   await logAction({
     service,
     actor: { id: auth.user.id, email: auth.user.email ?? null },
-    action: 'template.subject_config.bulk_delete',
+    action: 'template.subject_level_offering.detach_all',
     entityType: 'subject',
     entityId: subjectId,
     context: {
       subject_id: subject.id,
       subject_code: subject.code,
       subject_name: subject.name,
-      droppedConfigs,
-      deletedCount: droppedConfigs.length,
+      detachedLevels,
+      detachedCount: detachedLevels.length,
     },
   });
 
-  return NextResponse.json({ ok: true, deletedCount: droppedConfigs.length });
+  return NextResponse.json({ ok: true, detachedCount: detachedLevels.length });
 }

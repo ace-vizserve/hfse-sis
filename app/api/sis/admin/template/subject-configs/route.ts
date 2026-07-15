@@ -7,11 +7,13 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 // POST /api/sis/admin/template/subject-configs
 //
-// Enables a (subject × level) entry in the template — the dashed cells
-// in the matrix render as buttons that POST here. Pre-flight rejects:
-//   - 422 when the level is preschool (excluded from markbook per
-//     `MARKBOOK_LEVEL_LABELS_ORDERED`)
-//   - 409 when a config for this (subject × level) already exists
+// Creates the master weight config for a subject — one row per subject
+// (migration 080 collapsed `template_subject_configs` from (subject ×
+// level) to subject alone). The "Set weights" affordance on a subject card
+// with no config yet POSTs here. Which levels the subject is taught at is a
+// separate concern, tracked on `template_subject_level_offerings` via
+// PUT /api/sis/admin/template/subject-level-offerings.
+//   - 409 when a config for this subject already exists (use PATCH instead)
 // Same percent → numeric(4,2) conversion as the existing PATCH route.
 export async function POST(request: NextRequest) {
   const auth = await requireRole(['school_admin', 'superadmin']);
@@ -27,7 +29,6 @@ export async function POST(request: NextRequest) {
   }
   const {
     subject_id,
-    level_id,
     ww_weight,
     pt_weight,
     qa_weight,
@@ -38,33 +39,7 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // 1. Confirm the level exists + is markbook-eligible.
-  const { data: levelRow, error: levelErr } = await service
-    .from('levels')
-    .select('id, code, label, level_type')
-    .eq('id', level_id)
-    .maybeSingle();
-  if (levelErr)
-    return NextResponse.json({ error: levelErr.message }, { status: 500 });
-  if (!levelRow)
-    return NextResponse.json({ error: 'level not found' }, { status: 404 });
-  const level = levelRow as {
-    id: string;
-    code: string;
-    label: string;
-    level_type: string;
-  };
-  if (level.level_type === 'preschool') {
-    return NextResponse.json(
-      {
-        error:
-          'Preschool levels do not have grading sheets and cannot have subject configs',
-      },
-      { status: 422 }
-    );
-  }
-
-  // 2. Confirm the subject exists (and capture its code for the audit).
+  // 1. Confirm the subject exists (and capture its code for the audit).
   const { data: subjectRow, error: subjErr } = await service
     .from('subjects')
     .select('id, code, name')
@@ -76,24 +51,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'subject not found' }, { status: 404 });
   const subject = subjectRow as { id: string; code: string; name: string };
 
-  // 3. Uniqueness check on (subject_id, level_id).
+  // 2. Uniqueness check on subject_id (one config per subject).
   const { data: existing } = await service
     .from('template_subject_configs')
     .select('id')
     .eq('subject_id', subject_id)
-    .eq('level_id', level_id)
     .maybeSingle();
   if (existing) {
     return NextResponse.json(
       {
-        error: `${subject.code} is already configured at ${level.label}`,
+        error: `${subject.code} already has a template weight config`,
         existingId: (existing as { id: string }).id,
       },
       { status: 409 }
     );
   }
 
-  // 4. Insert with numeric(4,2) conversion.
+  // 3. Insert with numeric(4,2) conversion.
   const ww_dec = (ww_weight / 100).toFixed(2);
   const pt_dec = (pt_weight / 100).toFixed(2);
   const qa_dec = (qa_weight / 100).toFixed(2);
@@ -102,7 +76,6 @@ export async function POST(request: NextRequest) {
     .from('template_subject_configs')
     .insert({
       subject_id,
-      level_id,
       ww_weight: ww_dec,
       pt_weight: pt_dec,
       qa_weight: qa_dec,
@@ -128,9 +101,7 @@ export async function POST(request: NextRequest) {
     entityId: newId,
     context: {
       subject_id,
-      level_id,
       subject_code: subject.code,
-      level_code: level.code,
       weights: {
         ww_weight: Number(ww_dec),
         pt_weight: Number(pt_dec),

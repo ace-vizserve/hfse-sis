@@ -31,7 +31,6 @@ vi.mock('@/lib/supabase/service', () => {
             data: [
               {
                 subject_id: 'sci',
-                level_id: 'p3',
                 ww_weight: 0.35,
                 pt_weight: 0.45,
                 qa_weight: 0.2,
@@ -48,7 +47,6 @@ vi.mock('@/lib/supabase/service', () => {
             data: [
               {
                 subject_id: 'sci',
-                level_id: 'p3',
                 ww_weight: 0.4,
                 pt_weight: 0.4,
                 qa_weight: 0.2,
@@ -63,6 +61,10 @@ vi.mock('@/lib/supabase/service', () => {
         if (table === 'template_sections')
           return makeChain({ data: [], error: null });
         if (table === 'sections') return makeChain({ data: [], error: null });
+        if (table === 'template_subject_level_offerings')
+          return makeChain({ data: [], error: null });
+        if (table === 'subject_level_offerings')
+          return makeChain({ data: [], error: null });
         return makeChain({ data: [], error: null });
       },
     })),
@@ -81,14 +83,12 @@ describe('GET /api/sis/admin/template/diff', () => {
     expect(body.diff.configChanges).toEqual([
       {
         subjectId: 'sci',
-        levelId: 'p3',
         field: 'wwWeight',
         from: 0.4,
         to: 0.35,
       },
       {
         subjectId: 'sci',
-        levelId: 'p3',
         field: 'ptWeight',
         from: 0.4,
         to: 0.45,

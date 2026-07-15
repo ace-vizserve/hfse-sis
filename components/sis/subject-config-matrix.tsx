@@ -267,11 +267,7 @@ export function SubjectConfigMatrix({
       </TabsContent>
 
       <TabsContent value="structure-defaults">
-        <TemplateDriftList
-          changes={configChanges}
-          subjects={subjects}
-          levels={levels}
-        />
+        <TemplateDriftList changes={configChanges} subjects={subjects} />
       </TabsContent>
     </Tabs>
   );
@@ -297,25 +293,23 @@ const TEMPLATE_FIELD_LABEL: Record<TemplateConfigField, string> = {
 function TemplateDriftList({
   changes,
   subjects,
-  levels,
 }: {
+  // Migration 080 collapsed subject_configs to one row per subject — no
+  // more levelId on a drift row (see lib/sis/template-diff.ts). `levels`
+  // was dropped from this component's props along with it (it was only
+  // ever used to resolve levelId → label here); the surrounding matrix's
+  // own `levels` prop is untouched.
   changes: Array<{
     subjectId: string;
-    levelId: string;
     field: TemplateConfigField;
     from: number;
     to: number;
   }>;
   subjects: Subject[];
-  levels: Level[];
 }) {
   const subjectById = useMemo(
     () => new Map(subjects.map((s) => [s.id, s])),
     [subjects]
-  );
-  const levelById = useMemo(
-    () => new Map(levels.map((l) => [l.id, l])),
-    [levels]
   );
 
   if (changes.length === 0) {
@@ -343,16 +337,14 @@ function TemplateDriftList({
       <div className="space-y-1.5 p-4">
         {changes.map((c, i) => {
           const subject = subjectById.get(c.subjectId);
-          const level = levelById.get(c.levelId);
           return (
             <div
-              key={`${c.subjectId}-${c.levelId}-${c.field}-${i}`}
+              key={`${c.subjectId}-${c.field}-${i}`}
               className="flex items-center gap-2 text-xs"
             >
               <Badge variant="warning">~ DRIFT</Badge>
               <span className="text-foreground">
-                {subject?.code ?? c.subjectId} · {level?.label ?? c.levelId} ·{' '}
-                {TEMPLATE_FIELD_LABEL[c.field]}
+                {subject?.code ?? c.subjectId} · {TEMPLATE_FIELD_LABEL[c.field]}
               </span>
               <span className="ml-auto flex items-center">
                 <span className="rounded bg-muted px-1.5 py-0.5 font-mono line-through decoration-destructive/60">

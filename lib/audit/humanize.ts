@@ -172,6 +172,9 @@ const ACTION_LABELS: Record<string, string> = {
   'template.subject_config.update': 'Template subject updated',
   'template.subject_config.delete': 'Template subject removed',
   'template.subject_config.bulk_delete': 'Template subjects removed',
+  'template.subject_level_offering.toggle': 'Template subject level updated',
+  'template.subject_level_offering.detach_all':
+    'Template subject detached from all levels',
   'subject.create': 'Subject created',
   'template.apply': 'Template applied',
   'school_config.update': 'School settings updated',

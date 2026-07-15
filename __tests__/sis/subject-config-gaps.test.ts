@@ -1,8 +1,15 @@
 /**
  * computeSubjectConfigGaps() — the warning banner's data source on
  * /sis/admin/subjects. Closes the "zero visibility" gap: a missing
- * subject_configs row used to silently drop that subject from the report
- * card with no signal anywhere.
+ * subject-at-level offering used to silently drop that subject from the
+ * report card with no signal anywhere.
+ *
+ * Post migration-080: the function is a pure {level_id, subject_id}
+ * presence check, unchanged in logic — only its real callers' data source
+ * moved from template_subject_configs/subject_configs (level_id dropped)
+ * to template_subject_level_offerings/subject_level_offerings. These
+ * fixture pairs are intentionally source-agnostic (any {level_id,
+ * subject_id} shape exercises the same logic), so no test bodies changed.
  */
 
 import { describe, expect, it } from 'vitest';

@@ -9,6 +9,7 @@ import {
   listEligibleAysForApply,
   listTemplateSections,
   listTemplateSubjectConfigs,
+  listTemplateSubjectLevelOfferings,
 } from '@/lib/sis/template/queries';
 import { listLevels, listSubjects } from '@/lib/sis/subjects/queries';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -27,14 +28,21 @@ export default async function TemplateAdminPage() {
     redirect('/sis');
   }
 
-  const [templateSections, templateConfigs, subjects, levels, eligibleAys] =
-    await Promise.all([
-      listTemplateSections(),
-      listTemplateSubjectConfigs(),
-      listSubjects(),
-      listLevels(),
-      listEligibleAysForApply(),
-    ]);
+  const [
+    templateSections,
+    templateConfigs,
+    templateOfferings,
+    subjects,
+    levels,
+    eligibleAys,
+  ] = await Promise.all([
+    listTemplateSections(),
+    listTemplateSubjectConfigs(),
+    listTemplateSubjectLevelOfferings(),
+    listSubjects(),
+    listLevels(),
+    listEligibleAysForApply(),
+  ]);
 
   return (
     <PageShell>
@@ -80,6 +88,7 @@ export default async function TemplateAdminPage() {
       <TemplateManagerClient
         templateSections={templateSections}
         templateConfigs={templateConfigs}
+        templateOfferings={templateOfferings}
         subjects={subjects}
         levels={levels}
         eligibleAys={eligibleAys}

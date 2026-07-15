@@ -16,16 +16,23 @@ export type TemplateSectionRow = {
   level_type: 'primary' | 'secondary';
 };
 
+// One row per subject (migration 080 collapse) — no more `level_id`. Which
+// levels a subject is taught at now lives on `template_subject_level_
+// offerings` (see `TemplateSubjectLevelOfferingRow` below).
 export type TemplateSubjectConfigRow = {
   id: string;
   subject_id: string;
-  level_id: string;
   ww_weight: number;
   pt_weight: number;
   qa_weight: number;
   ww_max_slots: number;
   pt_max_slots: number;
   qa_max: number;
+};
+
+export type TemplateSubjectLevelOfferingRow = {
+  subject_id: string;
+  level_id: string;
 };
 
 export type EligibleAyRow = {
@@ -79,7 +86,7 @@ export async function listTemplateSubjectConfigs(): Promise<
   const { data, error } = await service
     .from('template_subject_configs')
     .select(
-      'id, subject_id, level_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
+      'id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
     );
   if (error) {
     console.error(
@@ -94,6 +101,25 @@ export async function listTemplateSubjectConfigs(): Promise<
     pt_weight: Number(r.pt_weight),
     qa_weight: Number(r.qa_weight),
   }));
+}
+
+// Which levels each template subject is taught at — the level dimension
+// migration 080 moved off `template_subject_configs`.
+export async function listTemplateSubjectLevelOfferings(): Promise<
+  TemplateSubjectLevelOfferingRow[]
+> {
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from('template_subject_level_offerings')
+    .select('subject_id, level_id');
+  if (error) {
+    console.error(
+      '[template] listTemplateSubjectLevelOfferings failed:',
+      error.message
+    );
+    return [];
+  }
+  return (data ?? []) as TemplateSubjectLevelOfferingRow[];
 }
 
 // Non-test AYs the admin can propagate the template into. Excludes test
