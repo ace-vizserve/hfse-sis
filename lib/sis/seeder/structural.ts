@@ -1,11 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
-  LEVEL_WEIGHT_PROFILES,
-  weightProfileFor,
-} from '@/lib/sis/level-profiles';
-
-import {
   buildCannedCalendar,
   buildCannedEvents,
   buildTermTemplates,
@@ -13,6 +8,7 @@ import {
   SCHOOL_CONFIG_DEFAULTS,
   SECTIONS,
   SUBJECTS,
+  weightBucketForSubjectCode,
 } from './fixtures';
 
 // Structural seeder for the Test environment. Populates the reference +
@@ -30,6 +26,7 @@ export type StructureSeedResult = {
   subjects_inserted: number;
   sections_inserted: number;
   subject_configs_inserted: number;
+  subject_level_offerings_inserted: number;
   terms_updated: number;
   calendar_days_inserted: number;
   calendar_events_inserted: number;
@@ -56,6 +53,7 @@ export async function ensureTestStructure(
     subjects_inserted: 0,
     sections_inserted: 0,
     subject_configs_inserted: 0,
+    subject_level_offerings_inserted: 0,
     terms_updated: 0,
     calendar_days_inserted: 0,
     calendar_events_inserted: 0,
@@ -145,44 +143,62 @@ export async function ensureTestStructure(
     }
   }
 
-  // ---- 4. subject_configs (AY-scoped) ----
+  // ---- 4. subject_configs (AY-scoped, one row per subject — migration
+  //         080 collapse) + subject_level_offerings (which levels teach
+  //         which subjects, AY-scoped) ----
+  //
+  // Weight is a property of the SUBJECT now, not the level it happens to
+  // be taught at (the level-type-keyed weightProfileFor default-fill bug
+  // this replaces — see fixtures.ts::weightBucketForSubjectCode for the
+  // verified real buckets). A subject that's taught at more than one level
+  // (every SUBJECTS entry here, since each is tagged to a whole level
+  // TYPE) gets exactly one subject_configs row and N subject_level_
+  // offerings rows (one per matching level).
   {
-    const rows: Array<{
+    const configRows: Array<{
       academic_year_id: string;
       subject_id: string;
-      level_id: string;
       ww_weight: number;
       pt_weight: number;
       qa_weight: number;
       ww_max_slots: number;
       pt_max_slots: number;
     }> = [];
+    const offeringRows: Array<{
+      subject_id: string;
+      level_id: string;
+      academic_year_id: string;
+    }> = [];
 
-    for (const lv of levels) {
-      for (const subj of SUBJECTS) {
+    for (const subj of SUBJECTS) {
+      const s = subjectByCode.get(subj.code);
+      if (!s) continue;
+      const bucket = weightBucketForSubjectCode(subj.code);
+      configRows.push({
+        academic_year_id: testAy.id,
+        subject_id: s.id,
+        ww_weight: bucket.ww,
+        pt_weight: bucket.pt,
+        qa_weight: bucket.qa,
+        ww_max_slots: 5,
+        pt_max_slots: 5,
+      });
+
+      for (const lv of levels) {
         if (subj.level_type !== lv.level_type) continue;
-        const s = subjectByCode.get(subj.code);
-        if (!s) continue;
-        const profile =
-          weightProfileFor(lv.level_type) ?? LEVEL_WEIGHT_PROFILES.secondary;
-        rows.push({
-          academic_year_id: testAy.id,
+        offeringRows.push({
           subject_id: s.id,
           level_id: lv.id,
-          ww_weight: profile.ww,
-          pt_weight: profile.pt,
-          qa_weight: profile.qa,
-          ww_max_slots: 5,
-          pt_max_slots: 5,
+          academic_year_id: testAy.id,
         });
       }
     }
 
-    if (rows.length > 0) {
+    if (configRows.length > 0) {
       const { data, error } = await service
         .from('subject_configs')
-        .upsert(rows, {
-          onConflict: 'academic_year_id,subject_id,level_id',
+        .upsert(configRows, {
+          onConflict: 'academic_year_id,subject_id',
           ignoreDuplicates: true,
         })
         .select('id');
@@ -193,6 +209,47 @@ export async function ensureTestStructure(
         );
       }
       result.subject_configs_inserted = data?.length ?? 0;
+    }
+
+    if (offeringRows.length > 0) {
+      const { data, error } = await service
+        .from('subject_level_offerings')
+        .upsert(offeringRows, {
+          onConflict: 'subject_id,level_id,academic_year_id',
+          ignoreDuplicates: true,
+        })
+        .select('id');
+      if (error) {
+        console.error(
+          '[structural seeder] subject_level_offerings upsert failed:',
+          error.message
+        );
+      }
+      result.subject_level_offerings_inserted = data?.length ?? 0;
+    }
+  }
+
+  // ---- 4b. section_subjects sync ----
+  // `create_academic_year` already syncs section_subjects for whatever
+  // sections it creates from the template — but this seeder's own section
+  // upsert above (step 3) is a raw upsert straight into `sections`, not
+  // routed through that RPC, so it isn't guaranteed to be covered (e.g. if
+  // this file's SECTIONS fixture ever diverges from template_sections).
+  // Re-running the sync here is idempotent (ON CONFLICT DO NOTHING) and
+  // guarantees every section this seeder just created/touched has its
+  // section_subjects rows before step 9 generates grading sheets —
+  // create_grading_sheets_for_ay (migration 080) now resolves sheet
+  // eligibility through section_subjects instead of a level_id join, so a
+  // section missing from it would silently get zero grading sheets.
+  {
+    const { error } = await service.rpc('sync_section_subjects_for_ay', {
+      p_ay_code: testAy.ay_code,
+    });
+    if (error) {
+      console.error(
+        '[structural seeder] sync_section_subjects_for_ay failed:',
+        error.message
+      );
     }
   }
 

@@ -247,6 +247,49 @@ export const SUBJECTS: SubjectSeed[] = [
   },
 ];
 
+// Known-correct WW/PT/QA weight per subject CODE — verified real HFSE data
+// (see docs/superpowers/specs/2026-07-15-ay-setup-subject-weights-redesign-design.md).
+// Weight is a property of the SUBJECT, not the level it's taught at (the
+// bug this replaces: lib/sis/level-profiles.ts::weightProfileFor keyed
+// purely off level TYPE, so Math/English/MAPEH all got the same split at a
+// given level type). This is explicit seed data the seeder states outright
+// — not a guessed default, and NOT auto-filled anywhere in the UI (KD-
+// #155-candidate design decision: no auto-fill; a real admin or the seeder
+// types/encodes the actual split).
+//
+// Three verified buckets:
+//   - Math / Science                                    → 40/40/20
+//   - MAPEH-family (Music/Arts/PE/Health/Christian
+//     Living/Contemporary Art/PE+Health/Pastoral) — the
+//     8 non-examinable codes flipped by migration 049,
+//     KD #95                                             → 20/60/20
+//   - everything else (English, Mother Tongue, Social
+//     Studies, History, Literature, Humanities,
+//     Economics, CCA)                                    → 30/50/20
+import type { WeightFractions } from '@/lib/sis/level-profiles';
+
+const MATH_SCIENCE: WeightFractions = { ww: 0.4, pt: 0.4, qa: 0.2 };
+const MAPEH_FAMILY: WeightFractions = { ww: 0.2, pt: 0.6, qa: 0.2 };
+const DEFAULT_BUCKET: WeightFractions = { ww: 0.3, pt: 0.5, qa: 0.2 };
+
+const MATH_SCIENCE_CODES = new Set(['MATH', 'SCI']);
+const MAPEH_FAMILY_CODES = new Set([
+  'MUSIC',
+  'ARTS',
+  'PE',
+  'HE',
+  'CL',
+  'CA',
+  'PEH',
+  'PMPD',
+]);
+
+export function weightBucketForSubjectCode(code: string): WeightFractions {
+  if (MATH_SCIENCE_CODES.has(code)) return MATH_SCIENCE;
+  if (MAPEH_FAMILY_CODES.has(code)) return MAPEH_FAMILY;
+  return DEFAULT_BUCKET;
+}
+
 export type SectionSeed = {
   level_code: string;
   name: string;
