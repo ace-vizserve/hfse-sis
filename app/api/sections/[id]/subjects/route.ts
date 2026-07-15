@@ -10,9 +10,13 @@ import { createServiceClient } from '@/lib/supabase/service';
 //
 // Assigns ONE additional subject to this section — a per-section override
 // on top of the level's default subject list (migration 079,
-// section_subjects). The subjectConfigId must belong to the section's own
-// (level_id, academic_year_id); this is defense in depth against attaching
-// a subject_config from a different level or AY.
+// section_subjects). subject_configs no longer carries a level_id
+// (migration 080 subject-weights collapse — one row per subject per AY), so
+// level-applicability is validated against `subject_level_offerings`
+// instead: the subjectConfigId must belong to the section's own AY, and
+// its subject must have a subject_level_offerings row for the section's
+// level. This is defense in depth against attaching a subject that isn't
+// offered at this level, or a config from a different AY.
 //
 // Registrar+ only — same gate as every other section-mutation route.
 export async function POST(
@@ -53,14 +57,27 @@ export async function POST(
 
   const { data: config } = await service
     .from('subject_configs')
-    .select('id, level_id, academic_year_id, subject:subjects(code, name)')
+    .select('id, subject_id, academic_year_id, subject:subjects(code, name)')
     .eq('id', subjectConfigId)
     .maybeSingle();
-  if (
-    !config ||
-    config.level_id !== section.level_id ||
-    config.academic_year_id !== section.academic_year_id
-  ) {
+  if (!config || config.academic_year_id !== section.academic_year_id) {
+    return NextResponse.json(
+      { error: "That subject isn't configured at this section's level" },
+      { status: 422 }
+    );
+  }
+
+  // Level-applicability now lives on subject_level_offerings (migration
+  // 080 dropped subject_configs.level_id) — reject when this subject has
+  // no offering row for the section's level in this AY.
+  const { data: offering } = await service
+    .from('subject_level_offerings')
+    .select('subject_id')
+    .eq('subject_id', config.subject_id)
+    .eq('level_id', section.level_id)
+    .eq('academic_year_id', section.academic_year_id)
+    .maybeSingle();
+  if (!offering) {
     return NextResponse.json(
       { error: "That subject isn't configured at this section's level" },
       { status: 422 }

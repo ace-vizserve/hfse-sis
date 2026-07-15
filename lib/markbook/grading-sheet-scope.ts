@@ -9,9 +9,19 @@
 // exists for it — that's the whole point of migration 079: subjects are no
 // longer purely level-derived, a section can opt out of (or into) specific
 // subjects its level offers.
+//
+// Post migration 080 (subject-weights collapse), `subject_configs` no
+// longer carries a `level_id` — a config's identity is `subject_id` alone
+// (one row per subject per AY). Level-applicability now lives on the
+// separate `subject_level_offerings` table and is enforced upstream, at
+// section_subjects-assignment time (app/api/sections/[id]/subjects/
+// route.ts) — by the time an assignment row exists, it's already known to
+// be level-valid. So the ONLY membership test this builder performs is
+// "does a section_subjects row pair this section to this subject_config" —
+// there is no level to cross-check here anymore.
 
 export type ScopeSection = { id: string; level_id: string };
-export type ScopeConfig = { id: string; subject_id: string; level_id: string };
+export type ScopeConfig = { id: string; subject_id: string };
 export type ScopeAssignment = { section_id: string; subject_config_id: string };
 export type ScopeTerm = { id: string };
 
@@ -38,9 +48,10 @@ export function buildGradingSheetScopes(
   const scopes: GradingSheetScope[] = [];
   for (const sec of sections) {
     const assignedIds = assignedBySection.get(sec.id) ?? new Set<string>();
-    const secConfigs = configs.filter(
-      (c) => c.level_id === sec.level_id && assignedIds.has(c.id)
-    );
+    // A config that no section_subjects row assigns to this section is
+    // never in scope — even if it's present elsewhere in the (AY-wide)
+    // `configs` list.
+    const secConfigs = configs.filter((c) => assignedIds.has(c.id));
     for (const term of terms) {
       for (const cfg of secConfigs) {
         scopes.push({
@@ -56,9 +67,9 @@ export function buildGradingSheetScopes(
 }
 
 // True when at least one section in `sections` resolves to zero assigned
-// subjects at its level — distinguishes "nothing to create because nobody
-// has assigned subjects yet" from "nothing to create because it's already
-// all generated" in the caller's response `reason`.
+// subjects — distinguishes "nothing to create because nobody has assigned
+// subjects yet" from "nothing to create because it's already all
+// generated" in the caller's response `reason`.
 export function anySectionMissingAssignedSubjects(
   sections: ScopeSection[],
   configs: ScopeConfig[],
@@ -72,9 +83,7 @@ export function anySectionMissingAssignedSubjects(
   }
   return sections.some((sec) => {
     const assignedIds = assignedBySection.get(sec.id) ?? new Set<string>();
-    const secConfigs = configs.filter(
-      (c) => c.level_id === sec.level_id && assignedIds.has(c.id)
-    );
+    const secConfigs = configs.filter((c) => assignedIds.has(c.id));
     return secConfigs.length === 0;
   });
 }

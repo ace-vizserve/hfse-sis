@@ -99,19 +99,18 @@ export async function POST(request: NextRequest) {
         reason: 'no_sections',
       });
 
-    const levelIds = [
-      ...new Set(
-        (sections as { id: string; level_id: string }[]).map((s) => s.level_id)
-      ),
-    ];
-
     // 2. Load subject configs + terms + this section's subject overrides in
-    //    parallel. section_subjects (migration 079) decides WHICH of a
-    //    level's configured subjects apply to a given section — a
-    //    (section, subject) pair only gets a sheet when a section_subjects
-    //    row exists for it. Every section was backfilled with its level's
-    //    full subject list at migration time, so existing sections behave
-    //    identically unless someone has since customized them.
+    //    parallel. section_subjects (migration 079) decides WHICH subjects
+    //    apply to a given section — a (section, subject) pair only gets a
+    //    sheet when a section_subjects row exists for it. Every section was
+    //    backfilled with its level's full subject list at migration time,
+    //    so existing sections behave identically unless someone has since
+    //    customized them. subject_configs no longer carries a level_id
+    //    (migration 080 subject-weights collapse — one row per subject per
+    //    AY), so configs resolve by academic_year_id alone; level-scoping
+    //    already happened upstream when the section_subjects rows were
+    //    assigned (app/api/sections/[id]/subjects/route.ts validates
+    //    against subject_level_offerings at that point).
     let termsQuery = service
       .from('terms')
       .select('id')
@@ -124,9 +123,8 @@ export async function POST(request: NextRequest) {
       await Promise.all([
         service
           .from('subject_configs')
-          .select('id, subject_id, level_id')
-          .eq('academic_year_id', resolvedAyId)
-          .in('level_id', levelIds),
+          .select('id, subject_id')
+          .eq('academic_year_id', resolvedAyId),
         termsQuery,
         service
           .from('section_subjects')
@@ -147,7 +145,7 @@ export async function POST(request: NextRequest) {
 
     const allScopes = buildGradingSheetScopes(
       sections as { id: string; level_id: string }[],
-      configs as { id: string; subject_id: string; level_id: string }[],
+      configs as { id: string; subject_id: string }[],
       (sectionSubjectRows ?? []) as {
         section_id: string;
         subject_config_id: string;

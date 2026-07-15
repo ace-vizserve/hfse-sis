@@ -7,12 +7,14 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 // POST /api/sections/[id]/subjects/load-defaults
 //
-// Assigns every subject currently configured (subject_configs) at this
-// section's level that isn't already assigned — additive only, never
-// removes an existing per-section customization. This is the same effect
-// as the migration-079 backfill, scoped to one section, for a freshly
-// created section (or one where a subject was added to the level after the
-// section existed) that hasn't been synced yet.
+// Assigns every subject offered at this section's level (per
+// subject_level_offerings — migration 080 moved level-applicability off
+// subject_configs, which now carries no level_id) that isn't already
+// assigned — additive only, never removes an existing per-section
+// customization. This is the same effect as the migration-079 backfill,
+// scoped to one section, for a freshly created section (or one where a
+// subject was added to the level after the section existed) that hasn't
+// been synced yet.
 //
 // Registrar+ only.
 export async function POST(
@@ -40,10 +42,10 @@ export async function POST(
     | { ay_code: string }[];
   const ayCode = Array.isArray(ayJoin) ? ayJoin[0]?.ay_code : ayJoin?.ay_code;
 
-  const [{ data: configs }, { data: existing }] = await Promise.all([
+  const [{ data: offerings }, { data: existing }] = await Promise.all([
     service
-      .from('subject_configs')
-      .select('id')
+      .from('subject_level_offerings')
+      .select('subject_id')
       .eq('level_id', section.level_id)
       .eq('academic_year_id', section.academic_year_id),
     service
@@ -52,14 +54,28 @@ export async function POST(
       .eq('section_id', sectionId),
   ]);
 
+  const offeredSubjectIds = (
+    (offerings ?? []) as Array<{ subject_id: string }>
+  ).map((o) => o.subject_id);
+
+  // subject_configs no longer carries a level_id (migration 080) — resolve
+  // the level's offered subjects' config rows by subject_id + AY instead.
+  let configs: Array<{ id: string }> = [];
+  if (offeredSubjectIds.length > 0) {
+    const { data: configRows } = await service
+      .from('subject_configs')
+      .select('id')
+      .eq('academic_year_id', section.academic_year_id)
+      .in('subject_id', offeredSubjectIds);
+    configs = (configRows ?? []) as Array<{ id: string }>;
+  }
+
   const existingIds = new Set(
     ((existing ?? []) as Array<{ subject_config_id: string }>).map(
       (r) => r.subject_config_id
     )
   );
-  const missing = ((configs ?? []) as Array<{ id: string }>).filter(
-    (c) => !existingIds.has(c.id)
-  );
+  const missing = configs.filter((c) => !existingIds.has(c.id));
 
   let inserted = 0;
   if (missing.length > 0) {

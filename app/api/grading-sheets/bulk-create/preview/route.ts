@@ -81,17 +81,21 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const levelIds = [...new Set(sections.map((s) => s.level_id))];
   const sectionIds = sections.map((s) => s.id);
 
+  // subject_configs no longer carries a level_id (migration 080
+  // subject-weights collapse — one row per subject per AY), so configs
+  // resolve by academic_year_id alone; level-scoping already happened
+  // upstream when the section_subjects rows were assigned (see
+  // app/api/sections/[id]/subjects/route.ts, which validates against
+  // subject_level_offerings).
   const [{ data: configRows }, { data: assignmentRows }] = await Promise.all([
     service
       .from('subject_configs')
       .select(
-        'id, subject_id, level_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, subject:subjects(code, name)'
+        'id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, subject:subjects(code, name)'
       )
-      .eq('academic_year_id', ayId)
-      .in('level_id', levelIds),
+      .eq('academic_year_id', ayId),
     service
       .from('section_subjects')
       .select('section_id, subject_config_id')
@@ -101,7 +105,6 @@ export async function POST(request: NextRequest) {
   type ConfigRow = {
     id: string;
     subject_id: string;
-    level_id: string;
     ww_weight: number;
     pt_weight: number;
     qa_weight: number;
@@ -126,7 +129,6 @@ export async function POST(request: NextRequest) {
           configs.map((c) => ({
             id: c.id,
             subject_id: c.subject_id,
-            level_id: c.level_id,
           })),
           assignments,
           terms
@@ -205,7 +207,9 @@ export async function POST(request: NextRequest) {
 
   // Union of subjects actually in scope (assigned to at least one selected
   // section) — the read-only weights summary. Sourced from subject_configs,
-  // never edited here (KD #4 — single per-level source of truth).
+  // never edited here (KD #4 — single per-AY source of truth post migration
+  // 080's subject-weights collapse: one config row per subject per AY, no
+  // level dimension).
   const subjectIdsInScope = new Set(scopes.map((sc) => sc.subject_id));
   const subjectsOut = configs
     .filter((c) => subjectIdsInScope.has(c.subject_id))
@@ -223,8 +227,9 @@ export async function POST(request: NextRequest) {
         qaWeight: c.qa_weight,
       };
     })
-    // De-dupe by subject code (the same subject can have multiple configs
-    // across different levels in scope — show it once per code).
+    // De-dupe by subject code — defensive no-op now that subject_configs is
+    // one row per (subject, AY) post migration 080 (previously a subject
+    // could have multiple per-level configs in scope simultaneously).
     .filter((s, i, arr) => arr.findIndex((x) => x.code === s.code) === i)
     .sort((a, b) => a.name.localeCompare(b.name));
 
