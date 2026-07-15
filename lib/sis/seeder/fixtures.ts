@@ -142,6 +142,25 @@ export type SubjectSeed = {
   name: string;
   is_examinable: boolean;
   level_type: 'primary' | 'secondary';
+  /**
+   * Optional: restricts subject_level_offerings to only these level CODES
+   * within the matching level_type — e.g. Mandarin is Primary but only
+   * P1–P5, not the full P1–P6 (migration 081's resolved-data table; this
+   * seeder always targets a "current" test AY, so it uses the
+   * AY2026-onward P1–P5 range, not the older P1–P4-only range). Omitted
+   * for every pre-081 entry — unchanged behaviour (every level whose
+   * level_type matches gets an offering row).
+   */
+  levelCodes?: string[];
+  /**
+   * Optional: true for subjects that exist in the catalog + fan into
+   * another subject's report-card column via subject_report_map, but never
+   * get their own subject_configs / subject_level_offerings rows — e.g.
+   * Mother Tongue post-081 (Filipino/Mandarin carry the real scores now).
+   * When true, the structural seeder inserts the `subjects` catalog row
+   * only; no config/offering rows are generated for it.
+   */
+  reportOnly?: boolean;
 };
 
 export const SUBJECTS: SubjectSeed[] = [
@@ -153,11 +172,35 @@ export const SUBJECTS: SubjectSeed[] = [
     is_examinable: true,
     level_type: 'primary',
   },
+  // Mother Tongue is report-only as of migration 081 — Filipino/Mandarin
+  // (below) carry the real per-student scores and fan into this subject's
+  // report-card column via subject_report_map. Kept in the catalog (name
+  // + is_examinable) so it can still be a subject_report_map target.
   {
     code: 'MT',
     name: 'Mother Tongue',
     is_examinable: true,
     level_type: 'primary',
+    reportOnly: true,
+  },
+  {
+    code: 'FIL',
+    name: 'Filipino',
+    is_examinable: true,
+    level_type: 'primary',
+  },
+  {
+    code: 'FIL',
+    name: 'Filipino',
+    is_examinable: true,
+    level_type: 'secondary',
+  },
+  {
+    code: 'MANDARIN',
+    name: 'Mandarin',
+    is_examinable: true,
+    level_type: 'primary',
+    levelCodes: ['P1', 'P2', 'P3', 'P4', 'P5'],
   },
   { code: 'SCI', name: 'Science', is_examinable: true, level_type: 'primary' },
   {
@@ -166,27 +209,12 @@ export const SUBJECTS: SubjectSeed[] = [
     is_examinable: true,
     level_type: 'primary',
   },
+  // MAPEH replaces MUSIC/ARTS/PE/HE (migration 081) — one combined,
+  // numeric-graded subject (20/60/20 via MAPEH_FAMILY_CODES below), not 4
+  // independent letter-graded ones.
   {
-    code: 'MUSIC',
-    name: 'Music Education',
-    is_examinable: true,
-    level_type: 'primary',
-  },
-  {
-    code: 'ARTS',
-    name: 'Arts Education',
-    is_examinable: true,
-    level_type: 'primary',
-  },
-  {
-    code: 'PE',
-    name: 'Physical Education',
-    is_examinable: true,
-    level_type: 'primary',
-  },
-  {
-    code: 'HE',
-    name: 'Health Education',
+    code: 'MAPEH',
+    name: 'MAPEH',
     is_examinable: true,
     level_type: 'primary',
   },
@@ -259,13 +287,27 @@ export const SUBJECTS: SubjectSeed[] = [
 //
 // Three verified buckets:
 //   - Math / Science                                    → 40/40/20
-//   - MAPEH-family (Music/Arts/PE/Health/Christian
-//     Living/Contemporary Art/PE+Health/Pastoral) — the
-//     8 non-examinable codes flipped by migration 049,
-//     KD #95                                             → 20/60/20
-//   - everything else (English, Mother Tongue, Social
+//   - MAPEH-family (the consolidated numeric `MAPEH` subject
+//     itself + the still-independent letter-graded Christian
+//     Living/Contemporary Art/PE+Health/Pastoral — the 4
+//     non-examinable codes flipped by migration 049, KD #95,
+//     that migration 081 did NOT touch)                  → 20/60/20
+//   - everything else (English, Filipino, Mandarin, Social
 //     Studies, History, Literature, Humanities,
 //     Economics, CCA)                                    → 30/50/20
+//
+// Migration 081 (MAPEH / language catalog corrections) retired MUSIC/
+// ARTS/PE/HE — the 4 independent letter-graded subjects a single numeric
+// `MAPEH` subject replaces — from MAPEH_FAMILY_CODES below (they no longer
+// exist in the catalog) and added `MAPEH` itself, which carries the SAME
+// 20/60/20 ratio its predecessors did even though it's now numeric-graded
+// (is_examinable=true) rather than letter-graded — weight bucket and
+// is_examinable are orthogonal. Mother Tongue (`MT`) is now report-only
+// (081) and never gets a subject_configs row at all (see `reportOnly` on
+// its SUBJECTS entry above), so it's been dropped from this comment's
+// "everything else" list; Filipino/Mandarin — its real-scoring
+// replacements — are NOT MAPEH-family and fall into the default bucket,
+// same as MT did.
 import type { WeightFractions } from '@/lib/sis/level-profiles';
 
 const MATH_SCIENCE: WeightFractions = { ww: 0.4, pt: 0.4, qa: 0.2 };
@@ -273,16 +315,7 @@ const MAPEH_FAMILY: WeightFractions = { ww: 0.2, pt: 0.6, qa: 0.2 };
 const DEFAULT_BUCKET: WeightFractions = { ww: 0.3, pt: 0.5, qa: 0.2 };
 
 const MATH_SCIENCE_CODES = new Set(['MATH', 'SCI']);
-const MAPEH_FAMILY_CODES = new Set([
-  'MUSIC',
-  'ARTS',
-  'PE',
-  'HE',
-  'CL',
-  'CA',
-  'PEH',
-  'PMPD',
-]);
+const MAPEH_FAMILY_CODES = new Set(['MAPEH', 'CL', 'CA', 'PEH', 'PMPD']);
 
 export function weightBucketForSubjectCode(code: string): WeightFractions {
   if (MATH_SCIENCE_CODES.has(code)) return MATH_SCIENCE;

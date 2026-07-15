@@ -173,6 +173,14 @@ export async function ensureTestStructure(
     for (const subj of SUBJECTS) {
       const s = subjectByCode.get(subj.code);
       if (!s) continue;
+
+      // reportOnly subjects (e.g. Mother Tongue post-migration-081) exist
+      // in the catalog + fan into another subject's report-card column via
+      // subject_report_map, but never get their own subject_configs /
+      // subject_level_offerings rows — Filipino/Mandarin carry the real
+      // scores now.
+      if (subj.reportOnly) continue;
+
       const bucket = weightBucketForSubjectCode(subj.code);
       configRows.push({
         academic_year_id: testAy.id,
@@ -186,6 +194,11 @@ export async function ensureTestStructure(
 
       for (const lv of levels) {
         if (subj.level_type !== lv.level_type) continue;
+        // levelCodes (e.g. Mandarin -> P1-P5, not the full P1-P6 Primary
+        // range) narrows the offering to specific level codes within the
+        // matching level_type. Omitted for every other entry — unchanged
+        // behaviour (every level whose level_type matches gets a row).
+        if (subj.levelCodes && !subj.levelCodes.includes(lv.code)) continue;
         offeringRows.push({
           subject_id: s.id,
           level_id: lv.id,

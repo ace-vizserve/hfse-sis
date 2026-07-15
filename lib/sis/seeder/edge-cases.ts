@@ -142,7 +142,7 @@ export async function seedEdgeCases(
     excellenceSS[Math.floor(rand() * excellenceSS.length)] ?? excellenceSS[0];
   const compassionateStudent =
     excellenceSS[Math.floor(rand() * excellenceSS.length)] ?? excellenceSS[0];
-  const peStudentRow =
+  const pehStudentRow =
     excellenceSS[Math.floor(rand() * excellenceSS.length)] ?? excellenceSS[0];
   const changeReq1 = gritSS[Math.floor(rand() * gritSS.length)] ?? gritSS[0];
   const changeReq2 =
@@ -530,41 +530,50 @@ export async function seedEdgeCases(
     console.error('[edge-cases] EC9 compassionate-leave failed:', err);
   }
 
-  // ── EC10 — PE 'E' letter-grade override (non-examinable) ──────────────────
+  // ── EC10 — PEH 'E' letter-grade override (non-examinable) ─────────────────
+  // Was 'PE' (Physical Education) — retired by migration 081 (MAPEH /
+  // language catalog corrections; PE was one of the 4 subjects consolidated
+  // into the new combined `MAPEH` subject, which is Primary-only and never
+  // offered at `excellence`, a Secondary S4 section — so 'PE' would never
+  // have had a config/sheet there in the first place). Retargeted to `PEH`
+  // (Physical Education and Health) — a genuinely non-examinable,
+  // letter-graded Secondary subject actually offered at every Secondary
+  // level including S4 (see supabase/seed.sql's subject_level_offerings
+  // block), so this fixture now exercises a real sheet.
   try {
-    if (t4 && peStudentRow) {
+    if (t4 && pehStudentRow) {
       // Migration 080 dropped subject_configs.level_id — a config row is
       // now unique per (subject_id, academic_year_id) alone, so the
-      // .eq('subjects.code', 'PE') filter is already sufficient (Pattern B).
-      const { data: peConfig } = await service
+      // .eq('subjects.code', 'PEH') filter is already sufficient (Pattern B).
+      const { data: pehConfig } = await service
         .from('subject_configs')
         .select('id, subjects!inner(code)')
-        .eq('subjects.code', 'PE')
+        .eq('subjects.code', 'PEH')
         .maybeSingle();
-      const peConfigId = (peConfig as { id: string } | null)?.id;
+      const pehConfigId = (pehConfig as { id: string } | null)?.id;
 
-      if (peConfigId) {
-        const { data: peSheet } = await service
+      if (pehConfigId) {
+        const { data: pehSheet } = await service
           .from('grading_sheets')
           .select('id')
           .eq('section_id', excellence.id)
           .eq('term_id', t4.id)
-          .eq('subject_config_id', peConfigId)
+          .eq('subject_config_id', pehConfigId)
           .maybeSingle();
-        const peSheetId = (peSheet as { id: string } | null)?.id;
+        const pehSheetId = (pehSheet as { id: string } | null)?.id;
 
-        if (peSheetId) {
+        if (pehSheetId) {
           const { error } = await service
             .from('grade_entries')
             .update({ letter_grade: 'E' })
-            .eq('grading_sheet_id', peSheetId)
-            .eq('section_student_id', peStudentRow.id);
+            .eq('grading_sheet_id', pehSheetId)
+            .eq('section_student_id', pehStudentRow.id);
           if (!error) count++;
         }
       }
     }
   } catch (err) {
-    console.error('[edge-cases] EC10 PE E-override failed:', err);
+    console.error('[edge-cases] EC10 PEH E-override failed:', err);
   }
 
   // ── EC11 — GA 88.4 student (S4 Excellence, all examinable subjects) ────────
@@ -872,7 +881,7 @@ export async function seedEdgeCases(
         excellenceWithdrawn,
         gaStudent,
         compassionateStudent,
-        peStudentRow,
+        pehStudentRow,
         appliedCR,
         pfileStudent2,
       ]
