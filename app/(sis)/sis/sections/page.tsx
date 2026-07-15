@@ -4,7 +4,6 @@ import { LayoutGrid, Users, UserX } from 'lucide-react';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { NewSectionButton } from '@/components/markbook/new-section-button';
 import { HubStat } from '@/components/sis/hub-stat';
-import { SectionsByLevelTree } from '@/components/sis/sections-by-level-tree';
 import { SectionsNeededPanel } from '@/components/sis/sections-needed-panel';
 import { SisSectionsDataTable } from '@/components/sis/sections-data-table';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
@@ -98,8 +97,8 @@ export default async function SisSectionsListPage({
         }>,
       };
 
-  // Level catalogue for the "New section" dialog + the "Sections by level"
-  // hierarchy below.
+  // Level catalogue for the "New section" dialog + the "Sections needed"
+  // gap panel below.
   type LevelCatalogRow = LevelLite & { is_core: boolean; sort_order: number };
   const { data: levelRows } = await supabase
     .from('levels')
@@ -195,29 +194,6 @@ export default async function SisSectionsListPage({
     )
     .map((l) => ({ id: l.id, code: l.code, label: l.label }));
 
-  // "Sections by level" hierarchy — how many sections exist under each
-  // level, in catalog order.
-  const sectionsByLevelId = new Map<
-    string,
-    Array<{ id: string; name: string; active: number }>
-  >();
-  for (const c of cards) {
-    if (!c.level_id) continue;
-    const arr = sectionsByLevelId.get(c.level_id) ?? [];
-    arr.push({ id: c.id, name: c.name, active: c.active });
-    sectionsByLevelId.set(c.level_id, arr);
-  }
-  for (const arr of sectionsByLevelId.values()) {
-    arr.sort((a, b) => a.name.localeCompare(b.name));
-  }
-  const levelsForTree = levelCatalog.map((l) => ({
-    id: l.id,
-    code: l.code,
-    label: l.label,
-    isCore: l.is_core,
-    sortOrder: l.sort_order,
-  }));
-
   // Derive unique level options sorted in canonical pedagogical order.
   const uniqueLevelLabels = Array.from(
     new Map(cards.map((c) => [c.level_label, c])).entries()
@@ -296,11 +272,6 @@ export default async function SisSectionsListPage({
       <SectionsNeededPanel
         levels={levelsNeedingSection}
         ayCode={ay?.ay_code ?? null}
-      />
-
-      <SectionsByLevelTree
-        levels={levelsForTree}
-        sectionsByLevelId={sectionsByLevelId}
       />
 
       {/* Sections DataTable — replaces the pill grid. Level facet + search +
