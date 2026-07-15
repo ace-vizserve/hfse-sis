@@ -116,8 +116,9 @@ export type GradingSheetRow = {
    *  School level facet. Sourced from levels.level_type. */
   school_level: 'primary' | 'secondary';
   subject: string;
-  /** Subject format: true for numeric-graded (quarterly), false for the 8
-   *  letter-graded subjects (MUSIC/ARTS/PE/HE/CL/CA/PEH/PMPD per KD #95). */
+  /** Subject format: true for numeric-graded (quarterly), false for the
+   *  letter-graded subjects (CL/CA/PEH/PMPD per KD #95; MUSIC/ARTS/PE/HE
+   *  were retired and replaced by numeric-graded MAPEH by migration 081). */
   is_examinable: boolean;
   term: string;
   teacher: string | null;

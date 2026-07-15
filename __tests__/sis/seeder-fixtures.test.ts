@@ -16,7 +16,9 @@ describe('weightBucketForSubjectCode', () => {
   });
 
   it('MAPEH-family subject codes get 20/60/20', () => {
-    const mapehCodes = ['MUSIC', 'ARTS', 'PE', 'HE', 'CL', 'CA', 'PEH', 'PMPD'];
+    // Migration 081 retired MUSIC/ARTS/PE/HE (4 separate letter-graded
+    // subjects) in favor of one combined numeric-graded MAPEH.
+    const mapehCodes = ['MAPEH', 'CL', 'CA', 'PEH', 'PMPD'];
     for (const code of mapehCodes) {
       expect(weightBucketForSubjectCode(code)).toEqual({
         ww: 0.2,
@@ -43,7 +45,7 @@ describe('weightBucketForSubjectCode', () => {
   });
 
   it('every bucket sums to 1', () => {
-    for (const code of ['MATH', 'MUSIC', 'ENG']) {
+    for (const code of ['MATH', 'MAPEH', 'ENG']) {
       const bucket = weightBucketForSubjectCode(code);
       expect(bucket.ww + bucket.pt + bucket.qa).toBeCloseTo(1);
     }
