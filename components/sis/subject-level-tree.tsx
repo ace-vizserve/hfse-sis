@@ -28,6 +28,7 @@ import {
   PROFILE_CLASS,
   PROFILE_TEXT,
 } from '@/components/sis/weight-profile';
+import { SubjectMonitoringTable } from '@/components/sis/subject-monitoring-table';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -275,6 +276,7 @@ export function SubjectLevelTree({
             </span>
           )}
         </TabsTrigger>
+        <TabsTrigger value="all-subjects">All subjects</TabsTrigger>
       </TabsList>
 
       <TabsContent value="this-year" className="space-y-4">
@@ -348,25 +350,42 @@ export function SubjectLevelTree({
             )}
           </DragOverlay>
         </DndContext>
-
-        <SubjectConfigEditDialog
-          draft={editDraft}
-          open={editOpen}
-          onOpenChange={setEditOpen}
-          subjects={subjects}
-        />
-        <SubjectConfigCreateDialog
-          subject={createSubject}
-          ayId={ayId}
-          ayCode={ayCode}
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-        />
       </TabsContent>
 
       <TabsContent value="structure-defaults">
         <TemplateDriftList changes={configChanges} subjects={subjects} />
       </TabsContent>
+
+      <TabsContent value="all-subjects">
+        <SubjectMonitoringTable
+          subjects={subjects}
+          levels={levels}
+          configBySubjectId={configBySubjectId}
+          levelIdsBySubjectId={levelIdsBySubjectId}
+          reportSubjectIdBySubjectId={reportSubjectIdBySubjectId}
+          onOpenEdit={openEdit}
+          onOpenCreate={openCreate}
+        />
+      </TabsContent>
+
+      {/* Mounted outside any TabsContent — Radix unmounts inactive tab
+          content, but these two dialogs are opened from openEdit/openCreate
+          handlers reachable from BOTH the "This year" tree and the "All
+          subjects" table, so they must stay mounted regardless of which
+          tab is active. */}
+      <SubjectConfigEditDialog
+        draft={editDraft}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        subjects={subjects}
+      />
+      <SubjectConfigCreateDialog
+        subject={createSubject}
+        ayId={ayId}
+        ayCode={ayCode}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+      />
     </Tabs>
   );
 }
