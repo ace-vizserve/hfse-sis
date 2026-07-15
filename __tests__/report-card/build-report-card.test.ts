@@ -93,6 +93,13 @@ function makeClient(tables: {
   'attendance_records:school_days'?: unknown[]; // term_id, school_days
   evaluation_writeups?: unknown[];
   teacher_assignments?: unknown[]; // { teacher_user_id } — role='form_adviser' row
+  // subject_report_map wiring: subject_id/report_subject_id rows (flat, no
+  // embed) + the plain `subjects` lookup used to resolve target metadata.
+  // Distinct keys — build-report-card.ts issues two separate `.from()`
+  // calls (no `subjects!<fk>` embed hint), matching this fake client's
+  // per-table dispatch.
+  subject_report_map?: unknown[];
+  subjects?: unknown[];
 }) {
   function makeChain(table: string, sel: string = ''): Record<string, unknown> {
     const chain: Record<string, unknown> = {
@@ -199,6 +206,28 @@ const SUBJECT_MATH = {
   code: 'MATH',
   name: 'Mathematics',
   is_examinable: true,
+};
+
+// subject_report_map fan-in fixtures — two graded subjects that both fold
+// into a shared display target. This is the ONLY existing fixture pair
+// (SUBJECT_MATH) can't express, since it's a single self-mapped subject.
+const SUBJECT_FILIPINO = {
+  id: 'sub-fil',
+  code: 'FIL',
+  name: 'Filipino',
+  is_examinable: false,
+};
+const SUBJECT_MANDARIN = {
+  id: 'sub-man',
+  code: 'MAN',
+  name: 'Mandarin',
+  is_examinable: false,
+};
+const SUBJECT_MOTHER_TONGUE_TARGET = {
+  id: 'sub-mt',
+  code: 'MT',
+  name: 'Mother Tongue',
+  is_examinable: false,
 };
 
 /** 4 grading sheets — one per term for Mathematics */
@@ -582,6 +611,133 @@ describe('buildReportCard', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.payload.section.form_class_adviser).toBeNull();
+    });
+  });
+
+  describe('subject_report_map wiring — end-to-end fan-in', () => {
+    it('folds two mapped subjects into one merged row using the mapper with real grade data', async () => {
+      const filSheets = TERMS.map((t) => ({
+        id: `sheet-fil-${t.id}`,
+        term_id: t.id,
+        subject_id: SUBJECT_FILIPINO.id,
+        section_id: SECTION.id,
+      }));
+      const manSheets = TERMS.map((t) => ({
+        id: `sheet-man-${t.id}`,
+        term_id: t.id,
+        subject_id: SUBJECT_MANDARIN.id,
+        section_id: SECTION.id,
+      }));
+
+      const supabase = makeClient({
+        students: [
+          {
+            id: STUDENT_ID,
+            student_number: 'SN-001',
+            last_name: 'Dela Cruz',
+            first_name: 'Juan',
+            middle_name: null,
+          },
+        ],
+        academic_years: [{ id: 'ay-1', label: 'AY2026' }],
+        terms: TERMS,
+        section_students: [makeEnrolment()],
+        // Both fanned-in subjects are offered/graded this level. The
+        // target ("Mother Tongue") is deliberately NOT in this list — per
+        // the design, a pure fan-in target is never itself offered, only
+        // ever a display column other subjects report into.
+        subject_level_offerings: [
+          { subject: SUBJECT_FILIPINO },
+          { subject: SUBJECT_MANDARIN },
+        ],
+        grading_sheets: [...filSheets, ...manSheets],
+        grade_entries: [
+          // Filipino has a real T1 grade; Mandarin has none at all (no
+          // entry row) — proves source-selection picks the mapper with
+          // data, not just the first in the group.
+          {
+            id: 'ge-fil-t1',
+            grading_sheet_id: filSheets[0].id,
+            section_student_id: 'ss-1',
+            quarterly_grade: 92,
+            letter_grade: null,
+            is_na: false,
+            annual_letter_grade: null,
+          },
+        ],
+        'attendance_records:presence': [],
+        'attendance_records:school_days': [],
+        evaluation_writeups: [],
+        subject_report_map: [
+          {
+            subject_id: SUBJECT_FILIPINO.id,
+            report_subject_id: SUBJECT_MOTHER_TONGUE_TARGET.id,
+          },
+          {
+            subject_id: SUBJECT_MANDARIN.id,
+            report_subject_id: SUBJECT_MOTHER_TONGUE_TARGET.id,
+          },
+        ],
+        subjects: [SUBJECT_MOTHER_TONGUE_TARGET],
+      });
+
+      const result = await buildReportCard(
+        supabase as unknown as SupabaseClient,
+        STUDENT_ID
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // Two graded subjects fold into exactly one report-card row.
+      expect(result.payload.subjects).toHaveLength(1);
+      const merged = result.payload.subjects[0];
+      expect(merged.subject).toEqual({
+        id: SUBJECT_MOTHER_TONGUE_TARGET.id,
+        code: SUBJECT_MOTHER_TONGUE_TARGET.code,
+        name: 'Mother Tongue (Filipino)',
+        is_examinable: false,
+      });
+      // Filipino's T1 data passed through onto the merged row unchanged.
+      expect(merged.t1.quarterly).toBe(92);
+      expect(merged.t1.letter).toBe('A'); // numericToLetter(92) — non-examinable derived letter
+    });
+
+    it('is a no-op when every subject self-maps (the current production shape)', async () => {
+      const supabase = makeClient({
+        students: [
+          {
+            id: STUDENT_ID,
+            student_number: 'SN-001',
+            last_name: 'Dela Cruz',
+            first_name: 'Juan',
+            middle_name: null,
+          },
+        ],
+        academic_years: [{ id: 'ay-1', label: 'AY2026' }],
+        terms: TERMS,
+        section_students: [makeEnrolment()],
+        subject_level_offerings: [{ subject: SUBJECT_MATH }],
+        grading_sheets: SHEETS,
+        grade_entries: makeGradeEntries([93, 90, 88, 85]),
+        'attendance_records:presence': [],
+        'attendance_records:school_days': [],
+        evaluation_writeups: [],
+        subject_report_map: [
+          { subject_id: SUBJECT_MATH.id, report_subject_id: SUBJECT_MATH.id },
+        ],
+        subjects: [SUBJECT_MATH],
+      });
+
+      const result = await buildReportCard(
+        supabase as unknown as SupabaseClient,
+        STUDENT_ID
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      expect(result.payload.subjects).toHaveLength(1);
+      expect(result.payload.subjects[0].subject).toEqual(SUBJECT_MATH);
+      expect(result.payload.subjects[0].t1.quarterly).toBe(93);
     });
   });
 

@@ -14,6 +14,11 @@ import {
   DEFAULT_SCHOOL_CONFIG,
   type SchoolConfig,
 } from '@/lib/sis/school-config';
+import {
+  resolveReportSubjects,
+  type ReportMapEntry,
+  type ReportTargetMeta,
+} from '@/lib/report-card/resolve-report-subjects';
 
 // Fully-resolved report card payload for one student in the current academic
 // year. Staff (`/markbook/report-cards/[studentId]`) and parent
@@ -311,6 +316,40 @@ export async function buildReportCard(
     )
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Report-card grouping map (migration 080, KD reference: subject_report_map
+  // wiring task). Global — no AY or level filter, since a mapping is a
+  // catalog-shape property, not a per-year one; the target subject (e.g.
+  // "Mother Tongue" once real fan-in exists) may not itself appear in this
+  // level's `subject_level_offerings` at all — it's only ever a display
+  // target, never directly offered. Two plain lookups rather than a
+  // `subjects!<fk>(...)` embed hint: no precedent for that embed syntax
+  // exists anywhere in this codebase today (the sibling admin route at
+  // app/api/sis/admin/subjects/[subjectId]/report-map/route.ts and
+  // lib/sis/subjects/queries.ts::listSubjectReportMap both already do two
+  // separate `.from('subjects')` lookups for the same table), so this
+  // mirrors that established, easily-testable pattern instead of an
+  // unverified one. Every subject is seeded self-mapped (migration 080), so
+  // in production today this resolves to a full self-map and
+  // resolveReportSubjects is a no-op.
+  const { data: reportMapRaw } = await supabase
+    .from('subject_report_map')
+    .select('subject_id, report_subject_id');
+  const reportMap: ReportMapEntry[] = (reportMapRaw ?? []) as ReportMapEntry[];
+
+  const reportTargets = new Map<string, ReportTargetMeta>();
+  if (reportMap.length > 0) {
+    const targetIds = Array.from(
+      new Set(reportMap.map((r) => r.report_subject_id))
+    );
+    const { data: targetRows } = await supabase
+      .from('subjects')
+      .select('id, code, name, is_examinable')
+      .in('id', targetIds);
+    for (const t of (targetRows ?? []) as ReportTargetMeta[]) {
+      reportTargets.set(t.id, t);
+    }
+  }
+
   // Grading sheets across every section the student touched this AY (so a
   // transferred student's old-section sheets are visible too). Term filter
   // keeps the result tight even when the student has multiple sections.
@@ -452,6 +491,16 @@ export async function buildReportCard(
       t4_sheet_id,
     };
   });
+
+  // Fold graded subjects into their report-card display identity per
+  // subject_report_map (migration 080). Pure + generic — see
+  // lib/report-card/resolve-report-subjects.ts for the algorithm; today
+  // (every subject self-mapped) this returns subjectRows unchanged.
+  const reportSubjectRows = resolveReportSubjects(
+    subjectRows,
+    reportMap,
+    reportTargets
+  );
 
   // Attendance: union per-student counts across every enrolment row in
   // this AY so a transferred student's pre + post-transfer days both show
@@ -620,7 +669,7 @@ export async function buildReportCard(
       },
       level,
       enrollment_status: primary.enrollment_status,
-      subjects: subjectRows,
+      subjects: reportSubjectRows,
       attendance,
       comments,
       schoolConfig,
