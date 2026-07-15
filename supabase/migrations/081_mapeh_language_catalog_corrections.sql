@@ -74,11 +74,33 @@
 -- including closed/archived ones — a much bigger blast radius than a
 -- catalog correction warrants).
 --
+-- REQUIRED DEPLOY STEP — without this, MAPEH/Filipino/Mandarin are inert:
+-- until someone runs `select sync_section_subjects_for_ay('<current AY
+-- code>')` (and then generates grading sheets for the affected sections,
+-- same as any other new subject rollout) for at least the current
+-- operational AY, these 3 subjects exist in the catalog and are "offered"
+-- per `subject_level_offerings`, but appear on NO section's roster and
+-- generate NO grading sheets. Add this to the deploy runbook alongside
+-- applying this migration — do not treat the migration alone as
+-- "MAPEH/Filipino/Mandarin are now live."
+--
 -- Idempotency: §1–§4 are pure ON CONFLICT DO NOTHING inserts, safe to
 -- re-run unconditionally. §5/§6 are gated on the four subjects / MT's
 -- subject_configs row still existing — a re-run after a successful apply
 -- is a safe no-op (RAISE NOTICE only, no assertion re-run, since the target
 -- rows are already gone).
+--
+-- Non-atomicity note (accepted, matches migration 080's own precedent):
+-- §1–§4 each commit independently (per-block begin/commit, not one
+-- outer transaction), so if §5 or §6 aborts on its assertion, the 3 new
+-- subjects + their configs/offerings/report-map rows stay committed while
+-- MUSIC/ARTS/PE/HE (and/or MT's direct offering) remain in place — a
+-- mixed-but-idempotently-recoverable state, not data loss. Re-running the
+-- migration after resolving whatever the assertion flagged completes the
+-- rest cleanly (§1–§4 no-op via ON CONFLICT, §5/§6 pick up where they left
+-- off). This mirrors 080's own transaction-per-block structure; changing
+-- it to one all-or-nothing transaction is a separate, larger decision, not
+-- made here.
 
 -- ═════════════════════════════════════════════════════════════════════
 -- 1. New catalog subjects
@@ -276,24 +298,53 @@ begin
     -- enrolled roster student the moment a sheet exists, regardless of
     -- whether anyone ever entered a score. Only non-null score/grade
     -- CONTENT counts as real graded history that must block this
-    -- migration. Empty numeric[] arrays are NOT null in Postgres —
-    -- array_length() returns NULL (not 0) for an empty array, hence the
-    -- coalesce(..., 0) > 0 form (same idiom migration 080 uses).
+    -- migration.
+    --
+    -- CORRECTNESS-CRITICAL (final-review fix): the placeholder arrays
+    -- `seed_grade_entries_for_sheet` (migration 036) writes are NULL-
+    -- FILLED, not empty — `ww_scores = array_fill(null::numeric,
+    -- array[v_ww_len])`, e.g. `{null,null,null,null,null}`.
+    -- `array_length()` on THAT array returns the element count (5), not
+    -- NULL — only a truly EMPTY `{}` array makes array_length() return
+    -- NULL. A bare `coalesce(array_length(ge.ww_scores,1),0) > 0` check
+    -- (this assertion's first-draft form) would therefore count every
+    -- null-filled placeholder as "real data" and abort against any
+    -- database with generated grading sheets — the normal, expected
+    -- state, including the AY9999 test environment. `array_remove(arr,
+    -- null)` strips the nulls first, so a fully-null placeholder
+    -- correctly reduces to an empty array (array_length -> NULL ->
+    -- coalesced to 0), while an array holding even one real score
+    -- correctly stays non-empty.
+    --
+    -- Also checks `grade_audit_log` — an append-only record (Hard Rule
+    -- #6) that current grade_entries content alone does not capture: a
+    -- grade entered then nulled back out still leaves a real audit trail
+    -- proving graded history occurred. Its own FK
+    -- (`grading_sheet_id -> grading_sheets ON DELETE RESTRICT`, migration
+    -- 001) would otherwise abort the delete at §5c with an opaque FK
+    -- error instead of this clean, intentional message — and per Hard
+    -- Rule #6 the audit rows themselves can never be deleted to work
+    -- around it, so their existence is a hard, permanent block on
+    -- retiring these subjects.
     select count(*) into v_bad_count
     from public.grade_entries ge
     join public.grading_sheets gs on gs.id = ge.grading_sheet_id
     join public.subjects subj on subj.id = gs.subject_id
     where subj.code in ('MUSIC', 'ARTS', 'PE', 'HE')
       and (
-        coalesce(array_length(ge.ww_scores, 1), 0) > 0
-        or coalesce(array_length(ge.pt_scores, 1), 0) > 0
+        coalesce(array_length(array_remove(ge.ww_scores, null), 1), 0) > 0
+        or coalesce(array_length(array_remove(ge.pt_scores, null), 1), 0) > 0
         or ge.qa_score is not null
         or ge.quarterly_grade is not null
         or ge.letter_grade is not null
+        or exists (
+          select 1 from public.grade_audit_log gal
+          where gal.grading_sheet_id = gs.id
+        )
       );
 
     if v_bad_count > 0 then
-      raise exception '[081] ABORT — % grade_entries row(s) under MUSIC/ARTS/PE/HE carry real score/grade content (non-null ww_scores/pt_scores/qa_score/quarterly_grade/letter_grade). Retirement was only confirmed safe on the assumption these four subjects have zero real grade data. Migration aborted BEFORE any deletion — investigate the flagged rows before re-running this migration.', v_bad_count;
+      raise exception '[081] ABORT — % grade_entries row(s) under MUSIC/ARTS/PE/HE carry real score/grade content (non-null ww_scores/pt_scores/qa_score/quarterly_grade/letter_grade) or have grade_audit_log history. Retirement was only confirmed safe on the assumption these four subjects have zero real grade data. Migration aborted BEFORE any deletion — investigate the flagged rows before re-running this migration.', v_bad_count;
     end if;
 
     raise notice '[081] Assertion passed — zero real grade data under MUSIC/ARTS/PE/HE. Proceeding with retirement.';
@@ -431,22 +482,28 @@ begin
   ) then
     raise notice '[081] MT already retargeted to report-only — skipping (already applied).';
   else
-    -- Same enforced precondition as §5a, scoped to MT.
+    -- Same enforced precondition as §5a (incl. the null-filled-array and
+    -- grade_audit_log fixes — see §5a's comment for the full rationale),
+    -- scoped to MT.
     select count(*) into v_bad_count
     from public.grade_entries ge
     join public.grading_sheets gs on gs.id = ge.grading_sheet_id
     join public.subjects subj on subj.id = gs.subject_id
     where subj.code = 'MT'
       and (
-        coalesce(array_length(ge.ww_scores, 1), 0) > 0
-        or coalesce(array_length(ge.pt_scores, 1), 0) > 0
+        coalesce(array_length(array_remove(ge.ww_scores, null), 1), 0) > 0
+        or coalesce(array_length(array_remove(ge.pt_scores, null), 1), 0) > 0
         or ge.qa_score is not null
         or ge.quarterly_grade is not null
         or ge.letter_grade is not null
+        or exists (
+          select 1 from public.grade_audit_log gal
+          where gal.grading_sheet_id = gs.id
+        )
       );
 
     if v_bad_count > 0 then
-      raise exception '[081] ABORT — % grade_entries row(s) under MT (Mother Tongue) carry real score/grade content (non-null ww_scores/pt_scores/qa_score/quarterly_grade/letter_grade). Retargeting MT to report-only was only confirmed safe on the assumption it has zero real grade data. Migration aborted BEFORE any deletion — investigate the flagged rows before re-running this migration.', v_bad_count;
+      raise exception '[081] ABORT — % grade_entries row(s) under MT (Mother Tongue) carry real score/grade content (non-null ww_scores/pt_scores/qa_score/quarterly_grade/letter_grade) or have grade_audit_log history. Retargeting MT to report-only was only confirmed safe on the assumption it has zero real grade data. Migration aborted BEFORE any deletion — investigate the flagged rows before re-running this migration.', v_bad_count;
     end if;
 
     raise notice '[081] Assertion passed — zero real grade data under MT. Proceeding with retargeting to report-only.';
