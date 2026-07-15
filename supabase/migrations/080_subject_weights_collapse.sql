@@ -53,9 +53,12 @@
 --   5. Same split for `template_subject_configs` (Structure Defaults
 --      master, migration 031) — no per-AY dimension, no FK pointing at it
 --      so no repoint step needed.
---   6. `apply_template_to_ay` (newest live body: migration 063 — verified
---      via grep for BOTH `create or replace function` and the uppercase
---      `CREATE OR REPLACE FUNCTION` spelling that 063 actually used; KD
+--   6. `apply_template_to_ay` (newest live body: migration 074, NOT 063 —
+--      074 threaded `schedule` through this function after 063; a stale-
+--      base re-emit here would have silently regressed KD #144's schedule
+--      propagation on every future "Apply template" run. Verified via grep
+--      for BOTH `create or replace function` and the uppercase
+--      `CREATE OR REPLACE FUNCTION` spelling that 063 (and 074) used; KD
 --      #119 hazard) and `create_academic_year` + `sync_section_subjects_for_ay`
 --      (newest live body: migration 079) are re-emitted to read/write the
 --      new subject-scoped `subject_configs` shape and the new offerings
@@ -622,13 +625,17 @@ end $$;
 commit;
 
 -- ═════════════════════════════════════════════════════════════════════
--- 6. apply_template_to_ay re-emit — newest live body is migration 063
---    (grep hazard: 063 used uppercase `CREATE OR REPLACE FUNCTION`, which
---    a lowercase-only grep for `create or replace function` misses — KD
---    #119). Sections branch is byte-identical to 063; subject_configs
---    branch drops level_id from the select/insert list and upserts on
---    (academic_year_id, subject_id) instead of the 3-column key; new
---    branch pushes template_subject_level_offerings → subject_level_offerings.
+-- 6. apply_template_to_ay re-emit — newest live body is migration 074
+--    (NOT 063 — 074 threaded `schedule` through this same function after
+--    063; a prior draft of this migration re-emitted from 063 and would
+--    have silently regressed KD #144's schedule propagation. Grep hazard
+--    noted for the record: 063 used uppercase `CREATE OR REPLACE FUNCTION`,
+--    which a lowercase-only grep for `create or replace function` misses —
+--    KD #119). Sections branch is byte-identical to 074 (schedule threaded
+--    through the INSERT column list, SELECT, and ON CONFLICT DO UPDATE SET);
+--    subject_configs branch drops level_id from the select/insert list and
+--    upserts on (academic_year_id, subject_id) instead of the 3-column key;
+--    new branch pushes template_subject_level_offerings → subject_level_offerings.
 -- ═════════════════════════════════════════════════════════════════════
 
 begin;
@@ -660,15 +667,16 @@ begin
     raise exception 'AY % not found.', v_code;
   end if;
 
-  -- Sections — unchanged from 063. form_class_adviser is per-AY — never
+  -- Sections — unchanged from 074. form_class_adviser is per-AY — never
   -- overwritten.
   with upsert as (
     insert into public.sections
-      (academic_year_id, level_id, name, class_type, form_class_adviser)
-    select v_ay_id, ts.level_id, ts.name, ts.class_type, null
+      (academic_year_id, level_id, name, class_type, schedule, form_class_adviser)
+    select v_ay_id, ts.level_id, ts.name, ts.class_type, ts.schedule, null
     from public.template_sections ts
     on conflict (academic_year_id, level_id, name) do update
-      set class_type = excluded.class_type
+      set class_type = excluded.class_type,
+          schedule   = excluded.schedule
     returning (xmax = 0) as is_insert
   )
   select
