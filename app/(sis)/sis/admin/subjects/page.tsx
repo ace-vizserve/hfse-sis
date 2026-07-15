@@ -7,17 +7,24 @@ import { PageShell } from '@/components/ui/page-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
+import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
 import {
-  listLevels,
   listSubjects,
   listSubjectConfigsForAy,
+  listSubjectLevelOfferings,
+  listSubjectReportMap,
 } from '@/lib/sis/subjects/queries';
+import {
+  listTemplateSubjectConfigs,
+  listTemplateSubjectLevelOfferings,
+} from '@/lib/sis/template/queries';
 import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
-import { SubjectConfigMatrix } from '@/components/sis/subject-config-matrix';
+import { SubjectLevelTree } from '@/components/sis/subject-level-tree';
 import { SubjectAySwitcher } from '@/components/sis/subject-ay-switcher';
 
-// Subject weights + max-slots matrix. school_admin + superadmin. Changing here
-// affects every grading sheet for the (subject × level) inside the selected AY.
+// Subject weights + slots + level attachment tree. school_admin + superadmin.
+// Changing weights here affects every grading sheet for that subject inside
+// the selected AY, at every level it's attached to.
 export default async function SubjectConfigPage({
   searchParams,
 }: {
@@ -53,33 +60,47 @@ export default async function SubjectConfigPage({
     ayList[0] ??
     null;
 
-  const [subjects, levels, configs] = currentAy
+  const [
+    subjects,
+    allLevels,
+    configs,
+    offerings,
+    reportMap,
+    offeredLevelIds,
+    templateOfferings,
+    templateConfigs,
+  ] = currentAy
     ? await Promise.all([
         listSubjects(),
-        listLevels(),
+        getLevelRows(service),
         listSubjectConfigsForAy(currentAy.id),
+        listSubjectLevelOfferings(currentAy.id),
+        listSubjectReportMap(),
+        getOfferedLevelIds(service, currentAy.id),
+        listTemplateSubjectLevelOfferings(),
+        listTemplateSubjectConfigs(),
       ])
-    : [[], [], []];
+    : [[], [], [], [], [], new Set<string>(), [], []];
+
+  // Tree + gap banner both scope to levels genuinely OFFERED this AY (core
+  // + any volatile level with an ay_level_offerings row) — a level with no
+  // offering row this year has no operational meaning here (nothing to
+  // attach subjects to), so excluding it also keeps the gap banner from
+  // flagging every template subject as "missing" at a level nobody's
+  // running classes at this year.
+  const levels = allLevels.filter((l) => l.isCore || offeredLevelIds.has(l.id));
 
   // Structure Defaults is the "what SHOULD be configured" reference — a
   // level missing one of its template subjects silently drops that subject
   // from grading-sheet creation AND the report card, with no error visible
   // anywhere. Compare against it here so the gap is visible where it's fixed.
-  //
-  // Full rows now (not just level/subject ids) so the inline "Structure
-  // Defaults" tab (SubjectConfigMatrix) can render actual weight/slot
-  // values, not just a presence gap. computeSubjectConfigGaps only reads
-  // {level_id, subject_id} off each row, so the wider select is a strict
-  // superset and leaves that presence-only check unaffected.
-  const { data: templateConfigs } = currentAy
-    ? await service
-        .from('template_subject_configs')
-        .select(
-          'subject_id, level_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
-        )
-    : { data: [] };
   const subjectConfigGaps = currentAy
-    ? computeSubjectConfigGaps(levels, subjects, templateConfigs ?? [], configs)
+    ? computeSubjectConfigGaps(
+        levels.map((l) => ({ id: l.id, label: l.label })),
+        subjects,
+        templateOfferings,
+        offerings
+      )
     : [];
 
   const ayOptions = ayList.map((a) => ({
@@ -93,7 +114,7 @@ export default async function SubjectConfigPage({
       <SisPageHeader
         group="Structure"
         title="Subject weights & slots."
-        description="WW / PT / QA weights and max slot counts per subject, level, and academic year."
+        description="WW / PT / QA weights and max slot counts per subject and academic year. Which levels a subject teaches at is managed here too — drag a subject onto a level to attach it."
         chips={
           <>
             {currentAy && (
@@ -130,8 +151,7 @@ export default async function SubjectConfigPage({
               <strong className="font-semibold text-foreground">
                 every grading sheet
               </strong>{' '}
-              for that subject and level in {currentAy.ay_code} — handle with
-              care.
+              for that subject in {currentAy.ay_code} — handle with care.
             </p>
           </div>
         </div>
@@ -160,7 +180,8 @@ export default async function SubjectConfigPage({
                         `${g.levelLabel}: ${g.missingSubjectCodes.join(', ')}`
                     )
                     .join(' · ')}{' '}
-                  — add them below or they won&apos;t appear on the report card.
+                  — attach them below or they won&apos;t appear on the report
+                  card.
                 </p>
               </div>
             </div>
@@ -180,12 +201,15 @@ export default async function SubjectConfigPage({
           </CardContent>
         </Card>
       ) : (
-        <SubjectConfigMatrix
+        <SubjectLevelTree
           subjects={subjects}
           levels={levels}
           configs={configs}
-          templateConfigs={templateConfigs ?? []}
+          offerings={offerings}
+          reportMap={reportMap}
+          templateConfigs={templateConfigs}
           ayCode={currentAy.ay_code}
+          ayId={currentAy.id}
         />
       )}
     </PageShell>

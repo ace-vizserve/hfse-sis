@@ -8,9 +8,12 @@ import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
 // PATCH /api/sis/admin/subjects/[configId]
 //
-// Updates per (subject × level × AY) weights + max slots. Superadmin only
-// — weight changes are high-blast-radius (every grading sheet for that
-// (subject × level) inside this AY reads the new weights on render).
+// Updates per (subject × AY) weights + max slots (migration 080 collapsed
+// the level dimension off `subject_configs` — a config now applies to
+// every level the subject is attached to, see `subject_level_offerings`).
+// school_admin + superadmin — weight changes are high-blast-radius (every
+// grading sheet for this subject inside this AY reads the new weights on
+// render).
 //
 // Body contract: integer percentages 0–100 that sum to 100. Converted to
 // `numeric(4,2)` decimals (0.00–1.00) on write to satisfy the DB check
@@ -45,7 +48,7 @@ export async function PATCH(
   const { data: before, error: loadErr } = await service
     .from('subject_configs')
     .select(
-      'id, academic_year_id, subject_id, level_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
+      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
     )
     .eq('id', configId)
     .maybeSingle();
@@ -94,7 +97,6 @@ export async function PATCH(
     context: {
       academic_year_id: before.academic_year_id,
       subject_id: before.subject_id,
-      level_id: before.level_id,
       before: {
         ww_weight: Number(before.ww_weight),
         pt_weight: Number(before.pt_weight),

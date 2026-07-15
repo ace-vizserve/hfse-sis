@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { GradingSheetPreview } from '@/components/sis/subject-config-matrix';
+import { GradingSheetPreview } from '@/components/sis/grading-sheet-preview';
 
 describe('GradingSheetPreview', () => {
   it('renders one column chip per WW/PT slot plus one QA chip, matching the real sheet shape', () => {

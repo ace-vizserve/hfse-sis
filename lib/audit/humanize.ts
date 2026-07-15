@@ -165,6 +165,9 @@ const ACTION_LABELS: Record<string, string> = {
 
   // Subjects / templates
   'subject_config.update': 'Subject weights updated',
+  'subject_config.create': 'Subject weights set',
+  'subject_level_offering.toggle': 'Subject level attachment updated',
+  'subject_report_map.update': 'Subject report mapping updated',
   'template.section.create': 'Template section created',
   'template.section.update': 'Template section updated',
   'template.section.delete': 'Template section removed',

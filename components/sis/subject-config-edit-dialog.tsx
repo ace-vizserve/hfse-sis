@@ -7,6 +7,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { GradingSheetPreview } from '@/components/sis/grading-sheet-preview';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -18,15 +19,31 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { SubjectConfigUpdateSchema } from '@/lib/schemas/subject-config';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  SubjectConfigCreateSchema,
+  SubjectConfigUpdateSchema,
+} from '@/lib/schemas/subject-config';
 import { cn } from '@/lib/utils';
 
+type SubjectOption = { id: string; code: string; name: string };
+
+// A `subject_configs` row is now subject-scoped only (migration 080 — no
+// level dimension; the same weights apply everywhere the subject is
+// attached). `reportSubjectId` is resolved by the caller (self-map when
+// unmapped) so the dialog never has to reach for `subject_report_map`
+// itself.
 export type SubjectConfigDraft = {
   configId: string;
+  subjectId: string;
   subjectCode: string;
   subjectName: string;
-  levelCode: string;
-  levelLabel: string;
   ayCode: string;
   ww_weight: number; // integer percentage
   pt_weight: number;
@@ -34,16 +51,19 @@ export type SubjectConfigDraft = {
   ww_max_slots: number;
   pt_max_slots: number;
   qa_max: number; // max possible QA score (default 30 per Hard Rule #1)
+  reportSubjectId: string;
 };
 
 export function SubjectConfigEditDialog({
   draft,
   open,
   onOpenChange,
+  subjects,
 }: {
   draft: SubjectConfigDraft | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  subjects: SubjectOption[];
 }) {
   const router = useRouter();
   // No auto-fill (KD-#155-candidate design decision — see the Subject
@@ -57,6 +77,7 @@ export function SubjectConfigEditDialog({
   const [wwSlots, setWwSlots] = useState('');
   const [ptSlots, setPtSlots] = useState('');
   const [qaMax, setQaMax] = useState('');
+  const [reportSubjectId, setReportSubjectId] = useState('');
 
   // Re-seed on draft change (i.e., user opened the dialog for a different row).
   useEffect(() => {
@@ -67,6 +88,7 @@ export function SubjectConfigEditDialog({
     setWwSlots(String(draft.ww_max_slots));
     setPtSlots(String(draft.pt_max_slots));
     setQaMax(String(draft.qa_max));
+    setReportSubjectId(draft.reportSubjectId);
   }, [draft]);
 
   const wwN = Number(ww) || 0;
@@ -96,7 +118,7 @@ export function SubjectConfigEditDialog({
     onSuccess: () => {
       // draft is guaranteed non-null at mutate-time (guarded in save()).
       toast.success(
-        `${draft!.subjectName} · ${draft!.levelCode}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
+        `${draft!.subjectName}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
       );
       onOpenChange(false);
       router.refresh();
@@ -116,6 +138,43 @@ export function SubjectConfigEditDialog({
     saveMutation.mutate({ configId: draft.configId, payload: parsed.data });
   }
 
+  // Reports-to — independent auto-save mutation, own toast. Rare edit, so
+  // it doesn't share a Save button with the weights form; changing the
+  // Select fires immediately.
+  const reportMapMutation = useMutation({
+    mutationFn: (vars: { subjectId: string; reportSubjectId: string }) =>
+      apiFetch(
+        `/api/sis/admin/subjects/${vars.subjectId}/report-map`,
+        jsonInit('PUT', { report_subject_id: vars.reportSubjectId })
+      ),
+    onSuccess: (_data, vars) => {
+      const target = subjects.find((s) => s.id === vars.reportSubjectId);
+      toast.success(
+        vars.reportSubjectId === vars.subjectId
+          ? `${draft?.subjectCode} now reports as itself`
+          : `${draft?.subjectCode} now reports as ${target?.code ?? 'another subject'}`
+      );
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'Could not update mapping');
+      // Revert the Select on failure.
+      if (draft) setReportSubjectId(draft.reportSubjectId);
+    },
+  });
+
+  function onReportSubjectChange(next: string) {
+    setReportSubjectId(next);
+    if (!draft) return;
+    reportMapMutation.mutate({
+      subjectId: draft.subjectId,
+      reportSubjectId: next,
+    });
+  }
+
+  const previewValid =
+    Number(wwSlots) > 0 && Number(ptSlots) > 0 && Number(qaMax) > 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl!">
@@ -127,19 +186,15 @@ export function SubjectConfigEditDialog({
             </div>
             <div className="min-w-0 flex-1 space-y-1">
               <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                {draft
-                  ? `${draft.ayCode} · ${draft.levelLabel}`
-                  : 'Subject weights'}
+                {draft ? draft.ayCode : 'Subject weights'}
               </p>
               <DialogTitle className="font-serif text-xl font-semibold leading-tight tracking-tight text-foreground">
-                {draft
-                  ? `${draft.subjectName} · ${draft.levelCode}`
-                  : 'Subject weights'}
+                {draft ? draft.subjectName : 'Subject weights'}
               </DialogTitle>
               <DialogDescription className="text-[13px] leading-relaxed text-muted-foreground">
                 {draft
-                  ? 'Changes apply to every grading sheet for this subject and year level. Locked sheets are not changed.'
-                  : 'Pick a cell to edit.'}
+                  ? 'Changes apply to every grading sheet for this subject in every level it teaches. Locked sheets are not changed.'
+                  : 'Pick a subject to edit.'}
               </DialogDescription>
             </div>
           </div>
@@ -230,6 +285,54 @@ export function SubjectConfigEditDialog({
                 />
               </div>
             </FieldRow>
+
+            {/* Live grading-sheet preview — the actual columns a teacher would
+                see, reflecting the slot counts above as they're edited. */}
+            {previewValid && (
+              <FieldRow eyebrow="Grading sheet preview">
+                <div className="w-fit rounded-md border border-border bg-muted/20 px-2 py-1">
+                  <GradingSheetPreview
+                    config={{
+                      ww_max_slots: Number(wwSlots),
+                      pt_max_slots: Number(ptSlots),
+                      qa_max: Number(qaMax),
+                    }}
+                  />
+                </div>
+              </FieldRow>
+            )}
+
+            {/* Reports-to — which report-card column this subject's grades roll
+                up into. Global + independent of weights (subject_report_map has
+                no AY/level column) so it auto-saves on change with its own
+                toast rather than sharing the weights Save button. */}
+            <FieldRow
+              eyebrow="Reports to"
+              helper="Which report-card column this subject's grades show under. Most subjects report as themselves."
+            >
+              <Select
+                value={reportSubjectId}
+                onValueChange={onReportSubjectChange}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Pick a subject" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjects
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        <span className="font-mono text-xs">{s.code}</span>
+                        <span className="ml-2 text-muted-foreground">
+                          {s.name}
+                          {s.id === draft.subjectId ? ' (itself)' : ''}
+                        </span>
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </FieldRow>
           </div>
         )}
 
@@ -253,6 +356,222 @@ export function SubjectConfigEditDialog({
               <Save className="size-3.5" />
             )}
             {saving ? 'Saving…' : 'Save weights'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// =====================================================================
+// Create-weights dialog — opens from a subject chip attached to a level
+// with no `subject_configs` row yet for this AY. Mirrors
+// TemplateSubjectConfigCreateDialog's blank-start behavior (no
+// level-profile auto-fill — weight is a property of the subject, not any
+// one level, so there's no single level context to derive a default from
+// even when the chip that opened it happens to live under one level).
+// =====================================================================
+
+export function SubjectConfigCreateDialog({
+  subject,
+  ayId,
+  ayCode,
+  open,
+  onOpenChange,
+}: {
+  subject: SubjectOption | null;
+  ayId: string;
+  ayCode: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const router = useRouter();
+
+  const [ww, setWw] = useState('');
+  const [pt, setPt] = useState('');
+  const [qa, setQa] = useState('');
+  const [wwSlots, setWwSlots] = useState('5');
+  const [ptSlots, setPtSlots] = useState('5');
+  const [qaMax, setQaMax] = useState('30');
+
+  useEffect(() => {
+    if (open) {
+      setWw('');
+      setPt('');
+      setQa('');
+      setWwSlots('5');
+      setPtSlots('5');
+      setQaMax('30');
+    }
+  }, [open, subject?.id]);
+
+  const wwN = Number(ww) || 0;
+  const ptN = Number(pt) || 0;
+  const qaN = Number(qa) || 0;
+  const sum = wwN + ptN + qaN;
+  const sumOk = sum === 100;
+
+  const parsed = subject
+    ? SubjectConfigCreateSchema.safeParse({
+        academic_year_id: ayId,
+        subject_id: subject.id,
+        ww_weight: wwN,
+        pt_weight: ptN,
+        qa_weight: qaN,
+        ww_max_slots: Number(wwSlots) || 0,
+        pt_max_slots: Number(ptSlots) || 0,
+        qa_max: Number(qaMax) || 0,
+      })
+    : null;
+
+  const createMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch('/api/sis/admin/subjects', jsonInit('POST', payload)),
+    onSuccess: () => {
+      toast.success(`Set weights for ${subject?.code}`);
+      onOpenChange(false);
+      router.refresh();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'save failed');
+    },
+  });
+  const saving = createMutation.isPending;
+
+  function save() {
+    if (!subject || !parsed || !parsed.success) {
+      toast.error(
+        (!parsed?.success && parsed?.error.issues[0]?.message) ||
+          'Invalid values'
+      );
+      return;
+    }
+    createMutation.mutate(parsed.data);
+  }
+
+  const previewValid =
+    Number(wwSlots) > 0 && Number(ptSlots) > 0 && Number(qaMax) > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl!">
+        <DialogHeader>
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-brand-tile-amber">
+              <Scale className="size-4" />
+            </div>
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                {ayCode}
+              </p>
+              <DialogTitle className="font-serif text-xl font-semibold leading-tight tracking-tight text-foreground">
+                {subject ? `Set weights for ${subject.name}` : 'Set weights'}
+              </DialogTitle>
+              <DialogDescription className="text-[13px] leading-relaxed text-muted-foreground">
+                Applies to every level this subject is attached to in {ayCode}.
+                Used the moment a grading sheet is generated.
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+
+        {subject && (
+          <div className="space-y-5">
+            <RatioBar ww={wwN} pt={ptN} qa={qaN} sumOk={sumOk} sum={sum} />
+
+            <FieldRow
+              eyebrow="Weights"
+              helper="Must sum to 100%. Canonical HFSE: Primary 40·40·20, Secondary 30·50·20."
+            >
+              <div className="grid grid-cols-3 gap-3">
+                <PercentField
+                  label="WW"
+                  sublabel="Written Works"
+                  value={ww}
+                  setValue={setWw}
+                />
+                <PercentField
+                  label="PT"
+                  sublabel="Perf. Tasks"
+                  value={pt}
+                  setValue={setPt}
+                />
+                <PercentField
+                  label="QA"
+                  sublabel="Quarterly"
+                  value={qa}
+                  setValue={setQa}
+                />
+              </div>
+            </FieldRow>
+
+            <FieldRow eyebrow="Max slots" helper="Hard cap 5 per KD #5.">
+              <div className="grid grid-cols-2 gap-3">
+                <NumberField
+                  label="WW slots"
+                  value={wwSlots}
+                  setValue={setWwSlots}
+                  maxDigits={1}
+                />
+                <NumberField
+                  label="PT slots"
+                  value={ptSlots}
+                  setValue={setPtSlots}
+                  maxDigits={1}
+                />
+              </div>
+            </FieldRow>
+
+            <FieldRow
+              eyebrow="QA max score"
+              helper="Denominator of the QA percentage. Canonical 30 per Hard Rule #1."
+            >
+              <div className="max-w-[160px]">
+                <NumberField
+                  label="Max score"
+                  value={qaMax}
+                  setValue={setQaMax}
+                  maxDigits={3}
+                />
+              </div>
+            </FieldRow>
+
+            {previewValid && (
+              <FieldRow eyebrow="Grading sheet preview">
+                <div className="w-fit rounded-md border border-border bg-muted/20 px-2 py-1">
+                  <GradingSheetPreview
+                    config={{
+                      ww_max_slots: Number(wwSlots),
+                      pt_max_slots: Number(ptSlots),
+                      qa_max: Number(qaMax),
+                    }}
+                  />
+                </div>
+              </FieldRow>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={save}
+            disabled={!subject || saving || !parsed?.success}
+            className="gap-1.5"
+          >
+            {saving ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Save className="size-3.5" />
+            )}
+            {saving ? 'Saving…' : 'Set weights'}
           </Button>
         </DialogFooter>
       </DialogContent>

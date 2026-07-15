@@ -38,8 +38,9 @@ import { listAllApproverAssignments } from '@/lib/sis/approvers/queries';
 import {
   listLevels,
   listSubjects,
-  listSubjectConfigsForAy,
+  listSubjectLevelOfferings,
 } from '@/lib/sis/subjects/queries';
+import { listTemplateSubjectLevelOfferings } from '@/lib/sis/template/queries';
 import {
   computeSubjectConfigGaps,
   type SubjectConfigGap,
@@ -383,28 +384,30 @@ async function loadApproverFlowCounts(): Promise<Record<string, number>> {
   }
 }
 
-// Levels whose Structure Defaults (template_subject_configs) template lists
-// subjects this AY's subject_configs is missing — same computation and
-// query shape as the warning banner on /sis/admin/subjects (that page's
-// existing block is the source this mirrors), scoped to every in-use level
-// rather than the page's single selected AY view. A missing config silently
+// Levels whose Structure Defaults (template_subject_level_offerings)
+// template says a subject SHOULD teach at, that this AY's
+// subject_level_offerings is missing — same computation and offerings-based
+// query shape as the warning banner on /sis/admin/subjects (migration 080
+// moved "which levels a subject teaches at" off subject_configs/
+// template_subject_configs onto these two offerings tables — see that
+// page's source, this mirrors it), scoped to every in-use level rather
+// than the page's single selected AY view. A missing attachment silently
 // drops that subject from grading-sheet creation AND the report card with
 // no visible signal anywhere else, so it earns a hub row.
 async function loadSubjectConfigGapsForHubUncached(
   ayId: string
 ): Promise<SubjectConfigGap[]> {
-  const service = createServiceClient();
-  const [subjects, levels, configs, templateResult] = await Promise.all([
+  const [subjects, levels, offerings, templateOfferings] = await Promise.all([
     listSubjects(),
     listLevels(),
-    listSubjectConfigsForAy(ayId),
-    service.from('template_subject_configs').select('subject_id, level_id'),
+    listSubjectLevelOfferings(ayId),
+    listTemplateSubjectLevelOfferings(),
   ]);
   return computeSubjectConfigGaps(
     levels,
     subjects,
-    templateResult.data ?? [],
-    configs
+    templateOfferings,
+    offerings
   );
 }
 
