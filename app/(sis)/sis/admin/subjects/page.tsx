@@ -1,13 +1,24 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { AlertTriangle, ArrowDown, BookOpenCheck } from 'lucide-react';
+import {
+  AlertTriangle,
+  BookOpenCheck,
+  ChevronDown,
+  PlusCircle,
+} from 'lucide-react';
 
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { PageShell } from '@/components/ui/page-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
 import {
@@ -23,11 +34,11 @@ import {
   listTemplateSubjectLevelOfferings,
 } from '@/lib/sis/template/queries';
 import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
-import { SubjectLevelTree } from '@/components/sis/subject-level-tree';
 import { SubjectAySwitcher } from '@/components/sis/subject-ay-switcher';
 import { SubjectCatalogCard } from '@/components/sis/subject-catalog-card';
 import { SectionAssignCard } from '@/components/sis/section-assign-card';
 import { SubjectTrackViewToggle } from '@/components/sis/subject-track-view-toggle';
+import { AdvancedSubjectViewSheet } from '@/components/sis/advanced-subject-view-sheet';
 
 // "Unified Subject Setup page" plan, Task 1 (docs:
 // C:\Users\Ace\.claude\plans\my-bad-its-not-graceful-creek.md). Redesigns
@@ -141,6 +152,19 @@ export default async function SubjectConfigPage({
       )
     : [];
 
+  const needsAttentionCount = catalogForLevel.filter(
+    (c) => c.needsAttention
+  ).length;
+  // When most/all of the catalog needs attention, that's "this year hasn't
+  // been set up yet" (fix: Apply template, once, from Structure Defaults —
+  // see the gap banner below), not a list of individual gaps worth
+  // reviewing one at a time. Auto-expanding into a wall of amber rows in
+  // that case doesn't help anyone; only open automatically when there's a
+  // genuinely small, reviewable number of real exceptions.
+  const catalogNeedsWholesaleSetup =
+    catalogForLevel.length > 0 &&
+    needsAttentionCount / catalogForLevel.length > 0.5;
+
   const ayOptions = ayList.map((a) => ({
     ayCode: a.ay_code,
     label: a.label,
@@ -220,26 +244,72 @@ export default async function SubjectConfigPage({
             (n, g) => n + g.missingSubjectCodes.length,
             0
           );
+          // A handful of named gaps is worth reading; a wall of nearly
+          // every subject at every level isn't a checklist anymore, it's a
+          // sign the AY hasn't been attached to Structure Defaults at all
+          // — say that plainly instead of listing dozens of codes nobody
+          // can actually scan.
+          const wholesale = totalMissing > 20;
+          const MAX_CODES_PER_LEVEL = 6;
+          const MAX_LEVELS_SHOWN = 5;
+          const shownGaps = subjectConfigGaps.slice(0, MAX_LEVELS_SHOWN);
+          const hiddenLevelCount = subjectConfigGaps.length - shownGaps.length;
+
           return (
             <div className="flex items-start gap-4 rounded-xl border border-brand-amber/30 bg-brand-amber-light p-5">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-amber text-ink shadow-brand-tile-amber">
                 <AlertTriangle className="size-4" />
               </div>
-              <div className="flex-1 space-y-1.5">
+              <div className="flex-1 space-y-2">
                 <p className="font-serif text-base font-semibold text-foreground">
-                  {totalMissing} subject{totalMissing === 1 ? '' : 's'} missing
-                  from Structure Defaults
+                  {wholesale
+                    ? `${currentAy.ay_code} hasn't been set up yet`
+                    : `${totalMissing} subject${totalMissing === 1 ? '' : 's'} missing from Structure Defaults`}
                 </p>
-                <p className="text-sm text-muted-foreground">
-                  {subjectConfigGaps
-                    .map(
-                      (g) =>
-                        `${g.levelLabel}: ${g.missingSubjectCodes.join(', ')}`
-                    )
-                    .join(' · ')}{' '}
-                  — attach them below or they won&apos;t appear on the report
-                  card.
-                </p>
+                {wholesale ? (
+                  <p className="text-sm text-muted-foreground">
+                    This is a one-time step, not {totalMissing} separate ones —
+                    go to{' '}
+                    <Link
+                      href="/sis/admin/template"
+                      className="font-medium text-foreground underline underline-offset-2"
+                    >
+                      Structure Defaults
+                    </Link>{' '}
+                    and click <strong>Apply template</strong> to bring every
+                    subject&apos;s weights in at once, then come back here to
+                    attach them to sections.
+                  </p>
+                ) : (
+                  <ul className="space-y-1 text-sm text-muted-foreground">
+                    {shownGaps.map((g) => {
+                      const shown = g.missingSubjectCodes.slice(
+                        0,
+                        MAX_CODES_PER_LEVEL
+                      );
+                      const hiddenCount =
+                        g.missingSubjectCodes.length - shown.length;
+                      return (
+                        <li key={g.levelId}>
+                          <span className="font-medium text-foreground">
+                            {g.levelLabel}:
+                          </span>{' '}
+                          {shown.join(', ')}
+                          {hiddenCount > 0 && ` +${hiddenCount} more`}
+                        </li>
+                      );
+                    })}
+                    {hiddenLevelCount > 0 && (
+                      <li>+{hiddenLevelCount} more levels</li>
+                    )}
+                  </ul>
+                )}
+                {!wholesale && (
+                  <p className="text-sm text-muted-foreground">
+                    Attach them below or they won&apos;t appear on the report
+                    card.
+                  </p>
+                )}
               </div>
             </div>
           );
@@ -258,50 +328,87 @@ export default async function SubjectConfigPage({
           </CardContent>
         </Card>
       ) : (
-        <Tabs defaultValue="subjects" className="space-y-5">
-          <TabsList variant="default" className="w-fit">
-            <TabsTrigger value="subjects">Setup</TabsTrigger>
-            <TabsTrigger value="advanced">
-              Advanced (drag &amp; drop)
-            </TabsTrigger>
-          </TabsList>
+        <div className="space-y-5">
+          {/* Catalog is secondary now — the core action is attaching
+              subjects to sections below. Collapsed by default so it
+              doesn't compete with that; auto-opens when there's a small,
+              genuinely reviewable number of real exceptions, but NOT when
+              the whole level needs setup (that's the gap banner's job, via
+              Apply template — expanding a wall of amber rows here doesn't
+              help that case). */}
+          <Collapsible
+            defaultOpen={needsAttentionCount > 0 && !catalogNeedsWholesaleSetup}
+          >
+            <Card className="gap-0 overflow-hidden py-0">
+              <CollapsibleTrigger className="group flex w-full items-center gap-3 px-5 py-4 text-left">
+                <div className="min-w-0 flex-1 leading-tight">
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Subject catalog
+                  </p>
+                  <p className="truncate font-serif text-[15px] font-semibold text-foreground">
+                    {catalogForLevel.length} subject
+                    {catalogForLevel.length === 1 ? '' : 's'} for {levelLabel}
+                    {needsAttentionCount > 0 &&
+                      ` — ${needsAttentionCount} need${needsAttentionCount === 1 ? 's' : ''} attention`}
+                  </p>
+                </div>
+                {needsAttentionCount > 0 && (
+                  <Badge variant="warning" className="shrink-0 gap-1">
+                    <AlertTriangle className="size-3" />
+                    {needsAttentionCount}
+                  </Badge>
+                )}
+                <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="border-t border-border">
+                <SubjectCatalogCard
+                  catalog={catalogForLevel}
+                  levelLabel={levelLabel}
+                  ayCode={currentAy.ay_code}
+                  ayId={currentAy.id}
+                  levelsOfType={levels
+                    .filter((l) => l.levelType === levelType)
+                    .map((l) => ({ id: l.id, code: l.code, label: l.label }))}
+                  bare
+                />
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
 
-          <TabsContent value="subjects" className="space-y-5">
-            <SubjectCatalogCard
-              catalog={catalogForLevel}
-              levelLabel={levelLabel}
-              ayCode={currentAy.ay_code}
-              ayId={currentAy.id}
-              levelsOfType={levels
-                .filter((l) => l.levelType === levelType)
-                .map((l) => ({ id: l.id, code: l.code, label: l.label }))}
-            />
-
-            <div className="flex items-center gap-2 pl-1 text-xs text-muted-foreground">
-              <ArrowDown className="size-3.5 shrink-0" />
-              Once a subject&apos;s set up above, put it in front of the
-              sections that teach it below.
-            </div>
-
+          {sectionsForLevel.length === 0 ? (
+            <Card className="items-center py-12 text-center">
+              <CardContent className="flex flex-col items-center gap-3">
+                <PlusCircle className="size-6 text-muted-foreground" />
+                <div className="font-serif text-lg font-semibold text-foreground">
+                  No {levelLabel} sections yet
+                </div>
+                <p className="max-w-sm text-sm text-muted-foreground">
+                  Subjects can&apos;t be attached until a section exists to
+                  attach them to.
+                </p>
+                <Button asChild size="sm" className="mt-1">
+                  <Link href="/sis/sections">Create a section</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
             <SectionAssignCard
               sections={sectionsForLevel}
               levelLabel={levelLabel}
             />
-          </TabsContent>
+          )}
 
-          <TabsContent value="advanced" className="space-y-5">
-            <SubjectLevelTree
-              subjects={subjects}
-              levels={levels}
-              configs={configs}
-              offerings={offerings}
-              reportMap={reportMap}
-              templateConfigs={templateConfigs}
-              ayCode={currentAy.ay_code}
-              ayId={currentAy.id}
-            />
-          </TabsContent>
-        </Tabs>
+          <AdvancedSubjectViewSheet
+            subjects={subjects}
+            levels={levels}
+            configs={configs}
+            offerings={offerings}
+            reportMap={reportMap}
+            templateConfigs={templateConfigs}
+            ayCode={currentAy.ay_code}
+            ayId={currentAy.id}
+          />
+        </div>
       )}
     </PageShell>
   );

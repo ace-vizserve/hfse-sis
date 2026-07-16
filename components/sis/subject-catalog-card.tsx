@@ -142,6 +142,7 @@ export function SubjectCatalogCard({
   ayCode,
   ayId,
   levelsOfType,
+  bare = false,
 }: {
   catalog: CatalogSubjectRow[];
   levelLabel: string;
@@ -153,6 +154,11 @@ export function SubjectCatalogCard({
    * `app/(sis)/sis/admin/subjects/page.tsx` already computes for the
    * Advanced tab). */
   levelsOfType: LevelOption[];
+  /** True when a parent already supplies the Card chrome + title/badge
+   * (the collapsible "Subject catalog" summary bar on the Setup page) —
+   * skips this component's own icon-tile header, keeping only the "+ Add
+   * subject" toolbar row and the table itself. */
+  bare?: boolean;
 }) {
   const router = useRouter();
   const levelType =
@@ -198,36 +204,53 @@ export function SubjectCatalogCard({
 
   const columnCount = levelType === 'secondary' ? 6 : 5;
 
+  const Root = bare ? 'div' : Card;
+  const rootProps = bare ? {} : { className: 'gap-0 overflow-hidden py-0' };
+
   return (
-    <Card className="gap-0 overflow-hidden py-0">
-      <div className="flex flex-wrap items-center gap-3 px-5 pb-4 pt-5">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-          <ListChecks className="size-4" />
+    <Root {...rootProps}>
+      {bare ? (
+        <div className="flex justify-end px-5 pb-3 pt-4">
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 gap-1.5"
+            onClick={() => setAddOpen(true)}
+          >
+            <Plus className="size-3.5" />
+            Add subject
+          </Button>
         </div>
-        <div className="min-w-0 flex-1 leading-tight">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            ① Subjects
-          </p>
-          <p className="truncate font-serif text-[16px] font-semibold text-foreground">
-            {levelLabel}&apos;s catalog for {ayCode}
-          </p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3 px-5 pb-4 pt-5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <ListChecks className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1 leading-tight">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              ① Subjects
+            </p>
+            <p className="truncate font-serif text-[16px] font-semibold text-foreground">
+              {levelLabel}&apos;s catalog for {ayCode}
+            </p>
+          </div>
+          {needsAttentionCount > 0 && (
+            <Badge variant="warning" className="shrink-0 gap-1">
+              <AlertTriangle className="size-3" />
+              {needsAttentionCount} need{needsAttentionCount === 1 ? 's' : ''}{' '}
+              attention
+            </Badge>
+          )}
+          <Button
+            size="sm"
+            className="shrink-0 gap-1.5"
+            onClick={() => setAddOpen(true)}
+          >
+            <Plus className="size-3.5" />
+            Add subject
+          </Button>
         </div>
-        {needsAttentionCount > 0 && (
-          <Badge variant="warning" className="shrink-0 gap-1">
-            <AlertTriangle className="size-3" />
-            {needsAttentionCount} need{needsAttentionCount === 1 ? 's' : ''}{' '}
-            attention
-          </Badge>
-        )}
-        <Button
-          size="sm"
-          className="shrink-0 gap-1.5"
-          onClick={() => setAddOpen(true)}
-        >
-          <Plus className="size-3.5" />
-          Add subject
-        </Button>
-      </div>
+      )}
 
       {catalog.length === 0 ? (
         <div className="border-t border-border px-5 py-10 text-center text-sm text-muted-foreground">
@@ -486,18 +509,17 @@ export function SubjectCatalogCard({
           </div>
         </SheetContent>
       </Sheet>
-    </Card>
+    </Root>
   );
 }
 
 // Weights cell — three states: a deliberate "No sheet" chip
 // (grading_method='no_sheet', so there ARE no weights by design, not a
-// gap); "No weights set" (no subject_configs row — a genuine gap, dashed
-// amber, mirrors subject-monitoring-table.tsx's identical fallback chip);
-// or the WW·PT·QA profile chip. An unconfirmed (migration 085
-// `weights_confirmed=false`, the GP/COMP/ARTD/PESTD case) row is already
-// carrying the "Needs attention" pill in the Subject cell — this cell
-// deliberately does NOT repeat that fact a second time.
+// gap); "Not set" (no subject_configs row — plain muted text, not a
+// second amber badge, since the row's own "Needs attention" pill already
+// flags this exact gap once); or the WW·PT·QA profile chip. An
+// unconfirmed (migration 085 `weights_confirmed=false`, the GP/COMP/ARTD/
+// PESTD case) row also relies on that same pill rather than repeating it.
 function WeightsCell({ subject }: { subject: CatalogSubjectRow }) {
   if (subject.grading_method === 'no_sheet') {
     return (
@@ -508,15 +530,7 @@ function WeightsCell({ subject }: { subject: CatalogSubjectRow }) {
   }
 
   if (!subject.config) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-brand-amber/50 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-brand-amber">
-        <span
-          className="size-1.5 shrink-0 rounded-full bg-brand-amber"
-          aria-hidden
-        />
-        No weights set
-      </span>
-    );
+    return <span className="text-sm text-muted-foreground/70">Not set</span>;
   }
 
   const ww = Math.round(subject.config.ww_weight * 100);

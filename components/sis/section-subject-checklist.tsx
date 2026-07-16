@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { Check, Languages, Loader2 } from 'lucide-react';
+import { Languages, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -11,11 +11,10 @@ import { MOTHER_TONGUE_SUBJECT_CODES } from '@/lib/schemas/subject';
 import type { SectionClassType } from '@/lib/schemas/section';
 import { resolveTrackBundle } from '@/lib/sis/track-bundles';
 import type { SectionWithSubjectsRow } from '@/lib/sis/subjects/queries';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 
 // SectionSubjectChecklist — Step ② "Assign to sections"'s per-section
 // full-catalog checklist (Task 3 of the "Unified Subject Setup page"
@@ -256,53 +255,60 @@ export function SectionSubjectChecklist({
         </div>
       )}
 
-      <div className="divide-y divide-border rounded-lg border border-border">
+      {/* Compact toggle-chip grid, not a tall one-subject-per-row list —
+          with 17+ sections on a level and every section carrying roughly
+          the same subject set, a vertical list here is what turns the
+          whole page into a wall of near-identical scrolling. A chip wraps
+          typically 1-2 lines instead of 5-6. Four states, all visible on
+          the chip itself: attached+recommended (filled, no extra mark),
+          attached+not-recommended ("extra" tag — a leftover from a track
+          flip, still real), unattached+recommended (dashed amber ring —
+          a gap), unattached+not-recommended (plain outline). */}
+      <div className="flex flex-wrap gap-1.5">
         {genericSubjects.map((s) => {
           const checked = attachedIds.has(s.subjectConfigId);
           const recommended = recommendedCodes?.has(s.code) ?? false;
           const busy =
             pendingId === s.subjectConfigId && toggleMutation.isPending;
           return (
-            <label
+            <button
               key={s.subjectConfigId}
-              className="flex items-center gap-3 px-3 py-2.5 text-sm"
+              type="button"
+              role="checkbox"
+              aria-checked={checked}
+              aria-label={`${s.name} — ${checked ? 'attached to' : 'not attached to'} ${section.name}`}
+              disabled={busy}
+              onClick={() => handleToggle(s.subjectConfigId, !checked)}
+              title={s.name}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-60',
+                checked
+                  ? 'border-brand-indigo/40 bg-accent text-accent-foreground'
+                  : 'border-border bg-card text-muted-foreground hover:border-hairline-strong hover:text-foreground',
+                !checked && recommended && 'border-dashed border-brand-amber/60'
+              )}
             >
-              <Checkbox
-                checked={checked}
-                disabled={busy}
-                onCheckedChange={(v) =>
-                  handleToggle(s.subjectConfigId, v === true)
-                }
-                aria-label={`${s.name} — attached to ${section.name}`}
-              />
-              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+              <span className="font-mono text-[9px] uppercase tracking-[0.08em] opacity-70">
                 {s.code}
               </span>
-              <span className="flex-1 font-medium text-foreground">
-                {s.name}
-              </span>
-              {!s.isExaminable && (
-                <Badge variant="muted" className="h-4 shrink-0 px-1 text-[9px]">
-                  Non-exam
-                </Badge>
+              {s.name}
+              {checked && !recommended && (
+                <span className="font-mono text-[8px] font-semibold uppercase tracking-[0.06em] text-brand-amber">
+                  extra
+                </span>
               )}
-              {recommended && (
-                <Badge
-                  variant="secondary"
-                  className="h-5 shrink-0 gap-1 text-[9px]"
-                >
-                  <Check className="size-2.5" />
-                  Recommended
-                </Badge>
+              {!checked && recommended && (
+                <span
+                  className="size-1.5 shrink-0 rounded-full bg-brand-amber"
+                  aria-hidden
+                />
               )}
-              {busy && (
-                <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
-              )}
-            </label>
+              {busy && <Loader2 className="size-3 shrink-0 animate-spin" />}
+            </button>
           );
         })}
         {genericSubjects.length === 0 && (
-          <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             No catalog subjects are offered at this section&apos;s level yet.
           </p>
         )}

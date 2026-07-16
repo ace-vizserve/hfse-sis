@@ -171,6 +171,60 @@ export function SectionAssignCard({
     bulkApplyMutation.mutate(bulkClassType);
   }
 
+  // Primary has no Global/Standard track — its equivalent of the bulk
+  // flag-buttons is "attach everything offered here that isn't already,"
+  // one click across every selected section, reusing the existing
+  // load-defaults route (pre-existing, additive-only, same as every other
+  // section_subjects write path) instead of forcing one-by-one expand +
+  // check per section.
+  const bulkLoadDefaultsMutation = useMutation({
+    mutationFn: async () => {
+      let sectionCount = 0;
+      let sheetCount = 0;
+      const errors: string[] = [];
+      for (const s of selectedSections) {
+        try {
+          const result = (await apiFetch(
+            `/api/sections/${s.id}/subjects/load-defaults`,
+            jsonInit('POST', {})
+          )) as { inserted?: number; sheetsInserted?: number };
+          if ((result.inserted ?? 0) > 0) sectionCount++;
+          sheetCount += result.sheetsInserted ?? 0;
+        } catch (e) {
+          const detail =
+            e instanceof ApiError && e.body && typeof e.body === 'object'
+              ? (e.body as { error?: string }).error
+              : undefined;
+          errors.push(`${s.name}: ${detail ?? 'failed'}`);
+        }
+      }
+      return { sectionCount, sheetCount, errors };
+    },
+    onSuccess: ({ sectionCount, sheetCount, errors }) => {
+      if (sectionCount > 0) {
+        toast.success(
+          `Attached subjects to ${sectionCount} section${sectionCount === 1 ? '' : 's'}` +
+            (sheetCount > 0
+              ? ` — ${sheetCount} new sheet${sheetCount === 1 ? '' : 's'}`
+              : '')
+        );
+      } else if (errors.length === 0) {
+        toast.info('Everything selected already has its subjects attached');
+      }
+      if (errors.length > 0) {
+        toast.error(
+          `${errors.length} section${errors.length === 1 ? '' : 's'} failed`,
+          { description: errors.join('\n') }
+        );
+      }
+      setSelectedIds(new Set());
+      if (sectionCount > 0) router.refresh();
+    },
+    onError: () => {
+      toast.error('Could not attach subjects to the selected sections');
+    },
+  });
+
   return (
     <Card className="gap-0 overflow-hidden py-0">
       <div className="flex flex-wrap items-center gap-3 px-5 pb-4 pt-5">
@@ -186,30 +240,48 @@ export function SectionAssignCard({
           </p>
         </div>
 
-        {levelType === 'secondary' && (
-          <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
+          {levelType === 'secondary' ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled={selectedIds.size === 0}
+                onClick={() => setBulkClassType('Global')}
+              >
+                Flag selected as Global
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled={selectedIds.size === 0}
+                onClick={() => setBulkClassType('Standard')}
+              >
+                Flag selected as Standard
+              </Button>
+            </>
+          ) : (
             <Button
               type="button"
               variant="outline"
               size="sm"
               className="gap-1.5"
-              disabled={selectedIds.size === 0}
-              onClick={() => setBulkClassType('Global')}
+              disabled={
+                selectedIds.size === 0 || bulkLoadDefaultsMutation.isPending
+              }
+              onClick={() => bulkLoadDefaultsMutation.mutate()}
             >
-              Flag selected as Global
+              {bulkLoadDefaultsMutation.isPending && (
+                <Loader2 className="size-3.5 animate-spin" />
+              )}
+              Attach subjects to selected sections
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              disabled={selectedIds.size === 0}
-              onClick={() => setBulkClassType('Standard')}
-            >
-              Flag selected as Standard
-            </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {sections.length === 0 ? (
@@ -220,9 +292,16 @@ export function SectionAssignCard({
         <div className="divide-y divide-border border-t border-border">
           {sections.map((section) => {
             const isExpanded = expandedIds.has(section.id);
-            const bundleSize = section.classType
-              ? resolveTrackBundle(section.classType, section.levelCode).length
-              : null;
+            // Track/bundle only means anything at Secondary — a Primary
+            // section can carry a leftover `class_type` value from the
+            // general section-creation form (the column isn't Secondary-
+            // exclusive at the DB level) with no real bundle behind it, so
+            // gate on levelType here too, not just a truthy classType.
+            const bundleSize =
+              levelType === 'secondary' && section.classType
+                ? resolveTrackBundle(section.classType, section.levelCode)
+                    .length
+                : null;
             const recommendedAttachedCount = section.subjects.filter(
               (s) => s.attached && s.recommended
             ).length;
@@ -232,16 +311,14 @@ export function SectionAssignCard({
 
             return (
               <div key={section.id}>
-                <div className="flex items-center gap-3 px-5 py-3">
-                  {levelType === 'secondary' && (
-                    <Checkbox
-                      checked={selectedIds.has(section.id)}
-                      onCheckedChange={(v) =>
-                        toggleSelected(section.id, v === true)
-                      }
-                      aria-label={`Select ${section.name} for bulk track-flag`}
-                    />
-                  )}
+                <div className="flex items-center gap-3 px-5 py-2.5">
+                  <Checkbox
+                    checked={selectedIds.has(section.id)}
+                    onCheckedChange={(v) =>
+                      toggleSelected(section.id, v === true)
+                    }
+                    aria-label={`Select ${section.name} for bulk assignment`}
+                  />
                   <button
                     type="button"
                     onClick={() => toggleExpanded(section.id)}
