@@ -16,15 +16,24 @@ import { CalendarRange } from 'lucide-react';
 export function SubjectAySwitcher({
   current,
   options,
+  levelType,
 }: {
   current: string;
   options: Array<{ ayCode: string; label: string; isCurrent: boolean }>;
+  /** The page's current `?level=` selection — threaded through so an AY
+   * switch preserves it. Without this, switching AY while viewing
+   * Secondary silently bounced the user back to the page's Primary
+   * default (the page's own `levelHref` helper preserves `?ay=` on a
+   * level switch; this is the reverse direction). */
+  levelType: 'primary' | 'secondary';
 }) {
   const router = useRouter();
 
   function onChange(next: string) {
     if (next === current) return;
-    router.push(`/sis/admin/subjects?ay=${encodeURIComponent(next)}`);
+    router.push(
+      `/sis/admin/subjects?ay=${encodeURIComponent(next)}&level=${encodeURIComponent(levelType)}`
+    );
     // Same route + changed ?ay= → force the RSC to re-fetch the subject-config
     // matrix for the new AY (the client Router Cache would otherwise replay the
     // prior AY's matrix until a hard reload).

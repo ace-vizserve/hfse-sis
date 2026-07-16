@@ -1,0 +1,194 @@
+/**
+ * computeCatalogForLevelType() — the pure decision logic behind
+ * lib/sis/subjects/queries.ts::listCatalogForLevelType (Task 1 of the
+ * "Unified Subject Setup page" plan; extracted per review finding — this
+ * branchy logic had zero test coverage). Covers the three rules the
+ * function encodes: the offering-state collapse to on/off/mixed, the
+ * Mother Tongue exclusion, and the cross-level-type inclusion/exclusion
+ * rule. Mirrors __tests__/sis/subject-config-gaps.test.ts's fixture style
+ * (pure comparison function, source-agnostic {id, code} shapes).
+ */
+
+import { describe, expect, it } from 'vitest';
+
+import { computeCatalogForLevelType } from '@/lib/sis/subjects/queries';
+import { MOTHER_TONGUE_UMBRELLA_CODE } from '@/lib/schemas/subject';
+
+// Two primary levels actually offered this AY; a third, secondary-only
+// level ('lvl-s1') is deliberately NOT in this set so subjects offered only
+// there exercise the cross-level-type exclusion rule.
+const PRIMARY_LEVEL_IDS = ['lvl-p1', 'lvl-p2'];
+
+const SUBJECTS = [
+  {
+    id: 'sub-math',
+    code: 'MATH',
+    name: 'Mathematics',
+    is_examinable: true,
+    grading_method: 'standard_sheet' as const,
+  },
+  {
+    id: 'sub-sci',
+    code: 'SCI',
+    name: 'Science',
+    is_examinable: true,
+    grading_method: 'standard_sheet' as const,
+  },
+  {
+    id: 'sub-artd',
+    code: 'ARTD',
+    name: 'Art & Design',
+    is_examinable: false,
+    grading_method: 'no_sheet' as const,
+  },
+  {
+    id: 'sub-hist',
+    code: 'HIST',
+    name: 'History',
+    is_examinable: true,
+    grading_method: 'standard_sheet' as const,
+  },
+  {
+    id: 'sub-mt',
+    code: MOTHER_TONGUE_UMBRELLA_CODE,
+    name: 'Mother Tongue',
+    is_examinable: false,
+    grading_method: 'no_sheet' as const,
+  },
+  {
+    id: 'sub-fil',
+    code: 'FIL',
+    name: 'Filipino',
+    is_examinable: true,
+    grading_method: 'standard_sheet' as const,
+  },
+  {
+    id: 'sub-mandarin',
+    code: 'MANDARIN',
+    name: 'Mandarin',
+    is_examinable: true,
+    grading_method: 'standard_sheet' as const,
+  },
+];
+
+// MATH: on at both primary levels → 'on'.
+// SCI: on at only one of the two primary levels → 'mixed'.
+// ARTD: no offerings anywhere → included as 'off' (a genuinely new,
+//   unattached subject — must still surface somewhere to be attached).
+// HIST: offered only at the secondary-only level → not this catalog's
+//   subject, excluded entirely.
+// MT: offered at a primary level too, but must never surface as its own
+//   row regardless.
+// FIL / MANDARIN: Mother Tongue's real graded subjects — ordinary rows,
+//   each self-reporting into MT via subject_report_map below.
+const OFFERINGS = [
+  { subject_id: 'sub-math', level_id: 'lvl-p1' },
+  { subject_id: 'sub-math', level_id: 'lvl-p2' },
+  { subject_id: 'sub-sci', level_id: 'lvl-p1' },
+  { subject_id: 'sub-hist', level_id: 'lvl-s1' },
+  { subject_id: 'sub-mt', level_id: 'lvl-p1' },
+  { subject_id: 'sub-fil', level_id: 'lvl-p1' },
+  { subject_id: 'sub-fil', level_id: 'lvl-p2' },
+  { subject_id: 'sub-mandarin', level_id: 'lvl-p1' },
+];
+
+const REPORT_MAP = [
+  { subject_id: 'sub-fil', report_subject_id: 'sub-mt' },
+  { subject_id: 'sub-mandarin', report_subject_id: 'sub-mt' },
+];
+
+const CONFIGS: never[] = [];
+
+describe('computeCatalogForLevelType', () => {
+  it('(a) marks a subject offered at every requested-type level as "on"', () => {
+    const rows = computeCatalogForLevelType(
+      SUBJECTS,
+      CONFIGS,
+      OFFERINGS,
+      REPORT_MAP,
+      PRIMARY_LEVEL_IDS
+    );
+    expect(rows.find((r) => r.code === 'MATH')?.offeringState).toBe('on');
+  });
+
+  it('(b) marks a subject offered at some but not all requested-type levels as "mixed"', () => {
+    const rows = computeCatalogForLevelType(
+      SUBJECTS,
+      CONFIGS,
+      OFFERINGS,
+      REPORT_MAP,
+      PRIMARY_LEVEL_IDS
+    );
+    expect(rows.find((r) => r.code === 'SCI')?.offeringState).toBe('mixed');
+  });
+
+  it('(c) marks a subject offered at zero levels of the requested type as "off" but still includes it', () => {
+    const rows = computeCatalogForLevelType(
+      SUBJECTS,
+      CONFIGS,
+      OFFERINGS,
+      REPORT_MAP,
+      PRIMARY_LEVEL_IDS
+    );
+    const artd = rows.find((r) => r.code === 'ARTD');
+    expect(artd).toBeDefined();
+    expect(artd?.offeringState).toBe('off');
+    expect(artd?.offeredLevelIds).toEqual([]);
+  });
+
+  it('(d) excludes a subject offered only at the OTHER level type entirely', () => {
+    const rows = computeCatalogForLevelType(
+      SUBJECTS,
+      CONFIGS,
+      OFFERINGS,
+      REPORT_MAP,
+      PRIMARY_LEVEL_IDS
+    );
+    expect(rows.find((r) => r.code === 'HIST')).toBeUndefined();
+  });
+
+  it('(e) never surfaces Mother Tongue itself as a row, even when it has offerings', () => {
+    const rows = computeCatalogForLevelType(
+      SUBJECTS,
+      CONFIGS,
+      OFFERINGS,
+      REPORT_MAP,
+      PRIMARY_LEVEL_IDS
+    );
+    expect(
+      rows.find((r) => r.code === MOTHER_TONGUE_UMBRELLA_CODE)
+    ).toBeUndefined();
+  });
+
+  it('(f) surfaces Filipino/Mandarin as ordinary rows, self-reporting into Mother Tongue', () => {
+    const rows = computeCatalogForLevelType(
+      SUBJECTS,
+      CONFIGS,
+      OFFERINGS,
+      REPORT_MAP,
+      PRIMARY_LEVEL_IDS
+    );
+    const fil = rows.find((r) => r.code === 'FIL');
+    const mandarin = rows.find((r) => r.code === 'MANDARIN');
+
+    expect(fil).toBeDefined();
+    expect(fil?.offeringState).toBe('on');
+    expect(fil?.reportSubjectCode).toBe(MOTHER_TONGUE_UMBRELLA_CODE);
+
+    expect(mandarin).toBeDefined();
+    expect(mandarin?.offeringState).toBe('mixed');
+    expect(mandarin?.reportSubjectCode).toBe(MOTHER_TONGUE_UMBRELLA_CODE);
+  });
+
+  it('sorts rows alphabetically by name', () => {
+    const rows = computeCatalogForLevelType(
+      SUBJECTS,
+      CONFIGS,
+      OFFERINGS,
+      REPORT_MAP,
+      PRIMARY_LEVEL_IDS
+    );
+    const names = rows.map((r) => r.name);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+  });
+});

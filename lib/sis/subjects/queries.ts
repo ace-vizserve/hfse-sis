@@ -195,28 +195,29 @@ export type CatalogSubjectRow = {
   needsAttention: boolean;
 };
 
-export async function listCatalogForLevelType(
-  service: SupabaseClient,
-  academicYearId: string,
-  levelType: 'primary' | 'secondary'
-): Promise<CatalogSubjectRow[]> {
-  const [subjects, configs, offerings, reportMap, allLevels, offeredLevelIds] =
-    await Promise.all([
-      listSubjects(),
-      listSubjectConfigsForAy(academicYearId),
-      listSubjectLevelOfferings(academicYearId),
-      listSubjectReportMap(),
-      getLevelRows(service),
-      getOfferedLevelIds(service, academicYearId),
-    ]);
+// ─────────────────────────────────────────────────────────────────────────
+// computeCatalogForLevelType — the pure decision logic extracted out of
+// listCatalogForLevelType (review finding on Task 1: this branchy logic —
+// the offering-state collapse to on/off/mixed, the Mother Tongue exclusion,
+// and the cross-level-type inclusion/exclusion rule — had zero test
+// coverage). No Supabase/DB imports; takes already-fetched rows plus the
+// requested level type's actually-offered level ids and returns the same
+// CatalogSubjectRow[] shape, mirroring the
+// lib/sis/subject-config-gaps.ts::computeSubjectConfigGaps pattern (pure
+// comparison function, DB-fetching caller is a thin wrapper below).
+// ─────────────────────────────────────────────────────────────────────────
 
-  // Levels of this type actually offered this AY — core levels always
-  // count; volatile (non-core) levels only when an ay_level_offerings row
-  // exists (KD #153), mirroring the existing page's own `levels` filter.
-  const levelsOfType = allLevels.filter(
-    (l) => l.levelType === levelType && (l.isCore || offeredLevelIds.has(l.id))
-  );
-  const levelIdsOfType = new Set(levelsOfType.map((l) => l.id));
+export function computeCatalogForLevelType(
+  subjects: SubjectRow[],
+  configs: SubjectConfigRow[],
+  offerings: SubjectLevelOfferingRow[],
+  reportMap: SubjectReportMapRow[],
+  // Ids of the levels of the requested type that are actually offered this
+  // AY (core levels + any volatile level with an ay_level_offerings row) —
+  // the caller resolves this via getLevelRows/getOfferedLevelIds (KD #153).
+  levelIdsOfType: readonly string[]
+): CatalogSubjectRow[] {
+  const levelIdSet = new Set(levelIdsOfType);
 
   const configBySubjectId = new Map(configs.map((c) => [c.subject_id, c]));
   const reportBySubjectId = new Map(
@@ -237,7 +238,7 @@ export async function listCatalogForLevelType(
   const anyOfferingBySubjectId = new Set<string>();
   for (const o of offerings) {
     anyOfferingBySubjectId.add(o.subject_id);
-    if (!levelIdsOfType.has(o.level_id)) continue;
+    if (!levelIdSet.has(o.level_id)) continue;
     const set =
       offeredLevelIdsBySubjectId.get(o.subject_id) ?? new Set<string>();
     set.add(o.level_id);
@@ -263,7 +264,7 @@ export async function listCatalogForLevelType(
 
     let offeringState: CatalogOfferingState;
     if (offeredCount === 0) offeringState = 'off';
-    else if (levelsOfType.length > 0 && offeredCount >= levelsOfType.length)
+    else if (levelIdsOfType.length > 0 && offeredCount >= levelIdsOfType.length)
       offeringState = 'on';
     else offeringState = 'mixed';
 
@@ -289,6 +290,40 @@ export async function listCatalogForLevelType(
   }
 
   return rows.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function listCatalogForLevelType(
+  service: SupabaseClient,
+  academicYearId: string,
+  levelType: 'primary' | 'secondary'
+): Promise<CatalogSubjectRow[]> {
+  const [subjects, configs, offerings, reportMap, allLevels, offeredLevelIds] =
+    await Promise.all([
+      listSubjects(),
+      listSubjectConfigsForAy(academicYearId),
+      listSubjectLevelOfferings(academicYearId),
+      listSubjectReportMap(),
+      getLevelRows(service),
+      getOfferedLevelIds(service, academicYearId),
+    ]);
+
+  // Levels of this type actually offered this AY — core levels always
+  // count; volatile (non-core) levels only when an ay_level_offerings row
+  // exists (KD #153), mirroring the existing page's own `levels` filter.
+  const levelIdsOfType = allLevels
+    .filter(
+      (l) =>
+        l.levelType === levelType && (l.isCore || offeredLevelIds.has(l.id))
+    )
+    .map((l) => l.id);
+
+  return computeCatalogForLevelType(
+    subjects,
+    configs,
+    offerings,
+    reportMap,
+    levelIdsOfType
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────

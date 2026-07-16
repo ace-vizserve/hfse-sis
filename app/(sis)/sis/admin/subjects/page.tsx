@@ -183,6 +183,7 @@ export default async function SubjectConfigPage({
             <SubjectAySwitcher
               current={currentAy?.ay_code ?? ''}
               options={ayOptions}
+              levelType={levelType}
             />
             <Tabs value={levelType}>
               <TabsList variant="segmented" aria-label="Level">
