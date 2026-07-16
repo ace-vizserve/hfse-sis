@@ -53,3 +53,13 @@ export type SubjectCreateInput = z.infer<typeof SubjectCreateSchema>;
 // as one "Mother Tongue" option with a language sub-choice; the actual
 // attach always targets the chosen language's real `subjectConfigId`.
 export const MOTHER_TONGUE_SUBJECT_CODES = ['FIL', 'MANDARIN'] as const;
+
+// The Mother Tongue umbrella subject itself (migration 081) — the
+// report-card column Filipino/Mandarin fan into via subject_report_map.
+// It carries no subject_configs/subject_level_offerings row and is never
+// directly attached to a section, so any catalog listing that walks
+// `subjects` must exclude this code explicitly rather than assuming a
+// subject with no config/offering data is simply "not yet set up" — MT
+// is *permanently* config/offering-less by design, unlike a genuinely
+// new, unconfirmed subject (which is legitimately catalog-visible).
+export const MOTHER_TONGUE_UMBRELLA_CODE = 'MT' as const;

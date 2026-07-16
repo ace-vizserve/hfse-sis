@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { AlertTriangle, BookOpenCheck, Info } from 'lucide-react';
 
 import { getSessionUser } from '@/lib/supabase/server';
@@ -6,6 +7,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { PageShell } from '@/components/ui/page-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
 import {
@@ -13,6 +15,8 @@ import {
   listSubjectConfigsForAy,
   listSubjectLevelOfferings,
   listSubjectReportMap,
+  listCatalogForLevelType,
+  listSectionsWithSubjectsForLevelType,
 } from '@/lib/sis/subjects/queries';
 import {
   listTemplateSubjectConfigs,
@@ -21,14 +25,39 @@ import {
 import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
 import { SubjectLevelTree } from '@/components/sis/subject-level-tree';
 import { SubjectAySwitcher } from '@/components/sis/subject-ay-switcher';
+import { SubjectCatalogCard } from '@/components/sis/subject-catalog-card';
+import { SectionAssignCard } from '@/components/sis/section-assign-card';
+import { SubjectTrackViewToggle } from '@/components/sis/subject-track-view-toggle';
 
-// Subject weights + slots + level attachment tree. school_admin + superadmin.
-// Changing weights here affects every grading sheet for that subject inside
-// the selected AY, at every level it's attached to.
+// "Unified Subject Setup page" plan, Task 1 (docs:
+// C:\Users\Ace\.claude\plans\my-bad-its-not-graceful-creek.md). Redesigns
+// this page IN PLACE (same URL — existing deep-links, e.g. the AY
+// Readiness checklist's "Subjects" step, keep working): a persistent
+// header (AY chip + Level toggle + Secondary-only Track view-filter)
+// above two real steps — ① Subjects (catalog + tune, Task 2) and
+// ② Assign to sections (per-section checklist, Task 3) — with the
+// pre-existing drag-and-drop level tree + monitoring table demoted to a
+// second "Advanced" tab, unchanged.
+//
+// school_admin + superadmin only. Changing weights (still done from the
+// Advanced tab today; Step ① takes over that job in Task 2) affects every
+// grading sheet for that subject inside the selected AY.
+
+type LevelType = 'primary' | 'secondary';
+
+const LEVEL_TYPE_LABEL: Record<LevelType, string> = {
+  primary: 'Primary',
+  secondary: 'Secondary',
+};
+
+function resolveLevelType(raw: string | undefined): LevelType {
+  return raw === 'secondary' ? 'secondary' : 'primary';
+}
+
 export default async function SubjectConfigPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ay?: string }>;
+  searchParams: Promise<{ ay?: string; level?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -41,6 +70,8 @@ export default async function SubjectConfigPage({
 
   const sp = await searchParams;
   const service = createServiceClient();
+  const levelType = resolveLevelType(sp.level);
+  const levelLabel = LEVEL_TYPE_LABEL[levelType];
 
   // Academic-year options + current selection.
   const { data: ays } = await service
@@ -69,6 +100,8 @@ export default async function SubjectConfigPage({
     offeredLevelIds,
     templateOfferings,
     templateConfigs,
+    catalogForLevel,
+    sectionsForLevel,
   ] = currentAy
     ? await Promise.all([
         listSubjects(),
@@ -79,21 +112,26 @@ export default async function SubjectConfigPage({
         getOfferedLevelIds(service, currentAy.id),
         listTemplateSubjectLevelOfferings(),
         listTemplateSubjectConfigs(),
+        listCatalogForLevelType(service, currentAy.id, levelType),
+        listSectionsWithSubjectsForLevelType(service, currentAy.id, levelType),
       ])
-    : [[], [], [], [], [], new Set<string>(), [], []];
+    : [[], [], [], [], [], new Set<string>(), [], [], [], []];
 
-  // Tree + gap banner both scope to levels genuinely OFFERED this AY (core
-  // + any volatile level with an ay_level_offerings row) — a level with no
-  // offering row this year has no operational meaning here (nothing to
-  // attach subjects to), so excluding it also keeps the gap banner from
-  // flagging every template subject as "missing" at a level nobody's
-  // running classes at this year.
+  // Advanced tab (SubjectLevelTree) + the gap banner both scope to levels
+  // genuinely OFFERED this AY (core + any volatile level with an
+  // ay_level_offerings row) — a level with no offering row this year has
+  // no operational meaning here (nothing to attach subjects to), so
+  // excluding it also keeps the gap banner from flagging every template
+  // subject as "missing" at a level nobody's running classes at this
+  // year. Unchanged from before this task — the Advanced tab is AY-wide,
+  // not level-TYPE-scoped like the new Step ①/② cards above it.
   const levels = allLevels.filter((l) => l.isCore || offeredLevelIds.has(l.id));
 
   // Structure Defaults is the "what SHOULD be configured" reference — a
-  // level missing one of its template subjects silently drops that subject
-  // from grading-sheet creation AND the report card, with no error visible
-  // anywhere. Compare against it here so the gap is visible where it's fixed.
+  // level missing one of its template subjects silently drops that
+  // subject from grading-sheet creation AND the report card, with no
+  // error visible anywhere. Compare against it here so the gap is visible
+  // where it's fixed.
   const subjectConfigGaps = currentAy
     ? computeSubjectConfigGaps(
         levels.map((l) => ({ id: l.id, label: l.label })),
@@ -109,12 +147,29 @@ export default async function SubjectConfigPage({
     isCurrent: a.is_current,
   }));
 
+  // Level toggle — a plain server-rendered Link pair styled as a segmented
+  // Tabs control (same pattern as /sis/audit-log's Overview|Log toggle:
+  // Tabs value={...} with TabsTrigger asChild wrapping a Link, no client
+  // component, no onValueChange). Refresh-safe + shareable because it's a
+  // real navigation, not client state — preserves ?ay= so switching level
+  // never drops the current AY selection.
+  function levelHref(target: LevelType): string {
+    const params = new URLSearchParams();
+    params.set('level', target);
+    if (sp.ay) params.set('ay', sp.ay);
+    return `/sis/admin/subjects?${params.toString()}`;
+  }
+
   return (
     <PageShell>
       <SisPageHeader
-        group="Structure"
-        title="Subject weights & slots."
-        description="WW / PT / QA weights and max slot counts per subject and academic year. Which levels a subject teaches at is managed here too — drag a subject onto a level to attach it."
+        group="Subject Setup"
+        title="Subject Setup."
+        description={
+          currentAy
+            ? `${levelLabel}'s catalog and section assignments for ${currentAy.label}.`
+            : `${levelLabel}'s catalog and section assignments.`
+        }
         chips={
           <>
             {currentAy && (
@@ -129,6 +184,17 @@ export default async function SubjectConfigPage({
               current={currentAy?.ay_code ?? ''}
               options={ayOptions}
             />
+            <Tabs value={levelType}>
+              <TabsList variant="segmented" aria-label="Level">
+                <TabsTrigger value="primary" asChild>
+                  <Link href={levelHref('primary')}>Primary</Link>
+                </TabsTrigger>
+                <TabsTrigger value="secondary" asChild>
+                  <Link href={levelHref('secondary')}>Secondary</Link>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            {levelType === 'secondary' && <SubjectTrackViewToggle />}
           </>
         }
       />
@@ -201,16 +267,37 @@ export default async function SubjectConfigPage({
           </CardContent>
         </Card>
       ) : (
-        <SubjectLevelTree
-          subjects={subjects}
-          levels={levels}
-          configs={configs}
-          offerings={offerings}
-          reportMap={reportMap}
-          templateConfigs={templateConfigs}
-          ayCode={currentAy.ay_code}
-          ayId={currentAy.id}
-        />
+        <Tabs defaultValue="subjects" className="space-y-5">
+          <TabsList variant="segmented" className="w-fit">
+            <TabsTrigger value="subjects">Subjects</TabsTrigger>
+            <TabsTrigger value="advanced">Advanced</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="subjects" className="space-y-5">
+            <SubjectCatalogCard
+              catalog={catalogForLevel}
+              levelLabel={levelLabel}
+              ayCode={currentAy.ay_code}
+            />
+            <SectionAssignCard
+              sections={sectionsForLevel}
+              levelLabel={levelLabel}
+            />
+          </TabsContent>
+
+          <TabsContent value="advanced" className="space-y-5">
+            <SubjectLevelTree
+              subjects={subjects}
+              levels={levels}
+              configs={configs}
+              offerings={offerings}
+              reportMap={reportMap}
+              templateConfigs={templateConfigs}
+              ayCode={currentAy.ay_code}
+              ayId={currentAy.id}
+            />
+          </TabsContent>
+        </Tabs>
       )}
     </PageShell>
   );
