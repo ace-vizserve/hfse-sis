@@ -91,17 +91,43 @@ export async function POST(
     inserted = missing.length;
   }
 
+  // Same "no separate generate step" guarantee as the single-subject attach
+  // route (POST /api/sections/[id]/subjects) — the bulk-load path must not
+  // leave freshly-inserted section_subjects rows without their grading
+  // sheets. Non-fatal: a sheet-generation hiccup doesn't undo the
+  // already-committed section_subjects insert. grading_method='no_sheet'
+  // subjects are skipped by the RPC itself (migration 083).
+  let sheetsInserted = 0;
   if (inserted > 0) {
+    const { data: bulkResult, error: bulkErr } = await service.rpc(
+      'create_grading_sheets_for_section',
+      { p_section_id: sectionId }
+    );
+    if (bulkErr) {
+      console.error(
+        '[sections/[id]/subjects/load-defaults POST] bulk-sheet RPC failed:',
+        bulkErr.message
+      );
+    } else if (
+      bulkResult &&
+      typeof bulkResult === 'object' &&
+      'inserted' in bulkResult
+    ) {
+      sheetsInserted = Number(
+        (bulkResult as { inserted: unknown }).inserted ?? 0
+      );
+    }
+
     await logAction({
       service,
       actor: { id: auth.user.id, email: auth.user.email ?? null },
       action: 'section.subjects.load_defaults',
       entityType: 'section',
       entityId: sectionId,
-      context: { sectionName: section.name, inserted },
+      context: { sectionName: section.name, inserted, sheetsInserted },
     });
     if (ayCode) invalidateDrillTags('markbook', ayCode);
   }
 
-  return NextResponse.json({ ok: true, inserted });
+  return NextResponse.json({ ok: true, inserted, sheetsInserted });
 }
