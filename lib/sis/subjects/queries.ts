@@ -5,8 +5,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
 import { MOTHER_TONGUE_UMBRELLA_CODE } from '@/lib/schemas/subject';
-import type { SectionClassType } from '@/lib/schemas/section';
-import { resolveTrackBundle } from '@/lib/sis/track-bundles';
 
 // Subject-config queries for /sis/admin/subjects. Service-role reads; the
 // page itself is gated to school_admin+superadmin via ROUTE_ACCESS.
@@ -175,9 +173,7 @@ export type CatalogSubjectRow = {
   /** The full config row (weights + slot counts) when hasConfig is true. */
   config: SubjectConfigRow | null;
   /** Resolved report-map target — defaults to self.id when no explicit
-   * subject_report_map row exists, matching the existing convention in
-   * subject-level-tree.tsx / subject-monitoring-table.tsx
-   * (`reportSubjectIdBySubjectId.get(subject.id) ?? subject.id`). */
+   * subject_report_map row exists. */
   reportSubjectId: string;
   /** Code of the resolved report target — equals `code` when self-mapped. */
   reportSubjectCode: string;
@@ -343,100 +339,31 @@ export async function listCatalogForLevelType(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// listSectionsWithSubjectsForLevelType — level-filtered sibling of
-// lib/markbook/grading-sheet-scope.ts::buildGradingSheetScopes's "sections
-// + their attached subjects in one shot" shape (that module is a pure
-// scope-builder over already-fetched rows; this is the actual query +
-// per-section subject map, filtered to one level type, feeding Step ②
-// "Assign to sections").
-//
-// Each returned section additionally carries whether every catalog
-// subject at this level is part of that section's RECOMMENDED bundle —
-// computed server-side, once, here, via the section's class_type
-// (`lib/sis/track-bundles.ts::subjectCodesForTrack`) — so Task 3's
-// checklist UI never has to duplicate the bundle lookup client-side.
+// listSectionsForLevelType — just enough to populate the simplified
+// Subject Setup page's "Attach to section" modal: which sections exist at
+// this level type, and their specific level code (so a registrar picking
+// among 15+ same-level-type sections can tell them apart). Deliberately
+// NOT the heavier per-section subject/attachment/recommended-bundle shape
+// this replaced — that fed a per-section checklist + track-flagging UI
+// that was rejected as overengineered in favor of a fully manual "check
+// subjects, pick sections, Attach" flow (see the "Unified Subject Setup
+// page" plan's history, docs\superpowers\plans, for the prior design).
 // ─────────────────────────────────────────────────────────────────────────
 
-export type SectionCatalogSubjectAssignment = {
-  subjectConfigId: string;
-  subjectId: string;
-  code: string;
-  // Added by Task 3 (was missing from Task 1's shape) — the checklist UI
-  // needs to render more than a bare code; both come straight off
-  // configuredCatalog, no extra query.
-  name: string;
-  isExaminable: boolean;
-  /** True when a section_subjects row pairs this section to this config. */
-  attached: boolean;
-  /** True when this subject is part of the section's resolved bundle;
-   * null when the section has no class_type (Global/Standard unset). */
-  recommended: boolean | null;
-  /** True when this subject has a `subject_level_offerings` row at the
-   * SECTION's own SPECIFIC level (not just the level TYPE the catalog was
-   * fetched for) — added by Task 3. `configuredCatalog` below is built
-   * once per level TYPE (e.g. every Primary subject), but a subject can
-   * be offered at only some individual levels of that type (the verified
-   * MIXED case: Mandarin at P1-P5, not P6 — see CatalogSubjectRow's own
-   * `offeringState`/`offeredLevelIds`). Without this flag every section's
-   * checklist would list every level-type-wide subject regardless of
-   * whether it's actually offered at that section's own level, which
-   * would let an admin check a box the single-attach route then 422s on
-   * (level-offering mismatch), and would show Mother Tongue languages
-   * that were never actually offered at that level. The checklist UI
-   * still keeps an already-`attached` row visible even when this is
-   * false (data-drift safety net — never hide a subject a section is
-   * actually attached to), it just won't offer NEW attachment for a
-   * false row. */
-  offeredAtThisLevel: boolean;
-};
-
-export type SectionWithSubjectsRow = {
+export type SectionOption = {
   id: string;
   name: string;
-  levelId: string;
-  /** The section's SPECIFIC level code (e.g. "S3", not just "secondary")
-   * — needed by Task 3's per-section bundle resolution. */
   levelCode: string;
-  classType: SectionClassType | null;
-  /** Active + late-enrollee headcount; null only if the section query
-   * itself failed (never for "zero students" — that's a real 0). */
-  studentCount: number | null;
-  /** One entry per catalog subject that HAS a subject_configs row for
-   * this AY (an unconfigured "needs attention" subject has no
-   * subjectConfigId to attach/detach yet — it isn't attachable until
-   * Step ① confirms it, so it's intentionally absent from this list;
-   * Task 3 should not need to special-case that, but it's worth knowing
-   * this list's length can be shorter than the full catalog's). */
-  subjects: SectionCatalogSubjectAssignment[];
 };
 
-// Task 3 of the "Unified Subject Setup page" plan: this now calls the
-// level-aware `resolveTrackBundle(classType, levelCode)` (replacing the
-// flat `subjectCodesForTrack(classType)` lookup Task 1 deliberately left
-// here, TODO-marked, so this swap would be body-only) — Standard's
-// humanities-slot subject is now correctly HIST at S1/S2 and HUM at
-// S3/S4. This is what drives the Assign-to-sections checklist's per-row
-// "Recommended" tag (`listSectionsWithSubjectsForLevelType` below). The
-// SAME `resolveTrackBundle` also backs `lib/sis/section-track.ts::applyTrackBundle`
-// (the bulk track-apply route) — one resolver, two call sites, no
-// duplicated HIST/HUM logic.
-function recommendedCodesForSection(
-  classType: SectionClassType | null,
-  levelCode: string
-): readonly string[] | null {
-  if (!classType) return null;
-  return resolveTrackBundle(classType, levelCode);
-}
-
-export async function listSectionsWithSubjectsForLevelType(
+export async function listSectionsForLevelType(
   service: SupabaseClient,
   academicYearId: string,
   levelType: 'primary' | 'secondary'
-): Promise<SectionWithSubjectsRow[]> {
-  const [allLevels, offeredLevelIds, catalog] = await Promise.all([
+): Promise<SectionOption[]> {
+  const [allLevels, offeredLevelIds] = await Promise.all([
     getLevelRows(service),
     getOfferedLevelIds(service, academicYearId),
-    listCatalogForLevelType(service, academicYearId, levelType),
   ]);
 
   const levelsOfType = allLevels.filter(
@@ -448,101 +375,27 @@ export async function listSectionsWithSubjectsForLevelType(
 
   const { data: sectionRows, error: sectionsError } = await service
     .from('sections')
-    .select('id, name, level_id, class_type')
+    .select('id, name, level_id')
     .eq('academic_year_id', academicYearId)
     .in('level_id', levelIds)
     .order('name', { ascending: true });
   if (sectionsError) {
     console.error(
-      '[subjects] listSectionsWithSubjectsForLevelType sections query failed:',
+      '[subjects] listSectionsForLevelType sections query failed:',
       sectionsError.message
     );
     return [];
   }
-  const sections = (sectionRows ?? []) as Array<{
-    id: string;
-    name: string;
-    level_id: string;
-    class_type: SectionClassType | null;
-  }>;
-  if (sections.length === 0) return [];
 
-  const sectionIds = sections.map((s) => s.id);
-
-  // Same "one query, in()-scoped to this page's sections, bucket
-  // client-side" pattern app/(sis)/sis/sections/page.tsx already uses for
-  // its own student-count column — cheap at this app's per-level section
-  // count (≤10ish, per the plan's own stated assumption).
-  const [{ data: assignmentRows }, { data: enrolmentRows }] = await Promise.all(
-    [
-      service
-        .from('section_subjects')
-        .select('section_id, subject_config_id')
-        .in('section_id', sectionIds),
-      service
-        .from('section_students')
-        .select('section_id, enrollment_status')
-        .in('section_id', sectionIds),
-    ]
-  );
-
-  const attachedBySection = new Map<string, Set<string>>();
-  for (const row of (assignmentRows ?? []) as Array<{
-    section_id: string;
-    subject_config_id: string;
-  }>) {
-    const set = attachedBySection.get(row.section_id) ?? new Set<string>();
-    set.add(row.subject_config_id);
-    attachedBySection.set(row.section_id, set);
-  }
-
-  const studentCountBySection = new Map<string, number>();
-  for (const row of (enrolmentRows ?? []) as Array<{
-    section_id: string;
-    enrollment_status: string;
-  }>) {
-    if (row.enrollment_status === 'withdrawn') continue;
-    studentCountBySection.set(
-      row.section_id,
-      (studentCountBySection.get(row.section_id) ?? 0) + 1
-    );
-  }
-
-  // Only catalog subjects with a real subject_configs row have a
-  // subjectConfigId to attach/detach at all — see SectionWithSubjectsRow's
-  // `subjects` doc comment above.
-  const configuredCatalog = catalog.filter((c) => c.hasConfig && c.config);
-
-  return sections.map((section) => {
-    const level = levelById.get(section.level_id);
-    const attachedIds = attachedBySection.get(section.id) ?? new Set<string>();
-    const recommendedCodes = recommendedCodesForSection(
-      section.class_type,
-      level?.code ?? ''
-    );
-    const recommendedSet = recommendedCodes ? new Set(recommendedCodes) : null;
-
-    const subjects: SectionCatalogSubjectAssignment[] = configuredCatalog.map(
-      (c) => ({
-        subjectConfigId: c.config!.id,
-        subjectId: c.id,
-        code: c.code,
-        name: c.name,
-        isExaminable: c.is_examinable,
-        attached: attachedIds.has(c.config!.id),
-        recommended: recommendedSet ? recommendedSet.has(c.code) : null,
-        offeredAtThisLevel: c.offeredLevelIds.includes(section.level_id),
-      })
-    );
-
-    return {
-      id: section.id,
-      name: section.name,
-      levelId: section.level_id,
-      levelCode: level?.code ?? '',
-      classType: section.class_type,
-      studentCount: studentCountBySection.get(section.id) ?? 0,
-      subjects,
-    };
-  });
+  return (
+    (sectionRows ?? []) as Array<{
+      id: string;
+      name: string;
+      level_id: string;
+    }>
+  ).map((s) => ({
+    id: s.id,
+    name: s.name,
+    levelCode: levelById.get(s.level_id)?.code ?? '',
+  }));
 }

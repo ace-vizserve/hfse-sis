@@ -31,6 +31,7 @@ export type AuditAction =
   | 'section.subject.assign'
   | 'section.subject.remove'
   | 'section.subjects.load_defaults'
+  | 'section.subjects.attach_many'
   | 'section.track.assign'
   | 'attendance.update'
   | 'attendance.daily.update'

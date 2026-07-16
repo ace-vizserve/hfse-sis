@@ -75,11 +75,6 @@ export type SubjectConfigFormDraft = SubjectConfigFormSubject & {
   reportSubjectId: string;
 };
 
-// Back-compat alias — the pre-Task-2 name both dialogs' callers already
-// import. Kept so `subject-level-tree.tsx` (and anything else reaching for
-// `SubjectConfigDraft`) doesn't need touching.
-export type SubjectConfigDraft = SubjectConfigFormDraft;
-
 type SubjectConfigFormProps = {
   /** Full catalog subject list — feeds the "Reports to" select (edit mode
    * only; see the field's own comment for why create mode omits it). */

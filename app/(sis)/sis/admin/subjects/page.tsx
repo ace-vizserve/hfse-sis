@@ -1,58 +1,42 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import {
-  AlertTriangle,
-  BookOpenCheck,
-  ChevronDown,
-  PlusCircle,
-} from 'lucide-react';
+import { AlertTriangle, BookOpenCheck } from 'lucide-react';
 
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { PageShell } from '@/components/ui/page-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
 import {
   listSubjects,
-  listSubjectConfigsForAy,
   listSubjectLevelOfferings,
-  listSubjectReportMap,
   listCatalogForLevelType,
-  listSectionsWithSubjectsForLevelType,
+  listSectionsForLevelType,
 } from '@/lib/sis/subjects/queries';
-import {
-  listTemplateSubjectConfigs,
-  listTemplateSubjectLevelOfferings,
-} from '@/lib/sis/template/queries';
+import { listTemplateSubjectLevelOfferings } from '@/lib/sis/template/queries';
 import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
 import { SubjectAySwitcher } from '@/components/sis/subject-ay-switcher';
 import { SubjectCatalogCard } from '@/components/sis/subject-catalog-card';
-import { SectionAssignCard } from '@/components/sis/section-assign-card';
-import { SubjectTrackViewToggle } from '@/components/sis/subject-track-view-toggle';
-import { AdvancedSubjectViewSheet } from '@/components/sis/advanced-subject-view-sheet';
 
-// "Unified Subject Setup page" plan, Task 1 (docs:
-// C:\Users\Ace\.claude\plans\my-bad-its-not-graceful-creek.md). Redesigns
-// this page IN PLACE (same URL — existing deep-links, e.g. the AY
-// Readiness checklist's "Subjects" step, keep working): a persistent
-// header (AY chip + Level toggle + Secondary-only Track view-filter)
-// above two real steps — ① Subjects (catalog + tune, Task 2) and
-// ② Assign to sections (per-section checklist, Task 3) — with the
-// pre-existing drag-and-drop level tree + monitoring table demoted to a
-// second "Advanced" tab, unchanged.
+// Subject Setup — one screen, fully manual. Rebuilt after a live review of
+// the prior "catalog + tune + per-section checklist" design (the "Unified
+// Subject Setup page" plan, docs:
+// C:\Users\Ace\.claude\plans\my-bad-its-not-graceful-creek.md) was
+// rejected as overengineered: too much chrome (a "Needs attention" badge
+// system, a Global/Standard track-flagging step + "Unflagged" badge, an
+// Advanced-view escape hatch) for what's actually a simple job. The
+// header (AY chip + Level toggle) stays — a persistent header
+// (AY chip + Level toggle) above ONE card: the subject catalog table.
+// Check subjects, click Attach to section, pick section(s) in a confirm
+// modal — that's the whole flow. Attaching is fully manual; there is no
+// track/bundle auto-suggestion anywhere on this page.
 //
-// school_admin + superadmin only. Changing weights (still done from the
-// Advanced tab today; Step ① takes over that job in Task 2) affects every
-// grading sheet for that subject inside the selected AY.
+// school_admin + superadmin only. Changing weights (via the catalog
+// table's pencil/"Set weights") affects every grading sheet for that
+// subject inside the selected AY.
 
 type LevelType = 'primary' | 'secondary';
 
@@ -105,37 +89,29 @@ export default async function SubjectConfigPage({
   const [
     subjects,
     allLevels,
-    configs,
     offerings,
-    reportMap,
     offeredLevelIds,
     templateOfferings,
-    templateConfigs,
     catalogForLevel,
     sectionsForLevel,
   ] = currentAy
     ? await Promise.all([
         listSubjects(),
         getLevelRows(service),
-        listSubjectConfigsForAy(currentAy.id),
         listSubjectLevelOfferings(currentAy.id),
-        listSubjectReportMap(),
         getOfferedLevelIds(service, currentAy.id),
         listTemplateSubjectLevelOfferings(),
-        listTemplateSubjectConfigs(),
         listCatalogForLevelType(service, currentAy.id, levelType),
-        listSectionsWithSubjectsForLevelType(service, currentAy.id, levelType),
+        listSectionsForLevelType(service, currentAy.id, levelType),
       ])
-    : [[], [], [], [], [], new Set<string>(), [], [], [], []];
+    : [[], [], [], new Set<string>(), [], [], []];
 
-  // Advanced tab (SubjectLevelTree) + the gap banner both scope to levels
-  // genuinely OFFERED this AY (core + any volatile level with an
-  // ay_level_offerings row) — a level with no offering row this year has
-  // no operational meaning here (nothing to attach subjects to), so
-  // excluding it also keeps the gap banner from flagging every template
-  // subject as "missing" at a level nobody's running classes at this
-  // year. Unchanged from before this task — the Advanced tab is AY-wide,
-  // not level-TYPE-scoped like the new Step ①/② cards above it.
+  // The gap banner scopes to levels genuinely OFFERED this AY (core + any
+  // volatile level with an ay_level_offerings row) — a level with no
+  // offering row this year has no operational meaning here (nothing to
+  // attach subjects to), so excluding it also keeps the banner from
+  // flagging every template subject as "missing" at a level nobody's
+  // running classes at this year.
   const levels = allLevels.filter((l) => l.isCore || offeredLevelIds.has(l.id));
 
   // Structure Defaults is the "what SHOULD be configured" reference — a
@@ -151,19 +127,6 @@ export default async function SubjectConfigPage({
         offerings
       )
     : [];
-
-  const needsAttentionCount = catalogForLevel.filter(
-    (c) => c.needsAttention
-  ).length;
-  // When most/all of the catalog needs attention, that's "this year hasn't
-  // been set up yet" (fix: Apply template, once, from Structure Defaults —
-  // see the gap banner below), not a list of individual gaps worth
-  // reviewing one at a time. Auto-expanding into a wall of amber rows in
-  // that case doesn't help anyone; only open automatically when there's a
-  // genuinely small, reviewable number of real exceptions.
-  const catalogNeedsWholesaleSetup =
-    catalogForLevel.length > 0 &&
-    needsAttentionCount / catalogForLevel.length > 0.5;
 
   const ayOptions = ayList.map((a) => ({
     ayCode: a.ay_code,
@@ -191,8 +154,8 @@ export default async function SubjectConfigPage({
         title="Subject Setup."
         description={
           currentAy
-            ? `${levelLabel}'s catalog and section assignments for ${currentAy.label}.`
-            : `${levelLabel}'s catalog and section assignments.`
+            ? `${levelLabel}'s subject catalog for ${currentAy.label}.`
+            : `${levelLabel}'s subject catalog.`
         }
         chips={
           <>
@@ -219,7 +182,6 @@ export default async function SubjectConfigPage({
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-            {levelType === 'secondary' && <SubjectTrackViewToggle />}
           </>
         }
       />
@@ -231,8 +193,8 @@ export default async function SubjectConfigPage({
           explanation of itself). */}
       {currentAy && (
         <p className="text-sm text-muted-foreground">
-          The subject list for {levelLabel} in {currentAy.ay_code} — set it up
-          below, then hand it to the sections that need it. Weight changes apply
+          Every subject offered at {levelLabel} in {currentAy.ay_code}. Check
+          the ones you want, then attach them to a section. Weight changes apply
           to every grading sheet already using that subject, so double-check
           before saving.
         </p>
@@ -328,87 +290,13 @@ export default async function SubjectConfigPage({
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-5">
-          {/* Catalog is secondary now — the core action is attaching
-              subjects to sections below. Collapsed by default so it
-              doesn't compete with that; auto-opens when there's a small,
-              genuinely reviewable number of real exceptions, but NOT when
-              the whole level needs setup (that's the gap banner's job, via
-              Apply template — expanding a wall of amber rows here doesn't
-              help that case). */}
-          <Collapsible
-            defaultOpen={needsAttentionCount > 0 && !catalogNeedsWholesaleSetup}
-          >
-            <Card className="gap-0 overflow-hidden py-0">
-              <CollapsibleTrigger className="group flex w-full items-center gap-3 px-5 py-4 text-left">
-                <div className="min-w-0 flex-1 leading-tight">
-                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Subject catalog
-                  </p>
-                  <p className="truncate font-serif text-[15px] font-semibold text-foreground">
-                    {catalogForLevel.length} subject
-                    {catalogForLevel.length === 1 ? '' : 's'} for {levelLabel}
-                    {needsAttentionCount > 0 &&
-                      ` — ${needsAttentionCount} need${needsAttentionCount === 1 ? 's' : ''} attention`}
-                  </p>
-                </div>
-                {needsAttentionCount > 0 && (
-                  <Badge variant="warning" className="shrink-0 gap-1">
-                    <AlertTriangle className="size-3" />
-                    {needsAttentionCount}
-                  </Badge>
-                )}
-                <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-              </CollapsibleTrigger>
-              <CollapsibleContent className="border-t border-border">
-                <SubjectCatalogCard
-                  catalog={catalogForLevel}
-                  levelLabel={levelLabel}
-                  ayCode={currentAy.ay_code}
-                  ayId={currentAy.id}
-                  levelsOfType={levels
-                    .filter((l) => l.levelType === levelType)
-                    .map((l) => ({ id: l.id, code: l.code, label: l.label }))}
-                  bare
-                />
-              </CollapsibleContent>
-            </Card>
-          </Collapsible>
-
-          {sectionsForLevel.length === 0 ? (
-            <Card className="items-center py-12 text-center">
-              <CardContent className="flex flex-col items-center gap-3">
-                <PlusCircle className="size-6 text-muted-foreground" />
-                <div className="font-serif text-lg font-semibold text-foreground">
-                  No {levelLabel} sections yet
-                </div>
-                <p className="max-w-sm text-sm text-muted-foreground">
-                  Subjects can&apos;t be attached until a section exists to
-                  attach them to.
-                </p>
-                <Button asChild size="sm" className="mt-1">
-                  <Link href="/sis/sections">Create a section</Link>
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <SectionAssignCard
-              sections={sectionsForLevel}
-              levelLabel={levelLabel}
-            />
-          )}
-
-          <AdvancedSubjectViewSheet
-            subjects={subjects}
-            levels={levels}
-            configs={configs}
-            offerings={offerings}
-            reportMap={reportMap}
-            templateConfigs={templateConfigs}
-            ayCode={currentAy.ay_code}
-            ayId={currentAy.id}
-          />
-        </div>
+        <SubjectCatalogCard
+          catalog={catalogForLevel}
+          levelLabel={levelLabel}
+          ayCode={currentAy.ay_code}
+          ayId={currentAy.id}
+          sections={sectionsForLevel}
+        />
       )}
     </PageShell>
   );

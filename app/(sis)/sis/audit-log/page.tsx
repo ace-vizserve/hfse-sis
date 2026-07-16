@@ -105,6 +105,7 @@ const SIS_AUDIT_ALLOWLIST = [
   'section.subject.assign',
   'section.subject.remove',
   'section.subjects.load_defaults',
+  'section.subjects.attach_many',
   'assignment.create',
   'assignment.delete',
   // Grade levels & progression (migration 078)
