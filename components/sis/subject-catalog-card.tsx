@@ -1,9 +1,6 @@
 'use client';
 
-import { Fragment, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import {
   AlertTriangle,
   ChevronDown,
@@ -12,8 +9,20 @@ import {
   Pencil,
   Plus,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Fragment, useState } from 'react';
+import { toast } from 'sonner';
 
-import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { NewSubjectForm } from '@/components/sis/new-subject-form';
+import {
+  SubjectConfigForm,
+  type SubjectConfigFormDraft,
+  type SubjectConfigFormSubject,
+} from '@/components/sis/subject-config-form';
+import {
+  classifyProfile,
+  ProfileLegendChip,
+} from '@/components/sis/weight-profile';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -43,20 +52,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { NewSubjectForm } from '@/components/sis/new-subject-form';
-import {
-  SubjectConfigForm,
-  type SubjectConfigFormDraft,
-  type SubjectConfigFormSubject,
-} from '@/components/sis/subject-config-form';
-import {
-  classifyProfile,
-  ProfileLegendChip,
-} from '@/components/sis/weight-profile';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { useTrackFilter } from '@/lib/sis/subject-track-filter-store';
+import type { CatalogSubjectRow } from '@/lib/sis/subjects/queries';
 import { subjectCodesForTrack } from '@/lib/sis/track-bundles';
 import { cn } from '@/lib/utils';
-import type { CatalogSubjectRow } from '@/lib/sis/subjects/queries';
 
 // Step ① "Subjects" — the merged catalog + tune table (Task 2 of the
 // "Unified Subject Setup page" plan; Task 1 built the stub this replaces).
@@ -196,7 +196,7 @@ export function SubjectCatalogCard({
           return track === trackFilter || track === 'both';
         });
 
-  const columnCount = levelType === 'secondary' ? 7 : 6;
+  const columnCount = levelType === 'secondary' ? 6 : 5;
 
   return (
     <Card className="gap-0 overflow-hidden py-0">
@@ -250,7 +250,6 @@ export function SubjectCatalogCard({
                 <TableHead>Weights</TableHead>
                 <TableHead>Reports as</TableHead>
                 <TableHead>Offered</TableHead>
-                <TableHead className="w-px" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -260,21 +259,28 @@ export function SubjectCatalogCard({
 
                 return (
                   <Fragment key={subject.id}>
-                    <TableRow>
+                    <TableRow className="group">
                       <TableCell>
-                        <div className="flex flex-col items-start gap-1 leading-tight">
-                          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                            {subject.code}
-                          </span>
-                          <span className="font-serif text-[14px] font-semibold text-foreground">
-                            {subject.name}
-                          </span>
-                          {subject.needsAttention && (
+                        <div className="flex items-center gap-2 leading-tight">
+                          <div className="flex min-w-0 flex-col items-start gap-1">
+                            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                              {subject.code}
+                            </span>
+                            <span className="font-serif text-[14px] font-semibold text-foreground">
+                              {subject.name}
+                            </span>
+                          </div>
+                          {subject.needsAttention ? (
+                            // Flagged rows get exactly one edit affordance —
+                            // this pill, which opens the SAME inline quick-fix
+                            // as the pencil would elsewhere. No pencil is
+                            // rendered alongside it (a row never shows two
+                            // competing ways to edit the same thing).
                             <button
                               type="button"
                               onClick={() => toggleInlineFix(subject.id)}
                               aria-expanded={isExpanded}
-                              className="inline-flex items-center gap-1 rounded-full bg-brand-amber-light px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-brand-amber transition-colors hover:bg-brand-amber/20"
+                              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-amber-light px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-brand-amber transition-colors hover:bg-brand-amber/20"
                             >
                               <AlertTriangle className="size-2.5" />
                               Needs attention
@@ -285,6 +291,22 @@ export function SubjectCatalogCard({
                                 )}
                               />
                             </button>
+                          ) : (
+                            // Already-confirmed rows get the deliberate full-
+                            // edit path instead — a quiet pencil, visible on
+                            // row hover/focus so it doesn't add permanent
+                            // per-row chrome to every line of the table.
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                              onClick={() => openEditDrawer(subject)}
+                              aria-label={`Edit ${subject.name}`}
+                              title={`Edit ${subject.name}`}
+                            >
+                              <Pencil className="size-3" />
+                            </Button>
                           )}
                         </div>
                       </TableCell>
@@ -329,20 +351,6 @@ export function SubjectCatalogCard({
                           levelLabel={levelLabel}
                           ayId={ayId}
                         />
-                      </TableCell>
-
-                      <TableCell>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-7 text-muted-foreground hover:text-foreground"
-                          onClick={() => openEditDrawer(subject)}
-                          aria-label={`Edit ${subject.name}`}
-                          title={`Edit ${subject.name}`}
-                        >
-                          <Pencil className="size-3.5" />
-                        </Button>
                       </TableCell>
                     </TableRow>
 
@@ -395,7 +403,7 @@ export function SubjectCatalogCard({
           if (!open) setEditSubject(null);
         }}
       >
-        <SheetContent className="overflow-y-auto sm:max-w-lg">
+        <SheetContent className="overflow-y-auto sm:max-w-2xl">
           <SheetHeader>
             <div className="flex items-start gap-3">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
@@ -486,10 +494,10 @@ export function SubjectCatalogCard({
 // (grading_method='no_sheet', so there ARE no weights by design, not a
 // gap); "No weights set" (no subject_configs row — a genuine gap, dashed
 // amber, mirrors subject-monitoring-table.tsx's identical fallback chip);
-// or the WW·PT·QA profile chip, with an "Unconfirmed" sub-label when the
-// row exists but migration 085's `weights_confirmed` is false (the GP/
-// COMP/ARTD/PESTD case) — visible right in the cell, not just the row's
-// "Needs attention" badge.
+// or the WW·PT·QA profile chip. An unconfirmed (migration 085
+// `weights_confirmed=false`, the GP/COMP/ARTD/PESTD case) row is already
+// carrying the "Needs attention" pill in the Subject cell — this cell
+// deliberately does NOT repeat that fact a second time.
 function WeightsCell({ subject }: { subject: CatalogSubjectRow }) {
   if (subject.grading_method === 'no_sheet') {
     return (
@@ -516,16 +524,7 @@ function WeightsCell({ subject }: { subject: CatalogSubjectRow }) {
   const qa = Math.round(subject.config.qa_weight * 100);
   const profile = classifyProfile(ww, pt, qa);
 
-  return (
-    <div className="flex flex-col items-start gap-0.5">
-      <ProfileLegendChip profile={profile} label={`${ww}·${pt}·${qa}`} />
-      {!subject.config.weights_confirmed && (
-        <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-brand-amber">
-          Unconfirmed
-        </span>
-      )}
-    </div>
-  );
+  return <ProfileLegendChip profile={profile} label={`${ww}·${pt}·${qa}`} />;
 }
 
 // Tri-state Offered toggle — fanned out client-side across every level of
@@ -586,36 +585,25 @@ function OfferedToggle({
 
   const stateLabel =
     subject.offeringState === 'on'
-      ? 'On'
+      ? 'Offered at every level'
       : subject.offeringState === 'off'
-        ? 'Off'
-        : 'Mixed';
+        ? 'Not offered'
+        : 'Offered at some levels, not others';
 
   return (
     <>
-      <div className="flex flex-col items-start gap-1">
-        <Switch
-          checked={subject.offeringState === 'on'}
-          onCheckedChange={handleCheckedChange}
-          disabled={busy || levelsOfType.length === 0}
-          aria-label={`Offered — ${subject.name}`}
-          className={
-            subject.offeringState === 'mixed'
-              ? 'ring-2 ring-brand-amber/50 ring-offset-1'
-              : undefined
-          }
-        />
-        <span
-          className={cn(
-            'font-mono text-[9px] font-semibold uppercase tracking-[0.1em]',
-            subject.offeringState === 'mixed'
-              ? 'text-brand-amber'
-              : 'text-muted-foreground'
-          )}
-        >
-          {stateLabel}
-        </span>
-      </div>
+      <Switch
+        checked={subject.offeringState === 'on'}
+        onCheckedChange={handleCheckedChange}
+        disabled={busy || levelsOfType.length === 0}
+        aria-label={`Offered — ${subject.name} — ${stateLabel}`}
+        title={stateLabel}
+        className={
+          subject.offeringState === 'mixed'
+            ? 'ring-2 ring-brand-amber/50 ring-offset-1'
+            : undefined
+        }
+      />
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>

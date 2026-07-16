@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { AlertTriangle, BookOpenCheck, Info } from 'lucide-react';
+import { AlertTriangle, ArrowDown, BookOpenCheck } from 'lucide-react';
 
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -200,28 +200,18 @@ export default async function SubjectConfigPage({
         }
       />
 
-      {/* Always-on boilerplate reminder — recolored indigo/informational
-          (Phase-0.4 convention) so it doesn't dilute the actionable amber
-          gap banner below when both render together. This one has no
-          specific detected problem to act on; the gap banner does. */}
+      {/* Purpose line — the single sentence answering "what is this page
+          for," ahead of any control chrome. Weight-change caution folds in
+          here as a plain clause instead of its own boxed banner (the
+          warning matters, but it doesn't need to outweigh the page's own
+          explanation of itself). */}
       {currentAy && (
-        <div className="flex items-start gap-4 rounded-xl border border-brand-indigo/30 bg-brand-indigo/5 p-5">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <Info className="size-4" />
-          </div>
-          <div className="flex-1 space-y-1.5">
-            <p className="font-serif text-base font-semibold text-foreground">
-              Changes here reach every grading sheet
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Editing a subject&apos;s weights or slot count applies to{' '}
-              <strong className="font-semibold text-foreground">
-                every grading sheet
-              </strong>{' '}
-              for that subject in {currentAy.ay_code} — handle with care.
-            </p>
-          </div>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          The subject list for {levelLabel} in {currentAy.ay_code} — set it up
+          below, then hand it to the sections that need it. Weight changes apply
+          to every grading sheet already using that subject, so double-check
+          before saving.
+        </p>
       )}
 
       {subjectConfigGaps.length > 0 &&
@@ -269,9 +259,11 @@ export default async function SubjectConfigPage({
         </Card>
       ) : (
         <Tabs defaultValue="subjects" className="space-y-5">
-          <TabsList variant="segmented" className="w-fit">
-            <TabsTrigger value="subjects">Subjects</TabsTrigger>
-            <TabsTrigger value="advanced">Advanced</TabsTrigger>
+          <TabsList variant="default" className="w-fit">
+            <TabsTrigger value="subjects">Setup</TabsTrigger>
+            <TabsTrigger value="advanced">
+              Advanced (drag &amp; drop)
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="subjects" className="space-y-5">
@@ -284,6 +276,13 @@ export default async function SubjectConfigPage({
                 .filter((l) => l.levelType === levelType)
                 .map((l) => ({ id: l.id, code: l.code, label: l.label }))}
             />
+
+            <div className="flex items-center gap-2 pl-1 text-xs text-muted-foreground">
+              <ArrowDown className="size-3.5 shrink-0" />
+              Once a subject&apos;s set up above, put it in front of the
+              sections that teach it below.
+            </div>
+
             <SectionAssignCard
               sections={sectionsForLevel}
               levelLabel={levelLabel}
