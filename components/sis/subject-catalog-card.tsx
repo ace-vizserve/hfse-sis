@@ -93,15 +93,18 @@ export function SubjectCatalogCard({
   ayCode,
   ayId,
   sections,
+  defaultSectionLevelType,
 }: {
   catalog: CatalogSubjectRow[];
   levelLabel: string;
   ayCode: string;
   ayId: string;
-  /** Every section at this level type — the "Attach to section" modal's
-   * picker. Just id/name/levelCode; no per-section subject state needed
-   * anymore (attaching is a write, not something this page displays). */
+  /** Every section, BOTH level types — the "Attach to section" modal picks
+   * its own level internally, independent of this page's catalog tab. */
   sections: AttachSection[];
+  /** Which level the modal's own toggle starts on — this page's currently
+   * active catalog tab. */
+  defaultSectionLevelType: 'primary' | 'secondary';
 }) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -358,6 +361,7 @@ export function SubjectCatalogCard({
         onOpenChange={setAttachOpen}
         subjects={selectedSubjects}
         sections={sections}
+        defaultLevelType={defaultSectionLevelType}
         onAttached={() => setSelectedIds(new Set())}
       />
     </>

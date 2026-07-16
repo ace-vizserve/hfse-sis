@@ -1,25 +1,25 @@
-import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { AlertTriangle, BookOpenCheck } from 'lucide-react';
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
-import { getSessionUser } from '@/lib/supabase/server';
-import { createServiceClient } from '@/lib/supabase/service';
-import { PageShell } from '@/components/ui/page-shell';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
-import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
-import {
-  listSubjects,
-  listSubjectLevelOfferings,
-  listCatalogForLevelType,
-  listSectionsForLevelType,
-} from '@/lib/sis/subjects/queries';
-import { listTemplateSubjectLevelOfferings } from '@/lib/sis/template/queries';
-import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
 import { SubjectAySwitcher } from '@/components/sis/subject-ay-switcher';
 import { SubjectCatalogCard } from '@/components/sis/subject-catalog-card';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageShell } from '@/components/ui/page-shell';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
+import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
+import {
+  listCatalogForLevelType,
+  listSectionsForLevelType,
+  listSubjectLevelOfferings,
+  listSubjects,
+} from '@/lib/sis/subjects/queries';
+import { listTemplateSubjectLevelOfferings } from '@/lib/sis/template/queries';
+import { getSessionUser } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 
 // Subject Setup — one screen, fully manual. Rebuilt after a live review of
 // the prior "catalog + tune + per-section checklist" design (the "Unified
@@ -93,7 +93,8 @@ export default async function SubjectConfigPage({
     offeredLevelIds,
     templateOfferings,
     catalogForLevel,
-    sectionsForLevel,
+    primarySections,
+    secondarySections,
   ] = currentAy
     ? await Promise.all([
         listSubjects(),
@@ -102,9 +103,16 @@ export default async function SubjectConfigPage({
         getOfferedLevelIds(service, currentAy.id),
         listTemplateSubjectLevelOfferings(),
         listCatalogForLevelType(service, currentAy.id, levelType),
-        listSectionsForLevelType(service, currentAy.id, levelType),
+        listSectionsForLevelType(service, currentAy.id, 'primary'),
+        listSectionsForLevelType(service, currentAy.id, 'secondary'),
       ])
-    : [[], [], [], new Set<string>(), [], [], []];
+    : [[], [], [], new Set<string>(), [], [], [], []];
+
+  // Both level types' sections, not just the currently-viewed catalog's —
+  // the Attach-to-section modal picks its own level internally (level
+  // first, then that level's sections), independent of which catalog tab
+  // is active on the page.
+  const allSections = [...primarySections, ...secondarySections];
 
   // The gap banner scopes to levels genuinely OFFERED this AY (core + any
   // volatile level with an ay_level_offerings row) — a level with no
@@ -172,16 +180,6 @@ export default async function SubjectConfigPage({
               options={ayOptions}
               levelType={levelType}
             />
-            <Tabs value={levelType}>
-              <TabsList variant="segmented" aria-label="Level">
-                <TabsTrigger value="primary" asChild>
-                  <Link href={levelHref('primary')}>Primary</Link>
-                </TabsTrigger>
-                <TabsTrigger value="secondary" asChild>
-                  <Link href={levelHref('secondary')}>Secondary</Link>
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
           </>
         }
       />
@@ -277,6 +275,17 @@ export default async function SubjectConfigPage({
           );
         })()}
 
+      <Tabs value={levelType}>
+        <TabsList aria-label="Level">
+          <TabsTrigger value="primary" asChild>
+            <Link href={levelHref('primary')}>Primary</Link>
+          </TabsTrigger>
+          <TabsTrigger value="secondary" asChild>
+            <Link href={levelHref('secondary')}>Secondary</Link>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {!currentAy ? (
         <Card className="items-center py-12 text-center">
           <CardContent className="flex flex-col items-center gap-3">
@@ -295,7 +304,8 @@ export default async function SubjectConfigPage({
           levelLabel={levelLabel}
           ayCode={currentAy.ay_code}
           ayId={currentAy.id}
-          sections={sectionsForLevel}
+          sections={allSections}
+          defaultSectionLevelType={levelType}
         />
       )}
     </PageShell>

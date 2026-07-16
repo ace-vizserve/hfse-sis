@@ -354,6 +354,7 @@ export type SectionOption = {
   id: string;
   name: string;
   levelCode: string;
+  levelType: 'primary' | 'secondary';
 };
 
 export async function listSectionsForLevelType(
@@ -397,5 +398,6 @@ export async function listSectionsForLevelType(
     id: s.id,
     name: s.name,
     levelCode: levelById.get(s.level_id)?.code ?? '',
+    levelType,
   }));
 }

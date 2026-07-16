@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 
 // AttachToSectionModal — the ONE confirm step in the simplified Subject
@@ -35,19 +36,31 @@ export type AttachSubject = {
   code: string;
   name: string;
 };
-export type AttachSection = { id: string; name: string; levelCode: string };
+export type AttachSection = {
+  id: string;
+  name: string;
+  levelCode: string;
+  levelType: 'primary' | 'secondary';
+};
 
 export function AttachToSectionModal({
   open,
   onOpenChange,
   subjects,
   sections,
+  defaultLevelType,
   onAttached,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   subjects: AttachSubject[];
+  /** Every section, both level types — the dialog picks its own level
+   * internally (level first, then that level's sections), independent of
+   * whichever catalog tab is active on the page behind it. */
   sections: AttachSection[];
+  /** Which level's sections to show pre-selected when the dialog opens —
+   * the catalog tab the subjects were checked from. Still switchable. */
+  defaultLevelType: 'primary' | 'secondary';
   /** Fired after at least one section was successfully attached to — the
    * catalog table uses this to clear its checkbox selection. */
   onAttached: () => void;
@@ -57,31 +70,38 @@ export function AttachToSectionModal({
     new Set()
   );
   const [search, setSearch] = useState('');
+  const [sectionLevelType, setSectionLevelType] = useState(defaultLevelType);
 
-  // Fresh section pick + search every time the modal is opened for a new
-  // subject selection — this component stays mounted (open toggles), so
-  // state doesn't naturally reset on its own. Reset happens during render
-  // (React's sanctioned "adjusting state on prop change" pattern) rather
-  // than in an effect, which would commit one stale-state render before
-  // clearing — this bails out of that render instead.
+  // Fresh section pick + search + level every time the modal is opened for
+  // a new subject selection — this component stays mounted (open toggles),
+  // so state doesn't naturally reset on its own. Reset happens during
+  // render (React's sanctioned "adjusting state on prop change" pattern)
+  // rather than in an effect, which would commit one stale-state render
+  // before clearing — this bails out of that render instead.
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
       setSelectedSectionIds(new Set());
       setSearch('');
+      setSectionLevelType(defaultLevelType);
     }
   }
 
+  const sectionsAtLevel = useMemo(
+    () => sections.filter((s) => s.levelType === sectionLevelType),
+    [sections, sectionLevelType]
+  );
+
   const filteredSections = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return sections;
-    return sections.filter(
+    if (!q) return sectionsAtLevel;
+    return sectionsAtLevel.filter(
       (s) =>
         s.name.toLowerCase().includes(q) ||
         s.levelCode.toLowerCase().includes(q)
     );
-  }, [sections, search]);
+  }, [sectionsAtLevel, search]);
 
   function toggleSection(id: string) {
     setSelectedSectionIds((prev) => {
@@ -173,7 +193,30 @@ export function AttachToSectionModal({
         </DialogHeader>
 
         <div className="space-y-3">
-          {sections.length > 0 && (
+          {/* Level comes first — which sections show up below depends on
+              it, so it's the first decision in the dialog, not a filter
+              buried alongside search. */}
+          <Tabs
+            value={sectionLevelType}
+            onValueChange={(v) =>
+              setSectionLevelType(v as 'primary' | 'secondary')
+            }
+          >
+            <TabsList
+              variant="segmented"
+              aria-label="Section level"
+              className="w-full"
+            >
+              <TabsTrigger value="primary" className="flex-1">
+                Primary
+              </TabsTrigger>
+              <TabsTrigger value="secondary" className="flex-1">
+                Secondary
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {sectionsAtLevel.length > 0 && (
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -185,9 +228,9 @@ export function AttachToSectionModal({
             </div>
           )}
 
-          {sections.length === 0 ? (
+          {sectionsAtLevel.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              No sections at this level yet — create one first.
+              No {sectionLevelType} sections yet — create one first.
             </p>
           ) : filteredSections.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
