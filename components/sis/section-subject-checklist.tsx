@@ -203,7 +203,18 @@ export function SectionSubjectChecklist({
       { attachId: nextId, detachId: previousId },
       {
         onError: (e) => {
+          // This mutation is two sequential requests (attach THEN detach) —
+          // unlike handleToggle's single-request mutation, a failure here
+          // can be a PARTIAL failure (e.g. attach succeeded, the following
+          // detach then threw). Reverting the local snapshot alone would
+          // silently show the pre-mutation state while the server's
+          // section_subjects rows may have actually drifted to something
+          // that violates "at most one Mother Tongue language attached at a
+          // time" (both attached, or neither). router.refresh() re-syncs
+          // the UI to server truth so a partial failure surfaces instead of
+          // hiding behind a stale-but-clean-looking snapshot.
           setAttachedIds(snapshot);
+          router.refresh();
           toast.error(
             e instanceof Error ? e.message : 'Could not update Mother Tongue'
           );
