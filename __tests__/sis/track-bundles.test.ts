@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { subjectCodesForTrack, TRACK_BUNDLES } from '@/lib/sis/track-bundles';
+import {
+  resolveTrackBundle,
+  subjectCodesForTrack,
+  TRACK_BUNDLES,
+} from '@/lib/sis/track-bundles';
 
 // Codes minted by migration 082 (subject registry hardening) — verified
 // directly against the migration file, not assumed.
@@ -74,5 +78,71 @@ describe('TRACK_BUNDLES / subjectCodesForTrack', () => {
 
   it('TRACK_BUNDLES is keyed by the existing SectionClassType vocabulary (Global/Standard), not a separate track type', () => {
     expect(Object.keys(TRACK_BUNDLES).sort()).toEqual(['Global', 'Standard']);
+  });
+});
+
+// resolveTrackBundle — Task 3 of the "Unified Subject Setup page" plan:
+// the level-aware Standard-bundle fix (HIST at S1/S2, HUM at S3/S4).
+describe('resolveTrackBundle', () => {
+  it('Standard @ S1 includes HIST, not HUM', () => {
+    const bundle = resolveTrackBundle('Standard', 'S1');
+    expect(bundle).toContain('HIST');
+    expect(bundle).not.toContain('HUM');
+  });
+
+  it('Standard @ S2 includes HIST, not HUM', () => {
+    const bundle = resolveTrackBundle('Standard', 'S2');
+    expect(bundle).toContain('HIST');
+    expect(bundle).not.toContain('HUM');
+  });
+
+  it('Standard @ S3 includes HUM, not HIST', () => {
+    const bundle = resolveTrackBundle('Standard', 'S3');
+    expect(bundle).toContain('HUM');
+    expect(bundle).not.toContain('HIST');
+  });
+
+  it('Standard @ S4 includes HUM, not HIST', () => {
+    const bundle = resolveTrackBundle('Standard', 'S4');
+    expect(bundle).toContain('HUM');
+    expect(bundle).not.toContain('HIST');
+  });
+
+  it('Standard @ S3/S4 is otherwise identical to the flat bundle (only the humanities slot swaps)', () => {
+    const flat = subjectCodesForTrack('Standard');
+    const s3 = resolveTrackBundle('Standard', 'S3');
+    expect(s3).toHaveLength(flat.length);
+    expect(new Set(s3)).toEqual(
+      new Set(flat.map((c) => (c === 'HIST' ? 'HUM' : c)))
+    );
+  });
+
+  it('Global @ any level is unaffected — same bundle regardless of level code', () => {
+    const flat = subjectCodesForTrack('Global');
+    for (const levelCode of ['S1', 'S2', 'S3', 'S4', 'P1', '']) {
+      expect(resolveTrackBundle('Global', levelCode)).toEqual(flat);
+    }
+  });
+
+  it('Standard at a non-S3/S4 level (e.g. S1/S2 or an unrecognized code) falls back to the flat HIST bundle', () => {
+    expect(resolveTrackBundle('Standard', 'S1')).toEqual(
+      subjectCodesForTrack('Standard')
+    );
+    // Defensive: an unrecognized/empty level code must not silently swap
+    // to HUM — only the two verified S3/S4 codes trigger the swap.
+    expect(resolveTrackBundle('Standard', '')).toEqual(
+      subjectCodesForTrack('Standard')
+    );
+  });
+
+  it('never includes a Mother Tongue code at any level', () => {
+    const MOTHER_TONGUE_CODES = ['FIL', 'MANDARIN', 'MT'];
+    for (const track of ['Global', 'Standard'] as const) {
+      for (const levelCode of ['S1', 'S2', 'S3', 'S4']) {
+        for (const mtCode of MOTHER_TONGUE_CODES) {
+          expect(resolveTrackBundle(track, levelCode)).not.toContain(mtCode);
+        }
+      }
+    }
   });
 });

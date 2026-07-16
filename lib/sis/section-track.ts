@@ -3,7 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { SectionClassType } from '@/lib/schemas/section';
-import { subjectCodesForTrack } from '@/lib/sis/track-bundles';
+import { resolveTrackBundle } from '@/lib/sis/track-bundles';
 
 export type ApplyTrackBundleResult = {
   /** How many NEW section_subjects rows this call actually inserted
@@ -20,13 +20,24 @@ export type ApplyTrackBundleResult = {
 };
 
 /**
- * Resolves a class_type's static subject-code bundle
- * (`lib/sis/track-bundles.ts`) to this section's AY's `subject_configs`
+ * Resolves a class_type's subject-code bundle
+ * (`lib/sis/track-bundles.ts::resolveTrackBundle`, level-aware — Task 3 of
+ * the "Unified Subject Setup page" plan: Standard's humanities slot is
+ * HIST at S1/S2, HUM at S3/S4) to this section's AY's `subject_configs`
  * rows, then inserts the resulting `section_subjects` rows additively
  * (`on conflict do nothing` — never removes an existing per-section
  * customization, matching every other `section_subjects` write path in
  * this codebase: the single-attach route `POST /api/sections/[id]/subjects`
  * and the level-wide `load-defaults` route).
+ *
+ * Looks up the section's own specific level CODE (not just level_type) via
+ * `sectionId` — this function is the single place both current callers
+ * (`POST /api/sections/[id]/track` and `POST /api/sections` at section
+ * creation) go through, and neither route passes a level code in today, so
+ * resolving it here (one extra light query, keyed on the same sectionId
+ * already required) keeps both call sites byte-identical rather than
+ * threading a new parameter through two routes for one internal resolver
+ * swap.
  *
  * Deliberately does NOT: set `sections.class_type`, call
  * `create_grading_sheets_for_section`, write an audit row, or invalidate
@@ -48,7 +59,21 @@ export async function applyTrackBundle(
     classType: SectionClassType;
   }
 ): Promise<ApplyTrackBundleResult> {
-  const codes = subjectCodesForTrack(classType);
+  const { data: sectionRow } = await service
+    .from('sections')
+    .select('level:levels(code)')
+    .eq('id', sectionId)
+    .maybeSingle();
+  const levelJoin = sectionRow?.level as
+    | { code: string }
+    | { code: string }[]
+    | null
+    | undefined;
+  const levelCode = Array.isArray(levelJoin)
+    ? levelJoin[0]?.code
+    : levelJoin?.code;
+
+  const codes = resolveTrackBundle(classType, levelCode ?? '');
 
   const { data: subjectRows } = await service
     .from('subjects')

@@ -6,7 +6,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
 import { MOTHER_TONGUE_UMBRELLA_CODE } from '@/lib/schemas/subject';
 import type { SectionClassType } from '@/lib/schemas/section';
-import { subjectCodesForTrack } from '@/lib/sis/track-bundles';
+import { resolveTrackBundle } from '@/lib/sis/track-bundles';
 
 // Subject-config queries for /sis/admin/subjects. Service-role reads; the
 // page itself is gated to school_admin+superadmin via ROUTE_ACCESS.
@@ -361,11 +361,33 @@ export type SectionCatalogSubjectAssignment = {
   subjectConfigId: string;
   subjectId: string;
   code: string;
+  // Added by Task 3 (was missing from Task 1's shape) — the checklist UI
+  // needs to render more than a bare code; both come straight off
+  // configuredCatalog, no extra query.
+  name: string;
+  isExaminable: boolean;
   /** True when a section_subjects row pairs this section to this config. */
   attached: boolean;
   /** True when this subject is part of the section's resolved bundle;
    * null when the section has no class_type (Global/Standard unset). */
   recommended: boolean | null;
+  /** True when this subject has a `subject_level_offerings` row at the
+   * SECTION's own SPECIFIC level (not just the level TYPE the catalog was
+   * fetched for) — added by Task 3. `configuredCatalog` below is built
+   * once per level TYPE (e.g. every Primary subject), but a subject can
+   * be offered at only some individual levels of that type (the verified
+   * MIXED case: Mandarin at P1-P5, not P6 — see CatalogSubjectRow's own
+   * `offeringState`/`offeredLevelIds`). Without this flag every section's
+   * checklist would list every level-type-wide subject regardless of
+   * whether it's actually offered at that section's own level, which
+   * would let an admin check a box the single-attach route then 422s on
+   * (level-offering mismatch), and would show Mother Tongue languages
+   * that were never actually offered at that level. The checklist UI
+   * still keeps an already-`attached` row visible even when this is
+   * false (data-drift safety net — never hide a subject a section is
+   * actually attached to), it just won't offer NEW attachment for a
+   * false row. */
+  offeredAtThisLevel: boolean;
 };
 
 export type SectionWithSubjectsRow = {
@@ -388,27 +410,22 @@ export type SectionWithSubjectsRow = {
   subjects: SectionCatalogSubjectAssignment[];
 };
 
-// TODO(sdd-task-3): swap this for `resolveTrackBundle(classType,
-// levelCode)` once Task 3 lands the level-aware Standard-bundle resolver
-// in lib/sis/track-bundles.ts (the flat TRACK_BUNDLES lookup will be
-// replaced there). Until that lands, every Standard section at every
-// level — including S3/S4 — is recommended the flat
-// TRACK_BUNDLES.Standard list (HIST, never HUM) via the current
-// `subjectCodesForTrack(classType)` call below. This is a known,
-// documented gap Task 1 deliberately does not fix (that's explicitly
-// Task 3's job, including its own HUM/S3-S4 offering verification) — this
-// is the one call site to redirect.
-// levelCode is intentionally unused today — kept in the signature so
-// Task 3's `resolveTrackBundle(classType, levelCode)` swap-in is a
-// body-only change at this one call site, not a call-site signature
-// change too.
+// Task 3 of the "Unified Subject Setup page" plan: this now calls the
+// level-aware `resolveTrackBundle(classType, levelCode)` (replacing the
+// flat `subjectCodesForTrack(classType)` lookup Task 1 deliberately left
+// here, TODO-marked, so this swap would be body-only) — Standard's
+// humanities-slot subject is now correctly HIST at S1/S2 and HUM at
+// S3/S4. This is what drives the Assign-to-sections checklist's per-row
+// "Recommended" tag (`listSectionsWithSubjectsForLevelType` below). The
+// SAME `resolveTrackBundle` also backs `lib/sis/section-track.ts::applyTrackBundle`
+// (the bulk track-apply route) — one resolver, two call sites, no
+// duplicated HIST/HUM logic.
 function recommendedCodesForSection(
   classType: SectionClassType | null,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   levelCode: string
 ): readonly string[] | null {
   if (!classType) return null;
-  return subjectCodesForTrack(classType);
+  return resolveTrackBundle(classType, levelCode);
 }
 
 export async function listSectionsWithSubjectsForLevelType(
@@ -510,8 +527,11 @@ export async function listSectionsWithSubjectsForLevelType(
         subjectConfigId: c.config!.id,
         subjectId: c.id,
         code: c.code,
+        name: c.name,
+        isExaminable: c.is_examinable,
         attached: attachedIds.has(c.config!.id),
         recommended: recommendedSet ? recommendedSet.has(c.code) : null,
+        offeredAtThisLevel: c.offeredLevelIds.includes(section.level_id),
       })
     );
 
