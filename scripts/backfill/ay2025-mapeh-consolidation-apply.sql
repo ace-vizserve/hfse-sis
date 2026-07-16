@@ -20,6 +20,17 @@
 --   (c) verifies coverage — every (section_student, term) group that had
 --       REAL content under any of the four now has a matching MAPEH row
 --       — and ABORTS BEFORE touching the old data if anything is missing.
+--   (c2) a SEPARATE, asymmetry-closing check: (b)/(c) only carry forward
+--       and verify `quarterly_grade` — but (d) below also nulls
+--       ww_scores/pt_scores/qa_score/letter_grade. If any old row somehow
+--       has real content in ONE of those OTHER columns while
+--       quarterly_grade is null (e.g. a `letter_grade` UG/E override with
+--       no derived numeric grade — all evidence says this shape does not
+--       exist in this dataset, but nothing before this check PROVED it),
+--       (d) would silently destroy it with no replacement. ABORTS BEFORE
+--       touching the old data if any such row is found — investigate and
+--       decide how to carry it forward before re-running, rather than
+--       guessing.
 --   (d) nulls out the old MUSIC/ARTS/PE/HE rows' content (ww_scores/
 --       pt_scores/qa_score/quarterly_grade/letter_grade/is_na) — this is
 --       the sanctioned Hard Rule #6 "deletion" (set to null, not a
@@ -127,6 +138,35 @@ begin
   end if;
 
   raise notice '[ay2025-mapeh-consolidation] Coverage verified — every real MUSIC/ARTS/PE/HE grade has a matching MAPEH row. Proceeding to null out the old rows.';
+end $$;
+
+-- (c2) Orphan-content check — closes the (b)/(c) vs (d) asymmetry flagged
+-- in independent review. Uses the EXACT same 4-column OR-chain migration
+-- 081 §5's assertion checks (minus quarterly_grade itself, minus
+-- grade_audit_log — that's §5's own separate, unaffected check) to find
+-- any row (d) would silently empty out with no corresponding MAPEH data.
+do $$
+declare
+  v_orphaned bigint;
+begin
+  select count(*) into v_orphaned
+  from public.grade_entries ge
+  join public.grading_sheets gs on gs.id = ge.grading_sheet_id
+  join public.subjects subj on subj.id = gs.subject_id
+  where subj.code in ('MUSIC', 'ARTS', 'PE', 'HE')
+    and ge.quarterly_grade is null
+    and (
+      coalesce(array_length(array_remove(ge.ww_scores, null), 1), 0) > 0
+      or coalesce(array_length(array_remove(ge.pt_scores, null), 1), 0) > 0
+      or ge.qa_score is not null
+      or ge.letter_grade is not null
+    );
+
+  if v_orphaned > 0 then
+    raise exception '[ay2025-mapeh-consolidation] ABORT — % grade_entries row(s) under MUSIC/ARTS/PE/HE have real content in ww_scores/pt_scores/qa_score/letter_grade with NO quarterly_grade — this content would be silently destroyed by step (d), which only carries quarterly_grade forward. Transaction rolled back — the old data is untouched. Investigate these rows and decide how to carry their content forward before re-running.', v_orphaned;
+  end if;
+
+  raise notice '[ay2025-mapeh-consolidation] Orphan-content check passed — no old row has real content outside quarterly_grade. Proceeding to null out the old rows.';
 end $$;
 
 -- (d) Null out the old rows' content — the sanctioned Hard Rule #6

@@ -105,3 +105,30 @@ join public.academic_years ay on ay.id = sec.academic_year_id
 where subj.code in ('MUSIC', 'ARTS', 'PE', 'HE')
 group by ay.ay_code, subj.code
 order by ay.ay_code, subj.code;
+
+-- (d) Orphan-content check — MUST return 0 rows. The apply script only
+-- carries quarterly_grade forward into MAPEH; this finds any old row with
+-- real content in ww_scores/pt_scores/qa_score/letter_grade WITHOUT a
+-- quarterly_grade, which the apply script's own hard orphan-content check
+-- will also catch and abort on — but surfacing it here, read-only, first
+-- is cheaper to investigate than an aborted transaction.
+select
+  ay.ay_code, sec.name as section, subj.code as subject,
+  st.student_number, t.term_number,
+  ge.ww_scores, ge.pt_scores, ge.qa_score, ge.letter_grade
+from public.grade_entries ge
+join public.grading_sheets gs on gs.id = ge.grading_sheet_id
+join public.subjects subj on subj.id = gs.subject_id
+join public.sections sec on sec.id = gs.section_id
+join public.terms t on t.id = gs.term_id
+join public.academic_years ay on ay.id = sec.academic_year_id
+join public.section_students ss on ss.id = ge.section_student_id
+join public.students st on st.id = ss.student_id
+where subj.code in ('MUSIC', 'ARTS', 'PE', 'HE')
+  and ge.quarterly_grade is null
+  and (
+    coalesce(array_length(array_remove(ge.ww_scores, null), 1), 0) > 0
+    or coalesce(array_length(array_remove(ge.pt_scores, null), 1), 0) > 0
+    or ge.qa_score is not null
+    or ge.letter_grade is not null
+  );
