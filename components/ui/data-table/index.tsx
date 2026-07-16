@@ -648,6 +648,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
                 table.getRowModel().rows.map((r) => (
                   <TableRow
                     key={r.id}
+                    className="group"
                     data-state={r.getIsSelected() && 'selected'}
                   >
                     {r.getVisibleCells().map((c) => (

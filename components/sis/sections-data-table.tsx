@@ -140,16 +140,38 @@ function buildColumns(
         <SortableHeader column={column}>Level</SortableHeader>
       ),
       cell: ({ row }) => (
-        // Same chip recipe as the Schedule column + the page header's
-        // level/schedule/AY chips — one "module chip anatomy," not a
-        // one-off. bg-card (not bg-white) per the no-new-bg-white rule;
-        // renders identically since both resolve to #FFFFFF.
-        <Badge
-          variant="outline"
-          className="h-6 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-foreground"
-        >
-          {row.original.levelLabel}
-        </Badge>
+        <div className="flex items-center gap-1">
+          {/* Same chip recipe as the Schedule column + the page header's
+              level/schedule/AY chips — one "module chip anatomy," not a
+              one-off. bg-card (not bg-white) per the no-new-bg-white rule;
+              renders identically since both resolve to #FFFFFF. */}
+          <Badge
+            variant="outline"
+            className="h-6 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-foreground"
+          >
+            {row.original.levelLabel}
+          </Badge>
+          {/* A level's "needed" row disappears once it has one section —
+              but HFSE levels routinely carry 2-3 (the virtue sections,
+              KD #144). Without this, adding a 2nd/3rd section to an
+              already-populated level meant leaving the row entirely for
+              the generic top-right "New section" button and re-picking
+              the level from a dropdown. Same shared controlled dialog the
+              'needed' row's "Add section" button already opens. */}
+          {row.original.kind === 'section' && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-5 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+              onClick={() => onAddSection(row.original.levelId)}
+              aria-label={`Add another section to ${row.original.levelLabel}`}
+              title={`Add another section to ${row.original.levelLabel}`}
+            >
+              <Plus className="size-3" />
+            </Button>
+          )}
+        </div>
       ),
       filterFn: facetFilterFn,
     },
