@@ -191,4 +191,77 @@ describe('computeCatalogForLevelType', () => {
     const names = rows.map((r) => r.name);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
   });
+
+  // Task 2 — needsAttention derivation (migration 085's weights_confirmed
+  // column). The load-bearing case Task 1's report flagged: a subject with
+  // a subject_configs row (hasConfig=true) whose weights are still an
+  // unconfirmed assumption (migration 082's GP/COMP/ARTD/PESTD stand-in
+  // rows) must still read needsAttention=true — a naive `!hasConfig` check
+  // would miss it.
+  describe('needsAttention (weights_confirmed)', () => {
+    it('flags a subject with NO config row at all', () => {
+      const rows = computeCatalogForLevelType(
+        SUBJECTS,
+        CONFIGS, // empty — no configs anywhere
+        OFFERINGS,
+        REPORT_MAP,
+        PRIMARY_LEVEL_IDS
+      );
+      const artd = rows.find((r) => r.code === 'ARTD');
+      expect(artd?.hasConfig).toBe(false);
+      expect(artd?.needsAttention).toBe(true);
+    });
+
+    it('flags a subject whose config row exists but is unconfirmed (the GP/COMP/ARTD/PESTD case)', () => {
+      const rows = computeCatalogForLevelType(
+        SUBJECTS,
+        [
+          {
+            id: 'cfg-artd',
+            academic_year_id: 'ay-1',
+            subject_id: 'sub-artd',
+            ww_weight: 0.3,
+            pt_weight: 0.5,
+            qa_weight: 0.2,
+            ww_max_slots: 5,
+            pt_max_slots: 5,
+            qa_max: 30,
+            weights_confirmed: false,
+          },
+        ],
+        OFFERINGS,
+        REPORT_MAP,
+        PRIMARY_LEVEL_IDS
+      );
+      const artd = rows.find((r) => r.code === 'ARTD');
+      expect(artd?.hasConfig).toBe(true);
+      expect(artd?.needsAttention).toBe(true);
+    });
+
+    it('does NOT flag a subject whose config row is confirmed', () => {
+      const rows = computeCatalogForLevelType(
+        SUBJECTS,
+        [
+          {
+            id: 'cfg-math',
+            academic_year_id: 'ay-1',
+            subject_id: 'sub-math',
+            ww_weight: 0.4,
+            pt_weight: 0.4,
+            qa_weight: 0.2,
+            ww_max_slots: 5,
+            pt_max_slots: 5,
+            qa_max: 30,
+            weights_confirmed: true,
+          },
+        ],
+        OFFERINGS,
+        REPORT_MAP,
+        PRIMARY_LEVEL_IDS
+      );
+      const math = rows.find((r) => r.code === 'MATH');
+      expect(math?.hasConfig).toBe(true);
+      expect(math?.needsAttention).toBe(false);
+    });
+  });
 });

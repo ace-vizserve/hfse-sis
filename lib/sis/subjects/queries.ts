@@ -43,6 +43,13 @@ export type SubjectConfigRow = {
   ww_max_slots: number;
   pt_max_slots: number;
   qa_max: number; // max possible QA score, default 30 (Hard Rule #1 canonical)
+  // migration 085 — "has a human confirmed this number" independent of
+  // "does a row exist." Defaults true for any config an admin creates
+  // through the Subject Setup page's own Add/Tune flow; migration 082's
+  // four stand-in GP/COMP/ARTD/PESTD rows were backfilled to false since
+  // their weights are a documented, unconfirmed assumption. See
+  // CatalogSubjectRow.needsAttention below for the consumer.
+  weights_confirmed: boolean;
 };
 
 // `subject_level_offerings(subject_id, level_id, academic_year_id)` — this
@@ -93,7 +100,7 @@ export async function listSubjectConfigsForAy(
   const { data, error } = await service
     .from('subject_configs')
     .select(
-      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
+      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, weights_confirmed'
     )
     .eq('academic_year_id', academicYearId);
   if (error) {
@@ -180,18 +187,25 @@ export type CatalogSubjectRow = {
   /** The specific level ids (within the requested type) this subject is
    * currently offered at — empty when offeringState is 'off'. */
   offeredLevelIds: string[];
-  /** hasConfig-only signal today ("no subject_configs row yet for this
-   * AY = brand-new, unconfirmed subject"). Deliberately NOT the full
-   * "needs attention" rule the plan describes (also: unexpected/missing
-   * report-map target; grading_method='no_sheet' surfaced as a deliberate
-   * chip) — that richer derivation is Task 2's job, working from the raw
-   * fields this row already exposes (hasConfig, config, reportSubjectId,
-   * grading_method). IMPORTANT CAVEAT (see Task 1 report): migration 082
-   * pre-populates subject_configs for its 4 new subjects (GP/COMP/ARTD/
-   * PESTD), so hasConfig is already true for all four and this flag will
-   * read false for them even though their weights are an unconfirmed
-   * assumption — Task 2 needs a different signal for that specific case,
-   * this loader does not invent one. */
+  /** Task 2's signal: true when there is no `subject_configs` row yet for
+   * this AY (a brand-new subject with nothing to show), OR a row exists
+   * but its weights are unconfirmed (`config.weights_confirmed === false`
+   * — migration 085; the case migration 082's four stand-in GP/COMP/ARTD/
+   * PESTD rows hit, since `hasConfig` alone reads true for them despite
+   * their weights being a documented, unconfirmed assumption — see Task
+   * 1's report + migration 085's header for why `weights_confirmed` was
+   * chosen over the two documented alternatives). Deliberately NOT also
+   * checking `reportSubjectId`/report-map "unexpectedness" — the plan
+   * doc's aspirational broader rule ("a report-map entry that's missing
+   * or points somewhere unexpected") has no crisp, evidence-backed
+   * definition of "unexpected" (a self-map IS the expected default for
+   * most subjects but NOT for Filipino/Mandarin, which correctly
+   * self-report to Mother Tongue) — building a heuristic for it here
+   * would be guessing at a rule nobody asked for. `grading_method ===
+   * 'no_sheet'` is likewise NOT a needsAttention trigger — it renders as
+   * a deliberate "No sheet" chip in the Weights column instead of a gap,
+   * per the plan's own framing ("reads as a deliberate choice rather than
+   * a gap"). */
   needsAttention: boolean;
 };
 
@@ -285,7 +299,7 @@ export function computeCatalogForLevelType(
       reportSubjectCode,
       offeringState,
       offeredLevelIds: Array.from(offeredSet),
-      needsAttention: !config,
+      needsAttention: !config || config.weights_confirmed === false,
     });
   }
 

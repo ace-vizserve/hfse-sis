@@ -279,6 +279,10 @@ export default async function SubjectConfigPage({
               catalog={catalogForLevel}
               levelLabel={levelLabel}
               ayCode={currentAy.ay_code}
+              ayId={currentAy.id}
+              levelsOfType={levels
+                .filter((l) => l.levelType === levelType)
+                .map((l) => ({ id: l.id, code: l.code, label: l.label }))}
             />
             <SectionAssignCard
               sections={sectionsForLevel}

@@ -97,12 +97,7 @@ import {
   type TemplateSubjectConfigCreateInput,
   type TemplateSubjectConfigUpdateInput,
 } from '@/lib/schemas/template';
-import {
-  GRADING_METHOD_LABELS,
-  GRADING_METHOD_VALUES,
-  SubjectCreateSchema,
-  type SubjectCreateInput,
-} from '@/lib/schemas/subject';
+import { NewSubjectForm } from '@/components/sis/new-subject-form';
 import {
   classifyProfile,
   PROFILE_CLASS,
@@ -2326,55 +2321,6 @@ function NewSubjectButton() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
-  const form = useForm<SubjectCreateInput>({
-    resolver: zodResolver(SubjectCreateSchema),
-    defaultValues: {
-      code: '',
-      name: '',
-      is_examinable: true,
-      grading_method: 'standard_sheet',
-    },
-  });
-
-  useEffect(() => {
-    if (!open)
-      form.reset({
-        code: '',
-        name: '',
-        is_examinable: true,
-        grading_method: 'standard_sheet',
-      });
-  }, [open, form]);
-
-  // Tier-2 POST. The original branched on the non-ok body
-  // (`body.error ?? \`Save failed (${status})\``); reconstructed from
-  // ApiError so the status fallback is preserved.
-  const createMutation = useMutation({
-    mutationFn: (values: SubjectCreateInput) =>
-      apiFetch('/api/sis/admin/subjects/catalog', jsonInit('POST', values)),
-    onError: (e) => {
-      if (e instanceof ApiError) {
-        const bodyError = (e.body as { error?: string } | null)?.error;
-        toast.error(bodyError ?? `Save failed (${e.status})`);
-        return;
-      }
-      toast.error(e instanceof Error ? e.message : 'Save failed');
-    },
-  });
-
-  async function onSubmit(values: SubjectCreateInput) {
-    try {
-      await createMutation.mutateAsync(values);
-      toast.success(`Added ${values.code} — ${values.name}`);
-      setOpen(false);
-      router.refresh();
-    } catch {
-      // onError already surfaced the toast.
-    }
-  }
-
-  const submitting = createMutation.isPending;
-
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -2394,115 +2340,15 @@ function NewSubjectButton() {
             <strong> Subject weights</strong> tab.
           </DialogDescription>
         </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="code"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Code</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      autoFocus
-                      placeholder="MATH, ENG, FIL…"
-                      onChange={(e) =>
-                        field.onChange(e.target.value.toUpperCase())
-                      }
-                      className="font-mono uppercase"
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Uppercase letters, digits, underscore, or hyphen. Max 32
-                    characters. Permanent after creation.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Display name</FormLabel>
-                  <FormControl>
-                    <Input {...field} placeholder="Mathematics" />
-                  </FormControl>
-                  <FormDescription>
-                    Shown on grading sheets, report cards, and dropdowns.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="is_examinable"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start gap-3 rounded-lg border border-border p-3">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={(v) => field.onChange(v === true)}
-                    />
-                  </FormControl>
-                  <div className="space-y-0.5 leading-tight">
-                    <FormLabel className="font-medium">Examinable</FormLabel>
-                    <FormDescription>
-                      Counted toward the term/annual academic average. Uncheck
-                      for advisory or enrichment subjects.
-                    </FormDescription>
-                  </div>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="grading_method"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Grading method</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {GRADING_METHOD_VALUES.map((v) => (
-                        <SelectItem key={v} value={v}>
-                          {GRADING_METHOD_LABELS[v]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    Standard sheet generates a WW/PT/QA grading grid when
-                    attached to a section. No sheet records this subject some
-                    other way and skips grid generation.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setOpen(false)}
-                disabled={submitting}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={submitting}>
-                {submitting && <Loader2 className="size-3.5 animate-spin" />}
-                Add subject
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
+        {open && (
+          <NewSubjectForm
+            onSuccess={() => {
+              setOpen(false);
+              router.refresh();
+            }}
+            onCancel={() => setOpen(false)}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

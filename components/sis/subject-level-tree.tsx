@@ -18,6 +18,7 @@ import {
 import { Scale, X } from 'lucide-react';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import type { GradingMethod } from '@/lib/schemas/subject';
 import {
   SubjectConfigCreateDialog,
   SubjectConfigEditDialog,
@@ -69,6 +70,11 @@ type Subject = {
   code: string;
   name: string;
   is_examinable: boolean;
+  // Real data already carries this (SubjectRow in lib/sis/subjects/
+  // queries.ts, since migration 082) — widened here (Task 2 of the
+  // "Unified Subject Setup page" plan) so openEdit/openCreate below can
+  // thread it into SubjectConfigForm's grade-type/grading-method fields.
+  grading_method: GradingMethod;
 };
 type Config = {
   id: string;
@@ -236,9 +242,11 @@ export function SubjectLevelTree({
   function openEdit(subject: Subject, config: Config) {
     setEditDraft({
       configId: config.id,
-      subjectId: subject.id,
-      subjectCode: subject.code,
-      subjectName: subject.name,
+      id: subject.id,
+      code: subject.code,
+      name: subject.name,
+      is_examinable: subject.is_examinable,
+      grading_method: subject.grading_method,
       ayCode,
       ww_weight: Math.round(config.ww_weight * 100),
       pt_weight: Math.round(config.pt_weight * 100),

@@ -107,6 +107,7 @@ export type AuditAction =
   | 'subject_config.create'
   | 'subject_level_offering.toggle'
   | 'subject_report_map.update'
+  | 'subject.catalog.update'
   | 'template.section.create'
   | 'template.section.update'
   | 'template.section.delete'

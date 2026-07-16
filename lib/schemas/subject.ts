@@ -44,6 +44,32 @@ export const SubjectCreateSchema = z.object({
 });
 export type SubjectCreateInput = z.infer<typeof SubjectCreateSchema>;
 
+// PATCH /api/sis/admin/subjects/catalog/[subjectId] — Task 2 of the
+// "Unified Subject Setup page" plan. `is_examinable` (grade type) and
+// `grading_method` are the two `subjects`-table fields the Tune step's
+// SubjectConfigForm needs to edit that no existing route can reach (the
+// subject_configs routes only touch subject_configs; these two live on
+// the global subjects row, no AY dimension). Both optional so a caller can
+// patch either field independently (mirrors the existing SlotMetaPatchSchema
+// partial-merge convention, KD #105) — but at least one must be present,
+// otherwise the PATCH is a meaningless no-op the caller almost certainly
+// didn't intend.
+export const SubjectCatalogUpdateSchema = z
+  .object({
+    is_examinable: z.boolean().optional(),
+    grading_method: z.enum(GRADING_METHOD_VALUES).optional(),
+  })
+  .refine(
+    (v) => v.is_examinable !== undefined || v.grading_method !== undefined,
+    {
+      message:
+        'At least one field (is_examinable or grading_method) is required',
+    }
+  );
+export type SubjectCatalogUpdateInput = z.infer<
+  typeof SubjectCatalogUpdateSchema
+>;
+
 // Mother Tongue language codes (migration 081 — MAPEH/language catalog
 // corrections). Filipino (`FIL`) and Mandarin (`MANDARIN`) are the real
 // gradable subjects; "Mother Tongue" (`MT`) was retargeted to a

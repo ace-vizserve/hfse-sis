@@ -88,6 +88,7 @@ const SIS_AUDIT_ALLOWLIST = [
   // Subject catalog (KD #72)
   'subject.create',
   'subject_config.update',
+  'subject.catalog.update',
   // Master class template (KD #66, #72)
   'template.section.create',
   'template.section.update',

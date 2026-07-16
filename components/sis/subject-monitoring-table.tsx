@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import type { LevelRow } from '@/lib/sis/levels';
+import type { GradingMethod } from '@/lib/schemas/subject';
 import {
   classifyProfile,
   ProfileLegendChip,
@@ -45,6 +46,13 @@ type Subject = {
   code: string;
   name: string;
   is_examinable: boolean;
+  // Widened alongside subject-level-tree.tsx's own local Subject type
+  // (Task 2, "Unified Subject Setup page" plan) — the two types describe
+  // the same runtime rows and must stay structurally compatible so the
+  // onOpenEdit/onOpenCreate callback props (declared with arrow-type
+  // syntax, so `strictFunctionTypes` checks parameters contravariantly)
+  // keep typechecking. Not consumed in this file today.
+  grading_method: GradingMethod;
 };
 type Config = {
   id: string;

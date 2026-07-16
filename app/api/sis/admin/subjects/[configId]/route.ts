@@ -48,7 +48,7 @@ export async function PATCH(
   const { data: before, error: loadErr } = await service
     .from('subject_configs')
     .select(
-      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max'
+      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, weights_confirmed'
     )
     .eq('id', configId)
     .maybeSingle();
@@ -61,6 +61,12 @@ export async function PATCH(
   const pt_dec = (pt_weight / 100).toFixed(2);
   const qa_dec = (qa_weight / 100).toFixed(2);
 
+  // Task 2 (migration 085) — an explicit save via this route means an
+  // admin reviewed these numbers, so weights_confirmed flips true
+  // unconditionally, regardless of whether the row started false
+  // (migration 082's GP/COMP/ARTD/PESTD stand-in rows). Closes the "needs
+  // attention" loop: fix the flagged row's weights via this route → the
+  // flag clears.
   const { error: updateErr } = await service
     .from('subject_configs')
     .update({
@@ -70,6 +76,7 @@ export async function PATCH(
       ww_max_slots,
       pt_max_slots,
       qa_max,
+      weights_confirmed: true,
     })
     .eq('id', configId);
   if (updateErr)
@@ -104,6 +111,7 @@ export async function PATCH(
         ww_max_slots: before.ww_max_slots,
         pt_max_slots: before.pt_max_slots,
         qa_max: before.qa_max,
+        weights_confirmed: before.weights_confirmed,
       },
       after: {
         ww_weight: Number(ww_dec),
@@ -112,6 +120,7 @@ export async function PATCH(
         ww_max_slots,
         pt_max_slots,
         qa_max,
+        weights_confirmed: true,
       },
       sheets_synced:
         (syncResult as { updated_sheets?: number } | null)?.updated_sheets ?? 0,
