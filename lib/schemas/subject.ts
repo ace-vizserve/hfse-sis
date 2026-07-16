@@ -10,6 +10,20 @@ import { z } from 'zod';
 // uppercases inbound code defensively (the regex passes only uppercase
 // already, but a safety net trims user-typed lowercase).
 
+// `grading_method` (migration 082) — a flag on `subjects` distinguishing
+// "has a normal WW/PT/QA grading sheet" from "recorded some other way,
+// don't generate a sheet." Required at creation (defaults to
+// 'standard_sheet' in the UI, matching every subject in the catalog
+// today) so it's never silently left unset — the DB column also carries a
+// NOT NULL DEFAULT as a structural backstop, but the create form should
+// still present the choice explicitly rather than hiding it.
+export const GRADING_METHOD_VALUES = ['standard_sheet', 'no_sheet'] as const;
+export type GradingMethod = (typeof GRADING_METHOD_VALUES)[number];
+export const GRADING_METHOD_LABELS: Record<GradingMethod, string> = {
+  standard_sheet: 'Standard sheet',
+  no_sheet: 'No sheet — recorded elsewhere',
+};
+
 export const SubjectCreateSchema = z.object({
   code: z
     .string()
@@ -26,5 +40,6 @@ export const SubjectCreateSchema = z.object({
     .min(1, 'Name required')
     .max(128, 'Keep name under 128 chars'),
   is_examinable: z.boolean(),
+  grading_method: z.enum(GRADING_METHOD_VALUES),
 });
 export type SubjectCreateInput = z.infer<typeof SubjectCreateSchema>;

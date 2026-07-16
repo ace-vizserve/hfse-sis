@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const { code, name, is_examinable } = parsed.data;
+  const { code, name, is_examinable, grading_method } = parsed.data;
 
   const service = createServiceClient();
 
@@ -51,8 +51,8 @@ export async function POST(request: NextRequest) {
 
   const { data: inserted, error: insertErr } = await service
     .from('subjects')
-    .insert({ code, name, is_examinable })
-    .select('id, code, name, is_examinable')
+    .insert({ code, name, is_examinable, grading_method })
+    .select('id, code, name, is_examinable, grading_method')
     .single();
   if (insertErr || !inserted) {
     return NextResponse.json(
@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
     code: string;
     name: string;
     is_examinable: boolean;
+    grading_method: string;
   };
 
   await logAction({
@@ -77,6 +78,7 @@ export async function POST(request: NextRequest) {
       code: row.code,
       name: row.name,
       is_examinable: row.is_examinable,
+      grading_method: row.grading_method,
     },
   });
 

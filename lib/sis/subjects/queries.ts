@@ -10,6 +10,10 @@ export type SubjectRow = {
   code: string;
   name: string;
   is_examinable: boolean;
+  // `grading_method` (migration 082) — 'standard_sheet' (has a WW/PT/QA
+  // grading grid) vs 'no_sheet' (recorded some other way, no grid
+  // generated). Every pre-082 subject defaults to 'standard_sheet'.
+  grading_method: 'standard_sheet' | 'no_sheet';
 };
 
 export type LevelRow = {
@@ -54,7 +58,7 @@ export async function listSubjects(): Promise<SubjectRow[]> {
   const service = createServiceClient();
   const { data, error } = await service
     .from('subjects')
-    .select('id, code, name, is_examinable')
+    .select('id, code, name, is_examinable, grading_method')
     .order('name', { ascending: true });
   if (error) {
     console.error('[subjects] listSubjects failed:', error.message);
