@@ -69,7 +69,7 @@ export type SubjectLevelOfferingToggleInput = z.infer<
   typeof SubjectLevelOfferingToggleSchema
 >;
 
-// PUT /api/sis/admin/subjects/[subjectId]/report-map — which subject's
+// PUT /api/sis/admin/subjects/[configId]/report-map — which subject's
 // report-card column this subject's grades roll up into
 // (`subject_report_map`, migration 080 — global, no AY/level dimension).
 export const SubjectReportMapUpdateSchema = z.object({

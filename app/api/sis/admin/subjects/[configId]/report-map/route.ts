@@ -5,13 +5,25 @@ import { requireRole } from '@/lib/auth/require-role';
 import { SubjectReportMapUpdateSchema } from '@/lib/schemas/subject-config';
 import { createServiceClient } from '@/lib/supabase/service';
 
-// PUT /api/sis/admin/subjects/[subjectId]/report-map
+// PUT /api/sis/admin/subjects/[configId]/report-map
 //
 // Sets which subject's report-card column this subject's grades roll up
 // into (`subject_report_map`, migration 080 — global, no AY/level
 // dimension; every subject is seeded self-mapped, so "reports as itself"
 // is the common/default case). Editable from the per-subject weights
 // dialog on /sis/admin/subjects.
+//
+// The URL segment is named `[configId]` (not `[subjectId]`) purely to
+// share the same dynamic-route slug name as this folder's sibling
+// route.ts (`app/api/sis/admin/subjects/[configId]/route.ts`, keyed by
+// subject_configs.id) — Next.js's App Router hard-requires every dynamic
+// segment at the same path depth to use one identical param name, or dev
+// mode fails to rebuild its route table (observed: "You cannot use
+// different slug names for the same dynamic path" — the whole route
+// manifest reload broke, with symptoms surfacing on unrelated routes).
+// The VALUE this route actually receives and operates on is still a
+// `subjects.id`, never a `subject_configs.id` — aliased back to
+// `subjectId` immediately below so the rest of this file reads correctly.
 //
 // The table's unique key is the (subject_id, report_subject_id) pair, but
 // a subject has effectively one active mapping at a time — so this route
@@ -20,12 +32,12 @@ import { createServiceClient } from '@/lib/supabase/service';
 // a DIFFERENT report_subject_id).
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ subjectId: string }> }
+  { params }: { params: Promise<{ configId: string }> }
 ) {
   const auth = await requireRole(['school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;
 
-  const { subjectId } = await params;
+  const { configId: subjectId } = await params;
   const body = await request.json().catch(() => null);
   const parsed = SubjectReportMapUpdateSchema.safeParse(body);
   if (!parsed.success) {

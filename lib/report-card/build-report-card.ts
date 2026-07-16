@@ -324,7 +324,7 @@ export async function buildReportCard(
   // target, never directly offered. Two plain lookups rather than a
   // `subjects!<fk>(...)` embed hint: no precedent for that embed syntax
   // exists anywhere in this codebase today (the sibling admin route at
-  // app/api/sis/admin/subjects/[subjectId]/report-map/route.ts and
+  // app/api/sis/admin/subjects/[configId]/report-map/route.ts and
   // lib/sis/subjects/queries.ts::listSubjectReportMap both already do two
   // separate `.from('subjects')` lookups for the same table), so this
   // mirrors that established, easily-testable pattern instead of an
