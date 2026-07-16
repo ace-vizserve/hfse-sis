@@ -3,13 +3,16 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { BookOpen, Loader2, Plus, Sparkles, X } from 'lucide-react';
+import { BookOpen, Languages, Loader2, Plus, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { MOTHER_TONGUE_SUBJECT_CODES } from '@/lib/schemas/subject';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -24,6 +27,18 @@ export type SectionSubjectChip = {
   name: string;
   isExaminable: boolean;
 };
+
+// "Mother Tongue" (`MT`) has no subject_configs/subject_level_offerings
+// row of its own since migration 081 retargeted it to a report-only
+// fan-in label — Filipino/Mandarin are the real attachable subjects.
+// Radix Select/RadioGroup reject empty-string values, so a sentinel
+// stands in for "the user picked the Mother Tongue umbrella, now show
+// the language sub-choice" — it is never itself sent to the API.
+const MOTHER_TONGUE_SENTINEL = '__mother_tongue__';
+
+function isMotherTongueCode(code: string): boolean {
+  return (MOTHER_TONGUE_SUBJECT_CODES as readonly string[]).includes(code);
+}
 
 /**
  * SectionSubjectsPanel — per-section subject overrides (migration 079,
@@ -48,6 +63,21 @@ export function SectionSubjectsPanel({
 }) {
   const router = useRouter();
   const [pickerValue, setPickerValue] = useState<string>('');
+  // Which language the Mother Tongue sub-choice currently has selected —
+  // only meaningful while pickerValue === MOTHER_TONGUE_SENTINEL.
+  const [motherTongueChoice, setMotherTongueChoice] = useState<string>('');
+
+  // availableToAdd is already scoped to this section's level (built from
+  // subject_level_offerings server-side), so a Primary section past P5
+  // simply never has Mandarin in this list — Filipino-only there
+  // naturally degrades to a single-option sub-choice, no separate P6
+  // special-case needed here (matches the existing server-side 422 gate).
+  const motherTongueOptions = availableToAdd.filter((s) =>
+    isMotherTongueCode(s.code)
+  );
+  const otherOptions = availableToAdd.filter(
+    (s) => !isMotherTongueCode(s.code)
+  );
 
   const addMutation = useMutation({
     mutationFn: (subjectConfigId: string) =>
@@ -57,6 +87,7 @@ export function SectionSubjectsPanel({
       ),
     onSuccess: () => {
       setPickerValue('');
+      setMotherTongueChoice('');
       router.refresh();
     },
     onError: (e) =>
@@ -117,6 +148,14 @@ export function SectionSubjectsPanel({
               value={pickerValue}
               onValueChange={(v) => {
                 setPickerValue(v);
+                if (v === MOTHER_TONGUE_SENTINEL) {
+                  // Umbrella pick — don't attach yet, surface the
+                  // language sub-choice below instead.
+                  setMotherTongueChoice(
+                    motherTongueOptions[0]?.subjectConfigId ?? ''
+                  );
+                  return;
+                }
                 addMutation.mutate(v);
               }}
             >
@@ -132,12 +171,18 @@ export function SectionSubjectsPanel({
                 <SelectValue placeholder="Add subject" />
               </SelectTrigger>
               <SelectContent>
-                {availableToAdd.map((s) => (
+                {otherOptions.map((s) => (
                   <SelectItem key={s.subjectConfigId} value={s.subjectConfigId}>
                     <span className="font-mono text-xs">{s.code}</span>
                     <span className="ml-2 text-muted-foreground">{s.name}</span>
                   </SelectItem>
                 ))}
+                {motherTongueOptions.length > 0 && (
+                  <SelectItem value={MOTHER_TONGUE_SENTINEL}>
+                    <Languages className="size-3.5 text-muted-foreground" />
+                    <span>Mother Tongue</span>
+                  </SelectItem>
+                )}
               </SelectContent>
             </Select>
           )}
@@ -160,6 +205,57 @@ export function SectionSubjectsPanel({
           </Button>
         </div>
       </div>
+
+      {pickerValue === MOTHER_TONGUE_SENTINEL && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-border bg-muted/40 px-5 py-3">
+          <Label className="shrink-0 text-xs text-muted-foreground">
+            Mother Tongue — choose a language
+          </Label>
+          <RadioGroup
+            value={motherTongueChoice}
+            onValueChange={setMotherTongueChoice}
+            className="flex flex-row flex-wrap items-center gap-4"
+          >
+            {motherTongueOptions.map((s) => (
+              <label
+                key={s.subjectConfigId}
+                className="flex items-center gap-1.5 text-xs font-medium text-foreground"
+              >
+                <RadioGroupItem value={s.subjectConfigId} />
+                {s.name}
+              </label>
+            ))}
+          </RadioGroup>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                setPickerValue('');
+                setMotherTongueChoice('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
+              disabled={!motherTongueChoice || addMutation.isPending}
+              onClick={() => addMutation.mutate(motherTongueChoice)}
+            >
+              {addMutation.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Plus className="size-3.5" />
+              )}
+              Add
+            </Button>
+          </div>
+        </div>
+      )}
 
       {assigned.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-5 py-8 text-center">
@@ -195,6 +291,11 @@ export function SectionSubjectsPanel({
                 {s.code}
               </span>
               {s.name}
+              {isMotherTongueCode(s.code) && (
+                <Badge variant="outline" className="h-4 px-1 text-[9px]">
+                  Mother Tongue
+                </Badge>
+              )}
               {!s.isExaminable && (
                 <Badge variant="muted" className="h-4 px-1 text-[9px]">
                   Non-exam

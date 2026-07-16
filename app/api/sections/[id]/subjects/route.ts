@@ -98,6 +98,36 @@ export async function POST(
     ? config.subject[0]
     : config.subject;
 
+  // Close the "attach subject → separate generate-sheet step" gap: create
+  // this section's grading sheet(s) for the newly-attached subject right
+  // now, matching the same best-effort, non-fatal invocation pattern
+  // section-creation already uses (app/api/sections/route.ts) — the
+  // section_subjects row above already committed, so a downstream
+  // sheet-generation hiccup must not roll that back; the registrar can
+  // always fall back to "Create all sheets" on /markbook/grading. The RPC
+  // is idempotent (`on conflict do nothing` throughout, migration 080 §8)
+  // and, as of migration 083, skips `grading_method='no_sheet'` subjects
+  // by design — those attach cleanly with no grid.
+  let sheetsInserted = 0;
+  const { data: bulkResult, error: bulkErr } = await service.rpc(
+    'create_grading_sheets_for_section',
+    { p_section_id: sectionId }
+  );
+  if (bulkErr) {
+    console.error(
+      '[sections/[id]/subjects POST] bulk-sheet RPC failed:',
+      bulkErr.message
+    );
+  } else if (
+    bulkResult &&
+    typeof bulkResult === 'object' &&
+    'inserted' in bulkResult
+  ) {
+    sheetsInserted = Number(
+      (bulkResult as { inserted: unknown }).inserted ?? 0
+    );
+  }
+
   await logAction({
     service,
     actor: { id: auth.user.id, email: auth.user.email ?? null },
@@ -109,10 +139,14 @@ export async function POST(
       subjectCode: subj?.code ?? null,
       subjectName: subj?.name ?? null,
       subjectConfigId,
+      grading_sheets_created: sheetsInserted,
     },
   });
 
   if (ayCode) invalidateDrillTags('markbook', ayCode);
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    grading_sheets_created: sheetsInserted,
+  });
 }

@@ -43,3 +43,13 @@ export const SubjectCreateSchema = z.object({
   grading_method: z.enum(GRADING_METHOD_VALUES),
 });
 export type SubjectCreateInput = z.infer<typeof SubjectCreateSchema>;
+
+// Mother Tongue language codes (migration 081 — MAPEH/language catalog
+// corrections). Filipino (`FIL`) and Mandarin (`MANDARIN`) are the real
+// gradable subjects; "Mother Tongue" (`MT`) was retargeted to a
+// report-only fan-in label (`subject_report_map`) and carries no
+// `subject_configs`/`subject_level_offerings` row of its own, so it must
+// never be directly attachable. Attach-flow UI presents these two codes
+// as one "Mother Tongue" option with a language sub-choice; the actual
+// attach always targets the chosen language's real `subjectConfigId`.
+export const MOTHER_TONGUE_SUBJECT_CODES = ['FIL', 'MANDARIN'] as const;
