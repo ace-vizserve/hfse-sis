@@ -4,7 +4,10 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import {
+  AlertTriangle,
+  CheckCircle2,
   ChevronRight,
+  Circle,
   ListTree,
   Loader2,
   MousePointerClick,
@@ -85,6 +88,47 @@ function groupBundlePreviews(
     bundle: e.bundle,
   }));
 }
+
+// The one question this whole step exists to answer: is this class ready
+// to grade? A section is measured against its track bundle when it has
+// one (Secondary, class_type set); otherwise against every catalog
+// subject offered at its level (Primary has no track concept, so "the
+// bundle" is just "everything this level offers"). Shown as a status icon
+// per section in the left rail so a registrar can scan the whole list and
+// see what's actually left to do, without opening each one.
+type SectionStatus = 'done' | 'partial' | 'not-started';
+
+function sectionCompletionStatus(
+  section: SectionWithSubjectsRow,
+  levelType: 'primary' | 'secondary'
+): { status: SectionStatus; numerator: number; denominator: number } {
+  const bundleSize =
+    levelType === 'secondary' && section.classType
+      ? resolveTrackBundle(section.classType, section.levelCode).length
+      : null;
+  const denominator = bundleSize ?? section.subjects.length;
+  const numerator =
+    bundleSize !== null
+      ? section.subjects.filter((s) => s.attached && s.recommended).length
+      : section.subjects.filter((s) => s.attached).length;
+
+  const status: SectionStatus =
+    denominator === 0 || numerator === 0
+      ? 'not-started'
+      : numerator >= denominator
+        ? 'done'
+        : 'partial';
+
+  return { status, numerator, denominator };
+}
+
+const STATUS_ICON: Record<SectionStatus, React.ReactNode> = {
+  done: <CheckCircle2 className="size-3.5 shrink-0 text-brand-mint" />,
+  partial: <AlertTriangle className="size-3.5 shrink-0 text-brand-amber" />,
+  'not-started': (
+    <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
+  ),
+};
 
 export function SectionAssignCard({
   sections,
@@ -301,23 +345,8 @@ export function SectionAssignCard({
           <div className="max-h-[32rem] divide-y divide-border overflow-y-auto border-b border-border md:max-h-[40rem] md:border-b-0 md:border-r">
             {sections.map((section) => {
               const isActive = section.id === activeId;
-              // Track/bundle only means anything at Secondary — a Primary
-              // section can carry a leftover `class_type` value from the
-              // general section-creation form (the column isn't
-              // Secondary-exclusive at the DB level) with no real bundle
-              // behind it, so gate on levelType here too, not just a
-              // truthy classType.
-              const bundleSize =
-                levelType === 'secondary' && section.classType
-                  ? resolveTrackBundle(section.classType, section.levelCode)
-                      .length
-                  : null;
-              const recommendedAttachedCount = section.subjects.filter(
-                (s) => s.attached && s.recommended
-              ).length;
-              const attachedCount = section.subjects.filter(
-                (s) => s.attached
-              ).length;
+              const { status, numerator, denominator } =
+                sectionCompletionStatus(section, levelType);
 
               return (
                 <div
@@ -340,6 +369,7 @@ export function SectionAssignCard({
                     aria-pressed={isActive}
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                   >
+                    {STATUS_ICON[status]}
                     <div className="min-w-0 flex-1 leading-tight">
                       <div className="flex items-center gap-1.5">
                         <span
@@ -363,9 +393,9 @@ export function SectionAssignCard({
                           ) : null)}
                       </div>
                       <p className="truncate font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-                        {bundleSize !== null
-                          ? `${recommendedAttachedCount} of ${bundleSize} recommended`
-                          : `${attachedCount} attached`}
+                        {status === 'done'
+                          ? 'Ready'
+                          : `${numerator} of ${denominator} ready`}
                       </p>
                     </div>
                     <ChevronRight

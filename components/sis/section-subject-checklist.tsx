@@ -267,7 +267,16 @@ export function SectionSubjectChecklist({
       <div className="flex flex-wrap gap-1.5">
         {genericSubjects.map((s) => {
           const checked = attachedIds.has(s.subjectConfigId);
-          const recommended = recommendedCodes?.has(s.code) ?? false;
+          // "Recommended"/"extra" is a track-bundle concept — it only
+          // means something when there's an actual bundle to compare
+          // against (recommendedCodes !== null, i.e. Secondary with a
+          // track picked). A Primary section, or an unflagged Secondary
+          // one, has no bundle at all, so every attached subject is just
+          // "attached" — flagging it "extra" there would be flatly wrong
+          // (there's nothing for it to be extra relative to).
+          const hasBundle = recommendedCodes !== null;
+          const recommended =
+            hasBundle && (recommendedCodes?.has(s.code) ?? false);
           const busy =
             pendingId === s.subjectConfigId && toggleMutation.isPending;
           return (
@@ -292,7 +301,7 @@ export function SectionSubjectChecklist({
                 {s.code}
               </span>
               {s.name}
-              {checked && !recommended && (
+              {checked && hasBundle && !recommended && (
                 <span className="font-mono text-[8px] font-semibold uppercase tracking-[0.06em] text-brand-amber">
                   extra
                 </span>
