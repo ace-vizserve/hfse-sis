@@ -34,8 +34,22 @@ import { type FacetConfig } from '@/components/ui/data-table/types';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { StatusBadge } from '@/components/ui/status-badge';
 import type { Role } from '@/lib/auth/roles';
-import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
+import {
+  SCHEDULE_LABELS,
+  TRACK_LABELS,
+  type Schedule,
+  type Track,
+} from '@/lib/schemas/section';
 import type { IndexStatus } from '@/lib/sis/section-index-status';
+
+// Abbreviated Track badge text — a compact "at a glance, is this a
+// multi-track (Global) homeroom" scan signal for a dense table row.
+// Deliberately shorter than the section-detail header's chip (which
+// spells out TRACK_LABELS in full — see the section detail page) — same
+// visual recipe as the Schedule column, just a one-letter label instead
+// of a full word, matching how the brief itself refers to this as "the G
+// badge."
+const TRACK_ABBR: Record<Track, string> = { global: 'G', standard: 'S' };
 
 // ─── Row type ────────────────────────────────────────────────────────────────
 
@@ -52,6 +66,11 @@ export type SisSectionRow = {
   name: string;
   levelLabel: string;
   schedule: Schedule | null;
+  /** Secondary curriculum track (migration 084) — a bulk-assignment
+   *  trigger only, never gates the section's actual subjects
+   *  (`section_subjects` stays the source of truth). null for Primary
+   *  sections and any Secondary section that hasn't been flagged yet. */
+  track: Track | null;
   active: number;
   withdrawn: number;
   indexStatus: IndexStatus | null;
@@ -145,6 +164,30 @@ function buildColumns(
             className="h-6 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-foreground"
           >
             {SCHEDULE_LABELS[row.original.schedule]}
+          </Badge>
+        ) : (
+          DASH
+        ),
+      filterFn: facetFilterFn,
+    },
+    {
+      // Same accessorFn-returns-the-label pattern as Schedule above — the
+      // facet vocabulary + sort key are the full word ("Global"/
+      // "Standard"), the cell itself renders the compact one-letter
+      // abbreviation (TRACK_ABBR) so the column stays narrow.
+      accessorFn: (row) => (row.track ? TRACK_LABELS[row.track] : '—'),
+      id: 'track',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Track</SortableHeader>
+      ),
+      cell: ({ row }) =>
+        row.original.track ? (
+          <Badge
+            variant="outline"
+            className="h-6 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-foreground"
+            title={TRACK_LABELS[row.original.track]}
+          >
+            {TRACK_ABBR[row.original.track]}
           </Badge>
         ) : (
           DASH
@@ -265,10 +308,17 @@ export function SisSectionsDataTable({
 }: {
   rows: SisSectionRow[];
   levels: { id: string; code: string; label: string }[];
-  /** Full level catalog (id/code/label) for the "Add section" dialog's
-   *  level dropdown — deliberately wider than `levels` (which is only the
-   *  levels that already appear as a row, i.e. the facet vocabulary). */
-  levelOptions: { id: string; code: string; label: string }[];
+  /** Full level catalog (id/code/label/level_type) for the "Add section"
+   *  dialog's level dropdown — deliberately wider than `levels` (which is
+   *  only the levels that already appear as a row, i.e. the facet
+   *  vocabulary). `level_type` drives the dialog's Secondary-only Track
+   *  requirement (migration 084). */
+  levelOptions: {
+    id: string;
+    code: string;
+    label: string;
+    level_type: 'primary' | 'secondary';
+  }[];
   ayCode: string | null;
   role: Role | null;
   termStarted: boolean;
@@ -298,6 +348,11 @@ export function SisSectionsDataTable({
       columnId: 'schedule',
       label: 'Schedule',
       valueOptions: Object.values(SCHEDULE_LABELS),
+    },
+    {
+      columnId: 'track',
+      label: 'Track',
+      valueOptions: Object.values(TRACK_LABELS),
     },
   ];
 

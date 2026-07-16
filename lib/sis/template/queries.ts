@@ -11,6 +11,7 @@ export type TemplateSectionRow = {
   name: string;
   class_type: string | null;
   schedule: string | null;
+  track: string | null;
   level_label: string;
   level_code: string;
   level_type: 'primary' | 'secondary';
@@ -46,7 +47,7 @@ export async function listTemplateSections(): Promise<TemplateSectionRow[]> {
   const { data, error } = await service
     .from('template_sections')
     .select(
-      'id, level_id, name, class_type, schedule, level:levels(code, label, level_type)'
+      'id, level_id, name, class_type, schedule, track, level:levels(code, label, level_type)'
     )
     .order('name');
   if (error) {
@@ -59,6 +60,7 @@ export async function listTemplateSections(): Promise<TemplateSectionRow[]> {
     name: string;
     class_type: string | null;
     schedule: string | null;
+    track: string | null;
     level:
       | { code: string; label: string; level_type: 'primary' | 'secondary' }
       | { code: string; label: string; level_type: 'primary' | 'secondary' }[]
@@ -72,6 +74,7 @@ export async function listTemplateSections(): Promise<TemplateSectionRow[]> {
       name: r.name,
       class_type: r.class_type,
       schedule: r.schedule,
+      track: r.track,
       level_label: lvl?.label ?? '—',
       level_code: lvl?.code ?? '',
       level_type: (lvl?.level_type ?? 'primary') as 'primary' | 'secondary',

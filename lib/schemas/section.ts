@@ -21,6 +21,22 @@ export const SCHEDULE_LABELS: Record<Schedule, string> = {
   whole_day: 'Whole Day',
 };
 
+// Secondary curriculum track (migration 084) — a bulk-assignment TRIGGER
+// only, never authoritative over what subjects a section actually carries
+// (`section_subjects`, migration 079, stays the sole source of truth for
+// that). Nullable/no-default at the DB level; Primary sections and any
+// section predating this feature simply have `track = null`. Required at
+// the APPLICATION layer only, and only for Secondary sections — never
+// inferred from level code, always an explicit registrar choice (the
+// direct lesson from `sections.curriculum_track`, migration 058, ripped
+// out a few weeks after shipping for doing the opposite of both of these).
+export const TRACK_VALUES = ['global', 'standard'] as const;
+export type Track = (typeof TRACK_VALUES)[number];
+export const TRACK_LABELS: Record<Track, string> = {
+  global: 'Global',
+  standard: 'Standard',
+};
+
 const uuidString = z.string().uuid('Invalid id');
 
 export const SectionCreateSchema = z.object({
@@ -31,6 +47,12 @@ export const SectionCreateSchema = z.object({
     .max(60, 'Keep it under 60 chars'),
   level_id: uuidString,
   class_type: z.enum(SECTION_CLASS_TYPES).nullable().optional(),
+  // Required-for-Secondary is enforced server-side (the route knows the
+  // level's level_type; this schema alone doesn't) — see
+  // POST /api/sections. Absent/null is valid at the schema layer so a
+  // Primary submission genuinely omits the field rather than sending a
+  // hidden default.
+  track: z.enum(TRACK_VALUES).nullable().optional(),
   // NOTE: `schedule` is intentionally NOT here. Section schedule is owned by the
   // class template (set in the SIS Admin template editor → propagated via
   // apply_template_to_ay); per-AY `/sis/sections` shows it read-only. The
@@ -40,6 +62,14 @@ export const SectionCreateSchema = z.object({
 });
 
 export type SectionCreateInput = z.infer<typeof SectionCreateSchema>;
+
+// POST /api/sections/[id]/track — bulk-apply a track bundle to an
+// existing section (or change it). Same value set as SectionCreateSchema's
+// `track`, but required here — this route's whole purpose is setting one.
+export const SectionTrackAssignSchema = z.object({
+  track: z.enum(TRACK_VALUES),
+});
+export type SectionTrackAssignInput = z.infer<typeof SectionTrackAssignSchema>;
 
 // PATCH /api/sections/[id] — rename only (see the schedule note above).
 // `level_id` and `academic_year_id` are load-bearing joins and can't be

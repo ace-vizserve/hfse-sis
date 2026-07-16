@@ -24,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GenerateSheetsDialog } from '@/components/sis/generate-sheets-dialog';
 import { HubStat } from '@/components/sis/hub-stat';
 import { SectionRenameDialog } from '@/components/sis/section-rename-dialog';
+import { SectionTrackDialog } from '@/components/sis/section-track-dialog';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { TeacherAssignmentsPanel } from '@/components/sis/section-teachers-tab';
 import {
@@ -31,7 +32,12 @@ import {
   type SectionRosterRow,
 } from '@/components/sis/section-roster-table';
 import type { SiblingSection } from '@/components/sis/section-transfer-dialog';
-import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
+import {
+  SCHEDULE_LABELS,
+  TRACK_LABELS,
+  type Schedule,
+  type Track,
+} from '@/lib/schemas/section';
 
 type LevelLite = {
   id: string;
@@ -77,13 +83,14 @@ export default async function SisSectionDetailPage({
   const { data: section } = await supabase
     .from('sections')
     .select(
-      'id, name, schedule, academic_year_id, level:levels(id, code, label, level_type), academic_year:academic_years(ay_code, label)'
+      'id, name, schedule, track, academic_year_id, level:levels(id, code, label, level_type), academic_year:academic_years(ay_code, label)'
     )
     .eq('id', id)
     .single();
   if (!section) notFound();
 
   const schedule = (section as { schedule?: Schedule | null }).schedule ?? null;
+  const track = (section as { track?: Track | null }).track ?? null;
 
   // Synchronous derivations from the already-resolved section row.
   const level = (
@@ -404,6 +411,14 @@ export default async function SisSectionDetailPage({
                 {SCHEDULE_LABELS[schedule]}
               </Badge>
             )}
+            {track && (
+              <Badge
+                variant="outline"
+                className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+              >
+                {TRACK_LABELS[track]}
+              </Badge>
+            )}
             {ay && (
               <Badge
                 variant="outline"
@@ -441,6 +456,13 @@ export default async function SisSectionDetailPage({
               sectionName={section.name}
               termStarted={termStarted}
             />
+            {level?.level_type === 'secondary' && (
+              <SectionTrackDialog
+                sectionId={section.id}
+                sectionName={section.name}
+                currentTrack={track}
+              />
+            )}
             <SectionRenameDialog
               sectionId={section.id}
               currentName={section.name}

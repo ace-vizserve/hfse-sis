@@ -72,6 +72,7 @@ const ACTION_LABELS: Record<string, string> = {
   'section.rename': 'Section renamed',
   'section.realphabetize': 'Roster re-alphabetized',
   'section.index.generate': 'Class index generated',
+  'section.track.assign': 'Section track set',
 
   // Attendance
   'attendance.update': 'Attendance updated',

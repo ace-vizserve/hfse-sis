@@ -24,13 +24,15 @@ export async function PATCH(
       { status: 400 }
     );
   }
-  const { name, class_type, schedule } = parsed.data;
+  const { name, class_type, schedule, track } = parsed.data;
 
   const service = createServiceClient();
 
   const { data: before, error: loadErr } = await service
     .from('template_sections')
-    .select('id, level_id, name, class_type, schedule')
+    .select(
+      'id, level_id, name, class_type, schedule, track, level:levels(level_type)'
+    )
     .eq('id', id)
     .maybeSingle();
   if (loadErr)
@@ -41,12 +43,38 @@ export async function PATCH(
       { status: 404 }
     );
 
+  // level_id is immutable here (see the comment above), so the existing
+  // row's own level tells us whether track is required/forbidden — same
+  // enforcement as create (migration 084).
+  const beforeLevel = before.level as
+    | { level_type: string }
+    | { level_type: string }[]
+    | null;
+  const levelType = Array.isArray(beforeLevel)
+    ? beforeLevel[0]?.level_type
+    : beforeLevel?.level_type;
+  if (levelType === 'secondary' && !track) {
+    return NextResponse.json(
+      {
+        error: 'Track (Global or Standard) is required for Secondary sections',
+      },
+      { status: 422 }
+    );
+  }
+  if (levelType !== 'secondary' && track) {
+    return NextResponse.json(
+      { error: 'Track only applies to Secondary sections' },
+      { status: 422 }
+    );
+  }
+
   const { error: updateErr } = await service
     .from('template_sections')
     .update({
       name,
       class_type: class_type ?? null,
       schedule: schedule ?? null,
+      track: track ?? null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id);
@@ -75,11 +103,13 @@ export async function PATCH(
         name: before.name,
         class_type: before.class_type,
         schedule: before.schedule,
+        track: before.track,
       },
       after: {
         name,
         class_type: class_type ?? null,
         schedule: schedule ?? null,
+        track: track ?? null,
       },
     },
   });
@@ -102,7 +132,7 @@ export async function DELETE(
 
   const { data: before, error: loadErr } = await service
     .from('template_sections')
-    .select('id, level_id, name, class_type, schedule')
+    .select('id, level_id, name, class_type, schedule, track')
     .eq('id', id)
     .maybeSingle();
   if (loadErr)
@@ -131,6 +161,7 @@ export async function DELETE(
       name: before.name,
       class_type: before.class_type,
       schedule: before.schedule,
+      track: before.track,
     },
   });
 

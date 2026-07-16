@@ -39,16 +39,25 @@ import {
 import {
   SECTION_CLASS_TYPES,
   SectionCreateSchema,
+  TRACK_LABELS,
+  TRACK_VALUES,
   type SectionCreateInput,
+  type Track,
 } from '@/lib/schemas/section';
 
-type LevelOption = { id: string; code: string; label: string };
+type LevelOption = {
+  id: string;
+  code: string;
+  label: string;
+  level_type: 'primary' | 'secondary';
+};
 
 function blankValues(initialLevelId?: string): SectionCreateInput {
   return {
     name: '',
     level_id: initialLevelId ?? '',
     class_type: null,
+    track: null,
   };
 }
 
@@ -95,6 +104,10 @@ export function NewSectionButton({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialLevelId]);
 
+  const selectedLevelId = form.watch('level_id');
+  const selectedLevelType =
+    levels.find((l) => l.id === selectedLevelId)?.level_type ?? null;
+
   // Tier-2 mutation (Model A): the POST is routed through useMutation; we keep
   // onSubmit async + mutateAsync so RHF's isSubmitting still drives `busy`, and
   // router.push/refresh fire on success exactly as before. The bespoke error
@@ -108,11 +121,22 @@ export function NewSectionButton({
           name: values.name.trim(),
           level_id: values.level_id,
           class_type: values.class_type ?? null,
+          track:
+            selectedLevelType === 'secondary' ? (values.track ?? null) : null,
         })
       ),
   });
 
   async function onSubmit(values: SectionCreateInput) {
+    // Track is required-for-Secondary at the application layer only (the
+    // schema can't see level_type) — guard here so the error surfaces
+    // inline instead of round-tripping to the server's 422.
+    if (selectedLevelType === 'secondary' && !values.track) {
+      form.setError('track', {
+        message: 'Pick Global or Standard for a Secondary section',
+      });
+      return;
+    }
     try {
       const body = await createMutation.mutateAsync(values);
       toast.success(`Created ${values.name}`);
@@ -249,6 +273,40 @@ export function NewSectionButton({
                 </FormItem>
               )}
             />
+
+            {selectedLevelType === 'secondary' && (
+              <FormField
+                control={form.control}
+                name="track"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Track</FormLabel>
+                    <Select
+                      value={field.value ?? ''}
+                      onValueChange={(v) => field.onChange(v as Track)}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Global or Standard — required" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {TRACK_VALUES.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {TRACK_LABELS[t]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Bulk-attaches the track&apos;s subjects to this section —
+                      additive, never removes a manual customization later.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             <DialogFooter>
               <Button
