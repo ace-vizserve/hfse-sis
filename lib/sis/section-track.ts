@@ -2,7 +2,7 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { Track } from '@/lib/schemas/section';
+import type { SectionClassType } from '@/lib/schemas/section';
 import { subjectCodesForTrack } from '@/lib/sis/track-bundles';
 
 export type ApplyTrackBundleResult = {
@@ -20,15 +20,15 @@ export type ApplyTrackBundleResult = {
 };
 
 /**
- * Resolves a track's static subject-code bundle (`lib/sis/track-bundles.ts`)
- * to this section's AY's `subject_configs` rows, then inserts the
- * resulting `section_subjects` rows additively (`on conflict do nothing`
- * — never removes an existing per-section customization, matching every
- * other `section_subjects` write path in this codebase: the single-attach
- * route `POST /api/sections/[id]/subjects` and the level-wide
- * `load-defaults` route).
+ * Resolves a class_type's static subject-code bundle
+ * (`lib/sis/track-bundles.ts`) to this section's AY's `subject_configs`
+ * rows, then inserts the resulting `section_subjects` rows additively
+ * (`on conflict do nothing` — never removes an existing per-section
+ * customization, matching every other `section_subjects` write path in
+ * this codebase: the single-attach route `POST /api/sections/[id]/subjects`
+ * and the level-wide `load-defaults` route).
  *
- * Deliberately does NOT: set `sections.track`, call
+ * Deliberately does NOT: set `sections.class_type`, call
  * `create_grading_sheets_for_section`, write an audit row, or invalidate
  * any cache — those differ slightly by caller (the dedicated
  * `POST /api/sections/[id]/track` route vs. mid-year section creation,
@@ -41,10 +41,14 @@ export async function applyTrackBundle(
   {
     sectionId,
     academicYearId,
-    track,
-  }: { sectionId: string; academicYearId: string; track: Track }
+    classType,
+  }: {
+    sectionId: string;
+    academicYearId: string;
+    classType: SectionClassType;
+  }
 ): Promise<ApplyTrackBundleResult> {
-  const codes = subjectCodesForTrack(track);
+  const codes = subjectCodesForTrack(classType);
 
   const { data: subjectRows } = await service
     .from('subjects')

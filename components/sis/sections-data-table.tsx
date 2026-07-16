@@ -36,20 +36,25 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import type { Role } from '@/lib/auth/roles';
 import {
   SCHEDULE_LABELS,
-  TRACK_LABELS,
+  SECTION_CLASS_TYPES,
   type Schedule,
-  type Track,
+  type SectionClassType,
 } from '@/lib/schemas/section';
 import type { IndexStatus } from '@/lib/sis/section-index-status';
 
 // Abbreviated Track badge text — a compact "at a glance, is this a
 // multi-track (Global) homeroom" scan signal for a dense table row.
-// Deliberately shorter than the section-detail header's chip (which
-// spells out TRACK_LABELS in full — see the section detail page) — same
-// visual recipe as the Schedule column, just a one-letter label instead
-// of a full word, matching how the brief itself refers to this as "the G
-// badge."
-const TRACK_ABBR: Record<Track, string> = { global: 'G', standard: 'S' };
+// Sourced from `class_type` (the SAME field the admissions auto-
+// enrollment matcher reads, `lib/sis/class-assignment.ts` — untouched by
+// this table) — there is no separate `track` column. Deliberately
+// shorter than the section-detail header's chip (which spells the value
+// out in full — see the section detail page) — same visual recipe as the
+// Schedule column, just a one-letter label instead of a full word,
+// matching how the brief itself refers to this as "the G badge."
+const TRACK_ABBR: Record<SectionClassType, string> = {
+  Global: 'G',
+  Standard: 'S',
+};
 
 // ─── Row type ────────────────────────────────────────────────────────────────
 
@@ -66,11 +71,12 @@ export type SisSectionRow = {
   name: string;
   levelLabel: string;
   schedule: Schedule | null;
-  /** Secondary curriculum track (migration 084) — a bulk-assignment
-   *  trigger only, never gates the section's actual subjects
-   *  (`section_subjects` stays the source of truth). null for Primary
-   *  sections and any Secondary section that hasn't been flagged yet. */
-  track: Track | null;
+  /** Secondary curriculum "track" — sourced from `class_type`, a
+   *  bulk-assignment trigger only in this role, never gates the
+   *  section's actual subjects (`section_subjects` stays the source of
+   *  truth). null for Primary sections and any Secondary section that
+   *  hasn't been flagged yet. */
+  classType: SectionClassType | null;
   active: number;
   withdrawn: number;
   indexStatus: IndexStatus | null;
@@ -175,19 +181,19 @@ function buildColumns(
       // facet vocabulary + sort key are the full word ("Global"/
       // "Standard"), the cell itself renders the compact one-letter
       // abbreviation (TRACK_ABBR) so the column stays narrow.
-      accessorFn: (row) => (row.track ? TRACK_LABELS[row.track] : '—'),
-      id: 'track',
+      accessorFn: (row) => row.classType ?? '—',
+      id: 'classType',
       header: ({ column }) => (
         <SortableHeader column={column}>Track</SortableHeader>
       ),
       cell: ({ row }) =>
-        row.original.track ? (
+        row.original.classType ? (
           <Badge
             variant="outline"
             className="h-6 border-border bg-card px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-foreground"
-            title={TRACK_LABELS[row.original.track]}
+            title={row.original.classType}
           >
-            {TRACK_ABBR[row.original.track]}
+            {TRACK_ABBR[row.original.classType]}
           </Badge>
         ) : (
           DASH
@@ -312,7 +318,7 @@ export function SisSectionsDataTable({
    *  dialog's level dropdown — deliberately wider than `levels` (which is
    *  only the levels that already appear as a row, i.e. the facet
    *  vocabulary). `level_type` drives the dialog's Secondary-only Track
-   *  requirement (migration 084). */
+   *  requirement (enforced via `class_type` — see lib/schemas/section.ts). */
   levelOptions: {
     id: string;
     code: string;
@@ -350,9 +356,9 @@ export function SisSectionsDataTable({
       valueOptions: Object.values(SCHEDULE_LABELS),
     },
     {
-      columnId: 'track',
+      columnId: 'classType',
       label: 'Track',
-      valueOptions: Object.values(TRACK_LABELS),
+      valueOptions: [...SECTION_CLASS_TYPES],
     },
   ];
 

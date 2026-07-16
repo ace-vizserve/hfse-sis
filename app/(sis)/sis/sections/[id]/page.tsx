@@ -34,9 +34,8 @@ import {
 import type { SiblingSection } from '@/components/sis/section-transfer-dialog';
 import {
   SCHEDULE_LABELS,
-  TRACK_LABELS,
   type Schedule,
-  type Track,
+  type SectionClassType,
 } from '@/lib/schemas/section';
 
 type LevelLite = {
@@ -83,14 +82,15 @@ export default async function SisSectionDetailPage({
   const { data: section } = await supabase
     .from('sections')
     .select(
-      'id, name, schedule, track, academic_year_id, level:levels(id, code, label, level_type), academic_year:academic_years(ay_code, label)'
+      'id, name, schedule, class_type, academic_year_id, level:levels(id, code, label, level_type), academic_year:academic_years(ay_code, label)'
     )
     .eq('id', id)
     .single();
   if (!section) notFound();
 
   const schedule = (section as { schedule?: Schedule | null }).schedule ?? null;
-  const track = (section as { track?: Track | null }).track ?? null;
+  const classType =
+    (section as { class_type?: SectionClassType | null }).class_type ?? null;
 
   // Synchronous derivations from the already-resolved section row.
   const level = (
@@ -411,12 +411,12 @@ export default async function SisSectionDetailPage({
                 {SCHEDULE_LABELS[schedule]}
               </Badge>
             )}
-            {track && (
+            {classType && (
               <Badge
                 variant="outline"
                 className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
               >
-                {TRACK_LABELS[track]}
+                {classType}
               </Badge>
             )}
             {ay && (
@@ -460,7 +460,7 @@ export default async function SisSectionDetailPage({
               <SectionTrackDialog
                 sectionId={section.id}
                 sectionName={section.name}
-                currentTrack={track}
+                currentTrack={classType}
               />
             )}
             <SectionRenameDialog

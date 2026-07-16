@@ -1,10 +1,6 @@
 import { z } from 'zod';
 
-import {
-  SCHEDULE_VALUES,
-  SECTION_CLASS_TYPES,
-  TRACK_VALUES,
-} from '@/lib/schemas/section';
+import { SCHEDULE_VALUES, SECTION_CLASS_TYPES } from '@/lib/schemas/section';
 
 // Master template tables that new AYs copy from. Mirrors the per-AY
 // schemas (`section.ts`, `subject-config.ts`) minus `academic_year_id`.
@@ -18,11 +14,11 @@ export const TemplateSectionCreateSchema = z.object({
     .trim()
     .min(1, 'Name required')
     .max(60, 'Keep it under 60 chars'),
+  // Doubles as the Secondary "track" picker — required-for-Secondary is
+  // enforced server-side (route resolves the level's level_type) — see
+  // POST /api/sis/admin/template/sections.
   class_type: z.enum(SECTION_CLASS_TYPES).nullable().optional(),
   schedule: z.enum(SCHEDULE_VALUES).nullable().optional(),
-  // Required-for-Secondary is enforced server-side (route resolves the
-  // level's level_type) — see POST /api/sis/admin/template/sections.
-  track: z.enum(TRACK_VALUES).nullable().optional(),
 });
 export type TemplateSectionCreateInput = z.infer<
   typeof TemplateSectionCreateSchema
@@ -36,7 +32,6 @@ export const TemplateSectionUpdateSchema = z.object({
     .max(60, 'Keep it under 60 chars'),
   class_type: z.enum(SECTION_CLASS_TYPES).nullable().optional(),
   schedule: z.enum(SCHEDULE_VALUES).nullable().optional(),
-  track: z.enum(TRACK_VALUES).nullable().optional(),
 });
 export type TemplateSectionUpdateInput = z.infer<
   typeof TemplateSectionUpdateSchema

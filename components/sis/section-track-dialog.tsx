@@ -19,21 +19,26 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { TRACK_LABELS, TRACK_VALUES, type Track } from '@/lib/schemas/section';
+import {
+  SECTION_CLASS_TYPES,
+  type SectionClassType,
+} from '@/lib/schemas/section';
 
 /**
  * SectionTrackDialog — the "flag this section as Global or Standard"
- * bulk-assignment action (migration 084). Secondary-only (the caller
- * gates on `level.level_type === 'secondary'`, mirroring how the
- * Schedule/Track fields are gated on the section-creation forms).
+ * bulk-assignment action. Secondary-only (the caller gates on
+ * `level.level_type === 'secondary'`, mirroring how the Schedule/Class-type
+ * fields are gated on the section-creation forms).
  *
- * `track` on `sections` is a bulk-assignment TRIGGER only — this dialog
- * additively attaches the chosen track's static subject bundle (never
- * removes a manual customization) and stamps `sections.track` for the
- * "G"/"S" badge; it never restricts what subjects the section can
- * actually carry (`section_subjects` stays the source of truth,
- * unaffected — the registrar can still add/remove any subject afterward
- * via the per-section attach panel below).
+ * `class_type` on `sections` — the SAME field the admissions auto-
+ * enrollment matcher already reads (`lib/sis/class-assignment.ts`,
+ * untouched by this dialog) — is a bulk-assignment TRIGGER only in this
+ * role: this dialog additively attaches the chosen track's static subject
+ * bundle (never removes a manual customization) and stamps
+ * `sections.class_type` for the "G"/"S" badge; it never restricts what
+ * subjects the section can actually carry (`section_subjects` stays the
+ * source of truth, unaffected — the registrar can still add/remove any
+ * subject afterward via the per-section attach panel below).
  */
 export function SectionTrackDialog({
   sectionId,
@@ -42,20 +47,22 @@ export function SectionTrackDialog({
 }: {
   sectionId: string;
   sectionName: string;
-  currentTrack: Track | null;
+  currentTrack: SectionClassType | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState<Track | ''>(currentTrack ?? '');
+  const [selected, setSelected] = useState<SectionClassType | ''>(
+    currentTrack ?? ''
+  );
 
   const applyMutation = useMutation({
-    mutationFn: (track: Track) =>
+    mutationFn: (classType: SectionClassType) =>
       apiFetch<{ inserted: number; sheetsInserted: number }>(
         `/api/sections/${sectionId}/track`,
-        jsonInit('POST', { track })
+        jsonInit('POST', { class_type: classType })
       ),
-    onSuccess: (json, track) => {
-      const parts = [`Set ${sectionName} to ${TRACK_LABELS[track]}`];
+    onSuccess: (json, classType) => {
+      const parts = [`Set ${sectionName} to ${classType}`];
       if (json?.inserted)
         parts.push(
           `${json.inserted} subject${json.inserted === 1 ? '' : 's'} attached`
@@ -97,21 +104,21 @@ export function SectionTrackDialog({
 
         <RadioGroup
           value={selected}
-          onValueChange={(v) => setSelected(v as Track)}
+          onValueChange={(v) => setSelected(v as SectionClassType)}
           className="flex flex-col gap-3"
         >
-          {TRACK_VALUES.map((t) => (
+          {SECTION_CLASS_TYPES.map((t) => (
             <label
               key={t}
               className="flex items-center gap-2 rounded-md border border-border px-3 py-2.5 text-sm font-medium text-foreground has-[[data-state=checked]]:border-brand-indigo has-[[data-state=checked]]:bg-brand-indigo/5"
             >
               <RadioGroupItem value={t} />
-              {TRACK_LABELS[t]}
+              {t}
             </label>
           ))}
         </RadioGroup>
         <Label className="text-xs font-normal text-muted-foreground">
-          {currentTrack ? `Currently ${TRACK_LABELS[currentTrack]}. ` : ''}
+          {currentTrack ? `Currently ${currentTrack}. ` : ''}
           Changing the track doesn&apos;t remove any subject already attached —
           it only adds what&apos;s missing from the new bundle.
         </Label>

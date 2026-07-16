@@ -8,17 +8,19 @@ import { applyTrackBundle } from '@/lib/sis/section-track';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // POST /api/sections/[id]/track
-// Body: { track: 'global' | 'standard' }
+// Body: { class_type: 'Global' | 'Standard' }
 //
 // One-click "flag this section as Global or Standard" — bulk-assigns the
-// track's static subject bundle (`lib/sis/track-bundles.ts`) via
+// class_type's static subject bundle (`lib/sis/track-bundles.ts`) via
 // `section_subjects` (additive only, never removes an existing manual
 // customization), then generates any newly-needed grading sheets, same
 // pattern as every other section_subjects write path in this codebase
 // (POST /api/sections/[id]/subjects, .../load-defaults). Also stamps
-// `sections.track` — a bulk-assignment TRIGGER only, never authoritative:
-// nothing else in the codebase reads it to gate/filter/restrict a
-// section's subjects.
+// `sections.class_type` — the SAME field the admissions auto-enrollment
+// matcher already reads (`lib/sis/class-assignment.ts`, untouched by this
+// route) — a bulk-assignment TRIGGER only in this new role, never
+// authoritative: nothing reads it to gate/filter/restrict a section's
+// subjects.
 //
 // Callable both from an existing section's detail page (this route) and
 // from section creation (`POST /api/sections`, which calls
@@ -42,7 +44,7 @@ export async function POST(
       { status: 400 }
     );
   }
-  const { track } = parsed.data;
+  const { class_type: classType } = parsed.data;
 
   const service = createServiceClient();
 
@@ -78,7 +80,7 @@ export async function POST(
 
   const { error: updateErr } = await service
     .from('sections')
-    .update({ track })
+    .update({ class_type: classType })
     .eq('id', sectionId);
   if (updateErr) {
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
@@ -89,12 +91,12 @@ export async function POST(
     {
       sectionId,
       academicYearId: section.academic_year_id,
-      track,
+      classType,
     }
   );
 
   // Same "no separate generate step" guarantee as the single-subject
-  // attach + load-defaults routes — best-effort, non-fatal (the track +
+  // attach + load-defaults routes — best-effort, non-fatal (the class_type +
   // section_subjects work above already committed).
   let sheetsInserted = 0;
   if (inserted > 0) {
@@ -126,7 +128,7 @@ export async function POST(
     entityId: sectionId,
     context: {
       sectionName: section.name,
-      track,
+      classType,
       bundleCodes: resolvedCodes,
       missingCodes,
       inserted,
@@ -138,7 +140,7 @@ export async function POST(
 
   return NextResponse.json({
     ok: true,
-    track,
+    class_type: classType,
     inserted,
     sheetsInserted,
     missingCodes,

@@ -84,11 +84,8 @@ import {
   SCHEDULE_LABELS,
   SCHEDULE_VALUES,
   SECTION_CLASS_TYPES,
-  TRACK_LABELS,
-  TRACK_VALUES,
   type Schedule,
   type SectionClassType,
-  type Track,
 } from '@/lib/schemas/section';
 import {
   TemplateSectionCreateSchema,
@@ -1228,7 +1225,6 @@ const BLANK_SECTION: TemplateSectionCreateInput = {
   level_id: '',
   class_type: null,
   schedule: null,
-  track: null,
 };
 
 // Sentinel for the shadcn Select's clear-to-None option, since an empty
@@ -1278,47 +1274,56 @@ function ScheduleFormField<T extends FieldValues>({
   );
 }
 
-// Shared Track <Select> field for the create + edit section dialogs
-// (migration 084). Required — Secondary sections must have an explicit
-// Global/Standard choice, never inferred, never defaulted (the direct
-// lesson from `sections.curriculum_track`). Renders nothing when the
-// section's level isn't Secondary — track is genuinely not part of the
-// form for Primary, not merely hidden-and-optional.
-function TrackFormField<T extends FieldValues>({
+// Shared Class-type <Select> field for the create + edit section dialogs.
+// The SAME field the admissions auto-enrollment matcher already reads
+// (`lib/sis/class-assignment.ts`, untouched here) — there is no separate
+// `track` field. Doubles as the Secondary "track" picker: required, and
+// (when applied to a real AY section) bulk-assigns the track's subject
+// bundle — never inferred, never defaulted (the direct lesson from
+// `sections.curriculum_track`). Optional/descriptive-only for Primary.
+function ClassTypeFormField<T extends FieldValues>({
   control,
   levelType,
 }: {
   control: Control<T>;
   levelType: 'primary' | 'secondary' | null;
 }) {
-  if (levelType !== 'secondary') return null;
   return (
     <FormField
       control={control}
-      name={'track' as Path<T>}
+      name={'class_type' as Path<T>}
       render={({ field }) => (
         <FormItem>
-          <FormLabel>Track</FormLabel>
+          <FormLabel>Class type</FormLabel>
           <Select
             value={field.value ?? ''}
-            onValueChange={(v) => field.onChange(v as Track)}
+            onValueChange={(v) =>
+              field.onChange(v === '' ? null : (v as SectionClassType))
+            }
           >
             <FormControl>
               <SelectTrigger>
-                <SelectValue placeholder="Global or Standard — required" />
+                <SelectValue
+                  placeholder={
+                    levelType === 'secondary'
+                      ? 'Global or Standard — required'
+                      : 'Optional'
+                  }
+                />
               </SelectTrigger>
             </FormControl>
             <SelectContent>
-              {TRACK_VALUES.map((t) => (
+              {SECTION_CLASS_TYPES.map((t) => (
                 <SelectItem key={t} value={t}>
-                  {TRACK_LABELS[t]}
+                  {t}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           <FormDescription>
-            Bulk-assigns the track&apos;s subject bundle when applied to a real
-            AY section — never gates what subjects a section can actually have.
+            {levelType === 'secondary'
+              ? "Required for Secondary — also bulk-assigns the track's subject bundle when applied to a real AY section (never gates what subjects a section can actually have)."
+              : 'Optional for Primary.'}
           </FormDescription>
           <FormMessage />
         </FormItem>
@@ -1360,7 +1365,6 @@ function NewTemplateSectionButton({
       level_id: string;
       class_type: SectionClassType | null;
       schedule: Schedule | null;
-      track: Track | null;
     }) =>
       apiFetch('/api/sis/admin/template/sections', jsonInit('POST', payload)),
     onError: (e) => {
@@ -1373,11 +1377,12 @@ function NewTemplateSectionButton({
     levels.find((l) => l.id === selectedLevelId)?.level_type ?? null;
 
   async function onSubmit(values: TemplateSectionCreateInput) {
-    // Track is required-for-Secondary at the application layer only (the
-    // schema can't see level_type) — guard here so the error surfaces
-    // inline instead of round-tripping to the server's 422.
-    if (selectedLevelType === 'secondary' && !values.track) {
-      form.setError('track', {
+    // Class type (which doubles as the Secondary "track" picker) is
+    // required-for-Secondary at the application layer only (the schema
+    // can't see level_type) — guard here so the error surfaces inline
+    // instead of round-tripping to the server's 422.
+    if (selectedLevelType === 'secondary' && !values.class_type) {
+      form.setError('class_type', {
         message: 'Pick Global or Standard for a Secondary section',
       });
       return;
@@ -1388,8 +1393,6 @@ function NewTemplateSectionButton({
         level_id: values.level_id,
         class_type: values.class_type ?? null,
         schedule: values.schedule ?? null,
-        track:
-          selectedLevelType === 'secondary' ? (values.track ?? null) : null,
       });
       toast.success(`Added ${values.name} to template`);
       setOpen(false);
@@ -1478,40 +1481,11 @@ function NewTemplateSectionButton({
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="class_type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Class type</FormLabel>
-                  <Select
-                    value={field.value ?? ''}
-                    onValueChange={(v) =>
-                      field.onChange(v === '' ? null : (v as SectionClassType))
-                    }
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Optional" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {SECTION_CLASS_TYPES.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <ScheduleFormField control={form.control} />
-            <TrackFormField
+            <ClassTypeFormField
               control={form.control}
               levelType={selectedLevelType}
             />
+            <ScheduleFormField control={form.control} />
             <DialogFooter>
               <Button
                 type="button"
@@ -1551,7 +1525,6 @@ function EditTemplateSectionButton({
       name: section.name,
       class_type: (section.class_type as SectionClassType | null) ?? null,
       schedule: (section.schedule as Schedule | null) ?? null,
-      track: (section.track as Track | null) ?? null,
     },
   });
 
@@ -1560,16 +1533,9 @@ function EditTemplateSectionButton({
       name: section.name,
       class_type: (section.class_type as SectionClassType | null) ?? null,
       schedule: (section.schedule as Schedule | null) ?? null,
-      track: (section.track as Track | null) ?? null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    section.id,
-    section.name,
-    section.class_type,
-    section.schedule,
-    section.track,
-  ]);
+  }, [section.id, section.name, section.class_type, section.schedule]);
 
   // Tier-2 mutation; mutateAsync awaited inside the RHF submit handler so
   // form.formState.isSubmitting drives the busy UX.
@@ -1578,7 +1544,6 @@ function EditTemplateSectionButton({
       name: string;
       class_type: SectionClassType | null;
       schedule: Schedule | null;
-      track: Track | null;
     }) =>
       apiFetch(
         `/api/sis/admin/template/sections/${section.id}`,
@@ -1592,8 +1557,10 @@ function EditTemplateSectionButton({
   async function onSubmit(values: TemplateSectionUpdateInput) {
     // level_id is immutable here — section.level_type is a stable guard
     // (the direct precedent: NewTemplateSectionButton's watch-based one).
-    if (section.level_type === 'secondary' && !values.track) {
-      form.setError('track', {
+    // Class type doubles as the Secondary "track" picker (see
+    // lib/schemas/section.ts).
+    if (section.level_type === 'secondary' && !values.class_type) {
+      form.setError('class_type', {
         message: 'Pick Global or Standard for a Secondary section',
       });
       return;
@@ -1603,8 +1570,6 @@ function EditTemplateSectionButton({
         name: values.name.trim(),
         class_type: values.class_type ?? null,
         schedule: values.schedule ?? null,
-        track:
-          section.level_type === 'secondary' ? (values.track ?? null) : null,
       });
       toast.success(`Updated ${values.name}`);
       setOpen(false);
@@ -1657,40 +1622,11 @@ function EditTemplateSectionButton({
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="class_type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Class type</FormLabel>
-                  <Select
-                    value={field.value ?? ''}
-                    onValueChange={(v) =>
-                      field.onChange(v === '' ? null : (v as SectionClassType))
-                    }
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Optional" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {SECTION_CLASS_TYPES.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <ScheduleFormField control={form.control} />
-            <TrackFormField
+            <ClassTypeFormField
               control={form.control}
               levelType={section.level_type}
             />
+            <ScheduleFormField control={form.control} />
             <DialogFooter>
               <Button
                 type="button"

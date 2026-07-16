@@ -39,10 +39,7 @@ import {
 import {
   SECTION_CLASS_TYPES,
   SectionCreateSchema,
-  TRACK_LABELS,
-  TRACK_VALUES,
   type SectionCreateInput,
-  type Track,
 } from '@/lib/schemas/section';
 
 type LevelOption = {
@@ -57,7 +54,6 @@ function blankValues(initialLevelId?: string): SectionCreateInput {
     name: '',
     level_id: initialLevelId ?? '',
     class_type: null,
-    track: null,
   };
 }
 
@@ -121,18 +117,17 @@ export function NewSectionButton({
           name: values.name.trim(),
           level_id: values.level_id,
           class_type: values.class_type ?? null,
-          track:
-            selectedLevelType === 'secondary' ? (values.track ?? null) : null,
         })
       ),
   });
 
   async function onSubmit(values: SectionCreateInput) {
-    // Track is required-for-Secondary at the application layer only (the
-    // schema can't see level_type) — guard here so the error surfaces
-    // inline instead of round-tripping to the server's 422.
-    if (selectedLevelType === 'secondary' && !values.track) {
-      form.setError('track', {
+    // Class type (which doubles as the Secondary "track" picker) is
+    // required-for-Secondary at the application layer only (the schema
+    // can't see level_type) — guard here so the error surfaces inline
+    // instead of round-tripping to the server's 422.
+    if (selectedLevelType === 'secondary' && !values.class_type) {
+      form.setError('class_type', {
         message: 'Pick Global or Standard for a Secondary section',
       });
       return;
@@ -254,7 +249,13 @@ export function NewSectionButton({
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Optional" />
+                        <SelectValue
+                          placeholder={
+                            selectedLevelType === 'secondary'
+                              ? 'Global or Standard — required'
+                              : 'Optional'
+                          }
+                        />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -266,47 +267,14 @@ export function NewSectionButton({
                     </SelectContent>
                   </Select>
                   <FormDescription>
-                    Global (G) = multi-track homeroom; Standard = fixed track.
-                    Leave blank if not applicable.
+                    {selectedLevelType === 'secondary'
+                      ? "Required for Secondary — also bulk-attaches the track's subjects to this section (additive, never removes a manual customization later)."
+                      : 'Global (G) = multi-track homeroom; Standard = fixed track. Leave blank if not applicable.'}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
-
-            {selectedLevelType === 'secondary' && (
-              <FormField
-                control={form.control}
-                name="track"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Track</FormLabel>
-                    <Select
-                      value={field.value ?? ''}
-                      onValueChange={(v) => field.onChange(v as Track)}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Global or Standard — required" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {TRACK_VALUES.map((t) => (
-                          <SelectItem key={t} value={t}>
-                            {TRACK_LABELS[t]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      Bulk-attaches the track&apos;s subjects to this section —
-                      additive, never removes a manual customization later.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
 
             <DialogFooter>
               <Button

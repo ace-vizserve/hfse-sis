@@ -21,19 +21,19 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const { name, level_id, class_type, schedule, track } = parsed.data;
+  const { name, level_id, class_type, schedule } = parsed.data;
 
   const service = createServiceClient();
 
-  // Track is Secondary-only + always-explicit, same enforcement as the
-  // per-AY section-create route (migration 084 — never inferred, never
-  // defaulted).
+  // `class_type` doubles as the Secondary "track" picker — Secondary-only
+  // + always-explicit, same enforcement as the per-AY section-create route
+  // (never inferred, never defaulted).
   const { data: level } = await service
     .from('levels')
     .select('level_type')
     .eq('id', level_id)
     .maybeSingle();
-  if (level?.level_type === 'secondary' && !track) {
+  if (level?.level_type === 'secondary' && !class_type) {
     return NextResponse.json(
       {
         error: 'Track (Global or Standard) is required for Secondary sections',
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       { status: 422 }
     );
   }
-  if (level?.level_type !== 'secondary' && track) {
+  if (level?.level_type !== 'secondary' && class_type) {
     return NextResponse.json(
       { error: 'Track only applies to Secondary sections' },
       { status: 422 }
@@ -55,9 +55,8 @@ export async function POST(request: NextRequest) {
       name,
       class_type: class_type ?? null,
       schedule: schedule ?? null,
-      track: track ?? null,
     })
-    .select('id, level_id, name, class_type, schedule, track')
+    .select('id, level_id, name, class_type, schedule')
     .single();
 
   if (error) {
@@ -83,7 +82,6 @@ export async function POST(request: NextRequest) {
       level_id,
       class_type: class_type ?? null,
       schedule: schedule ?? null,
-      track: track ?? null,
     },
   });
 

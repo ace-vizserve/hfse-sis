@@ -12,7 +12,7 @@ const MOTHER_TONGUE_CODES = ['FIL', 'MANDARIN', 'MT'];
 
 describe('TRACK_BUNDLES / subjectCodesForTrack', () => {
   it('Global bundle matches the plan exactly (8 subjects)', () => {
-    expect(subjectCodesForTrack('global')).toEqual([
+    expect(subjectCodesForTrack('Global')).toEqual([
       'ENG',
       'MATH',
       'SCI',
@@ -25,7 +25,7 @@ describe('TRACK_BUNDLES / subjectCodesForTrack', () => {
   });
 
   it('Standard bundle matches the plan exactly (7 subjects, no Mother Tongue)', () => {
-    expect(subjectCodesForTrack('standard')).toEqual([
+    expect(subjectCodesForTrack('Standard')).toEqual([
       'ENG',
       'MATH',
       'SCI',
@@ -37,7 +37,7 @@ describe('TRACK_BUNDLES / subjectCodesForTrack', () => {
   });
 
   it('never includes a Mother Tongue code in either bundle', () => {
-    for (const track of ['global', 'standard'] as const) {
+    for (const track of ['Global', 'Standard'] as const) {
       for (const mtCode of MOTHER_TONGUE_CODES) {
         expect(subjectCodesForTrack(track)).not.toContain(mtCode);
       }
@@ -47,32 +47,32 @@ describe('TRACK_BUNDLES / subjectCodesForTrack', () => {
   it('includes the exact 4 codes migration 082 minted, split correctly by track', () => {
     // Global gets GP/COMP/ARTD/PEH (PEH pre-existing); Standard gets
     // PESTD (the new standalone Secondary PE) and none of the other 3.
-    expect(subjectCodesForTrack('global')).toEqual(
+    expect(subjectCodesForTrack('Global')).toEqual(
       expect.arrayContaining(['GP', 'COMP', 'ARTD'])
     );
-    expect(subjectCodesForTrack('standard')).not.toEqual(
+    expect(subjectCodesForTrack('Standard')).not.toEqual(
       expect.arrayContaining(['GP', 'COMP', 'ARTD'])
     );
-    expect(subjectCodesForTrack('standard')).toContain('PESTD');
-    expect(subjectCodesForTrack('global')).not.toContain('PESTD');
+    expect(subjectCodesForTrack('Standard')).toContain('PESTD');
+    expect(subjectCodesForTrack('Global')).not.toContain('PESTD');
   });
 
   it('every migration-082 code appears in exactly one bundle', () => {
     for (const code of NEW_MIGRATION_082_CODES) {
-      const inGlobal = subjectCodesForTrack('global').includes(code);
-      const inStandard = subjectCodesForTrack('standard').includes(code);
+      const inGlobal = subjectCodesForTrack('Global').includes(code);
+      const inStandard = subjectCodesForTrack('Standard').includes(code);
       expect(inGlobal !== inStandard).toBe(true);
     }
   });
 
   it('neither bundle has duplicate codes', () => {
-    for (const track of ['global', 'standard'] as const) {
+    for (const track of ['Global', 'Standard'] as const) {
       const codes = subjectCodesForTrack(track);
       expect(new Set(codes).size).toBe(codes.length);
     }
   });
 
-  it('TRACK_BUNDLES has exactly the two track keys', () => {
-    expect(Object.keys(TRACK_BUNDLES).sort()).toEqual(['global', 'standard']);
+  it('TRACK_BUNDLES is keyed by the existing SectionClassType vocabulary (Global/Standard), not a separate track type', () => {
+    expect(Object.keys(TRACK_BUNDLES).sort()).toEqual(['Global', 'Standard']);
   });
 });

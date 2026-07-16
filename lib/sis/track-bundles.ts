@@ -1,9 +1,16 @@
-// Secondary curriculum track bundles (migration 084, "Config-Driven
-// Subject Registry + Secondary Tracks" Phase 3). A STATIC config map in
-// code, deliberately not a new DB table — cheap to remove or change later
-// if the track concept doesn't stick, matching the non-authoritative /
-// reversible requirement on `sections.track` itself (see the migration's
-// header comment).
+// Secondary curriculum track bundles ("Config-Driven Subject Registry +
+// Secondary Tracks" Phase 3). A STATIC config map in code, deliberately
+// not a new DB table — cheap to remove or change later if the track
+// concept doesn't stick, matching the non-authoritative / reversible
+// requirement on `sections.class_type` in its bundle-apply role (see
+// lib/schemas/section.ts's header comment on that field).
+//
+// Keyed by the EXISTING `SectionClassType` ('Global' | 'Standard') —
+// there is no separate `track` column/type. A prior draft of this file
+// added one; it was removed in favour of reusing `class_type`, which
+// already carried this exact vocabulary for the admissions auto-
+// enrollment matcher (`lib/sis/class-assignment.ts`, untouched by this
+// module).
 //
 // Pure module — subject CODES only, no DB/Supabase imports, safe to unit
 // test and to import from both server routes and (if ever needed) client
@@ -16,10 +23,10 @@
 //   - Mother Tongue (FIL / MANDARIN) is deliberately NOT in the Standard
 //     bundle — see the note below.
 
-import type { Track } from '@/lib/schemas/section';
+import type { SectionClassType } from '@/lib/schemas/section';
 
-export const TRACK_BUNDLES: Record<Track, readonly string[]> = {
-  global: ['ENG', 'MATH', 'SCI', 'HUM', 'GP', 'COMP', 'ARTD', 'PEH'],
+export const TRACK_BUNDLES: Record<SectionClassType, readonly string[]> = {
+  Global: ['ENG', 'MATH', 'SCI', 'HUM', 'GP', 'COMP', 'ARTD', 'PEH'],
   // Mother Tongue is intentionally absent here. Attaching "Mother Tongue"
   // to a section isn't a single subject — the registrar has to also pick
   // a language (Filipino or Mandarin, migration 081's real graded
@@ -32,7 +39,7 @@ export const TRACK_BUNDLES: Record<Track, readonly string[]> = {
   // language sub-choice) — simpler and lower-risk than threading a
   // language pick through the bulk-apply flow, at the cost of one small
   // manual step.
-  standard: ['ENG', 'MATH', 'SCI', 'HIST', 'LIT', 'CA', 'PESTD'],
+  Standard: ['ENG', 'MATH', 'SCI', 'HIST', 'LIT', 'CA', 'PESTD'],
 };
 
 /** Subject codes for a track bundle. Thin named wrapper over the map so
@@ -40,6 +47,8 @@ export const TRACK_BUNDLES: Record<Track, readonly string[]> = {
  * object index, and so this is the one function to unit-test if the
  * bundle membership rule (e.g. "never include an MT code") ever needs to
  * be asserted in code instead of just in a comment. */
-export function subjectCodesForTrack(track: Track): readonly string[] {
-  return TRACK_BUNDLES[track];
+export function subjectCodesForTrack(
+  classType: SectionClassType
+): readonly string[] {
+  return TRACK_BUNDLES[classType];
 }

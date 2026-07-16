@@ -15,7 +15,7 @@ import { getOfferedLevelIds } from '@/lib/sis/levels';
 import { sgToday } from '@/lib/dates';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { computeIndexStatus } from '@/lib/sis/section-index-status';
-import type { Schedule, Track } from '@/lib/schemas/section';
+import type { Schedule, SectionClassType } from '@/lib/schemas/section';
 
 type LevelLite = {
   id: string;
@@ -31,7 +31,7 @@ type SectionCard = {
   level_label: string;
   level_type: 'primary' | 'secondary' | 'unknown';
   schedule: Schedule | null;
-  track: Track | null;
+  classType: SectionClassType | null;
   active: number;
   withdrawn: number;
   unnumbered: number;
@@ -90,7 +90,7 @@ export default async function SisSectionsListPage({
     ? await supabase
         .from('sections')
         .select(
-          'id, name, schedule, track, level:levels(id, code, label, level_type)'
+          'id, name, schedule, class_type, level:levels(id, code, label, level_type)'
         )
         .eq('academic_year_id', ay.id)
     : {
@@ -98,7 +98,7 @@ export default async function SisSectionsListPage({
           id: string;
           name: string;
           schedule: Schedule | null;
-          track: Track | null;
+          class_type: SectionClassType | null;
           level: LevelLite | LevelLite[] | null;
         }>,
       };
@@ -177,7 +177,8 @@ export default async function SisSectionsListPage({
       level_type: (lvl?.level_type ?? 'unknown') as SectionCard['level_type'],
       schedule: ((s as { schedule?: Schedule | null }).schedule ??
         null) as Schedule | null,
-      track: ((s as { track?: Track | null }).track ?? null) as Track | null,
+      classType: ((s as { class_type?: SectionClassType | null }).class_type ??
+        null) as SectionClassType | null,
       active: counts[s.id]?.active ?? 0,
       withdrawn: counts[s.id]?.withdrawn ?? 0,
       unnumbered: counts[s.id]?.unnumbered ?? 0,
@@ -227,7 +228,7 @@ export default async function SisSectionsListPage({
     name: c.name,
     levelLabel: c.level_label,
     schedule: c.schedule,
-    track: c.track,
+    classType: c.classType,
     active: c.active,
     withdrawn: c.withdrawn,
     indexStatus: computeIndexStatus(c.active, c.unnumbered),
@@ -240,7 +241,7 @@ export default async function SisSectionsListPage({
     name: '',
     levelLabel: l.label,
     schedule: null,
-    track: null,
+    classType: null,
     active: 0,
     withdrawn: 0,
     indexStatus: null,

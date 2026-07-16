@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const { name, level_id, class_type, track } = parsed.data;
+  const { name, level_id, class_type } = parsed.data;
 
   const service = createServiceClient();
 
@@ -96,17 +96,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // `track` is a Secondary-only, always-explicit application-layer
-  // requirement — never inferred from level code, never defaulted (the
-  // direct lesson from `sections.curriculum_track`, migration 058). The
-  // DB column itself stays nullable/no-default (migration 084); this is
-  // the enforcement point.
+  // `class_type` doubles as the Secondary "track" picker (see
+  // lib/schemas/section.ts) — Secondary-only, always-explicit at the
+  // application layer, never inferred from level code, never defaulted
+  // (the direct lesson from `sections.curriculum_track`, migration 058).
+  // The DB column itself stays nullable/no-default; this is the
+  // enforcement point.
   const { data: level } = await service
     .from('levels')
     .select('level_type')
     .eq('id', level_id)
     .maybeSingle();
-  if (level?.level_type === 'secondary' && !track) {
+  if (level?.level_type === 'secondary' && !class_type) {
     return NextResponse.json(
       {
         error: 'Track (Global or Standard) is required for Secondary sections',
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
       { status: 422 }
     );
   }
-  if (level?.level_type !== 'secondary' && track) {
+  if (level?.level_type !== 'secondary' && class_type) {
     return NextResponse.json(
       { error: 'Track only applies to Secondary sections' },
       { status: 422 }
@@ -128,9 +129,8 @@ export async function POST(request: NextRequest) {
       level_id,
       name,
       class_type: class_type ?? null,
-      track: track ?? null,
     })
-    .select('id, name, level_id, class_type, track')
+    .select('id, name, level_id, class_type')
     .single();
 
   if (insertErr) {
@@ -162,8 +162,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Track bundle-apply (migration 084) — when the registrar flagged this
-  // Secondary section Global/Standard at creation, additively attach the
+  // Track bundle-apply — when the registrar flagged this Secondary section
+  // Global/Standard (via `class_type`) at creation, additively attach the
   // track's static subject bundle on top of whatever the level-wide sync
   // above just seeded. Additive + on-conflict-do-nothing (same as every
   // other section_subjects write path), so this is a no-op if the sync
@@ -171,12 +171,12 @@ export async function POST(request: NextRequest) {
   // bundle is guaranteed present even if the level-wide default set ever
   // narrows in the future.
   let trackBundleInserted = 0;
-  if (track) {
+  if (class_type) {
     try {
       const bundleResult = await applyTrackBundle(service, {
         sectionId: inserted.id,
         academicYearId: ay.id,
-        track,
+        classType: class_type,
       });
       trackBundleInserted = bundleResult.inserted;
     } catch (e) {
@@ -220,7 +220,6 @@ export async function POST(request: NextRequest) {
       name,
       level_id,
       class_type: class_type ?? null,
-      track: track ?? null,
       track_bundle_inserted: trackBundleInserted,
       grading_sheets_created: sheetsInserted,
     },
