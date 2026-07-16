@@ -3,7 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { ChevronRight, ListTree, Loader2 } from 'lucide-react';
+import {
+  ChevronRight,
+  ListTree,
+  Loader2,
+  MousePointerClick,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
@@ -27,23 +32,24 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { SectionSubjectChecklist } from '@/components/sis/section-subject-checklist';
 import { cn } from '@/lib/utils';
 
-// Step ② "Assign to sections" — the real UI (Task 3 of the "Unified
-// Subject Setup page" plan; docs:
-// C:\Users\Ace\.claude\plans\my-bad-its-not-graceful-creek.md). Task 1
-// shipped a stub here; Task 2 built Step ①'s SubjectCatalogCard, which
-// this deliberately does not touch or reuse UI from.
+// Step ② "Assign to sections" — Task 3 of the "Unified Subject Setup page"
+// plan (docs: C:\Users\Ace\.claude\plans\my-bad-its-not-graceful-creek.md),
+// reshaped after live review: a level with a normal section count (10-20+
+// for Primary) turned into a wall of stacked, individually-expandable cards
+// — compacting each card's *content* didn't fix that, because the problem
+// was the page SHAPE, not the density. This is a master-detail layout
+// instead: a compact scrollable list on the left, ONE section's checklist
+// in a fixed pane on the right. Selecting a different section REPLACES the
+// pane's content instead of adding another expanded block underneath — the
+// page can never grow past "list + one detail pane," no matter how many
+// sections exist.
 //
-// Two complementary mechanisms, per the plan's design decisions:
-//   1. Bulk "Flag selected as Global/Standard" — sets `class_type` AND
-//      additively bulk-attaches the resolved bundle, for several sections
-//      at once. Behind an AlertDialog confirm naming the resolved section
-//      count + a per-level-group bundle preview (Standard sections at
-//      different levels can resolve to different bundles since Task 3's
-//      HIST/HUM fix — the preview reflects that, not one generic list).
-//   2. Per-section lazy-expand → `SectionSubjectChecklist` — the
-//      fine-grained view/adjustment surface underneath, whether a section
-//      was just bulk-flagged or needs individual attention.
-// Neither ever opens a further dialog from within itself.
+// Two complementary mechanisms, per the plan's design decisions (unchanged
+// by the relayout): bulk "Flag selected as Global/Standard" (Secondary) /
+// "Attach subjects to selected sections" (Primary, reuses the existing
+// load-defaults route) operate on the LEFT rail's checkboxes, independent
+// of which section is currently shown in the detail pane. Neither ever
+// opens a further dialog from within itself.
 
 function groupBundlePreviews(
   classType: SectionClassType,
@@ -92,9 +98,16 @@ export function SectionAssignCard({
     levelLabel.toLowerCase() === 'secondary' ? 'secondary' : 'primary';
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [bulkClassType, setBulkClassType] = useState<SectionClassType | null>(
     null
+  );
+  // The one section shown in the detail pane — defaults to the first so
+  // the pane is never empty on first load. Distinct from `selectedIds`
+  // (the bulk-action checkboxes) on purpose: "which section am I looking
+  // at" and "which sections should the bulk button act on" are different
+  // questions an admin can answer independently.
+  const [activeId, setActiveId] = useState<string | null>(
+    sections[0]?.id ?? null
   );
 
   function toggleSelected(id: string, checked: boolean) {
@@ -106,16 +119,8 @@ export function SectionAssignCard({
     });
   }
 
-  function toggleExpanded(id: string) {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
   const selectedSections = sections.filter((s) => selectedIds.has(s.id));
+  const activeSection = sections.find((s) => s.id === activeId) ?? null;
 
   const bulkApplyMutation = useMutation({
     // Fan out one POST per selected section (reuses the existing per-
@@ -289,29 +294,39 @@ export function SectionAssignCard({
           No sections at this level yet.
         </div>
       ) : (
-        <div className="divide-y divide-border border-t border-border">
-          {sections.map((section) => {
-            const isExpanded = expandedIds.has(section.id);
-            // Track/bundle only means anything at Secondary — a Primary
-            // section can carry a leftover `class_type` value from the
-            // general section-creation form (the column isn't Secondary-
-            // exclusive at the DB level) with no real bundle behind it, so
-            // gate on levelType here too, not just a truthy classType.
-            const bundleSize =
-              levelType === 'secondary' && section.classType
-                ? resolveTrackBundle(section.classType, section.levelCode)
-                    .length
-                : null;
-            const recommendedAttachedCount = section.subjects.filter(
-              (s) => s.attached && s.recommended
-            ).length;
-            const attachedCount = section.subjects.filter(
-              (s) => s.attached
-            ).length;
+        <div className="grid grid-cols-1 border-t border-border md:grid-cols-[minmax(220px,280px)_1fr]">
+          {/* LEFT — compact section list, always the same height regardless
+              of how many are "expanded" (there's no per-row expand anymore
+              — clicking a row swaps the detail pane instead). */}
+          <div className="max-h-[32rem] divide-y divide-border overflow-y-auto border-b border-border md:max-h-[40rem] md:border-b-0 md:border-r">
+            {sections.map((section) => {
+              const isActive = section.id === activeId;
+              // Track/bundle only means anything at Secondary — a Primary
+              // section can carry a leftover `class_type` value from the
+              // general section-creation form (the column isn't
+              // Secondary-exclusive at the DB level) with no real bundle
+              // behind it, so gate on levelType here too, not just a
+              // truthy classType.
+              const bundleSize =
+                levelType === 'secondary' && section.classType
+                  ? resolveTrackBundle(section.classType, section.levelCode)
+                      .length
+                  : null;
+              const recommendedAttachedCount = section.subjects.filter(
+                (s) => s.attached && s.recommended
+              ).length;
+              const attachedCount = section.subjects.filter(
+                (s) => s.attached
+              ).length;
 
-            return (
-              <div key={section.id}>
-                <div className="flex items-center gap-3 px-5 py-2.5">
+              return (
+                <div
+                  key={section.id}
+                  className={cn(
+                    'flex items-center gap-2.5 px-3 py-2',
+                    isActive && 'bg-accent'
+                  )}
+                >
                   <Checkbox
                     checked={selectedIds.has(section.id)}
                     onCheckedChange={(v) =>
@@ -321,49 +336,88 @@ export function SectionAssignCard({
                   />
                   <button
                     type="button"
-                    onClick={() => toggleExpanded(section.id)}
-                    aria-expanded={isExpanded}
-                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    onClick={() => setActiveId(section.id)}
+                    aria-pressed={isActive}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
                   >
+                    <div className="min-w-0 flex-1 leading-tight">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={cn(
+                            'truncate font-serif text-sm',
+                            isActive
+                              ? 'font-semibold text-accent-foreground'
+                              : 'font-medium text-foreground'
+                          )}
+                        >
+                          {section.name}
+                        </span>
+                        {levelType === 'secondary' &&
+                          (section.classType ? (
+                            <Badge
+                              variant="secondary"
+                              className="h-4 shrink-0 px-1 text-[9px]"
+                            >
+                              {section.classType[0]}
+                            </Badge>
+                          ) : null)}
+                      </div>
+                      <p className="truncate font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                        {bundleSize !== null
+                          ? `${recommendedAttachedCount} of ${bundleSize} recommended`
+                          : `${attachedCount} attached`}
+                      </p>
+                    </div>
                     <ChevronRight
                       className={cn(
-                        'size-4 shrink-0 text-muted-foreground transition-transform',
-                        isExpanded && 'rotate-90'
+                        'size-3.5 shrink-0 text-muted-foreground/60',
+                        isActive && 'text-accent-foreground'
                       )}
                     />
-                    <span className="truncate font-serif text-[15px] font-semibold text-foreground">
-                      {section.name}
-                    </span>
-                    {levelType === 'secondary' &&
-                      (section.classType ? (
-                        <Badge variant="secondary" className="shrink-0">
-                          {section.classType}
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className="shrink-0 text-muted-foreground"
-                        >
-                          Unflagged
-                        </Badge>
-                      ))}
-                    <span className="ml-auto shrink-0 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-                      {bundleSize !== null
-                        ? `${recommendedAttachedCount} of ${bundleSize} recommended`
-                        : `${attachedCount} attached`}
-                    </span>
                   </button>
                 </div>
+              );
+            })}
+          </div>
 
-                {isExpanded && (
-                  <SectionSubjectChecklist
-                    section={section}
-                    levelType={levelType}
-                  />
-                )}
+          {/* RIGHT — the active section's checklist, and only the active
+              one. Clicking a different row on the left replaces this pane
+              instead of adding a second block below it. */}
+          <div className="min-w-0">
+            {activeSection ? (
+              <>
+                <div className="flex items-center gap-2 border-b border-dashed border-border px-5 py-3">
+                  <span className="font-serif text-base font-semibold text-foreground">
+                    {activeSection.name}
+                  </span>
+                  {levelType === 'secondary' && (
+                    <Badge
+                      variant={
+                        activeSection.classType ? 'secondary' : 'outline'
+                      }
+                      className={cn(
+                        'shrink-0',
+                        !activeSection.classType && 'text-muted-foreground'
+                      )}
+                    >
+                      {activeSection.classType ?? 'Unflagged'}
+                    </Badge>
+                  )}
+                </div>
+                <SectionSubjectChecklist
+                  section={activeSection}
+                  levelType={levelType}
+                />
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-2 px-5 py-16 text-center">
+                <MousePointerClick className="size-5 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  Select a section from the list to manage its subjects.
+                </p>
               </div>
-            );
-          })}
+            )}
+          </div>
         </div>
       )}
 
