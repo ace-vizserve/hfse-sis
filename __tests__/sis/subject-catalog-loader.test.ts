@@ -196,8 +196,13 @@ describe('computeCatalogForLevelType', () => {
   // column). The load-bearing case Task 1's report flagged: a subject with
   // a subject_configs row (hasConfig=true) whose weights are still an
   // unconfirmed assumption (migration 082's GP/COMP/ARTD/PESTD stand-in
-  // rows) must still read needsAttention=true — a naive `!hasConfig` check
-  // would miss it.
+  // rows, which are all grading_method='standard_sheet' per that
+  // migration) must still read needsAttention=true — a naive `!hasConfig`
+  // check would miss it. These two cases use SCI (not the fixture's ARTD,
+  // whose test-only grading_method is 'no_sheet' — see the dedicated
+  // no_sheet-exclusion block below) so they exercise a standard_sheet
+  // subject, matching the real GP/COMP/ARTD/PESTD rows this comment refers
+  // to.
   describe('needsAttention (weights_confirmed)', () => {
     it('flags a subject with NO config row at all', () => {
       const rows = computeCatalogForLevelType(
@@ -207,9 +212,9 @@ describe('computeCatalogForLevelType', () => {
         REPORT_MAP,
         PRIMARY_LEVEL_IDS
       );
-      const artd = rows.find((r) => r.code === 'ARTD');
-      expect(artd?.hasConfig).toBe(false);
-      expect(artd?.needsAttention).toBe(true);
+      const sci = rows.find((r) => r.code === 'SCI');
+      expect(sci?.hasConfig).toBe(false);
+      expect(sci?.needsAttention).toBe(true);
     });
 
     it('flags a subject whose config row exists but is unconfirmed (the GP/COMP/ARTD/PESTD case)', () => {
@@ -217,9 +222,9 @@ describe('computeCatalogForLevelType', () => {
         SUBJECTS,
         [
           {
-            id: 'cfg-artd',
+            id: 'cfg-sci',
             academic_year_id: 'ay-1',
-            subject_id: 'sub-artd',
+            subject_id: 'sub-sci',
             ww_weight: 0.3,
             pt_weight: 0.5,
             qa_weight: 0.2,
@@ -233,9 +238,9 @@ describe('computeCatalogForLevelType', () => {
         REPORT_MAP,
         PRIMARY_LEVEL_IDS
       );
-      const artd = rows.find((r) => r.code === 'ARTD');
-      expect(artd?.hasConfig).toBe(true);
-      expect(artd?.needsAttention).toBe(true);
+      const sci = rows.find((r) => r.code === 'SCI');
+      expect(sci?.hasConfig).toBe(true);
+      expect(sci?.needsAttention).toBe(true);
     });
 
     it('does NOT flag a subject whose config row is confirmed', () => {
@@ -262,6 +267,63 @@ describe('computeCatalogForLevelType', () => {
       const math = rows.find((r) => r.code === 'MATH');
       expect(math?.hasConfig).toBe(true);
       expect(math?.needsAttention).toBe(false);
+    });
+  });
+
+  // Fix pass (review finding) — needsAttention must NOT fire for a
+  // grading_method='no_sheet' subject, regardless of its config state.
+  // Per the JSDoc above needsAttention in lib/sis/subjects/queries.ts, a
+  // no_sheet subject renders a deliberate "No sheet" chip in the Weights
+  // column instead of a gap — so it must never be flagged as needing
+  // attention, even with no config row or an unconfirmed one (both of
+  // which are otherwise needsAttention triggers per the block above). The
+  // fixture's ARTD ('sub-artd') is grading_method='no_sheet' and has zero
+  // offerings anywhere (see the offeringState='off' case (c) above), which
+  // makes it the natural fixture subject for this — before the fix, these
+  // two cases would have read needsAttention=true (the latent bug: an
+  // admin who flips a subject to no_sheet via SubjectConfigForm could never
+  // clear this flag through the UI, since the weights-save control hides
+  // once grading_method='no_sheet').
+  describe('needsAttention excludes grading_method=no_sheet subjects', () => {
+    it('does NOT flag a no_sheet subject with no config row at all', () => {
+      const rows = computeCatalogForLevelType(
+        SUBJECTS,
+        CONFIGS, // empty — no configs anywhere
+        OFFERINGS,
+        REPORT_MAP,
+        PRIMARY_LEVEL_IDS
+      );
+      const artd = rows.find((r) => r.code === 'ARTD');
+      expect(artd?.grading_method).toBe('no_sheet');
+      expect(artd?.hasConfig).toBe(false);
+      expect(artd?.needsAttention).toBe(false);
+    });
+
+    it('does NOT flag a no_sheet subject whose config row is unconfirmed', () => {
+      const rows = computeCatalogForLevelType(
+        SUBJECTS,
+        [
+          {
+            id: 'cfg-artd',
+            academic_year_id: 'ay-1',
+            subject_id: 'sub-artd',
+            ww_weight: 0.3,
+            pt_weight: 0.5,
+            qa_weight: 0.2,
+            ww_max_slots: 5,
+            pt_max_slots: 5,
+            qa_max: 30,
+            weights_confirmed: false,
+          },
+        ],
+        OFFERINGS,
+        REPORT_MAP,
+        PRIMARY_LEVEL_IDS
+      );
+      const artd = rows.find((r) => r.code === 'ARTD');
+      expect(artd?.grading_method).toBe('no_sheet');
+      expect(artd?.hasConfig).toBe(true);
+      expect(artd?.needsAttention).toBe(false);
     });
   });
 });

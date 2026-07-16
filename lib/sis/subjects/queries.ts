@@ -299,7 +299,9 @@ export function computeCatalogForLevelType(
       reportSubjectCode,
       offeringState,
       offeredLevelIds: Array.from(offeredSet),
-      needsAttention: !config || config.weights_confirmed === false,
+      needsAttention:
+        subject.grading_method !== 'no_sheet' &&
+        (!config || config.weights_confirmed === false),
     });
   }
 
