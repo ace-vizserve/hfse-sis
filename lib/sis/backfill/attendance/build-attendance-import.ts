@@ -53,10 +53,20 @@ export interface BuildAttendanceImportResult {
     excludedYs: string[];
     unrecognized: string[];
     skippedEmpty: string[];
+    unparseableDateHeaders: string[];
   };
 }
 
 const VALID_MARKS = new Set(['P', 'A', 'EX', 'L']);
+
+// Comment lines in preview.sql interpolate raw workbook/computed text after
+// a `--` marker. sqlString/sqlStringOrNull (quote-escaping for actual SQL
+// string literals) don't apply here — the risk in a comment context is an
+// embedded newline (Excel allows Alt+Enter within a cell) breaking the
+// comment mid-line, not unescaped quotes.
+function sanitizeComment(text: string): string {
+  return text.replace(/[\r\n]+/g, ' ');
+}
 
 export function buildAttendanceImport(
   input: BuildAttendanceImportInput
@@ -102,13 +112,19 @@ export function buildAttendanceImport(
   }
 
   // --- Date classification (once, across all core sections) ---
+  // allDatesRaw and allDatesISO MUST stay the same length and positionally
+  // aligned — every downstream loop indexes both by the same `i`. A date
+  // header that fails to resolve (e.g. a typo like "5-Xyz") is kept as a
+  // `null` placeholder at its original index rather than filtered out, so
+  // it can never desync the two arrays and misattribute a later date's
+  // real data to it (or vice versa).
   const allDatesRaw = coreSections[0]?.section.dateColumns ?? [];
-  const allDatesISO = allDatesRaw
-    .map((d) => resolveHeaderDate(d, year))
-    .filter((d): d is string => d !== null);
-  const dateHeaderByISO = new Map<string, string>();
+  const allDatesISO: (string | null)[] = allDatesRaw.map((d) =>
+    resolveHeaderDate(d, year)
+  );
+  const unparseableDateHeaders: string[] = [];
   allDatesRaw.forEach((raw, i) => {
-    if (allDatesISO[i]) dateHeaderByISO.set(allDatesISO[i], raw);
+    if (allDatesISO[i] === null) unparseableDateHeaders.push(raw);
   });
 
   const blankDates = new Set<string>();
@@ -131,7 +147,12 @@ export function buildAttendanceImport(
     }
   }
 
-  const classifications = classifyDates(allDatesISO, blankDates, legendRanges);
+  const validDatesISO = allDatesISO.filter((d): d is string => d !== null);
+  const classifications = classifyDates(
+    validDatesISO,
+    blankDates,
+    legendRanges
+  );
   const dayTypeByDate = new Map(classifications.map((c) => [c.date, c]));
 
   // --- Attendance rows + needs-review ---
@@ -189,6 +210,7 @@ export function buildAttendanceImport(
     excludedYs,
     unrecognized,
     skippedEmpty,
+    unparseableDateHeaders,
   };
 
   return {
@@ -219,7 +241,7 @@ function buildPreviewSql(
   lines.push(`-- Date classification (${classifications.length} dates):`);
   for (const c of classifications) {
     const overlay = c.hblOverlay ? ' [hbl_overlay]' : '';
-    const label = c.label ? ` "${c.label}"` : '';
+    const label = c.label ? ` "${sanitizeComment(c.label)}"` : '';
     lines.push(`--   ${c.date}: ${c.dayType}${overlay}${label}`);
   }
   lines.push('--');
@@ -228,13 +250,16 @@ function buildPreviewSql(
   );
   lines.push('--');
   lines.push(
-    `-- Skipped (empty section tabs): ${stats.skippedEmpty.join(', ') || '(none)'}`
+    `-- Skipped (empty section tabs): ${stats.skippedEmpty.map(sanitizeComment).join(', ') || '(none)'}`
   );
   lines.push(
-    `-- Excluded (Youngstarters): ${stats.excludedYs.join(', ') || '(none)'}`
+    `-- Excluded (Youngstarters): ${stats.excludedYs.map(sanitizeComment).join(', ') || '(none)'}`
   );
   lines.push(
-    `-- Unrecognized sheet names: ${stats.unrecognized.join(', ') || '(none)'}`
+    `-- Unrecognized sheet names: ${stats.unrecognized.map(sanitizeComment).join(', ') || '(none)'}`
+  );
+  lines.push(
+    `-- Unparseable date headers (ignored, no data written for these): ${stats.unparseableDateHeaders.map(sanitizeComment).join(', ') || '(none)'}`
   );
   lines.push('--');
   lines.push(
@@ -243,7 +268,7 @@ function buildPreviewSql(
   if (needsReview.length === 0) lines.push('--   (none)');
   for (const r of needsReview) {
     lines.push(
-      `--   [${r.sheetName}] index ${r.indexNo} "${r.fullName}" — ${r.reason}`
+      `--   [${sanitizeComment(r.sheetName)}] index ${sanitizeComment(r.indexNo)} "${sanitizeComment(r.fullName)}" — ${sanitizeComment(r.reason)}`
     );
   }
   return lines.join('\n') + '\n';

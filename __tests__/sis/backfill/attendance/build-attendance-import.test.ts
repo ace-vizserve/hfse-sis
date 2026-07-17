@@ -175,4 +175,53 @@ describe('buildAttendanceImport', () => {
     );
     expect(result.apply).toMatch(/select .*m\.status, null,/);
   });
+
+  it('keeps dates index-aligned when a malformed header sits between two valid ones', () => {
+    // "5-Xyz" structurally matches the D-Mon header shape but "Xyz" is not
+    // a real month, so resolveHeaderDate returns null for it. Before the
+    // fix, .filter()-ing the null out of allDatesISO desynchronized it from
+    // allDatesRaw — every downstream loop indexes both arrays by the same
+    // `i`, so the real data under 9-Jan (the header AFTER the bad one)
+    // would get silently misattributed or dropped.
+    const section = buildSection({
+      dateColumns: ['8-Jan', '5-Xyz', '9-Jan'],
+      students: [
+        {
+          indexNo: '1',
+          fullName: 'ALVAREZ, Jaime III D.',
+          marks: { '8-Jan': 'P', '5-Xyz': 'L', '9-Jan': 'A' },
+        },
+        {
+          indexNo: '2',
+          fullName: 'AMATE, Jaiden Matthew A.',
+          marks: { '8-Jan': 'A', '5-Xyz': 'EX', '9-Jan': 'P' },
+        },
+      ],
+    });
+    const result = buildAttendanceImport({
+      ...BASE_INPUT,
+      sections: [section],
+      rosterLookup: ROSTER,
+    });
+
+    // 1) The malformed header's own mark data ('L' / 'EX') never leaks into
+    // apply.sql at all.
+    expect(result.apply).not.toContain("'L'");
+    expect(result.apply).not.toContain(
+      "'ss-alvarez-uuid', date '2026-01-08', 'EX'"
+    );
+    expect(result.apply).not.toContain(
+      "'ss-amate-uuid', date '2026-01-08', 'EX'"
+    );
+
+    // 2) The real dates before and after the malformed header are still
+    // correctly processed, under the CORRECT (not shifted) ISO date.
+    expect(result.apply).toContain("'ss-alvarez-uuid', date '2026-01-08', 'P'");
+    expect(result.apply).toContain("'ss-alvarez-uuid', date '2026-01-09', 'A'");
+    expect(result.apply).toContain("'ss-amate-uuid', date '2026-01-08', 'A'");
+    expect(result.apply).toContain("'ss-amate-uuid', date '2026-01-09', 'P'");
+
+    // 3) The malformed header is tracked for operator visibility.
+    expect(result.stats.unparseableDateHeaders).toContain('5-Xyz');
+  });
 });
