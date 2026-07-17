@@ -141,7 +141,7 @@ export function buildEnrollmentImport(
     list.push(row);
     byEnrolee.set(row.candidate.enroleeNumber, list);
   }
-  const finalMatched: MatchedRow[] = [];
+  const enroleeDeduped: MatchedRow[] = [];
   for (const [enroleeNumber, rows] of byEnrolee) {
     if (rows.length > 1) {
       for (const row of rows) {
@@ -150,6 +150,37 @@ export function buildEnrollmentImport(
           cleanName: row.cleanName,
           sheetFullName: `${row.candidate.lastName}, ${row.candidate.firstName}`,
           reason: `duplicate claim on enrolee ${enroleeNumber} (matched from ${rows.length} roster rows)`,
+        });
+      }
+      continue;
+    }
+    enroleeDeduped.push(rows[0]);
+  }
+
+  // Duplicate index-number detection: section_students carries a SEPARATE
+  // unique constraint on (section_id, index_number), distinct from
+  // (section_id, student_id) — the ON CONFLICT target the apply script's
+  // insert uses. Two different students resolving to the same index_number
+  // within one section would trip that other constraint, which isn't the
+  // conflict target, and abort the whole transaction rather than skip one
+  // row. Flag every colliding row for manual review instead of writing any
+  // of them, mirroring the enrolee dup-claim guard above.
+  const byIndex = new Map<string, MatchedRow[]>();
+  for (const row of enroleeDeduped) {
+    const key = `${row.levelCode}::${row.cleanName}::${row.indexNumber}`;
+    const list = byIndex.get(key) ?? [];
+    list.push(row);
+    byIndex.set(key, list);
+  }
+  const finalMatched: MatchedRow[] = [];
+  for (const rows of byIndex.values()) {
+    if (rows.length > 1) {
+      for (const row of rows) {
+        needsReview.push({
+          levelCode: row.levelCode,
+          cleanName: row.cleanName,
+          sheetFullName: `${row.candidate.lastName}, ${row.candidate.firstName}`,
+          reason: `duplicate index number ${row.indexNumber} within ${row.levelCode} ${row.cleanName} (matched from ${rows.length} roster rows)`,
         });
       }
       continue;
@@ -296,10 +327,10 @@ function buildApplySql(
   lines.push('');
   lines.push('-- 1) Term');
   lines.push(
-    'insert into terms (academic_year_id, term_number, start_date, end_date)'
+    'insert into terms (academic_year_id, term_number, start_date, end_date, label)'
   );
   lines.push(
-    `select ay.id, ${input.termNumber}, date ${sqlString(input.termStart)}, date ${sqlString(input.termEnd)}`
+    `select ay.id, ${input.termNumber}, date ${sqlString(input.termStart)}, date ${sqlString(input.termEnd)}, 'Term ' || ${input.termNumber} || ' — ' || ay.ay_code`
   );
   lines.push('from academic_years ay');
   lines.push(`where ay.ay_code = ${sqlString(input.ayCode)}`);

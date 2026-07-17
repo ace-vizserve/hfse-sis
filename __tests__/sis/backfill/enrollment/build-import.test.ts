@@ -176,4 +176,92 @@ describe('buildEnrollmentImport', () => {
     expect(result.stats.needsReview).toBe(2);
     expect(result.apply).not.toContain('H220038');
   });
+
+  it('writes the required NOT NULL label column on the generated term insert', () => {
+    const sections: ParsedSection[] = [
+      {
+        sheetName: 'P1 Patience(G)',
+        classSectionLabel: 'P1 Patience (AM Global)',
+        formTeacher: 'Ms. Kristel',
+        students: [{ indexNo: '1', fullName: 'BEDICO, Miguel Zion C.' }],
+        firstDate: '8-Jan',
+        lastDate: '13-Mar',
+      },
+    ];
+    const result = buildEnrollmentImport({
+      ...BASE_INPUT,
+      sections,
+      candidates: CANDIDATES,
+    });
+
+    expect(result.apply).toContain(
+      'insert into terms (academic_year_id, term_number, start_date, end_date, label)'
+    );
+    expect(result.apply).toContain("'Term ' || 1 || ' — ' || ay.ay_code");
+  });
+
+  it('flags both rows when two matched students land on the same index number in one section', () => {
+    const sections: ParsedSection[] = [
+      {
+        sheetName: 'P1 Obedience',
+        classSectionLabel: 'P1 Obedience',
+        formTeacher: 'Ms. Arlene',
+        students: [
+          { indexNo: '1', fullName: 'BEDICO, Miguel Zion C.' },
+          { indexNo: '1', fullName: 'ALVAREZ, Jaime D.' },
+        ],
+        firstDate: '8-Jan',
+        lastDate: '13-Mar',
+      },
+    ];
+    const result = buildEnrollmentImport({
+      ...BASE_INPUT,
+      sections,
+      candidates: CANDIDATES,
+    });
+
+    // Both roster rows independently match a distinct candidate (no
+    // enrolee dup-claim), but they both claim index_number 1 within the
+    // same section — that must be caught too.
+    expect(result.stats.needsReview).toBe(2);
+    expect(result.stats.strong + result.stats.exact).toBe(0);
+    expect(result.apply).not.toContain('H220038');
+    expect(result.apply).not.toContain('H190240');
+  });
+
+  it('escapes an embedded apostrophe in a matched candidate name', () => {
+    const apostropheCandidates: CandidateName[] = [
+      ...CANDIDATES,
+      {
+        enroleeNumber: 'E260100',
+        studentNumber: 'H260100',
+        lastName: "O'Brien",
+        firstName: 'Test',
+        middleName: null,
+      },
+    ];
+    const sections: ParsedSection[] = [
+      {
+        sheetName: 'P1 Obedience',
+        classSectionLabel: 'P1 Obedience',
+        formTeacher: 'Ms. Arlene',
+        students: [{ indexNo: '1', fullName: "O'BRIEN, Test" }],
+        firstDate: '8-Jan',
+        lastDate: '13-Mar',
+      },
+    ];
+    const result = buildEnrollmentImport({
+      ...BASE_INPUT,
+      sections,
+      candidates: apostropheCandidates,
+    });
+
+    expect(result.stats.exact).toBe(1);
+    expect(result.stats.needsReview).toBe(0);
+    // The single quote must be doubled per the SQL standard so the literal
+    // stays well-formed — a lone "'B" here would mean the apostrophe broke
+    // out of the string literal.
+    expect(result.apply).toContain("O''Brien");
+    expect(result.apply).not.toContain("O'B");
+  });
 });
