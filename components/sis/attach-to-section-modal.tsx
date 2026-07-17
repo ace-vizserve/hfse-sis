@@ -1,12 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { Layers, Loader2, Search } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -18,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { cn } from '@/lib/utils';
 
 // AttachToSectionModal — the ONE confirm step in the simplified Subject
@@ -71,6 +71,12 @@ export function AttachToSectionModal({
   );
   const [search, setSearch] = useState('');
   const [sectionLevelType, setSectionLevelType] = useState(defaultLevelType);
+  // Which single level (P1, S3, …) is currently drilled into — null until
+  // a level is picked, at which point `effectiveLevelCode` below falls
+  // back to the first level with sections for the active type.
+  const [selectedLevelCode, setSelectedLevelCode] = useState<string | null>(
+    null
+  );
 
   // Fresh section pick + search + level every time the modal is opened for
   // a new subject selection — this component stays mounted (open toggles),
@@ -85,6 +91,7 @@ export function AttachToSectionModal({
       setSelectedSectionIds(new Set());
       setSearch('');
       setSectionLevelType(defaultLevelType);
+      setSelectedLevelCode(null);
     }
   }
 
@@ -103,6 +110,45 @@ export function AttachToSectionModal({
     );
   }, [sectionsAtLevel, search]);
 
+  // Drill-down step: which levels exist for the active type (P1..P6 /
+  // S1..S4), each with its own section count + how many of its sections
+  // are already selected (so switching levels doesn't lose track of picks
+  // made elsewhere). Derived from `sectionsAtLevel`, not the search-filtered
+  // list — the level picker itself stays stable while typing; only the
+  // section list below it is search-scoped (see the flat search branch in
+  // the render below).
+  const levelsAtType = useMemo(() => {
+    const byLevel = new Map<string, AttachSection[]>();
+    for (const s of sectionsAtLevel) {
+      const arr = byLevel.get(s.levelCode);
+      if (arr) arr.push(s);
+      else byLevel.set(s.levelCode, [s]);
+    }
+    return Array.from(byLevel.entries())
+      .map(([code, group]) => ({
+        code,
+        count: group.length,
+        selectedCount: group.filter((s) => selectedSectionIds.has(s.id)).length,
+      }))
+      .sort((a, b) => a.code.localeCompare(b.code));
+  }, [sectionsAtLevel, selectedSectionIds]);
+
+  // Falls back to the first available level whenever the explicit pick is
+  // missing or no longer valid (fresh open, or a level-type switch whose
+  // levels don't include the previously picked code) — a plain computed
+  // value, so no extra state-correction render is needed.
+  const effectiveLevelCode =
+    (selectedLevelCode &&
+      levelsAtType.some((l) => l.code === selectedLevelCode) &&
+      selectedLevelCode) ||
+    levelsAtType[0]?.code ||
+    null;
+
+  const sectionsForActiveLevel = useMemo(
+    () => sectionsAtLevel.filter((s) => s.levelCode === effectiveLevelCode),
+    [sectionsAtLevel, effectiveLevelCode]
+  );
+
   function toggleSection(id: string) {
     setSelectedSectionIds((prev) => {
       const next = new Set(prev);
@@ -111,6 +157,22 @@ export function AttachToSectionModal({
       return next;
     });
   }
+
+  function toggleMany(ids: string[], checked: boolean) {
+    setSelectedSectionIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  const isSearching = search.trim().length > 0;
+  const activeLevelSelectedCount = sectionsForActiveLevel.filter((s) =>
+    selectedSectionIds.has(s.id)
+  ).length;
 
   const attachMutation = useMutation({
     mutationFn: async () => {
@@ -168,7 +230,7 @@ export function AttachToSectionModal({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Layers className="size-5 text-primary" />
@@ -232,58 +294,112 @@ export function AttachToSectionModal({
             <p className="py-6 text-center text-sm text-muted-foreground">
               No {sectionLevelType} sections yet — create one first.
             </p>
-          ) : filteredSections.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No sections match &ldquo;{search}&rdquo;.
-            </p>
+          ) : isSearching ? (
+            // Search bypasses the level drill-down entirely — a flat,
+            // cross-level result list with each row's own level chip, so
+            // a search hit outside the currently-picked level still shows
+            // up instead of silently appearing empty.
+            filteredSections.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No sections match &ldquo;{search}&rdquo;.
+              </p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto pr-1">
+                <div className="flex flex-wrap gap-1.5">
+                  {filteredSections.map((s) => (
+                    <SectionToggleChip
+                      key={s.id}
+                      section={s}
+                      checked={selectedSectionIds.has(s.id)}
+                      onToggle={() => toggleSection(s.id)}
+                      showLevelCode
+                    />
+                  ))}
+                </div>
+              </div>
+            )
           ) : (
-            <div className="grid max-h-64 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
-              {filteredSections.map((s) => {
-                const checked = selectedSectionIds.has(s.id);
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    role="checkbox"
-                    aria-checked={checked}
-                    onClick={() => toggleSection(s.id)}
-                    className={cn(
-                      'flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors',
-                      checked
-                        ? 'border-primary bg-accent text-accent-foreground'
-                        : 'border-border hover:border-hairline-strong'
-                    )}
-                  >
-                    <span
+            <>
+              {/* Step 1 of the drill-down: pick a level. Each pill carries
+                  its section count and, once ≥1 of its sections is picked,
+                  a small selected-count badge — so switching levels never
+                  loses track of picks made elsewhere. */}
+              <div className="flex flex-wrap gap-1.5">
+                {levelsAtType.map((l) => {
+                  const active = l.code === effectiveLevelCode;
+                  return (
+                    <button
+                      key={l.code}
+                      type="button"
+                      onClick={() => setSelectedLevelCode(l.code)}
                       className={cn(
-                        'flex size-4 shrink-0 items-center justify-center rounded border',
-                        checked
-                          ? 'border-primary bg-primary text-primary-foreground'
-                          : 'border-hairline-strong'
+                        'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors',
+                        active
+                          ? 'border-primary bg-accent text-accent-foreground'
+                          : 'border-border text-muted-foreground hover:border-hairline-strong'
                       )}
                     >
-                      {checked && (
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={3}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="size-2.5"
-                        >
-                          <path d="M20 6L9 17l-5-5" />
-                        </svg>
+                      {l.code}
+                      <span className="font-mono text-[10px] font-normal text-muted-foreground">
+                        {l.count}
+                      </span>
+                      {l.selectedCount > 0 && (
+                        <span className="flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-semibold text-primary-foreground">
+                          {l.selectedCount}
+                        </span>
                       )}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                    <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-                      {s.levelCode}
-                    </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Step 2: that level's sections only. */}
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-muted-foreground">
+                  {activeLevelSelectedCount} of {sectionsForActiveLevel.length}{' '}
+                  selected
+                </span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      toggleMany(
+                        sectionsForActiveLevel.map((s) => s.id),
+                        true
+                      )
+                    }
+                    className="font-medium text-primary hover:underline"
+                  >
+                    Select all {effectiveLevelCode}
                   </button>
-                );
-              })}
-            </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      toggleMany(
+                        sectionsForActiveLevel.map((s) => s.id),
+                        false
+                      )
+                    }
+                    className="font-medium text-muted-foreground hover:underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div className="max-h-56 overflow-y-auto pr-1">
+                <div className="flex flex-wrap gap-1.5">
+                  {sectionsForActiveLevel.map((s) => (
+                    <SectionToggleChip
+                      key={s.id}
+                      section={s}
+                      checked={selectedSectionIds.has(s.id)}
+                      onToggle={() => toggleSection(s.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            </>
           )}
         </div>
 
@@ -311,5 +427,64 @@ export function AttachToSectionModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Shared checkbox-styled chip for a single section — used by both the
+// level-drilled list and the flat cross-level search results, so the two
+// render paths can't visually drift.
+function SectionToggleChip({
+  section,
+  checked,
+  onToggle,
+  showLevelCode,
+}: {
+  section: AttachSection;
+  checked: boolean;
+  onToggle: () => void;
+  showLevelCode?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={onToggle}
+      className={cn(
+        'flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-sm transition-colors',
+        checked
+          ? 'border-primary bg-accent text-accent-foreground'
+          : 'border-border hover:border-hairline-strong'
+      )}
+    >
+      <span
+        className={cn(
+          'flex size-4 shrink-0 items-center justify-center rounded border',
+          checked
+            ? 'border-primary bg-primary text-primary-foreground'
+            : 'border-hairline-strong'
+        )}
+      >
+        {checked && (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="size-2.5"
+          >
+            <path d="M20 6L9 17l-5-5" />
+          </svg>
+        )}
+      </span>
+      <span className="truncate">{section.name}</span>
+      {showLevelCode && (
+        <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+          {section.levelCode}
+        </span>
+      )}
+    </button>
   );
 }

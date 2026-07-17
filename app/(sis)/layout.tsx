@@ -3,7 +3,6 @@ import { cookies } from 'next/headers';
 import { getSessionUser } from '@/lib/supabase/server';
 import { ModuleSidebar } from '@/components/module-sidebar';
 import { AyBanner } from '@/components/sis/ay-banner';
-import { AyReadinessPill } from '@/components/sis/ay-readiness-pill';
 import {
   SidebarInset,
   SidebarProvider,
@@ -94,7 +93,6 @@ export default async function SisLayout({
           {children}
         </div>
       </SidebarInset>
-      {readiness && <AyReadinessPill readiness={readiness} role={role} />}
     </SidebarProvider>
   );
 }

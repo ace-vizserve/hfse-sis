@@ -430,6 +430,18 @@ const EVALUATION_NAV: NavSection[] = [
 // migration 086 — the volatile-level / per-AY-offering concept it managed
 // was deleted outright; the level catalog is now a fixed 10-row constant
 // (lib/sis/levels.ts) with no admin surface.
+// Grouping/relatedness pass (2026-07-17): "Access" (a single-item group
+// holding only Approvers) folded into "System" — a labeled section over one
+// row wasn't grouping anything. "Organisation" reordered to Structure
+// Defaults before Subject Weights, matching the actual dependency direction
+// (Subject Weights' own gap banner sends the user to Structure Defaults
+// first when an AY is unconfigured — the old order contradicted that). The
+// sis module's `quickActionByRole` (lib/sidebar/registry.ts) was also
+// emptied out — both prior entries (AY Setup for superadmin, School
+// Calendar for school_admin) duplicated the first two rows of this very
+// "Year Setup" group, so the CTA slot added a visually-duplicate row with
+// zero click savings, unlike other modules where the quick action actually
+// skips past several groups.
 const SIS_NAV: NavSection[] = [
   {
     items: [
@@ -483,32 +495,36 @@ const SIS_NAV: NavSection[] = [
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
       {
-        href: '/sis/admin/subjects',
-        label: 'Subject Weights',
-        requiresRoles: ['school_admin', 'superadmin'],
-      },
-      {
+        // Structure Defaults before Subject Weights: it's the source the
+        // AY-scoped weights get applied FROM (KD #66) — Subject Weights'
+        // own gap banner sends the user here first when an AY is
+        // unconfigured, so the nav order now matches that dependency
+        // direction instead of contradicting it.
+        //
         // Label-only rename (was "Class Template"); href unchanged. Full
         // reframe of this surface is sub-project 3, out of scope here.
         href: '/sis/admin/template',
         label: 'Structure Defaults',
         requiresRoles: ['school_admin', 'superadmin'],
       },
-    ],
-  },
-  {
-    label: 'Access',
-    items: [
       {
-        href: '/sis/admin/approvers',
-        label: 'Approvers',
-        requiresRoles: ['superadmin'],
+        href: '/sis/admin/subjects',
+        label: 'Subject Weights',
+        requiresRoles: ['school_admin', 'superadmin'],
       },
     ],
   },
   {
     label: 'System',
     items: [
+      // Approvers folded in from the former standalone "Access" group — a
+      // labeled section over a single row didn't group anything; it's
+      // access-control config alongside School Config/Settings/Audit Log.
+      {
+        href: '/sis/admin/approvers',
+        label: 'Approvers',
+        requiresRoles: ['superadmin'],
+      },
       {
         href: '/sis/admin/school-config',
         label: 'School Config',

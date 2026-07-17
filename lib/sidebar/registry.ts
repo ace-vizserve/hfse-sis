@@ -91,11 +91,13 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/markbook/audit-log': History,
     },
     quickActionByRole: {
-      teacher: {
-        label: 'Open my sheets',
-        href: '/markbook/grading?grading.mine=1',
-        icon: ClipboardList,
-      },
+      // No teacher quick action — the destination (My Sheets) is already
+      // the second row of nav, right under Dashboard, so a CTA would only
+      // duplicate it. It's also a functional no-op: the RSC query
+      // (app/(markbook)/markbook/grading/page.tsx) relies on RLS to scope
+      // a teacher's rows to their own sheets already, so the `mine`
+      // toggle the old CTA's `?grading.mine=1` set had nothing left to
+      // filter.
       registrar: MARKBOOK_QUICK_REGISTRAR,
       // school_admin is the consolidated approver pool (Sprint 33) and
       // gets the same quick action as registrar.
@@ -116,15 +118,12 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/attendance/import': FileUp,
       '/attendance/audit-log': History,
     },
-    quickActionByRole: {
-      teacher: {
-        label: 'Mark today',
-        href: '/attendance/sections',
-        icon: CalendarCheck,
-      },
-      // Registrars+ land on the analytics dashboard which IS the action;
-      // no extra CTA needed.
-    },
+    // No quick action for any role — teacher's would-be target (Sections)
+    // is already the second row of nav, right under Dashboard, with an
+    // identical href, so a CTA would only duplicate it with zero click
+    // savings. Registrars+ land on the analytics dashboard which IS the
+    // action.
+    quickActionByRole: {},
   },
 
   'p-files': {
@@ -260,14 +259,11 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/evaluation/virtue-themes': Sparkles,
       '/evaluation/audit-log': History,
     },
-    quickActionByRole: {
-      teacher: {
-        label: 'Open my sections',
-        href: '/evaluation/sections',
-        icon: SquarePen,
-      },
-      // Registrar+ land on analytics dashboard.
-    },
+    // No quick action for any role — teacher's would-be target (All
+    // terms) is already the second row of nav, right under Dashboard,
+    // with an identical href, so a CTA would only duplicate it with zero
+    // click savings. Registrar+ land on the analytics dashboard.
+    quickActionByRole: {},
   },
 
   sis: {
@@ -289,19 +285,11 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/sis/admin/settings': Settings2,
       '/sis/audit-log': History,
     },
-    quickActionByRole: {
-      // school_admin: most-used config surface is the calendar.
-      school_admin: {
-        label: 'School Calendar',
-        href: '/sis/calendar',
-        icon: CalendarDays,
-      },
-      // Superadmin lives in AY Setup / structural config more often.
-      superadmin: {
-        label: 'AY Setup',
-        href: '/sis/ay-setup',
-        icon: CalendarCog,
-      },
-    },
+    // No quick action here — unlike other modules (where the quick action
+    // skips past several nav groups to the day-to-day destination), both
+    // candidate targets (AY Setup, School Calendar) already sit as the
+    // first two items of the very first nav group ("Year Setup"), so a
+    // dedicated CTA would only duplicate that row with zero click savings.
+    quickActionByRole: {},
   },
 };
