@@ -90,6 +90,7 @@ describe('parseSheet', () => {
       { indexNo: '1', fullName: 'ALVAREZ, Jaime III D.' },
       { indexNo: '2', fullName: 'AMATE, Jaiden Matthew A.' },
     ]);
+    expect(result.rejectedNames).toEqual([]);
   });
 
   it('returns an empty roster for a section with no students', () => {
@@ -100,6 +101,7 @@ describe('parseSheet', () => {
     const result = parseSheet(ws, 'Reserved 1');
 
     expect(result.students).toEqual([]);
+    expect(result.rejectedNames).toEqual([]);
   });
 
   it('rejects a stray second-table "Name" header row landing in the name column', () => {
@@ -117,6 +119,7 @@ describe('parseSheet', () => {
       { indexNo: '1', fullName: 'ALVAREZ, Jaime III D.' },
       { indexNo: '2', fullName: 'AMATE, Jaiden Matthew A.' },
     ]);
+    expect(result.rejectedNames).toEqual(['Name']);
   });
 
   it('returns an empty roster when the only non-blank name-column value is the stray "Name" artifact', () => {
@@ -131,6 +134,7 @@ describe('parseSheet', () => {
     const result = parseSheet(ws, 'Reserved 1');
 
     expect(result.students).toEqual([]);
+    expect(result.rejectedNames).toEqual(['Name']);
   });
 
   it('finds the Class Section / Form Teacher label even at a different column offset', () => {

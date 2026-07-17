@@ -17,6 +17,11 @@ export interface ParsedSection {
   students: RosterStudent[];
   firstDate: string | null;
   lastDate: string | null;
+  // Non-blank name-column values that were rejected for lacking a comma
+  // (e.g. the stray second-table "Name" header artifact) — tracked so a
+  // human reviewer can confirm none of these are actually real students
+  // with a data-entry quirk. Always [] when nothing was rejected.
+  rejectedNames: string[];
 }
 
 const DATE_COL_RE = /^\d{1,2}-[A-Za-z]{3}$/;
@@ -61,6 +66,7 @@ export function parseSheet(
       students: [],
       firstDate: null,
       lastDate: null,
+      rejectedNames: [],
     };
   }
 
@@ -77,6 +83,7 @@ export function parseSheet(
   const indexColIdx = 0;
 
   const students: RosterStudent[] = [];
+  const rejectedNames: string[] = [];
   for (let i = headerRowIdx + 1; i < rows.length; i++) {
     const row = rows[i];
     const fullName = (row[nameColIdx] ?? '').trim();
@@ -87,7 +94,14 @@ export function parseSheet(
     // in the column. Genuine names in this file are always
     // "LASTNAME, First Middle." (always contains a comma); the stray label
     // never does, so reject non-comma values the same way blanks are.
-    if (!fullName || !fullName.includes(',')) continue;
+    // Rejections are tracked (not just silently dropped) so a human
+    // reviewer can confirm none of them are actually real students with a
+    // data-entry quirk (blank comma, single-word name, merge glitch).
+    if (!fullName) continue;
+    if (!fullName.includes(',')) {
+      rejectedNames.push(fullName);
+      continue;
+    }
     students.push({
       indexNo: (row[indexColIdx] ?? '').trim(),
       fullName,
@@ -101,6 +115,7 @@ export function parseSheet(
     students,
     firstDate: header[dateColIndices[0]].trim(),
     lastDate: header[dateColIndices[dateColIndices.length - 1]].trim(),
+    rejectedNames,
   };
 }
 

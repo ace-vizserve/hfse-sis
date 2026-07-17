@@ -55,6 +55,7 @@ export interface BuildImportResult {
     excludedYs: string[];
     unrecognized: string[];
     skippedEmpty: string[];
+    rejectedNameArtifacts: { sheetName: string; values: string[] }[];
   };
 }
 
@@ -66,9 +67,20 @@ export function buildEnrollmentImport(
   const excludedYs: string[] = [];
   const unrecognized: string[] = [];
   const skippedEmpty: string[] = [];
+  const rejectedNameArtifacts: { sheetName: string; values: string[] }[] = [];
   const sectionMeta = new Map<string, SectionMetaEntry>();
 
   for (const section of input.sections) {
+    // Tracked regardless of whether the section itself is otherwise
+    // skipped/excluded/unrecognized — a comma-less name-column artifact can
+    // occur on any sheet, so it must not be lost when the sheet is also
+    // filtered out for another reason.
+    if (section.rejectedNames.length > 0) {
+      rejectedNameArtifacts.push({
+        sheetName: section.sheetName,
+        values: section.rejectedNames,
+      });
+    }
     if (section.students.length === 0) {
       skippedEmpty.push(section.sheetName);
       continue;
@@ -197,6 +209,7 @@ export function buildEnrollmentImport(
     excludedYs,
     unrecognized,
     skippedEmpty,
+    rejectedNameArtifacts,
   };
 
   return {
@@ -252,6 +265,19 @@ function buildPreviewSql(
   );
   lines.push(
     `-- Unrecognized sheet names (needs manual attention): ${stats.unrecognized.join(', ') || '(none)'}`
+  );
+  lines.push('--');
+  lines.push(
+    `-- Comma-less name-column values rejected (verify none are real students): ${
+      stats.rejectedNameArtifacts.length === 0
+        ? '(none)'
+        : stats.rejectedNameArtifacts
+            .map(
+              (a) =>
+                `[${a.sheetName}] ${a.values.map((v) => `"${v}"`).join(', ')}`
+            )
+            .join('; ')
+    }`
   );
   lines.push('--');
   lines.push(

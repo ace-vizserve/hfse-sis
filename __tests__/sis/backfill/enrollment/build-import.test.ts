@@ -46,6 +46,7 @@ describe('buildEnrollmentImport', () => {
         students: [{ indexNo: '1', fullName: 'BEDICO, Miguel Zion C.' }],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        rejectedNames: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -73,6 +74,7 @@ describe('buildEnrollmentImport', () => {
         students: [],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        rejectedNames: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -94,6 +96,7 @@ describe('buildEnrollmentImport', () => {
         students: [{ indexNo: '1', fullName: 'BEDICO, Miguel Zion C.' }],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        rejectedNames: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -117,6 +120,7 @@ describe('buildEnrollmentImport', () => {
         students: [{ indexNo: '1', fullName: 'NOBODY, Matches Here' }],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        rejectedNames: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -141,6 +145,7 @@ describe('buildEnrollmentImport', () => {
         students: [{ indexNo: '1', fullName: 'NONAME, Sample' }],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        rejectedNames: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -165,6 +170,7 @@ describe('buildEnrollmentImport', () => {
         ],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        rejectedNames: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -186,6 +192,7 @@ describe('buildEnrollmentImport', () => {
         students: [{ indexNo: '1', fullName: 'BEDICO, Miguel Zion C.' }],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        rejectedNames: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -212,6 +219,7 @@ describe('buildEnrollmentImport', () => {
         ],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        rejectedNames: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -248,6 +256,7 @@ describe('buildEnrollmentImport', () => {
         students: [{ indexNo: '1', fullName: "O'BRIEN, Test" }],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        rejectedNames: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -263,5 +272,37 @@ describe('buildEnrollmentImport', () => {
     // out of the string literal.
     expect(result.apply).toContain("O''Brien");
     expect(result.apply).not.toContain("O'B");
+  });
+
+  it('surfaces comma-rejected name artifacts in the preview report only, never the apply file', () => {
+    const sections: ParsedSection[] = [
+      {
+        sheetName: 'P1 Patience(G)',
+        classSectionLabel: 'P1 Patience (AM Global)',
+        formTeacher: 'Ms. Kristel',
+        students: [{ indexNo: '1', fullName: 'BEDICO, Miguel Zion C.' }],
+        firstDate: '8-Jan',
+        lastDate: '13-Mar',
+        rejectedNames: ['Name'],
+      },
+    ];
+    const result = buildEnrollmentImport({
+      ...BASE_INPUT,
+      sections,
+      candidates: CANDIDATES,
+    });
+
+    expect(result.stats.rejectedNameArtifacts).toEqual([
+      { sheetName: 'P1 Patience(G)', values: ['Name'] },
+    ]);
+    expect(result.preview).toContain('Comma-less name-column values');
+    expect(result.preview).toContain('[P1 Patience(G)] "Name"');
+    expect(result.apply).not.toContain('Comma-less name-column values');
+    expect(result.apply).not.toContain('[P1 Patience(G)] "Name"');
+    // Confirms this is purely additive reporting — the matched student and
+    // section-creation output are unaffected by the artifact being present.
+    expect(result.stats.sectionsCreated).toBe(1);
+    expect(result.stats.strong).toBe(1);
+    expect(result.apply).toContain("'H220038'");
   });
 });
