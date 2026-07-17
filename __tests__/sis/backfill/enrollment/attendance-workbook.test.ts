@@ -7,10 +7,11 @@ import { parseSheet } from '@/lib/sis/backfill/enrollment/attendance-workbook';
 // Builds a minimal sheet matching the real HFSE masthead layout: 9 header
 // rows (masthead), then a column-header row containing dated columns, then
 // roster rows. Mirrors "P1 Patience(G)" from the real workbook, trimmed to
-// 2 date columns instead of 47.
+// 2 date columns instead of 47, and with a "School Holiday" / "Important
+// dates" legend pair at columns 10/14 (mirroring the real file's Jan block).
 function buildFixtureRows(): string[][] {
   const rows: string[][] = [];
-  rows[0] = ['', '', '', '', '', '', '', '', ''];
+  rows[0] = ['', '', '', '', '', '', '', '', '', '', '', '', '', '', ''];
   rows[1] = [
     'Legend:',
     '',
@@ -21,6 +22,12 @@ function buildFixtureRows(): string[][] {
     '',
     '',
     '',
+    '',
+    'School Holiday',
+    '',
+    '',
+    '',
+    'Important dates',
   ];
   rows[2] = [
     '-',
@@ -32,13 +39,99 @@ function buildFixtureRows(): string[][] {
     '',
     '',
     '',
+    '',
+    'Feb 17-18 CNY',
+    '',
+    '',
+    '',
+    'Feb 2-6 Mathematics Week',
   ];
-  rows[3] = ['P', 'Present', '', '', 'Form Teacher', 'Ms. Kristel', '', '', ''];
-  rows[4] = ['A', 'Absent', '', '', 'Students - ', '', '', '', ''];
-  rows[5] = ['EX', 'Excused', '', '', '', '', '', '', ''];
-  rows[6] = ['L', 'Late', '', '', '', '', '', '', ''];
-  rows[7] = ['', '', '', '', 'Homeroom ', '', '', '', ''];
-  rows[8] = ['', '', '4 Vacation Leaves', '', '', '', '', '', ''];
+  rows[3] = [
+    'P',
+    'Present',
+    '',
+    '',
+    'Form Teacher',
+    'Ms. Kristel',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    'Feb 20 Staff Development Day',
+  ];
+  rows[4] = [
+    'A',
+    'Absent',
+    '',
+    '',
+    'Students - ',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ];
+  rows[5] = [
+    'EX',
+    'Excused',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ];
+  rows[6] = ['L', 'Late', '', '', '', '', '', '', '', '', '', '', '', '', ''];
+  rows[7] = [
+    '',
+    '',
+    '',
+    '',
+    'Homeroom ',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ];
+  rows[8] = [
+    '',
+    '',
+    '4 Vacation Leaves',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ];
   rows[9] = [
     'Index \nNo',
     'Bus No.',
@@ -68,9 +161,9 @@ function buildFixtureRows(): string[][] {
     '',
     'AMATE, Jaiden Matthew A.',
     'P',
-    'P',
-    '2',
-    '100.00',
+    'A',
+    '1',
+    '50.00',
   ];
   rows[12] = ['', '', '', '', '', '', '', '', ''];
   return rows;
@@ -86,9 +179,18 @@ describe('parseSheet', () => {
     expect(result.formTeacher).toBe('Ms. Kristel');
     expect(result.firstDate).toBe('8-Jan');
     expect(result.lastDate).toBe('9-Jan');
+    expect(result.dateColumns).toEqual(['8-Jan', '9-Jan']);
     expect(result.students).toEqual([
-      { indexNo: '1', fullName: 'ALVAREZ, Jaime III D.' },
-      { indexNo: '2', fullName: 'AMATE, Jaiden Matthew A.' },
+      {
+        indexNo: '1',
+        fullName: 'ALVAREZ, Jaime III D.',
+        marks: { '8-Jan': 'P', '9-Jan': 'P' },
+      },
+      {
+        indexNo: '2',
+        fullName: 'AMATE, Jaiden Matthew A.',
+        marks: { '8-Jan': 'P', '9-Jan': 'A' },
+      },
     ]);
     expect(result.rejectedNames).toEqual([]);
   });
@@ -116,8 +218,16 @@ describe('parseSheet', () => {
     const result = parseSheet(ws, 'P1 Patience(G)');
 
     expect(result.students).toEqual([
-      { indexNo: '1', fullName: 'ALVAREZ, Jaime III D.' },
-      { indexNo: '2', fullName: 'AMATE, Jaiden Matthew A.' },
+      {
+        indexNo: '1',
+        fullName: 'ALVAREZ, Jaime III D.',
+        marks: { '8-Jan': 'P', '9-Jan': 'P' },
+      },
+      {
+        indexNo: '2',
+        fullName: 'AMATE, Jaiden Matthew A.',
+        marks: { '8-Jan': 'P', '9-Jan': 'A' },
+      },
     ]);
     expect(result.rejectedNames).toEqual(['Name']);
   });
@@ -155,5 +265,26 @@ describe('parseSheet', () => {
     const result = parseSheet(ws, 'YS');
 
     expect(result.classSectionLabel).toBe('YS Faith - Little&Junior Stars');
+  });
+
+  it('extracts legend entries from both the School Holiday and Important dates columns', () => {
+    const ws = XLSX.utils.aoa_to_sheet(buildFixtureRows());
+    const result = parseSheet(ws, 'P1 Patience(G)');
+
+    expect(result.legendEntries).toEqual([
+      { rawText: 'Feb 17-18 CNY', column: 'schoolHoliday' },
+      { rawText: 'Feb 2-6 Mathematics Week', column: 'importantDates' },
+      { rawText: 'Feb 20 Staff Development Day', column: 'importantDates' },
+    ]);
+  });
+
+  it('returns an empty legendEntries array when no legend headers are present', () => {
+    const rows = buildFixtureRows();
+    rows[1][10] = '';
+    rows[1][14] = '';
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const result = parseSheet(ws, 'P1 Patience(G)');
+
+    expect(result.legendEntries).toEqual([]);
   });
 });
