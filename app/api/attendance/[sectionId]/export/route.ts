@@ -196,11 +196,8 @@ export async function GET(
     };
   });
 
-  const isYoungstarters = (level?.code ?? '').toUpperCase().startsWith('YS');
   const input: AttendanceSheetExportInput = {
-    schoolName: isYoungstarters
-      ? 'HFSE YOUNGSTARTERS'
-      : 'HFSE INTERNATIONAL SCHOOL',
+    schoolName: 'HFSE INTERNATIONAL SCHOOL',
     sheetName: section.name,
     term: {
       label: term.label,

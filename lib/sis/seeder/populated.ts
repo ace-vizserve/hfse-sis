@@ -16,12 +16,7 @@ import {
 import type { AdmissionsRow } from '@/lib/supabase/admissions';
 
 import { computeQuarterly } from '@/lib/compute/quarterly';
-import {
-  LEVEL_LABELS,
-  LEVEL_CODES,
-  LEVEL_TYPE_BY_CODE,
-  type LevelCode,
-} from '@/lib/sis/levels';
+import { LEVEL_LABELS, LEVEL_CODES, type LevelCode } from '@/lib/sis/levels';
 import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
 import { DOCUMENT_SLOTS, OPTIONAL_DOCUMENT_SLOT_KEYS } from '@/lib/sis/queries';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -2052,27 +2047,12 @@ function buildParentFields(
   return fields;
 }
 
-// Funnel-row level distribution. Heaviest in P1-S4 (the canonical mass
-// market), with 1-2 Youngstarters + 1 Cambridge Secondary sprinkled in so
-// the dashboard's level breakdowns show every band populated.
+// Funnel-row level distribution. Uniform across the fixed 10-level catalog
+// (P1-P6, S1-S4) — migration 086 removed the volatile Youngstarters/
+// Cambridge Secondary levels this used to sprinkle in (KD #153; real
+// grading/attendance data confirmed HFSE never used them).
 function pickFunnelLevelCode(rand: () => number): LevelCode {
-  const r = rand();
-  // Youngstarters: ~6% (2/33), one row each across L/J/S families.
-  if (r < 0.06) {
-    const ys: LevelCode[] = ['YS-L', 'YS-J', 'YS-S'];
-    return ys[Math.floor(rand() * ys.length)];
-  }
-  // Cambridge Secondary: ~3% (1/33).
-  if (r < 0.09) {
-    const cs: LevelCode[] = ['CS1', 'CS2'];
-    return cs[Math.floor(rand() * cs.length)];
-  }
-  // Primary + standard Secondary share the remaining ~91%. Pick uniformly
-  // across all P1-S4 codes (10 of them).
-  const main = LEVEL_CODES.filter(
-    (c) => LEVEL_TYPE_BY_CODE[c] !== 'preschool' && c !== 'CS1' && c !== 'CS2'
-  );
-  return main[Math.floor(rand() * main.length)];
+  return LEVEL_CODES[Math.floor(rand() * LEVEL_CODES.length)];
 }
 
 // Injects 33 pre-enrolment applications across the canonical applicationStatus

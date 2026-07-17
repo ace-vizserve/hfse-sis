@@ -18,7 +18,7 @@ export const LEVEL_WEIGHT_PROFILES: Record<
 };
 
 // Resolves a level type string to its canonical weight fractions.
-// 'preschool' and any unrecognised value return null (no profile).
+// Any value other than 'primary'/'secondary' returns null (no profile).
 export function weightProfileFor(
   levelType: string | null | undefined
 ): WeightFractions | null {

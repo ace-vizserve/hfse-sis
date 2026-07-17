@@ -14,10 +14,12 @@ import { unstable_cache } from 'next/cache';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 // Canonical level codes (short internal identifiers used in levels.code FK).
+// Fixed set — Primary One through Secondary Four only (migration 086 removed
+// the volatile Youngstarters/Cambridge Secondary levels: real grading and
+// attendance data confirmed HFSE never used them, and curriculum
+// differentiation like a Cambridge-style class is a SECTION concern —
+// class_type + per-section subject attachment — not a separate level).
 export const LEVEL_CODES = [
-  'YS-L',
-  'YS-J',
-  'YS-S',
   'P1',
   'P2',
   'P3',
@@ -28,17 +30,12 @@ export const LEVEL_CODES = [
   'S2',
   'S3',
   'S4',
-  'CS1',
-  'CS2',
 ] as const;
 export type LevelCode = (typeof LEVEL_CODES)[number];
 
 // Canonical level labels (the word form, stored in levels.label and used as
 // classLevel/levelApplied in admissions tables after migration 029).
 export const LEVEL_LABELS = {
-  'YS-L': 'Youngstarters | Little Stars',
-  'YS-J': 'Youngstarters | Junior Stars',
-  'YS-S': 'Youngstarters | Senior Stars',
   P1: 'Primary One',
   P2: 'Primary Two',
   P3: 'Primary Three',
@@ -49,8 +46,6 @@ export const LEVEL_LABELS = {
   S2: 'Secondary Two',
   S3: 'Secondary Three',
   S4: 'Secondary Four',
-  CS1: 'Cambridge Secondary One (Year 8)',
-  CS2: 'Cambridge Secondary Two (Year 9)',
 } as const satisfies Record<LevelCode, string>;
 export type LevelLabel = (typeof LEVEL_LABELS)[LevelCode];
 
@@ -60,14 +55,9 @@ const LEVEL_LABELS_ORDERED: readonly LevelLabel[] = LEVEL_CODES.map(
   (c) => LEVEL_LABELS[c]
 );
 
-// Mapping from level type to the codes belonging to it.
-export const LEVEL_TYPE_BY_CODE: Record<
-  LevelCode,
-  'preschool' | 'primary' | 'secondary'
-> = {
-  'YS-L': 'preschool',
-  'YS-J': 'preschool',
-  'YS-S': 'preschool',
+// Mapping from level type to the codes belonging to it. No 'preschool'
+// member remains — see the LEVEL_CODES removal note above.
+export const LEVEL_TYPE_BY_CODE: Record<LevelCode, 'primary' | 'secondary'> = {
   P1: 'primary',
   P2: 'primary',
   P3: 'primary',
@@ -78,14 +68,12 @@ export const LEVEL_TYPE_BY_CODE: Record<
   S2: 'secondary',
   S3: 'secondary',
   S4: 'secondary',
-  CS1: 'secondary',
-  CS2: 'secondary',
 };
 
 // For an attendance writer or grid reader, return the audience value to
 // match against `school_calendar.audience` for the section's level.
-// Preschool returns null — caller should match only audience='all' rows.
-// Primary / Secondary return the matching audience.
+// An unmatched/unknown label returns null — caller should match only
+// audience='all' rows in that case.
 //
 // Used by app/api/attendance/daily/route.ts to scope the day-type lookup
 // (audience IN ('all', $level_type) with audience=$level_type winning).
@@ -98,10 +86,7 @@ export function levelTypeForAudienceLookup(
       ? (levelOrCode as LevelCode)
       : LEVEL_CODE_BY_LABEL[canonicalizeLevelLabel(levelOrCode) ?? '']
   ) as LevelCode | undefined;
-  if (!code) return null;
-  const t = LEVEL_TYPE_BY_CODE[code];
-  if (t === 'primary' || t === 'secondary') return t;
-  return null;
+  return code ? LEVEL_TYPE_BY_CODE[code] : null;
 }
 
 // Inverse lookup — label -> code.
@@ -157,12 +142,15 @@ export function compareLevelLabels(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// DB-backed level rows + per-AY offerings (migration 078 — Levels & Grade
-// Progression, Phase 2). `levels` is a small, AY-agnostic managed table:
-// `sort_order` drives display order, `next_level_id` is the progression
-// pointer, `is_core` marks P1-P6/S1-S4 (permanent, always offered). Volatile
-// (non-core) levels are offered in a given AY only when an `ay_level_offerings`
-// row exists for that (academic_year_id, level_id) pair.
+// DB-backed level rows. `levels` is a small, fixed, AY-agnostic managed
+// table: `sort_order` drives display order. Migration 086 removed the
+// volatile-level / per-AY-offering concept (KD #153) — every remaining
+// level is core (P1-P6, S1-S4) and always offered, so there is no more
+// "which levels are offered this AY" question to answer; `getOfferedLevelIds`
+// and the `ay_level_offerings` table it read no longer exist. `is_core`/
+// `next_level_id` stay on the row (is_core is now trivially true for every
+// row; next_level_id was already dormant per KD #153's own note) rather than
+// narrowing the schema further, which wasn't required for this removal.
 //
 // Follows the hoisted-uncached + per-call unstable_cache idiom (KD #46; see
 // lib/sis/readiness.ts) — the service client is captured via closure so it
@@ -175,7 +163,7 @@ export type LevelRow = {
   id: string;
   code: string;
   label: string;
-  levelType: 'preschool' | 'primary' | 'secondary';
+  levelType: 'primary' | 'secondary';
   sortOrder: number;
   nextLevelId: string | null;
   isCore: boolean;
@@ -185,7 +173,7 @@ type LevelRowDb = {
   id: string;
   code: string;
   label: string;
-  level_type: 'preschool' | 'primary' | 'secondary';
+  level_type: 'primary' | 'secondary';
   sort_order: number;
   next_level_id: string | null;
   is_core: boolean;
@@ -224,50 +212,4 @@ export function getLevelRows(service: SupabaseClient): Promise<LevelRow[]> {
       tags: ['levels'],
     }
   )();
-}
-
-// Returns a plain array (not a Set) — unstable_cache persists its return
-// value (e.g. to the filesystem cache handler in production), which requires
-// JSON-serializable data; `JSON.stringify(new Set(...))` collapses to `{}`,
-// silently losing every id. The public `getOfferedLevelIds` wrapper below
-// converts to a Set only after the cached call returns.
-async function getOfferedLevelIdsUncached(
-  service: SupabaseClient,
-  academicYearId: string
-): Promise<string[]> {
-  const [
-    { data: coreRows, error: coreError },
-    { data: offeringRows, error: offeringError },
-  ] = await Promise.all([
-    service.from('levels').select('id').eq('is_core', true),
-    service
-      .from('ay_level_offerings')
-      .select('level_id')
-      .eq('academic_year_id', academicYearId),
-  ]);
-
-  if (coreError) throw coreError;
-  if (offeringError) throw offeringError;
-
-  const ids = new Set<string>(
-    ((coreRows ?? []) as Array<{ id: string }>).map((r) => r.id)
-  );
-  for (const row of (offeringRows ?? []) as Array<{ level_id: string }>) {
-    ids.add(row.level_id);
-  }
-  return Array.from(ids);
-}
-
-// Level ids offered in a given AY: every core level id (always offered) plus
-// any volatile level id with an `ay_level_offerings` row for that AY.
-export async function getOfferedLevelIds(
-  service: SupabaseClient,
-  academicYearId: string
-): Promise<Set<string>> {
-  const ids = await unstable_cache(
-    () => getOfferedLevelIdsUncached(service, academicYearId),
-    ['sis-offered-level-ids', academicYearId],
-    { revalidate: 60, tags: ['levels'] }
-  )();
-  return new Set(ids);
 }

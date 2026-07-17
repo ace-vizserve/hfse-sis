@@ -1,8 +1,15 @@
 // Pure aggregator for the SIS Admin hub's "Needs attention" feed. Merges
-// three independent signals — enrolled-but-unplaced students, pending grade
-// change requests, and demand for a level that isn't offered — into one
-// severity-ranked row list. No I/O; the RSC page fetches the three inputs
-// and this function just shapes them for `<HubAttentionFeed>`.
+// independent signals — enrolled-but-unplaced students, pending grade
+// change requests, unadvised sections, approver-flow gaps, and Structure
+// Defaults subject gaps — into one severity-ranked row list. No I/O; the
+// RSC page fetches the inputs and this function just shapes them for
+// `<HubAttentionFeed>`.
+//
+// A "demand for a level that isn't offered" signal used to live here too
+// (fed by lib/sis/level-demand.ts) — removed by migration 086 alongside
+// the whole Grade Levels admin page and its offered/shelved concept: the
+// level catalog is now a fixed 10 core levels, always offered, so "demand
+// for an unoffered level" can no longer happen.
 //
 // Severity vocabulary: 'destructive' (red) for a blocking gap that keeps a
 // student out of attendance/markbook/evaluation; 'amber' for a
@@ -10,7 +17,6 @@
 // carries the meaning too — color is never the only signal.
 
 import type { ClassAssignmentReadinessRow } from '@/lib/sis/dashboard';
-import type { LevelDemandRow } from '@/lib/sis/level-demand';
 import { classifyApproverReadiness } from '@/lib/sis/approver-readiness';
 import type { SubjectConfigGap } from '@/lib/sis/subject-config-gaps';
 
@@ -28,13 +34,6 @@ export type AttentionRow = {
 export function buildAttentionRows(input: {
   unassigned: ClassAssignmentReadinessRow[];
   pendingChangeRequests: number;
-  levelDemand: LevelDemandRow[];
-  // The AY `levelDemand` was actually computed against — the accepting AY
-  // (KD #118: the open early-bird upcoming year when one exists, else the
-  // operationally current year), NOT necessarily "this year." Threaded
-  // through so the row text can't lie about which AY doesn't offer the
-  // level.
-  acceptingAyCode: string;
   // Sections in the current AY with zero `form_adviser` teacher_assignments
   // row. Optional — the hub page fetches these separately; other callers
   // (tests, future consumers) can omit it and get the pre-existing 3-signal
@@ -81,20 +80,6 @@ export function buildAttentionRows(input: {
       text: `${count} grade ${count === 1 ? 'change is' : 'changes are'} waiting on an approver`,
       href: '/markbook/change-requests',
       actionLabel: 'Review',
-    });
-  }
-
-  const unmetDemand = input.levelDemand.filter(
-    (r) => !r.offered && r.count > 0
-  );
-  for (const row of unmetDemand) {
-    rows.push({
-      id: `level-demand-${row.label}`,
-      severity: 'amber',
-      text: `${row.count} ${row.count === 1 ? 'applicant chose' : 'applicants chose'} ${row.label} — not offered in ${input.acceptingAyCode}`,
-      meta: input.acceptingAyCode,
-      href: '/sis/admin/levels',
-      actionLabel: 'Grade levels',
     });
   }
 

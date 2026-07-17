@@ -109,7 +109,9 @@ const SIS_AUDIT_ALLOWLIST = [
   'section.subjects.attach_many',
   'assignment.create',
   'assignment.delete',
-  // Grade levels & progression (migration 078)
+  // Grade levels & progression (migration 078) — the admin page + write
+  // routes were removed by migration 086; kept in this allowlist so
+  // historical rows stay visible (Hard Rule #6, append-only).
   'level.create',
   'level.update',
   'level.delete',

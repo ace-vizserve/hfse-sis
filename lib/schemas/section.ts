@@ -11,8 +11,8 @@ export const SECTION_CLASS_TYPES = ['Global', 'Standard'] as const;
 export type SectionClassType = (typeof SECTION_CLASS_TYPES)[number];
 
 // Structured daily schedule for a section. Drives future auto-enrollment
-// (matching an applicant's preferred schedule against the section's). YS
-// (preschool) deferred. `null` = unspecified.
+// (matching an applicant's preferred schedule against the section's).
+// `null` = unspecified.
 export const SCHEDULE_VALUES = ['morning', 'afternoon', 'whole_day'] as const;
 export type Schedule = (typeof SCHEDULE_VALUES)[number];
 export const SCHEDULE_LABELS: Record<Schedule, string> = {

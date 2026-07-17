@@ -33,9 +33,7 @@ export async function PUT(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // Confirm the level exists + is markbook-eligible (preschool levels have
-  // no grading sheets and were excluded from this affordance pre-collapse
-  // too — see the old POST /subject-configs preschool check).
+  // Confirm the level exists.
   const { data: levelRow, error: levelErr } = await service
     .from('levels')
     .select('id, code, label, level_type')
@@ -51,15 +49,6 @@ export async function PUT(request: NextRequest) {
     label: string;
     level_type: string;
   };
-  if (level.level_type === 'preschool') {
-    return NextResponse.json(
-      {
-        error:
-          'Preschool levels do not have grading sheets and cannot be assigned subjects',
-      },
-      { status: 422 }
-    );
-  }
 
   const { data: subjectRow, error: subjErr } = await service
     .from('subjects')

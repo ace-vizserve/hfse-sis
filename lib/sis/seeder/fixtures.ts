@@ -20,120 +20,89 @@ import type { Schedule } from '@/lib/schemas/section';
 // structural seeder's upsert uses `ignoreDuplicates: true` against the
 // shared, already-migrated project, so these two fields are normally masked
 // on conflict — kept correct anyway so the fixture is right on a genuinely
-// fresh install and doesn't silently drift from the real schema.
+// fresh install and doesn't silently drift from the real schema. Trimmed to
+// the fixed 10-row catalog by migration 086 (KD #153) — the volatile
+// Youngstarters preschool tiers + Cambridge Secondary levels (and the
+// per-AY offered/shelved concept) were removed outright; is_core is
+// trivially true for every row now.
 export type LevelSeed = {
   code: string;
   label: string;
-  level_type: 'primary' | 'secondary' | 'preschool';
+  level_type: 'primary' | 'secondary';
   sort_order: number;
   is_core: boolean;
 };
 
 export const LEVELS: LevelSeed[] = [
   {
-    code: 'YS-L',
-    label: 'Youngstarters | Little Stars',
-    level_type: 'preschool',
-    sort_order: 1,
-    is_core: false,
-  },
-  {
-    code: 'YS-J',
-    label: 'Youngstarters | Junior Stars',
-    level_type: 'preschool',
-    sort_order: 2,
-    is_core: false,
-  },
-  {
-    code: 'YS-S',
-    label: 'Youngstarters | Senior Stars',
-    level_type: 'preschool',
-    sort_order: 3,
-    is_core: false,
-  },
-  {
     code: 'P1',
     label: 'Primary One',
     level_type: 'primary',
-    sort_order: 4,
+    sort_order: 1,
     is_core: true,
   },
   {
     code: 'P2',
     label: 'Primary Two',
     level_type: 'primary',
-    sort_order: 5,
+    sort_order: 2,
     is_core: true,
   },
   {
     code: 'P3',
     label: 'Primary Three',
     level_type: 'primary',
-    sort_order: 6,
+    sort_order: 3,
     is_core: true,
   },
   {
     code: 'P4',
     label: 'Primary Four',
     level_type: 'primary',
-    sort_order: 7,
+    sort_order: 4,
     is_core: true,
   },
   {
     code: 'P5',
     label: 'Primary Five',
     level_type: 'primary',
-    sort_order: 8,
+    sort_order: 5,
     is_core: true,
   },
   {
     code: 'P6',
     label: 'Primary Six',
     level_type: 'primary',
-    sort_order: 9,
+    sort_order: 6,
     is_core: true,
   },
   {
     code: 'S1',
     label: 'Secondary One',
     level_type: 'secondary',
-    sort_order: 10,
+    sort_order: 7,
     is_core: true,
   },
   {
     code: 'S2',
     label: 'Secondary Two',
     level_type: 'secondary',
-    sort_order: 11,
+    sort_order: 8,
     is_core: true,
   },
   {
     code: 'S3',
     label: 'Secondary Three',
     level_type: 'secondary',
-    sort_order: 12,
+    sort_order: 9,
     is_core: true,
   },
   {
     code: 'S4',
     label: 'Secondary Four',
     level_type: 'secondary',
-    sort_order: 13,
+    sort_order: 10,
     is_core: true,
-  },
-  {
-    code: 'CS1',
-    label: 'Cambridge Secondary One (Year 8)',
-    level_type: 'secondary',
-    sort_order: 14,
-    is_core: false,
-  },
-  {
-    code: 'CS2',
-    label: 'Cambridge Secondary Two (Year 9)',
-    level_type: 'secondary',
-    sort_order: 15,
-    is_core: false,
   },
 ];
 

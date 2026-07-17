@@ -129,7 +129,9 @@ const ACTION_LABELS: Record<string, string> = {
   'sis.vl_allowance.update': 'Vacation allowance updated',
   'sis.level.create': 'Level created',
 
-  // Grade levels (Levels & Grade Progression, migration 078)
+  // Grade levels (Levels & Grade Progression, migration 078) — the admin
+  // page + write routes were removed by migration 086; labels kept so
+  // historical audit_log rows still render in plain English (Hard Rule #6).
   'level.create': 'Grade level added',
   'level.update': 'Grade level updated',
   'level.delete': 'Grade level removed',
@@ -637,7 +639,8 @@ function templateSummary(
       return joinParts(parts);
     }
 
-    // Grade levels (Levels & Grade Progression, migration 078) ---------------
+    // Grade levels (Levels & Grade Progression, migration 078) — dormant
+    // since migration 086 removed the admin page; historical rows only.
     case 'level.create':
     case 'level.delete': {
       const parts: string[] = [];

@@ -72,8 +72,7 @@ type Level = {
   id: string;
   code: string;
   label: string;
-  // Includes 'preschool' per migration 029 — KD #50.
-  level_type: 'primary' | 'secondary' | 'preschool';
+  level_type: 'primary' | 'secondary';
 };
 type Section = { id: string; name: string; level: Level | Level[] | null };
 type Subject = {

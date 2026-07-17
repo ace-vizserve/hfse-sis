@@ -1,27 +1,27 @@
 import { unstable_cache } from 'next/cache';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/service';
-import { computeLevelDemand } from '@/lib/sis/level-demand';
-import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
+import { getLevelRows } from '@/lib/sis/levels';
 import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
 
-// Order matches the user-approved 11-step AY-Setup workflow (2026-07-15,
-// Task 5 of the migration-080 subject_configs collapse plan): Academic Year
-// -> Calendar -> Grade Levels -> Sections -> Subject Weights -> Form
-// Advisers -> Section Subjects -> Grading Sheets -> Virtue Themes ->
-// Report-card Letterhead, with 'app-window' (early-bird applications) as
-// the lone optional item after the core 10.
+// Order matches the user-approved 10-step AY-Setup workflow: Academic Year
+// -> Calendar -> Sections -> Subject Weights -> Form Advisers -> Section
+// Subjects -> Grading Sheets -> Virtue Themes -> Report-card Letterhead,
+// with 'app-window' (early-bird applications) as the lone optional item
+// after the core 9. The 'grade-levels' step (matching applicant-named
+// levels to the catalog) was removed by migration 086 alongside the whole
+// Grade Levels admin page — the level catalog is now a fixed 10 core
+// levels (P1-P6, S1-S4), nothing to reconcile against applicant demand.
 //
-// 'sections' and 'subject-weights' are a split/decouple of the prior single
-// 'classes' step: 'sections' asks "does every grade level in use have at
-// least one class section," while 'subject-weights' asks "is every grade
-// level in use fully configured against Structure Defaults" — a genuinely
-// independent, parallel task that no longer depends on sections existing
-// (a registrar can configure subject weights before creating a section).
+// 'sections' and 'subject-weights' are a split/decouple of an older single
+// 'classes' step: 'sections' asks "does every grade level have at least one
+// class section," while 'subject-weights' asks "is every grade level fully
+// configured against Structure Defaults" — a genuinely independent,
+// parallel task that no longer depends on sections existing (a registrar
+// can configure subject weights before creating a section).
 export type ReadinessStepId =
   | 'ay-setup'
   | 'calendar'
-  | 'grade-levels'
   | 'sections'
   | 'subject-weights'
   | 'advisers'
@@ -72,17 +72,9 @@ const STEP_META: Record<
     href: '/sis/calendar',
     required: true,
   },
-  'grade-levels': {
-    id: 'grade-levels',
-    step: 3,
-    label: 'Grade levels',
-    description: 'Match the level catalog to what applicants are applying for',
-    href: '/sis/admin/levels',
-    required: true,
-  },
   sections: {
     id: 'sections',
-    step: 4,
+    step: 3,
     label: 'Sections',
     description:
       'Create at least one class section for each grade level in use',
@@ -91,7 +83,7 @@ const STEP_META: Record<
   },
   'subject-weights': {
     id: 'subject-weights',
-    step: 5,
+    step: 4,
     label: 'Subject weights',
     description: 'Attach subjects and weights to every grade level in use',
     href: '/sis/admin/subjects',
@@ -99,7 +91,7 @@ const STEP_META: Record<
   },
   advisers: {
     id: 'advisers',
-    step: 6,
+    step: 5,
     label: 'Form advisers',
     description: 'Assign form class advisers',
     href: '/sis/sections',
@@ -107,7 +99,7 @@ const STEP_META: Record<
   },
   'section-subjects': {
     id: 'section-subjects',
-    step: 7,
+    step: 6,
     label: 'Section subjects',
     description: 'Confirm which subjects each section teaches',
     href: '/sis/sections',
@@ -115,7 +107,7 @@ const STEP_META: Record<
   },
   'grading-sheets': {
     id: 'grading-sheets',
-    step: 8,
+    step: 7,
     label: 'Grading sheets',
     description: 'Create grading sheets for all sections',
     href: '/markbook/sections',
@@ -123,7 +115,7 @@ const STEP_META: Record<
   },
   'virtue-themes': {
     id: 'virtue-themes',
-    step: 9,
+    step: 8,
     label: 'Virtue themes',
     description: 'Set virtue themes for each term',
     href: '/evaluation/virtue-themes',
@@ -131,7 +123,7 @@ const STEP_META: Record<
   },
   letterhead: {
     id: 'letterhead',
-    step: 10,
+    step: 9,
     label: 'Report-card letterhead',
     description: 'Configure school letterhead and branding',
     href: '/sis/admin/school-config',
@@ -139,7 +131,7 @@ const STEP_META: Record<
   },
   'app-window': {
     id: 'app-window',
-    step: 11,
+    step: 10,
     label: 'Application window',
     description: 'Open early-bird application window (optional)',
     href: '/sis/ay-setup',
@@ -205,46 +197,11 @@ export function resolveCalendarStep(input: {
   };
 }
 
-// "Done" means every distinct levelApplied value on this AY's admissions
-// applications resolves to a real level in the catalog (lib/sis/level-
-// demand.ts::computeLevelDemand's levelId !== null — the same "unmatched
-// demand" signal the Grade Levels page's Smart Sync panel surfaces). No
-// applications yet -> not_started (nothing to validate against), matching
-// the same convention every other "totalX === 0" step here uses.
-export function resolveGradeLevelsStep(input: {
-  totalDistinctApplied: number;
-  unmatchedCount: number;
-}): ReadinessStep {
-  const { totalDistinctApplied, unmatchedCount } = input;
-  let status: ReadinessStatus;
-  let fraction: { done: number; total: number } | undefined;
-
-  if (totalDistinctApplied === 0) {
-    status = 'not_started';
-  } else if (unmatchedCount === 0) {
-    status = 'done';
-    fraction = { done: totalDistinctApplied, total: totalDistinctApplied };
-  } else {
-    status = 'partial';
-    fraction = {
-      done: totalDistinctApplied - unmatchedCount,
-      total: totalDistinctApplied,
-    };
-  }
-
-  return {
-    ...STEP_META['grade-levels'],
-    status,
-    fraction,
-  };
-}
-
-// "Done" once every grade level genuinely in use this AY (core levels +
-// any volatile level with an ay_level_offerings row — same relevant-level
-// set fetchSections uses) has at least one class section. Sections are a
-// prerequisite the registrar can't skip, but whether they've been created
-// yet is a distinct question from whether the levels are correctly
-// configured — see resolveSubjectWeightsStep below, which used to fold
+// "Done" once every grade level (the fixed 10-level catalog) has at least
+// one class section for this AY. Sections are a prerequisite the registrar
+// can't skip, but whether they've been created yet is a distinct question
+// from whether the levels are correctly configured — see
+// resolveSubjectWeightsStep below, which used to fold
 // this section-existence question into its own fraction (the bug this
 // split closes: with 0 sections, subject weights silently read as
 // not_started even when the weights themselves were fully configured).
@@ -584,40 +541,6 @@ async function fetchCalendar(
   return { totalTerms, coveredTerms };
 }
 
-// Admissions tables live in the same Supabase project (KD #53 slug
-// convention: ay{YYYY}_enrolment_applications). Reuses computeLevelDemand
-// (lib/sis/level-demand.ts) — the exact same pure classifier the Grade
-// Levels page's Smart Sync panel uses — so this readiness check and that
-// page's "unmatched" list can never disagree on what counts as unmatched.
-async function fetchGradeLevels(
-  db: SupabaseClient,
-  ayCode: string,
-  ayId: string
-): Promise<{ totalDistinctApplied: number; unmatchedCount: number }> {
-  const year = ayCode.replace(/^AY/i, '').toLowerCase();
-  const { data: appRows, error: appError } = await db
-    .from(`ay${year}_enrolment_applications`)
-    .select('levelApplied')
-    .not('levelApplied', 'is', null);
-
-  // A missing/not-yet-created admissions table for this AY is not a
-  // readiness failure — treat as "no applications yet" (not_started).
-  if (appError) return { totalDistinctApplied: 0, unmatchedCount: 0 };
-
-  const [levels, offeredIds] = await Promise.all([
-    getLevelRows(db),
-    getOfferedLevelIds(db, ayId),
-  ]);
-
-  const demand = computeLevelDemand(
-    (appRows ?? []) as Array<{ levelApplied: string | null }>,
-    levels,
-    offeredIds
-  );
-  const unmatchedCount = demand.filter((d) => d.levelId === null).length;
-  return { totalDistinctApplied: demand.length, unmatchedCount };
-}
-
 async function fetchSectionSubjects(
   db: SupabaseClient,
   ayId: string
@@ -648,25 +571,16 @@ async function fetchSectionSubjects(
   return { totalSections, sectionsWithSubjects };
 }
 
-// Shared by fetchSections + fetchSubjectWeights below — the AY's "relevant
-// levels" set: every core level, plus every volatile level with an
-// ay_level_offerings row for this AY. getOfferedLevelIds already returns
-// core-level ids unioned with offered-volatile ids, so filtering the full
-// level catalog against it is the complete relevant set (mirrors the same
-// computation on /sis/admin/subjects, lib/sis/subject-config-gaps.ts's
-// call site). One query pair, reused by both fetchers rather than
-// duplicated.
+// Shared by fetchSections + fetchSubjectWeights below — every level is now
+// "relevant" (the fixed 10-level catalog is always in use, migration 086).
+// Kept as its own function so both fetchers still share one query rather
+// than duplicating it, even though there's no filtering left to do.
 async function fetchRelevantLevels(
   db: SupabaseClient,
-  ayId: string
+  _ayId: string
 ): Promise<Array<{ id: string; label: string }>> {
-  const [levels, offeredIds] = await Promise.all([
-    getLevelRows(db),
-    getOfferedLevelIds(db, ayId),
-  ]);
-  return levels
-    .filter((l) => offeredIds.has(l.id))
-    .map((l) => ({ id: l.id, label: l.label }));
+  const levels = await getLevelRows(db);
+  return levels.map((l) => ({ id: l.id, label: l.label }));
 }
 
 // "Done" once every relevant level (see fetchRelevantLevels) has at least
@@ -905,7 +819,6 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
     return buildReadiness(ayCode, [
       resolveAySetupStep({ datedTermCount: 0, totalTermCount: 0 }),
       resolveCalendarStep({ totalTerms: 0, coveredTerms: 0 }),
-      resolveGradeLevelsStep({ totalDistinctApplied: 0, unmatchedCount: 0 }),
       resolveSectionsStep({ relevantLevelCount: 0, levelsWithSectionCount: 0 }),
       resolveSubjectWeightsStep({
         levelsInUse: 0,
@@ -927,11 +840,10 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   const ayId = (ayRow as any).id;
   const accepting = (ayRow as any).accepting_applications ?? false;
 
-  // Fan out 10 fetchers
+  // Fan out 9 fetchers
   const [
     aySetup,
     calendar,
-    gradeLevels,
     sections,
     subjectWeights,
     advisers,
@@ -942,7 +854,6 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   ] = await Promise.all([
     fetchAySetup(db, ayId),
     fetchCalendar(db, ayId),
-    fetchGradeLevels(db, ayCode, ayId),
     fetchSections(db, ayId),
     fetchSubjectWeights(db, ayId),
     fetchAdvisers(db, ayId),
@@ -955,15 +866,14 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   // Build steps, in the AY-Setup checklist's display order.
   const step1 = resolveAySetupStep(aySetup);
   const step2 = resolveCalendarStep(calendar);
-  const step3 = resolveGradeLevelsStep(gradeLevels);
-  const step4 = resolveSectionsStep(sections);
-  const step5 = resolveSubjectWeightsStep(subjectWeights);
-  const step6 = resolveAdvisersStep(advisers);
-  const step7 = resolveSectionSubjectsStep(sectionSubjects);
-  const step8 = resolveGradingSheetsStep(gradingSheets);
-  const step9 = resolveVirtueThemesStep(virtueThemes);
-  const step10 = resolveLetterheadStep(letterhead);
-  const step11 = resolveAppWindowStep({ accepting });
+  const step3 = resolveSectionsStep(sections);
+  const step4 = resolveSubjectWeightsStep(subjectWeights);
+  const step5 = resolveAdvisersStep(advisers);
+  const step6 = resolveSectionSubjectsStep(sectionSubjects);
+  const step7 = resolveGradingSheetsStep(gradingSheets);
+  const step8 = resolveVirtueThemesStep(virtueThemes);
+  const step9 = resolveLetterheadStep(letterhead);
+  const step10 = resolveAppWindowStep({ accepting });
 
   return buildReadiness(ayCode, [
     step1,
@@ -976,7 +886,6 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
     step8,
     step9,
     step10,
-    step11,
   ]);
 }
 

@@ -2,7 +2,6 @@ import Link from 'next/link';
 import {
   CalendarOff,
   ClipboardList,
-  Layers,
   LayoutGrid,
   UserPlus,
   type LucideIcon,
@@ -11,21 +10,22 @@ import {
 import { cn } from '@/lib/utils';
 
 /**
- * HubQuickActions — the SIS Admin hub's five-tile launchpad row (Task V1,
+ * HubQuickActions — the SIS Admin hub's launchpad row (Task V1,
  * `docs/superpowers/specs/2026-07-11-sis-admin-visual-redesign.html` Screen
  * 1). Gradient icon tiles per the app's real signature (visual-consistency
  * pass — the earlier "no gradients on content" rule was reversed, see
  * `components/sis/hub-stat.tsx`) — hover lift per §7.3. "New section" and
  * "New staff member" share the one neutral indigo/navy tile (no precedent
  * anywhere in this app for varying a tile's hue across non-semantic
- * actions); "Add a closure"/"Generate sheets"/"Grade levels" keep their
- * semantic destructive/mint/amber tones.
+ * actions); "Add a closure"/"Generate sheets" keep their semantic
+ * destructive/mint tones. (The fifth tile, "Grade levels," was removed by
+ * migration 086 alongside the whole Grade Levels admin page — KD #153's
+ * managed-entity concept was deleted outright, not just its nav entry.)
  *
  * Order is frequency-weighted, not arbitrary (layout redesign pass, Pareto
  * Principle) — "New section"/"Generate sheets"/"New staff member" are the
  * recurring "This year"-cadence actions (KD #154's sidebar cadence hints);
- * "Add a closure" is occasional; "Grade levels" is once-a-year Structure
- * config, so it sits last.
+ * "Add a closure" is occasional, so it sits last.
  */
 
 type QuickAction = {
@@ -70,14 +70,6 @@ const ACTIONS: QuickAction[] = [
     toneClass:
       'bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-brand-tile-destructive',
   },
-  {
-    label: 'Grade levels',
-    sublabel: 'Structure',
-    href: '/sis/admin/levels',
-    icon: Layers,
-    toneClass:
-      'bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-brand-tile-amber',
-  },
 ];
 
 export function HubQuickActions() {
@@ -85,7 +77,7 @@ export function HubQuickActions() {
     <div
       role="group"
       aria-label="Quick actions"
-      className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+      className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
     >
       {ACTIONS.map((action) => (
         <Link

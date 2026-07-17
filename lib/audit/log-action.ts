@@ -78,6 +78,10 @@ export type AuditAction =
   | 'sis.allowance.update'
   | 'sis.vl_allowance.update'
   | 'sis.level.create'
+  // 'level.create'/'level.update'/'level.delete'/'level.offering.toggle'
+  // backed the Grade Levels admin CRUD (KD #153) — removed by migration 086
+  // alongside the whole page. Retained here for back-compat with historical
+  // audit_log rows (Hard Rule #6, append-only); no code emits them anymore.
   | 'level.create'
   | 'level.update'
   | 'level.delete'

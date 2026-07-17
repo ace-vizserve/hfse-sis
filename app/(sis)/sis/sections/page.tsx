@@ -12,7 +12,6 @@ import type { LevelCardSection } from '@/components/sis/section-level-card';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
-import { getOfferedLevelIds } from '@/lib/sis/levels';
 import { sgToday } from '@/lib/dates';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { computeIndexStatus } from '@/lib/sis/section-index-status';
@@ -20,22 +19,26 @@ import { listTemplateSections } from '@/lib/sis/template/queries';
 import type { Schedule, SectionClassType } from '@/lib/schemas/section';
 
 // "Sections & advisers" — one card per grade level, not one row per
-// section. The page's purpose is really "does every offered level have
-// its section(s) set up, staffed, numbered" — a per-LEVEL readiness
-// check — but the prior design was a flat per-SECTION table, so any level
-// without a section yet rendered as a full row of dashes just to say
-// "nothing here" (12 of 13 levels, on a freshly-set-up AY). A card per
-// level fixes that at the root, and folds in a level-scoped quick-add
-// (including a template-driven "create all N official section names in
-// one click," KD #144) that the flat table had no room for. Rebuilt from
-// a live-reviewed mockup — see docs/superpowers/plans history if this
-// page changes shape again.
+// section. The page's purpose is really "does every level have its
+// section(s) set up, staffed, numbered" — a per-LEVEL readiness check —
+// but the prior design was a flat per-SECTION table, so any level without
+// a section yet rendered as a full row of dashes just to say "nothing
+// here." A card per level fixes that at the root, and folds in a
+// level-scoped quick-add (including a template-driven "create all N
+// official section names in one click," KD #144) that the flat table had
+// no room for. Rebuilt from a live-reviewed mockup — see
+// docs/superpowers/plans history if this page changes shape again.
+//
+// The level catalog is a fixed 10 core levels (P1-P6, S1-S4) since
+// migration 086 removed the volatile Youngstarters/Cambridge Secondary
+// levels and the per-AY offered/shelved concept — every level shown here
+// is always relevant, no "is this level offered this year" filtering.
 
 type LevelLite = {
   id: string;
   code: string;
   label: string;
-  level_type: 'primary' | 'secondary' | 'preschool';
+  level_type: 'primary' | 'secondary';
 };
 type SectionRaw = {
   id: string;
@@ -54,21 +57,16 @@ type SectionRaw = {
 const GROUP_LABEL: Record<LevelLite['level_type'], string> = {
   primary: 'Primary',
   secondary: 'Secondary',
-  preschool: 'Youngstarters',
 };
-const GROUP_ORDER: LevelLite['level_type'][] = [
-  'primary',
-  'secondary',
-  'preschool',
-];
+const GROUP_ORDER: LevelLite['level_type'][] = ['primary', 'secondary'];
 
 export default async function SisSectionsListPage({
   searchParams,
 }: {
-  // Grade Levels' row menu deep-links here (?addSectionLevel=<id>) so
-  // "Add section" from that page opens this page's New Section dialog
-  // pre-filled, instead of landing the registrar on a blank page to
-  // re-find the level they just came from.
+  // A caller can deep-link here with ?addSectionLevel=<id> to open this
+  // page's New Section dialog pre-filled for a specific level (e.g. from a
+  // level-scoped "no section yet" callout elsewhere), instead of landing
+  // the registrar on a blank page to re-find the level.
   searchParams: Promise<{ addSectionLevel?: string }>;
 }) {
   const sessionUser = await getSessionUser();
@@ -129,10 +127,10 @@ export default async function SisSectionsListPage({
       };
 
   // Level catalogue for the "New section" dialog + each level card.
-  type LevelCatalogRow = LevelLite & { is_core: boolean; sort_order: number };
+  type LevelCatalogRow = LevelLite & { sort_order: number };
   const { data: levelRows } = await supabase
     .from('levels')
-    .select('id, code, label, level_type, is_core, sort_order')
+    .select('id, code, label, level_type, sort_order')
     .order('sort_order');
   const levelCatalog = (levelRows ?? []) as LevelCatalogRow[];
   const levelOptions = levelCatalog.map((l) => ({
@@ -149,12 +147,6 @@ export default async function SisSectionsListPage({
   )
     ? sp.addSectionLevel
     : undefined;
-
-  // Which levels are actually meant to run this AY — core levels always
-  // are; volatile levels need an ay_level_offerings row (KD #153).
-  const offeredLevelIds = ay
-    ? await getOfferedLevelIds(supabase, ay.id)
-    : new Set<string>();
 
   const ids = (sections ?? []).map((s) => s.id);
   const counts: Record<
@@ -222,12 +214,9 @@ export default async function SisSectionsListPage({
   const totalActive = rawSections.reduce((n, c) => n + c.active, 0);
   const totalWithdrawn = rawSections.reduce((n, c) => n + c.withdrawn, 0);
 
-  // Every level relevant to this AY (core, or volatile-and-offered) — a
-  // level needing a section must still get a card even though no section
-  // row carries its label yet.
-  const relevantLevelCatalog = levelCatalog.filter(
-    (l) => l.is_core || offeredLevelIds.has(l.id)
-  );
+  // The fixed 10-level catalog — a level needing a section must still get
+  // a card even though no section row carries its label yet.
+  const relevantLevelCatalog = levelCatalog;
 
   const sectionsByLevelId = new Map<string, SectionRaw[]>();
   for (const s of rawSections) {
@@ -279,7 +268,7 @@ export default async function SisSectionsListPage({
       <SisPageHeader
         group="This year"
         title="Sections & advisers."
-        description="One card per level — every offered level, its section(s), and whether it's staffed. Day-to-day roster / grading / attendance is in Markbook."
+        description="One card per level — every level, its section(s), and whether it's staffed. Day-to-day roster / grading / attendance is in Markbook."
         chips={
           ay && (
             <Badge

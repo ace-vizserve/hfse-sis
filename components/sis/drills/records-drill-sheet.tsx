@@ -183,9 +183,8 @@ function formatDate(iso: string | null): string {
 }
 
 // compareLevelLabels from lib/sis/levels.ts is the canonical ordering
-// (YS-L → YS-J → YS-S → P1-P6 → S1-S4 → CS1 → CS2). Using it here
-// instead of a locally-hardcoded list prevents PEH / preschool ordering
-// drift when new levels are added.
+// (P1-P6 → S1-S4). Using it here instead of a locally-hardcoded list
+// prevents ordering drift when levels change.
 function compareLevels(a: string, b: string): number {
   return compareLevelLabels(
     a === 'Unknown' ? null : a,

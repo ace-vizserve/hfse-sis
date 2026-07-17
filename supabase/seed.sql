@@ -1,5 +1,5 @@
 -- HFSE Markbook — seed data
--- Contents: AY2026, 15 levels, 17 subjects, AY2026 sections,
+-- Contents: AY2026, 10 levels, 17 subjects, AY2026 sections,
 -- AY2026 terms (T1–T4), subject_configs (weights per subject), and
 -- subject_level_offerings (which levels each subject is taught at).
 -- Idempotent: safe to re-run.
@@ -12,36 +12,32 @@ on conflict (ay_code) do nothing;
 -- ---------- Levels ----------
 -- sort_order + is_core are NOT NULL as of migration 078 (Levels & Grade
 -- Progression) — sort_order has no column default, so a fresh install that
--- omitted it here would 400 on this insert. is_core marks the permanent
--- P1-P6/S1-S4 band (mirrors migration 078's backfill).
+-- omitted it here would 400 on this insert. is_core is trivially true for
+-- every row now — migration 086 removed the volatile Youngstarters/
+-- Cambridge Secondary levels + the ay_level_offerings per-AY concept
+-- entirely (KD #153); the level catalog is a fixed 10-row P1-P6/S1-S4 band.
 insert into public.levels (code, label, level_type, sort_order, is_core) values
-  ('YS-L', 'Youngstarters | Little Stars',     'preschool',   1, false),
-  ('YS-J', 'Youngstarters | Junior Stars',     'preschool',   2, false),
-  ('YS-S', 'Youngstarters | Senior Stars',     'preschool',   3, false),
-  ('P1',   'Primary One',                       'primary',    4, true),
-  ('P2',   'Primary Two',                       'primary',    5, true),
-  ('P3',   'Primary Three',                     'primary',    6, true),
-  ('P4',   'Primary Four',                      'primary',    7, true),
-  ('P5',   'Primary Five',                      'primary',    8, true),
-  ('P6',   'Primary Six',                       'primary',    9, true),
-  ('S1',   'Secondary One',                     'secondary', 10, true),
-  ('S2',   'Secondary Two',                     'secondary', 11, true),
-  ('S3',   'Secondary Three',                   'secondary', 12, true),
-  ('S4',   'Secondary Four',                    'secondary', 13, true),
-  ('CS1',  'Cambridge Secondary One (Year 8)',  'secondary', 14, false),
-  ('CS2',  'Cambridge Secondary Two (Year 9)',  'secondary', 15, false)
+  ('P1',   'Primary One',                       'primary',    1, true),
+  ('P2',   'Primary Two',                       'primary',    2, true),
+  ('P3',   'Primary Three',                     'primary',    3, true),
+  ('P4',   'Primary Four',                      'primary',    4, true),
+  ('P5',   'Primary Five',                      'primary',    5, true),
+  ('P6',   'Primary Six',                       'primary',    6, true),
+  ('S1',   'Secondary One',                     'secondary',  7, true),
+  ('S2',   'Secondary Two',                     'secondary',  8, true),
+  ('S3',   'Secondary Three',                   'secondary',  9, true),
+  ('S4',   'Secondary Four',                    'secondary', 10, true)
 on conflict (code) do nothing;
 
--- Seed the progression chain (mirrors migration 078's chain seed exactly).
+-- Seed the progression chain (mirrors migration 086's re-emitted chain
+-- exactly — the volatile-level legs were dropped alongside the rows).
 -- On a fresh install this is the only place next_level_id gets populated;
 -- on the shared/already-migrated project the insert above is a no-op
--- (on conflict) and every row's next_level_id is already set by 078, so
+-- (on conflict) and every row's next_level_id is already set by 086, so
 -- the `next_level_id is null` guard makes this safely idempotent either way.
 with chain(code, next_code) as (
-  values ('YS-L','YS-J'),('YS-J','YS-S'),('YS-S','P1'),
-         ('P1','P2'),('P2','P3'),('P3','P4'),('P4','P5'),('P5','P6'),('P6','S1'),
-         ('S1','S2'),('S2','S3'),('S3','S4'),
-         ('CS1','CS2')
+  values ('P1','P2'),('P2','P3'),('P3','P4'),('P4','P5'),('P5','P6'),('P6','S1'),
+         ('S1','S2'),('S2','S3'),('S3','S4')
 )
 update public.levels l
 set next_level_id = n.id

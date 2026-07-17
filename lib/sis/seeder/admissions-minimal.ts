@@ -17,6 +17,16 @@ import { hashString, mulberry32 } from './random';
 // KD #62 category ↔ enroleeType mirror.
 //
 // Idempotent on enroleeNumber — re-running skips rows that already exist.
+//
+// Note: a handful of personas below carry `levelApplied` values like
+// "Youngstarters | Little Stars" / "Cambridge Secondary One (Year 8)" —
+// levels migration 086 removed from the catalog (KD #153; `levelApplied` is
+// free text, not FK-constrained, so this doesn't break the seed insert).
+// Left as-is deliberately: they now exercise the "applicant's level label
+// doesn't match anything in the catalog" edge case (canonicalizeLevelLabel
+// passes unknown values through unchanged, lib/sis/levels.ts), which is a
+// real, ongoing scenario independent of the removed feature — not a stale
+// leftover that needs rewriting to a canonical P1-S4 label.
 
 const PDF_URL =
   'https://vnhklhppftebbcuupfjw.supabase.co/storage/v1/object/public/parent-portal/ay2025/documents/1766798602565_Sample%20document.pdf';

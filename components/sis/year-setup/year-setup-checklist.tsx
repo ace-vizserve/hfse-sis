@@ -11,7 +11,6 @@ import {
   CircleDashed,
   ClipboardList,
   Clock,
-  Layers,
   LayoutGrid,
   ListChecks,
   Loader2,
@@ -66,7 +65,6 @@ import {
 const ITEM_ICONS: Record<ReadinessStepId, LucideIcon> = {
   'ay-setup': CalendarCog,
   calendar: CalendarDays,
-  'grade-levels': Layers,
   sections: School,
   'subject-weights': LayoutGrid,
   advisers: Users,
@@ -365,16 +363,6 @@ export function YearSetupChecklist({
                       </Link>
                     </Button>
                   </>
-                );
-                break;
-
-              case 'grade-levels':
-                action = (
-                  <Button variant={primaryVariant} size="sm" asChild>
-                    <Link href={step.href}>
-                      Open Grade levels <ArrowUpRight className="size-3.5" />
-                    </Link>
-                  </Button>
                 );
                 break;
 

@@ -1,21 +1,21 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { CheckCircle2, Layers, Loader2, Plus } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { NewSectionButton } from '@/components/markbook/new-section-button';
 import { AdviserCell } from '@/components/sections/adviser-cell';
 import { SectionRowActions } from '@/components/sections/section-row-actions';
-import { NewSectionButton } from '@/components/markbook/new-section-button';
 import { GenerateIndexButton } from '@/components/sis/generate-index-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import type { Role } from '@/lib/auth/roles';
+import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   SCHEDULE_LABELS,
   type Schedule,
@@ -68,7 +68,7 @@ export function SectionLevelCard({
     id: string;
     code: string;
     label: string;
-    level_type: 'primary' | 'secondary' | 'preschool';
+    level_type: 'primary' | 'secondary';
   };
   sections: LevelCardSection[];
   /** This level's official section names per Structure Defaults — empty

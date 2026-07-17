@@ -46,7 +46,7 @@ type LevelOption = {
   id: string;
   code: string;
   label: string;
-  level_type: 'primary' | 'secondary' | 'preschool';
+  level_type: 'primary' | 'secondary';
 };
 
 function blankValues(initialLevelId?: string): SectionCreateInput {
@@ -69,9 +69,8 @@ export function NewSectionButton({
   /** Dual-mode, same pattern as AddLevelDialog (components/sis/levels-
    * manager-client.tsx): uncontrolled with its own trigger button by
    * default (the page header CTA), or controlled + pre-filled for a
-   * cross-module "add a section for THIS level" quick action (e.g. from
-   * Grade Levels' row menu, or the "Levels with no section yet" callout
-   * on this page). */
+   * cross-module "add a section for THIS level" quick action (e.g. a
+   * level-scoped "no section yet" callout elsewhere). */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   initialLevelId?: string;
@@ -79,10 +78,10 @@ export function NewSectionButton({
   const router = useRouter();
   const isControlled = controlledOpen !== undefined;
   // Auto-opens on first render when an initialLevelId arrives while
-  // uncontrolled — e.g. Grade Levels' row menu deep-links here via
-  // ?addSectionLevel=<id>, and the page resolves that into initialLevelId
-  // server-side. Only affects the very first mount (a later initialLevelId
-  // change while already open/closed doesn't reopen it).
+  // uncontrolled — e.g. a caller deep-links here via ?addSectionLevel=<id>,
+  // and the page resolves that into initialLevelId server-side. Only
+  // affects the very first mount (a later initialLevelId change while
+  // already open/closed doesn't reopen it).
   const [uncontrolledOpen, setUncontrolledOpen] = useState(
     () => !isControlled && Boolean(initialLevelId)
   );

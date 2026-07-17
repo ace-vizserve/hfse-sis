@@ -422,11 +422,14 @@ const EVALUATION_NAV: NavSection[] = [
 // Group structure restored to the production sidebar (Year Setup /
 // Organisation / Access / System) per user request (2026-07-12), carrying
 // the post-KD #154 item set and names: "Structure Defaults" (renamed from
-// Class Template), Grade Levels (new page, KD #153), no "Sync from
-// Admissions" (page deleted — auto-sync cron per KD #90/#154), and no
-// "Users" (accounts merged into Staff's Accounts cut; /sis/admin/users is
-// a superadmin-gated redirect stub reachable via the "Staff accounts"
-// command-palette entry or the Staff page's Accounts tab).
+// Class Template), no "Sync from Admissions" (page deleted — auto-sync cron
+// per KD #90/#154), and no "Users" (accounts merged into Staff's Accounts
+// cut; /sis/admin/users is a superadmin-gated redirect stub reachable via
+// the "Staff accounts" command-palette entry or the Staff page's Accounts
+// tab). "Grade Levels" (KD #153's managed-entity page) was removed by
+// migration 086 — the volatile-level / per-AY-offering concept it managed
+// was deleted outright; the level catalog is now a fixed 10-row constant
+// (lib/sis/levels.ts) with no admin surface.
 const SIS_NAV: NavSection[] = [
   {
     items: [
@@ -478,11 +481,6 @@ const SIS_NAV: NavSection[] = [
         href: '/sis/admin/discount-codes',
         label: 'Discount Codes',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
-      },
-      {
-        href: '/sis/admin/levels',
-        label: 'Grade Levels',
-        requiresRoles: ['school_admin', 'superadmin'],
       },
       {
         href: '/sis/admin/subjects',
@@ -670,7 +668,6 @@ export const NAV_BY_MODULE: {
 export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   { prefix: '/sis/admin/approvers', allowed: ['superadmin'] },
   { prefix: '/sis/admin/subjects', allowed: ['school_admin', 'superadmin'] },
-  { prefix: '/sis/admin/levels', allowed: ['school_admin', 'superadmin'] },
   { prefix: '/sis/admin/template', allowed: ['school_admin', 'superadmin'] },
   {
     prefix: '/sis/admin/school-config',

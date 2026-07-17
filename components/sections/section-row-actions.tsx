@@ -62,10 +62,10 @@ export type SectionRowActionsProps = {
    *  Controls the label of the adviser action item. */
   hasAdviser?: boolean;
   /** SIS only: the section's level type — gates the Track item to
-   *  Secondary (SectionTrackDialog 422s for Primary/preschool) — and its
-   *  current class_type, for the dialog's pre-selected value + the item's
+   *  Secondary (SectionTrackDialog 422s for Primary) — and its current
+   *  class_type, for the dialog's pre-selected value + the item's
    *  Set/Change label. */
-  levelType?: 'primary' | 'secondary' | 'preschool';
+  levelType?: 'primary' | 'secondary';
   classType?: SectionClassType | null;
 };
 

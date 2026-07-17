@@ -147,7 +147,7 @@ export async function getCalendarEventsForTerm(
 // override over the `'all'` baseline when both exist (KD #50 + KD #76).
 //
 // `levelType` is the section's level type ('primary' | 'secondary' | null).
-// null = preschool — falls through to audience='all' rows.
+// null = unmatched/unresolved level — falls through to audience='all' rows.
 //
 // Use this helper anywhere the UI iterates one column / row per date
 // (the attendance grid, calendar admin, anything that mustn't double up
@@ -195,7 +195,7 @@ export async function getEncodableDatesForTerm(
 // true. school_day + hbl return false.
 //
 // `levelType` enforces the audience-precedence rule (specific row wins
-// over 'all'). null = preschool (only 'all' rows considered).
+// over 'all'). null = unmatched/unresolved level (only 'all' rows considered).
 // fallow-ignore-next-line unused-export
 export async function isHoliday(
   termId: string,

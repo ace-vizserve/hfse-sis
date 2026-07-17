@@ -3,7 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { createServiceClient } from '@/lib/supabase/service';
-import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
+import { getLevelRows } from '@/lib/sis/levels';
 import { MOTHER_TONGUE_UMBRELLA_CODE } from '@/lib/schemas/subject';
 
 // Subject-config queries for /sis/admin/subjects. Service-role reads; the
@@ -177,8 +177,8 @@ export type CatalogSubjectRow = {
   reportSubjectId: string;
   /** Code of the resolved report target — equals `code` when self-mapped. */
   reportSubjectCode: string;
-  /** Offering state across every level of the requested type that is
-   * actually offered this AY (core levels + offered volatile levels). */
+  /** Offering state across every level of the requested type (all core,
+   * migration 086 — every level is always relevant). */
   offeringState: CatalogOfferingState;
   /** The specific level ids (within the requested type) this subject is
    * currently offered at — empty when offeringState is 'off'. */
@@ -222,9 +222,9 @@ export function computeCatalogForLevelType(
   configs: SubjectConfigRow[],
   offerings: SubjectLevelOfferingRow[],
   reportMap: SubjectReportMapRow[],
-  // Ids of the levels of the requested type that are actually offered this
-  // AY (core levels + any volatile level with an ay_level_offerings row) —
-  // the caller resolves this via getLevelRows/getOfferedLevelIds (KD #153).
+  // Ids of the levels of the requested type — the caller resolves this via
+  // getLevelRows (migration 086 removed the per-AY offered/shelved concept,
+  // KD #153; every level is always relevant).
   levelIdsOfType: readonly string[]
 ): CatalogSubjectRow[] {
   const levelIdSet = new Set(levelIdsOfType);
@@ -309,24 +309,19 @@ export async function listCatalogForLevelType(
   academicYearId: string,
   levelType: 'primary' | 'secondary'
 ): Promise<CatalogSubjectRow[]> {
-  const [subjects, configs, offerings, reportMap, allLevels, offeredLevelIds] =
+  const [subjects, configs, offerings, reportMap, allLevels] =
     await Promise.all([
       listSubjects(),
       listSubjectConfigsForAy(academicYearId),
       listSubjectLevelOfferings(academicYearId),
       listSubjectReportMap(),
       getLevelRows(service),
-      getOfferedLevelIds(service, academicYearId),
     ]);
 
-  // Levels of this type actually offered this AY — core levels always
-  // count; volatile (non-core) levels only when an ay_level_offerings row
-  // exists (KD #153), mirroring the existing page's own `levels` filter.
+  // Every level of this type is always relevant (migration 086 removed the
+  // per-AY offered/shelved concept, KD #153).
   const levelIdsOfType = allLevels
-    .filter(
-      (l) =>
-        l.levelType === levelType && (l.isCore || offeredLevelIds.has(l.id))
-    )
+    .filter((l) => l.levelType === levelType)
     .map((l) => l.id);
 
   return computeCatalogForLevelType(
@@ -362,14 +357,9 @@ export async function listSectionsForLevelType(
   academicYearId: string,
   levelType: 'primary' | 'secondary'
 ): Promise<SectionOption[]> {
-  const [allLevels, offeredLevelIds] = await Promise.all([
-    getLevelRows(service),
-    getOfferedLevelIds(service, academicYearId),
-  ]);
+  const allLevels = await getLevelRows(service);
 
-  const levelsOfType = allLevels.filter(
-    (l) => l.levelType === levelType && (l.isCore || offeredLevelIds.has(l.id))
-  );
+  const levelsOfType = allLevels.filter((l) => l.levelType === levelType);
   const levelById = new Map(levelsOfType.map((l) => [l.id, l]));
   const levelIds = levelsOfType.map((l) => l.id);
   if (levelIds.length === 0) return [];

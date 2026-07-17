@@ -711,9 +711,8 @@ function SubjectCard({
 }
 
 // Per-subject level-attachment control — chips for attached levels (each
-// with a direct-fire detach button, low-friction/reversible like the
-// AY-level-offering Switch at /sis/admin/levels) + a "+ Add level"
-// dropdown for unattached markbook-eligible levels. Fires
+// with a direct-fire detach button, low-friction/reversible) + a "+ Add
+// level" dropdown for unattached levels. Fires
 // PUT /api/sis/admin/template/subject-level-offerings directly per action;
 // no intermediate confirm dialog since detaching never loses weight data.
 function LevelAttachmentRow({
@@ -753,22 +752,13 @@ function LevelAttachmentRow({
     },
   });
 
-  // Markbook excludes preschool levels — same exclusion the old per-level
-  // create flow applied.
-  const markbookLevels = levels.filter(
-    (l) => (l.level_type as string) !== 'preschool'
-  );
-  const attachedLevels = markbookLevels.filter((l) =>
-    offeredLevelIds.has(l.id)
-  );
-  const availableLevels = markbookLevels.filter(
-    (l) => !offeredLevelIds.has(l.id)
-  );
+  const attachedLevels = levels.filter((l) => offeredLevelIds.has(l.id));
+  const availableLevels = levels.filter((l) => !offeredLevelIds.has(l.id));
 
-  if (markbookLevels.length === 0) {
+  if (levels.length === 0) {
     return (
       <p className="px-1 py-1 text-[12px] text-muted-foreground">
-        No markbook levels available (only preschool levels exist).
+        No levels available.
       </p>
     );
   }

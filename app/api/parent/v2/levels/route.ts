@@ -1,20 +1,23 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
+import { getLevelRows } from '@/lib/sis/levels';
 import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
 import { corsHeaders } from '@/lib/cors';
 
 // GET /api/parent/v2/levels
 //
-// Called by the admissions portal SPA. Returns the full level catalog (all
-// grade levels, preschool through secondary) for the upcoming-or-current
-// academic year, each with a `nextCode` progression pointer and an
-// `offered` flag — lets the portal render "what level comes after this
-// one" and which levels are actually open this year without hardcoding
-// the ladder. Auth/CORS/rate-limit contract mirrors the students +
-// report-card routes exactly (same Bearer verification via
-// service.auth.getUser, same 'parent-v2' rate-limit scope + budget, same
-// corsHeaders() allowlist reflection).
+// Called by the admissions portal SPA. Returns the full level catalog (P1-P6,
+// S1-S4 — migration 086 removed the volatile preschool/Cambridge levels and
+// the per-AY offered/shelved concept, KD #153) for the upcoming-or-current
+// academic year, each with a `nextCode` progression pointer — lets the
+// portal render "what level comes after this one" without hardcoding the
+// ladder. `offered` is kept in the response shape (always `true` now) rather
+// than removed outright, since this is an external consumer (the admissions
+// portal SPA) we can't coordinate a breaking-field-removal with in lockstep.
+// Auth/CORS/rate-limit contract mirrors the students + report-card routes
+// exactly (same Bearer verification via service.auth.getUser, same
+// 'parent-v2' rate-limit scope + budget, same corsHeaders() allowlist
+// reflection).
 //
 // AY resolution deliberately does NOT call
 // getUpcomingAcademicYear()/getCurrentAcademicYear() from
@@ -119,23 +122,20 @@ export async function GET(request: Request) {
     );
   }
 
-  // 3. Load the level catalog + this AY's offered-level set.
-  const [rows, offeredIds] = await Promise.all([
-    getLevelRows(service),
-    getOfferedLevelIds(service, targetAy.id),
-  ]);
+  // 3. Load the level catalog.
+  const rows = await getLevelRows(service);
   const byId = new Map(rows.map((r) => [r.id, r]));
 
   // 4. Shape the response — ordered by sortOrder (getLevelRows already
   //    orders this way), nextCode resolved by mapping nextLevelId through
-  //    the same rows array.
+  //    the same rows array. `offered` is always true now (see file header).
   const levels = rows.map((r) => ({
     code: r.code,
     label: r.label,
     type: r.levelType,
     sortOrder: r.sortOrder,
     nextCode: r.nextLevelId ? (byId.get(r.nextLevelId)?.code ?? null) : null,
-    offered: offeredIds.has(r.id),
+    offered: true,
   }));
 
   return NextResponse.json(

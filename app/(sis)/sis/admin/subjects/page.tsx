@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
+import { getLevelRows } from '@/lib/sis/levels';
 import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
 import {
   listCatalogForLevelType,
@@ -90,7 +90,6 @@ export default async function SubjectConfigPage({
     subjects,
     allLevels,
     offerings,
-    offeredLevelIds,
     templateOfferings,
     catalogForLevel,
     primarySections,
@@ -100,13 +99,12 @@ export default async function SubjectConfigPage({
         listSubjects(),
         getLevelRows(service),
         listSubjectLevelOfferings(currentAy.id),
-        getOfferedLevelIds(service, currentAy.id),
         listTemplateSubjectLevelOfferings(),
         listCatalogForLevelType(service, currentAy.id, levelType),
         listSectionsForLevelType(service, currentAy.id, 'primary'),
         listSectionsForLevelType(service, currentAy.id, 'secondary'),
       ])
-    : [[], [], [], new Set<string>(), [], [], [], []];
+    : [[], [], [], [], [], [], []];
 
   // Both level types' sections, not just the currently-viewed catalog's —
   // the Attach-to-section modal picks its own level internally (level
@@ -114,13 +112,10 @@ export default async function SubjectConfigPage({
   // is active on the page.
   const allSections = [...primarySections, ...secondarySections];
 
-  // The gap banner scopes to levels genuinely OFFERED this AY (core + any
-  // volatile level with an ay_level_offerings row) — a level with no
-  // offering row this year has no operational meaning here (nothing to
-  // attach subjects to), so excluding it also keeps the banner from
-  // flagging every template subject as "missing" at a level nobody's
-  // running classes at this year.
-  const levels = allLevels.filter((l) => l.isCore || offeredLevelIds.has(l.id));
+  // Every level is core and always relevant (migration 086 removed the
+  // volatile-level / per-AY-offering concept, KD #153) — the gap banner
+  // scopes to the full catalog, no offered-filtering needed.
+  const levels = allLevels;
 
   // Structure Defaults is the "what SHOULD be configured" reference — a
   // level missing one of its template subjects silently drops that
@@ -180,16 +175,6 @@ export default async function SubjectConfigPage({
               options={ayOptions}
               levelType={levelType}
             />
-            <Tabs value={levelType}>
-              <TabsList variant="segmented" aria-label="Level">
-                <TabsTrigger value="primary" asChild>
-                  <Link href={levelHref('primary')}>Primary</Link>
-                </TabsTrigger>
-                <TabsTrigger value="secondary" asChild>
-                  <Link href={levelHref('secondary')}>Secondary</Link>
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
           </>
         }
       />
@@ -284,6 +269,17 @@ export default async function SubjectConfigPage({
             </div>
           );
         })()}
+
+      <Tabs value={levelType}>
+        <TabsList aria-label="Level">
+          <TabsTrigger value="primary" asChild>
+            <Link href={levelHref('primary')}>Primary</Link>
+          </TabsTrigger>
+          <TabsTrigger value="secondary" asChild>
+            <Link href={levelHref('secondary')}>Secondary</Link>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {!currentAy ? (
         <Card className="items-center py-12 text-center">

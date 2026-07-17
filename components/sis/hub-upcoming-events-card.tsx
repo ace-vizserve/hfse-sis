@@ -87,9 +87,8 @@ export function HubUpcomingEventsCard({
         className={cn('space-y-0 p-0', events.length === 0 && 'flex-1')}
       >
         {events.length === 0 ? (
-          // Richer than a one-line empty state (same icon-tile + serif
-          // heading + description recipe as the Grade Levels catalog's
-          // "No grade levels yet" state), and `flex-1` on CardContent above
+          // Richer than a one-line empty state (icon-tile + serif heading +
+          // description recipe, §7.6), and `flex-1` on CardContent above
           // so it actually grows to fill whatever height the grid gives
           // this card (it sits `h-full` next to "Needs attention", whose
           // height varies with row count) instead of leaving dead space

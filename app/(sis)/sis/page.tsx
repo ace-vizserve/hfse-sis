@@ -11,10 +11,7 @@ import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { SystemHealthStrip } from '@/components/sis/system-health-strip';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
-import {
-  getCurrentAcademicYear,
-  getUpcomingAcademicYear,
-} from '@/lib/academic-year';
+import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { buildAttentionRows } from '@/lib/sis/hub-attention';
 import { isTestAyCode } from '@/lib/sis/environment';
 import {
@@ -23,16 +20,9 @@ import {
   getUpcomingCalendarEvents,
 } from '@/lib/sis/dashboard';
 import { getSystemHealth } from '@/lib/sis/health';
-import { getLevelRows, getOfferedLevelIds } from '@/lib/sis/levels';
-import {
-  computeLevelDemand,
-  type LevelDemandRow,
-} from '@/lib/sis/level-demand';
 import { getAyReadiness } from '@/lib/sis/readiness';
 import { getSessionUser } from '@/lib/supabase/server';
-import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
-import { fetchAllPages } from '@/lib/supabase/paginate';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { listAllApproverAssignments } from '@/lib/sis/approvers/queries';
 import {
@@ -77,7 +67,6 @@ export default async function SisAdminHub() {
     hubKpis,
     unassignedStudents,
     upcomingEvents,
-    levelDemand,
     unassignedAdviserSections,
     approverFlowCounts,
     subjectConfigGapsForHub,
@@ -99,12 +88,6 @@ export default async function SisAdminHub() {
           [] as Awaited<ReturnType<typeof getUpcomingCalendarEvents>>
         ),
     currentAy
-      ? loadLevelDemand(currentAy.ay_code, currentAy.id)
-      : Promise.resolve({
-          rows: [] as LevelDemandRow[],
-          acceptingAyCode: ayCode,
-        }),
-    currentAy
       ? loadUnassignedAdviserSections(currentAy.id, currentAy.ay_code)
       : Promise.resolve([] as Array<{ id: string; name: string }>),
     role === 'superadmin'
@@ -118,8 +101,6 @@ export default async function SisAdminHub() {
   const attentionRows = buildAttentionRows({
     unassigned: unassignedStudents,
     pendingChangeRequests: hubKpis?.pendingChangeRequests ?? 0,
-    levelDemand: levelDemand.rows,
-    acceptingAyCode: levelDemand.acceptingAyCode,
     unassignedAdviserSections,
     approverFlowCounts,
     subjectConfigGaps: subjectConfigGapsForHub,
@@ -223,84 +204,6 @@ export default async function SisAdminHub() {
       </div>
     </PageShell>
   );
-}
-
-// Demand for a level the accepting AY doesn't offer — same source + pattern
-// as `/sis/admin/levels` (KD #118: the "accepting" AY is the open early-bird
-// upcoming year if one exists, else the operationally current year). Kept
-// local to this page since the hub only needs the un-offered/unknown rows
-// (filtered downstream by `buildAttentionRows`), not the full manager UI.
-// Returns the resolved `acceptingAyCode` alongside the rows so the caller
-// (and `buildAttentionRows`, final-review fix #2) can say which AY a level
-// isn't offered in, instead of a generic "this year."
-async function loadLevelDemand(
-  currentAyCode: string,
-  currentAyId: string
-): Promise<{ rows: LevelDemandRow[]; acceptingAyCode: string }> {
-  try {
-    // getUpcomingAcademicYear() uses a cookie-scoped server client (per its
-    // own module doc) — per KD #54's gotcha, that must run here in the RSC
-    // body, never inside unstable_cache. Only the resulting fetch (levels +
-    // offered ids + admissions applications, all service-client) is cached.
-    const upcoming = await getUpcomingAcademicYear();
-    const acceptingAyId = upcoming?.id ?? currentAyId;
-    const acceptingAyCode = upcoming?.ay_code ?? currentAyCode;
-    const rows = await loadLevelDemandRowsCached(
-      acceptingAyId,
-      acceptingAyCode
-    );
-    return { rows, acceptingAyCode };
-  } catch (err) {
-    console.warn(
-      '[sis hub] level demand fetch failed:',
-      err instanceof Error ? err.message : err
-    );
-    return { rows: [], acceptingAyCode: currentAyCode };
-  }
-}
-
-// Hoisted-uncached + per-call unstable_cache idiom (KD #46) — mirrors the
-// caching already established for getLevelRows/getOfferedLevelIds
-// (lib/sis/levels.ts), which this composes. Tagged both 'levels' (so a
-// levels/offerings edit invalidates it, same tag those two use) and
-// `sis:${acceptingAyCode}` (so an admissions-side write for that AY does
-// too, per the existing `revalidateTag('sis:${ayCode}')` convention).
-async function loadLevelDemandRowsUncached(
-  acceptingAyId: string,
-  acceptingAyCode: string
-): Promise<LevelDemandRow[]> {
-  const service = createServiceClient();
-  const [levels, offeredSet] = await Promise.all([
-    getLevelRows(service),
-    getOfferedLevelIds(service, acceptingAyId),
-  ]);
-
-  const admissions = createAdmissionsClient();
-  const prefix = `ay${acceptingAyCode.replace(/^AY/i, '').toLowerCase()}`;
-  type AppLevelRow = { levelApplied: string | null };
-  type PageResult<T> = PromiseLike<{
-    data: T[] | null;
-    error: { message: string } | null;
-  }>;
-  const apps = await fetchAllPages<AppLevelRow>(
-    (from, to) =>
-      admissions
-        .from(`${prefix}_enrolment_applications`)
-        .select('levelApplied')
-        .range(from, to) as unknown as PageResult<AppLevelRow>
-  );
-  return computeLevelDemand(apps, levels, offeredSet);
-}
-
-function loadLevelDemandRowsCached(
-  acceptingAyId: string,
-  acceptingAyCode: string
-): Promise<LevelDemandRow[]> {
-  return unstable_cache(
-    () => loadLevelDemandRowsUncached(acceptingAyId, acceptingAyCode),
-    ['sis-hub-level-demand', acceptingAyId],
-    { revalidate: 60, tags: ['levels', `sis:${acceptingAyCode}`] }
-  )();
 }
 
 // Sections in the current AY with zero `form_adviser` teacher_assignments

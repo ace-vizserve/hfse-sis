@@ -16,14 +16,14 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { Role } from '@/lib/auth/roles';
 
 export type LevelGroup = {
-  levelType: 'primary' | 'secondary' | 'preschool';
+  levelType: 'primary' | 'secondary';
   groupLabel: string;
   levels: Array<{
     level: {
       id: string;
       code: string;
       label: string;
-      level_type: 'primary' | 'secondary' | 'preschool';
+      level_type: 'primary' | 'secondary';
     };
     sections: LevelCardSection[];
     templateSections: LevelCardTemplateSection[];
@@ -31,13 +31,12 @@ export type LevelGroup = {
 };
 
 const SEGMENT_OPTIONS: Array<{
-  value: 'all' | 'primary' | 'secondary' | 'preschool';
+  value: 'all' | 'primary' | 'secondary';
   label: string;
 }> = [
   { value: 'all', label: 'All' },
   { value: 'primary', label: 'Primary' },
   { value: 'secondary', label: 'Secondary' },
-  { value: 'preschool', label: 'Youngstarters' },
 ];
 
 // SectionsOverview — the level-card grid + its search/segment filter + CSV
@@ -66,9 +65,9 @@ export function SectionsOverview({
   allSections: Array<{ id: string; name: string }>;
 }) {
   const [search, setSearch] = useState('');
-  const [segment, setSegment] = useState<
-    'all' | 'primary' | 'secondary' | 'preschool'
-  >('all');
+  const [segment, setSegment] = useState<'all' | 'primary' | 'secondary'>(
+    'all'
+  );
 
   const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
