@@ -31,7 +31,10 @@ const tabsListVariants = cva('group/tabs-list inline-flex w-fit text-ink-4', {
       // Gradient-tile rail — background-colored container, borderless chips at rest, hover fills with muted; active chip carries the brand gradient + tile shadow.
       default:
         'rounded-md bg-accent p-1 group-data-[orientation=horizontal]/tabs:items-center group-data-[orientation=horizontal]/tabs:gap-1 group-data-[orientation=vertical]/tabs:flex-col group-data-[orientation=vertical]/tabs:items-stretch group-data-[orientation=vertical]/tabs:gap-1',
-      // Segmented pill — opt-in for toolbars with count badges (e.g. grading data-table status tabs).
+      // Segmented pill — opt-in for compact toolbar toggles (level/view
+      // switchers, filter segments). Active state shares DEFAULT's
+      // gradient-tile treatment (same tokens); the "well" container +
+      // sentence-case labels are what still tell the two apart.
       segmented:
         'items-center justify-center rounded-lg border border-hairline bg-muted p-[3px] shadow-input group-data-[orientation=horizontal]/tabs:h-9 group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col',
     },
@@ -73,9 +76,16 @@ function TabsTrigger({
         // DEFAULT active — brand gradient tile + white text + crafted tile shadow.
         'group-data-[variant=default]/tabs-list:data-[state=active]:bg-gradient-to-br group-data-[variant=default]/tabs-list:data-[state=active]:from-brand-indigo group-data-[variant=default]/tabs-list:data-[state=active]:to-brand-navy group-data-[variant=default]/tabs-list:data-[state=active]:text-white group-data-[variant=default]/tabs-list:data-[state=active]:shadow-brand-tile',
 
-        // SEGMENTED (pill) — white pill, indigo text, hairline ring on active.
-        'group-data-[variant=segmented]/tabs-list:h-[calc(100%-1px)] group-data-[variant=segmented]/tabs-list:flex-1 group-data-[variant=segmented]/tabs-list:rounded-md group-data-[variant=segmented]/tabs-list:border group-data-[variant=segmented]/tabs-list:border-transparent group-data-[variant=segmented]/tabs-list:px-3 group-data-[variant=segmented]/tabs-list:py-1 group-data-[variant=segmented]/tabs-list:text-sm group-data-[variant=segmented]/tabs-list:font-medium hover:group-data-[variant=segmented]/tabs-list:text-foreground',
-        'group-data-[variant=segmented]/tabs-list:data-[state=active]:bg-white group-data-[variant=segmented]/tabs-list:data-[state=active]:text-brand-indigo group-data-[variant=segmented]/tabs-list:data-[state=active]:shadow-xs group-data-[variant=segmented]/tabs-list:data-[state=active]:ring-1 group-data-[variant=segmented]/tabs-list:data-[state=active]:ring-hairline group-data-[variant=segmented]/tabs-list:data-[state=active]:font-semibold',
+        // SEGMENTED (pill) — same crafted gradient-tile treatment as
+        // DEFAULT's active state (shared `shadow-brand-tile` token),
+        // housed in the bordered "well" container instead of default's
+        // flat accent rail — same family, still a visually distinct
+        // component (container shape + sizing + sentence-case labels vs
+        // default's mono-uppercase). Previously a flat white pill +
+        // hairline ring, which read as "night and day" next to default's
+        // gradient tile — user-flagged design-review finding.
+        'group-data-[variant=segmented]/tabs-list:h-[calc(100%-1px)] group-data-[variant=segmented]/tabs-list:flex-1 group-data-[variant=segmented]/tabs-list:rounded-md group-data-[variant=segmented]/tabs-list:border group-data-[variant=segmented]/tabs-list:border-transparent group-data-[variant=segmented]/tabs-list:px-3 group-data-[variant=segmented]/tabs-list:py-1 group-data-[variant=segmented]/tabs-list:text-sm group-data-[variant=segmented]/tabs-list:font-medium group-data-[variant=segmented]/tabs-list:text-ink-3 group-data-[variant=segmented]/tabs-list:data-[state=inactive]:hover:bg-card/70 group-data-[variant=segmented]/tabs-list:data-[state=inactive]:hover:text-foreground',
+        'group-data-[variant=segmented]/tabs-list:data-[state=active]:bg-gradient-to-br group-data-[variant=segmented]/tabs-list:data-[state=active]:from-brand-indigo group-data-[variant=segmented]/tabs-list:data-[state=active]:to-brand-navy group-data-[variant=segmented]/tabs-list:data-[state=active]:text-white group-data-[variant=segmented]/tabs-list:data-[state=active]:shadow-brand-tile group-data-[variant=segmented]/tabs-list:data-[state=active]:font-semibold',
 
         className
       )}
