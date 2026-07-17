@@ -80,7 +80,14 @@ export function parseSheet(
   for (let i = headerRowIdx + 1; i < rows.length; i++) {
     const row = rows[i];
     const fullName = (row[nameColIdx] ?? '').trim();
-    if (!fullName) continue;
+    // Every real sheet has a second, unrelated mini-table further down with
+    // its own header row containing the literal text "Name" in this same
+    // column (positional coincidence, not a real roster row) — and on fully
+    // empty "Reserved" sheets, that stray label is the ONLY non-blank value
+    // in the column. Genuine names in this file are always
+    // "LASTNAME, First Middle." (always contains a comma); the stray label
+    // never does, so reject non-comma values the same way blanks are.
+    if (!fullName || !fullName.includes(',')) continue;
     students.push({
       indexNo: (row[indexColIdx] ?? '').trim(),
       fullName,
