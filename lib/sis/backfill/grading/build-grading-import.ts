@@ -264,7 +264,7 @@ function buildApplySql(
   lines.push('values');
   const configRows = [...configsByKey.values()].map(
     (s) =>
-      `  (${sqlString(s.subjectCode)}, ${sqlString(s.levelCode)}, ${s.wwWeight}, ${s.ptWeight}, ${s.qaWeight}, ${s.wwTotals.length}, ${s.ptTotals.length}, ${sqlStringOrNull(s.qaTotal == null ? null : String(s.qaTotal))})`
+      `  (${sqlString(s.subjectCode)}, ${sqlString(s.levelCode)}, ${s.wwWeight}, ${s.ptWeight}, ${s.qaWeight}, ${s.wwTotals.length}, ${s.ptTotals.length}, ${s.qaTotal ?? 'null'})`
   );
   lines.push(configRows.join(',\n') + ';');
   lines.push('');

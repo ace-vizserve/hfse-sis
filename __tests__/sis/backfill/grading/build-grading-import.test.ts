@@ -81,6 +81,9 @@ describe('buildGradingImport', () => {
     expect(result.apply).toContain('is_locked');
     expect(result.apply).toContain('true');
     expect(result.apply).toContain("'backfill-import'");
+    // Verify qa_max is emitted as a raw numeric literal, not a quoted string
+    expect(result.apply).toMatch(/,\s*65\)/); // qa_max=65 as raw number, not '65'
+    expect(result.apply).not.toMatch(/,\s*'65'\)/); // should NOT be quoted
   });
 
   it('flags an unresolved (level, section, index) as needs-review and excludes it from apply.sql', () => {
