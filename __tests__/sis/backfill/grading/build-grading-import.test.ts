@@ -66,6 +66,8 @@ describe('buildGradingImport', () => {
     });
 
     expect(result.stats.subjectConfigsWritten).toBe(1);
+    expect(result.stats.subjectLevelOfferingsWritten).toBe(1);
+    expect(result.stats.sectionSubjectsWritten).toBe(1);
     expect(result.stats.gradingSheetsWritten).toBe(1);
     expect(result.stats.gradeEntriesWritten).toBe(1);
     expect(result.stats.needsReview).toBe(0);
@@ -75,6 +77,8 @@ describe('buildGradingImport', () => {
     expect(result.apply).toContain("'S1'");
     expect(result.apply).toContain('0.4'); // ww_weight / pt_weight
     expect(result.apply).toContain('subject_configs');
+    expect(result.apply).toContain('subject_level_offerings');
+    expect(result.apply).toContain('section_subjects');
     expect(result.apply).toContain('grading_sheets');
     expect(result.apply).toContain('grade_entries');
     expect(result.apply).toContain("'ss-banta-uuid'");
@@ -84,6 +88,13 @@ describe('buildGradingImport', () => {
     // Verify qa_max is emitted as a raw numeric literal, not a quoted string
     expect(result.apply).toMatch(/,\s*65\)/); // qa_max=65 as raw number, not '65'
     expect(result.apply).not.toMatch(/,\s*'65'\)/); // should NOT be quoted
+    // subject_configs no longer has a level_id column (migration 080)
+    expect(result.apply).not.toMatch(
+      /insert into subject_configs \([^)]*level_id/
+    );
+    expect(result.apply).toMatch(
+      /on conflict \(academic_year_id, subject_id\) do update/
+    );
   });
 
   it('flags an unresolved (level, section, index) as needs-review and excludes it from apply.sql', () => {
@@ -152,7 +163,7 @@ describe('buildGradingImport', () => {
     expect(result.stats.gradeEntriesWritten).toBe(1);
   });
 
-  it('writes one subject_configs row per distinct (subject, level) pair, upserting on conflict', () => {
+  it('collapses MATH/S1 + MATH/S2 into ONE subject_configs row (migration 080: one row per subject, not per subject×level), while still writing two subject_level_offerings and two grading_sheets rows', () => {
     const s1 = mathSheet();
     const s2 = mathSheet({
       levelCode: 'S2',
@@ -173,10 +184,47 @@ describe('buildGradingImport', () => {
       ],
     });
 
-    expect(result.stats.subjectConfigsWritten).toBe(2); // MATH/S1 and MATH/S2
+    // subject_configs is now one row per subject for the whole AY — S1 and
+    // S2 share the config, they do NOT each get their own row.
+    expect(result.stats.subjectConfigsWritten).toBe(1);
+    // subject_level_offerings still tracks per-level applicability.
+    expect(result.stats.subjectLevelOfferingsWritten).toBe(2); // MATH/S1, MATH/S2
+    expect(result.stats.sectionSubjectsWritten).toBe(2); // Discipline 1, Integrity 1
     expect(result.stats.gradingSheetsWritten).toBe(2);
     expect(result.apply).toContain('on conflict');
     expect(result.apply).toMatch(/do update/i); // subject_configs
-    expect(result.apply).toMatch(/do nothing/i); // grading_sheets / grade_entries
+    expect(result.apply).toMatch(/do nothing/i); // offerings / section_subjects / grading_sheets / grade_entries
+    // Exactly one MATH row in the subject_configs VALUES block, not two.
+    const subjectConfigsMatch = result.apply.match(
+      /create temp table _ay26grd_subject_configs[\s\S]*?;/
+    );
+    expect(subjectConfigsMatch).not.toBeNull();
+    expect(subjectConfigsMatch![0].match(/'MATH'/g)).toHaveLength(1);
+  });
+
+  it('throws a clear error if the same subject has divergent weights/max-scores between two sections (cannot be represented — subject_configs is one row per subject now)', () => {
+    const s1 = mathSheet(); // ww=0.4, wwTotals=[20,20]
+    const s2 = mathSheet({
+      levelCode: 'S2',
+      sectionName: 'Integrity 1',
+      ptWeight: 0.5, // deliberately different from s1's 0.4
+      students: [student({ fullName: 'DELFIN, Demelly Czarina L.' })],
+    });
+
+    expect(() =>
+      buildGradingImport({
+        ...BASE_INPUT,
+        sheets: [s1, s2],
+        rosterLookup: [
+          ...ROSTER,
+          {
+            levelCode: 'S2',
+            sectionName: 'Integrity 1',
+            indexNumber: 1,
+            sectionStudentId: 'ss-delfin-uuid',
+          },
+        ],
+      })
+    ).toThrow(/divergent weights\/max-scores/);
   });
 });
