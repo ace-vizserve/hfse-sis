@@ -130,8 +130,16 @@ export function matchName(
     const cmp = compareTokens(sheetTokens, candTokens);
     if (cmp) structured.push({ candidate: c, tier: cmp });
   }
-  const exact = structured.find((s) => s.tier === 'exact');
-  if (exact) return { tier: 'exact', candidate: exact.candidate, score: 1 };
+  const exact = structured.filter((s) => s.tier === 'exact');
+  if (exact.length === 1) {
+    return { tier: 'exact', candidate: exact[0].candidate, score: 1 };
+  }
+  if (exact.length > 1) {
+    // Ambiguous — more than one same-surname candidate is a byte-identical
+    // exact match (e.g. duplicate/legacy admissions records for a common
+    // name). Same guard as the 'strong' tier below, one tier up.
+    return { tier: 'none', candidate: null, score: 0 };
+  }
 
   const strong = structured.filter((s) => s.tier === 'strong');
   if (strong.length === 1) {

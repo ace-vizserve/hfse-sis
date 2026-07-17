@@ -114,6 +114,32 @@ describe('matchName', () => {
     expect(result.tier).toBe('fuzzy');
     expect(result.candidate?.enroleeNumber).toBe('E260092');
   });
+
+  const duplicateExactCandidates: CandidateName[] = [
+    {
+      enroleeNumber: 'E260095',
+      studentNumber: 'H190242',
+      lastName: 'Alvarez',
+      firstName: 'Jaime',
+      middleName: 'Dela Cruz',
+    },
+    {
+      enroleeNumber: 'E260096',
+      studentNumber: 'H190243',
+      lastName: 'Alvarez',
+      firstName: 'Jaime',
+      middleName: 'Dela Cruz',
+    },
+  ];
+
+  it('returns none when two same-surname candidates are byte-identical exact matches', () => {
+    const result = matchName(
+      { lastName: 'ALVAREZ', firstMiddle: 'Jaime Dela Cruz' },
+      duplicateExactCandidates
+    );
+    expect(result.tier).toBe('none');
+    expect(result.candidate).toBeNull();
+  });
 });
 
 describe('similarityRatio', () => {
