@@ -1,0 +1,377 @@
+// lib/sis/backfill/attendance/build-attendance-import.ts
+// Composes the attendance/legend/day-classifier modules (plus Phase 1's
+// section-identity + sql-escape) into the two SQL files described by the
+// design doc: a read-only preview report and a transactional, idempotent
+// apply script. No I/O — takes already-parsed sections and an
+// already-fetched roster lookup.
+import { deriveSectionIdentity } from '../enrollment/section-identity';
+import { sqlString, sqlStringOrNull } from '../enrollment/sql-escape';
+import type { ParsedSection } from '../enrollment/attendance-workbook';
+import { parseLegendDateRange, resolveHeaderDate } from './legend-parser';
+import {
+  classifyDates,
+  type DateClassification,
+  type LegendRange,
+} from './day-classifier';
+
+export interface RosterLookupEntry {
+  levelCode: string;
+  cleanName: string;
+  indexNumber: number;
+  sectionStudentId: string;
+}
+
+export interface BuildAttendanceImportInput {
+  sections: ParsedSection[];
+  rosterLookup: RosterLookupEntry[];
+  ayCode: string;
+  termNumber: number;
+  year: number;
+}
+
+interface AttendanceRow {
+  sectionStudentId: string;
+  date: string;
+  status: 'P' | 'A' | 'EX' | 'L';
+}
+
+interface NeedsReviewRow {
+  sheetName: string;
+  indexNo: string;
+  fullName: string;
+  reason: string;
+}
+
+export interface BuildAttendanceImportResult {
+  preview: string;
+  apply: string;
+  stats: {
+    schoolDays: number;
+    holidays: number;
+    attendanceRows: number;
+    needsReview: number;
+    excludedYs: string[];
+    unrecognized: string[];
+    skippedEmpty: string[];
+  };
+}
+
+const VALID_MARKS = new Set(['P', 'A', 'EX', 'L']);
+
+export function buildAttendanceImport(
+  input: BuildAttendanceImportInput
+): BuildAttendanceImportResult {
+  const { sections, rosterLookup, ayCode, termNumber, year } = input;
+
+  const rosterMap = new Map<string, string>();
+  for (const r of rosterLookup) {
+    rosterMap.set(
+      `${r.levelCode}::${r.cleanName}::${r.indexNumber}`,
+      r.sectionStudentId
+    );
+  }
+
+  const excludedYs: string[] = [];
+  const unrecognized: string[] = [];
+  const skippedEmpty: string[] = [];
+  const coreSections: {
+    section: ParsedSection;
+    levelCode: string;
+    cleanName: string;
+  }[] = [];
+
+  for (const section of sections) {
+    if (section.students.length === 0) {
+      skippedEmpty.push(section.sheetName);
+      continue;
+    }
+    const identity = deriveSectionIdentity(section.sheetName);
+    if (identity.kind === 'ys') {
+      excludedYs.push(section.sheetName);
+      continue;
+    }
+    if (identity.kind === 'unrecognized') {
+      unrecognized.push(section.sheetName);
+      continue;
+    }
+    coreSections.push({
+      section,
+      levelCode: identity.levelCode,
+      cleanName: identity.cleanName,
+    });
+  }
+
+  // --- Date classification (once, across all core sections) ---
+  const allDatesRaw = coreSections[0]?.section.dateColumns ?? [];
+  const allDatesISO = allDatesRaw
+    .map((d) => resolveHeaderDate(d, year))
+    .filter((d): d is string => d !== null);
+  const dateHeaderByISO = new Map<string, string>();
+  allDatesRaw.forEach((raw, i) => {
+    if (allDatesISO[i]) dateHeaderByISO.set(allDatesISO[i], raw);
+  });
+
+  const blankDates = new Set<string>();
+  for (let i = 0; i < allDatesRaw.length; i++) {
+    const rawDate = allDatesRaw[i];
+    const isoDate = allDatesISO[i];
+    if (!isoDate) continue;
+    const allBlank = coreSections.every(({ section }) =>
+      section.students.every((s) => !(s.marks[rawDate] ?? '').trim())
+    );
+    if (allBlank) blankDates.add(isoDate);
+  }
+
+  const legendRanges: LegendRange[] = [];
+  for (const { section } of coreSections) {
+    for (const entry of section.legendEntries) {
+      const parsed = parseLegendDateRange(entry.rawText, year);
+      if (!parsed) continue;
+      legendRanges.push({ ...parsed, column: entry.column });
+    }
+  }
+
+  const classifications = classifyDates(allDatesISO, blankDates, legendRanges);
+  const dayTypeByDate = new Map(classifications.map((c) => [c.date, c]));
+
+  // --- Attendance rows + needs-review ---
+  const attendanceRows: AttendanceRow[] = [];
+  const needsReview: NeedsReviewRow[] = [];
+
+  for (const { section, levelCode, cleanName } of coreSections) {
+    for (const student of section.students) {
+      const key = `${levelCode}::${cleanName}::${Number.parseInt(student.indexNo, 10)}`;
+      const sectionStudentId = rosterMap.get(key);
+      if (!sectionStudentId) {
+        needsReview.push({
+          sheetName: section.sheetName,
+          indexNo: student.indexNo,
+          fullName: student.fullName,
+          reason: `no matching section_students row for index ${student.indexNo}`,
+        });
+        continue;
+      }
+
+      for (let i = 0; i < allDatesRaw.length; i++) {
+        const rawDate = allDatesRaw[i];
+        const isoDate = allDatesISO[i];
+        if (!isoDate) continue;
+        const classification = dayTypeByDate.get(isoDate);
+        if (!classification || classification.dayType !== 'school_day')
+          continue;
+
+        const mark = (student.marks[rawDate] ?? '').trim();
+        if (!mark) continue;
+        if (!VALID_MARKS.has(mark)) {
+          needsReview.push({
+            sheetName: section.sheetName,
+            indexNo: student.indexNo,
+            fullName: student.fullName,
+            reason: `unexpected mark "${mark}" on ${isoDate}`,
+          });
+          continue;
+        }
+        attendanceRows.push({
+          sectionStudentId,
+          date: isoDate,
+          status: mark as AttendanceRow['status'],
+        });
+      }
+    }
+  }
+
+  const stats: BuildAttendanceImportResult['stats'] = {
+    schoolDays: classifications.filter((c) => c.dayType === 'school_day')
+      .length,
+    holidays: classifications.filter((c) => c.dayType !== 'school_day').length,
+    attendanceRows: attendanceRows.length,
+    needsReview: needsReview.length,
+    excludedYs,
+    unrecognized,
+    skippedEmpty,
+  };
+
+  return {
+    preview: buildPreviewSql(termNumber, classifications, needsReview, stats),
+    apply: buildApplySql(ayCode, termNumber, classifications, attendanceRows),
+    stats,
+  };
+}
+
+function buildPreviewSql(
+  termNumber: number,
+  classifications: DateClassification[],
+  needsReview: NeedsReviewRow[],
+  stats: BuildAttendanceImportResult['stats']
+): string {
+  const lines: string[] = [];
+  lines.push(
+    `-- AY2026 T${termNumber} attendance import — PREVIEW (read-only)`
+  );
+  lines.push('--');
+  lines.push(
+    '-- Generated by gen-ay2026-t1-attendance.ts from the T1 attendance workbook.'
+  );
+  lines.push(
+    '-- Review this report BEFORE running the matching apply.sql file.'
+  );
+  lines.push('--');
+  lines.push(`-- Date classification (${classifications.length} dates):`);
+  for (const c of classifications) {
+    const overlay = c.hblOverlay ? ' [hbl_overlay]' : '';
+    const label = c.label ? ` "${c.label}"` : '';
+    lines.push(`--   ${c.date}: ${c.dayType}${overlay}${label}`);
+  }
+  lines.push('--');
+  lines.push(
+    `-- school_days=${stats.schoolDays} holidays=${stats.holidays} attendanceRows=${stats.attendanceRows}`
+  );
+  lines.push('--');
+  lines.push(
+    `-- Skipped (empty section tabs): ${stats.skippedEmpty.join(', ') || '(none)'}`
+  );
+  lines.push(
+    `-- Excluded (Youngstarters): ${stats.excludedYs.join(', ') || '(none)'}`
+  );
+  lines.push(
+    `-- Unrecognized sheet names: ${stats.unrecognized.join(', ') || '(none)'}`
+  );
+  lines.push('--');
+  lines.push(
+    `-- Needs review (${needsReview.length}) — NOT written by apply.sql:`
+  );
+  if (needsReview.length === 0) lines.push('--   (none)');
+  for (const r of needsReview) {
+    lines.push(
+      `--   [${r.sheetName}] index ${r.indexNo} "${r.fullName}" — ${r.reason}`
+    );
+  }
+  return lines.join('\n') + '\n';
+}
+
+function buildApplySql(
+  ayCode: string,
+  termNumber: number,
+  classifications: DateClassification[],
+  attendanceRows: AttendanceRow[]
+): string {
+  const lines: string[] = [];
+  lines.push(
+    `-- AY2026 T${termNumber} attendance import — APPLY (transactional)`
+  );
+  lines.push('--');
+  lines.push(`-- RUN ay2026-t${termNumber}-attendance-preview.sql FIRST.`);
+  lines.push(
+    '-- Generated by gen-ay2026-t1-attendance.ts — do not hand-edit; regenerate instead.'
+  );
+  lines.push('--');
+  lines.push('-- Run the WHOLE file in one go (one connection/session).');
+  lines.push('');
+  lines.push('begin;');
+  lines.push('');
+
+  lines.push('drop table if exists _ay26att_calendar;');
+  lines.push(
+    'create temp table _ay26att_calendar (date, day_type, hbl_overlay, label) as'
+  );
+  lines.push('values');
+  const calendarRows = classifications.map(
+    (c) =>
+      `  (date ${sqlString(c.date)}, ${sqlString(c.dayType)}, ${c.hblOverlay ? 'true' : 'false'}, ${sqlStringOrNull(c.label)})`
+  );
+  lines.push(
+    (calendarRows.length
+      ? calendarRows.join(',\n')
+      : "  (date '1970-01-01', 'school_day', false, NULL)") + ';'
+  );
+  lines.push('');
+
+  lines.push('drop table if exists _ay26att_marks;');
+  lines.push(
+    'create temp table _ay26att_marks (section_student_id, date, status) as'
+  );
+  lines.push('values');
+  const markRows = attendanceRows.map(
+    (r) =>
+      `  (${sqlString(r.sectionStudentId)}, date ${sqlString(r.date)}, ${sqlString(r.status)})`
+  );
+  lines.push(
+    (markRows.length
+      ? markRows.join(',\n')
+      : "  ('00000000-0000-0000-0000-000000000000', date '1970-01-01', 'P')") +
+      ';'
+  );
+  lines.push('');
+
+  lines.push('-- 1) school_calendar');
+  lines.push(
+    'insert into school_calendar (term_id, date, day_type, hbl_overlay, label)'
+  );
+  lines.push('select t.id, c.date, c.day_type, c.hbl_overlay, c.label');
+  lines.push('from _ay26att_calendar c');
+  lines.push(`join academic_years ay on ay.ay_code = ${sqlString(ayCode)}`);
+  lines.push(
+    `join terms t on t.academic_year_id = ay.id and t.term_number = ${termNumber}`
+  );
+  lines.push('on conflict (term_id, audience, date) do nothing;');
+  lines.push('');
+
+  lines.push(
+    '-- 2) attendance_daily (no natural unique constraint — guarded manually)'
+  );
+  lines.push(
+    '-- ex_reason is always NULL — the source workbook has no sub-reason data'
+  );
+  lines.push(
+    '-- for EX marks (written explicitly, not omitted, so this is visible here)'
+  );
+  lines.push(
+    'insert into attendance_daily (section_student_id, term_id, date, status, ex_reason, period_id, recorded_by, recorded_at)'
+  );
+  lines.push(
+    'select m.section_student_id::uuid, t.id, m.date, m.status, null, null, null, now()'
+  );
+  lines.push('from _ay26att_marks m');
+  lines.push(`join academic_years ay on ay.ay_code = ${sqlString(ayCode)}`);
+  lines.push(
+    `join terms t on t.academic_year_id = ay.id and t.term_number = ${termNumber}`
+  );
+  lines.push('where not exists (');
+  lines.push('  select 1 from attendance_daily ad');
+  lines.push('  where ad.section_student_id = m.section_student_id::uuid');
+  lines.push('    and ad.date = m.date');
+  lines.push('    and ad.period_id is null');
+  lines.push(');');
+  lines.push('');
+
+  lines.push('-- 3) rollups');
+  const distinctStudentIds = [
+    ...new Set(attendanceRows.map((r) => r.sectionStudentId)),
+  ];
+  for (const id of distinctStudentIds) {
+    lines.push(
+      `select public.recompute_attendance_rollup(t.id, ${sqlString(id)}::uuid) from academic_years ay join terms t on t.academic_year_id = ay.id and t.term_number = ${termNumber} where ay.ay_code = ${sqlString(ayCode)};`
+    );
+  }
+  lines.push('');
+
+  lines.push('-- pre-commit sanity check');
+  lines.push('select');
+  lines.push(
+    `  (select count(*) from school_calendar sc join terms t on t.id=sc.term_id join academic_years ay on ay.id=t.academic_year_id where ay.ay_code=${sqlString(ayCode)} and t.term_number=${termNumber}) as calendar_count,`
+  );
+  lines.push(
+    `  (select count(*) from attendance_records ar join terms t on t.id=ar.term_id join academic_years ay on ay.id=t.academic_year_id where ay.ay_code=${sqlString(ayCode)} and t.term_number=${termNumber}) as rollup_count;`
+  );
+  lines.push(
+    `-- expect calendar_count ~= ${classifications.length}, rollup_count ~= ${distinctStudentIds.length}`
+  );
+  lines.push('');
+  lines.push('commit;');
+  lines.push('');
+  lines.push('-- === post-commit verification ===');
+  lines.push(
+    `select count(*) as attendance_daily_rows from attendance_daily ad join terms t on t.id=ad.term_id join academic_years ay on ay.id=t.academic_year_id where ay.ay_code=${sqlString(ayCode)} and t.term_number=${termNumber};`
+  );
+  return lines.join('\n') + '\n';
+}
