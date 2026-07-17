@@ -1,7 +1,7 @@
 // __tests__/sis/backfill/grading/grading-workbook.test.ts
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -284,6 +284,123 @@ const ARTD_SEC1_ROWS: (string | number)[][] = [
   ],
 ];
 
+// A fixture simulating the real Humanities workbook's corrupted row 5 label.
+// Row 5's percentages are deliberately wrong (99%, 88%, 77%) while row 8's
+// WS% cells hold the correct values (40%, 40%, 20%) — a regression would
+// read the wrong values from row 5 and fail this test.
+const HUMANITIES_CORRUPTED_LABEL_ROWS: (string | number)[][] = [
+  ['Term 1 - 2026'],
+  ['GLOBAL CLASS'],
+  ['Secondary 1 DISCIPLINE 1 '],
+  ['Teacher: Mr. X'],
+  [],
+  [
+    'Index No.',
+    'NAME',
+    'WRITTEN WORKS (99%)', // ← deliberately wrong label, should be ignored
+    '',
+    '',
+    '',
+    '',
+    '',
+    'PERFORMANCE TASKS (88%)', // ← deliberately wrong label, should be ignored
+    '',
+    '',
+    '',
+    '',
+    '',
+    'QUARTERLY ',
+    '',
+    '',
+    'Initial',
+    'Quarterly',
+  ],
+  [
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    'ASSESSMENT (77%)', // ← deliberately wrong label, should be ignored
+    '',
+    '',
+    'Grade',
+    'Grade',
+  ],
+  [
+    '',
+    '',
+    'W1',
+    'W2',
+    'W3',
+    'Total',
+    'PS',
+    'WS',
+    'PT1',
+    'PT2',
+    'PT3',
+    'Total',
+    'PS',
+    'WS',
+    'Exam',
+    'PS',
+    'WS',
+    '',
+    '',
+  ],
+  [
+    '',
+    '',
+    20,
+    20,
+    '',
+    40,
+    '100%',
+    '40%', // ← correct value in row 8, NOT 99%
+    30,
+    30,
+    25,
+    85,
+    '100%',
+    '40%', // ← correct value in row 8, NOT 88%
+    65,
+    '100%',
+    '20%', // ← correct value in row 8, NOT 77%
+    '',
+    '',
+  ],
+  [
+    1,
+    'STUDENT, One',
+    19,
+    20,
+    '',
+    39,
+    '97.50',
+    '39.00',
+    30,
+    19,
+    25,
+    74,
+    '87.06',
+    '34.82',
+    33,
+    '50.77',
+    '10.15',
+    '83.98',
+    89,
+  ],
+];
+
 describe('parseGradingWorkbook', () => {
   it('reads level/section identity, weights (from row 8 WS%, not the row 5 label), max-scores, and student rows — Math shape', () => {
     const dir = mkdtempSync(join(tmpdir(), 'grading-wb-'));
@@ -380,5 +497,24 @@ describe('parseGradingWorkbook', () => {
     // MATH_SEC1_ROWS has 2 real students (BANTA, BARROGA) then 2 rows with
     // an index number but a blank name — those must not be read as students.
     expect(sheets[0].students).toHaveLength(2);
+  });
+
+  it('reads weight from row 8 WS% even when row 5 label text is wrong/mismatched (simulates the real Humanities corruption)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grading-wb-'));
+    const path = join(dir, 'humanities.xlsx');
+    writeWorkbook(path, {
+      'Humanities - Sec 1 Discipline 1': HUMANITIES_CORRUPTED_LABEL_ROWS,
+    });
+
+    const sheets = parseGradingWorkbook(path, 'HUMANITIES');
+    expect(sheets).toHaveLength(1);
+
+    const sheet = sheets[0];
+    // The critical assertion: weights must come from row 8's WS% cells,
+    // NOT from row 5's corrupted label text (which says 99%, 88%, 77%).
+    // If a regression ever reads row 5 instead, these will fail.
+    expect(sheet.wwWeight).toBeCloseTo(0.4); // from row 8, NOT 0.99 from row 5
+    expect(sheet.ptWeight).toBeCloseTo(0.4); // from row 8, NOT 0.88 from row 5
+    expect(sheet.qaWeight).toBeCloseTo(0.2); // from row 8, NOT 0.77 from row 5
   });
 });
