@@ -227,4 +227,30 @@ describe('buildGradingImport', () => {
       })
     ).toThrow(/divergent weights\/max-scores/);
   });
+
+  it('throws when two sections share the same weights but different per-slot max-scores (same shape, different array values)', () => {
+    const s1 = mathSheet(); // wwTotals=[20,20]
+    const s2 = mathSheet({
+      levelCode: 'S2',
+      sectionName: 'Integrity 1',
+      wwTotals: [20, 15], // same weight (0.4), different max-score array
+      students: [student({ fullName: 'DELFIN, Demelly Czarina L.' })],
+    });
+
+    expect(() =>
+      buildGradingImport({
+        ...BASE_INPUT,
+        sheets: [s1, s2],
+        rosterLookup: [
+          ...ROSTER,
+          {
+            levelCode: 'S2',
+            sectionName: 'Integrity 1',
+            indexNumber: 1,
+            sectionStudentId: 'ss-delfin-uuid',
+          },
+        ],
+      })
+    ).toThrow(/divergent weights\/max-scores/);
+  });
 });
