@@ -75,3 +75,7 @@ ay2025_calendar.sql
 
 # Untracked student-data spreadsheets at repo root (PII — never commit)
 /*.xlsx
+
+# AY2026 source Excel data (real student PII — attendance/grading/evaluation
+# workbooks). Local input for scripts/backfill/gen-ay2026-*.ts; never commit.
+/AY2026/
