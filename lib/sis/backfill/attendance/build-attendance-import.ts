@@ -184,11 +184,20 @@ export function buildAttendanceImport(
         const mark = (student.marks[rawDate] ?? '').trim();
         if (!mark) continue;
         if (!VALID_MARKS.has(mark)) {
+          // "-" is the workbook's own legend symbol for "No Class" (a
+          // per-student marker, not a data-entry typo) — labeled distinctly
+          // so a human reviewing preview.sql doesn't chase it as an error.
+          // Genuinely unrecognized values (e.g. a stray "Ex" instead of
+          // "EX") keep the generic message.
+          const reason =
+            mark === '-'
+              ? `"-" ("No Class" per the workbook's own legend) on ${isoDate} — not imported; does not affect the attendance rollup`
+              : `unexpected mark "${mark}" on ${isoDate}`;
           needsReview.push({
             sheetName: section.sheetName,
             indexNo: student.indexNo,
             fullName: student.fullName,
-            reason: `unexpected mark "${mark}" on ${isoDate}`,
+            reason,
           });
           continue;
         }
