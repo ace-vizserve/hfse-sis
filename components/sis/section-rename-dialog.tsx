@@ -36,12 +36,25 @@ import {
 export function SectionRenameDialog({
   sectionId,
   currentName,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: {
   sectionId: string;
   currentName: string;
+  /** Dual-mode, same pattern as NewSectionButton: uncontrolled with its
+   * own trigger button by default (the section detail page), or
+   * controlled + trigger-less for embedding in a ⋯ actions menu (the
+   * sections list page's per-row menu). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = isControlled
+    ? (controlledOnOpenChange ?? (() => {}))
+    : setUncontrolledOpen;
   const form = useForm<SectionUpdateInput>({
     resolver: zodResolver(SectionUpdateSchema),
     defaultValues: { name: currentName },
@@ -84,12 +97,14 @@ export function SectionRenameDialog({
         if (!next) form.reset({ name: currentName });
       }}
     >
-      <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className="gap-1.5">
-          <Pencil className="size-3.5" />
-          Rename
-        </Button>
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <Button size="sm" variant="outline" className="gap-1.5">
+            <Pencil className="size-3.5" />
+            Rename
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Rename section</DialogTitle>

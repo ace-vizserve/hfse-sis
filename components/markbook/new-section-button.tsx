@@ -46,7 +46,7 @@ type LevelOption = {
   id: string;
   code: string;
   label: string;
-  level_type: 'primary' | 'secondary';
+  level_type: 'primary' | 'secondary' | 'preschool';
 };
 
 function blankValues(initialLevelId?: string): SectionCreateInput {

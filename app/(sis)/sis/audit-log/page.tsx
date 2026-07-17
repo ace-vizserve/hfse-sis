@@ -101,6 +101,7 @@ const SIS_AUDIT_ALLOWLIST = [
   // Sections + teacher assignments
   'section.create',
   'section.rename',
+  'section.delete',
   'section.realphabetize',
   'section.subject.assign',
   'section.subject.remove',

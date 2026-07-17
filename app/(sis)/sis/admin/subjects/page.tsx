@@ -180,6 +180,16 @@ export default async function SubjectConfigPage({
               options={ayOptions}
               levelType={levelType}
             />
+            <Tabs value={levelType}>
+              <TabsList variant="segmented" aria-label="Level">
+                <TabsTrigger value="primary" asChild>
+                  <Link href={levelHref('primary')}>Primary</Link>
+                </TabsTrigger>
+                <TabsTrigger value="secondary" asChild>
+                  <Link href={levelHref('secondary')}>Secondary</Link>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </>
         }
       />
@@ -274,17 +284,6 @@ export default async function SubjectConfigPage({
             </div>
           );
         })()}
-
-      <Tabs value={levelType}>
-        <TabsList aria-label="Level">
-          <TabsTrigger value="primary" asChild>
-            <Link href={levelHref('primary')}>Primary</Link>
-          </TabsTrigger>
-          <TabsTrigger value="secondary" asChild>
-            <Link href={levelHref('secondary')}>Secondary</Link>
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
 
       {!currentAy ? (
         <Card className="items-center py-12 text-center">

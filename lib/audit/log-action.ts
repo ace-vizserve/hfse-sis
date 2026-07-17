@@ -26,6 +26,7 @@ export type AuditAction =
   | 'assignment.delete'
   | 'section.create'
   | 'section.rename'
+  | 'section.delete'
   | 'section.realphabetize'
   | 'section.index.generate'
   | 'section.subject.assign'

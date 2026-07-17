@@ -44,13 +44,26 @@ export function SectionTrackDialog({
   sectionId,
   sectionName,
   currentTrack,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: {
   sectionId: string;
   sectionName: string;
   currentTrack: SectionClassType | null;
+  /** Dual-mode, same pattern as NewSectionButton: uncontrolled with its
+   * own trigger button by default (the section detail page), or
+   * controlled + trigger-less for embedding in a ⋯ actions menu (the
+   * sections list page's per-row menu). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = isControlled
+    ? (controlledOnOpenChange ?? (() => {}))
+    : setUncontrolledOpen;
   const [selected, setSelected] = useState<SectionClassType | ''>(
     currentTrack ?? ''
   );
@@ -83,12 +96,14 @@ export function SectionTrackDialog({
         if (!next) setSelected(currentTrack ?? '');
       }}
     >
-      <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className="gap-1.5">
-          <Waypoints className="size-3.5" />
-          {currentTrack ? 'Change track' : 'Set track'}
-        </Button>
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <Button size="sm" variant="outline" className="gap-1.5">
+            <Waypoints className="size-3.5" />
+            {currentTrack ? 'Change track' : 'Set track'}
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>

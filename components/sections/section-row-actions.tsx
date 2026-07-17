@@ -22,14 +22,24 @@ import {
   CalendarDays,
   ClipboardList,
   FilePlus2,
+  Pencil,
+  Trash2,
   UserPlus,
+  Waypoints,
 } from 'lucide-react';
 
 import { GenerateIndexDialog } from '@/components/sis/generate-index-button';
 import { GenerateSheetsDialog } from '@/components/sis/generate-sheets-dialog';
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { SectionDeleteDialog } from '@/components/sis/section-delete-dialog';
+import { SectionRenameDialog } from '@/components/sis/section-rename-dialog';
+import { SectionTrackDialog } from '@/components/sis/section-track-dialog';
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { RowActionsMenu } from '@/components/ui/data-table';
 import type { Role } from '@/lib/auth/roles';
+import type { SectionClassType } from '@/lib/schemas/section';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -51,6 +61,12 @@ export type SectionRowActionsProps = {
   /** SIS only: whether this section already has a form adviser assigned.
    *  Controls the label of the adviser action item. */
   hasAdviser?: boolean;
+  /** SIS only: the section's level type — gates the Track item to
+   *  Secondary (SectionTrackDialog 422s for Primary/preschool) — and its
+   *  current class_type, for the dialog's pre-selected value + the item's
+   *  Set/Change label. */
+  levelType?: 'primary' | 'secondary' | 'preschool';
+  classType?: SectionClassType | null;
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -64,6 +80,8 @@ export function SectionRowActions({
   todayHref,
   hasAdviser,
   ayId,
+  levelType,
+  classType,
 }: SectionRowActionsProps) {
   const isRegistrarPlus =
     role === 'registrar' || role === 'school_admin' || role === 'superadmin';
@@ -73,6 +91,14 @@ export function SectionRowActions({
   // animates open.
   const [indexOpen, setIndexOpen] = useState(false);
   const [sheetsOpen, setSheetsOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [trackOpen, setTrackOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Rename/track/delete are structural section management — SIS-only,
+  // registrar+ (matches KD #48: SIS Admin is the central config surface).
+  const showStructuralItems = module === 'sis' && isRegistrarPlus;
+  const showTrackItem = showStructuralItems && levelType === 'secondary';
 
   // ── Resolve the "Open" destination per module ──────────────────────────────
   const openHref =
@@ -165,6 +191,49 @@ export function SectionRowActions({
             Generate sheets
           </DropdownMenuItem>
         )}
+
+        {/* ── Track — Secondary only (sis, registrar+) ── */}
+        {showTrackItem && (
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              setTrackOpen(true);
+            }}
+          >
+            <Waypoints className="size-4 shrink-0" />
+            {classType ? 'Change track' : 'Set track'}
+          </DropdownMenuItem>
+        )}
+
+        {/* ── Rename (sis, registrar+) ── */}
+        {showStructuralItems && (
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              setRenameOpen(true);
+            }}
+          >
+            <Pencil className="size-4 shrink-0" />
+            Rename
+          </DropdownMenuItem>
+        )}
+
+        {/* ── Delete — undo an accidental creation (sis, registrar+) ── */}
+        {showStructuralItems && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={(e) => {
+                e.preventDefault();
+                setDeleteOpen(true);
+              }}
+            >
+              <Trash2 className="size-4 shrink-0" />
+              Delete section
+            </DropdownMenuItem>
+          </>
+        )}
       </RowActionsMenu>
 
       {/* Controlled dialogs — rendered outside the RowActionsMenu so they
@@ -193,6 +262,34 @@ export function SectionRowActions({
             onOpenChange={setSheetsOpen}
           />
         </>
+      )}
+
+      {/* Structural dialogs — same "mounted outside the menu" reasoning as
+          the generate dialogs above. */}
+      {showStructuralItems && (
+        <>
+          <SectionRenameDialog
+            sectionId={sectionId}
+            currentName={sectionName}
+            open={renameOpen}
+            onOpenChange={setRenameOpen}
+          />
+          <SectionDeleteDialog
+            sectionId={sectionId}
+            sectionName={sectionName}
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+          />
+        </>
+      )}
+      {showTrackItem && (
+        <SectionTrackDialog
+          sectionId={sectionId}
+          sectionName={sectionName}
+          currentTrack={classType ?? null}
+          open={trackOpen}
+          onOpenChange={setTrackOpen}
+        />
       )}
     </>
   );

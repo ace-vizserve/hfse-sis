@@ -5,9 +5,10 @@ import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { NewSectionButton } from '@/components/markbook/new-section-button';
 import { HubStat } from '@/components/sis/hub-stat';
 import {
-  SisSectionsDataTable,
-  type SisSectionRow,
-} from '@/components/sis/sections-data-table';
+  SectionsOverview,
+  type LevelGroup,
+} from '@/components/sis/sections-overview';
+import type { LevelCardSection } from '@/components/sis/section-level-card';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
@@ -15,27 +16,51 @@ import { getOfferedLevelIds } from '@/lib/sis/levels';
 import { sgToday } from '@/lib/dates';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { computeIndexStatus } from '@/lib/sis/section-index-status';
+import { listTemplateSections } from '@/lib/sis/template/queries';
 import type { Schedule, SectionClassType } from '@/lib/schemas/section';
+
+// "Sections & advisers" — one card per grade level, not one row per
+// section. The page's purpose is really "does every offered level have
+// its section(s) set up, staffed, numbered" — a per-LEVEL readiness
+// check — but the prior design was a flat per-SECTION table, so any level
+// without a section yet rendered as a full row of dashes just to say
+// "nothing here" (12 of 13 levels, on a freshly-set-up AY). A card per
+// level fixes that at the root, and folds in a level-scoped quick-add
+// (including a template-driven "create all N official section names in
+// one click," KD #144) that the flat table had no room for. Rebuilt from
+// a live-reviewed mockup — see docs/superpowers/plans history if this
+// page changes shape again.
 
 type LevelLite = {
   id: string;
   code: string;
   label: string;
-  level_type: 'primary' | 'secondary';
+  level_type: 'primary' | 'secondary' | 'preschool';
 };
-type SectionCard = {
+type SectionRaw = {
   id: string;
   name: string;
   level_id: string;
   level_code: string;
   level_label: string;
-  level_type: 'primary' | 'secondary' | 'unknown';
+  level_type: LevelLite['level_type'];
   schedule: Schedule | null;
   classType: SectionClassType | null;
   active: number;
   withdrawn: number;
   unnumbered: number;
 };
+
+const GROUP_LABEL: Record<LevelLite['level_type'], string> = {
+  primary: 'Primary',
+  secondary: 'Secondary',
+  preschool: 'Youngstarters',
+};
+const GROUP_ORDER: LevelLite['level_type'][] = [
+  'primary',
+  'secondary',
+  'preschool',
+];
 
 export default async function SisSectionsListPage({
   searchParams,
@@ -103,8 +128,7 @@ export default async function SisSectionsListPage({
         }>,
       };
 
-  // Level catalogue for the "New section" dialog + the "needed" gap rows
-  // merged into the sections table below.
+  // Level catalogue for the "New section" dialog + each level card.
   type LevelCatalogRow = LevelLite & { is_core: boolean; sort_order: number };
   const { data: levelRows } = await supabase
     .from('levels')
@@ -127,10 +151,7 @@ export default async function SisSectionsListPage({
     : undefined;
 
   // Which levels are actually meant to run this AY — core levels always
-  // are; volatile levels need an ay_level_offerings row (KD #153). Feeds
-  // the "needed" gap rows below: a SHELVED level with no section is fine
-  // (deliberately not running), an OFFERED one with no section is a real
-  // gap — nobody can be enrolled there this year.
+  // are; volatile levels need an ay_level_offerings row (KD #153).
   const offeredLevelIds = ay
     ? await getOfferedLevelIds(supabase, ay.id)
     : new Set<string>();
@@ -163,10 +184,24 @@ export default async function SisSectionsListPage({
     ? await loadFormAdvisersBySection(ids, ay.ay_code)
     : ({} as Record<string, { userId: string; name: string }>);
 
+  const templateSections = await listTemplateSections();
+  const templateByLevelId = new Map<
+    string,
+    Array<{ name: string; classType: SectionClassType | null }>
+  >();
+  for (const t of templateSections) {
+    const list = templateByLevelId.get(t.level_id) ?? [];
+    list.push({
+      name: t.name,
+      classType: t.class_type as SectionClassType | null,
+    });
+    templateByLevelId.set(t.level_id, list);
+  }
+
   const getLevel = (l: LevelLite | LevelLite[] | null): LevelLite | null =>
     Array.isArray(l) ? (l[0] ?? null) : l;
 
-  const cards: SectionCard[] = (sections ?? []).map((s) => {
+  const rawSections: SectionRaw[] = (sections ?? []).map((s) => {
     const lvl = getLevel(s.level as LevelLite | LevelLite[] | null);
     return {
       id: s.id,
@@ -174,90 +209,77 @@ export default async function SisSectionsListPage({
       level_id: lvl?.id ?? '',
       level_code: lvl?.code ?? '',
       level_label: lvl?.label ?? 'Unknown',
-      level_type: (lvl?.level_type ?? 'unknown') as SectionCard['level_type'],
-      schedule: ((s as { schedule?: Schedule | null }).schedule ??
-        null) as Schedule | null,
-      classType: ((s as { class_type?: SectionClassType | null }).class_type ??
-        null) as SectionClassType | null,
+      level_type: lvl?.level_type ?? 'primary',
+      schedule: (s as { schedule?: Schedule | null }).schedule ?? null,
+      classType:
+        (s as { class_type?: SectionClassType | null }).class_type ?? null,
       active: counts[s.id]?.active ?? 0,
       withdrawn: counts[s.id]?.withdrawn ?? 0,
       unnumbered: counts[s.id]?.unnumbered ?? 0,
     };
   });
 
-  const totalSections = cards.length;
-  const totalActive = cards.reduce((n, c) => n + c.active, 0);
-  const totalWithdrawn = cards.reduce((n, c) => n + c.withdrawn, 0);
+  const totalActive = rawSections.reduce((n, c) => n + c.active, 0);
+  const totalWithdrawn = rawSections.reduce((n, c) => n + c.withdrawn, 0);
 
-  // Offered levels (core, or volatile-and-switched-on) with zero sections
-  // in this AY — the real "capture the grade level, make it easy to add a
-  // section" gap.
-  const levelIdsWithSections = new Set(
-    cards.map((c) => c.level_id).filter(Boolean)
-  );
-  const levelsNeedingSection = levelCatalog
-    .filter(
-      (l) =>
-        (l.is_core || offeredLevelIds.has(l.id)) &&
-        !levelIdsWithSections.has(l.id)
-    )
-    .map((l) => ({ id: l.id, code: l.code, label: l.label }));
-
-  // Level facet options — every level relevant to this AY (core, or
-  // volatile-and-offered), not just ones with an existing section. A level
-  // needing a section (below) must still be filterable/findable, so the
-  // facet vocabulary has to include it even though no section row carries
-  // its label yet. Already in catalog (sort_order) order.
+  // Every level relevant to this AY (core, or volatile-and-offered) — a
+  // level needing a section must still get a card even though no section
+  // row carries its label yet.
   const relevantLevelCatalog = levelCatalog.filter(
     (l) => l.is_core || offeredLevelIds.has(l.id)
   );
-  const levels = relevantLevelCatalog.map((l) => ({
-    id: l.code,
-    code: l.code,
-    label: l.label,
-  }));
 
-  // Flat rows for the DataTable — real sections plus one "needed" row per
-  // gap level (folded in here instead of a separate panel, so a registrar
-  // works from a single sortable/filterable list, not a list plus a
-  // duplicate-in-spirit summary above it).
-  const sectionRows: SisSectionRow[] = cards.map((c) => ({
-    kind: 'section',
-    id: c.id,
-    levelId: c.level_id,
-    name: c.name,
-    levelLabel: c.level_label,
-    schedule: c.schedule,
-    classType: c.classType,
-    active: c.active,
-    withdrawn: c.withdrawn,
-    indexStatus: computeIndexStatus(c.active, c.unnumbered),
-    fcaName: adviserMap[c.id]?.name ?? null,
-  }));
-  const neededRows: SisSectionRow[] = levelsNeedingSection.map((l) => ({
-    kind: 'needed',
-    id: `needed:${l.id}`,
-    levelId: l.id,
-    name: '',
-    levelLabel: l.label,
-    schedule: null,
-    classType: null,
-    active: 0,
-    withdrawn: 0,
-    indexStatus: null,
-    fcaName: null,
-  }));
-  const rows: SisSectionRow[] = [...sectionRows, ...neededRows];
+  const sectionsByLevelId = new Map<string, SectionRaw[]>();
+  for (const s of rawSections) {
+    const list = sectionsByLevelId.get(s.level_id) ?? [];
+    list.push(s);
+    sectionsByLevelId.set(s.level_id, list);
+  }
+  const levelsWithSections = new Set(
+    rawSections.map((s) => s.level_id).filter(Boolean)
+  ).size;
 
-  // Section list for the bulk "Generate all indexes" button in the toolbar.
-  const sectionsList = cards.map((c) => ({ id: c.id, name: c.name }));
+  const groups: LevelGroup[] = GROUP_ORDER.map((levelType) => ({
+    levelType,
+    groupLabel: GROUP_LABEL[levelType],
+    levels: relevantLevelCatalog
+      .filter((l) => l.level_type === levelType)
+      .map((l) => {
+        const sectionsForLevel: LevelCardSection[] = (
+          sectionsByLevelId.get(l.id) ?? []
+        )
+          .slice()
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((s) => ({
+            id: s.id,
+            name: s.name,
+            schedule: s.schedule,
+            classType: s.classType,
+            active: s.active,
+            withdrawn: s.withdrawn,
+            indexStatus:
+              s.active > 0 ? computeIndexStatus(s.active, s.unnumbered) : null,
+            fcaName: adviserMap[s.id]?.name ?? null,
+          }));
+        return {
+          level: {
+            id: l.id,
+            code: l.code,
+            label: l.label,
+            level_type: l.level_type,
+          },
+          sections: sectionsForLevel,
+          templateSections: templateByLevelId.get(l.id) ?? [],
+        };
+      }),
+  })).filter((g) => g.levels.length > 0);
 
   return (
     <PageShell>
       <SisPageHeader
         group="This year"
         title="Sections & advisers."
-        description="Every section for the current academic year. Structural config lives here; day-to-day roster / grading / attendance for each section are in the Markbook module."
+        description="One card per level — every offered level, its section(s), and whether it's staffed. Day-to-day roster / grading / attendance is in Markbook."
         chips={
           ay && (
             <Badge
@@ -280,11 +302,11 @@ export default async function SisSectionsListPage({
       {/* Stats */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <HubStat
-          label="Total sections"
-          value={totalSections}
+          label="Levels covered"
+          value={`${levelsWithSections} / ${relevantLevelCatalog.length}`}
           icon={LayoutGrid}
           tone="brand"
-          subtext={`${levels.length} ${levels.length === 1 ? 'level' : 'levels'} · ${ay?.label ?? 'No current AY'}`}
+          subtext={`Have at least one section · ${ay?.label ?? 'No current AY'}`}
         />
         <HubStat
           label="Active students"
@@ -302,20 +324,13 @@ export default async function SisSectionsListPage({
         />
       </div>
 
-      {/* Sections DataTable — replaces the pill grid. Level facet + search +
-          per-row ⋯ actions (Open roster / Generate index / Generate sheets),
-          plus a "needed" row per gap level with its own "Add section"
-          action. The bulk "Generate all indexes" button lives in
-          toolbarTrailing. */}
-      <SisSectionsDataTable
-        rows={rows}
-        levels={levels}
-        levelOptions={levelOptions}
-        ayCode={ay?.ay_code ?? null}
+      <SectionsOverview
+        groups={groups}
         role={sessionUser.role}
         termStarted={termStarted}
-        sections={sectionsList}
         ayId={ay?.id ?? ''}
+        ayCode={ay?.ay_code ?? null}
+        allSections={rawSections.map((s) => ({ id: s.id, name: s.name }))}
       />
     </PageShell>
   );
