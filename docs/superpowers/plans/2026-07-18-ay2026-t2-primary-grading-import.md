@@ -1531,9 +1531,972 @@ Expected: prints a per-file skip-count line for all 6 files, then a `Stats:` blo
 
 ---
 
+---
+
+## Amendment (2026-07-18) — Task 4: tab-name-first identity, fixing a silent misattribution risk
+
+**Why:** Tasks 1–3 were implemented, reviewed, and run for real. The real run found two things the design got wrong — see `docs/superpowers/specs/2026-07-18-ay2026-t2-primary-grading-import-design.md` §8 for the full investigation. In short: (1) the 3 `Reserved N` tabs are not empty — they're real Respect/Gentleness/Compassion sections that were never renamed; (2) row 2's text is simply wrong on 6 real tabs across 4 subjects (a copy-paste artifact from cloning a template tab in Excel), and because roster resolution keys on `(levelCode, sectionName, indexNumber)`, a wrong `sectionName` from row 2 doesn't reliably fail loud — it can resolve against a _different real section's_ roster and silently attribute one student's grades to another. Tab names, by contrast, are provably reliable (Excel forbids two tabs sharing a name). This task fixes `grading-workbook-t2.ts` to prefer tab-name identity, falling back to row 2 only when the tab name doesn't parse, and logs every case where the two signals disagree so a human can see exactly what got corrected.
+
+### Task 4: Tab-name-first identity resolution
+
+**Files:**
+
+- Modify: `lib/sis/backfill/grading/grading-workbook-t2.ts` (Task 1, already shipped — this task changes it directly, unlike every other task in this project which avoids touching prior-phase files; this file belongs to this same phase, not an earlier one, so amending it in place is correct)
+- Modify: `__tests__/sis/backfill/grading/grading-workbook-t2.test.ts` (add new test cases; existing 5 tests must still pass unchanged)
+- Modify: `scripts/backfill/gen-ay2026-t2-primary-grading.ts` (aggregate + report the new `identityCorrections` list)
+
+**Interfaces:**
+
+- Changes `ParseGradingWorkbookT2Result` (consumed by Task 3's orchestrator): adds one new field, `identityCorrections: string[]`, alongside the existing `sheets`/`skippedSecondary`/`skippedUnrecognized`.
+- Does **not** change `build-primary-grading-import.ts` (Task 2) at all — the identity-corrections report is stitched into `preview.sql` by the orchestrator (Task 3), appended after the composer's own preview output, so Task 2 stays untouched and doesn't need re-review.
+
+- [ ] **Step 1: Write the failing tests — add 3 new test cases to the existing file**
+
+Modify `__tests__/sis/backfill/grading/grading-workbook-t2.test.ts` — replace the file's entire content with the following (the first 5 `it(...)` blocks are unchanged from Task 1, reproduced here verbatim so the file is complete and self-contained; only the 3 new tests at the end and the new fixtures above them are additions):
+
+```ts
+// __tests__/sis/backfill/grading/grading-workbook-t2.test.ts
+import { describe, expect, it } from 'vitest';
+import * as XLSX from 'xlsx';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { parseGradingWorkbookT2 } from '@/lib/sis/backfill/grading/grading-workbook-t2';
+
+function writeWorkbook(
+  path: string,
+  sheets: Record<string, (string | number)[][]>
+) {
+  const wb = XLSX.utils.book_new();
+  for (const [name, rows] of Object.entries(sheets)) {
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  }
+  XLSX.writeFile(wb, path);
+}
+
+// Real row shape from Math's "Math - P1 Patience" tab, transcribed verbatim
+// (2 real WW slots of 3 nominal columns, 3 PT slots, then the real
+// Initial/Quarterly pair at cols 17/18, THEN the spurious second
+// "Quarterly"/"Term 1" pair at cols 21/22 that must never be read).
+const MATH_P1_ROWS: (string | number)[][] = [
+  ['Term 2 - 2026'],
+  [],
+  ['Primary 1 PATIENCE - MATH'],
+  ['Teacher: Mr. Wai Chung'],
+  [],
+  [
+    'Index No.',
+    'NAME',
+    'WRITTEN WORKS (40%)',
+    '',
+    '',
+    '',
+    '',
+    '',
+    'PERFORMANCE TASKS (40%)',
+    '',
+    '',
+    '',
+    '',
+    '',
+    'QUARTERLY ',
+    '',
+    '',
+    'Initial',
+    'Quarterly',
+    '',
+    '',
+    'Quarterly',
+    'Term 1',
+  ],
+  [
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    'ASSESSMENT (20%)',
+    '',
+    '',
+    'Grade',
+    'Grade',
+    '',
+    '',
+    'Grade',
+    'Grade',
+  ],
+  [
+    '',
+    '',
+    'W1',
+    'W2',
+    'W3',
+    'Total',
+    'PS',
+    'WS',
+    'PT1',
+    'PT2',
+    'PT3',
+    'Total',
+    'PS',
+    'WS',
+    'Exam',
+    'PS',
+    'WS',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ],
+  [
+    '',
+    '',
+    10,
+    10,
+    '',
+    20,
+    '100%',
+    '40%',
+    10,
+    10,
+    10,
+    30,
+    '100%',
+    '40%',
+    30,
+    '100%',
+    '20%',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ],
+  [
+    1,
+    'ALVAREZ, Jaime III D.',
+    10,
+    10,
+    '',
+    20,
+    '100.00',
+    '40.00',
+    9,
+    6,
+    10,
+    25,
+    '83.33',
+    '33.33',
+    22,
+    '73.33',
+    '14.67',
+    88.0,
+    92,
+    '',
+    '',
+    60,
+    93,
+  ],
+  [
+    2,
+    'AMATE, Jaiden Matthew A.',
+    10,
+    10,
+    '',
+    20,
+    '100.00',
+    '40.00',
+    10,
+    7,
+    10,
+    27,
+    '90.00',
+    '36.00',
+    24,
+    '80.00',
+    '16.00',
+    92.0,
+    95,
+    '',
+    '',
+    95,
+    98,
+  ],
+];
+
+// Real row shape from Literature's "Literature - Sec 1 Discipline 2" tab —
+// a Secondary Regular-track section riding along in the same workbook.
+// Must be recognized and skipped, never processed as Primary.
+const LIT_SEC1_ROWS: (string | number)[][] = [
+  ['Term 2 - 2026'],
+  [],
+  ['Secondary 1 DISCIPLINE 2 - LITERATURE'],
+  ['Teacher: Ms. Carl'],
+  [],
+  [
+    'Index No.',
+    'NAME',
+    'WRITTEN WORKS (30%)',
+    '',
+    '',
+    '',
+    '',
+    '',
+    'PERFORMANCE TASKS (50%)',
+    '',
+    '',
+    '',
+    '',
+    '',
+    'QUARTERLY ',
+    '',
+    '',
+    'Initial',
+    'Quarterly',
+  ],
+  [],
+  [
+    '',
+    '',
+    'W1',
+    '',
+    '',
+    'Total',
+    'PS',
+    'WS',
+    'PT1',
+    'PT2',
+    'PT3',
+    'Total',
+    'PS',
+    'WS',
+    'Exam',
+    'PS',
+    'WS',
+  ],
+  [
+    '',
+    '',
+    30,
+    '',
+    '',
+    30,
+    '100%',
+    '30%',
+    30,
+    20,
+    25,
+    75,
+    '100%',
+    '50%',
+    65,
+    '100%',
+    '20%',
+  ],
+  [
+    1,
+    'BAGANG, Miguel C.',
+    26,
+    '',
+    '',
+    26,
+    '86.67',
+    '26.00',
+    28,
+    19,
+    25,
+    72,
+    '96.00',
+    '48.00',
+    59,
+    '90.77',
+    '18.15',
+    92.15,
+    95,
+  ],
+];
+
+describe('parseGradingWorkbookT2', () => {
+  it('parses a real Primary tab, reading only the FIRST Initial/Quarterly pair (not the spurious second pair)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grading-wb-t2-'));
+    const path = join(dir, 'math.xlsx');
+    writeWorkbook(path, { 'Math - P1 Patience': MATH_P1_ROWS });
+
+    const result = parseGradingWorkbookT2(path, 'MATH');
+
+    expect(result.sheets).toHaveLength(1);
+    const sheet = result.sheets[0];
+    expect(sheet.subjectCode).toBe('MATH');
+    expect(sheet.levelCode).toBe('P1');
+    expect(sheet.sectionName).toBe('Patience');
+    expect(sheet.teacherName).toBe('Mr. Wai Chung');
+    expect(sheet.wwWeight).toBeCloseTo(0.4);
+    expect(sheet.ptWeight).toBeCloseTo(0.4);
+    expect(sheet.qaWeight).toBeCloseTo(0.2);
+    expect(sheet.wwTotals).toEqual([10, 10]);
+    expect(sheet.ptTotals).toEqual([10, 10, 10]);
+    expect(sheet.qaTotal).toBe(30);
+
+    const alvarez = sheet.students[0];
+    expect(alvarez.indexNo).toBe('1');
+    expect(alvarez.fullName).toBe('ALVAREZ, Jaime III D.');
+    // The real printed grades (cols 17/18) — NEVER the spurious second
+    // pair's values (60/93 at cols 21/22).
+    expect(alvarez.printedInitialGrade).toBeCloseTo(88.0);
+    expect(alvarez.printedQuarterlyGrade).toBe(92);
+    // Tab name and row 2 agree here — no correction needed.
+    expect(result.identityCorrections).toEqual([]);
+  });
+
+  it('recognizes a Secondary tab and reports it as skipped, never processing it as Primary', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grading-wb-t2-'));
+    const path = join(dir, 'lit.xlsx');
+    writeWorkbook(path, { 'Literature - Sec 1 Discipline 2': LIT_SEC1_ROWS });
+
+    const result = parseGradingWorkbookT2(path, 'LIT');
+
+    expect(result.sheets).toHaveLength(0);
+    expect(result.skippedSecondary).toEqual([
+      'Literature - Sec 1 Discipline 2',
+    ]);
+    expect(result.skippedUnrecognized).toEqual([]);
+  });
+
+  it('reports a blank/Reserved tab as unrecognized, not an error', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grading-wb-t2-'));
+    const path = join(dir, 'reserved.xlsx');
+    writeWorkbook(path, { 'Reserved 1': [[''], [''], ['']] });
+
+    const result = parseGradingWorkbookT2(path, 'MATH');
+
+    expect(result.sheets).toHaveLength(0);
+    expect(result.skippedUnrecognized).toEqual(['Reserved 1']);
+    expect(result.skippedSecondary).toEqual([]);
+  });
+
+  it('title-cases a multi-word Secondary Regular-track section name correctly', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grading-wb-t2-'));
+    const path = join(dir, 'lit2.xlsx');
+    const rows = LIT_SEC1_ROWS.map((r) => [...r]);
+    writeWorkbook(path, { 'Literature - Sec 1 Discipline 2': rows });
+
+    const result = parseGradingWorkbookT2(path, 'LIT');
+    expect(result.skippedSecondary).toHaveLength(1);
+  });
+
+  it('handles a subject-suffix containing commas without breaking section-name extraction (MAPEH shape)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grading-wb-t2-'));
+    const path = join(dir, 'star.xlsx');
+    const rows = MATH_P1_ROWS.map((r) => [...r]);
+    rows[2] = ['Primary 1 PATIENCE - MUSIC, ARTS, PE, HEALTH'];
+    writeWorkbook(path, { 'STAR - P1 Patience': rows });
+
+    const result = parseGradingWorkbookT2(path, 'MAPEH');
+    expect(result.sheets).toHaveLength(1);
+    expect(result.sheets[0].sectionName).toBe('Patience');
+  });
+
+  it('uses the TAB NAME over a wrong row-2 label, and records the mismatch — the real bug this task fixes', () => {
+    // Real bug, verified against the actual workbook: the tab is genuinely
+    // "P5 Perseverance" (confirmed by its real roster of Perseverance
+    // students), but row 2 was copy-pasted from the Commitment tab and
+    // still says "COMMITMENT". Trusting row 2 here would silently resolve
+    // these students against the Commitment section's real roster instead.
+    const dir = mkdtempSync(join(tmpdir(), 'grading-wb-t2-'));
+    const path = join(dir, 'eng.xlsx');
+    const rows = MATH_P1_ROWS.map((r) => [...r]);
+    rows[2] = ['Primary 5 COMMITMENT - ENGLISH'];
+    writeWorkbook(path, { 'English - P5 Perseverance': rows });
+
+    const result = parseGradingWorkbookT2(path, 'ENG');
+
+    expect(result.sheets).toHaveLength(1);
+    expect(result.sheets[0].levelCode).toBe('P5');
+    expect(result.sheets[0].sectionName).toBe('Perseverance');
+    expect(result.identityCorrections).toHaveLength(1);
+    expect(result.identityCorrections[0]).toContain(
+      'English - P5 Perseverance'
+    );
+    expect(result.identityCorrections[0]).toContain('P5 Perseverance');
+    expect(result.identityCorrections[0]).toContain('P5 Commitment');
+  });
+
+  it('falls back to row 2 when the tab name does not parse, recovering a real Reserved-tab section without flagging a mismatch', () => {
+    // The Finding-A case: "Reserved 1" is not empty — it's a real,
+    // never-renamed Respect section. Tab name gives no signal at all here
+    // (doesn't parse), so this must fall back to row 2, and since there's
+    // no tab-name signal to disagree with, no correction is logged.
+    const dir = mkdtempSync(join(tmpdir(), 'grading-wb-t2-'));
+    const path = join(dir, 'reserved-respect.xlsx');
+    const rows = MATH_P1_ROWS.map((r) => [...r]);
+    rows[2] = ['Primary 1 RESPECT - MATH'];
+    writeWorkbook(path, { 'Reserved 1': rows });
+
+    const result = parseGradingWorkbookT2(path, 'MATH');
+
+    expect(result.sheets).toHaveLength(1);
+    expect(result.sheets[0].levelCode).toBe('P1');
+    expect(result.sheets[0].sectionName).toBe('Respect');
+    expect(result.identityCorrections).toEqual([]);
+  });
+
+  it('resolves two tabs with SWAPPED row-2 labels independently and correctly via tab name (Mandarin P3/P4 real case)', () => {
+    // Real bug: "Mandarin - P3 Courtesy" and "Mandarin - P4 Diligence" have
+    // their row-2 labels swapped with each other. Each tab must resolve to
+    // its OWN correct identity via its own tab name — neither one's real
+    // students may end up attributed to the other section.
+    const dir = mkdtempSync(join(tmpdir(), 'grading-wb-t2-'));
+    const path = join(dir, 'mandarin.xlsx');
+    const p3Rows = MATH_P1_ROWS.map((r) => [...r]);
+    p3Rows[2] = ['Primary 4 DILIGENCE - MANDARIN'];
+    const p4Rows = MATH_P1_ROWS.map((r) => [...r]);
+    p4Rows[2] = ['Primary 3 COURTESY - MANDARIN'];
+    writeWorkbook(path, {
+      'Mandarin - P3 Courtesy': p3Rows,
+      'Mandarin - P4 Diligence': p4Rows,
+    });
+
+    const result = parseGradingWorkbookT2(path, 'MANDARIN');
+
+    expect(result.sheets).toHaveLength(2);
+    const bySection = new Map(result.sheets.map((s) => [s.sectionName, s]));
+    expect(bySection.get('Courtesy')?.levelCode).toBe('P3');
+    expect(bySection.get('Diligence')?.levelCode).toBe('P4');
+    expect(result.identityCorrections).toHaveLength(2);
+  });
+});
+```
+
+- [ ] **Step 2: Run the tests to verify the 3 new tests fail** (the existing 5 already pass — this is a modify, not a from-scratch module)
+
+Run: `npx vitest run __tests__/sis/backfill/grading/grading-workbook-t2.test.ts`
+Expected: 5 PASS, 3 FAIL — the 3 new tests fail because `identityCorrections` doesn't exist on the result yet and the tab-name-first behavior isn't implemented.
+
+- [ ] **Step 3: Implement the fix**
+
+Replace the entire content of `lib/sis/backfill/grading/grading-workbook-t2.ts`:
+
+```ts
+// lib/sis/backfill/grading/grading-workbook-t2.ts
+// Parses HFSE's real T2 "GRADES" folder subject workbooks (Primary + a
+// Secondary Regular-track tab riding along in the same file) into one
+// ParsedSubjectSheet per real PRIMARY section tab. Secondary tabs are
+// recognized and skipped (Phase 6b's scope), never processed here.
+//
+// Deltas from Phase 3's T1 parser (grading-workbook.ts, never modified —
+// this is a standalone module):
+//   1. Row 2's identity text has no numeric section suffix for Primary
+//      ("Primary 1 PATIENCE - MATH") and carries a trailing " - SUBJECT"
+//      T1's raw text never had — a new regex handles both this and the
+//      still-numbered Secondary shape ("Secondary 1 DISCIPLINE 2 - LIT").
+//   2. Every T2 sheet has a SECOND, unreliable "Quarterly"/"Term 1" column
+//      pair after the real printed-grade columns. T1's finder took the
+//      LAST label match scanning forward — silently wrong here. This
+//      finder takes the FIRST match of each label only.
+//   3. (Added after a real run — see design doc §8.) Row 2's text is
+//      sometimes simply WRONG — a copy-paste artifact from cloning an
+//      existing tab as a template in Excel and forgetting to update the
+//      label. Because roster resolution keys on (levelCode, sectionName,
+//      indexNumber), trusting a wrong row-2 label doesn't fail loud — it
+//      can silently resolve against a DIFFERENT real section's roster.
+//      Tab names are structurally reliable (Excel forbids duplicate tab
+//      names), so identity is now resolved from the tab name FIRST, with
+//      row 2 used only as a fallback when the tab name itself doesn't
+//      parse (the real case for the never-renamed "Reserved N" tabs).
+//      Every case where the two signals disagree is recorded so a human
+//      can see exactly what got corrected.
+import * as XLSX from 'xlsx';
+
+import type { GradingStudentRow, ParsedSubjectSheet } from './grading-workbook';
+
+export interface ParseGradingWorkbookT2Result {
+  sheets: ParsedSubjectSheet[];
+  skippedSecondary: string[];
+  skippedUnrecognized: string[];
+  identityCorrections: string[];
+}
+
+const ROW_LEVEL_SECTION = 2;
+const ROW_TEACHER = 3;
+const ROW_LABELS = 5;
+const ROW_SUBCOLS = 7;
+const ROW_MAXSCORES = 8;
+const ROW_STUDENTS_START = 9;
+
+function cell(row: unknown[] | undefined, i: number): string {
+  if (!row) return '';
+  const v = row[i];
+  return v == null ? '' : String(v).trim();
+}
+
+function numOrNull(v: string): number | null {
+  if (v === '') return null;
+  const n = Number(v);
+  return Number.isNaN(n) ? null : n;
+}
+
+interface ColumnLayout {
+  wwCols: number[];
+  ptCols: number[];
+  wwTotalCol: number;
+  ptTotalCol: number;
+  examCol: number;
+}
+
+function findColumnLayout(subcolRow: unknown[]): ColumnLayout {
+  const wwCols: number[] = [];
+  const ptCols: number[] = [];
+  const totalCols: number[] = [];
+  let examCol = -1;
+  for (let i = 2; i < subcolRow.length; i++) {
+    const label = cell(subcolRow as unknown[], i);
+    if (/^W\d+$/i.test(label)) wwCols.push(i);
+    else if (/^PT\d+$/i.test(label)) ptCols.push(i);
+    else if (/^Total$/i.test(label)) totalCols.push(i);
+    else if (/^Exam$/i.test(label)) examCol = i;
+  }
+  const [wwTotalCol, ptTotalCol] = totalCols;
+  if (wwTotalCol == null || ptTotalCol == null || examCol === -1) {
+    throw new Error(
+      'grading-workbook-t2: could not locate WW/PT Total columns or the Exam column in row 8 sub-labels'
+    );
+  }
+  return { wwCols, ptCols, wwTotalCol, ptTotalCol, examCol };
+}
+
+function weightAt(maxRow: unknown[], totalCol: number): number {
+  const wsCell = cell(maxRow, totalCol + 2);
+  const pct = Number(wsCell.replace('%', ''));
+  if (Number.isNaN(pct)) {
+    throw new Error(
+      `grading-workbook-t2: expected a WS% cell at column ${totalCol + 2}, got "${wsCell}"`
+    );
+  }
+  return pct / 100;
+}
+
+// Fixed version of Phase 3's column finder — takes the FIRST match of each
+// label, not the last, and stops scanning once both are found. This is
+// what keeps the spurious second "Quarterly"/"Term 1" pair out of the
+// import entirely.
+function findPrintedGradeColsT2(
+  labelRow: unknown[],
+  fromCol: number
+): { initialCol: number | null; quarterlyCol: number | null } {
+  let initialCol: number | null = null;
+  let quarterlyCol: number | null = null;
+  for (let i = fromCol; i < labelRow.length; i++) {
+    if (initialCol !== null && quarterlyCol !== null) break;
+    const label = cell(labelRow, i);
+    if (initialCol === null && /Initial/i.test(label)) {
+      initialCol = i;
+      continue;
+    }
+    if (quarterlyCol === null && /Quarterly/i.test(label)) {
+      quarterlyCol = i;
+    }
+  }
+  return { initialCol, quarterlyCol };
+}
+
+type IdentityT2 =
+  | { kind: 'primary'; levelCode: string; sectionName: string }
+  | { kind: 'secondary'; levelCode: string; sectionName: string }
+  | { kind: 'unrecognized' };
+
+function titleCase(raw: string): string {
+  return raw
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+// Row 2's shape: "Primary N NAME - SUBJECT" or "Secondary N NAME - SUBJECT".
+const ROW2_IDENTITY_RE = /^(Primary|Secondary)\s+(\d+)\s+(.+?)\s+-\s+.+$/i;
+
+function parseRow2Identity(raw: string): IdentityT2 {
+  const m = ROW2_IDENTITY_RE.exec(raw.trim());
+  if (!m) return { kind: 'unrecognized' };
+  const [, levelWord, levelNum, sectionRaw] = m;
+  const isPrimary = levelWord.toLowerCase() === 'primary';
+  return {
+    kind: isPrimary ? 'primary' : 'secondary',
+    levelCode: `${isPrimary ? 'P' : 'S'}${levelNum}`,
+    sectionName: titleCase(sectionRaw),
+  };
+}
+
+// Tab name's shape: "<Subject> - P<N> <Name>", "<Subject> - S<N> <Name>", or
+// "<Subject> - Sec <N> <Name>" (the S/Sec spelling varies by file — both
+// observed in real data, "Sec" tried first so it isn't shadowed by the
+// single-letter "S" alternative).
+const TAB_NAME_IDENTITY_RE = /^.+?\s*-\s*(Sec|P|S)\.?\s*(\d+)\s+(.+)$/i;
+
+function parseTabNameIdentity(sheetName: string): IdentityT2 {
+  const m = TAB_NAME_IDENTITY_RE.exec(sheetName.trim());
+  if (!m) return { kind: 'unrecognized' };
+  const [, prefix, levelNum, sectionRaw] = m;
+  const isPrimary = prefix.toLowerCase().startsWith('p');
+  return {
+    kind: isPrimary ? 'primary' : 'secondary',
+    levelCode: `${isPrimary ? 'P' : 'S'}${levelNum}`,
+    sectionName: titleCase(sectionRaw),
+  };
+}
+
+function identityLabel(identity: IdentityT2): string {
+  return identity.kind === 'unrecognized'
+    ? '(unrecognized)'
+    : `${identity.levelCode} ${identity.sectionName}`;
+}
+
+// Tab name wins whenever it parses — Excel forbids two tabs sharing a
+// name, so a mistyped tab name would be immediately visible to whoever
+// built the workbook, unlike a free-text label cell that's easy to
+// fat-finger via copy-paste without visual feedback. Row 2 is the
+// fallback ONLY when the tab name doesn't parse (the real case for
+// never-renamed "Reserved N" tabs). When both parse but disagree, a
+// human-readable correction note is returned so the operator can see
+// exactly what got overridden.
+function resolveIdentity(
+  sheetName: string,
+  row2Raw: string
+): { identity: IdentityT2; correctionNote: string | null } {
+  const tabIdentity = parseTabNameIdentity(sheetName);
+  if (tabIdentity.kind === 'unrecognized') {
+    return { identity: parseRow2Identity(row2Raw), correctionNote: null };
+  }
+
+  const row2Identity = parseRow2Identity(row2Raw);
+  const disagrees =
+    row2Identity.kind !== 'unrecognized' &&
+    (row2Identity.kind !== tabIdentity.kind ||
+      row2Identity.levelCode !== tabIdentity.levelCode ||
+      row2Identity.sectionName !== tabIdentity.sectionName);
+
+  return {
+    identity: tabIdentity,
+    correctionNote: disagrees
+      ? `"${sheetName}": tab name says ${identityLabel(tabIdentity)}, row 2 says ${identityLabel(row2Identity)} — using tab name`
+      : null,
+  };
+}
+
+function parseTeacherName(raw: string): string | null {
+  const m = /Teacher:\s*(.*)/i.exec(raw);
+  if (!m) return null;
+  const name = m[1].trim();
+  return name === '' ? null : name;
+}
+
+function parseOneSheetT2(
+  rows: unknown[][],
+  subjectCode: string,
+  sheetName: string
+): {
+  sheet: ParsedSubjectSheet | null;
+  identity: IdentityT2;
+  correctionNote: string | null;
+} {
+  const { identity, correctionNote } = resolveIdentity(
+    sheetName,
+    cell(rows[ROW_LEVEL_SECTION], 0)
+  );
+  if (identity.kind !== 'primary')
+    return { sheet: null, identity, correctionNote };
+
+  const teacherName = parseTeacherName(cell(rows[ROW_TEACHER], 0));
+  const layout = findColumnLayout(rows[ROW_SUBCOLS]);
+  const maxRow = rows[ROW_MAXSCORES];
+
+  const wwWeight = weightAt(maxRow, layout.wwTotalCol);
+  const ptWeight = weightAt(maxRow, layout.ptTotalCol);
+  const qaWeight = weightAt(maxRow, layout.examCol);
+
+  const realWwCols = layout.wwCols.filter((c) => cell(maxRow, c) !== '');
+  const realPtCols = layout.ptCols.filter((c) => cell(maxRow, c) !== '');
+  const wwTotals = realWwCols.map((c) => Number(cell(maxRow, c)));
+  const ptTotals = realPtCols.map((c) => Number(cell(maxRow, c)));
+  const qaTotalRaw = cell(maxRow, layout.examCol);
+  const qaTotal = qaTotalRaw === '' ? null : Number(qaTotalRaw);
+
+  const { initialCol, quarterlyCol } = findPrintedGradeColsT2(
+    rows[ROW_LABELS],
+    layout.examCol + 1
+  );
+
+  const students: GradingStudentRow[] = [];
+  for (let i = ROW_STUDENTS_START; i < rows.length; i++) {
+    const row = rows[i];
+    const indexNo = cell(row, 0);
+    const fullName = cell(row, 1);
+    if (!/^\d+$/.test(indexNo) || fullName === '') continue;
+
+    students.push({
+      indexNo,
+      fullName,
+      wwScores: realWwCols.map((c) => numOrNull(cell(row, c))),
+      ptScores: realPtCols.map((c) => numOrNull(cell(row, c))),
+      examScore: numOrNull(cell(row, layout.examCol)),
+      printedInitialGrade:
+        initialCol == null ? null : numOrNull(cell(row, initialCol)),
+      printedQuarterlyGrade:
+        quarterlyCol == null ? null : numOrNull(cell(row, quarterlyCol)),
+    });
+  }
+
+  return {
+    sheet: {
+      subjectCode,
+      levelCode: identity.levelCode,
+      sectionName: identity.sectionName,
+      teacherName,
+      wwWeight,
+      ptWeight,
+      qaWeight,
+      wwTotals,
+      ptTotals,
+      qaTotal,
+      students,
+    },
+    identity,
+    correctionNote,
+  };
+}
+
+export function parseGradingWorkbookT2(
+  filePath: string,
+  subjectCode: string
+): ParseGradingWorkbookT2Result {
+  const wb = XLSX.readFile(filePath);
+  const sheets: ParsedSubjectSheet[] = [];
+  const skippedSecondary: string[] = [];
+  const skippedUnrecognized: string[] = [];
+  const identityCorrections: string[] = [];
+
+  for (const sheetName of wb.SheetNames) {
+    const rows: unknown[][] = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
+      header: 1,
+      defval: '',
+      raw: false,
+    });
+    const { sheet, identity, correctionNote } = parseOneSheetT2(
+      rows,
+      subjectCode,
+      sheetName
+    );
+    if (correctionNote) identityCorrections.push(correctionNote);
+    if (identity.kind === 'primary' && sheet) {
+      sheets.push(sheet);
+    } else if (identity.kind === 'secondary') {
+      skippedSecondary.push(sheetName);
+    } else {
+      skippedUnrecognized.push(sheetName);
+    }
+  }
+
+  return { sheets, skippedSecondary, skippedUnrecognized, identityCorrections };
+}
+```
+
+- [ ] **Step 4: Run the tests to verify all 8 pass**
+
+Run: `npx vitest run __tests__/sis/backfill/grading/grading-workbook-t2.test.ts`
+Expected: PASS (8 tests — the original 5 plus 3 new)
+
+- [ ] **Step 5: Run Phase 3's existing grading-workbook tests + the full backfill suite to confirm zero regression**
+
+Run: `npx vitest run __tests__/sis/backfill/`
+Expected: PASS — every test across every phase, including Task 2/3's tests (which don't reference `identityCorrections` and are unaffected by this change).
+
+- [ ] **Step 6: Update the orchestrator to report identity corrections in preview.sql**
+
+Replace the entire content of `scripts/backfill/gen-ay2026-t2-primary-grading.ts`:
+
+```ts
+// scripts/backfill/gen-ay2026-t2-primary-grading.ts
+// Generates ay2026-t2-primary-grading-{preview,apply}.sql from HFSE's real
+// T2 "GRADES" folder subject workbooks (Primary tabs only — Secondary
+// Regular-track tabs riding along in the same files are recognized and
+// skipped, deferred to Phase 6b). Emits SQL for review — does NOT write
+// to the database itself. See:
+// docs/superpowers/specs/2026-07-18-ay2026-t2-primary-grading-import-design.md
+//
+// Run: npx tsx --env-file=.env.local scripts/backfill/gen-ay2026-t2-primary-grading.ts
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { createServiceClient } from '../../lib/supabase/service';
+import { parseGradingWorkbookT2 } from '../../lib/sis/backfill/grading/grading-workbook-t2';
+import { buildPrimaryGradingImport } from '../../lib/sis/backfill/grading/build-primary-grading-import';
+import type {
+  RosterLookupEntry,
+  SubjectConfigWeight,
+} from '../../lib/sis/backfill/grading/build-primary-grading-import';
+
+const AY_CODE = 'AY2026';
+const TERM_NUMBER = 2;
+const DIR = 'AY2026/T2/Term 2 Grades/GRADES';
+
+// Explicit file list — never a directory glob. "Copy of English..." and
+// "Copy of Science..." are corrupted duplicates (literal #REF! in the
+// NAME column, same signature as T1's corrupted file) and must never be
+// read.
+const SUBJECT_FILES: { file: string; subjectCode: string }[] = [
+  { file: 'Math Grading AY2026 T2.xlsx', subjectCode: 'MATH' },
+  { file: 'English Grading AY2026 T2.xlsx', subjectCode: 'ENG' },
+  { file: 'Science Grading AY2026 T2.xlsx', subjectCode: 'SCI' },
+  { file: 'STAR (PrI) Grading AY2026 T2.xlsx', subjectCode: 'MAPEH' },
+  { file: 'Filipino Grading AY2026 T2.xlsx', subjectCode: 'FIL' },
+  { file: 'Mandarin Grading AY2026 T2.xlsx', subjectCode: 'MANDARIN' },
+];
+
+// Hand-verified during design (docs/superpowers/specs/2026-07-18-ay2026-t2-primary-grading-import-design.md
+// §2 Locked Decision #6) by comparing each subject's real T2 header weight
+// against the live subject_configs value — NOT derived at generation time.
+// MATH/ENG/SCI are deliberately absent: already correct + already
+// weights_confirmed=true from Phase 3 / its correction pass.
+const SUBJECT_CONFIG_WEIGHTS: SubjectConfigWeight[] = [
+  { subjectCode: 'FIL', wwWeight: 0.4, ptWeight: 0.4, qaWeight: 0.2 }, // real correction: was 0.3/0.5/0.2
+  { subjectCode: 'MAPEH', wwWeight: 0.2, ptWeight: 0.6, qaWeight: 0.2 }, // confirm-only, already correct
+  { subjectCode: 'MANDARIN', wwWeight: 0.3, ptWeight: 0.5, qaWeight: 0.2 }, // confirm-only, already correct
+];
+
+function buildIdentityCorrectionsSection(corrections: string[]): string {
+  const lines: string[] = [];
+  lines.push('--');
+  lines.push(
+    `-- Identity corrections (${corrections.length}) — tab name overrode a conflicting row 2 label:`
+  );
+  lines.push('-- (see design doc §8 for why row 2 alone is not trustworthy)');
+  if (corrections.length === 0) lines.push('--   (none)');
+  for (const c of corrections) lines.push(`--   ${c}`);
+  return lines.join('\n') + '\n';
+}
+
+async function main() {
+  const svc = createServiceClient();
+
+  // 1. Parse every real workbook; collect Primary sheets + skip counts.
+  let sheets: ReturnType<typeof parseGradingWorkbookT2>['sheets'] = [];
+  let skippedSecondaryTotal = 0;
+  let skippedUnrecognizedTotal = 0;
+  let allIdentityCorrections: string[] = [];
+  for (const { file, subjectCode } of SUBJECT_FILES) {
+    const result = parseGradingWorkbookT2(join(DIR, file), subjectCode);
+    sheets = sheets.concat(result.sheets);
+    skippedSecondaryTotal += result.skippedSecondary.length;
+    skippedUnrecognizedTotal += result.skippedUnrecognized.length;
+    allIdentityCorrections = allIdentityCorrections.concat(
+      result.identityCorrections
+    );
+    console.log(
+      `${file}: ${result.sheets.length} Primary sheet(s), skipped ${result.skippedSecondary.length} Secondary + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} identity correction(s)`
+    );
+  }
+
+  // 2. Build the roster lookup for AY2026's Primary sections.
+  const { data: ay, error: ayErr } = await svc
+    .from('academic_years')
+    .select('id')
+    .eq('ay_code', AY_CODE)
+    .single();
+  if (ayErr) throw ayErr;
+
+  const { data: rows, error: rowsErr } = await svc
+    .from('section_students')
+    .select(
+      'id, index_number, sections!inner(name, academic_year_id, levels!inner(code, level_type))'
+    )
+    .eq('sections.academic_year_id', (ay as any).id)
+    .eq('sections.levels.level_type', 'primary');
+  if (rowsErr) throw rowsErr;
+
+  const rosterLookup: RosterLookupEntry[] = (rows ?? []).map((r: any) => ({
+    levelCode: r.sections.levels.code,
+    sectionName: r.sections.name,
+    indexNumber: r.index_number,
+    sectionStudentId: r.id,
+  }));
+
+  // 3. Compose.
+  const result = buildPrimaryGradingImport({
+    sheets,
+    rosterLookup,
+    subjectConfigWeights: SUBJECT_CONFIG_WEIGHTS,
+    ayCode: AY_CODE,
+    termNumber: TERM_NUMBER,
+  });
+
+  const finalPreview =
+    result.preview +
+    '\n' +
+    buildIdentityCorrectionsSection(allIdentityCorrections);
+
+  writeFileSync(
+    'scripts/backfill/ay2026-t2-primary-grading-preview.sql',
+    finalPreview
+  );
+  writeFileSync(
+    'scripts/backfill/ay2026-t2-primary-grading-apply.sql',
+    result.apply
+  );
+
+  console.log('Stats:', JSON.stringify(result.stats, null, 2));
+  console.log(
+    `Skipped across all files: ${skippedSecondaryTotal} Secondary tabs (deferred to Phase 6b), ${skippedUnrecognizedTotal} unrecognized tabs`
+  );
+  console.log(
+    `Identity corrections (tab name overrode row 2): ${allIdentityCorrections.length}`
+  );
+  console.log('Wrote scripts/backfill/ay2026-t2-primary-grading-preview.sql');
+  console.log('Wrote scripts/backfill/ay2026-t2-primary-grading-apply.sql');
+}
+
+main()
+  .then(() => process.exit(0))
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+```
+
+- [ ] **Step 7: Run the full backfill test suite once more to confirm no regression**
+
+Run: `npx vitest run __tests__/sis/backfill/`
+Expected: PASS — all tests across all phases green.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add lib/sis/backfill/grading/grading-workbook-t2.ts __tests__/sis/backfill/grading/grading-workbook-t2.test.ts scripts/backfill/gen-ay2026-t2-primary-grading.ts
+git commit -m "fix(backfill): resolve AY2026 T2 Primary grading identity from tab name, not row 2"
+```
+
+- [ ] **Step 9: Re-run the generator for real and re-verify**
+
+Run: `npx tsx --env-file=.env.local scripts/backfill/gen-ay2026-t2-primary-grading.ts`
+Expected: `gradingSheetsWritten` rises from the prior run's 85 (17 Primary sheets per subject minus the ones that never applied — Respect/Gentleness/Compassion still won't resolve, since those 3 sections still don't exist in `section_students`, but they'll now correctly land in needs-review under their true names instead of not appearing at all where a wrong-identity tab used to silently absorb them). The `Identity corrections` count should read exactly **6** (matching the table in design doc §8 Finding B) — read `scripts/backfill/ay2026-t2-primary-grading-preview.sql`'s new "Identity corrections" section in full and hand-verify each of the 6 lines matches the table in the design doc exactly, and that no unexpected 7th correction appears (which would mean another tab has the same problem this investigation didn't catch).
+
 ## Self-review notes (fixed inline before handoff)
 
 - **Spec coverage:** design doc §2 Locked Decisions 1–10 are each implemented — scope (Task 3's `SUBJECT_FILES`), corrupted-file exclusion (explicit list, never `Copy of...`), Primary/Secondary/unrecognized classification + skip-not-error handling (Task 1, tested for all three), the fixed first-match printed-grade-column finder (Task 1, tested against a fixture carrying the real spurious second pair), the exactly-3-subject corrections-only `subject_configs` write (Task 2/3, tested to prove it never touches an untouched subject or `ww_max_slots`/etc.), no `subject_level_offerings`/`section_subjects` writes (simply absent from Task 2's SQL — verified by omission, not present anywhere in `buildApplySql`), MAPEH's letter column never read/written (Task 1's column finder only matches `Initial`/`Quarterly` labels — `"Final Grade Equivalent"` matches neither), roster resolution + needs-review + real-formula grade computation (Task 2, mirrors Phase 3's proven pattern), sheet locking (Task 2's `grading_sheets` insert), single un-chunked `apply.sql` (Task 2 returns one string, no file-array/chunking machinery — tested explicitly). §3's architecture and §4's SQL write plan map 1:1 onto Tasks 1–3. §5's validation plan is Task 3 Step 5.
 - **Placeholder scan:** none found — every step has complete, runnable code.
 - **Type consistency:** `ParsedSubjectSheet`/`GradingStudentRow` field names are imported as types from Phase 3's module (not redefined) and used identically across Task 1's producer and Task 2's consumer. `RosterLookupEntry` and `SubjectConfigWeight` names/shapes match exactly between Task 2's producer and Task 3's orchestrator usage — verified `subjectCode`/`wwWeight`/`ptWeight`/`qaWeight` field names are consistent in the test file, the implementation, and the orchestrator's `SUBJECT_CONFIG_WEIGHTS` constant.
 - **Corrected during plan-writing (not a new design decision, a factual fix caught while re-verifying against a precise column dump):** the design doc originally claimed MAPEH has no printed Quarterly column and needs an Initial-only fallback. A precise indexed dump showed it does have a real printed Quarterly grade (paired correctly by the fixed first-match column finder) — no special-case is needed, and the design doc was corrected accordingly before this plan was written. This plan reflects the corrected, simpler reality: MAPEH is handled by the same code path as every other subject.
+- **Amendment self-review (Task 4, added after Tasks 1–3's real run):** spec coverage — design doc §8's two findings are each covered (Finding A via the existing Reserved-tab-fallback test + Finding B via the new mismatch/swap tests + the real 6-correction table cross-check in Step 9); placeholder scan — none found; type consistency — `ParseGradingWorkbookT2Result.identityCorrections` is additive-only, verified it doesn't break Task 2/3's existing consumption (Task 2 never reads this field at all, and Task 3's orchestrator is the only consumer, updated in this same task). Deliberately scoped to touch only Task 1's own file (same-phase, not a prior-phase violation) plus Task 3's orchestrator — Task 2's composer is untouched and does not need re-review.
