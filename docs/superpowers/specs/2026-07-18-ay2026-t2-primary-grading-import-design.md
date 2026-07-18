@@ -86,6 +86,7 @@ ay2026-t2-primary-grading-apply.sql     ← reviewed + run manually after
 - Phase 6b (Secondary — Regular track from the same `GRADES/` folder + Global track from `Lower Secondary Global Grading Sheets/`, plus resolving the CCA subject's section attachment) — separate, later spec.
 - Phase 7 (T2 evaluation write-ups) and Phase 8 (Records cross-check against the Term 2 CONSOLIDATED FORM) — separate specs.
 - Re-resolving any students who were already unresolved in earlier phases' needs-review buckets.
+- **Accepted residual risk, flagged by the final whole-branch review (2026-07-18):** within a resolved section, students are matched by `indexNumber` alone — the workbook's `fullName` is carried through for display/needs-review text but never cross-checked against the DB roster's name. This is the same _class_ of silent-misattribution risk Task 4 closed for section identity (a mismatch wouldn't fail loud). Not fixed here because it's the same index-based resolution pattern every phase in this project already uses (Phases 1–6a), governed by a locked project convention (section `index_number` is permanent, never reused — see project memory), and — unlike the row-2 labels, which were observed wrong on 8 real tabs — there is no observed instance of index-number corruption in any phase's real run so far. If a future phase's real run does surface a name/index mismatch, add a `fullName` cross-check to that phase's composer (and consider backporting to prior phases) rather than guessing here.
 
 ## 8. Amendment (2026-07-18) — real-run findings require a Task 4
 
