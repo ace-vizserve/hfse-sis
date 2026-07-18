@@ -1,8 +1,8 @@
 # AY2026 T2 Primary Grading Sheets Import — Design
 
 **Date:** 2026-07-18
-**Status:** Design (approved in brainstorming; pending spec review)
-**Target:** Import HFSE's real T2 Primary grading data (6 subjects × 14 real sections) into `subject_configs` (corrections only) / `grading_sheets` / `grade_entries`.
+**Status:** Amended (see §8 — Tasks 1–3 implemented + reviewed; Task 4 added after a real run surfaced 2 findings)
+**Target:** Import HFSE's real T2 Primary grading data (6 subjects × 17 real sections — see §8 Finding A, corrects the "14" figure below) into `subject_configs` (corrections only) / `grading_sheets` / `grade_entries`.
 
 **Scope:** Phase 6a — the first half of the T2 grading sequence, split from the original single "T2 grading" phase because the full-roster scope (Primary + Secondary, ~5x T1's volume) was judged better done as two passes. Phase 6b (Secondary — Regular + Global track, plus the newly-discovered CCA subject) is a separate, later spec.
 
@@ -86,3 +86,26 @@ ay2026-t2-primary-grading-apply.sql     ← reviewed + run manually after
 - Phase 6b (Secondary — Regular track from the same `GRADES/` folder + Global track from `Lower Secondary Global Grading Sheets/`, plus resolving the CCA subject's section attachment) — separate, later spec.
 - Phase 7 (T2 evaluation write-ups) and Phase 8 (Records cross-check against the Term 2 CONSOLIDATED FORM) — separate specs.
 - Re-resolving any students who were already unresolved in earlier phases' needs-review buckets.
+
+## 8. Amendment (2026-07-18) — real-run findings require a Task 4
+
+The implementation (Tasks 1–3) was built, reviewed, and run for real against the live database and the real 6 workbooks. The run surfaced two things this design got wrong, both discovered only by inspecting the _actual output_, not by re-reading the source files differently — a genuine gap in the original investigation, not a coding bug in Tasks 1–3.
+
+**Finding A — `Reserved N` tabs are not empty.** Locked Decision #1's claim ("3 KD #144 sections have zero students/data... confirmed present only as empty `Reserved N` tabs") was wrong. Every `Reserved N` tab across all 6 files actually contains a real, populated Primary section — Respect, Gentleness, or Compassion — with real students and real scores; the tab was simply never renamed from the workbook template's placeholder name. The real scope is **17 Primary sections, not 14** (the full KD #144 list). This is not a code defect — the existing identity parser (row-2-based) already reads these tabs correctly _when it reaches them via the row-2 fallback described in Finding B's fix_; the design's assumption that the tab name told the whole story was the gap. Consequence, confirmed benign: these 3 sections' students correctly fail roster resolution (`no matching section_students row`) and land in needs-review, because the sections themselves don't exist in `section_students` yet — a real SIS Admin/Records gap outside this phase's scope, not something this import should paper over. Nothing incorrect gets written for them.
+
+**Finding B — row 2 is not always reliable, and the failure mode is silent, not loud.** Cross-checking every real tab's name against its row-2 text found **6 tabs across 4 subjects where row 2 is simply wrong** — a copy-paste artifact from cloning an existing tab as a template inside Excel and forgetting to update the label cell:
+
+| File       | Tab (verified correct)      | Row 2 text (wrong)                                             |
+| ---------- | --------------------------- | -------------------------------------------------------------- |
+| English    | `English - P5 Perseverance` | `"Primary 5 COMMITMENT - ENGLISH"`                             |
+| STAR/MAPEH | `STAR - P5 Perseverance`    | `"Primary 5 COMMITMENT - MUSIC, ARTS, PE, HEALTH"`             |
+| Filipino   | `Filipino - P6 Loyalty`     | `"Primary 6 GRIT - FILIPINO"`                                  |
+| Mandarin   | `Mandarin - P3 Courtesy`    | `"Primary 4 DILIGENCE - MANDARIN"`                             |
+| Mandarin   | `Mandarin - P4 Diligence`   | `"Primary 3 COURTESY - MANDARIN"` (swapped with the row above) |
+| Mandarin   | `Mandarin - P5 Commitment`  | `"Primary 4 DILIGENCE - MANDARIN"`                             |
+
+Math and Science have zero instances of this — every tab name there matches row 2 exactly. Locked Decision #4 ("level/section identity parsing is regex-based [over row 2 text]... not a fixed-position read") is amended: **row 2 alone is not a safe sole identity source**. Because roster resolution keys on `(levelCode, sectionName, indexNumber)`, a wrong `sectionName` from row 2 does not reliably fail loud — it can resolve against a _different real section's_ roster and silently attribute one student's grades to another, with no error and no needs-review flag. This is the specific risk class Hard Rule discipline throughout this whole project exists to prevent, and it slipped through here because the original design never cross-checked the two available identity signals against each other.
+
+**Amended Locked Decision (supersedes #1, #3, #4 for identity specifically — #4's non-identity claims, like title-casing and the `" - SUBJECT"` suffix handling, are unaffected):**
+
+9. **Identity is derived from the tab name first; row 2 is a fallback used only when the tab name doesn't parse.** Tab names are a `"<Subject> - <PrimaryLevel><Num> <Section>"` or `"<Subject> - <S|Sec><Num> <Section>"` shape (`"Math - P1 Patience"`, `"English - P5 Perseverance"`, `"Math - S1 Discipline 2"`, `"Literature - Sec 1 Discipline 2"` — note the `S`/`Sec` prefix spelling itself varies by file and both must be handled) and are structurally reliable: Excel does not allow two tabs in one workbook to share a name, so a mis-typed tab name would be immediately, visibly obvious to whoever built the workbook, unlike a free-text label cell. When the tab name matches this shape, it is authoritative for level + section identity, full stop — row 2 is not consulted for identity at all in that case (row 2 is still used for weights/teacher-name, which this bug never affected). When the tab name does **not** match the shape (`"Reserved 1"`, `"Sheet2"`, etc. — Finding A's case), identity falls back to parsing row 2's text exactly as the original Locked Decision #4 described. **Every tab where the two signals disagree is recorded in a new preview.sql section** (`identity corrections — tab name overrode a conflicting row 2 label`) so a human reviewing the output can see exactly which corrections this fix applied and confirm none of them look wrong, rather than the override happening invisibly.
