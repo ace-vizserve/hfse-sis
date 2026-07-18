@@ -1,3 +1,4 @@
+// __tests__/sis/backfill/grading/grading-workbook-t2.test.ts
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
 import { mkdtempSync } from 'node:fs';
@@ -300,6 +301,8 @@ describe('parseGradingWorkbookT2', () => {
     // pair's values (60/93 at cols 21/22).
     expect(alvarez.printedInitialGrade).toBeCloseTo(88.0);
     expect(alvarez.printedQuarterlyGrade).toBe(92);
+    // Tab name and row 2 agree here — no correction needed.
+    expect(result.identityCorrections).toEqual([]);
   });
 
   it('recognizes a Secondary tab and reports it as skipped, never processing it as Primary', () => {
@@ -334,12 +337,6 @@ describe('parseGradingWorkbookT2', () => {
     const rows = LIT_SEC1_ROWS.map((r) => [...r]);
     writeWorkbook(path, { 'Literature - Sec 1 Discipline 2': rows });
 
-    // This case is exercised indirectly — sectionName title-casing is
-    // proven directly via the Primary MATH case above ("PATIENCE" ->
-    // "Patience"); this test proves the multi-word "DISCIPLINE 2" shape
-    // is at least correctly classified as Secondary (not crashing on the
-    // 2-word section name), matching the design doc's stated identity
-    // regex behavior for the deferred Phase 6b.
     const result = parseGradingWorkbookT2(path, 'LIT');
     expect(result.skippedSecondary).toHaveLength(1);
   });
@@ -354,5 +351,74 @@ describe('parseGradingWorkbookT2', () => {
     const result = parseGradingWorkbookT2(path, 'MAPEH');
     expect(result.sheets).toHaveLength(1);
     expect(result.sheets[0].sectionName).toBe('Patience');
+  });
+
+  it('uses the TAB NAME over a wrong row-2 label, and records the mismatch — the real bug this task fixes', () => {
+    // Real bug, verified against the actual workbook: the tab is genuinely
+    // "P5 Perseverance" (confirmed by its real roster of Perseverance
+    // students), but row 2 was copy-pasted from the Commitment tab and
+    // still says "COMMITMENT". Trusting row 2 here would silently resolve
+    // these students against the Commitment section's real roster instead.
+    const dir = mkdtempSync(join(tmpdir(), 'grading-wb-t2-'));
+    const path = join(dir, 'eng.xlsx');
+    const rows = MATH_P1_ROWS.map((r) => [...r]);
+    rows[2] = ['Primary 5 COMMITMENT - ENGLISH'];
+    writeWorkbook(path, { 'English - P5 Perseverance': rows });
+
+    const result = parseGradingWorkbookT2(path, 'ENG');
+
+    expect(result.sheets).toHaveLength(1);
+    expect(result.sheets[0].levelCode).toBe('P5');
+    expect(result.sheets[0].sectionName).toBe('Perseverance');
+    expect(result.identityCorrections).toHaveLength(1);
+    expect(result.identityCorrections[0]).toContain(
+      'English - P5 Perseverance'
+    );
+    expect(result.identityCorrections[0]).toContain('P5 Perseverance');
+    expect(result.identityCorrections[0]).toContain('P5 Commitment');
+  });
+
+  it('falls back to row 2 when the tab name does not parse, recovering a real Reserved-tab section without flagging a mismatch', () => {
+    // The Finding-A case: "Reserved 1" is not empty — it's a real,
+    // never-renamed Respect section. Tab name gives no signal at all here
+    // (doesn't parse), so this must fall back to row 2, and since there's
+    // no tab-name signal to disagree with, no correction is logged.
+    const dir = mkdtempSync(join(tmpdir(), 'grading-wb-t2-'));
+    const path = join(dir, 'reserved-respect.xlsx');
+    const rows = MATH_P1_ROWS.map((r) => [...r]);
+    rows[2] = ['Primary 1 RESPECT - MATH'];
+    writeWorkbook(path, { 'Reserved 1': rows });
+
+    const result = parseGradingWorkbookT2(path, 'MATH');
+
+    expect(result.sheets).toHaveLength(1);
+    expect(result.sheets[0].levelCode).toBe('P1');
+    expect(result.sheets[0].sectionName).toBe('Respect');
+    expect(result.identityCorrections).toEqual([]);
+  });
+
+  it('resolves two tabs with SWAPPED row-2 labels independently and correctly via tab name (Mandarin P3/P4 real case)', () => {
+    // Real bug: "Mandarin - P3 Courtesy" and "Mandarin - P4 Diligence" have
+    // their row-2 labels swapped with each other. Each tab must resolve to
+    // its OWN correct identity via its own tab name — neither one's real
+    // students may end up attributed to the other section.
+    const dir = mkdtempSync(join(tmpdir(), 'grading-wb-t2-'));
+    const path = join(dir, 'mandarin.xlsx');
+    const p3Rows = MATH_P1_ROWS.map((r) => [...r]);
+    p3Rows[2] = ['Primary 4 DILIGENCE - MANDARIN'];
+    const p4Rows = MATH_P1_ROWS.map((r) => [...r]);
+    p4Rows[2] = ['Primary 3 COURTESY - MANDARIN'];
+    writeWorkbook(path, {
+      'Mandarin - P3 Courtesy': p3Rows,
+      'Mandarin - P4 Diligence': p4Rows,
+    });
+
+    const result = parseGradingWorkbookT2(path, 'MANDARIN');
+
+    expect(result.sheets).toHaveLength(2);
+    const bySection = new Map(result.sheets.map((s) => [s.sectionName, s]));
+    expect(bySection.get('Courtesy')?.levelCode).toBe('P3');
+    expect(bySection.get('Diligence')?.levelCode).toBe('P4');
+    expect(result.identityCorrections).toHaveLength(2);
   });
 });

@@ -46,6 +46,18 @@ const SUBJECT_CONFIG_WEIGHTS: SubjectConfigWeight[] = [
   { subjectCode: 'MANDARIN', wwWeight: 0.3, ptWeight: 0.5, qaWeight: 0.2 }, // confirm-only, already correct
 ];
 
+function buildIdentityCorrectionsSection(corrections: string[]): string {
+  const lines: string[] = [];
+  lines.push('--');
+  lines.push(
+    `-- Identity corrections (${corrections.length}) — tab name overrode a conflicting row 2 label:`
+  );
+  lines.push('-- (see design doc §8 for why row 2 alone is not trustworthy)');
+  if (corrections.length === 0) lines.push('--   (none)');
+  for (const c of corrections) lines.push(`--   ${c}`);
+  return lines.join('\n') + '\n';
+}
+
 async function main() {
   const svc = createServiceClient();
 
@@ -53,13 +65,17 @@ async function main() {
   let sheets: ReturnType<typeof parseGradingWorkbookT2>['sheets'] = [];
   let skippedSecondaryTotal = 0;
   let skippedUnrecognizedTotal = 0;
+  let allIdentityCorrections: string[] = [];
   for (const { file, subjectCode } of SUBJECT_FILES) {
     const result = parseGradingWorkbookT2(join(DIR, file), subjectCode);
     sheets = sheets.concat(result.sheets);
     skippedSecondaryTotal += result.skippedSecondary.length;
     skippedUnrecognizedTotal += result.skippedUnrecognized.length;
+    allIdentityCorrections = allIdentityCorrections.concat(
+      result.identityCorrections
+    );
     console.log(
-      `${file}: ${result.sheets.length} Primary sheet(s), skipped ${result.skippedSecondary.length} Secondary + ${result.skippedUnrecognized.length} unrecognized`
+      `${file}: ${result.sheets.length} Primary sheet(s), skipped ${result.skippedSecondary.length} Secondary + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} identity correction(s)`
     );
   }
 
@@ -96,9 +112,14 @@ async function main() {
     termNumber: TERM_NUMBER,
   });
 
+  const finalPreview =
+    result.preview +
+    '\n' +
+    buildIdentityCorrectionsSection(allIdentityCorrections);
+
   writeFileSync(
     'scripts/backfill/ay2026-t2-primary-grading-preview.sql',
-    result.preview
+    finalPreview
   );
   writeFileSync(
     'scripts/backfill/ay2026-t2-primary-grading-apply.sql',
@@ -108,6 +129,9 @@ async function main() {
   console.log('Stats:', JSON.stringify(result.stats, null, 2));
   console.log(
     `Skipped across all files: ${skippedSecondaryTotal} Secondary tabs (deferred to Phase 6b), ${skippedUnrecognizedTotal} unrecognized tabs`
+  );
+  console.log(
+    `Identity corrections (tab name overrode row 2): ${allIdentityCorrections.length}`
   );
   console.log('Wrote scripts/backfill/ay2026-t2-primary-grading-preview.sql');
   console.log('Wrote scripts/backfill/ay2026-t2-primary-grading-apply.sql');

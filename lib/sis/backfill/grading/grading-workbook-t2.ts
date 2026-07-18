@@ -4,8 +4,8 @@
 // ParsedSubjectSheet per real PRIMARY section tab. Secondary tabs are
 // recognized and skipped (Phase 6b's scope), never processed here.
 //
-// Two real deltas from Phase 3's T1 parser (grading-workbook.ts, never
-// modified — this is a standalone module):
+// Deltas from Phase 3's T1 parser (grading-workbook.ts, never modified —
+// this is a standalone module):
 //   1. Row 2's identity text has no numeric section suffix for Primary
 //      ("Primary 1 PATIENCE - MATH") and carries a trailing " - SUBJECT"
 //      T1's raw text never had — a new regex handles both this and the
@@ -14,6 +14,18 @@
 //      pair after the real printed-grade columns. T1's finder took the
 //      LAST label match scanning forward — silently wrong here. This
 //      finder takes the FIRST match of each label only.
+//   3. (Added after a real run — see design doc §8.) Row 2's text is
+//      sometimes simply WRONG — a copy-paste artifact from cloning an
+//      existing tab as a template in Excel and forgetting to update the
+//      label. Because roster resolution keys on (levelCode, sectionName,
+//      indexNumber), trusting a wrong row-2 label doesn't fail loud — it
+//      can silently resolve against a DIFFERENT real section's roster.
+//      Tab names are structurally reliable (Excel forbids duplicate tab
+//      names), so identity is now resolved from the tab name FIRST, with
+//      row 2 used only as a fallback when the tab name itself doesn't
+//      parse (the real case for the never-renamed "Reserved N" tabs).
+//      Every case where the two signals disagree is recorded so a human
+//      can see exactly what got corrected.
 import * as XLSX from 'xlsx';
 
 import type { GradingStudentRow, ParsedSubjectSheet } from './grading-workbook';
@@ -22,6 +34,7 @@ export interface ParseGradingWorkbookT2Result {
   sheets: ParsedSubjectSheet[];
   skippedSecondary: string[];
   skippedUnrecognized: string[];
+  identityCorrections: string[];
 }
 
 const ROW_LEVEL_SECTION = 2;
@@ -112,8 +125,6 @@ type IdentityT2 =
   | { kind: 'secondary'; levelCode: string; sectionName: string }
   | { kind: 'unrecognized' };
 
-const IDENTITY_RE = /^(Primary|Secondary)\s+(\d+)\s+(.+?)\s+-\s+.+$/i;
-
 function titleCase(raw: string): string {
   return raw
     .trim()
@@ -122,8 +133,11 @@ function titleCase(raw: string): string {
     .join(' ');
 }
 
-function parseIdentityT2(raw: string): IdentityT2 {
-  const m = IDENTITY_RE.exec(raw.trim());
+// Row 2's shape: "Primary N NAME - SUBJECT" or "Secondary N NAME - SUBJECT".
+const ROW2_IDENTITY_RE = /^(Primary|Secondary)\s+(\d+)\s+(.+?)\s+-\s+.+$/i;
+
+function parseRow2Identity(raw: string): IdentityT2 {
+  const m = ROW2_IDENTITY_RE.exec(raw.trim());
   if (!m) return { kind: 'unrecognized' };
   const [, levelWord, levelNum, sectionRaw] = m;
   const isPrimary = levelWord.toLowerCase() === 'primary';
@@ -131,6 +145,62 @@ function parseIdentityT2(raw: string): IdentityT2 {
     kind: isPrimary ? 'primary' : 'secondary',
     levelCode: `${isPrimary ? 'P' : 'S'}${levelNum}`,
     sectionName: titleCase(sectionRaw),
+  };
+}
+
+// Tab name's shape: "<Subject> - P<N> <Name>", "<Subject> - S<N> <Name>", or
+// "<Subject> - Sec <N> <Name>" (the S/Sec spelling varies by file — both
+// observed in real data, "Sec" tried first so it isn't shadowed by the
+// single-letter "S" alternative).
+const TAB_NAME_IDENTITY_RE = /^.+?\s*-\s*(Sec|P|S)\.?\s*(\d+)\s+(.+)$/i;
+
+function parseTabNameIdentity(sheetName: string): IdentityT2 {
+  const m = TAB_NAME_IDENTITY_RE.exec(sheetName.trim());
+  if (!m) return { kind: 'unrecognized' };
+  const [, prefix, levelNum, sectionRaw] = m;
+  const isPrimary = prefix.toLowerCase().startsWith('p');
+  return {
+    kind: isPrimary ? 'primary' : 'secondary',
+    levelCode: `${isPrimary ? 'P' : 'S'}${levelNum}`,
+    sectionName: titleCase(sectionRaw),
+  };
+}
+
+function identityLabel(identity: IdentityT2): string {
+  return identity.kind === 'unrecognized'
+    ? '(unrecognized)'
+    : `${identity.levelCode} ${identity.sectionName}`;
+}
+
+// Tab name wins whenever it parses — Excel forbids two tabs sharing a
+// name, so a mistyped tab name would be immediately visible to whoever
+// built the workbook, unlike a free-text label cell that's easy to
+// fat-finger via copy-paste without visual feedback. Row 2 is the
+// fallback ONLY when the tab name doesn't parse (the real case for
+// never-renamed "Reserved N" tabs). When both parse but disagree, a
+// human-readable correction note is returned so the operator can see
+// exactly what got overridden.
+function resolveIdentity(
+  sheetName: string,
+  row2Raw: string
+): { identity: IdentityT2; correctionNote: string | null } {
+  const tabIdentity = parseTabNameIdentity(sheetName);
+  if (tabIdentity.kind === 'unrecognized') {
+    return { identity: parseRow2Identity(row2Raw), correctionNote: null };
+  }
+
+  const row2Identity = parseRow2Identity(row2Raw);
+  const disagrees =
+    row2Identity.kind !== 'unrecognized' &&
+    (row2Identity.kind !== tabIdentity.kind ||
+      row2Identity.levelCode !== tabIdentity.levelCode ||
+      row2Identity.sectionName !== tabIdentity.sectionName);
+
+  return {
+    identity: tabIdentity,
+    correctionNote: disagrees
+      ? `"${sheetName}": tab name says ${identityLabel(tabIdentity)}, row 2 says ${identityLabel(row2Identity)} — using tab name`
+      : null,
   };
 }
 
@@ -143,10 +213,19 @@ function parseTeacherName(raw: string): string | null {
 
 function parseOneSheetT2(
   rows: unknown[][],
-  subjectCode: string
-): { sheet: ParsedSubjectSheet | null; identity: IdentityT2 } {
-  const identity = parseIdentityT2(cell(rows[ROW_LEVEL_SECTION], 0));
-  if (identity.kind !== 'primary') return { sheet: null, identity };
+  subjectCode: string,
+  sheetName: string
+): {
+  sheet: ParsedSubjectSheet | null;
+  identity: IdentityT2;
+  correctionNote: string | null;
+} {
+  const { identity, correctionNote } = resolveIdentity(
+    sheetName,
+    cell(rows[ROW_LEVEL_SECTION], 0)
+  );
+  if (identity.kind !== 'primary')
+    return { sheet: null, identity, correctionNote };
 
   const teacherName = parseTeacherName(cell(rows[ROW_TEACHER], 0));
   const layout = findColumnLayout(rows[ROW_SUBCOLS]);
@@ -203,6 +282,7 @@ function parseOneSheetT2(
       students,
     },
     identity,
+    correctionNote,
   };
 }
 
@@ -214,6 +294,7 @@ export function parseGradingWorkbookT2(
   const sheets: ParsedSubjectSheet[] = [];
   const skippedSecondary: string[] = [];
   const skippedUnrecognized: string[] = [];
+  const identityCorrections: string[] = [];
 
   for (const sheetName of wb.SheetNames) {
     const rows: unknown[][] = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
@@ -221,7 +302,12 @@ export function parseGradingWorkbookT2(
       defval: '',
       raw: false,
     });
-    const { sheet, identity } = parseOneSheetT2(rows, subjectCode);
+    const { sheet, identity, correctionNote } = parseOneSheetT2(
+      rows,
+      subjectCode,
+      sheetName
+    );
+    if (correctionNote) identityCorrections.push(correctionNote);
     if (identity.kind === 'primary' && sheet) {
       sheets.push(sheet);
     } else if (identity.kind === 'secondary') {
@@ -231,5 +317,5 @@ export function parseGradingWorkbookT2(
     }
   }
 
-  return { sheets, skippedSecondary, skippedUnrecognized };
+  return { sheets, skippedSecondary, skippedUnrecognized, identityCorrections };
 }
