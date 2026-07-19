@@ -21,17 +21,16 @@ import {
   findPrintedGradeColsT2,
   resolveIdentity,
   parseTeacherName,
-  dedupeByIdentityPreferringScored,
   type IdentityT2,
 } from './t2-masthead';
 
 export interface ParseGradingWorkbookSecondaryT2Result {
   sheets: ParsedSubjectSheet[];
+  sheetNames: string[];
   skippedPrimary: string[];
   skippedUnrecognized: string[];
   identityCorrections: string[];
   truncationNotes: string[];
-  duplicateIdentityNotes: string[];
 }
 
 function parseOneSheetSecondaryT2(
@@ -141,14 +140,12 @@ export function parseGradingWorkbookSecondaryT2(
     }
   }
 
-  const { kept, duplicateNotes } = dedupeByIdentityPreferringScored(candidates);
-
   return {
-    sheets: kept,
+    sheets: candidates.map((c) => c.sheet),
+    sheetNames: candidates.map((c) => c.sheetName),
     skippedPrimary,
     skippedUnrecognized,
     identityCorrections,
     truncationNotes,
-    duplicateIdentityNotes: duplicateNotes,
   };
 }

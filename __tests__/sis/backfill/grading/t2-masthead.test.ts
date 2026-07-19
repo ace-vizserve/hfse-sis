@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveIdentity,
   hasAnyScore,
-  dedupeByIdentityPreferringScored,
+  isReservedTabName,
+  dedupePreferringNonReservedTab,
 } from '@/lib/sis/backfill/grading/t2-masthead';
 
 describe('resolveIdentity', () => {
@@ -149,65 +150,50 @@ describe('hasAnyScore', () => {
   });
 });
 
-describe('dedupeByIdentityPreferringScored', () => {
-  it('keeps a lone sheet untouched even when it has zero scores (no collision)', () => {
-    const lone = {
-      levelCode: 'P2',
-      sectionName: 'Gentleness',
-      students: [{ wwScores: [null], ptScores: [null], examScore: null }],
-    };
-    const { kept, duplicateNotes } = dedupeByIdentityPreferringScored([
+describe('isReservedTabName', () => {
+  it('matches "Reserved N" tab names', () => {
+    expect(isReservedTabName('Reserved 4')).toBe(true);
+    expect(isReservedTabName('Reserved 1')).toBe(true);
+    expect(isReservedTabName('reserved 12')).toBe(true);
+  });
+
+  it('does not match a real, descriptive tab name', () => {
+    expect(isReservedTabName('Science - S1 Discipline 2')).toBe(false);
+    expect(isReservedTabName('Science - Sec 1 Discipline 1')).toBe(false);
+  });
+});
+
+describe('dedupePreferringNonReservedTab', () => {
+  it('keeps a lone sheet untouched even if it came from a Reserved-named tab', () => {
+    const lone = { levelCode: 'P2', sectionName: 'Gentleness' };
+    const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
       { sheetName: 'Reserved 2', sheet: lone },
     ]);
     expect(kept).toEqual([lone]);
     expect(duplicateNotes).toEqual([]);
   });
 
-  it('drops the empty duplicate and keeps the scored one — the real Reserved 4 vs English S1 Discipline 2 case', () => {
-    const empty = {
-      levelCode: 'S1',
-      sectionName: 'Discipline 2',
-      students: [
-        {
-          wwScores: [null, null, null] as (number | null)[],
-          ptScores: [null, null, null] as (number | null)[],
-          examScore: null as number | null,
-        },
-      ],
-    };
-    const scored = {
-      levelCode: 'S1',
-      sectionName: 'Discipline 2',
-      students: [
-        { wwScores: [19, 16, null], ptScores: [28, 27, 22], examScore: 44 },
-      ],
-    };
-    const { kept, duplicateNotes } = dedupeByIdentityPreferringScored([
-      { sheetName: 'Reserved 4', sheet: empty },
-      { sheetName: 'English - S1 Discipline 2', sheet: scored },
+  it('drops a Reserved-named duplicate even when it has real scores — the real Science Reserved 4 vs Global Discipline 1 case', () => {
+    const reservedButScored = { levelCode: 'S1', sectionName: 'Discipline 1' };
+    const real = { levelCode: 'S1', sectionName: 'Discipline 1' };
+    const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
+      { sheetName: 'Reserved 4', sheet: reservedButScored },
+      { sheetName: 'Science - Sec 1 Discipline 1', sheet: real },
     ]);
-    expect(kept).toEqual([scored]);
+    expect(kept).toEqual([real]);
     expect(duplicateNotes).toEqual([
-      '"Reserved 4" and "English - S1 Discipline 2" both resolved to S1 Discipline 2 — "Reserved 4" has no scores at all, using "English - S1 Discipline 2"',
+      '"Reserved 4" and "Science - Sec 1 Discipline 1" both resolved to S1 Discipline 1 — "Reserved 4" is a Reserved slot, using "Science - Sec 1 Discipline 1"',
     ]);
   });
 
-  it('keeps every sheet in a group when the collision is ambiguous (zero or multiple scored)', () => {
-    const empty1 = {
-      levelCode: 'S2',
-      sectionName: 'Integrity',
-      students: [{ wwScores: [null], ptScores: [null], examScore: null }],
-    };
-    const empty2 = {
-      levelCode: 'S2',
-      sectionName: 'Integrity',
-      students: [{ wwScores: [null], ptScores: [null], examScore: null }],
-    };
-    const { kept, duplicateNotes } = dedupeByIdentityPreferringScored([
-      { sheetName: 'Reserved A', sheet: empty1 },
-      { sheetName: 'Reserved B', sheet: empty2 },
+  it('keeps every sheet when the collision is ambiguous (zero or multiple non-Reserved candidates)', () => {
+    const a = { levelCode: 'S2', sectionName: 'Integrity' };
+    const b = { levelCode: 'S2', sectionName: 'Integrity' };
+    const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
+      { sheetName: 'English - S2 Integrity', sheet: a },
+      { sheetName: 'Science - S2 Integrity', sheet: b },
     ]);
-    expect(kept).toEqual([empty1, empty2]);
+    expect(kept).toEqual([a, b]);
     expect(duplicateNotes).toEqual([]);
   });
 });

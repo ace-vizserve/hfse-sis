@@ -13,6 +13,7 @@ import { createServiceClient } from '../../lib/supabase/service';
 import { parseGradingWorkbookSecondaryT2 } from '../../lib/sis/backfill/grading/grading-workbook-secondary-t2';
 import { parseGradingWorkbookGlobalT2 } from '../../lib/sis/backfill/grading/grading-workbook-global-t2';
 import { buildSecondaryGradingImport } from '../../lib/sis/backfill/grading/build-secondary-grading-import';
+import { dedupePreferringNonReservedTab } from '../../lib/sis/backfill/grading/t2-masthead';
 import type {
   RosterLookupEntry,
   SubjectConfigWeight,
@@ -104,10 +105,9 @@ function buildNotesSection(
 async function main() {
   const svc = createServiceClient();
 
-  let sheets: ParsedSubjectSheet[] = [];
+  const candidates: { sheetName: string; sheet: ParsedSubjectSheet }[] = [];
   let allIdentityCorrections: string[] = [];
   let allTruncationNotes: string[] = [];
-  let allDuplicateIdentityNotes: string[] = [];
 
   // 1. Regular track.
   for (const { file, subjectCode } of REGULAR_SUBJECT_FILES) {
@@ -115,16 +115,18 @@ async function main() {
       join(REGULAR_DIR, file),
       subjectCode
     );
-    sheets = sheets.concat(result.sheets);
+    for (let i = 0; i < result.sheets.length; i++) {
+      candidates.push({
+        sheetName: result.sheetNames[i],
+        sheet: result.sheets[i],
+      });
+    }
     allIdentityCorrections = allIdentityCorrections.concat(
       result.identityCorrections
     );
     allTruncationNotes = allTruncationNotes.concat(result.truncationNotes);
-    allDuplicateIdentityNotes = allDuplicateIdentityNotes.concat(
-      result.duplicateIdentityNotes
-    );
     console.log(
-      `[Regular] ${file}: ${result.sheets.length} Secondary sheet(s), skipped ${result.skippedPrimary.length} Primary + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} correction(s), ${result.truncationNotes.length} truncation(s), ${result.duplicateIdentityNotes.length} duplicate(s)`
+      `[Regular] ${file}: ${result.sheets.length} Secondary sheet(s), skipped ${result.skippedPrimary.length} Primary + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} correction(s), ${result.truncationNotes.length} truncation(s)`
     );
   }
 
@@ -134,20 +136,29 @@ async function main() {
       join(GLOBAL_DIR, file),
       subjectCode
     );
-    sheets = sheets.concat(result.sheets);
+    for (let i = 0; i < result.sheets.length; i++) {
+      candidates.push({
+        sheetName: result.sheetNames[i],
+        sheet: result.sheets[i],
+      });
+    }
     allIdentityCorrections = allIdentityCorrections.concat(
       result.identityCorrections
     );
     allTruncationNotes = allTruncationNotes.concat(result.truncationNotes);
-    allDuplicateIdentityNotes = allDuplicateIdentityNotes.concat(
-      result.duplicateIdentityNotes
-    );
     console.log(
-      `[Global] ${file}: ${result.sheets.length} Secondary sheet(s), skipped ${result.skippedDoNotUse.length} DO-NOT-USE + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} correction(s), ${result.truncationNotes.length} truncation(s), ${result.duplicateIdentityNotes.length} duplicate(s)`
+      `[Global] ${file}: ${result.sheets.length} Secondary sheet(s), skipped ${result.skippedDoNotUse.length} DO-NOT-USE + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} correction(s), ${result.truncationNotes.length} truncation(s)`
     );
   }
 
-  // 3. Build the roster lookup for AY2026's Secondary sections.
+  // 3. Cross-file, cross-track dedup — the ONLY place a Regular-track
+  // Reserved tab colliding with a Global-track real tab (or vice versa)
+  // is visible, since every parser above only ever sees one file at a
+  // time.
+  const { kept: sheets, duplicateNotes: allDuplicateIdentityNotes } =
+    dedupePreferringNonReservedTab(candidates);
+
+  // 4. Build the roster lookup for AY2026's Secondary sections.
   const { data: ay, error: ayErr } = await svc
     .from('academic_years')
     .select('id')
@@ -171,7 +182,7 @@ async function main() {
     sectionStudentId: r.id,
   }));
 
-  // 4. Compose.
+  // 5. Compose.
   const result = buildSecondaryGradingImport({
     sheets,
     rosterLookup,
@@ -197,7 +208,7 @@ async function main() {
     '\n' +
     buildNotesSection(
       'Duplicate tabs — identical identity, empty duplicate dropped',
-      'see design doc §1 point 2 and the Task 6 amendment for the Reserved-tab collision case',
+      'see design doc §1 point 2 and the Task 7 amendment for the cross-file Reserved-tab collision case',
       allDuplicateIdentityNotes
     );
 

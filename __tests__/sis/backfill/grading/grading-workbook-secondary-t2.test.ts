@@ -264,7 +264,7 @@ describe('parseGradingWorkbookSecondaryT2', () => {
     expect(result.identityCorrections).toEqual([]);
   });
 
-  it('dedupes the real Reserved-4/English-S1-Discipline-2 identity collision, keeping only the scored sheet (real fixture, Task 6 amendment)', () => {
+  it('returns BOTH the Reserved-4 and the real English-S1-Discipline-2 sheets undeduped (real fixture, Task 7 amendment — dedup now happens once, cross-file, in the orchestrator)', () => {
     const path = join(
       'AY2026',
       'T2',
@@ -275,23 +275,19 @@ describe('parseGradingWorkbookSecondaryT2', () => {
 
     const result = parseGradingWorkbookSecondaryT2(path, 'ENG');
 
-    const s1Discipline2Sheets = result.sheets.filter(
-      (s) => s.levelCode === 'S1' && s.sectionName === 'Discipline 2'
-    );
-    expect(s1Discipline2Sheets).toHaveLength(1);
-    expect(
-      s1Discipline2Sheets[0].students.some(
-        (s) =>
-          s.wwScores.some((v) => v != null) ||
-          s.ptScores.some((v) => v != null) ||
-          s.examScore != null
+    const s1Discipline2Indices = result.sheets
+      .map((s, i) => ({ s, i }))
+      .filter(
+        ({ s }) => s.levelCode === 'S1' && s.sectionName === 'Discipline 2'
       )
-    ).toBe(true);
+      .map(({ i }) => i);
+    expect(s1Discipline2Indices).toHaveLength(2);
 
-    expect(result.duplicateIdentityNotes).toHaveLength(1);
-    expect(result.duplicateIdentityNotes[0]).toContain('Reserved 4');
-    expect(result.duplicateIdentityNotes[0]).toContain(
-      'English - S1 Discipline 2'
+    const s1Discipline2SheetNames = s1Discipline2Indices.map(
+      (i) => result.sheetNames[i]
+    );
+    expect(s1Discipline2SheetNames).toEqual(
+      expect.arrayContaining(['Reserved 4', 'English - S1 Discipline 2'])
     );
   });
 });

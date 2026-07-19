@@ -322,3 +322,60 @@ export function dedupeByIdentityPreferringScored<T extends ScoredSheetLike>(
   }
   return { kept, duplicateNotes };
 }
+
+// A tab literally named "Reserved N" is never a real, currently-taught
+// class. Verified against HFSE's own Term 2 Consolidated Form: the one
+// real production case (Science's "Reserved 4") was NOT simply empty —
+// it had a teacher assigned and real scores — but its 25-student roster
+// turned out to be a stale, superseded snapshot of an entirely different
+// section (S2 Integrity 2) under old index numbers, unrelated to
+// whatever its row-2 label happened to claim. Score content is therefore
+// not a reliable signal (see dedupeByIdentityPreferringScored's doc
+// comment, which this supersedes for the Secondary parsers only) — the
+// tab name itself is the reliable one. Whenever a Reserved-named tab's
+// resolved identity collides with ANY other, properly-named tab, the
+// Reserved tab always loses, unconditionally.
+export function isReservedTabName(sheetName: string): boolean {
+  return /^Reserved\b/i.test(sheetName.trim());
+}
+
+// Deliberately run ONCE across the FULL merged candidate set spanning
+// every file and both tracks — not per-file — since the real bug this
+// fixes is a CROSS-FILE collision (a Regular-track file's stray
+// "Reserved N" tab colliding with a Global-track file's real,
+// properly-named tab for the same identity). A per-file dedup call
+// structurally cannot see this, since each file is parsed independently.
+export function dedupePreferringNonReservedTab<
+  T extends { levelCode: string; sectionName: string },
+>(
+  candidates: { sheetName: string; sheet: T }[]
+): { kept: T[]; duplicateNotes: string[] } {
+  const groups = new Map<string, { sheetName: string; sheet: T }[]>();
+  for (const c of candidates) {
+    const key = `${c.sheet.levelCode}::${c.sheet.sectionName}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(c);
+  }
+
+  const kept: T[] = [];
+  const duplicateNotes: string[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      kept.push(group[0].sheet);
+      continue;
+    }
+    const named = group.filter((c) => !isReservedTabName(c.sheetName));
+    const reserved = group.filter((c) => isReservedTabName(c.sheetName));
+    if (named.length === 1 && reserved.length === group.length - 1) {
+      kept.push(named[0].sheet);
+      for (const r of reserved) {
+        duplicateNotes.push(
+          `"${r.sheetName}" and "${named[0].sheetName}" both resolved to ${group[0].sheet.levelCode} ${group[0].sheet.sectionName} — "${r.sheetName}" is a Reserved slot, using "${named[0].sheetName}"`
+        );
+      }
+    } else {
+      for (const c of group) kept.push(c.sheet);
+    }
+  }
+  return { kept, duplicateNotes };
+}
