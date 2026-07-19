@@ -2444,6 +2444,361 @@ Expected: prints a per-file line for all 16 files (8 Regular + 8 Global), then a
 
 ---
 
+### Task 6: Fix Reserved-tab identity collision (real-data amendment)
+
+**Why this task exists:** after Task 5 shipped and the controller ran the generator for real per Step 5's validation plan, hand-verifying the output surfaced a genuine data-correctness bug that no per-task or final review could have caught from the diff alone — it's a landmine in the source Excel file, not a logic defect. In `English Grading AY2026 T2.xlsx`, the tab named **"Reserved 4"** is an unused scratch tab — real student names (25 rows), but every WW/PT/Exam score cell is null, and its `Teacher:` cell is blank. Its row-2 free-text label happens to read `"Secondary 1 DISCIPLINE 2 - ENGLISH"` (a leftover copy-paste), which makes `resolveIdentity` correctly parse it — via the row-2 fallback, since the tab name "Reserved 4" itself doesn't parse — into the **exact same identity** (`S1`, `Discipline 2`) as the real, fully-scored tab that follows it, **"English - S1 Discipline 2"**.
+
+Both get pushed into `sheets` as independent entries for the same (subject, level, section). Because `grade_entries` writes use `on conflict (grading_sheet_id, section_student_id) do nothing`, and "Reserved 4" appears _before_ the real tab in workbook order (so its rows are inserted first within the same statement), running `apply.sql` as Task 5 generated it would silently write **all-null grade rows for 13 real students** in English S1 Discipline 2 — the real tab's actual scores for those same students would be silently dropped by the conflict guard, with no error, no warning.
+
+A broader investigation (documented here, not repeated in the fix) ruled out two tempting-but-wrong fixes: (a) "exclude any tab named `Reserved N`" is wrong — `Reserved 1/2/3` in this same file, and others across the corpus, are legitimately real, currently-used Primary sections (e.g. `Reserved 1` → `P1 Respect`, teacher "Ms. Shaf") that simply never got renamed from their placeholder tab name; (b) "exclude any tab with no teacher assigned" is also wrong — several already-shipped, real Phase 6a Primary tabs (`English - P5 Tenacity/Commitment/Perseverance`, `P6 Grit`) and one real Secondary tab (`English - S4 Excellence`) all have a blank `Teacher:` cell too, despite carrying real scores. The only reliable, precise signal is: **when two or more tabs in the same file resolve to the identical identity, and exactly one of them has any real score data while the rest are entirely null, the non-null one is real and the null one(s) are stale duplicates.** A lone tab with genuinely zero scores and no collision (confirmed to exist for two already-shipped Phase 6a sections — `Math P2 Gentleness`, `English P4 Compassion`) is left completely untouched by this fix: that's an honest "no grades entered yet" state, not corrupted data, and this task must not change that behavior.
+
+This fix lives in the shared `t2-masthead.ts` module and is wired into **all three** T2 parsers (Phase 6a's `grading-workbook-t2.ts` included) for defense-in-depth and architectural symmetry — even though no Primary-kind collision exists anywhere in the real dataset today (verified by an exhaustive scan across every Primary + Secondary + Global file before writing this task). Because it's additive (a new field, a filtering step that is a no-op wherever no collision exists), Phase 6a's existing test suite must still pass completely unchanged — same acceptance bar as Task 1.
+
+**Files:**
+
+- Modify: `lib/sis/backfill/grading/t2-masthead.ts` (add `hasAnyScore` + `dedupeByIdentityPreferringScored`)
+- Modify: `lib/sis/backfill/grading/grading-workbook-secondary-t2.ts` (wire in dedup, add `duplicateIdentityNotes` field)
+- Modify: `lib/sis/backfill/grading/grading-workbook-global-t2.ts` (same)
+- Modify: `lib/sis/backfill/grading/grading-workbook-t2.ts` (same — Phase 6a's file; its own existing test suite is the regression gate, unchanged)
+- Modify: `scripts/backfill/gen-ay2026-t2-secondary-grading.ts` (surface `duplicateIdentityNotes` in the preview under a third notes section)
+- Test: `__tests__/sis/backfill/grading/t2-masthead.test.ts` (add cases for `hasAnyScore` and `dedupeByIdentityPreferringScored`, including the real Reserved-4-vs-English-S1-Discipline2 shape)
+- Test: `__tests__/sis/backfill/grading/grading-workbook-secondary-t2.test.ts` (add a case proving the real collision resolves to only the populated sheet)
+- Test: `__tests__/sis/backfill/grading/grading-workbook-t2.test.ts` (confirm existing tests pass unchanged — this file is not expected to need a new collision test since no Primary-kind collision exists in its real fixtures, but the wiring must not break anything)
+
+**Interfaces:**
+
+- Consumes: nothing new from other tasks.
+- Produces: `hasAnyScore` and `dedupeByIdentityPreferringScored` (exported from `t2-masthead.ts`) — no later task consumes these (Task 6 is terminal).
+
+- [ ] **Step 1: Add the dedup helpers to `t2-masthead.ts`**
+
+Add to `lib/sis/backfill/grading/t2-masthead.ts` (after `parseTeacherName`, at the end of the file):
+
+```ts
+// A minimal structural shape — avoids importing the full ParsedSubjectSheet
+// type from grading-workbook.ts into this masthead-only module.
+interface ScoredSheetLike {
+  levelCode: string;
+  sectionName: string;
+  students: {
+    wwScores: (number | null)[];
+    ptScores: (number | null)[];
+    examScore: number | null;
+  }[];
+}
+
+export function hasAnyScore(sheet: ScoredSheetLike): boolean {
+  return sheet.students.some(
+    (s) =>
+      s.wwScores.some((v) => v != null) ||
+      s.ptScores.some((v) => v != null) ||
+      s.examScore != null
+  );
+}
+
+// When two or more tabs in the same file resolve to the identical
+// (levelCode, sectionName) identity — the signature of a stale, unused
+// "Reserved N" scratch tab whose row-2 label happens to match a real,
+// populated tab — keep only the one with real score data. This is
+// deliberately NOT a blanket "drop every all-null sheet" rule: a lone,
+// non-colliding section with genuinely zero scores recorded yet (no
+// teacher has entered grades) is left completely untouched — that's an
+// honest "nothing entered yet" state, not corrupted data. When a
+// collision group has zero, or more than one, sheet with real scores,
+// that's a genuinely ambiguous case this heuristic can't safely resolve —
+// every sheet in the group is kept rather than guessed, so it surfaces
+// downstream (needs-review / mismatch sections) instead of being silently
+// dropped.
+export function dedupeByIdentityPreferringScored<T extends ScoredSheetLike>(
+  candidates: { sheetName: string; sheet: T }[]
+): { kept: T[]; duplicateNotes: string[] } {
+  const groups = new Map<string, { sheetName: string; sheet: T }[]>();
+  for (const c of candidates) {
+    const key = `${c.sheet.levelCode}::${c.sheet.sectionName}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(c);
+  }
+
+  const kept: T[] = [];
+  const duplicateNotes: string[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      kept.push(group[0].sheet);
+      continue;
+    }
+    const scored = group.filter((c) => hasAnyScore(c.sheet));
+    const empty = group.filter((c) => !hasAnyScore(c.sheet));
+    if (scored.length === 1 && empty.length === group.length - 1) {
+      kept.push(scored[0].sheet);
+      for (const e of empty) {
+        duplicateNotes.push(
+          `"${e.sheetName}" and "${scored[0].sheetName}" both resolved to ${group[0].sheet.levelCode} ${group[0].sheet.sectionName} — "${e.sheetName}" has no scores at all, using "${scored[0].sheetName}"`
+        );
+      }
+    } else {
+      for (const c of group) kept.push(c.sheet);
+    }
+  }
+  return { kept, duplicateNotes };
+}
+```
+
+- [ ] **Step 2: Write the failing tests for the new helpers**
+
+Add to `__tests__/sis/backfill/grading/t2-masthead.test.ts`:
+
+```ts
+import {
+  hasAnyScore,
+  dedupeByIdentityPreferringScored,
+} from '@/lib/sis/backfill/grading/t2-masthead';
+
+describe('hasAnyScore', () => {
+  it('returns false when every student has entirely null scores', () => {
+    expect(
+      hasAnyScore({
+        levelCode: 'S1',
+        sectionName: 'Discipline 2',
+        students: [
+          {
+            wwScores: [null, null],
+            ptScores: [null, null, null],
+            examScore: null,
+          },
+          { wwScores: [null], ptScores: [null], examScore: null },
+        ],
+      })
+    ).toBe(false);
+  });
+
+  it('returns true when at least one student has any real score', () => {
+    expect(
+      hasAnyScore({
+        levelCode: 'S1',
+        sectionName: 'Discipline 2',
+        students: [
+          {
+            wwScores: [null, null],
+            ptScores: [null, null, null],
+            examScore: null,
+          },
+          { wwScores: [17, 15], ptScores: [19, 18, 17], examScore: 40 },
+        ],
+      })
+    ).toBe(true);
+  });
+});
+
+describe('dedupeByIdentityPreferringScored', () => {
+  it('keeps a lone sheet untouched even when it has zero scores (no collision)', () => {
+    const lone = {
+      levelCode: 'P2',
+      sectionName: 'Gentleness',
+      students: [{ wwScores: [null], ptScores: [null], examScore: null }],
+    };
+    const { kept, duplicateNotes } = dedupeByIdentityPreferringScored([
+      { sheetName: 'Reserved 2', sheet: lone },
+    ]);
+    expect(kept).toEqual([lone]);
+    expect(duplicateNotes).toEqual([]);
+  });
+
+  it('drops the empty duplicate and keeps the scored one — the real Reserved 4 vs English S1 Discipline 2 case', () => {
+    const empty = {
+      levelCode: 'S1',
+      sectionName: 'Discipline 2',
+      students: [
+        {
+          wwScores: [null, null, null],
+          ptScores: [null, null, null],
+          examScore: null,
+        },
+      ],
+    };
+    const scored = {
+      levelCode: 'S1',
+      sectionName: 'Discipline 2',
+      students: [
+        { wwScores: [19, 16, null], ptScores: [28, 27, 22], examScore: 44 },
+      ],
+    };
+    const { kept, duplicateNotes } = dedupeByIdentityPreferringScored([
+      { sheetName: 'Reserved 4', sheet: empty },
+      { sheetName: 'English - S1 Discipline 2', sheet: scored },
+    ]);
+    expect(kept).toEqual([scored]);
+    expect(duplicateNotes).toEqual([
+      '"Reserved 4" and "English - S1 Discipline 2" both resolved to S1 Discipline 2 — "Reserved 4" has no scores at all, using "English - S1 Discipline 2"',
+    ]);
+  });
+
+  it('keeps every sheet in a group when the collision is ambiguous (zero or multiple scored)', () => {
+    const empty1 = {
+      levelCode: 'S2',
+      sectionName: 'Integrity',
+      students: [{ wwScores: [null], ptScores: [null], examScore: null }],
+    };
+    const empty2 = {
+      levelCode: 'S2',
+      sectionName: 'Integrity',
+      students: [{ wwScores: [null], ptScores: [null], examScore: null }],
+    };
+    const { kept, duplicateNotes } = dedupeByIdentityPreferringScored([
+      { sheetName: 'Reserved A', sheet: empty1 },
+      { sheetName: 'Reserved B', sheet: empty2 },
+    ]);
+    expect(kept).toEqual([empty1, empty2]);
+    expect(duplicateNotes).toEqual([]);
+  });
+});
+```
+
+- [ ] **Step 3: Run the new tests to verify they fail**
+
+Run: `npx vitest run __tests__/sis/backfill/grading/t2-masthead.test.ts`
+Expected: FAIL — `hasAnyScore is not a function` / `dedupeByIdentityPreferringScored is not a function`.
+
+- [ ] **Step 4: Run Step 1's implementation, verify the new tests now pass**
+
+Run: `npx vitest run __tests__/sis/backfill/grading/t2-masthead.test.ts`
+Expected: PASS, all cases including the 3 above plus every existing test in this file (Phase 6a's 7 + Task 1's additions).
+
+- [ ] **Step 5: Wire the dedup into `grading-workbook-secondary-t2.ts`**
+
+In `lib/sis/backfill/grading/grading-workbook-secondary-t2.ts`:
+
+Change the import block to add `dedupeByIdentityPreferringScored`:
+
+```ts
+import {
+  ROW_LEVEL_SECTION,
+  ROW_TEACHER,
+  ROW_LABELS,
+  ROW_SUBCOLS,
+  ROW_MAXSCORES,
+  ROW_STUDENTS_START,
+  cell,
+  numOrNull,
+  findColumnLayout,
+  weightAt,
+  findPrintedGradeColsT2,
+  resolveIdentity,
+  parseTeacherName,
+  dedupeByIdentityPreferringScored,
+  type IdentityT2,
+} from './t2-masthead';
+```
+
+Add `duplicateIdentityNotes: string[]` to the result interface:
+
+```ts
+export interface ParseGradingWorkbookSecondaryT2Result {
+  sheets: ParsedSubjectSheet[];
+  skippedPrimary: string[];
+  skippedUnrecognized: string[];
+  identityCorrections: string[];
+  truncationNotes: string[];
+  duplicateIdentityNotes: string[];
+}
+```
+
+Replace the body of `parseGradingWorkbookSecondaryT2` from the `for (const sheetName of wb.SheetNames)` loop onward:
+
+```ts
+export function parseGradingWorkbookSecondaryT2(
+  filePath: string,
+  subjectCode: string
+): ParseGradingWorkbookSecondaryT2Result {
+  const wb = XLSX.readFile(filePath);
+  const candidates: { sheetName: string; sheet: ParsedSubjectSheet }[] = [];
+  const skippedPrimary: string[] = [];
+  const skippedUnrecognized: string[] = [];
+  const identityCorrections: string[] = [];
+  const truncationNotes: string[] = [];
+
+  for (const sheetName of wb.SheetNames) {
+    const rows: unknown[][] = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
+      header: 1,
+      defval: '',
+      raw: false,
+    });
+    const { sheet, identity, correctionNote, truncationNote } =
+      parseOneSheetSecondaryT2(rows, subjectCode, sheetName);
+    if (correctionNote) identityCorrections.push(correctionNote);
+    if (truncationNote) truncationNotes.push(truncationNote);
+    if (identity.kind === 'secondary' && sheet) {
+      candidates.push({ sheetName, sheet });
+    } else if (identity.kind === 'primary') {
+      skippedPrimary.push(sheetName);
+    } else {
+      skippedUnrecognized.push(sheetName);
+    }
+  }
+
+  const { kept, duplicateNotes } = dedupeByIdentityPreferringScored(candidates);
+
+  return {
+    sheets: kept,
+    skippedPrimary,
+    skippedUnrecognized,
+    identityCorrections,
+    truncationNotes,
+    duplicateIdentityNotes: duplicateNotes,
+  };
+}
+```
+
+- [ ] **Step 6: Add the real-collision test to `grading-workbook-secondary-t2.test.ts`**
+
+Add a test asserting that, against the real `English Grading AY2026 T2.xlsx` file, `parseGradingWorkbookSecondaryT2` returns exactly one sheet for `S1`/`Discipline 2` (not two), that sheet has real (non-null) scores, and `duplicateIdentityNotes` contains exactly one note mentioning both `"Reserved 4"` and `"English - S1 Discipline 2"`. Follow this file's existing convention for referencing the real fixture path (`AY2026/T2/Term 2 Grades/GRADES/English Grading AY2026 T2.xlsx`, same as this file's other real-data tests).
+
+- [ ] **Step 7: Run this file's tests, verify pass**
+
+Run: `npx vitest run __tests__/sis/backfill/grading/grading-workbook-secondary-t2.test.ts`
+Expected: PASS — all 4 existing + the 1 new test.
+
+- [ ] **Step 8: Apply the identical wiring to `grading-workbook-global-t2.ts`**
+
+Same three changes as Step 5 (import `dedupeByIdentityPreferringScored`, add `duplicateIdentityNotes: string[]` to `ParseGradingWorkbookGlobalT2Result`, replace the loop body to collect `candidates` and dedup before returning) — mirror Step 5's exact shape, adjusted only for this file's `skippedDoNotUse` bucket (unchanged, still collected inline in the same loop before the candidate push). No new test required — no Global-track collision exists in the real 8-file corpus (confirmed during investigation), so this is defensive wiring; the existing 3 tests passing unchanged is the acceptance bar.
+
+Run: `npx vitest run __tests__/sis/backfill/grading/grading-workbook-global-t2.test.ts`
+Expected: PASS — all 3 existing tests, unchanged.
+
+- [ ] **Step 9: Apply the identical wiring to `grading-workbook-t2.ts` (Phase 6a)**
+
+Same shape again, adjusted for this file's `skippedSecondary` bucket and `identity.kind === 'primary'` filter (the Primary parser keeps `sheets` when `identity.kind === 'primary'`, mirrors to `skippedSecondary` when `identity.kind === 'secondary'`). Add `duplicateIdentityNotes: string[]` to `ParseGradingWorkbookT2Result`. No new test required — no Primary-kind collision exists anywhere in the real dataset (confirmed during investigation); Phase 6a's existing 8 tests passing completely unchanged is this step's acceptance bar, per the plan's Global Constraints.
+
+Run: `npx vitest run __tests__/sis/backfill/grading/grading-workbook-t2.test.ts`
+Expected: PASS — all 8 existing tests, unchanged.
+
+- [ ] **Step 10: Surface `duplicateIdentityNotes` in the orchestrator's preview**
+
+In `scripts/backfill/gen-ay2026-t2-secondary-grading.ts`, add an `allDuplicateIdentityNotes: string[]` accumulator alongside the existing `allIdentityCorrections` / `allTruncationNotes`, fed from both the Regular-track and Global-track loops (`result.duplicateIdentityNotes`), and append a third `buildNotesSection` call to `finalPreview`:
+
+```ts
+buildNotesSection(
+  'Duplicate tabs — identical identity, empty duplicate dropped',
+  'see design doc §1 point 2 and the Task 6 amendment for the Reserved-tab collision case',
+  allDuplicateIdentityNotes
+);
+```
+
+Also update both per-file `console.log` lines to append `, ${result.duplicateIdentityNotes.length} duplicate(s)`.
+
+- [ ] **Step 11: Run the full backfill test suite**
+
+Run: `npx vitest run __tests__/sis/backfill/`
+Expected: PASS — every existing test unchanged, plus the 3 new `t2-masthead.test.ts` cases and the 1 new `grading-workbook-secondary-t2.test.ts` case (23 test files, 153 + 4 = 157 tests).
+
+- [ ] **Step 12: Commit**
+
+```bash
+git add lib/sis/backfill/grading/t2-masthead.ts lib/sis/backfill/grading/grading-workbook-secondary-t2.ts lib/sis/backfill/grading/grading-workbook-global-t2.ts lib/sis/backfill/grading/grading-workbook-t2.ts scripts/backfill/gen-ay2026-t2-secondary-grading.ts __tests__/sis/backfill/grading/t2-masthead.test.ts __tests__/sis/backfill/grading/grading-workbook-secondary-t2.test.ts
+git commit -m "fix(backfill): dedup Reserved-tab identity collisions, preferring the scored sheet"
+```
+
+---
+
 ## Self-review notes (fixed inline before handoff)
 
 - **Spec coverage:** design doc §2 Locked Decisions 1–10 are each implemented — scope (Task 5's `REGULAR_SUBJECT_FILES`/`GLOBAL_SUBJECT_FILES`, CCA/Filipino/Mandarin/STAR exclusion documented inline), CCA out of scope (never referenced anywhere in this plan), shared module extraction with Phase 6a's behavior preserved (Task 1, whose own acceptance test IS Phase 6a's existing suite), the truncation-aware identity rule (Task 1, tested against both real truncation cases and both real "not a truncation" cases to prove the heuristic doesn't over-fire), zero-corrections `subject_configs` handling that still correctly accepts and processes an empty list (Task 4, explicitly tested), no `subject_level_offerings`/`section_subjects` writes (absent from Task 4's SQL, same as Phase 6a), locked/single-file/idempotent SQL (Task 4, same shape as Phase 6a). §3's architecture diagram and §4's SQL write plan map 1:1 onto Tasks 1–5. §5's validation plan is Task 5 Step 5. §6's testing section is satisfied by Task 1's Phase-6a-regression gate plus each new file's dedicated tests.
