@@ -3115,6 +3115,154 @@ git commit -m "fix(backfill): dedup Reserved-tab collisions by tab name, cross-f
 
 ---
 
+### Task 8: Fix missing `subjectCode` in the dedup grouping key (controller-caught regression)
+
+**Why this task exists:** immediately after Task 7 shipped and passed review, the controller re-ran the real generator to confirm both collisions (English + Science) now resolve correctly. They didn't — the "Duplicate tabs" section reported **zero** duplicates found, and every stat reverted to the original pre-Task-6 numbers (46 grading sheets, 926 grade entries, 149 needs-review, 14 quarterly mismatches). Task 6's already-working English fix had silently broken too.
+
+**Root cause:** `dedupePreferringNonReservedTab`'s grouping key is `${levelCode}::${sectionName}` — it does not include `subjectCode`. This was harmless under Task 6, where dedup ran **per-file inside each parser** — every candidate in a single call was already implicitly the same subject, so the missing `subjectCode` in the key was never exercised. Task 7 deliberately moved dedup to run **once across the full merged 16-file, 8-subject candidate set** — and every subject shares each section's identity (Math's "S1 Discipline 2", English's "S1 Discipline 2", Science's "S1 Discipline 2", …). Without `subjectCode` in the key, all of them land in one group. Since a real, correctly-named sheet exists for nearly every subject at nearly every identity, almost every group ends up with several non-Reserved (`named`) candidates — `named.length !== 1` — which trips the function's own "ambiguous, keep everything" branch for essentially the whole dataset. Dedup silently stopped doing anything at all.
+
+This was not caught by Task 7's review because the review's manual walkthrough (correctly) verified the function's branching logic in isolation against small, single-subject fixtures — the missing key field only manifests once real multi-subject data is run through it. The plan's own Task 7 Step 2 test suite has the same blind spot: its third test case (`'keeps every sheet when the collision is ambiguous'`) uses two different-subject sheetNames (`"English - S2 Integrity"` / `"Science - S2 Integrity"`) but both are non-Reserved, so its expected output (`kept: [a, b]`, both kept) is identical whether the function correctly treats them as two independent, unrelated single-item groups or incorrectly merges them into one "ambiguous" group — the test cannot distinguish the two, so it passed either way. This task adds the test case that actually can: two subjects, one with a real Reserved-vs-real collision, one without — proving the fix and blocking the regression from recurring.
+
+No live data was affected — the bug was caught via a fresh regeneration, not an `apply.sql` run.
+
+**Files:**
+
+- Modify: `lib/sis/backfill/grading/t2-masthead.ts` (widen `dedupePreferringNonReservedTab`'s generic constraint to require `subjectCode`, include it in the grouping key)
+- Modify: `__tests__/sis/backfill/grading/t2-masthead.test.ts` (add `subjectCode` to the three existing `dedupePreferringNonReservedTab` test fixtures now required by the widened type; add the new cross-subject regression case)
+
+**Interfaces:**
+
+- Consumes: nothing new.
+- Produces: nothing new consumed by later tasks (Task 8 is terminal). `dedupePreferringNonReservedTab`'s signature changes (generic constraint widened) — its one real call site, in `scripts/backfill/gen-ay2026-t2-secondary-grading.ts`, already passes `ParsedSubjectSheet` objects, which already carry `subjectCode`, so no orchestrator changes are needed.
+
+- [ ] **Step 1: Fix the grouping key**
+
+In `lib/sis/backfill/grading/t2-masthead.ts`, change `dedupePreferringNonReservedTab`'s signature and key computation:
+
+```ts
+export function dedupePreferringNonReservedTab<
+  T extends { subjectCode: string; levelCode: string; sectionName: string },
+>(
+  candidates: { sheetName: string; sheet: T }[]
+): { kept: T[]; duplicateNotes: string[] } {
+  const groups = new Map<string, { sheetName: string; sheet: T }[]>();
+  for (const c of candidates) {
+    const key = `${c.sheet.subjectCode}::${c.sheet.levelCode}::${c.sheet.sectionName}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(c);
+  }
+  // ... rest of the function body is unchanged
+```
+
+Only the `T extends {...}` line and the `const key = ...` line change — everything else in the function (the `group.length === 1` check, the `named`/`reserved` split, the `else` ambiguous branch, the `duplicateNotes` message text) is byte-identical to what Task 7 shipped.
+
+Also update the function's doc comment (currently starts `// Deliberately run ONCE across the FULL merged candidate set...`) to add one sentence: `// Grouped by (subjectCode, levelCode, sectionName) — every field, not just level+section, since a real sheet exists for nearly every subject at nearly every identity and omitting subjectCode would incorrectly lump unrelated subjects' sheets into one group (the regression this task fixes).`
+
+- [ ] **Step 2: Update the three existing test fixtures to the new required shape**
+
+In `__tests__/sis/backfill/grading/t2-masthead.test.ts`, the `dedupePreferringNonReservedTab` describe block currently has three sheet fixtures missing `subjectCode` (`lone`, `reservedButScored`/`real`, `a`/`b`). Add a `subjectCode` field to each:
+
+```ts
+describe('dedupePreferringNonReservedTab', () => {
+  it('keeps a lone sheet untouched even if it came from a Reserved-named tab', () => {
+    const lone = {
+      subjectCode: 'MATH',
+      levelCode: 'P2',
+      sectionName: 'Gentleness',
+    };
+    const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
+      { sheetName: 'Reserved 2', sheet: lone },
+    ]);
+    expect(kept).toEqual([lone]);
+    expect(duplicateNotes).toEqual([]);
+  });
+
+  it('drops a Reserved-named duplicate even when it has real scores — the real Science Reserved 4 vs Global Discipline 1 case', () => {
+    const reservedButScored = {
+      subjectCode: 'SCI',
+      levelCode: 'S1',
+      sectionName: 'Discipline 1',
+    };
+    const real = {
+      subjectCode: 'SCI',
+      levelCode: 'S1',
+      sectionName: 'Discipline 1',
+    };
+    const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
+      { sheetName: 'Reserved 4', sheet: reservedButScored },
+      { sheetName: 'Science - Sec 1 Discipline 1', sheet: real },
+    ]);
+    expect(kept).toEqual([real]);
+    expect(duplicateNotes).toEqual([
+      '"Reserved 4" and "Science - Sec 1 Discipline 1" both resolved to S1 Discipline 1 — "Reserved 4" is a Reserved slot, using "Science - Sec 1 Discipline 1"',
+    ]);
+  });
+
+  it('keeps every sheet when the collision is ambiguous (zero or multiple non-Reserved candidates)', () => {
+    const a = { subjectCode: 'ENG', levelCode: 'S2', sectionName: 'Integrity' };
+    const b = { subjectCode: 'SCI', levelCode: 'S2', sectionName: 'Integrity' };
+    const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
+      { sheetName: 'English - S2 Integrity', sheet: a },
+      { sheetName: 'Science - S2 Integrity', sheet: b },
+    ]);
+    expect(kept).toEqual([a, b]);
+    expect(duplicateNotes).toEqual([]);
+  });
+
+  it('does NOT lump different subjects sharing the same section into one collision group — the regression this task fixes', () => {
+    const mathReserved = {
+      subjectCode: 'MATH',
+      levelCode: 'S1',
+      sectionName: 'Discipline 2',
+    };
+    const mathReal = {
+      subjectCode: 'MATH',
+      levelCode: 'S1',
+      sectionName: 'Discipline 2',
+    };
+    const scienceReal = {
+      subjectCode: 'SCI',
+      levelCode: 'S1',
+      sectionName: 'Discipline 2',
+    };
+    const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
+      { sheetName: 'Reserved 1', sheet: mathReserved },
+      { sheetName: 'Math - S1 Discipline 2', sheet: mathReal },
+      { sheetName: 'Science - S1 Discipline 2', sheet: scienceReal },
+    ]);
+    // Math's own Reserved-vs-real collision resolves independently of
+    // Science's unrelated, non-colliding sheet for the same section — if
+    // subjectCode were missing from the key, all three would land in one
+    // group (2 non-Reserved candidates: mathReal + scienceReal), tripping
+    // the "ambiguous, keep everything" branch and letting mathReserved
+    // survive incorrectly.
+    expect(kept).toEqual([mathReal, scienceReal]);
+    expect(duplicateNotes).toEqual([
+      '"Reserved 1" and "Math - S1 Discipline 2" both resolved to S1 Discipline 2 — "Reserved 1" is a Reserved slot, using "Math - S1 Discipline 2"',
+    ]);
+  });
+});
+```
+
+- [ ] **Step 3: Run the test file, verify all pass**
+
+Run: `npx vitest run __tests__/sis/backfill/grading/t2-masthead.test.ts`
+Expected: PASS — all existing cases plus the 1 new regression case (161 + 1 = 162 total across the suite).
+
+- [ ] **Step 4: Run the full backfill test suite**
+
+Run: `npx vitest run __tests__/sis/backfill/`
+Expected: PASS — 162 tests, 23 files.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/sis/backfill/grading/t2-masthead.ts __tests__/sis/backfill/grading/t2-masthead.test.ts
+git commit -m "fix(backfill): include subjectCode in the cross-file dedup grouping key"
+```
+
+---
+
 ## Self-review notes (fixed inline before handoff)
 
 - **Spec coverage:** design doc §2 Locked Decisions 1–10 are each implemented — scope (Task 5's `REGULAR_SUBJECT_FILES`/`GLOBAL_SUBJECT_FILES`, CCA/Filipino/Mandarin/STAR exclusion documented inline), CCA out of scope (never referenced anywhere in this plan), shared module extraction with Phase 6a's behavior preserved (Task 1, whose own acceptance test IS Phase 6a's existing suite), the truncation-aware identity rule (Task 1, tested against both real truncation cases and both real "not a truncation" cases to prove the heuristic doesn't over-fire), zero-corrections `subject_configs` handling that still correctly accepts and processes an empty list (Task 4, explicitly tested), no `subject_level_offerings`/`section_subjects` writes (absent from Task 4's SQL, same as Phase 6a), locked/single-file/idempotent SQL (Task 4, same shape as Phase 6a). §3's architecture diagram and §4's SQL write plan map 1:1 onto Tasks 1–5. §5's validation plan is Task 5 Step 5. §6's testing section is satisfied by Task 1's Phase-6a-regression gate plus each new file's dedicated tests.
