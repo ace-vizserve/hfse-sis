@@ -165,7 +165,11 @@ describe('isReservedTabName', () => {
 
 describe('dedupePreferringNonReservedTab', () => {
   it('keeps a lone sheet untouched even if it came from a Reserved-named tab', () => {
-    const lone = { levelCode: 'P2', sectionName: 'Gentleness' };
+    const lone = {
+      subjectCode: 'MATH',
+      levelCode: 'P2',
+      sectionName: 'Gentleness',
+    };
     const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
       { sheetName: 'Reserved 2', sheet: lone },
     ]);
@@ -174,8 +178,16 @@ describe('dedupePreferringNonReservedTab', () => {
   });
 
   it('drops a Reserved-named duplicate even when it has real scores — the real Science Reserved 4 vs Global Discipline 1 case', () => {
-    const reservedButScored = { levelCode: 'S1', sectionName: 'Discipline 1' };
-    const real = { levelCode: 'S1', sectionName: 'Discipline 1' };
+    const reservedButScored = {
+      subjectCode: 'SCI',
+      levelCode: 'S1',
+      sectionName: 'Discipline 1',
+    };
+    const real = {
+      subjectCode: 'SCI',
+      levelCode: 'S1',
+      sectionName: 'Discipline 1',
+    };
     const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
       { sheetName: 'Reserved 4', sheet: reservedButScored },
       { sheetName: 'Science - Sec 1 Discipline 1', sheet: real },
@@ -187,13 +199,46 @@ describe('dedupePreferringNonReservedTab', () => {
   });
 
   it('keeps every sheet when the collision is ambiguous (zero or multiple non-Reserved candidates)', () => {
-    const a = { levelCode: 'S2', sectionName: 'Integrity' };
-    const b = { levelCode: 'S2', sectionName: 'Integrity' };
+    const a = { subjectCode: 'ENG', levelCode: 'S2', sectionName: 'Integrity' };
+    const b = { subjectCode: 'SCI', levelCode: 'S2', sectionName: 'Integrity' };
     const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
       { sheetName: 'English - S2 Integrity', sheet: a },
       { sheetName: 'Science - S2 Integrity', sheet: b },
     ]);
     expect(kept).toEqual([a, b]);
     expect(duplicateNotes).toEqual([]);
+  });
+
+  it('does NOT lump different subjects sharing the same section into one collision group — the regression this task fixes', () => {
+    const mathReserved = {
+      subjectCode: 'MATH',
+      levelCode: 'S1',
+      sectionName: 'Discipline 2',
+    };
+    const mathReal = {
+      subjectCode: 'MATH',
+      levelCode: 'S1',
+      sectionName: 'Discipline 2',
+    };
+    const scienceReal = {
+      subjectCode: 'SCI',
+      levelCode: 'S1',
+      sectionName: 'Discipline 2',
+    };
+    const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
+      { sheetName: 'Reserved 1', sheet: mathReserved },
+      { sheetName: 'Math - S1 Discipline 2', sheet: mathReal },
+      { sheetName: 'Science - S1 Discipline 2', sheet: scienceReal },
+    ]);
+    // Math's own Reserved-vs-real collision resolves independently of
+    // Science's unrelated, non-colliding sheet for the same section — if
+    // subjectCode were missing from the key, all three would land in one
+    // group (2 non-Reserved candidates: mathReal + scienceReal), tripping
+    // the "ambiguous, keep everything" branch and letting mathReserved
+    // survive incorrectly.
+    expect(kept).toEqual([mathReal, scienceReal]);
+    expect(duplicateNotes).toEqual([
+      '"Reserved 1" and "Math - S1 Discipline 2" both resolved to S1 Discipline 2 — "Reserved 1" is a Reserved slot, using "Math - S1 Discipline 2"',
+    ]);
   });
 });

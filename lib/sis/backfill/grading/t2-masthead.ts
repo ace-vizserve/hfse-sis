@@ -345,14 +345,19 @@ export function isReservedTabName(sheetName: string): boolean {
 // "Reserved N" tab colliding with a Global-track file's real,
 // properly-named tab for the same identity). A per-file dedup call
 // structurally cannot see this, since each file is parsed independently.
+// Grouped by (subjectCode, levelCode, sectionName) — every field, not just
+// level+section, since a real sheet exists for nearly every subject at
+// nearly every identity and omitting subjectCode would incorrectly lump
+// unrelated subjects' sheets into one group (the regression this task
+// fixes).
 export function dedupePreferringNonReservedTab<
-  T extends { levelCode: string; sectionName: string },
+  T extends { subjectCode: string; levelCode: string; sectionName: string },
 >(
   candidates: { sheetName: string; sheet: T }[]
 ): { kept: T[]; duplicateNotes: string[] } {
   const groups = new Map<string, { sheetName: string; sheet: T }[]>();
   for (const c of candidates) {
-    const key = `${c.sheet.levelCode}::${c.sheet.sectionName}`;
+    const key = `${c.sheet.subjectCode}::${c.sheet.levelCode}::${c.sheet.sectionName}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(c);
   }
