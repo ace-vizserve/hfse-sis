@@ -2799,6 +2799,322 @@ git commit -m "fix(backfill): dedup Reserved-tab identity collisions, preferring
 
 ---
 
+### Task 7: Replace score-based dedup with a tab-name-based rule, run cross-file (real-data amendment)
+
+**Why this task exists:** after Task 6 shipped and the controller re-ran the generator, applied the output, and then investigated a lower-than-expected `grade_entries` row count, real-data cross-checking against `AY2026/T2/Term 2 CONSOLIDATED FORM.xlsx` (HFSE's own authoritative per-section grade summary) uncovered a **second, more serious instance of the same bug class Task 6 fixed — but one Task 6's heuristic could not catch.**
+
+`Science Grading AY2026 T2.xlsx` (Regular track) has its own "Reserved 4" tab. Unlike English's, it is **not empty** — it has a teacher assigned (`Ms. Joy/Ms. Tin`) and real, non-null scores for 25 students. Its row-2 label reads `"Secondary 1 DISCIPLINE 1 - SCIENCE"`, which does not collide with anything inside Science's own Regular-track file (Science's real Regular sections are Discipline 2/Integrity 2/Consistency/Excellence — no "Discipline 1" there), so Task 6's _within-file_ dedup correctly found no collision and left it alone. But once the orchestrator **merges** the Regular and Global tracks together, this identity — `S1`, `Discipline 1` — collides with the Global track's own real, correctly-named `"Science - Sec 1 Discipline 1"` tab. Because Regular-track files are processed before Global-track files, and `grade_entries` writes use `on conflict (grading_sheet_id, section_student_id) do nothing`, the phantom Regular-file entries land first and the real Global-track scores for those students are silently dropped. This was **cross-file**, which Task 6's per-parser dedup call structurally cannot see (each parser only ever looks at one file at a time).
+
+Cross-referencing the Consolidated Form settled two things conclusively: (1) the real `S1-Discipline 1 (G)` roster's index 1 is `BANTA, Stephanie Louise S.`, matching the Global-track sheet exactly — not `Reserved 4`'s `AWINGAN, Gabriel Anthony A.`; (2) `Reserved 4`'s entire 25-student roster (`AWINGAN`, `BORJE`, `CARREON`, `DE LEON`, `DELA FUENTE`, `DELFIN`, …) are real students, but they belong to **`S2-Integrity 2`** (Regular) and **`S2-Integrity 1 (G)`** (Global) — at completely different index numbers (e.g. `BORJE` is really index 5 in Integrity 2, not index 2). `Reserved 4` is a stale, superseded snapshot of that class under old indexing, unrelated to Discipline 1 or Discipline 2 despite what either file's row-2 happens to claim. Its students' real, current grades already exist correctly under their own section's properly-named tab, untouched by any of this.
+
+This proves the Task 6 heuristic's central assumption — "a Reserved tab that's part of a real collision will be the empty one" — is false. The reliable signal is not score content, it's the **literal tab name**: a tab named `Reserved N` is never a real, currently-taught class, and whenever its resolved identity collides with any other, properly-named tab — regardless of whether the Reserved tab happens to contain scores — the Reserved tab must lose, every time. This task replaces Task 6's `hasAnyScore`-based within-file dedup, in the two Secondary parsers only, with a simpler, tab-name-based rule, and moves it to run **once, across the full merged Regular + Global candidate set** in the orchestrator — the only place cross-file collisions are visible. Phase 6a's `grading-workbook-t2.ts` (Primary) is **not touched** by this task — no Primary-kind collision exists anywhere in the real dataset (confirmed exhaustively during Task 6's own investigation), so its existing Task-6-added defense stays as-is, out of scope here.
+
+**Files:**
+
+- Modify: `lib/sis/backfill/grading/t2-masthead.ts` (add `isReservedTabName` + `dedupePreferringNonReservedTab`; leave `hasAnyScore` / `dedupeByIdentityPreferringScored` untouched — still used by Phase 6a's file, out of scope)
+- Modify: `lib/sis/backfill/grading/grading-workbook-secondary-t2.ts` (stop deduping internally; return `sheets` + a parallel `sheetNames` array, undeduped)
+- Modify: `lib/sis/backfill/grading/grading-workbook-global-t2.ts` (same)
+- Modify: `scripts/backfill/gen-ay2026-t2-secondary-grading.ts` (zip both tracks' `sheets`/`sheetNames` into one candidate list per file as collected, then call `dedupePreferringNonReservedTab` ONCE over the complete 16-file merged set before composing)
+- Test: `__tests__/sis/backfill/grading/t2-masthead.test.ts` (replace the Task 6 `dedupeByIdentityPreferringScored` test cases with equivalent cases for the new function — including the real Science `Reserved 4` vs `Science - Sec 1 Discipline 1` (Global) cross-file case)
+- Test: `__tests__/sis/backfill/grading/grading-workbook-secondary-t2.test.ts` (update the Task 6 collision test — the parser no longer dedupes internally, so this file's own collision test must now assert on the undeduped `sheets`/`sheetNames` pair instead of a deduped `sheets` array; the real English collision now resolves at the orchestrator level, not here)
+
+**Interfaces:**
+
+- Consumes: nothing new from other tasks.
+- Produces: `isReservedTabName` and `dedupePreferringNonReservedTab` (exported from `t2-masthead.ts`) — no later task consumes these (Task 7 is terminal).
+
+- [ ] **Step 1: Add the new tab-name-based helpers to `t2-masthead.ts`**
+
+Add to `lib/sis/backfill/grading/t2-masthead.ts` (after `dedupeByIdentityPreferringScored`, at the end of the file):
+
+```ts
+// A tab literally named "Reserved N" is never a real, currently-taught
+// class. Verified against HFSE's own Term 2 Consolidated Form: the one
+// real production case (Science's "Reserved 4") was NOT simply empty —
+// it had a teacher assigned and real scores — but its 25-student roster
+// turned out to be a stale, superseded snapshot of an entirely different
+// section (S2 Integrity 2) under old index numbers, unrelated to
+// whatever its row-2 label happened to claim. Score content is therefore
+// not a reliable signal (see dedupeByIdentityPreferringScored's doc
+// comment, which this supersedes for the Secondary parsers only) — the
+// tab name itself is the reliable one. Whenever a Reserved-named tab's
+// resolved identity collides with ANY other, properly-named tab, the
+// Reserved tab always loses, unconditionally.
+export function isReservedTabName(sheetName: string): boolean {
+  return /^Reserved\b/i.test(sheetName.trim());
+}
+
+// Deliberately run ONCE across the FULL merged candidate set spanning
+// every file and both tracks — not per-file — since the real bug this
+// fixes is a CROSS-FILE collision (a Regular-track file's stray
+// "Reserved N" tab colliding with a Global-track file's real,
+// properly-named tab for the same identity). A per-file dedup call
+// structurally cannot see this, since each file is parsed independently.
+export function dedupePreferringNonReservedTab<
+  T extends { levelCode: string; sectionName: string },
+>(
+  candidates: { sheetName: string; sheet: T }[]
+): { kept: T[]; duplicateNotes: string[] } {
+  const groups = new Map<string, { sheetName: string; sheet: T }[]>();
+  for (const c of candidates) {
+    const key = `${c.sheet.levelCode}::${c.sheet.sectionName}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(c);
+  }
+
+  const kept: T[] = [];
+  const duplicateNotes: string[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      kept.push(group[0].sheet);
+      continue;
+    }
+    const named = group.filter((c) => !isReservedTabName(c.sheetName));
+    const reserved = group.filter((c) => isReservedTabName(c.sheetName));
+    if (named.length === 1 && reserved.length === group.length - 1) {
+      kept.push(named[0].sheet);
+      for (const r of reserved) {
+        duplicateNotes.push(
+          `"${r.sheetName}" and "${named[0].sheetName}" both resolved to ${group[0].sheet.levelCode} ${group[0].sheet.sectionName} — "${r.sheetName}" is a Reserved slot, using "${named[0].sheetName}"`
+        );
+      }
+    } else {
+      for (const c of group) kept.push(c.sheet);
+    }
+  }
+  return { kept, duplicateNotes };
+}
+```
+
+- [ ] **Step 2: Write the failing tests for the new helpers**
+
+Add to `__tests__/sis/backfill/grading/t2-masthead.test.ts`:
+
+```ts
+import {
+  isReservedTabName,
+  dedupePreferringNonReservedTab,
+} from '@/lib/sis/backfill/grading/t2-masthead';
+
+describe('isReservedTabName', () => {
+  it('matches "Reserved N" tab names', () => {
+    expect(isReservedTabName('Reserved 4')).toBe(true);
+    expect(isReservedTabName('Reserved 1')).toBe(true);
+    expect(isReservedTabName('reserved 12')).toBe(true);
+  });
+
+  it('does not match a real, descriptive tab name', () => {
+    expect(isReservedTabName('Science - S1 Discipline 2')).toBe(false);
+    expect(isReservedTabName('Science - Sec 1 Discipline 1')).toBe(false);
+  });
+});
+
+describe('dedupePreferringNonReservedTab', () => {
+  it('keeps a lone sheet untouched even if it came from a Reserved-named tab', () => {
+    const lone = { levelCode: 'P2', sectionName: 'Gentleness' };
+    const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
+      { sheetName: 'Reserved 2', sheet: lone },
+    ]);
+    expect(kept).toEqual([lone]);
+    expect(duplicateNotes).toEqual([]);
+  });
+
+  it('drops a Reserved-named duplicate even when it has real scores — the real Science Reserved 4 vs Global Discipline 1 case', () => {
+    const reservedButScored = { levelCode: 'S1', sectionName: 'Discipline 1' };
+    const real = { levelCode: 'S1', sectionName: 'Discipline 1' };
+    const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
+      { sheetName: 'Reserved 4', sheet: reservedButScored },
+      { sheetName: 'Science - Sec 1 Discipline 1', sheet: real },
+    ]);
+    expect(kept).toEqual([real]);
+    expect(duplicateNotes).toEqual([
+      '"Reserved 4" and "Science - Sec 1 Discipline 1" both resolved to S1 Discipline 1 — "Reserved 4" is a Reserved slot, using "Science - Sec 1 Discipline 1"',
+    ]);
+  });
+
+  it('keeps every sheet when the collision is ambiguous (zero or multiple non-Reserved candidates)', () => {
+    const a = { levelCode: 'S2', sectionName: 'Integrity' };
+    const b = { levelCode: 'S2', sectionName: 'Integrity' };
+    const { kept, duplicateNotes } = dedupePreferringNonReservedTab([
+      { sheetName: 'English - S2 Integrity', sheet: a },
+      { sheetName: 'Science - S2 Integrity', sheet: b },
+    ]);
+    expect(kept).toEqual([a, b]);
+    expect(duplicateNotes).toEqual([]);
+  });
+});
+```
+
+Also **remove** the three `dedupeByIdentityPreferringScored` test cases added by Task 6 from this same file (the function itself stays, still used by `grading-workbook-t2.ts`, but its Secondary-parser-facing role is superseded — leaving stale tests for a code path no longer exercised by the Secondary parsers would be misleading). Leave the two `hasAnyScore` test cases in place — that helper is unchanged and still used.
+
+- [ ] **Step 3: Run the new tests to verify they fail, then pass**
+
+Run: `npx vitest run __tests__/sis/backfill/grading/t2-masthead.test.ts`
+Expected (before Step 1's code exists): FAIL — `isReservedTabName is not a function` / `dedupePreferringNonReservedTab is not a function`.
+Expected (after Step 1): PASS — the 5 new cases, the 2 remaining `hasAnyScore` cases, and every other existing test in this file.
+
+- [ ] **Step 4: Stop deduping inside `grading-workbook-secondary-t2.ts` — return undeduped candidates instead**
+
+In `lib/sis/backfill/grading/grading-workbook-secondary-t2.ts`:
+
+Remove `dedupeByIdentityPreferringScored` from the import block (no longer used here).
+
+Change the result interface:
+
+```ts
+export interface ParseGradingWorkbookSecondaryT2Result {
+  sheets: ParsedSubjectSheet[];
+  sheetNames: string[];
+  skippedPrimary: string[];
+  skippedUnrecognized: string[];
+  identityCorrections: string[];
+  truncationNotes: string[];
+}
+```
+
+Replace the last two statements of `parseGradingWorkbookSecondaryT2` (the `dedupeByIdentityPreferringScored` call and the `return`) with:
+
+```ts
+return {
+  sheets: candidates.map((c) => c.sheet),
+  sheetNames: candidates.map((c) => c.sheetName),
+  skippedPrimary,
+  skippedUnrecognized,
+  identityCorrections,
+  truncationNotes,
+};
+```
+
+- [ ] **Step 5: Update this file's collision test to match the new (undeduped) contract**
+
+In `__tests__/sis/backfill/grading/grading-workbook-secondary-t2.test.ts`, find the collision test Task 6 added (asserting `parseGradingWorkbookSecondaryT2` against the real English file returns exactly one deduped `S1`/`Discipline 2` sheet). Update it to assert the **new** contract instead: `result.sheets` contains **two** entries for `S1`/`Discipline 2` (the Reserved 4 one and the real one, both present — no dedup happens at this layer anymore), and `result.sheetNames` at the corresponding indices are `"Reserved 4"` and `"English - S1 Discipline 2"`. This file no longer resolves the collision itself — Step 6/7 below prove the orchestrator resolves it correctly instead.
+
+Run: `npx vitest run __tests__/sis/backfill/grading/grading-workbook-secondary-t2.test.ts`
+Expected: PASS — the updated test plus the other 3 existing tests.
+
+- [ ] **Step 6: Apply the identical change to `grading-workbook-global-t2.ts`**
+
+Same shape as Step 4 — remove the `dedupeByIdentityPreferringScored` import (if present; this file may not have needed it if Task 6 found no Global-track collision — check first), add `sheetNames: string[]` to `ParseGradingWorkbookGlobalT2Result`, return `sheets`/`sheetNames` as parallel unfiltered arrays built directly from this file's own candidate collection loop. No test change required — this file's own 3 existing tests should pass unchanged (no Global-track-internal collision exists in the real corpus).
+
+Run: `npx vitest run __tests__/sis/backfill/grading/grading-workbook-global-t2.test.ts`
+Expected: PASS — all 3 existing tests, unchanged.
+
+- [ ] **Step 7: Wire the orchestrator's single, cross-file dedup pass**
+
+In `scripts/backfill/gen-ay2026-t2-secondary-grading.ts`:
+
+Add `dedupePreferringNonReservedTab` to the `t2-masthead` import (new import line — this file doesn't currently import from `t2-masthead` directly, add it):
+
+```ts
+import { dedupePreferringNonReservedTab } from '../../lib/sis/backfill/grading/t2-masthead';
+```
+
+Replace the `main` function's sheet-collection + composition section (from `let sheets: ParsedSubjectSheet[] = [];` through the `buildSecondaryGradingImport` call) with:
+
+```ts
+const candidates: { sheetName: string; sheet: ParsedSubjectSheet }[] = [];
+let allIdentityCorrections: string[] = [];
+let allTruncationNotes: string[] = [];
+
+// 1. Regular track.
+for (const { file, subjectCode } of REGULAR_SUBJECT_FILES) {
+  const result = parseGradingWorkbookSecondaryT2(
+    join(REGULAR_DIR, file),
+    subjectCode
+  );
+  for (let i = 0; i < result.sheets.length; i++) {
+    candidates.push({
+      sheetName: result.sheetNames[i],
+      sheet: result.sheets[i],
+    });
+  }
+  allIdentityCorrections = allIdentityCorrections.concat(
+    result.identityCorrections
+  );
+  allTruncationNotes = allTruncationNotes.concat(result.truncationNotes);
+  console.log(
+    `[Regular] ${file}: ${result.sheets.length} Secondary sheet(s), skipped ${result.skippedPrimary.length} Primary + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} correction(s), ${result.truncationNotes.length} truncation(s)`
+  );
+}
+
+// 2. Global track.
+for (const { file, subjectCode } of GLOBAL_SUBJECT_FILES) {
+  const result = parseGradingWorkbookGlobalT2(
+    join(GLOBAL_DIR, file),
+    subjectCode
+  );
+  for (let i = 0; i < result.sheets.length; i++) {
+    candidates.push({
+      sheetName: result.sheetNames[i],
+      sheet: result.sheets[i],
+    });
+  }
+  allIdentityCorrections = allIdentityCorrections.concat(
+    result.identityCorrections
+  );
+  allTruncationNotes = allTruncationNotes.concat(result.truncationNotes);
+  console.log(
+    `[Global] ${file}: ${result.sheets.length} Secondary sheet(s), skipped ${result.skippedDoNotUse.length} DO-NOT-USE + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} correction(s), ${result.truncationNotes.length} truncation(s)`
+  );
+}
+
+// 3. Cross-file, cross-track dedup — the ONLY place a Regular-track
+// Reserved tab colliding with a Global-track real tab (or vice versa)
+// is visible, since every parser above only ever sees one file at a
+// time.
+const { kept: sheets, duplicateNotes: allDuplicateIdentityNotes } =
+  dedupePreferringNonReservedTab(candidates);
+
+// 4. Build the roster lookup for AY2026's Secondary sections.
+const { data: ay, error: ayErr } = await svc
+  .from('academic_years')
+  .select('id')
+  .eq('ay_code', AY_CODE)
+  .single();
+if (ayErr) throw ayErr;
+
+const { data: rows, error: rowsErr } = await svc
+  .from('section_students')
+  .select(
+    'id, index_number, sections!inner(name, academic_year_id, levels!inner(code, level_type))'
+  )
+  .eq('sections.academic_year_id', (ay as any).id)
+  .eq('sections.levels.level_type', 'secondary');
+if (rowsErr) throw rowsErr;
+
+const rosterLookup: RosterLookupEntry[] = (rows ?? []).map((r: any) => ({
+  levelCode: r.sections.levels.code,
+  sectionName: r.sections.name,
+  indexNumber: r.index_number,
+  sectionStudentId: r.id,
+}));
+
+// 5. Compose.
+const result = buildSecondaryGradingImport({
+  sheets,
+  rosterLookup,
+  subjectConfigWeights: SUBJECT_CONFIG_WEIGHTS,
+  ayCode: AY_CODE,
+  termNumber: TERM_NUMBER,
+});
+```
+
+The `finalPreview` construction below this (three `buildNotesSection` calls) is unchanged — it already reads `allDuplicateIdentityNotes`, which now comes from the single orchestrator-level call instead of per-file accumulation. Update the middle `buildNotesSection` call's `docPointer` argument from `'see design doc §1 point 2 and the Task 6 amendment for the Reserved-tab collision case'` to `'see design doc §1 point 2 and the Task 7 amendment for the cross-file Reserved-tab collision case'`.
+
+- [ ] **Step 8: Run the full backfill test suite**
+
+Run: `npx vitest run __tests__/sis/backfill/`
+Expected: PASS — every test green, with the net test count reflecting: −3 (removed `dedupeByIdentityPreferringScored` cases) +5 (new `t2-masthead.test.ts` cases) +0 net change to `grading-workbook-secondary-t2.test.ts` (1 test updated in place, not added) = 159 + 5 − 3 = 161.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add lib/sis/backfill/grading/t2-masthead.ts lib/sis/backfill/grading/grading-workbook-secondary-t2.ts lib/sis/backfill/grading/grading-workbook-global-t2.ts scripts/backfill/gen-ay2026-t2-secondary-grading.ts __tests__/sis/backfill/grading/t2-masthead.test.ts __tests__/sis/backfill/grading/grading-workbook-secondary-t2.test.ts
+git commit -m "fix(backfill): dedup Reserved-tab collisions by tab name, cross-file"
+```
+
+---
+
 ## Self-review notes (fixed inline before handoff)
 
 - **Spec coverage:** design doc §2 Locked Decisions 1–10 are each implemented — scope (Task 5's `REGULAR_SUBJECT_FILES`/`GLOBAL_SUBJECT_FILES`, CCA/Filipino/Mandarin/STAR exclusion documented inline), CCA out of scope (never referenced anywhere in this plan), shared module extraction with Phase 6a's behavior preserved (Task 1, whose own acceptance test IS Phase 6a's existing suite), the truncation-aware identity rule (Task 1, tested against both real truncation cases and both real "not a truncation" cases to prove the heuristic doesn't over-fire), zero-corrections `subject_configs` handling that still correctly accepts and processes an empty list (Task 4, explicitly tested), no `subject_level_offerings`/`section_subjects` writes (absent from Task 4's SQL, same as Phase 6a), locked/single-file/idempotent SQL (Task 4, same shape as Phase 6a). §3's architecture diagram and §4's SQL write plan map 1:1 onto Tasks 1–5. §5's validation plan is Task 5 Step 5. §6's testing section is satisfied by Task 1's Phase-6a-regression gate plus each new file's dedicated tests.
