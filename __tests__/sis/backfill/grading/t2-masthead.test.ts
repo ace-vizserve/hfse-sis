@@ -1,7 +1,11 @@
 // __tests__/sis/backfill/grading/t2-masthead.test.ts
 import { describe, expect, it } from 'vitest';
 
-import { resolveIdentity } from '@/lib/sis/backfill/grading/t2-masthead';
+import {
+  resolveIdentity,
+  hasAnyScore,
+  dedupeByIdentityPreferringScored,
+} from '@/lib/sis/backfill/grading/t2-masthead';
 
 describe('resolveIdentity', () => {
   it('uses the tab name when it agrees with row 2 (no note of any kind)', () => {
@@ -106,5 +110,104 @@ describe('resolveIdentity', () => {
     });
     expect(result.truncationNote).toBeNull();
     expect(result.correctionNote).toContain('Integrity 2');
+  });
+});
+
+describe('hasAnyScore', () => {
+  it('returns false when every student has entirely null scores', () => {
+    expect(
+      hasAnyScore({
+        levelCode: 'S1',
+        sectionName: 'Discipline 2',
+        students: [
+          {
+            wwScores: [null, null],
+            ptScores: [null, null, null],
+            examScore: null,
+          },
+          { wwScores: [null], ptScores: [null], examScore: null },
+        ],
+      })
+    ).toBe(false);
+  });
+
+  it('returns true when at least one student has any real score', () => {
+    expect(
+      hasAnyScore({
+        levelCode: 'S1',
+        sectionName: 'Discipline 2',
+        students: [
+          {
+            wwScores: [null, null],
+            ptScores: [null, null, null],
+            examScore: null,
+          },
+          { wwScores: [17, 15], ptScores: [19, 18, 17], examScore: 40 },
+        ],
+      })
+    ).toBe(true);
+  });
+});
+
+describe('dedupeByIdentityPreferringScored', () => {
+  it('keeps a lone sheet untouched even when it has zero scores (no collision)', () => {
+    const lone = {
+      levelCode: 'P2',
+      sectionName: 'Gentleness',
+      students: [{ wwScores: [null], ptScores: [null], examScore: null }],
+    };
+    const { kept, duplicateNotes } = dedupeByIdentityPreferringScored([
+      { sheetName: 'Reserved 2', sheet: lone },
+    ]);
+    expect(kept).toEqual([lone]);
+    expect(duplicateNotes).toEqual([]);
+  });
+
+  it('drops the empty duplicate and keeps the scored one — the real Reserved 4 vs English S1 Discipline 2 case', () => {
+    const empty = {
+      levelCode: 'S1',
+      sectionName: 'Discipline 2',
+      students: [
+        {
+          wwScores: [null, null, null] as (number | null)[],
+          ptScores: [null, null, null] as (number | null)[],
+          examScore: null as number | null,
+        },
+      ],
+    };
+    const scored = {
+      levelCode: 'S1',
+      sectionName: 'Discipline 2',
+      students: [
+        { wwScores: [19, 16, null], ptScores: [28, 27, 22], examScore: 44 },
+      ],
+    };
+    const { kept, duplicateNotes } = dedupeByIdentityPreferringScored([
+      { sheetName: 'Reserved 4', sheet: empty },
+      { sheetName: 'English - S1 Discipline 2', sheet: scored },
+    ]);
+    expect(kept).toEqual([scored]);
+    expect(duplicateNotes).toEqual([
+      '"Reserved 4" and "English - S1 Discipline 2" both resolved to S1 Discipline 2 — "Reserved 4" has no scores at all, using "English - S1 Discipline 2"',
+    ]);
+  });
+
+  it('keeps every sheet in a group when the collision is ambiguous (zero or multiple scored)', () => {
+    const empty1 = {
+      levelCode: 'S2',
+      sectionName: 'Integrity',
+      students: [{ wwScores: [null], ptScores: [null], examScore: null }],
+    };
+    const empty2 = {
+      levelCode: 'S2',
+      sectionName: 'Integrity',
+      students: [{ wwScores: [null], ptScores: [null], examScore: null }],
+    };
+    const { kept, duplicateNotes } = dedupeByIdentityPreferringScored([
+      { sheetName: 'Reserved A', sheet: empty1 },
+      { sheetName: 'Reserved B', sheet: empty2 },
+    ]);
+    expect(kept).toEqual([empty1, empty2]);
+    expect(duplicateNotes).toEqual([]);
   });
 });

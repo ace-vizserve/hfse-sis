@@ -263,4 +263,35 @@ describe('parseGradingWorkbookSecondaryT2', () => {
     expect(result.truncationNotes).toHaveLength(1);
     expect(result.identityCorrections).toEqual([]);
   });
+
+  it('dedupes the real Reserved-4/English-S1-Discipline-2 identity collision, keeping only the scored sheet (real fixture, Task 6 amendment)', () => {
+    const path = join(
+      'AY2026',
+      'T2',
+      'Term 2 Grades',
+      'GRADES',
+      'English Grading AY2026 T2.xlsx'
+    );
+
+    const result = parseGradingWorkbookSecondaryT2(path, 'ENG');
+
+    const s1Discipline2Sheets = result.sheets.filter(
+      (s) => s.levelCode === 'S1' && s.sectionName === 'Discipline 2'
+    );
+    expect(s1Discipline2Sheets).toHaveLength(1);
+    expect(
+      s1Discipline2Sheets[0].students.some(
+        (s) =>
+          s.wwScores.some((v) => v != null) ||
+          s.ptScores.some((v) => v != null) ||
+          s.examScore != null
+      )
+    ).toBe(true);
+
+    expect(result.duplicateIdentityNotes).toHaveLength(1);
+    expect(result.duplicateIdentityNotes[0]).toContain('Reserved 4');
+    expect(result.duplicateIdentityNotes[0]).toContain(
+      'English - S1 Discipline 2'
+    );
+  });
 });

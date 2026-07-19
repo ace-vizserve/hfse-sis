@@ -24,6 +24,7 @@ import {
   findPrintedGradeColsT2,
   resolveIdentity,
   parseTeacherName,
+  dedupeByIdentityPreferringScored,
   type IdentityT2,
 } from './t2-masthead';
 
@@ -33,6 +34,7 @@ export interface ParseGradingWorkbookGlobalT2Result {
   skippedUnrecognized: string[];
   identityCorrections: string[];
   truncationNotes: string[];
+  duplicateIdentityNotes: string[];
 }
 
 function parseOneSheetGlobalT2(
@@ -117,7 +119,7 @@ export function parseGradingWorkbookGlobalT2(
   subjectCode: string
 ): ParseGradingWorkbookGlobalT2Result {
   const wb = XLSX.readFile(filePath);
-  const sheets: ParsedSubjectSheet[] = [];
+  const candidates: { sheetName: string; sheet: ParsedSubjectSheet }[] = [];
   const skippedDoNotUse: string[] = [];
   const skippedUnrecognized: string[] = [];
   const identityCorrections: string[] = [];
@@ -138,17 +140,20 @@ export function parseGradingWorkbookGlobalT2(
     if (correctionNote) identityCorrections.push(correctionNote);
     if (truncationNote) truncationNotes.push(truncationNote);
     if (identity.kind === 'secondary' && sheet) {
-      sheets.push(sheet);
+      candidates.push({ sheetName, sheet });
     } else {
       skippedUnrecognized.push(sheetName);
     }
   }
 
+  const { kept, duplicateNotes } = dedupeByIdentityPreferringScored(candidates);
+
   return {
-    sheets,
+    sheets: kept,
     skippedDoNotUse,
     skippedUnrecognized,
     identityCorrections,
     truncationNotes,
+    duplicateIdentityNotes: duplicateNotes,
   };
 }

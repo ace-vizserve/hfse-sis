@@ -255,3 +255,70 @@ export function parseTeacherName(raw: string): string | null {
   const name = m[1].trim();
   return name === '' ? null : name;
 }
+
+// A minimal structural shape — avoids importing the full ParsedSubjectSheet
+// type from grading-workbook.ts into this masthead-only module.
+interface ScoredSheetLike {
+  levelCode: string;
+  sectionName: string;
+  students: {
+    wwScores: (number | null)[];
+    ptScores: (number | null)[];
+    examScore: number | null;
+  }[];
+}
+
+export function hasAnyScore(sheet: ScoredSheetLike): boolean {
+  return sheet.students.some(
+    (s) =>
+      s.wwScores.some((v) => v != null) ||
+      s.ptScores.some((v) => v != null) ||
+      s.examScore != null
+  );
+}
+
+// When two or more tabs in the same file resolve to the identical
+// (levelCode, sectionName) identity — the signature of a stale, unused
+// "Reserved N" scratch tab whose row-2 label happens to match a real,
+// populated tab — keep only the one with real score data. This is
+// deliberately NOT a blanket "drop every all-null sheet" rule: a lone,
+// non-colliding section with genuinely zero scores recorded yet (no
+// teacher has entered grades) is left completely untouched — that's an
+// honest "nothing entered yet" state, not corrupted data. When a
+// collision group has zero, or more than one, sheet with real scores,
+// that's a genuinely ambiguous case this heuristic can't safely resolve —
+// every sheet in the group is kept rather than guessed, so it surfaces
+// downstream (needs-review / mismatch sections) instead of being silently
+// dropped.
+export function dedupeByIdentityPreferringScored<T extends ScoredSheetLike>(
+  candidates: { sheetName: string; sheet: T }[]
+): { kept: T[]; duplicateNotes: string[] } {
+  const groups = new Map<string, { sheetName: string; sheet: T }[]>();
+  for (const c of candidates) {
+    const key = `${c.sheet.levelCode}::${c.sheet.sectionName}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(c);
+  }
+
+  const kept: T[] = [];
+  const duplicateNotes: string[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      kept.push(group[0].sheet);
+      continue;
+    }
+    const scored = group.filter((c) => hasAnyScore(c.sheet));
+    const empty = group.filter((c) => !hasAnyScore(c.sheet));
+    if (scored.length === 1 && empty.length === group.length - 1) {
+      kept.push(scored[0].sheet);
+      for (const e of empty) {
+        duplicateNotes.push(
+          `"${e.sheetName}" and "${scored[0].sheetName}" both resolved to ${group[0].sheet.levelCode} ${group[0].sheet.sectionName} — "${e.sheetName}" has no scores at all, using "${scored[0].sheetName}"`
+        );
+      }
+    } else {
+      for (const c of group) kept.push(c.sheet);
+    }
+  }
+  return { kept, duplicateNotes };
+}

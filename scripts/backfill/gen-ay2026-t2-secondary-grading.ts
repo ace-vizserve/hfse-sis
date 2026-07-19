@@ -107,6 +107,7 @@ async function main() {
   let sheets: ParsedSubjectSheet[] = [];
   let allIdentityCorrections: string[] = [];
   let allTruncationNotes: string[] = [];
+  let allDuplicateIdentityNotes: string[] = [];
 
   // 1. Regular track.
   for (const { file, subjectCode } of REGULAR_SUBJECT_FILES) {
@@ -119,8 +120,11 @@ async function main() {
       result.identityCorrections
     );
     allTruncationNotes = allTruncationNotes.concat(result.truncationNotes);
+    allDuplicateIdentityNotes = allDuplicateIdentityNotes.concat(
+      result.duplicateIdentityNotes
+    );
     console.log(
-      `[Regular] ${file}: ${result.sheets.length} Secondary sheet(s), skipped ${result.skippedPrimary.length} Primary + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} correction(s), ${result.truncationNotes.length} truncation(s)`
+      `[Regular] ${file}: ${result.sheets.length} Secondary sheet(s), skipped ${result.skippedPrimary.length} Primary + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} correction(s), ${result.truncationNotes.length} truncation(s), ${result.duplicateIdentityNotes.length} duplicate(s)`
     );
   }
 
@@ -135,8 +139,11 @@ async function main() {
       result.identityCorrections
     );
     allTruncationNotes = allTruncationNotes.concat(result.truncationNotes);
+    allDuplicateIdentityNotes = allDuplicateIdentityNotes.concat(
+      result.duplicateIdentityNotes
+    );
     console.log(
-      `[Global] ${file}: ${result.sheets.length} Secondary sheet(s), skipped ${result.skippedDoNotUse.length} DO-NOT-USE + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} correction(s), ${result.truncationNotes.length} truncation(s)`
+      `[Global] ${file}: ${result.sheets.length} Secondary sheet(s), skipped ${result.skippedDoNotUse.length} DO-NOT-USE + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} correction(s), ${result.truncationNotes.length} truncation(s), ${result.duplicateIdentityNotes.length} duplicate(s)`
     );
   }
 
@@ -186,6 +193,12 @@ async function main() {
       "Tab name truncated — row 2's fuller label used instead",
       'see design doc §1 point 2 for the Excel 31-char sheet-name limit case',
       allTruncationNotes
+    ) +
+    '\n' +
+    buildNotesSection(
+      'Duplicate tabs — identical identity, empty duplicate dropped',
+      'see design doc §1 point 2 and the Task 6 amendment for the Reserved-tab collision case',
+      allDuplicateIdentityNotes
     );
 
   writeFileSync(
