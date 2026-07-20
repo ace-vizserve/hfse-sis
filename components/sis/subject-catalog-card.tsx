@@ -66,6 +66,7 @@ function draftFromRow(
     name: row.name,
     is_examinable: row.is_examinable,
     grading_method: row.grading_method,
+    report_label: row.report_label,
     ayCode,
     ww_weight: Math.round(cfg.ww_weight * 100),
     pt_weight: Math.round(cfg.pt_weight * 100),
@@ -84,6 +85,7 @@ function subjectIdentity(row: CatalogSubjectRow): SubjectConfigFormSubject {
     name: row.name,
     is_examinable: row.is_examinable,
     grading_method: row.grading_method,
+    report_label: row.report_label,
   };
 }
 

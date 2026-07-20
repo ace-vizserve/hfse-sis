@@ -26,6 +26,7 @@ const SUBJECTS = [
     name: 'Mathematics',
     is_examinable: true,
     grading_method: 'standard_sheet' as const,
+    report_label: null,
   },
   {
     id: 'sub-sci',
@@ -33,6 +34,7 @@ const SUBJECTS = [
     name: 'Science',
     is_examinable: true,
     grading_method: 'standard_sheet' as const,
+    report_label: null,
   },
   {
     id: 'sub-artd',
@@ -40,6 +42,7 @@ const SUBJECTS = [
     name: 'Art & Design',
     is_examinable: false,
     grading_method: 'no_sheet' as const,
+    report_label: null,
   },
   {
     id: 'sub-hist',
@@ -47,6 +50,7 @@ const SUBJECTS = [
     name: 'History',
     is_examinable: true,
     grading_method: 'standard_sheet' as const,
+    report_label: null,
   },
   {
     id: 'sub-mt',
@@ -54,6 +58,7 @@ const SUBJECTS = [
     name: 'Mother Tongue',
     is_examinable: false,
     grading_method: 'no_sheet' as const,
+    report_label: null,
   },
   {
     id: 'sub-fil',
@@ -61,6 +66,7 @@ const SUBJECTS = [
     name: 'Filipino',
     is_examinable: true,
     grading_method: 'standard_sheet' as const,
+    report_label: null,
   },
   {
     id: 'sub-mandarin',
@@ -68,6 +74,7 @@ const SUBJECTS = [
     name: 'Mandarin',
     is_examinable: true,
     grading_method: 'standard_sheet' as const,
+    report_label: null,
   },
 ];
 

@@ -2,7 +2,7 @@
 
 import { AlertCircle, CheckCircle2, Loader2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -60,6 +60,9 @@ export type SubjectConfigFormSubject = {
   name: string;
   is_examinable: boolean;
   grading_method: GradingMethod;
+  // What prints on the report card for this subject, independent of
+  // `name`. Null = falls back to `name` (see lib/report-card/build-report-card.ts).
+  report_label: string | null;
 };
 
 // A `subject_configs` row is subject-scoped only (migration 080 — no level
@@ -118,6 +121,8 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
     mode === 'edit' ? props.draft.is_examinable : props.subject.is_examinable;
   const initialGradingMethod =
     mode === 'edit' ? props.draft.grading_method : props.subject.grading_method;
+  const initialReportLabel =
+    mode === 'edit' ? props.draft.report_label : props.subject.report_label;
 
   // ── Weights + slots + QA max ─────────────────────────────────────────
   // Edit mode re-seeds from the actual saved row — an already-configured
@@ -151,6 +156,14 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
   );
   const [isExaminable, setIsExaminable] = useState(initialIsExaminable);
   const [gradingMethod, setGradingMethod] = useState(initialGradingMethod);
+  // Report label — a free-text field, so it can't auto-save on every
+  // keystroke like the Selects above; saves on blur instead, only when the
+  // value actually changed since the last successful save (tracked via a
+  // ref rather than re-comparing against `initialReportLabel`, since that
+  // stays stale for the rest of this mount once the first save succeeds —
+  // props don't re-fetch until the drawer closes and reopens).
+  const [reportLabel, setReportLabel] = useState(initialReportLabel ?? '');
+  const lastSavedReportLabelRef = useRef(initialReportLabel ?? '');
 
   // Re-seed on identity change (edit: a different draft loaded; create: a
   // different subject picked) — mirrors the pre-extraction dialogs' own
@@ -166,6 +179,8 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
       setReportSubjectId(props.draft.reportSubjectId);
       setIsExaminable(props.draft.is_examinable);
       setGradingMethod(props.draft.grading_method);
+      setReportLabel(props.draft.report_label ?? '');
+      lastSavedReportLabelRef.current = props.draft.report_label ?? '';
     } else {
       const d = defaultWeightPercentsForSubjectCode(props.subject.code);
       setWw(String(d.ww));
@@ -176,6 +191,8 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
       setQaMax('30');
       setIsExaminable(props.subject.is_examinable);
       setGradingMethod(props.subject.grading_method);
+      setReportLabel(props.subject.report_label ?? '');
+      lastSavedReportLabelRef.current = props.subject.report_label ?? '';
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subjectId, mode === 'edit' ? props.draft.configId : null]);
@@ -273,31 +290,42 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
     reportMapMutation.mutate(next);
   }
 
-  // ── Grade type + grading method — new in Task 2, both modes ─────────
-  // Auto-save on change, mirroring reports-to's pattern. These two fields
+  // ── Grade type + grading method + report label — new in Task 2 (+
+  // report label, this session), both modes ───────────────────────────
+  // Auto-save on change, mirroring reports-to's pattern. These fields
   // live on `subjects` (no AY dimension) — PATCH /catalog/[id] is the one
   // route that reaches them; the subject_configs routes above can't.
   const catalogMutation = useMutation({
     mutationFn: (patch: {
       is_examinable?: boolean;
       grading_method?: GradingMethod;
+      report_label?: string;
     }) =>
       apiFetch(
         `/api/sis/admin/subjects/catalog/${subjectId}`,
         jsonInit('PATCH', patch)
       ),
     onSuccess: (_data, patch) => {
-      const what = 'is_examinable' in patch ? 'grade type' : 'grading method';
+      const what =
+        'is_examinable' in patch
+          ? 'grade type'
+          : 'grading_method' in patch
+            ? 'grading method'
+            : 'report label';
       toast.success(`${subjectCode} ${what} updated`);
+      if ('report_label' in patch)
+        lastSavedReportLabelRef.current = patch.report_label ?? '';
       router.refresh();
       // No onSaved() here either — same reasoning as reportMapMutation
-      // above; these two auto-save independently and shouldn't close the
+      // above; these auto-save independently and shouldn't close the
       // caller's chrome on their own.
     },
     onError: (e, patch) => {
       toast.error(e instanceof Error ? e.message : 'Could not update');
       if ('is_examinable' in patch) setIsExaminable(initialIsExaminable);
       if ('grading_method' in patch) setGradingMethod(initialGradingMethod);
+      if ('report_label' in patch)
+        setReportLabel(lastSavedReportLabelRef.current);
     },
   });
 
@@ -310,6 +338,11 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
   function onGradingMethodChange(next: GradingMethod) {
     setGradingMethod(next);
     catalogMutation.mutate({ grading_method: next });
+  }
+
+  function onReportLabelBlur() {
+    if (reportLabel === lastSavedReportLabelRef.current) return;
+    catalogMutation.mutate({ report_label: reportLabel });
   }
 
   const previewValid =
@@ -363,6 +396,24 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
               </SelectContent>
             </Select>
           </div>
+        </div>
+        <div className="mt-3 space-y-1">
+          <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            Report label
+          </Label>
+          <Input
+            type="text"
+            placeholder={subjectName}
+            value={reportLabel}
+            onChange={(e) => setReportLabel(e.target.value)}
+            onBlur={onReportLabelBlur}
+            maxLength={128}
+          />
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            What prints on the report card for this subject, if different from
+            &ldquo;{subjectName}&rdquo;. Leave blank to use the subject name
+            as-is.
+          </p>
         </div>
       </FieldRow>
 

@@ -36,6 +36,13 @@ export type ReportTargetMeta = {
   id: string;
   code: string;
   name: string;
+  // What prints on the report card, independent of `name` — null falls
+  // back to `name`. Resolved by the CALLER at render time for the common
+  // (self-map) case; this module composes it directly into `.name` only
+  // for the fan-in case below, since that's already synthesizing a new
+  // "{Target} ({Source})" string from two subjects' identities, not a
+  // simple passthrough.
+  report_label: string | null;
   is_examinable: boolean;
 };
 
@@ -150,6 +157,7 @@ export function resolveReportSubjects(
             id: target.id,
             code: target.code,
             name: target.name,
+            report_label: target.report_label,
             is_examinable: row.subject.is_examinable,
           },
         });
@@ -188,7 +196,15 @@ export function resolveReportSubjects(
       subject: {
         id: target.id,
         code: target.code,
-        name: `${target.name} (${sourceRow.subject.name})`,
+        // Composing a new "{Target} ({Source})" string here — a real
+        // synthesis of two subjects' identities, not a simple passthrough —
+        // so this is the one place report_label resolution happens ahead of
+        // render time. `report_label: null` on the output row is correct
+        // (not a loss of information): the composed string above already IS
+        // the final display text, so a render-time `report_label ?? name`
+        // fallback should never re-substitute anything for this row.
+        name: `${target.report_label ?? target.name} (${sourceRow.subject.report_label ?? sourceRow.subject.name})`,
+        report_label: null,
         is_examinable: sourceRow.subject.is_examinable,
       },
     });
@@ -197,6 +213,13 @@ export function resolveReportSubjects(
   // Grouping can move a merged row's alphabetical position relative to
   // where its source row(s) sorted — re-sort the final list. (Array.sort is
   // stable, so an input that's already correctly sorted — e.g. every group
-  // is single-mapper, nothing changed — round-trips byte-identical.)
-  return output.sort((a, b) => a.subject.name.localeCompare(b.subject.name));
+  // is single-mapper, nothing changed — round-trips byte-identical.) Sort by
+  // the EFFECTIVE display value (report_label ?? name), not the raw
+  // catalog name — a subject printed under a different report label should
+  // sort where it's shown, not where it's catalogued.
+  return output.sort((a, b) =>
+    (a.subject.report_label ?? a.subject.name).localeCompare(
+      b.subject.report_label ?? b.subject.name
+    )
+  );
 }

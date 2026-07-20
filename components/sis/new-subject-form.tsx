@@ -33,6 +33,7 @@ import {
   SubjectCreateSchema,
   type GradingMethod,
   type SubjectCreateInput,
+  type SubjectCreateFormInput,
 } from '@/lib/schemas/subject';
 
 export type NewSubjectResult = {
@@ -60,13 +61,25 @@ export function NewSubjectForm({
   onSuccess: (subject: NewSubjectResult) => void;
   onCancel: () => void;
 }) {
-  const form = useForm<SubjectCreateInput>({
+  // Two generics because SubjectCreateSchema has a transform
+  // (report_label): TFieldValues (what RHF's Controllers actually hold,
+  // pre-transform — report_label optional) vs the third generic,
+  // TTransformedValues (what handleSubmit's callback receives, post-
+  // transform — report_label always string | null). Passing just one
+  // generic here would pin both to the same shape and mismatch the
+  // resolver's own inferred type.
+  const form = useForm<SubjectCreateFormInput, unknown, SubjectCreateInput>({
     resolver: zodResolver(SubjectCreateSchema),
     defaultValues: {
       code: '',
       name: '',
       is_examinable: true,
       grading_method: 'standard_sheet',
+      // No visible field for this at creation time — a brand-new subject
+      // can have its report label set afterward via the catalog row's
+      // edit drawer. Explicit null (not omitted) since the schema's
+      // transform makes the output type string | null, never undefined.
+      report_label: null,
     },
   });
 
@@ -76,6 +89,7 @@ export function NewSubjectForm({
       name: '',
       is_examinable: true,
       grading_method: 'standard_sheet',
+      report_label: null,
     });
     // Reset once on mount only — this form is embedded fresh each time its
     // chrome (Dialog/Sheet) opens (both callers unmount-on-close), so a

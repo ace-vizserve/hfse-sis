@@ -31,7 +31,13 @@ export type Cell = {
 };
 
 export type SubjectRow = {
-  subject: { id: string; code: string; name: string; is_examinable: boolean };
+  subject: {
+    id: string;
+    code: string;
+    name: string;
+    report_label: string | null;
+    is_examinable: boolean;
+  };
   t1: Cell;
   t2: Cell;
   t3: Cell;
@@ -287,46 +293,75 @@ export async function buildReportCard(
     new Set(ayEnrolments.map((e) => e.section.id))
   );
 
-  // "Which subjects appear on this report card" is a level-membership
-  // question — migration 080 dropped subject_configs.level_id, so this
-  // resolves via subject_level_offerings instead (Pattern A).
-  const { data: configs } = await supabase
-    .from('subject_level_offerings')
-    .select('subject:subjects(id, code, name, is_examinable)')
-    .eq('academic_year_id', ay.id)
-    .eq('level_id', level.id);
+  // "Which subjects appear on this report card" is a SECTION-membership
+  // question, not a level one — a student's actual section can offer a
+  // different subject set than its level's blanket subject_level_offerings
+  // (the Subject Setup "Attach to section" flow supports genuine
+  // per-section divergence; lib/markbook/grading-sheet-scope.ts already
+  // honors this for grading-sheet generation — this loader previously did
+  // not). Scoped across every section the student touched this AY
+  // (allSectionIds, same transfer-safety rationale as the grading_sheets
+  // query below it). section_subjects rows are validated against
+  // subject_level_offerings at write time
+  // (app/api/sections/[id]/subjects/route.ts), so no separate
+  // level-membership re-check is needed here — subject_level_offerings is
+  // no longer queried by this file at all.
+  //
+  // report_label (migration 087) — what prints on the report card for a
+  // subject, independent of `name`. Carried through as its OWN field
+  // (never overwriting `name`) all the way to render time — see
+  // components/report-card/report-card-document.tsx, the one place that
+  // resolves `report_label ?? name` for display.
+  const { data: sectionSubjectRows } = await supabase
+    .from('section_subjects')
+    .select(
+      'subject_config:subject_configs(subject:subjects(id, code, name, report_label, is_examinable))'
+    )
+    .in('section_id', allSectionIds);
 
-  type CfgRow = {
-    subject:
-      | { id: string; code: string; name: string; is_examinable: boolean }
-      | { id: string; code: string; name: string; is_examinable: boolean }[]
+  type SubjectMeta = {
+    id: string;
+    code: string;
+    name: string;
+    report_label: string | null;
+    is_examinable: boolean;
+  };
+  type SectionSubjectRow = {
+    subject_config:
+      | { subject: SubjectMeta | SubjectMeta[] | null }
+      | { subject: SubjectMeta | SubjectMeta[] | null }[]
       | null;
   };
-  const subjects = ((configs ?? []) as CfgRow[])
-    .map((c) => first(c.subject))
-    .filter(
-      (
-        s
-      ): s is {
-        id: string;
-        code: string;
-        name: string;
-        is_examinable: boolean;
-      } => !!s
-    )
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const subjectsById = new Map<string, SubjectMeta>();
+  for (const row of (sectionSubjectRows ?? []) as SectionSubjectRow[]) {
+    const cfg = first(row.subject_config);
+    const s = cfg ? first(cfg.subject) : null;
+    if (!s) continue;
+    // De-dupe: a transferred student's old + new section can both carry a
+    // section_subjects row for the same ongoing subject.
+    if (subjectsById.has(s.id)) continue;
+    subjectsById.set(s.id, {
+      id: s.id,
+      code: s.code,
+      name: s.name,
+      report_label: s.report_label,
+      is_examinable: s.is_examinable,
+    });
+  }
+  const subjects = Array.from(subjectsById.values()).sort((a, b) =>
+    (a.report_label ?? a.name).localeCompare(b.report_label ?? b.name)
+  );
 
   // Report-card grouping map (migration 080, KD reference: subject_report_map
   // wiring task). Global — no AY or level filter, since a mapping is a
   // catalog-shape property, not a per-year one; the target subject (e.g.
-  // "Mother Tongue" once real fan-in exists) may not itself appear in this
-  // level's `subject_level_offerings` at all — it's only ever a display
-  // target, never directly offered. Two plain lookups rather than a
-  // `subjects!<fk>(...)` embed hint: no precedent for that embed syntax
-  // exists anywhere in this codebase today (the sibling admin route at
-  // app/api/sis/admin/subjects/[configId]/report-map/route.ts and
-  // lib/sis/subjects/queries.ts::listSubjectReportMap both already do two
-  // separate `.from('subjects')` lookups for the same table), so this
+  // "Mother Tongue" once real fan-in exists) may not itself be attached to
+  // any section directly — it's only ever a display target. Two plain
+  // lookups rather than a `subjects!<fk>(...)` embed hint: no precedent for
+  // that embed syntax exists anywhere in this codebase today (the sibling
+  // admin route at app/api/sis/admin/subjects/[configId]/report-map/route.ts
+  // and lib/sis/subjects/queries.ts::listSubjectReportMap both already do
+  // two separate `.from('subjects')` lookups for the same table), so this
   // mirrors that established, easily-testable pattern instead of an
   // unverified one. Every subject is seeded self-mapped (migration 080), so
   // in production today this resolves to a full self-map and
@@ -343,10 +378,16 @@ export async function buildReportCard(
     );
     const { data: targetRows } = await supabase
       .from('subjects')
-      .select('id, code, name, is_examinable')
+      .select('id, code, name, report_label, is_examinable')
       .in('id', targetIds);
     for (const t of (targetRows ?? []) as ReportTargetMeta[]) {
-      reportTargets.set(t.id, t);
+      reportTargets.set(t.id, {
+        id: t.id,
+        code: t.code,
+        name: t.name,
+        report_label: t.report_label,
+        is_examinable: t.is_examinable,
+      });
     }
   }
 

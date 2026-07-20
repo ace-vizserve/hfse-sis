@@ -46,6 +46,7 @@ function renderCreate(code: string) {
         name: code,
         is_examinable: true,
         grading_method: 'standard_sheet',
+        report_label: null,
       }}
       ayId={AY_UUID}
       ayCode="AY2026"
@@ -56,9 +57,11 @@ function renderCreate(code: string) {
 
 // PercentField renders WW, PT, QA in that fixed order — no htmlFor/id
 // association to the visible label, so DOM order is the reliable query.
+// Index 0 is the "Report label" free-text field, which renders before the
+// weights row in the Subject identity FieldRow — skip it.
 function weightInputs() {
   const inputs = screen.getAllByRole('textbox');
-  return { ww: inputs[0], pt: inputs[1], qa: inputs[2] };
+  return { ww: inputs[1], pt: inputs[2], qa: inputs[3] };
 }
 
 describe('SubjectConfigForm (create mode — DepEd default weights)', () => {
