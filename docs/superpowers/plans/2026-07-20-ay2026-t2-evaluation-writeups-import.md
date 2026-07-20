@@ -784,6 +784,252 @@ Expected: prints per-sheet blank counts for all 23 sheets, `Distinct section ide
 
 ---
 
+### Task 4: Per-section breakdown in `preview.sql` (final-review amendment)
+
+**Why this task exists:** the final whole-branch review (covering all 3 tasks together) found that `preview.sql` doesn't match design doc §6's stated contract — §6 says the preview reports "per-section resolved/blank/needs-review counts... and a sample of resolved identities," but the shipped `buildPreviewSql` only emits a grand total (`writeups=390`) plus the needs-review list. The per-section blank counts Task 1's parser already computes (`ParseConsolidatedWriteupsResult.blankCounts`) never reach the composer at all — `BuildWriteupsImportInput` doesn't accept them, so `buildPreviewSql` structurally cannot surface them. The orchestrator currently only prints them to the console (transient), not into the durable, reviewable `.sql` file design doc §9's controller checklist is meant to read from.
+
+No data-correctness issue — the actual INSERT logic, roster resolution, and Hard Rule #6 compliance are all unaffected. This is purely about the preview artifact being incomplete relative to what it was designed to show.
+
+**Files:**
+
+- Modify: `lib/sis/backfill/evaluation/build-writeups-import.ts` (accept `blankCounts`, add a per-section stats table, extend `buildPreviewSql`)
+- Modify: `scripts/backfill/gen-ay2026-t2-writeups.ts` (pass `parsed.blankCounts` through to `buildWriteupsImport`)
+- Modify: `__tests__/sis/backfill/evaluation/build-writeups-import.test.ts` (add `blankCounts` to the 5 existing test inputs now that the field is required; add 1 new test for the per-section breakdown)
+
+**Interfaces:**
+
+- Consumes: `SheetBlankCount` (Task 1's `lib/sis/backfill/evaluation/parse-consolidated-writeups.ts`, already exported).
+- Produces: `BuildWriteupsImportInput` gains a required `blankCounts: SheetBlankCount[]` field — no other task consumes this change (Task 4 is terminal).
+
+- [ ] **Step 1: Update the composer**
+
+In `lib/sis/backfill/evaluation/build-writeups-import.ts`, change the import line to:
+
+```ts
+import type {
+  ParsedWriteupRow,
+  SheetBlankCount,
+} from './parse-consolidated-writeups';
+```
+
+Add `blankCounts` to the input interface:
+
+```ts
+export interface BuildWriteupsImportInput {
+  rows: ParsedWriteupRow[];
+  blankCounts: SheetBlankCount[];
+  rosterLookup: RosterLookupEntry[];
+  termId: string;
+  submittedAt: string;
+}
+```
+
+Add `levelCode`/`sectionName` to `ResolvedWriteup`:
+
+```ts
+interface ResolvedWriteup {
+  levelCode: string;
+  sectionName: string;
+  studentId: string;
+  sectionId: string;
+  writeup: string;
+}
+```
+
+Add a new `SectionStats` interface and `buildSectionStats` helper (place after the `NeedsReviewRow` interface):
+
+```ts
+interface SectionStats {
+  levelCode: string;
+  sectionName: string;
+  resolved: number;
+  needsReview: number;
+  blank: number;
+}
+
+function buildSectionStats(
+  blankCounts: SheetBlankCount[],
+  resolved: ResolvedWriteup[],
+  needsReview: NeedsReviewRow[]
+): SectionStats[] {
+  const key = (levelCode: string, sectionName: string) =>
+    `${levelCode}::${sectionName}`;
+  const map = new Map<string, SectionStats>();
+
+  for (const b of blankCounts) {
+    map.set(key(b.levelCode, b.sectionName), {
+      levelCode: b.levelCode,
+      sectionName: b.sectionName,
+      resolved: 0,
+      needsReview: 0,
+      blank: b.blankCount,
+    });
+  }
+  for (const r of resolved) {
+    const s = map.get(key(r.levelCode, r.sectionName));
+    if (s) s.resolved++;
+  }
+  for (const n of needsReview) {
+    const s = map.get(key(n.levelCode, n.sectionName));
+    if (s) s.needsReview++;
+  }
+
+  return Array.from(map.values());
+}
+```
+
+Update `buildWriteupsImport`'s body — change the destructure, the `resolved.push` call, and the `buildPreviewSql` call:
+
+```ts
+export function buildWriteupsImport(
+  input: BuildWriteupsImportInput
+): BuildWriteupsImportResult {
+  const { rows, blankCounts, rosterLookup, termId, submittedAt } = input;
+
+  const rosterMap = new Map<string, RosterLookupEntry>();
+  for (const r of rosterLookup) {
+    rosterMap.set(`${r.levelCode}::${r.sectionName}::${r.indexNumber}`, r);
+  }
+
+  const resolved: ResolvedWriteup[] = [];
+  const needsReview: NeedsReviewRow[] = [];
+
+  for (const row of rows) {
+    const key = `${row.levelCode}::${row.sectionName}::${Number.parseInt(row.indexNo, 10)}`;
+    const entry = rosterMap.get(key);
+    if (!entry) {
+      needsReview.push({
+        levelCode: row.levelCode,
+        sectionName: row.sectionName,
+        indexNo: row.indexNo,
+        fullName: row.fullName,
+        reason: `no matching active section_students row for index ${row.indexNo}`,
+      });
+      continue;
+    }
+    resolved.push({
+      levelCode: row.levelCode,
+      sectionName: row.sectionName,
+      studentId: entry.studentId,
+      sectionId: entry.sectionId,
+      writeup: row.writeup,
+    });
+  }
+
+  const stats: BuildWriteupsImportResult['stats'] = {
+    writeupsWritten: resolved.length,
+    needsReview: needsReview.length,
+  };
+
+  const sectionStats = buildSectionStats(blankCounts, resolved, needsReview);
+
+  return {
+    preview: buildPreviewSql(sectionStats, needsReview, stats),
+    apply: buildApplySql(termId, submittedAt, resolved),
+    stats,
+  };
+}
+```
+
+Update `buildPreviewSql`'s signature and body to accept + render `sectionStats`:
+
+```ts
+function buildPreviewSql(
+  sectionStats: SectionStats[],
+  needsReview: NeedsReviewRow[],
+  stats: BuildWriteupsImportResult['stats']
+): string {
+  const lines: string[] = [];
+  lines.push('-- AY2026 T2 evaluation write-ups import — PREVIEW (read-only)');
+  lines.push('--');
+  lines.push(
+    '-- Generated by gen-ay2026-t2-writeups.ts from the Term 2 Consolidated Form.'
+  );
+  lines.push(
+    '-- Review this report BEFORE running the matching apply.sql file.'
+  );
+  lines.push('--');
+  lines.push(`-- writeups=${stats.writeupsWritten}`);
+  lines.push('--');
+  lines.push(
+    '-- Per-section breakdown (resolved / needs-review / blank cell):'
+  );
+  for (const s of sectionStats) {
+    lines.push(
+      `--   ${s.levelCode} ${s.sectionName}: resolved=${s.resolved} needsReview=${s.needsReview} blank=${s.blank}`
+    );
+  }
+  lines.push('--');
+  lines.push(
+    `-- Needs review (${needsReview.length}) — NOT written by apply.sql:`
+  );
+  if (needsReview.length === 0) lines.push('--   (none)');
+  for (const r of needsReview) {
+    lines.push(
+      `--   [${r.levelCode} ${r.sectionName}] index ${r.indexNo} "${r.fullName}" — ${r.reason}`
+    );
+  }
+  return lines.join('\n') + '\n';
+}
+```
+
+`buildApplySql` is unchanged (it never used `sectionStats`, and `ResolvedWriteup`'s new `levelCode`/`sectionName` fields aren't referenced there — `resolved.map` in `buildApplySql` still only reads `r.studentId`/`r.sectionId`/`r.writeup`).
+
+- [ ] **Step 2: Update the composer's tests**
+
+In `__tests__/sis/backfill/evaluation/build-writeups-import.test.ts`, add `blankCounts: []` to each of the 5 existing `buildWriteupsImport({...})` call sites (every one currently passes `{ rows, rosterLookup, termId, submittedAt }` — add `blankCounts: [],` as a new property in each).
+
+Add one new test at the end of the `describe('buildWriteupsImport', ...)` block:
+
+```ts
+it('includes a per-section resolved/needs-review/blank breakdown in the preview', () => {
+  const result = buildWriteupsImport({
+    rows: [row(), row({ indexNo: '99', fullName: 'UNRESOLVED, Student' })],
+    blankCounts: [
+      { levelCode: 'S1', sectionName: 'Discipline 1', blankCount: 3 },
+      { levelCode: 'P1', sectionName: 'Patience', blankCount: 0 },
+    ],
+    rosterLookup: [rosterEntry()],
+    termId: TERM_ID,
+    submittedAt: SUBMITTED_AT,
+  });
+  expect(result.preview).toContain(
+    'S1 Discipline 1: resolved=1 needsReview=1 blank=3'
+  );
+  expect(result.preview).toContain(
+    'P1 Patience: resolved=0 needsReview=0 blank=0'
+  );
+});
+```
+
+- [ ] **Step 3: Run the composer's tests, verify pass**
+
+Run: `npx vitest run __tests__/sis/backfill/evaluation/build-writeups-import.test.ts`
+Expected: PASS — all 5 existing + the 1 new test (6 total).
+
+- [ ] **Step 4: Wire `blankCounts` through the orchestrator**
+
+In `scripts/backfill/gen-ay2026-t2-writeups.ts`, find the `buildWriteupsImport({...})` call and add `blankCounts: parsed.blankCounts,` as a new property (alongside the existing `rows: parsed.rows,`).
+
+- [ ] **Step 5: Run the full backfill test suite**
+
+Run: `npx vitest run __tests__/sis/backfill/`
+Expected: PASS — 176 + 1 = 177 tests, 25 files.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add lib/sis/backfill/evaluation/build-writeups-import.ts scripts/backfill/gen-ay2026-t2-writeups.ts __tests__/sis/backfill/evaluation/build-writeups-import.test.ts
+git commit -m "fix(backfill): surface per-section counts in the writeups preview"
+```
+
+- [ ] **Step 7: Re-run the generator for real and confirm the preview now shows the breakdown**
+
+Run: `npx tsx --env-file=.env.local scripts/backfill/gen-ay2026-t2-writeups.ts`
+Expected: same stats as before (writeupsWritten/needsReview unchanged — this task only changes what's _reported_, not what's resolved or written). Read `scripts/backfill/ay2026-t2-writeups-preview.sql` and confirm it now has a "Per-section breakdown" block listing all 23 sections with their resolved/needsReview/blank counts, matching the console output from the original Task 3 run.
+
+---
+
 ## Self-review notes (fixed inline before handoff)
 
 - **Spec coverage:** design doc §2 (source data + column identification) → Task 1's parser + its real-fixture tests. §3 (identity resolution) → Task 1's `parseSheetIdentity` + its 6 dedicated tests covering every real naming variant found (hyphen, space, Global-track `(G)` marker, unrecognized). §4 (roster resolution excluding withdrawn) → Task 3's orchestrator query (`neq('enrollment_status', 'withdrawn')`) — this lives in the orchestrator, not the composer, matching every prior phase's pattern where the composer stays pure/DB-agnostic and the orchestrator owns the actual query. §5 (field mapping) → Task 2's `buildApplySql`, verified by the composer's own tests (submitted=true literal, submitted_at from input, created_by never emitted = NULL by column omission). §6 (SQL emission, on-conflict-do-nothing, sqlString reuse) → Task 2. §7 (three-file architecture) → Tasks 1–3 map directly. §8 (testing) → both lib tasks have real-fixture + synthetic tests respectively; no orchestrator test file, consistent with every prior phase. §9 (validation plan, distinct-identity assertion) → Task 3 Step 1's `seen` Set check + Step 5's controller checklist.
