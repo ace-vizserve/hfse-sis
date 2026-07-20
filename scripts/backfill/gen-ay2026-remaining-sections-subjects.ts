@@ -49,6 +49,11 @@ const PRIMARY_REGULAR_SECTIONS = [
   'Grit',
 ];
 
+// PESTD ("Physical Education"), not PEH ("Physical Education and
+// Health") — PEH is the Global-track subject. Confirmed against HFSE's
+// own Consolidated Form, which carries two separate columns ("Physical
+// Education" on the Regular-track tabs vs "PE & Health" on the
+// Global-track tabs) — see ay2026-pestd-correction-apply.sql.
 const SECONDARY_REGULAR_S1S2_SECTIONS = ['Discipline 2', 'Integrity 2'];
 const SECONDARY_REGULAR_S1S2_SUBJECTS = [
   'ENG',
@@ -56,7 +61,7 @@ const SECONDARY_REGULAR_S1S2_SUBJECTS = [
   'MATH',
   'CA',
   'LIT',
-  'PEH',
+  'PESTD',
   'FIL',
   'HIST',
 ];
@@ -67,7 +72,7 @@ const SECONDARY_REGULAR_S3S4_SUBJECTS = [
   'MATH',
   'CA',
   'LIT',
-  'PEH',
+  'PESTD',
   'FIL',
   'SS',
 ];
