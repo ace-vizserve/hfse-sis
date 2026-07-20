@@ -136,6 +136,7 @@ const ACTION_LABELS: Record<string, string> = {
   'level.update': 'Grade level updated',
   'level.delete': 'Grade level removed',
   'level.offering.toggle': 'Level offering changed',
+  'level.alias.create': 'Level naming variant mapped',
 
   // Academic years
   'ay.create': 'Academic year created',

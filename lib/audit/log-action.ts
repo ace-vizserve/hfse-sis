@@ -86,6 +86,7 @@ export type AuditAction =
   | 'level.update'
   | 'level.delete'
   | 'level.offering.toggle'
+  | 'level.alias.create'
   | 'ay.create'
   | 'ay.switch_current'
   | 'ay.accepting_applications.toggle'
