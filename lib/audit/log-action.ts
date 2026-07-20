@@ -135,6 +135,7 @@ export type AuditAction =
   | 'environment.switch'
   | 'environment.seed'
   | 'environment.topup'
+  | 'environment.demo_accounts_removed'
   | 'grade_entry.annual_letter.update'
   | 'user.login'
   | 'parent.session.issued'

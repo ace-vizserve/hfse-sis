@@ -199,6 +199,7 @@ const ACTION_LABELS: Record<string, string> = {
   'environment.switch': 'Environment switched',
   'environment.seed': 'Demo data seeded',
   'environment.topup': 'Demo data topped up',
+  'environment.demo_accounts_removed': 'Demo accounts removed',
 
   // Parent sessions
   'parent.session.issued': 'Parent signed in',
