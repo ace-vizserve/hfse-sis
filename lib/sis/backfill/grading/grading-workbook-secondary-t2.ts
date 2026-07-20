@@ -58,8 +58,17 @@ function parseOneSheetSecondaryT2(
   const ptWeight = weightAt(maxRow, layout.ptTotalCol);
   const qaWeight = weightAt(maxRow, layout.examCol);
 
-  const realWwCols = layout.wwCols.filter((c) => cell(maxRow, c) !== '');
-  const realPtCols = layout.ptCols.filter((c) => cell(maxRow, c) !== '');
+  // numOrNull (not a bare !== '' check) — a real T2 sheet can use "-" for
+  // an unused slot's max score. Number("-") is NaN, and an un-filtered NaN
+  // serializes into the generated SQL as the literal unquoted text NaN,
+  // which Postgres rejects as an unrecognized identifier, aborting the
+  // whole apply.sql transaction. See grading-workbook-t2.ts's identical fix.
+  const realWwCols = layout.wwCols.filter(
+    (c) => numOrNull(cell(maxRow, c)) !== null
+  );
+  const realPtCols = layout.ptCols.filter(
+    (c) => numOrNull(cell(maxRow, c)) !== null
+  );
   const wwTotals = realWwCols.map((c) => Number(cell(maxRow, c)));
   const ptTotals = realPtCols.map((c) => Number(cell(maxRow, c)));
   const qaTotalRaw = cell(maxRow, layout.examCol);

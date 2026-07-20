@@ -378,11 +378,16 @@ describe('parseGradingWorkbookT2', () => {
     expect(result.identityCorrections[0]).toContain('P5 Commitment');
   });
 
-  it('falls back to row 2 when the tab name does not parse, recovering a real Reserved-tab section without flagging a mismatch', () => {
-    // The Finding-A case: "Reserved 1" is not empty — it's a real,
-    // never-renamed Respect section. Tab name gives no signal at all here
-    // (doesn't parse), so this must fall back to row 2, and since there's
-    // no tab-name signal to disagree with, no correction is logged.
+  it("falls back to row 2 to correctly identify a Reserved-tab section, then excludes it — Respect/Gentleness/Compassion are hidden in HFSE's own Consolidated Form and out of scope (2026-07-20 decision)", () => {
+    // The Finding-A case: "Reserved 1" is not empty — it resolves via row 2
+    // (tab name gives no signal, doesn't parse) to a real, never-renamed
+    // "Respect" section with real teacher-entered grades. Identity
+    // resolution still works correctly here (no misattribution to a
+    // different, real section) — but Respect itself is one of three
+    // sections HFSE keeps hidden in their own Term 2 Consolidated Form,
+    // so its data is excluded from the import entirely rather than
+    // written to a section that isn't part of HFSE's current active
+    // scope.
     const dir = mkdtempSync(join(tmpdir(), 'grading-wb-t2-'));
     const path = join(dir, 'reserved-respect.xlsx');
     const rows = MATH_P1_ROWS.map((r) => [...r]);
@@ -391,9 +396,8 @@ describe('parseGradingWorkbookT2', () => {
 
     const result = parseGradingWorkbookT2(path, 'MATH');
 
-    expect(result.sheets).toHaveLength(1);
-    expect(result.sheets[0].levelCode).toBe('P1');
-    expect(result.sheets[0].sectionName).toBe('Respect');
+    expect(result.sheets).toHaveLength(0);
+    expect(result.skippedExcludedSection).toEqual(['Reserved 1']);
     expect(result.identityCorrections).toEqual([]);
   });
 

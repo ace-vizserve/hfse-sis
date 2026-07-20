@@ -65,17 +65,19 @@ async function main() {
   let sheets: ReturnType<typeof parseGradingWorkbookT2>['sheets'] = [];
   let skippedSecondaryTotal = 0;
   let skippedUnrecognizedTotal = 0;
+  let skippedExcludedSectionTotal = 0;
   let allIdentityCorrections: string[] = [];
   for (const { file, subjectCode } of SUBJECT_FILES) {
     const result = parseGradingWorkbookT2(join(DIR, file), subjectCode);
     sheets = sheets.concat(result.sheets);
     skippedSecondaryTotal += result.skippedSecondary.length;
     skippedUnrecognizedTotal += result.skippedUnrecognized.length;
+    skippedExcludedSectionTotal += result.skippedExcludedSection.length;
     allIdentityCorrections = allIdentityCorrections.concat(
       result.identityCorrections
     );
     console.log(
-      `${file}: ${result.sheets.length} Primary sheet(s), skipped ${result.skippedSecondary.length} Secondary + ${result.skippedUnrecognized.length} unrecognized, ${result.identityCorrections.length} identity correction(s)`
+      `${file}: ${result.sheets.length} Primary sheet(s), skipped ${result.skippedSecondary.length} Secondary + ${result.skippedUnrecognized.length} unrecognized + ${result.skippedExcludedSection.length} excluded-section (${result.skippedExcludedSection.join(', ') || 'none'}), ${result.identityCorrections.length} identity correction(s)`
     );
   }
 
@@ -128,7 +130,7 @@ async function main() {
 
   console.log('Stats:', JSON.stringify(result.stats, null, 2));
   console.log(
-    `Skipped across all files: ${skippedSecondaryTotal} Secondary tabs (deferred to Phase 6b), ${skippedUnrecognizedTotal} unrecognized tabs`
+    `Skipped across all files: ${skippedSecondaryTotal} Secondary tabs (deferred to Phase 6b), ${skippedUnrecognizedTotal} unrecognized tabs, ${skippedExcludedSectionTotal} excluded-section tabs (Respect/Gentleness/Compassion — hidden in HFSE's own Consolidated Form, out of scope per 2026-07-20 decision)`
   );
   console.log(
     `Identity corrections (tab name overrode row 2): ${allIdentityCorrections.length}`

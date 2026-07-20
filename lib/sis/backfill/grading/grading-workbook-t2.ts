@@ -37,10 +37,27 @@ export interface ParseGradingWorkbookT2Result {
   sheets: ParsedSubjectSheet[];
   skippedSecondary: string[];
   skippedUnrecognized: string[];
+  skippedExcludedSection: string[];
   identityCorrections: string[];
   truncationNotes: string[];
   duplicateIdentityNotes: string[];
 }
+
+// These three Primary sections are hidden tabs in HFSE's own Term 2
+// Consolidated Form — confirmed directly against the live file, not
+// inferred — meaning HFSE itself doesn't currently treat them as active,
+// current-year sections. Real teacher-entered grades were nonetheless
+// found under their names via "Reserved N" tab row-2 labels in these
+// per-subject GRADES workbooks — most likely leftover data from a
+// discontinued/renamed section, but the school's own choice to hide them
+// from the consolidated summary is treated as authoritative here: their
+// data is excluded from the import entirely, matching the same scope the
+// Consolidated Form itself uses. User decision, 2026-07-20.
+const EXCLUDED_PRIMARY_SECTIONS = new Set([
+  'Respect',
+  'Gentleness',
+  'Compassion',
+]);
 
 function parseOneSheetT2(
   rows: unknown[][],
@@ -67,8 +84,18 @@ function parseOneSheetT2(
   const ptWeight = weightAt(maxRow, layout.ptTotalCol);
   const qaWeight = weightAt(maxRow, layout.examCol);
 
-  const realWwCols = layout.wwCols.filter((c) => cell(maxRow, c) !== '');
-  const realPtCols = layout.ptCols.filter((c) => cell(maxRow, c) !== '');
+  // numOrNull (not a bare !== '' check) — a real T2 Primary sheet uses "-"
+  // for an unused slot's max score (e.g. Science/P4 Compassion's 5th PT
+  // slot). Number("-") is NaN, and an un-filtered NaN serializes into the
+  // generated SQL as the literal unquoted text NaN, which Postgres rejects
+  // as an unrecognized identifier ("column nan does not exist"), aborting
+  // the whole apply.sql transaction.
+  const realWwCols = layout.wwCols.filter(
+    (c) => numOrNull(cell(maxRow, c)) !== null
+  );
+  const realPtCols = layout.ptCols.filter(
+    (c) => numOrNull(cell(maxRow, c)) !== null
+  );
   const wwTotals = realWwCols.map((c) => Number(cell(maxRow, c)));
   const ptTotals = realPtCols.map((c) => Number(cell(maxRow, c)));
   const qaTotalRaw = cell(maxRow, layout.examCol);
@@ -127,6 +154,7 @@ export function parseGradingWorkbookT2(
   const candidates: { sheetName: string; sheet: ParsedSubjectSheet }[] = [];
   const skippedSecondary: string[] = [];
   const skippedUnrecognized: string[] = [];
+  const skippedExcludedSection: string[] = [];
   const identityCorrections: string[] = [];
   const truncationNotes: string[] = [];
 
@@ -143,7 +171,13 @@ export function parseGradingWorkbookT2(
     );
     if (correctionNote) identityCorrections.push(correctionNote);
     if (truncationNote) truncationNotes.push(truncationNote);
-    if (identity.kind === 'primary' && sheet) {
+    if (
+      identity.kind === 'primary' &&
+      sheet &&
+      EXCLUDED_PRIMARY_SECTIONS.has(identity.sectionName)
+    ) {
+      skippedExcludedSection.push(sheetName);
+    } else if (identity.kind === 'primary' && sheet) {
       candidates.push({ sheetName, sheet });
     } else if (identity.kind === 'secondary') {
       skippedSecondary.push(sheetName);
@@ -158,6 +192,7 @@ export function parseGradingWorkbookT2(
     sheets: kept,
     skippedSecondary,
     skippedUnrecognized,
+    skippedExcludedSection,
     identityCorrections,
     truncationNotes,
     duplicateIdentityNotes: duplicateNotes,
