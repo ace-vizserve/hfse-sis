@@ -54,7 +54,8 @@ export type SidebarBadgeKey =
   | 'changeRequests'
   | 'pendingDocValidation'
   | 'unsyncedStudents'
-  | 'pfileAwaitingVerification';
+  | 'pfileAwaitingVerification'
+  | 'levelMismatches';
 export type SidebarBadges = Partial<Record<SidebarBadgeKey, number>>;
 
 // Informational nav-item count chips — see NavItem.countKey above.
@@ -154,6 +155,15 @@ const RECORDS_NAV: NavSection[] = [
         href: '/records/unsynced',
         label: 'Students needing setup',
         badgeKey: 'unsyncedStudents',
+      },
+      // Reconciliation queue for admissions `levelApplied` free-text values
+      // that don't match any known level (KD-adjacent to unsynced students —
+      // same "surface the gap, offer a one-click fix" pattern). Badge mirrors
+      // `countUnmatchedLevelLabels`.
+      {
+        href: '/records/level-mismatches',
+        label: 'Level naming to review',
+        badgeKey: 'levelMismatches',
       },
       // Section setup lives in SIS Admin, but the registrar can't reach the SIS
       // module (its /sis hub is school_admin+). Cross-link kept here so she can
