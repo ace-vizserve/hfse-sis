@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { canonicalizeLevelLabel } from '@/lib/sis/levels';
+import { resolveLevelId } from '@/lib/sis/levels';
 
 // Max active students per section. Mirrors Hard Rule #5. Kept as a local
 // constant so this helper is self-contained without pulling a central
@@ -69,16 +69,20 @@ export async function pickSectionForApplicant(
   }
   const ayId = (ayRow as { id: string }).id;
 
-  // `application.levelApplied` is the word-form label after migration 029
-  // ("Primary One", not "P1"). The `levels` table stores both the short
-  // `code` (FK identifier — 'P1') and the `label` (display string — 'Primary
-  // One'). Look up by label, defending against any legacy digit-form rows
-  // ("Primary 1") via `canonicalizeLevelLabel`.
-  const labelLookup = canonicalizeLevelLabel(application.levelApplied);
+  // Resolves canonical labels, the legacy digit-form fallback, AND any
+  // staff-defined alias for a portal naming variant (migration 088, KD
+  // level-alias reconciliation). A null here means genuinely unresolved —
+  // the applicant surfaces in /records/level-mismatches for a registrar to
+  // map once, which then resolves every future application with the same
+  // raw string automatically.
+  const levelId = await resolveLevelId(service, application.levelApplied);
+  if (!levelId) {
+    return { error: `Level ${application.levelApplied} has no section` };
+  }
   const { data: levelRow, error: levelErr } = await service
     .from('levels')
     .select('id, code, label')
-    .eq('label', labelLookup ?? application.levelApplied)
+    .eq('id', levelId)
     .maybeSingle();
   if (levelErr || !levelRow) {
     return { error: `Level ${application.levelApplied} has no section` };
