@@ -178,13 +178,13 @@ export function EditStageDialog({
 
   // Manual section picker (Task 3.6, docs/superpowers/specs/2026-07-20-manual-section-assignment-design.md).
   // Renders inline (not a nested dialog) the moment the registrar's pending
-  // choice is "Enrolled" and every prereq stage is complete — mirrors the
-  // server-side gate in the stage PATCH route, which requires section_id in
-  // the payload for this exact transition.
+  // choice is "Enrolled". This is just the UI's own precondition for showing
+  // the picker (submit is gated on `sectionId` too, see `onSubmit`) — it does
+  // NOT duplicate prereq-completeness or section-validity checks. The stage
+  // PATCH route is the actual enforcement for both; on a miss it 422s with a
+  // `blockers` array that `saveMutation.onError` surfaces as a toast.
   const requiresSectionPick =
-    stageKey === 'application' &&
-    effectiveStatus === 'Enrolled' &&
-    incompleteCount === 0;
+    stageKey === 'application' && effectiveStatus === 'Enrolled';
 
   const [sectionId, setSectionId] = useState<string | null>(null);
 
@@ -630,14 +630,18 @@ export function EditStageDialog({
                       <p className="text-xs text-muted-foreground">
                         Loading sections…
                       </p>
+                    ) : sectionsQuery.isError ? (
+                      <p className="text-xs text-destructive">
+                        {sectionsQuery.error instanceof ApiError
+                          ? sectionsQuery.error.message
+                          : "Couldn't load sections — try again."}
+                      </p>
                     ) : !sectionsQuery.data?.level ? (
                       <p className="text-xs text-destructive">
-                        This applicant&apos;s level name doesn&apos;t match a
-                        known level yet — resolve it at{' '}
-                        <span className="font-mono">
-                          /records/level-mismatches
-                        </span>{' '}
-                        before enrolling.
+                        This applicant&apos;s level name isn&apos;t recognized
+                        yet — a registrar needs to resolve it under Records →
+                        Level naming to review before this student can be
+                        enrolled.
                       </p>
                     ) : sectionsQuery.data.sections.length === 0 ? (
                       <p className="text-xs text-muted-foreground">
