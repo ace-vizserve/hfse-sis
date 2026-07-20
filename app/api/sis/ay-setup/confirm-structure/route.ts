@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidateTag } from 'next/cache';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
@@ -65,6 +66,8 @@ export async function POST(request: Request) {
   if (updateErr) {
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
+
+  revalidateTag(`sis:${ayCode.toUpperCase()}`, 'max');
 
   await logAction({
     service,

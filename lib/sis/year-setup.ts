@@ -89,6 +89,11 @@ export function checklistSummary(
       return `${remaining} term${remaining === 1 ? '' : 's'} still ${remaining === 1 ? 'has' : 'have'} unmarked dates — attendance entry will be blocked there until they're set.`;
     }
 
+    case 'structure-confirmed': {
+      if (step.status === 'done') return 'Starting setup confirmed.';
+      return 'Sections, subjects, and weights were carried forward from last year — review them, then confirm.';
+    }
+
     case 'sections': {
       if (!step.fraction) return 'No grade levels in use yet.';
       const { done, total } = step.fraction;
