@@ -94,6 +94,7 @@ export type AuditAction =
   | 'ay.term_dates.update'
   | 'ay.term_virtue.update'
   | 'ay.term_grading_lock.update'
+  | 'ay.structure.confirm'
   | 'evaluation.writeup.save'
   | 'evaluation.writeup.submit'
   | 'evaluation.writeup.resubmit'

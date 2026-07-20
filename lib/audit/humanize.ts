@@ -146,6 +146,7 @@ const ACTION_LABELS: Record<string, string> = {
   'ay.term_dates.update': 'Term dates updated',
   'ay.term_virtue.update': 'Term virtue updated',
   'ay.term_grading_lock.update': 'Grading lock dates updated',
+  'ay.structure.confirm': 'AY starting setup confirmed',
   'ay.copy_teacher_assignments': 'Teacher assignments copied',
 
   // Evaluation
