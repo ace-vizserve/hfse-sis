@@ -120,7 +120,7 @@ export function admissionsInsights(input: AdmissionsInsightInput): Insight[] {
       severity: input.outdatedCount >= 10 ? 'bad' : 'warn',
       title: `${pluralize(input.outdatedCount, 'applicant', 'applicants')} need follow-up`,
       detail:
-        'Stages not updated in >7 days — outside Enrolled/Cancelled/Withdrawn',
+        'No activity recorded in >7 days — outside Enrolled/Cancelled/Withdrawn',
       cta: {
         label: 'Review applicants',
         href: input.outdatedHref ?? '/admissions/applications',

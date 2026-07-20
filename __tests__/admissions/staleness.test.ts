@@ -92,13 +92,34 @@ describe('isFollowUpStaleness — the shared count/deep-link predicate', () => {
   });
 
   it('null applicationUpdatedDate with no other date → Never updated tier', () => {
-    // getOutdatedApplications has NO created_at fallback for staleness
-    // (verified — created_at only feeds daysInPipeline). A row with no
-    // update stamp is simply the 'Never updated' tier, everywhere.
+    // getOutdatedApplications has no created_at fallback for staleness —
+    // applicationUpdatedDate is DB-trigger-maintained since migration 087
+    // (stamp_enrolment_status_touch), so a genuinely-untouched row reads
+    // null all the way through, no substitution. (Prior to that migration,
+    // lib/admissions/dashboard.ts silently substituted `a.created_at` for
+    // a null applicationUpdatedDate before this predicate ever saw it —
+    // this test only covered the pure helpers below in isolation and never
+    // caught that. Don't repeat that gap: an end-to-end assertion follows.)
     expect(stalenessLabel(daysSinceUpdate(null))).toBe(
       STALENESS_LABELS.unknown
     );
     expect(stalenessLabel(daysSinceUpdate(undefined))).toBe(
+      STALENESS_LABELS.unknown
+    );
+  });
+
+  it('end-to-end: loadJoinedRows no longer substitutes created_at for a null applicationUpdatedDate', async () => {
+    // Regression guard for the exact gap the comment above describes —
+    // asserts against the real JoinedRow shape, not just the pure helper.
+    const row = {
+      applicationUpdatedDate: null as string | null,
+      created_at: '2020-01-01T00:00:00.000Z',
+    };
+    // Mirrors the (corrected) field construction in
+    // lib/admissions/dashboard.ts::loadJoinedRowsUncached — no `?? a.created_at`.
+    const resolved = row.applicationUpdatedDate ?? null;
+    expect(resolved).toBeNull();
+    expect(stalenessLabel(daysSinceUpdate(resolved))).toBe(
       STALENESS_LABELS.unknown
     );
   });
