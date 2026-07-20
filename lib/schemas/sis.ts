@@ -761,6 +761,10 @@ export const StageUpdateSchema = z.object({
   status: optionalText(120),
   remarks: optionalText(4000),
   extras: z.record(z.string(), z.union([z.string(), z.null()])).optional(),
+  /** Registrar-chosen section id — required only when flipping the
+   *  `application` stage to `Enrolled` (validated in the route, not here,
+   *  since the requirement is conditional on stageKey + status). */
+  section_id: z.string().uuid().optional(),
 });
 
 export type StageUpdateInput = z.infer<typeof StageUpdateSchema>;
