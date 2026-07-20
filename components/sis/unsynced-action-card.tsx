@@ -4,10 +4,7 @@ import { AlertTriangle, ArrowUpRight, GraduationCap } from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
 
-import {
-  AssignSectionDialog,
-  type AssignableSection,
-} from '@/components/sis/assign-section-dialog';
+import { AssignSectionDialog } from '@/components/sis/assign-section-dialog';
 import {
   Alert,
   AlertDescription,
@@ -15,6 +12,10 @@ import {
   AlertTitle,
 } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import type {
+  AssignableLevel,
+  AssignableSection,
+} from '@/lib/sis/class-assignment';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Top-of-fold action card on the Records lite page (rendered when the
@@ -30,7 +31,7 @@ import { Button } from '@/components/ui/button';
 type Props = {
   enroleeNumber: string;
   ayCode: string;
-  levelApplied: string | null;
+  level: AssignableLevel | null;
   studentName: string;
   availableSections: AssignableSection[];
 };
@@ -38,7 +39,7 @@ type Props = {
 export function UnsyncedActionCard({
   enroleeNumber,
   ayCode,
-  levelApplied,
+  level,
   studentName,
   availableSections,
 }: Props) {
@@ -78,7 +79,7 @@ export function UnsyncedActionCard({
       <AssignSectionDialog
         enroleeNumber={enroleeNumber}
         ayCode={ayCode}
-        levelApplied={levelApplied}
+        level={level}
         studentName={studentName}
         availableSections={availableSections}
         open={open}
