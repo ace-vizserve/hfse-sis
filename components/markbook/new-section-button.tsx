@@ -63,6 +63,7 @@ export function NewSectionButton({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   initialLevelId,
+  onCreated,
 }: {
   levels: LevelOption[];
   ayCode: string | null;
@@ -74,6 +75,11 @@ export function NewSectionButton({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   initialLevelId?: string;
+  /** When provided, a successful create calls this instead of navigating
+   *  to the new section's admin page — used when this button is mounted
+   *  inside another flow (e.g. the section-assignment picker) that must
+   *  not be abandoned on section creation. */
+  onCreated?: (section: { id: string; name: string }) => void;
 }) {
   const router = useRouter();
   const isControlled = controlledOpen !== undefined;
@@ -136,9 +142,14 @@ export function NewSectionButton({
       toast.success(`Created ${values.name}`);
       setOpen(false);
       form.reset(blankValues());
-      // Section setup lives in SIS Admin now (2026-04-22).
-      router.push(`/sis/sections/${body.id}`);
-      router.refresh();
+      if (onCreated) {
+        onCreated({ id: body.id, name: values.name.trim() });
+        router.refresh();
+      } else {
+        // Section setup lives in SIS Admin now (2026-04-22).
+        router.push(`/sis/sections/${body.id}`);
+        router.refresh();
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'create failed');
     }
