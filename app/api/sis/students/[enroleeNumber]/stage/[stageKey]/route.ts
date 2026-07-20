@@ -492,30 +492,19 @@ export async function PATCH(
         { status: 422 }
       );
     }
-    const validated = await validateSectionChoice(
-      supabase,
-      parsed.data.section_id,
-      ayCode
-    );
-    if ('error' in validated) {
-      return NextResponse.json(
-        { error: `Cannot enroll: ${validated.error}` },
-        { status: 422 }
-      );
-    }
-
     // Need the application row's studentNumber — what syncOneStudent uses
     // to upsert the public `students` row + section_students row; in
     // production the parent portal writes it alongside enroleeNumber at
     // intake, so a null here is anomalous. Fail loudly instead of letting
     // syncOneStudent silently skip with 'no studentNumber' (which would
     // land the row in an Enrolled status with no section roster
-    // placement).
+    // placement). Also carries levelApplied so validateSectionChoice can
+    // confirm the chosen section's level matches the applicant's level.
     const admissionsClient = createAdmissionsClient();
     const appsTable = `${prefix}_enrolment_applications`;
     const { data: appRow, error: appErr } = await admissionsClient
       .from(appsTable)
-      .select('studentNumber')
+      .select('studentNumber, levelApplied')
       .eq('enroleeNumber', enroleeNumber)
       .maybeSingle();
     if (appErr || !appRow) {
@@ -528,13 +517,29 @@ export async function PATCH(
         { status: 422 }
       );
     }
-    const appLite = appRow as unknown as { studentNumber: string | null };
+    const appLite = appRow as unknown as {
+      studentNumber: string | null;
+      levelApplied: string | null;
+    };
     if (!appLite.studentNumber) {
       return NextResponse.json(
         {
           error:
             'Cannot enroll: this applicant has no Student Number on file. Student numbers are normally generated at parent-portal submission alongside the enrolee number — contact admissions support to assign one before enrolling.',
         },
+        { status: 422 }
+      );
+    }
+
+    const validated = await validateSectionChoice(
+      supabase,
+      parsed.data.section_id,
+      ayCode,
+      appLite.levelApplied
+    );
+    if ('error' in validated) {
+      return NextResponse.json(
+        { error: `Cannot enroll: ${validated.error}` },
         { status: 422 }
       );
     }

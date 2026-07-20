@@ -104,13 +104,15 @@ export async function listAssignableSections(
 /**
  * Server-side validation for a registrar-chosen section — shared by the
  * assign-section route and the stage route's Enrolled-flip. Confirms the
- * section exists, belongs to the given AY, and isn't at capacity at write
+ * section exists, belongs to the given AY, matches the applicant's level
+ * (when `expectedLevelApplied` is supplied), and isn't at capacity at write
  * time (a second student could fill it between page-load and confirm).
  */
 export async function validateSectionChoice(
   service: SupabaseClient,
   sectionId: string,
-  ayCode: string
+  ayCode: string,
+  expectedLevelApplied?: string | null
 ): Promise<
   | {
       section: {
@@ -145,6 +147,20 @@ export async function validateSectionChoice(
   }
   if (!row.levels?.label) {
     return { error: 'Section has no level label' };
+  }
+
+  if (expectedLevelApplied != null && expectedLevelApplied.trim()) {
+    const expectedLevelId = await resolveLevelId(service, expectedLevelApplied);
+    if (!expectedLevelId) {
+      return {
+        error: `The applicant's level ("${expectedLevelApplied}") isn't recognized — resolve it at /records/level-mismatches before assigning a section.`,
+      };
+    }
+    if (expectedLevelId !== row.level_id) {
+      return {
+        error: `This section's level doesn't match the applicant's level (${expectedLevelApplied}).`,
+      };
+    }
   }
 
   const { count, error: countErr } = await service

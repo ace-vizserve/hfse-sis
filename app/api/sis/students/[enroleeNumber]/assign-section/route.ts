@@ -197,7 +197,12 @@ export async function POST(
   // Existence + AY match + capacity re-check at write time (Hard Rule #5 —
   // max 50 active per section) — shared with the stage route's Enrolled-flip
   // via lib/sis/class-assignment.ts::validateSectionChoice.
-  const validated = await validateSectionChoice(service, sectionId, ayCode);
+  const validated = await validateSectionChoice(
+    service,
+    sectionId,
+    ayCode,
+    appsRow.levelApplied
+  );
   if ('error' in validated) {
     return NextResponse.json({ error: validated.error }, { status: 422 });
   }
