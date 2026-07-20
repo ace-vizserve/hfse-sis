@@ -9,6 +9,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
+import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -653,7 +654,8 @@ export function EditStageDialog({
                         {[...sectionsQuery.data.sections]
                           .sort((a, b) => a.activeCount - b.activeCount)
                           .map((sec) => {
-                            const full = sec.activeCount >= 50;
+                            const full =
+                              sec.activeCount >= MAX_ACTIVE_PER_SECTION;
                             return (
                               <button
                                 key={sec.id}
@@ -674,7 +676,8 @@ export function EditStageDialog({
                                   {sec.name}
                                 </span>
                                 <span className="font-mono tabular-nums text-muted-foreground">
-                                  {sec.activeCount}/50{full ? ' · Full' : ''}
+                                  {sec.activeCount}/{MAX_ACTIVE_PER_SECTION}
+                                  {full ? ' · Full' : ''}
                                 </span>
                               </button>
                             );
