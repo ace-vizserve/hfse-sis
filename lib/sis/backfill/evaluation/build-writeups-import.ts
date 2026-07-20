@@ -28,6 +28,8 @@ export interface BuildWriteupsImportInput {
 interface ResolvedWriteup {
   levelCode: string;
   sectionName: string;
+  indexNo: string;
+  fullName: string;
   studentId: string;
   sectionId: string;
   writeup: string;
@@ -117,6 +119,8 @@ export function buildWriteupsImport(
     resolved.push({
       levelCode: row.levelCode,
       sectionName: row.sectionName,
+      indexNo: row.indexNo,
+      fullName: row.fullName,
       studentId: entry.studentId,
       sectionId: entry.sectionId,
       writeup: row.writeup,
@@ -131,14 +135,39 @@ export function buildWriteupsImport(
   const sectionStats = buildSectionStats(blankCounts, resolved, needsReview);
 
   return {
-    preview: buildPreviewSql(sectionStats, needsReview, stats),
+    preview: buildPreviewSql(sectionStats, resolved, needsReview, stats),
     apply: buildApplySql(termId, submittedAt, resolved),
     stats,
   };
 }
 
+const SAMPLE_SIZE = 5;
+const SNIPPET_LENGTH = 100;
+
+function buildResolvedSampleLines(resolved: ResolvedWriteup[]): string[] {
+  const lines: string[] = [];
+  lines.push(
+    `-- Resolved sample (first ${Math.min(SAMPLE_SIZE, resolved.length)} of ${resolved.length}) — spot-check for real, un-mangled content:`
+  );
+  if (resolved.length === 0) {
+    lines.push('--   (none)');
+    return lines;
+  }
+  for (const r of resolved.slice(0, SAMPLE_SIZE)) {
+    const snippet =
+      r.writeup.length > SNIPPET_LENGTH
+        ? `${r.writeup.slice(0, SNIPPET_LENGTH)}...`
+        : r.writeup;
+    lines.push(
+      `--   [${r.levelCode} ${r.sectionName}] index ${r.indexNo} "${r.fullName}": "${snippet}"`
+    );
+  }
+  return lines;
+}
+
 function buildPreviewSql(
   sectionStats: SectionStats[],
+  resolved: ResolvedWriteup[],
   needsReview: NeedsReviewRow[],
   stats: BuildWriteupsImportResult['stats']
 ): string {
@@ -162,6 +191,8 @@ function buildPreviewSql(
       `--   ${s.levelCode} ${s.sectionName}: resolved=${s.resolved} needsReview=${s.needsReview} blank=${s.blank}`
     );
   }
+  lines.push('--');
+  lines.push(...buildResolvedSampleLines(resolved));
   lines.push('--');
   lines.push(
     `-- Needs review (${needsReview.length}) — NOT written by apply.sql:`

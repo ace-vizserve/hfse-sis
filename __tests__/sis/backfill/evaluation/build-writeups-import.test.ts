@@ -116,4 +116,20 @@ describe('buildWriteupsImport', () => {
       'P1 Patience: resolved=0 needsReview=0 blank=0'
     );
   });
+
+  it('includes a truncated resolved write-up sample in the preview', () => {
+    const longWriteup = 'A'.repeat(150);
+    const result = buildWriteupsImport({
+      rows: [row({ writeup: longWriteup })],
+      blankCounts: [],
+      rosterLookup: [rosterEntry()],
+      termId: TERM_ID,
+      submittedAt: SUBMITTED_AT,
+    });
+    expect(result.preview).toContain('Resolved sample (first 1 of 1)');
+    expect(result.preview).toContain(
+      `[S1 Discipline 1] index 1 "BANTA, Stephanie Louise S.": "${'A'.repeat(100)}..."`
+    );
+    expect(result.preview).not.toContain('A'.repeat(101));
+  });
 });
