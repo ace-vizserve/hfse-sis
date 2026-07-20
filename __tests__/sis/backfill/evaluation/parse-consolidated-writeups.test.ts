@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import { existsSync } from 'node:fs';
 import {
   parseSheetIdentity,
   parseConsolidatedWriteups,
 } from '@/lib/sis/backfill/evaluation/parse-consolidated-writeups';
 
 const REAL_FILE = 'AY2026/T2/Term 2 CONSOLIDATED FORM.xlsx';
+
+// The AY2026/ source folder holds real student PII and is gitignored — it
+// exists locally but not in CI. Skip (not fail) the real-fixture suite
+// below when it's absent, matching the established pattern in
+// masterfile-grades.test.ts. parseSheetIdentity's suite above needs no
+// fixture and always runs.
+const d = existsSync(REAL_FILE) ? describe : describe.skip;
 
 describe('parseSheetIdentity', () => {
   it('parses a plain Primary sheet name', () => {
@@ -47,7 +55,7 @@ describe('parseSheetIdentity', () => {
   });
 });
 
-describe('parseConsolidatedWriteups (real fixture file)', () => {
+d('parseConsolidatedWriteups (real fixture file)', () => {
   it('parses the real consolidated form into exactly 390 non-blank write-up rows across 23 recognized sheets, 0 unrecognized', () => {
     const result = parseConsolidatedWriteups(REAL_FILE);
     expect(result.rows.length).toBe(390);

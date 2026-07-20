@@ -1,11 +1,23 @@
 // __tests__/sis/backfill/grading/grading-workbook-secondary-t2.test.ts
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { parseGradingWorkbookSecondaryT2 } from '@/lib/sis/backfill/grading/grading-workbook-secondary-t2';
+
+// The AY2026/ source folder holds real student PII and is gitignored — it
+// exists locally but not in CI. Guard the one real-fixture test below so it
+// skips (not fails) when it's absent, matching the established pattern in
+// masterfile-grades.test.ts.
+const REAL_ENG_T2_FILE = join(
+  'AY2026',
+  'T2',
+  'Term 2 Grades',
+  'GRADES',
+  'English Grading AY2026 T2.xlsx'
+);
 
 function writeWorkbook(
   path: string,
@@ -264,30 +276,25 @@ describe('parseGradingWorkbookSecondaryT2', () => {
     expect(result.identityCorrections).toEqual([]);
   });
 
-  it('returns BOTH the Reserved-4 and the real English-S1-Discipline-2 sheets undeduped (real fixture, Task 7 amendment — dedup now happens once, cross-file, in the orchestrator)', () => {
-    const path = join(
-      'AY2026',
-      'T2',
-      'Term 2 Grades',
-      'GRADES',
-      'English Grading AY2026 T2.xlsx'
-    );
+  it.skipIf(!existsSync(REAL_ENG_T2_FILE))(
+    'returns BOTH the Reserved-4 and the real English-S1-Discipline-2 sheets undeduped (real fixture, Task 7 amendment — dedup now happens once, cross-file, in the orchestrator)',
+    () => {
+      const result = parseGradingWorkbookSecondaryT2(REAL_ENG_T2_FILE, 'ENG');
 
-    const result = parseGradingWorkbookSecondaryT2(path, 'ENG');
+      const s1Discipline2Indices = result.sheets
+        .map((s, i) => ({ s, i }))
+        .filter(
+          ({ s }) => s.levelCode === 'S1' && s.sectionName === 'Discipline 2'
+        )
+        .map(({ i }) => i);
+      expect(s1Discipline2Indices).toHaveLength(2);
 
-    const s1Discipline2Indices = result.sheets
-      .map((s, i) => ({ s, i }))
-      .filter(
-        ({ s }) => s.levelCode === 'S1' && s.sectionName === 'Discipline 2'
-      )
-      .map(({ i }) => i);
-    expect(s1Discipline2Indices).toHaveLength(2);
-
-    const s1Discipline2SheetNames = s1Discipline2Indices.map(
-      (i) => result.sheetNames[i]
-    );
-    expect(s1Discipline2SheetNames).toEqual(
-      expect.arrayContaining(['Reserved 4', 'English - S1 Discipline 2'])
-    );
-  });
+      const s1Discipline2SheetNames = s1Discipline2Indices.map(
+        (i) => result.sheetNames[i]
+      );
+      expect(s1Discipline2SheetNames).toEqual(
+        expect.arrayContaining(['Reserved 4', 'English - S1 Discipline 2'])
+      );
+    }
+  );
 });

@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { existsSync } from 'node:fs';
 import { parseT1Writeups } from '@/lib/sis/backfill/evaluation/parse-t1-writeups';
 
 const REAL_FILE =
   'AY2026/T1/Term 1 Grades/AY2026 T1 Student Evaluation_Subject Checklists.xlsx';
 
-describe('parseT1Writeups (real fixture file)', () => {
+// The AY2026/ source folder holds real student PII and is gitignored — it
+// exists locally but not in CI. Skip (not fail) this suite when it's absent,
+// matching the established pattern in masterfile-grades.test.ts.
+const d = existsSync(REAL_FILE) ? describe : describe.skip;
+
+d('parseT1Writeups (real fixture file)', () => {
   it('parses the full file into exactly 392 real write-up rows across 20 recognized sheets, 7 unrecognized', () => {
     const result = parseT1Writeups(REAL_FILE);
     expect(result.rows.length).toBe(392);

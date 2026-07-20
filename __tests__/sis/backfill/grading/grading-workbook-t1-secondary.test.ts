@@ -1,7 +1,7 @@
 // __tests__/sis/backfill/grading/grading-workbook-t1-secondary.test.ts
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -274,83 +274,91 @@ describe('parseGradingWorkbookT1Secondary', () => {
   });
 });
 
-describe('parseGradingWorkbookT1Secondary (real fixture files — full 9-file sweep)', () => {
-  const DIR = 'AY2026/T1/Term 1 Grades/Grades';
-  const FILES: { file: string; code: string }[] = [
-    { file: 'English Grading AY2026 T1.xlsx', code: 'ENG' },
-    { file: 'Math Grading AY2026 T1.xlsx', code: 'MATH' },
-    { file: 'Science Grading AY2026 T1.xlsx', code: 'SCI' },
-    { file: 'Filipino Grading AY2026 T1.xlsx', code: 'FIL' },
-    { file: 'History Grading AY2026 T1.xlsx', code: 'HIST' },
-    { file: 'Literature Grading AY2026 T1.xlsx', code: 'LIT' },
-    { file: 'SS & Geo Grading AY2026 T1.xlsx', code: 'SS' },
-    { file: 'Contemporary Arts Grading AY2026 T1.xlsx', code: 'CA' },
-    { file: 'PE (Sec) Grading AY2026 T1.xlsx', code: 'PEH' },
-  ];
+// The AY2026/ source folder holds real student PII and is gitignored — it
+// exists locally but not in CI. Skip (not fail) this suite when it's absent,
+// matching the established pattern in masterfile-grades.test.ts.
+const DIR = 'AY2026/T1/Term 1 Grades/Grades';
+const d = existsSync(DIR) ? describe : describe.skip;
 
-  it(
-    'parses all 9 real files into exactly 32 sheets / 768 students total, with the exact counts confirmed during design',
-    { timeout: 30000 },
-    () => {
-      let totalSheets = 0;
-      let totalStudents = 0;
-      let totalDoNotUse = 0;
-      let totalPrimarySkipped = 0;
-      let totalUnrecognized = 0;
-      let totalIdentityCorrections = 0;
-      let totalTruncationNotes = 0;
-      for (const f of FILES) {
-        const result = parseGradingWorkbookT1Secondary(
-          `${DIR}/${f.file}`,
-          f.code
-        );
-        totalSheets += result.sheets.length;
-        totalStudents += result.sheets.reduce(
-          (sum, s) => sum + s.students.length,
-          0
-        );
-        totalDoNotUse += result.skippedDoNotUse.length;
-        totalPrimarySkipped += result.skippedPrimary.length;
-        totalUnrecognized += result.skippedUnrecognized.length;
-        totalIdentityCorrections += result.identityCorrections.length;
-        totalTruncationNotes += result.truncationNotes.length;
+d(
+  'parseGradingWorkbookT1Secondary (real fixture files — full 9-file sweep)',
+  () => {
+    const FILES: { file: string; code: string }[] = [
+      { file: 'English Grading AY2026 T1.xlsx', code: 'ENG' },
+      { file: 'Math Grading AY2026 T1.xlsx', code: 'MATH' },
+      { file: 'Science Grading AY2026 T1.xlsx', code: 'SCI' },
+      { file: 'Filipino Grading AY2026 T1.xlsx', code: 'FIL' },
+      { file: 'History Grading AY2026 T1.xlsx', code: 'HIST' },
+      { file: 'Literature Grading AY2026 T1.xlsx', code: 'LIT' },
+      { file: 'SS & Geo Grading AY2026 T1.xlsx', code: 'SS' },
+      { file: 'Contemporary Arts Grading AY2026 T1.xlsx', code: 'CA' },
+      { file: 'PE (Sec) Grading AY2026 T1.xlsx', code: 'PEH' },
+    ];
+
+    it(
+      'parses all 9 real files into exactly 32 sheets / 768 students total, with the exact counts confirmed during design',
+      { timeout: 30000 },
+      () => {
+        let totalSheets = 0;
+        let totalStudents = 0;
+        let totalDoNotUse = 0;
+        let totalPrimarySkipped = 0;
+        let totalUnrecognized = 0;
+        let totalIdentityCorrections = 0;
+        let totalTruncationNotes = 0;
+        for (const f of FILES) {
+          const result = parseGradingWorkbookT1Secondary(
+            `${DIR}/${f.file}`,
+            f.code
+          );
+          totalSheets += result.sheets.length;
+          totalStudents += result.sheets.reduce(
+            (sum, s) => sum + s.students.length,
+            0
+          );
+          totalDoNotUse += result.skippedDoNotUse.length;
+          totalPrimarySkipped += result.skippedPrimary.length;
+          totalUnrecognized += result.skippedUnrecognized.length;
+          totalIdentityCorrections += result.identityCorrections.length;
+          totalTruncationNotes += result.truncationNotes.length;
+        }
+        expect(totalSheets).toBe(32);
+        expect(totalStudents).toBe(768);
+        expect(totalDoNotUse).toBe(8);
+        expect(totalPrimarySkipped).toBe(64);
+        expect(totalUnrecognized).toBe(0);
+        expect(totalIdentityCorrections).toBe(0);
+        expect(totalTruncationNotes).toBe(6);
       }
-      expect(totalSheets).toBe(32);
-      expect(totalStudents).toBe(768);
-      expect(totalDoNotUse).toBe(8);
-      expect(totalPrimarySkipped).toBe(64);
-      expect(totalUnrecognized).toBe(0);
-      expect(totalIdentityCorrections).toBe(0);
-      expect(totalTruncationNotes).toBe(6);
-    }
-  );
+    );
 
-  it(
-    'History has only Discipline 2 + Integrity 2 — no S3/S4 tabs exist in the real file',
-    { timeout: 30000 },
-    () => {
-      const result = parseGradingWorkbookT1Secondary(
-        `${DIR}/History Grading AY2026 T1.xlsx`,
-        'HIST'
-      );
-      expect(result.sheets).toHaveLength(2);
-      const sections = result.sheets.map((s) => s.sectionName).sort();
-      expect(sections).toEqual(['Discipline 2', 'Integrity 2']);
-    }
-  );
+    it(
+      'History has only Discipline 2 + Integrity 2 — no S3/S4 tabs exist in the real file',
+      { timeout: 30000 },
+      () => {
+        const result = parseGradingWorkbookT1Secondary(
+          `${DIR}/History Grading AY2026 T1.xlsx`,
+          'HIST'
+        );
+        expect(result.sheets).toHaveLength(2);
+        const sections = result.sheets.map((s) => s.sectionName).sort();
+        expect(sections).toEqual(['Discipline 2', 'Integrity 2']);
+      }
+    );
 
-  it(
-    'SS & Geo has only S3 Consistency + S4 Excellence — no S1/S2 tabs exist — and its DO-NOT-USE tab is filtered',
-    { timeout: 30000 },
-    () => {
-      const result = parseGradingWorkbookT1Secondary(
-        `${DIR}/SS & Geo Grading AY2026 T1.xlsx`,
-        'SS'
-      );
-      expect(result.sheets).toHaveLength(2);
-      const sections = result.sheets.map((s) => s.sectionName).sort();
-      expect(sections).toEqual(['Consistency', 'Excellence']);
-      expect(result.skippedDoNotUse).toHaveLength(1);
-    }
-  );
-});
+    it(
+      'SS & Geo has only S3 Consistency + S4 Excellence — no S1/S2 tabs exist — and its DO-NOT-USE tab is filtered',
+      { timeout: 30000 },
+      () => {
+        const result = parseGradingWorkbookT1Secondary(
+          `${DIR}/SS & Geo Grading AY2026 T1.xlsx`,
+          'SS'
+        );
+        expect(result.sheets).toHaveLength(2);
+        const sections = result.sheets.map((s) => s.sectionName).sort();
+        expect(sections).toEqual(['Consistency', 'Excellence']);
+        expect(result.skippedDoNotUse).toHaveLength(1);
+      }
+    );
+  }
+);
