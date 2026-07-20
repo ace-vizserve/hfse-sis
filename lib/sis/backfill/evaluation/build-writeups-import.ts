@@ -4,7 +4,10 @@
 // transactional, idempotent apply script. No I/O. See:
 // docs/superpowers/specs/2026-07-20-ay2026-t2-evaluation-writeups-import-design.md
 import { sqlString } from '../enrollment/sql-escape';
-import type { ParsedWriteupRow } from './parse-consolidated-writeups';
+import type {
+  ParsedWriteupRow,
+  SheetBlankCount,
+} from './parse-consolidated-writeups';
 
 export interface RosterLookupEntry {
   levelCode: string;
@@ -16,12 +19,15 @@ export interface RosterLookupEntry {
 
 export interface BuildWriteupsImportInput {
   rows: ParsedWriteupRow[];
+  blankCounts: SheetBlankCount[];
   rosterLookup: RosterLookupEntry[];
   termId: string;
   submittedAt: string;
 }
 
 interface ResolvedWriteup {
+  levelCode: string;
+  sectionName: string;
   studentId: string;
   sectionId: string;
   writeup: string;
@@ -33,6 +39,44 @@ interface NeedsReviewRow {
   indexNo: string;
   fullName: string;
   reason: string;
+}
+
+interface SectionStats {
+  levelCode: string;
+  sectionName: string;
+  resolved: number;
+  needsReview: number;
+  blank: number;
+}
+
+function buildSectionStats(
+  blankCounts: SheetBlankCount[],
+  resolved: ResolvedWriteup[],
+  needsReview: NeedsReviewRow[]
+): SectionStats[] {
+  const key = (levelCode: string, sectionName: string) =>
+    `${levelCode}::${sectionName}`;
+  const map = new Map<string, SectionStats>();
+
+  for (const b of blankCounts) {
+    map.set(key(b.levelCode, b.sectionName), {
+      levelCode: b.levelCode,
+      sectionName: b.sectionName,
+      resolved: 0,
+      needsReview: 0,
+      blank: b.blankCount,
+    });
+  }
+  for (const r of resolved) {
+    const s = map.get(key(r.levelCode, r.sectionName));
+    if (s) s.resolved++;
+  }
+  for (const n of needsReview) {
+    const s = map.get(key(n.levelCode, n.sectionName));
+    if (s) s.needsReview++;
+  }
+
+  return Array.from(map.values());
 }
 
 export interface BuildWriteupsImportResult {
@@ -47,7 +91,7 @@ export interface BuildWriteupsImportResult {
 export function buildWriteupsImport(
   input: BuildWriteupsImportInput
 ): BuildWriteupsImportResult {
-  const { rows, rosterLookup, termId, submittedAt } = input;
+  const { rows, blankCounts, rosterLookup, termId, submittedAt } = input;
 
   const rosterMap = new Map<string, RosterLookupEntry>();
   for (const r of rosterLookup) {
@@ -71,6 +115,8 @@ export function buildWriteupsImport(
       continue;
     }
     resolved.push({
+      levelCode: row.levelCode,
+      sectionName: row.sectionName,
       studentId: entry.studentId,
       sectionId: entry.sectionId,
       writeup: row.writeup,
@@ -82,14 +128,17 @@ export function buildWriteupsImport(
     needsReview: needsReview.length,
   };
 
+  const sectionStats = buildSectionStats(blankCounts, resolved, needsReview);
+
   return {
-    preview: buildPreviewSql(needsReview, stats),
+    preview: buildPreviewSql(sectionStats, needsReview, stats),
     apply: buildApplySql(termId, submittedAt, resolved),
     stats,
   };
 }
 
 function buildPreviewSql(
+  sectionStats: SectionStats[],
   needsReview: NeedsReviewRow[],
   stats: BuildWriteupsImportResult['stats']
 ): string {
@@ -104,6 +153,15 @@ function buildPreviewSql(
   );
   lines.push('--');
   lines.push(`-- writeups=${stats.writeupsWritten}`);
+  lines.push('--');
+  lines.push(
+    '-- Per-section breakdown (resolved / needs-review / blank cell):'
+  );
+  for (const s of sectionStats) {
+    lines.push(
+      `--   ${s.levelCode} ${s.sectionName}: resolved=${s.resolved} needsReview=${s.needsReview} blank=${s.blank}`
+    );
+  }
   lines.push('--');
   lines.push(
     `-- Needs review (${needsReview.length}) — NOT written by apply.sql:`

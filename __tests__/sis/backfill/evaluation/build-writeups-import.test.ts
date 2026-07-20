@@ -34,6 +34,7 @@ describe('buildWriteupsImport', () => {
   it('resolves a matching row and writes it', () => {
     const result = buildWriteupsImport({
       rows: [row()],
+      blankCounts: [],
       rosterLookup: [rosterEntry()],
       termId: TERM_ID,
       submittedAt: SUBMITTED_AT,
@@ -52,6 +53,7 @@ describe('buildWriteupsImport', () => {
   it('flags an unresolvable row as needs-review instead of writing it', () => {
     const result = buildWriteupsImport({
       rows: [row({ indexNo: '99' })],
+      blankCounts: [],
       rosterLookup: [rosterEntry()],
       termId: TERM_ID,
       submittedAt: SUBMITTED_AT,
@@ -64,6 +66,7 @@ describe('buildWriteupsImport', () => {
   it('never emits created_by — the column is always left NULL by omission', () => {
     const result = buildWriteupsImport({
       rows: [row()],
+      blankCounts: [],
       rosterLookup: [rosterEntry()],
       termId: TERM_ID,
       submittedAt: SUBMITTED_AT,
@@ -74,6 +77,7 @@ describe('buildWriteupsImport', () => {
   it('escapes a single quote in the write-up text', () => {
     const result = buildWriteupsImport({
       rows: [row({ writeup: "Student's progress is strong." })],
+      blankCounts: [],
       rosterLookup: [rosterEntry()],
       termId: TERM_ID,
       submittedAt: SUBMITTED_AT,
@@ -84,6 +88,7 @@ describe('buildWriteupsImport', () => {
   it('handles an empty rows array without throwing', () => {
     const result = buildWriteupsImport({
       rows: [],
+      blankCounts: [],
       rosterLookup: [rosterEntry()],
       termId: TERM_ID,
       submittedAt: SUBMITTED_AT,
@@ -91,5 +96,24 @@ describe('buildWriteupsImport', () => {
     expect(result.stats).toEqual({ writeupsWritten: 0, needsReview: 0 });
     expect(result.apply).toContain('begin;');
     expect(result.apply).toContain('commit;');
+  });
+
+  it('includes a per-section resolved/needs-review/blank breakdown in the preview', () => {
+    const result = buildWriteupsImport({
+      rows: [row(), row({ indexNo: '99', fullName: 'UNRESOLVED, Student' })],
+      blankCounts: [
+        { levelCode: 'S1', sectionName: 'Discipline 1', blankCount: 3 },
+        { levelCode: 'P1', sectionName: 'Patience', blankCount: 0 },
+      ],
+      rosterLookup: [rosterEntry()],
+      termId: TERM_ID,
+      submittedAt: SUBMITTED_AT,
+    });
+    expect(result.preview).toContain(
+      'S1 Discipline 1: resolved=1 needsReview=1 blank=3'
+    );
+    expect(result.preview).toContain(
+      'P1 Patience: resolved=0 needsReview=0 blank=0'
+    );
   });
 });

@@ -83,6 +83,7 @@ async function main() {
 
   const result = buildWriteupsImport({
     rows: parsed.rows,
+    blankCounts: parsed.blankCounts,
     rosterLookup,
     termId: (term as any).id,
     submittedAt: (term as any).end_date,
