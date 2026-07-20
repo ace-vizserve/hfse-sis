@@ -1,7 +1,7 @@
 // Pure aggregator for the SIS Admin hub's "Needs attention" feed. Merges
 // independent signals — enrolled-but-unplaced students, pending grade
-// change requests, unadvised sections, approver-flow gaps, and Structure
-// Defaults subject gaps — into one severity-ranked row list. No I/O; the
+// change requests, unadvised sections, approver-flow gaps, and levels with
+// no subjects configured — into one severity-ranked row list. No I/O; the
 // RSC page fetches the inputs and this function just shapes them for
 // `<HubAttentionFeed>`.
 //
@@ -18,7 +18,7 @@
 
 import type { ClassAssignmentReadinessRow } from '@/lib/sis/dashboard';
 import { classifyApproverReadiness } from '@/lib/sis/approver-readiness';
-import type { SubjectConfigGap } from '@/lib/sis/subject-config-gaps';
+import type { EmptyLevelGap } from '@/lib/sis/subject-config-gaps';
 
 export type AttentionSeverity = 'destructive' | 'amber';
 
@@ -44,11 +44,11 @@ export function buildAttentionRows(input: {
   // (mirrors the /sis/admin/approvers ROUTE_ACCESS gate + the system-health
   // strip's existing superadmin-only framing).
   approverFlowCounts?: Record<string, number>;
-  // Levels whose Structure Defaults template lists subjects this AY's
-  // subject_configs is missing — same computation that powers the warning
-  // banner on /sis/admin/subjects, surfaced here so the gap doesn't require
-  // a visit to that page to notice.
-  subjectConfigGaps?: SubjectConfigGap[];
+  // Levels this AY that have zero subjects attached at all — same
+  // computation that powers the warning banner on /sis/admin/subjects,
+  // surfaced here so the gap doesn't require a visit to that page to
+  // notice.
+  subjectConfigGaps?: EmptyLevelGap[];
 }): AttentionRow[] {
   const rows: AttentionRow[] = [];
 
@@ -110,12 +110,10 @@ export function buildAttentionRows(input: {
   }
 
   for (const gap of input.subjectConfigGaps ?? []) {
-    const n = gap.missingSubjectCodes.length;
     rows.push({
       id: `subject-config-gap-${gap.levelId}`,
       severity: 'amber',
-      text: `${gap.levelLabel} is missing ${n} subject${n === 1 ? '' : 's'} from Structure Defaults`,
-      meta: gap.missingSubjectCodes.join(', '),
+      text: `${gap.levelLabel} has no subjects configured yet`,
       href: '/sis/admin/subjects',
       actionLabel: 'Fix',
     });

@@ -140,14 +140,13 @@ describe('buildAttentionRows — Phase 7 additions', () => {
     ).toBe(false);
   });
 
-  it('adds an amber row per level missing subjects from Structure Defaults', () => {
+  it('adds an amber row per level with no subjects configured', () => {
     const rows = buildAttentionRows({
       ...BASE_INPUT,
       subjectConfigGaps: [
         {
           levelId: 's1',
           levelLabel: 'Secondary 1',
-          missingSubjectCodes: ['SCI', 'PE'],
         },
       ],
     });

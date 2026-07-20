@@ -7,7 +7,6 @@ import { GenerateAllIndexButton } from '@/components/sis/generate-index-button';
 import {
   SectionLevelCard,
   type LevelCardSection,
-  type LevelCardTemplateSection,
 } from '@/components/sis/section-level-card';
 import { Button } from '@/components/ui/button';
 import { exportCsv } from '@/components/ui/data-table/csv';
@@ -26,7 +25,6 @@ export type LevelGroup = {
       level_type: 'primary' | 'secondary';
     };
     sections: LevelCardSection[];
-    templateSections: LevelCardTemplateSection[];
   }>;
 };
 
@@ -176,12 +174,11 @@ export function SectionsOverview({
               <div className="h-px flex-1 bg-border" />
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {g.levels.map(({ level, sections, templateSections }) => (
+              {g.levels.map(({ level, sections }) => (
                 <SectionLevelCard
                   key={level.id}
                   level={level}
                   sections={sections}
-                  templateSections={isRegistrarPlus ? templateSections : []}
                   role={role}
                   termStarted={termStarted}
                   ayId={ayId}

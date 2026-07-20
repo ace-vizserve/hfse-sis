@@ -3,10 +3,9 @@
 import { LEVEL_WEIGHT_PROFILES } from '@/lib/sis/level-profiles';
 import { cn } from '@/lib/utils';
 
-// Shared weight-profile classification + chip styling. Used by both the
-// /sis/admin/template editor and the /sis/admin/subjects matrix so the
-// two surfaces have identical visual semantics — change the recipe here
-// and both update.
+// Shared weight-profile classification + chip styling for the
+// /sis/admin/subjects catalog table — change the recipe here and it
+// updates everywhere it's used.
 //
 // Why light tints over saturated gradients: the cells sit dense on the
 // page (a full subject × level matrix), and dense small numerics on

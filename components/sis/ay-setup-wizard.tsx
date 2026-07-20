@@ -36,13 +36,6 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { CreateAySchema, type CreateAyInput } from '@/lib/schemas/ay-setup';
-import { TEMPLATE_SOURCE_SENTINEL } from '@/lib/sis/ay-setup/constants';
-
-// Source string from getCopyForwardPreview is either a real AY code
-// (`'AY2026'`) or the sentinel — render the sentinel as the human label.
-function formatSource(sourceAyCode: string): string {
-  return sourceAyCode === TEMPLATE_SOURCE_SENTINEL ? 'template' : sourceAyCode;
-}
 
 type Preview = {
   source_ay_code: string | null;
@@ -116,17 +109,17 @@ function AySetupWizard({ preview, children }: Props) {
           ? `${values.ay_code} setup completed`
           : `${values.ay_code} created`
       );
-      // First-AY case: the RPC had no prior AY or template to copy from,
-      // so sections and subject configs were not created. Guide the user to
-      // the class template so they don't wonder why the grading setup is
-      // empty.
+      // First-AY case: there was no prior AY to copy from (migration 089
+      // removed the class-template fallback), so sections and subject
+      // configs were not created. Guide the user to set them up manually
+      // so they don't wonder why the grading setup is empty.
       if (sectionsCopied === 0 && configsCopied === 0) {
         toast.info(
-          'No sections were copied — apply the class template to populate sections and subject weights.',
+          'No sections were copied — create sections and attach subjects manually to get started.',
           {
             action: {
-              label: 'Open Class Template',
-              onClick: () => router.push('/sis/admin/template'),
+              label: 'Open Sections',
+              onClick: () => router.push('/sis/sections'),
             },
           }
         );
@@ -287,7 +280,7 @@ function AySetupWizard({ preview, children }: Props) {
                     value={
                       preview.sections_to_copy === 0
                         ? 'Already configured — none copied'
-                        : `${preview.sections_to_copy} copied from ${formatSource(preview.source_ay_code)}`
+                        : `${preview.sections_to_copy} copied from ${preview.source_ay_code}`
                     }
                   />
                   <ReviewRow
@@ -295,14 +288,14 @@ function AySetupWizard({ preview, children }: Props) {
                     value={
                       preview.subject_configs_to_copy === 0
                         ? 'Already configured — none copied'
-                        : `${preview.subject_configs_to_copy} copied from ${formatSource(preview.source_ay_code)}`
+                        : `${preview.subject_configs_to_copy} copied from ${preview.source_ay_code}`
                     }
                   />
                 </>
               ) : (
                 <ReviewRow
                   label="Sections & subject configs"
-                  value="None — no template configured and no prior non-test AY to copy from. Seed manually later."
+                  value="None — no prior non-test AY to copy from. Seed manually later."
                 />
               )}
               <ReviewRow
@@ -350,20 +343,20 @@ function AySetupWizard({ preview, children }: Props) {
               {creationSummary?.sections_copied === 0 &&
                 creationSummary?.subject_configs_copied === 0 && (
                   <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[13px] leading-relaxed text-amber-700 dark:text-amber-400">
-                    <strong>Next step:</strong> Open the{' '}
+                    <strong>Next step:</strong> Open{' '}
                     <button
                       type="button"
                       className="font-semibold underline underline-offset-2 hover:no-underline"
                       onClick={() => {
                         handleOpenChange(false);
-                        router.push('/sis/admin/template');
+                        router.push('/sis/sections');
                       }}
                     >
-                      Class Template
+                      Sections
                     </button>{' '}
-                    and apply it to {createdAyCode} to create sections and
-                    subject weights. Without this step, teachers cannot access
-                    grading sheets.
+                    to create sections for {createdAyCode}, then attach subjects
+                    on Subject Weights. Without this step, teachers cannot
+                    access grading sheets.
                   </div>
                 )}
               <p className="text-xs leading-relaxed text-muted-foreground">
@@ -389,10 +382,10 @@ function AySetupWizard({ preview, children }: Props) {
                     type="button"
                     onClick={() => {
                       handleOpenChange(false);
-                      router.push('/sis/admin/template');
+                      router.push('/sis/sections');
                     }}
                   >
-                    Open Class Template
+                    Open Sections
                   </Button>
                 </>
               ) : (

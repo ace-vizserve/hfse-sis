@@ -1,10 +1,7 @@
 'use client';
 
-import { useMutation } from '@tanstack/react-query';
-import { CheckCircle2, Layers, Loader2, Plus } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { CheckCircle2, Plus } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
 import { NewSectionButton } from '@/components/markbook/new-section-button';
 import { AdviserCell } from '@/components/sections/adviser-cell';
@@ -15,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { StatusBadge } from '@/components/ui/status-badge';
 import type { Role } from '@/lib/auth/roles';
-import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   SCHEDULE_LABELS,
   type Schedule,
@@ -34,10 +30,11 @@ import type { IndexStatus } from '@/lib/sis/section-index-status';
 // 2nd/3rd section to an already-populated level meant leaving the row for
 // the generic top-right button).
 //
-// Adding is smarter too: Structure Defaults already knows a level's
-// official section names (the virtue sections, KD #144) — an empty or
-// partly-filled level offers a one-click "Create N (template)" for
-// whichever names are still missing, alongside the manual fallback.
+// A template-driven "create all N official section names in one click"
+// quick-add used to live here (KD #144) — removed alongside the Structure
+// Defaults template (migration 089): there's no more master list of
+// official section names independent of an AY to offer it from. Adding is
+// manual only now, via the "Add section" button.
 
 export type LevelCardSection = {
   id: string;
@@ -50,15 +47,9 @@ export type LevelCardSection = {
   fcaName: string | null;
 };
 
-export type LevelCardTemplateSection = {
-  name: string;
-  classType: SectionClassType | null;
-};
-
 export function SectionLevelCard({
   level,
   sections,
-  templateSections,
   role,
   termStarted,
   ayId,
@@ -71,67 +62,12 @@ export function SectionLevelCard({
     level_type: 'primary' | 'secondary';
   };
   sections: LevelCardSection[];
-  /** This level's official section names per Structure Defaults — empty
-   * for levels with no template entry yet (e.g. Youngstarters, KD #144). */
-  templateSections: LevelCardTemplateSection[];
   role: Role | null;
   termStarted: boolean;
   ayId: string;
   ayCode: string | null;
 }) {
-  const router = useRouter();
   const [addOpen, setAddOpen] = useState(false);
-
-  const existingNamesLower = new Set(
-    sections.map((s) => s.name.trim().toLowerCase())
-  );
-  const missingTemplateSections = templateSections.filter(
-    (t) => !existingNamesLower.has(t.name.trim().toLowerCase())
-  );
-
-  const batchCreateMutation = useMutation({
-    mutationFn: async () => {
-      let created = 0;
-      const errors: string[] = [];
-      for (const t of missingTemplateSections) {
-        try {
-          await apiFetch(
-            '/api/sections',
-            jsonInit('POST', {
-              name: t.name,
-              level_id: level.id,
-              class_type: t.classType,
-            })
-          );
-          created++;
-        } catch (e) {
-          const detail =
-            e instanceof ApiError && e.body && typeof e.body === 'object'
-              ? (e.body as { error?: string }).error
-              : undefined;
-          errors.push(`${t.name}: ${detail ?? 'failed'}`);
-        }
-      }
-      return { created, errors };
-    },
-    onSuccess: ({ created, errors }) => {
-      if (created > 0) {
-        toast.success(
-          `Created ${created} section${created === 1 ? '' : 's'} for ${level.label}`
-        );
-        router.refresh();
-      }
-      if (errors.length > 0) {
-        toast.error(
-          `${errors.length} section${errors.length === 1 ? '' : 's'} failed`,
-          { description: errors.join('\n') }
-        );
-      }
-    },
-    onError: () => {
-      toast.error(`Could not create sections for ${level.label}`);
-    },
-  });
 
   const isRegistrarPlus =
     role === 'registrar' || role === 'school_admin' || role === 'superadmin';
@@ -166,44 +102,16 @@ export function SectionLevelCard({
         <div className="flex flex-1 flex-col gap-3 p-3.5">
           <p className="text-xs text-muted-foreground">No section yet.</p>
           {isRegistrarPlus && (
-            <>
-              {templateSections.length > 0 && (
-                <div className="space-y-2 rounded-xl border border-dashed border-hairline-strong bg-muted/40 p-2.5">
-                  <p className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground">
-                    <Layers className="size-3 shrink-0" />
-                    Structure Defaults has {templateSections.length}
-                  </p>
-                  <p className="text-[11px] leading-snug text-muted-foreground">
-                    {templateSections.map((t) => t.name).join(', ')}
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 w-full gap-1.5 text-xs"
-                    disabled={batchCreateMutation.isPending}
-                    onClick={() => batchCreateMutation.mutate()}
-                  >
-                    {batchCreateMutation.isPending && (
-                      <Loader2 className="size-3 animate-spin" />
-                    )}
-                    <Plus className="size-3" />
-                    Create all {templateSections.length}
-                  </Button>
-                </div>
-              )}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1.5 border-dashed text-xs text-muted-foreground"
-                onClick={() => setAddOpen(true)}
-              >
-                <Plus className="size-3" />
-                {templateSections.length > 0
-                  ? 'or add one manually'
-                  : 'Add section'}
-              </Button>
-            </>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 border-dashed text-xs text-muted-foreground"
+              onClick={() => setAddOpen(true)}
+            >
+              <Plus className="size-3" />
+              Add section
+            </Button>
           )}
         </div>
       ) : (
@@ -270,24 +178,6 @@ export function SectionLevelCard({
               </div>
             ))}
           </div>
-          {isRegistrarPlus && missingTemplateSections.length > 0 && (
-            <div className="border-t border-dashed border-hairline-strong p-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 w-full gap-1.5 text-xs text-primary hover:text-primary"
-                disabled={batchCreateMutation.isPending}
-                onClick={() => batchCreateMutation.mutate()}
-              >
-                {batchCreateMutation.isPending && (
-                  <Loader2 className="size-3 animate-spin" />
-                )}
-                <Plus className="size-3" />
-                Add missing {missingTemplateSections.length} (template)
-              </Button>
-            </div>
-          )}
         </>
       )}
 

@@ -12,7 +12,8 @@ export type ApplyTrackBundleResult = {
   /** Bundle codes that resolved to a real subject_configs row for this
    * AY. Normally equals the full bundle; can be shorter if a bundle
    * subject somehow has no subject_configs row for this AY yet (e.g. a
-   * brand-new AY that hasn't run apply_template_to_ay). */
+   * brand-new AY whose sections/subject configs haven't been created or
+   * copied forward yet). */
   resolvedCodes: string[];
   /** Bundle codes that did NOT resolve — surfaced so the caller can warn
    * instead of silently under-attaching. */

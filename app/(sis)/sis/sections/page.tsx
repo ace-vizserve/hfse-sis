@@ -15,7 +15,6 @@ import { PageShell } from '@/components/ui/page-shell';
 import { sgToday } from '@/lib/dates';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { computeIndexStatus } from '@/lib/sis/section-index-status';
-import { listTemplateSections } from '@/lib/sis/template/queries';
 import type { Schedule, SectionClassType } from '@/lib/schemas/section';
 
 // "Sections & advisers" — one card per grade level, not one row per
@@ -24,10 +23,13 @@ import type { Schedule, SectionClassType } from '@/lib/schemas/section';
 // but the prior design was a flat per-SECTION table, so any level without
 // a section yet rendered as a full row of dashes just to say "nothing
 // here." A card per level fixes that at the root, and folds in a
-// level-scoped quick-add (including a template-driven "create all N
-// official section names in one click," KD #144) that the flat table had
-// no room for. Rebuilt from a live-reviewed mockup — see
-// docs/superpowers/plans history if this page changes shape again.
+// level-scoped quick-add that the flat table had no room for. The
+// template-driven "create all N official section names in one click" (KD
+// #144) was removed with the Structure Defaults template (migration 089)
+// — there's no more master list of official section names independent of
+// an AY to offer it from; "Add section" is a plain manual add now.
+// Rebuilt from a live-reviewed mockup — see docs/superpowers/plans history
+// if this page changes shape again.
 //
 // The level catalog is a fixed 10 core levels (P1-P6, S1-S4) since
 // migration 086 removed the volatile Youngstarters/Cambridge Secondary
@@ -176,20 +178,6 @@ export default async function SisSectionsListPage({
     ? await loadFormAdvisersBySection(ids, ay.ay_code)
     : ({} as Record<string, { userId: string; name: string }>);
 
-  const templateSections = await listTemplateSections();
-  const templateByLevelId = new Map<
-    string,
-    Array<{ name: string; classType: SectionClassType | null }>
-  >();
-  for (const t of templateSections) {
-    const list = templateByLevelId.get(t.level_id) ?? [];
-    list.push({
-      name: t.name,
-      classType: t.class_type as SectionClassType | null,
-    });
-    templateByLevelId.set(t.level_id, list);
-  }
-
   const getLevel = (l: LevelLite | LevelLite[] | null): LevelLite | null =>
     Array.isArray(l) ? (l[0] ?? null) : l;
 
@@ -258,7 +246,6 @@ export default async function SisSectionsListPage({
             level_type: l.level_type,
           },
           sections: sectionsForLevel,
-          templateSections: templateByLevelId.get(l.id) ?? [],
         };
       }),
   })).filter((g) => g.levels.length > 0);

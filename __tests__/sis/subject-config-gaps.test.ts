@@ -1,101 +1,69 @@
 /**
- * computeSubjectConfigGaps() — the warning banner's data source on
- * /sis/admin/subjects. Closes the "zero visibility" gap: a missing
- * subject-at-level offering used to silently drop that subject from the
- * report card with no signal anywhere.
+ * findEmptyLevels() — the warning banner's data source on
+ * /sis/admin/subjects (also feeds the readiness pill's subject-weights
+ * step and the Hub attention feed — all three MUST call this one function).
  *
- * Post migration-080: the function is a pure {level_id, subject_id}
- * presence check, unchanged in logic — only its real callers' data source
- * moved from template_subject_configs/subject_configs (level_id dropped)
- * to template_subject_level_offerings/subject_level_offerings. These
- * fixture pairs are intentionally source-agnostic (any {level_id,
- * subject_id} shape exercises the same logic), so no test bodies changed.
+ * Post migration 089 (Structure Defaults template removed): there is no
+ * "what SHOULD be configured" reference left to compare against, so the
+ * check narrowed to "does this level have at least one subject attached at
+ * all" — a pure presence check over live subject_level_offerings rows, no
+ * comparison source needed.
  */
 
 import { describe, expect, it } from 'vitest';
-import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
+import { findEmptyLevels } from '@/lib/sis/subject-config-gaps';
 
 const LEVELS = [
   { id: 'lvl-p3', label: 'Primary 3' },
   { id: 'lvl-s1', label: 'Secondary 1' },
-];
-const SUBJECTS = [
-  { id: 'sub-math', code: 'MATH' },
-  { id: 'sub-sci', code: 'SCI' },
-  { id: 'sub-pe', code: 'PE' },
-  { id: 'sub-arts', code: 'ARTS' },
+  { id: 'lvl-s2', label: 'Secondary 2' },
 ];
 
-describe('computeSubjectConfigGaps', () => {
-  it('returns no gaps when every template subject has a matching config', () => {
-    const gaps = computeSubjectConfigGaps(
-      LEVELS,
-      SUBJECTS,
-      [
-        { level_id: 'lvl-p3', subject_id: 'sub-math' },
-        { level_id: 'lvl-p3', subject_id: 'sub-sci' },
-      ],
-      [
-        { level_id: 'lvl-p3', subject_id: 'sub-math' },
-        { level_id: 'lvl-p3', subject_id: 'sub-sci' },
-      ]
-    );
+describe('findEmptyLevels', () => {
+  it('returns no gaps when every level has at least one subject attached', () => {
+    const gaps = findEmptyLevels(LEVELS, [
+      { level_id: 'lvl-p3', subject_id: 'sub-math' },
+      { level_id: 'lvl-s1', subject_id: 'sub-sci' },
+      { level_id: 'lvl-s2', subject_id: 'sub-arts' },
+    ]);
     expect(gaps).toEqual([]);
   });
 
-  it('reports the missing subject codes for a level with an incomplete config set', () => {
-    const gaps = computeSubjectConfigGaps(
-      LEVELS,
-      SUBJECTS,
-      [
-        { level_id: 'lvl-p3', subject_id: 'sub-math' },
-        { level_id: 'lvl-p3', subject_id: 'sub-sci' },
-        { level_id: 'lvl-p3', subject_id: 'sub-pe' },
-      ],
-      [{ level_id: 'lvl-p3', subject_id: 'sub-math' }]
-    );
-    expect(gaps).toEqual([
-      {
-        levelId: 'lvl-p3',
-        levelLabel: 'Primary 3',
-        missingSubjectCodes: ['PE', 'SCI'],
-      },
+  it('reports a level with zero subject offerings anywhere in the input', () => {
+    const gaps = findEmptyLevels(LEVELS, [
+      { level_id: 'lvl-p3', subject_id: 'sub-math' },
+      { level_id: 'lvl-s1', subject_id: 'sub-sci' },
+      // lvl-s2 never appears in actualOfferings
+    ]);
+    expect(gaps).toEqual([{ levelId: 'lvl-s2', levelLabel: 'Secondary 2' }]);
+  });
+
+  it('a level is still counted empty even if other levels have many subjects', () => {
+    const gaps = findEmptyLevels(LEVELS, [
+      { level_id: 'lvl-p3', subject_id: 'sub-math' },
+      { level_id: 'lvl-p3', subject_id: 'sub-sci' },
+      { level_id: 'lvl-p3', subject_id: 'sub-arts' },
+    ]);
+    expect(gaps.map((g) => g.levelId).sort()).toEqual(['lvl-s1', 'lvl-s2']);
+  });
+
+  it('covers multiple empty levels, sorted by level label', () => {
+    const gaps = findEmptyLevels(LEVELS, []);
+    expect(gaps.map((g) => g.levelLabel)).toEqual([
+      'Primary 3',
+      'Secondary 1',
+      'Secondary 2',
     ]);
   });
 
-  it('treats a level with no template rows as complete — never a false positive', () => {
-    const gaps = computeSubjectConfigGaps(
-      LEVELS,
-      SUBJECTS,
-      [{ level_id: 'lvl-p3', subject_id: 'sub-math' }], // no template rows for lvl-s1
-      []
-    );
-    expect(gaps.find((g) => g.levelId === 'lvl-s1')).toBeUndefined();
-  });
-
-  it('covers multiple levels independently, sorted by level label', () => {
-    const gaps = computeSubjectConfigGaps(
-      LEVELS,
-      SUBJECTS,
-      [
-        { level_id: 'lvl-p3', subject_id: 'sub-math' },
-        { level_id: 'lvl-s1', subject_id: 'sub-arts' },
-      ],
-      []
-    );
-    expect(gaps.map((g) => g.levelLabel)).toEqual(['Primary 3', 'Secondary 1']);
-    expect(
-      gaps.find((g) => g.levelId === 'lvl-s1')?.missingSubjectCodes
-    ).toEqual(['ARTS']);
-  });
-
-  it('a subject id with no matching subject row is silently dropped, never crashes', () => {
-    const gaps = computeSubjectConfigGaps(
-      LEVELS,
-      SUBJECTS,
-      [{ level_id: 'lvl-p3', subject_id: 'sub-unknown' }],
-      []
-    );
-    expect(gaps).toEqual([]);
+  it('an offering row for an unknown level id is silently ignored, never crashes', () => {
+    const gaps = findEmptyLevels(LEVELS, [
+      { level_id: 'lvl-unknown', subject_id: 'sub-math' },
+    ]);
+    expect(gaps.map((g) => g.levelId).sort()).toEqual([
+      'lvl-p3',
+      'lvl-s1',
+      'lvl-s2',
+    ]);
   });
 });

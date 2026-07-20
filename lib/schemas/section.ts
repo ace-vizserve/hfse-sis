@@ -55,12 +55,13 @@ export const SectionCreateSchema = z.object({
   // at the schema layer so a Primary submission genuinely omits the field
   // rather than sending a hidden default.
   class_type: z.enum(SECTION_CLASS_TYPES).nullable().optional(),
-  // NOTE: `schedule` is intentionally NOT here. Section schedule is owned by the
-  // class template (set in the SIS Admin template editor → propagated via
-  // apply_template_to_ay); per-AY `/sis/sections` shows it read-only. The
-  // per-AY `/api/sections` create/rename routes deliberately don't write it, so
+  // NOTE: `schedule` is intentionally NOT here. Section schedule is set once
+  // at section creation and carried forward automatically when a new AY
+  // copies its sections from the prior AY (`create_academic_year`, migration
+  // 089); per-AY `/sis/sections` shows it read-only. The per-AY
+  // `/api/sections` create/rename routes deliberately don't write it, so
   // it's kept off this schema to avoid advertising a field the route drops.
-  // SCHEDULE_VALUES/SCHEDULE_LABELS live here for the template schema + display.
+  // SCHEDULE_VALUES/SCHEDULE_LABELS live here for shared display use.
 });
 
 export type SectionCreateInput = z.infer<typeof SectionCreateSchema>;

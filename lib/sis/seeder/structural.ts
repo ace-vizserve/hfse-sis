@@ -244,10 +244,11 @@ export async function ensureTestStructure(
 
   // ---- 4b. section_subjects sync ----
   // `create_academic_year` already syncs section_subjects for whatever
-  // sections it creates from the template — but this seeder's own section
-  // upsert above (step 3) is a raw upsert straight into `sections`, not
-  // routed through that RPC, so it isn't guaranteed to be covered (e.g. if
-  // this file's SECTIONS fixture ever diverges from template_sections).
+  // sections it copies forward from the prior AY (migration 089) — but
+  // this seeder's own section upsert above (step 3) is a raw upsert
+  // straight into `sections`, not routed through that RPC, so it isn't
+  // guaranteed to be covered (e.g. if this file's SECTIONS fixture ever
+  // diverges from what a real prior AY would have had).
   // Re-running the sync here is idempotent (ON CONFLICT DO NOTHING) and
   // guarantees every section this seeder just created/touched has its
   // section_subjects rows before step 9 generates grading sheets —

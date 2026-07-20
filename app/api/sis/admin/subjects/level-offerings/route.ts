@@ -9,11 +9,9 @@ import { createServiceClient } from '@/lib/supabase/service';
 //
 // Attaches/detaches a subject to/from a level for a specific academic
 // year, via `subject_level_offerings` (migration 080 collapse — the level
-// dimension that used to live on `subject_configs`). AY-scoped sibling of
-// PUT /api/sis/admin/template/subject-level-offerings (the template's
-// AY-agnostic equivalent) — mirrors that route's shape exactly, plus the
-// `academic_year_id` the per-AY table needs. This is the write path behind
-// the /sis/admin/subjects tree's drag-a-subject-onto-a-level gesture.
+// dimension that used to live on `subject_configs`). This is the write path
+// behind the /sis/admin/subjects tree's drag-a-subject-onto-a-level
+// gesture.
 //
 // Idempotent both directions: attaching twice, or detaching when already
 // detached, succeeds without error.

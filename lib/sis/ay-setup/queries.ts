@@ -148,16 +148,12 @@ export async function listAcademicYears(): Promise<AcademicYearListItem[]> {
   return items;
 }
 
-import { TEMPLATE_SOURCE_SENTINEL } from './constants';
-
 export type CopyForwardPreview = {
   /**
    * Where the new AY's sections + subject_configs will be sourced from:
-   * - `TEMPLATE_SOURCE_SENTINEL` (`'__TEMPLATE__'`) when the master template
-   *   has rows (migration 031).
-   * - An AY code (`'AY2026'`) when falling back to copy-from-prior-AY.
-   * - `null` when there's nothing to copy (target already has data, no
-   *   template, no prior AY).
+   * - An AY code (`'AY2026'`) — the most recent non-test prior AY.
+   * - `null` when there's nothing to copy (target already has data, or
+   *   there's no prior AY to copy from).
    */
   source_ay_code: string | null;
   sections_to_copy: number;
@@ -170,13 +166,11 @@ export type CopyForwardPreview = {
 
 /**
  * Returns the counts that the AY Setup wizard will copy from on creation.
- * Mirrors `create_academic_year` post migration 031:
+ * Mirrors `create_academic_year` post migration 089 (Structure Defaults
+ * template removed): a new AY's sections/subject_configs are always copied
+ * from the most recently created non-test AY, unconditionally — there is no
+ * template layer to check first.
  *
- *   - Template tables (`template_sections` / `template_subject_configs`)
- *     win when populated. The preview reports `source_ay_code =
- *     TEMPLATE_SOURCE_SENTINEL` and the count of template rows.
- *   - Otherwise falls back to the most-recent non-test prior AY (the
- *     migration-030 behaviour, kept for empty-template installs).
  *   - The RPC skips copying if the target AY already has sections (or
  *     subject_configs). The preview reports 0 in that case.
  */
@@ -202,7 +196,7 @@ export async function getCopyForwardPreview(
     : 0;
   const termsToInsert = Math.max(0, 4 - targetExistingTermsCount);
 
-  // Pre-compute target-side counts so we can skip-report for either source.
+  // Pre-compute target-side counts so we can skip-report copy sources.
   const [targetSectionsRes, targetConfigsRes] = await Promise.all([
     targetId
       ? service
@@ -220,29 +214,8 @@ export async function getCopyForwardPreview(
   const targetHasSections = (targetSectionsRes.count ?? 0) > 0;
   const targetHasConfigs = (targetConfigsRes.count ?? 0) > 0;
 
-  // Template wins when populated. Count rows directly from the template
-  // tables — same source the RPC actually copies from.
-  const [templateSectionsRes, templateConfigsRes] = await Promise.all([
-    service
-      .from('template_sections')
-      .select('id', { count: 'exact', head: true }),
-    service
-      .from('template_subject_configs')
-      .select('id', { count: 'exact', head: true }),
-  ]);
-  const templateSectionsCount = templateSectionsRes.count ?? 0;
-  const templateConfigsCount = templateConfigsRes.count ?? 0;
-  if (templateSectionsCount > 0 || templateConfigsCount > 0) {
-    return {
-      source_ay_code: TEMPLATE_SOURCE_SENTINEL,
-      sections_to_copy: targetHasSections ? 0 : templateSectionsCount,
-      subject_configs_to_copy: targetHasConfigs ? 0 : templateConfigsCount,
-      ay_already_exists: targetId !== null,
-      terms_to_insert: termsToInsert,
-    };
-  }
-
-  // Fallback: most recent non-test prior AY.
+  // Most recent non-test prior AY — the only copy source (matches
+  // create_academic_year's v_source_ay_id resolution).
   const { data: prior } = await service
     .from('academic_years')
     .select('id, ay_code')

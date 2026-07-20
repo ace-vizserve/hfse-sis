@@ -390,18 +390,11 @@ export function YearSetupChecklist({
 
               case 'subject-weights':
                 action = (
-                  <>
-                    <ApplyTemplateButton
-                      ayCode={selectedAy.ay_code}
-                      variant={primaryVariant}
-                    />
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link href={step.href}>
-                        Open Subject weights{' '}
-                        <ArrowUpRight className="size-3.5" />
-                      </Link>
-                    </Button>
-                  </>
+                  <Button variant={primaryVariant} size="sm" asChild>
+                    <Link href={step.href}>
+                      Open Subject weights <ArrowUpRight className="size-3.5" />
+                    </Link>
+                  </Button>
                 );
                 break;
 
@@ -622,42 +615,6 @@ function ConfirmStructureButton({
     >
       {m.isPending && <Loader2 className="size-3.5 animate-spin" />}
       Confirm starting setup
-    </Button>
-  );
-}
-
-function ApplyTemplateButton({
-  ayCode,
-  variant = 'default',
-}: {
-  ayCode: string;
-  variant?: 'default' | 'outline';
-}) {
-  const router = useRouter();
-  const m = useMutation({
-    mutationFn: () =>
-      apiFetch(
-        '/api/sis/admin/template/apply',
-        jsonInit('POST', { ay_codes: [ayCode] })
-      ),
-    onSuccess: () => {
-      toast.success('Class template applied.');
-      router.refresh();
-    },
-    onError: (e) =>
-      toast.error(
-        e instanceof Error ? e.message : 'Could not apply the template.'
-      ),
-  });
-  return (
-    <Button
-      variant={variant}
-      size="sm"
-      onClick={() => m.mutate()}
-      disabled={m.isPending}
-    >
-      {m.isPending && <Loader2 className="size-3.5 animate-spin" />}
-      Apply class template
     </Button>
   );
 }

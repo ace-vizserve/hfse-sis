@@ -119,8 +119,7 @@ export async function listSubjectConfigsForAy(
 }
 
 // Which levels each subject is attached to in a given AY — the level
-// dimension migration 080 moved off `subject_configs`. AY-scoped sibling of
-// `lib/sis/template/queries.ts::listTemplateSubjectLevelOfferings`.
+// dimension migration 080 moved off `subject_configs`.
 export async function listSubjectLevelOfferings(
   academicYearId: string
 ): Promise<SubjectLevelOfferingRow[]> {
@@ -219,7 +218,7 @@ export type CatalogSubjectRow = {
 // coverage). No Supabase/DB imports; takes already-fetched rows plus the
 // requested level type's actually-offered level ids and returns the same
 // CatalogSubjectRow[] shape, mirroring the
-// lib/sis/subject-config-gaps.ts::computeSubjectConfigGaps pattern (pure
+// lib/sis/subject-config-gaps.ts::findEmptyLevels pattern (pure
 // comparison function, DB-fetching caller is a thin wrapper below).
 // ─────────────────────────────────────────────────────────────────────────
 

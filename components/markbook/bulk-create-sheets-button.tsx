@@ -53,7 +53,7 @@ export function BulkCreateSheetsButton({
           );
         } else if (reason === 'no_subjects') {
           toast.warning(
-            `No subject weights configured for ${ayCode}. Apply the class template in SIS Admin → Class Template first.`
+            `No subject weights configured for ${ayCode}. Attach subjects in SIS Admin → Subject Weights first.`
           );
         } else if (reason === 'no_terms') {
           toast.warning(

@@ -10,14 +10,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getLevelRows } from '@/lib/sis/levels';
-import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
+import { findEmptyLevels } from '@/lib/sis/subject-config-gaps';
 import {
   listCatalogForLevelType,
   listSectionsForLevelType,
   listSubjectLevelOfferings,
-  listSubjects,
 } from '@/lib/sis/subjects/queries';
-import { listTemplateSubjectLevelOfferings } from '@/lib/sis/template/queries';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -87,24 +85,20 @@ export default async function SubjectConfigPage({
     null;
 
   const [
-    subjects,
     allLevels,
     offerings,
-    templateOfferings,
     catalogForLevel,
     primarySections,
     secondarySections,
   ] = currentAy
     ? await Promise.all([
-        listSubjects(),
         getLevelRows(service),
         listSubjectLevelOfferings(currentAy.id),
-        listTemplateSubjectLevelOfferings(),
         listCatalogForLevelType(service, currentAy.id, levelType),
         listSectionsForLevelType(service, currentAy.id, 'primary'),
         listSectionsForLevelType(service, currentAy.id, 'secondary'),
       ])
-    : [[], [], [], [], [], [], []];
+    : [[], [], [], [], []];
 
   // Both level types' sections, not just the currently-viewed catalog's —
   // the Attach-to-section modal picks its own level internally (level
@@ -117,16 +111,12 @@ export default async function SubjectConfigPage({
   // scopes to the full catalog, no offered-filtering needed.
   const levels = allLevels;
 
-  // Structure Defaults is the "what SHOULD be configured" reference — a
-  // level missing one of its template subjects silently drops that
-  // subject from grading-sheet creation AND the report card, with no
-  // error visible anywhere. Compare against it here so the gap is visible
-  // where it's fixed.
+  // A level with literally no subjects attached silently drops out of
+  // grading-sheet creation AND the report card, with no error visible
+  // anywhere. Flag it here so the gap is visible where it's fixed.
   const subjectConfigGaps = currentAy
-    ? computeSubjectConfigGaps(
+    ? findEmptyLevels(
         levels.map((l) => ({ id: l.id, label: l.label })),
-        subjects,
-        templateOfferings,
         offerings
       )
     : [];
@@ -193,82 +183,26 @@ export default async function SubjectConfigPage({
         </p>
       )}
 
-      {subjectConfigGaps.length > 0 &&
-        (() => {
-          const totalMissing = subjectConfigGaps.reduce(
-            (n, g) => n + g.missingSubjectCodes.length,
-            0
-          );
-          // A handful of named gaps is worth reading; a wall of nearly
-          // every subject at every level isn't a checklist anymore, it's a
-          // sign the AY hasn't been attached to Structure Defaults at all
-          // — say that plainly instead of listing dozens of codes nobody
-          // can actually scan.
-          const wholesale = totalMissing > 20;
-          const MAX_CODES_PER_LEVEL = 6;
-          const MAX_LEVELS_SHOWN = 5;
-          const shownGaps = subjectConfigGaps.slice(0, MAX_LEVELS_SHOWN);
-          const hiddenLevelCount = subjectConfigGaps.length - shownGaps.length;
-
-          return (
-            <div className="flex items-start gap-4 rounded-xl border border-brand-amber/30 bg-brand-amber-light p-5">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-amber text-ink shadow-brand-tile-amber">
-                <AlertTriangle className="size-4" />
-              </div>
-              <div className="flex-1 space-y-2">
-                <p className="font-serif text-base font-semibold text-foreground">
-                  {wholesale
-                    ? `${currentAy.ay_code} hasn't been set up yet`
-                    : `${totalMissing} subject${totalMissing === 1 ? '' : 's'} missing from Structure Defaults`}
-                </p>
-                {wholesale ? (
-                  <p className="text-sm text-muted-foreground">
-                    This is a one-time step, not {totalMissing} separate ones —
-                    go to{' '}
-                    <Link
-                      href="/sis/admin/template"
-                      className="font-medium text-foreground underline underline-offset-2"
-                    >
-                      Structure Defaults
-                    </Link>{' '}
-                    and click <strong>Apply template</strong> to bring every
-                    subject&apos;s weights in at once, then come back here to
-                    attach them to sections.
-                  </p>
-                ) : (
-                  <ul className="space-y-1 text-sm text-muted-foreground">
-                    {shownGaps.map((g) => {
-                      const shown = g.missingSubjectCodes.slice(
-                        0,
-                        MAX_CODES_PER_LEVEL
-                      );
-                      const hiddenCount =
-                        g.missingSubjectCodes.length - shown.length;
-                      return (
-                        <li key={g.levelId}>
-                          <span className="font-medium text-foreground">
-                            {g.levelLabel}:
-                          </span>{' '}
-                          {shown.join(', ')}
-                          {hiddenCount > 0 && ` +${hiddenCount} more`}
-                        </li>
-                      );
-                    })}
-                    {hiddenLevelCount > 0 && (
-                      <li>+{hiddenLevelCount} more levels</li>
-                    )}
-                  </ul>
-                )}
-                {!wholesale && (
-                  <p className="text-sm text-muted-foreground">
-                    Attach them below or they won&apos;t appear on the report
-                    card.
-                  </p>
-                )}
-              </div>
-            </div>
-          );
-        })()}
+      {subjectConfigGaps.length > 0 && (
+        <div className="flex items-start gap-4 rounded-xl border border-brand-amber/30 bg-brand-amber-light p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-amber text-ink shadow-brand-tile-amber">
+            <AlertTriangle className="size-4" />
+          </div>
+          <div className="flex-1 space-y-2">
+            <p className="font-serif text-base font-semibold text-foreground">
+              {subjectConfigGaps.length === 1
+                ? '1 level with no subjects configured'
+                : `${subjectConfigGaps.length} levels with no subjects configured`}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {subjectConfigGaps.map((g) => g.levelLabel).join(', ')} — nothing
+              will appear on the report card for{' '}
+              {subjectConfigGaps.length === 1 ? 'it' : 'them'} until you check a
+              subject in the catalog below and attach it to a section.
+            </p>
+          </div>
+        </div>
+      )}
 
       <Tabs value={levelType}>
         <TabsList aria-label="Level">
