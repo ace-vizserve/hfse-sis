@@ -1982,13 +1982,22 @@ drop table if exists public.template_subject_configs;
 drop table if exists public.template_sections;
 
 -- =====================================================================
--- 3. Re-emit create_academic_year — migration 080 body (the newest live
---    definition, KD #119 hazard) with the v_use_template decision and
---    every "if v_use_template ... elsif v_source_ay_id ..." template
---    branch removed. The v_source_ay_id ("most recent non-test AY")
---    resolution is now unconditional — the only source. Every other step
---    (terms, ay_level_offerings, sync_section_subjects_for_ay, admissions
---    DDL, return shape) is byte-identical to 080.
+-- 3. Re-emit create_academic_year — migration 086 body (the newest live
+--    definition as of this migration's authoring, KD #119 hazard —
+--    corrected during Phase 4 execution from an earlier draft of this
+--    migration that mistakenly assumed migration 080 was newest; 086
+--    (applied before this plan was written) already re-emitted the
+--    function to drop step "4b" (the ay_level_offerings insert — that
+--    table no longer exists, dropped by 086 alongside the volatile-level
+--    catalog, KD #153's SUPERSEDED note) and to drop the
+--    v_template_sections_count/v_template_configs_count/v_use_template
+--    decision variables' *table existence*, though 086 itself still had
+--    the v_use_template branch logic — THIS migration is what finally
+--    removes that decision + every "if v_use_template ... elsif
+--    v_source_ay_id ..." template branch, making the v_source_ay_id
+--    ("most recent non-test AY") resolution unconditional. Every other
+--    step (terms, sync_section_subjects_for_ay, admissions DDL, return
+--    shape) is byte-identical to 086.
 -- =====================================================================
 
 create or replace function public.create_academic_year(
@@ -2073,13 +2082,9 @@ begin
     end if;
   end if;
 
-  -- 4b. Volatile-level offerings — branch-agnostic (078). Unchanged.
-  insert into public.ay_level_offerings (academic_year_id, level_id)
-  select distinct s.academic_year_id, s.level_id
-  from public.sections s
-  join public.levels l on l.id = s.level_id
-  where s.academic_year_id = v_ay_id and l.is_core = false
-  on conflict (academic_year_id, level_id) do nothing;
+  -- (No 4b: the ay_level_offerings insert that used to live here was
+  --  already removed by migration 086, which dropped the table entirely
+  --  — KD #153's SUPERSEDED note. Nothing to re-emit.)
 
   -- 5. subject_configs (weights, one row per subject) + subject_level_
   --    offerings (which subjects apply to which levels this AY) — copied
@@ -2112,7 +2117,7 @@ begin
   end if;
 
   -- 5b. Section-subjects defaults — branch-agnostic, resolves via
-  --     subject_level_offerings (migration 080 body).
+  --     subject_level_offerings (migration 086 body).
   perform public.sync_section_subjects_for_ay(v_code);
 
   -- 6. Admissions DDL — already idempotent.
