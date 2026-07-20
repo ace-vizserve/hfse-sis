@@ -10,6 +10,7 @@ import {
   resolveVirtueThemesStep,
   resolveLetterheadStep,
   resolveAppWindowStep,
+  resolveStructureConfirmedStep,
   buildReadiness,
   nextIncompleteStepId,
   describeYearBandStatus,
@@ -291,6 +292,19 @@ describe('resolveAppWindowStep', () => {
     const s = resolveAppWindowStep({ accepting: false });
     expect(s.required).toBe(false);
     expect(s.status).toBe('not_started');
+  });
+});
+
+describe('resolveStructureConfirmedStep', () => {
+  it('not_started when confirmedAt is null', () => {
+    const s = resolveStructureConfirmedStep({ confirmedAt: null });
+    expect(s.status).toBe('not_started');
+  });
+  it('done when confirmedAt is set', () => {
+    const s = resolveStructureConfirmedStep({
+      confirmedAt: '2026-07-20T00:00:00.000Z',
+    });
+    expect(s.status).toBe('done');
   });
 });
 
