@@ -7,6 +7,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
+import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -34,8 +35,6 @@ export type SectionTransferDialogProps = {
   siblings: SiblingSection[];
   trigger?: React.ReactNode;
 };
-
-const MAX_PER_SECTION = 50;
 
 export function SectionTransferDialog({
   enroleeNumber,
@@ -142,7 +141,7 @@ export function SectionTransferDialog({
                 <span className="font-medium text-foreground">{s.name}</span>
                 <span className="flex items-center gap-2">
                   <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                    {s.activeCount}/{MAX_PER_SECTION}
+                    {s.activeCount}/{MAX_ACTIVE_PER_SECTION}
                   </span>
                   {s.isAtCapacity && (
                     <Badge

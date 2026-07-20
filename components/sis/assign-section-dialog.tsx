@@ -18,9 +18,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { NewSectionButton } from '@/components/markbook/new-section-button';
-import type {
-  AssignableLevel,
-  AssignableSection,
+import {
+  MAX_ACTIVE_PER_SECTION,
+  type AssignableLevel,
+  type AssignableSection,
 } from '@/lib/sis/class-assignment';
 
 // First-time class-section assignment for an enrolled applicant whose
@@ -43,8 +44,6 @@ export type AssignSectionDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
-
-const MAX_PER_SECTION = 50;
 
 export function AssignSectionDialog({
   enroleeNumber,
@@ -70,7 +69,10 @@ export function AssignSectionDialog({
   const sorted = React.useMemo(
     () =>
       [...localSections]
-        .map((s) => ({ ...s, isAtCapacity: s.activeCount >= MAX_PER_SECTION }))
+        .map((s) => ({
+          ...s,
+          isAtCapacity: s.activeCount >= MAX_ACTIVE_PER_SECTION,
+        }))
         .sort(
           (a, b) =>
             Number(a.isAtCapacity) - Number(b.isAtCapacity) ||
@@ -172,7 +174,7 @@ export function AssignSectionDialog({
                 <span className="font-medium text-foreground">{s.name}</span>
                 <span className="flex items-center gap-2">
                   <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                    {s.activeCount}/{MAX_PER_SECTION} students
+                    {s.activeCount}/{MAX_ACTIVE_PER_SECTION} students
                   </span>
                   {s.isAtCapacity && (
                     <Badge

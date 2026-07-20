@@ -5,6 +5,7 @@ import { ArrowUpRight, UserCheck, UserMinus, Users } from 'lucide-react';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { getTeacherList } from '@/lib/auth/staff-list';
+import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { GenerateIndexButton } from '@/components/sis/generate-index-button';
@@ -47,8 +48,6 @@ type LevelLite = {
 type EnrolmentLite = {
   enrollment_status: 'active' | 'late_enrollee' | 'withdrawn';
 };
-
-const MAX_PER_SECTION = 50;
 
 // SIS Admin section detail. Tabs: Overview + Teachers.
 // Bite 4 (2026-04-22) pulled the teacher-assignments editor out of
@@ -308,7 +307,7 @@ export default async function SisSectionDetailPage({
           id: s.id,
           name: s.name,
           activeCount: c,
-          isAtCapacity: c >= MAX_PER_SECTION,
+          isAtCapacity: c >= MAX_ACTIVE_PER_SECTION,
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
