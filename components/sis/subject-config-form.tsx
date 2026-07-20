@@ -27,6 +27,7 @@ import {
   SubjectConfigCreateSchema,
   SubjectConfigUpdateSchema,
 } from '@/lib/schemas/subject-config';
+import { defaultWeightPercentsForSubjectCode } from '@/lib/sis/subjects/weight-defaults';
 import { cn } from '@/lib/utils';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -119,18 +120,22 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
     mode === 'edit' ? props.draft.grading_method : props.subject.grading_method;
 
   // ── Weights + slots + QA max ─────────────────────────────────────────
-  // Edit mode re-seeds from the actual saved row (no auto-fill — a
-  // deliberate KD-#155-candidate decision, see the design doc); create
-  // mode starts at HFSE's canonical slot defaults (5/5/30) with blank
-  // weights so a real number has to be typed in before Save enables.
+  // Edit mode re-seeds from the actual saved row — an already-configured
+  // subject's real data is always the source of truth, never overwritten
+  // by a suggestion. Create mode pre-fills the three weight fields with
+  // the DepEd default inferred from the subject's CODE
+  // (defaultWeightPercentsForSubjectCode) — a real, valid, fully editable
+  // starting point (Save is enabled immediately since the default already
+  // sums to 100). Slots still default to 5/5, QA max to 30.
+  const createDefaults = defaultWeightPercentsForSubjectCode(subjectCode);
   const [ww, setWw] = useState(
-    mode === 'edit' ? String(props.draft.ww_weight) : ''
+    mode === 'edit' ? String(props.draft.ww_weight) : String(createDefaults.ww)
   );
   const [pt, setPt] = useState(
-    mode === 'edit' ? String(props.draft.pt_weight) : ''
+    mode === 'edit' ? String(props.draft.pt_weight) : String(createDefaults.pt)
   );
   const [qa, setQa] = useState(
-    mode === 'edit' ? String(props.draft.qa_weight) : ''
+    mode === 'edit' ? String(props.draft.qa_weight) : String(createDefaults.qa)
   );
   const [wwSlots, setWwSlots] = useState(
     mode === 'edit' ? String(props.draft.ww_max_slots) : '5'
@@ -162,9 +167,10 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
       setIsExaminable(props.draft.is_examinable);
       setGradingMethod(props.draft.grading_method);
     } else {
-      setWw('');
-      setPt('');
-      setQa('');
+      const d = defaultWeightPercentsForSubjectCode(props.subject.code);
+      setWw(String(d.ww));
+      setPt(String(d.pt));
+      setQa(String(d.qa));
       setWwSlots('5');
       setPtSlots('5');
       setQaMax('30');
@@ -379,7 +385,11 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
           {/* Weights row — three inputs with short, aligned labels. */}
           <FieldRow
             eyebrow="Weights"
-            helper="Must sum to 100%. Canonical HFSE: Primary 40·40·20, Secondary 30·50·20."
+            helper={
+              mode === 'create'
+                ? 'Must sum to 100%. Pre-filled with the DepEd standard split for this kind of subject — adjust if this subject differs.'
+                : 'Must sum to 100%.'
+            }
           >
             <div className="grid grid-cols-3 gap-3">
               <PercentField

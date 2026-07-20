@@ -244,53 +244,12 @@ export const SUBJECTS: SubjectSeed[] = [
   },
 ];
 
-// Known-correct WW/PT/QA weight per subject CODE — verified real HFSE data
-// (see docs/superpowers/specs/2026-07-15-ay-setup-subject-weights-redesign-design.md).
-// Weight is a property of the SUBJECT, not the level it's taught at (the
-// bug this replaces: lib/sis/level-profiles.ts::weightProfileFor keyed
-// purely off level TYPE, so Math/English/MAPEH all got the same split at a
-// given level type). This is explicit seed data the seeder states outright
-// — not a guessed default, and NOT auto-filled anywhere in the UI (KD-
-// #155-candidate design decision: no auto-fill; a real admin or the seeder
-// types/encodes the actual split).
-//
-// Three verified buckets:
-//   - Math / Science                                    → 40/40/20
-//   - MAPEH-family (the consolidated numeric `MAPEH` subject
-//     itself + the still-independent letter-graded Christian
-//     Living/Contemporary Art/PE+Health/Pastoral — the 4
-//     non-examinable codes flipped by migration 049, KD #95,
-//     that migration 081 did NOT touch)                  → 20/60/20
-//   - everything else (English, Filipino, Mandarin, Social
-//     Studies, History, Literature, Humanities,
-//     Economics, CCA)                                    → 30/50/20
-//
-// Migration 081 (MAPEH / language catalog corrections) retired MUSIC/
-// ARTS/PE/HE — the 4 independent letter-graded subjects a single numeric
-// `MAPEH` subject replaces — from MAPEH_FAMILY_CODES below (they no longer
-// exist in the catalog) and added `MAPEH` itself, which carries the SAME
-// 20/60/20 ratio its predecessors did even though it's now numeric-graded
-// (is_examinable=true) rather than letter-graded — weight bucket and
-// is_examinable are orthogonal. Mother Tongue (`MT`) is now report-only
-// (081) and never gets a subject_configs row at all (see `reportOnly` on
-// its SUBJECTS entry above), so it's been dropped from this comment's
-// "everything else" list; Filipino/Mandarin — its real-scoring
-// replacements — are NOT MAPEH-family and fall into the default bucket,
-// same as MT did.
-import type { WeightFractions } from '@/lib/sis/level-profiles';
-
-const MATH_SCIENCE: WeightFractions = { ww: 0.4, pt: 0.4, qa: 0.2 };
-const MAPEH_FAMILY: WeightFractions = { ww: 0.2, pt: 0.6, qa: 0.2 };
-const DEFAULT_BUCKET: WeightFractions = { ww: 0.3, pt: 0.5, qa: 0.2 };
-
-const MATH_SCIENCE_CODES = new Set(['MATH', 'SCI']);
-const MAPEH_FAMILY_CODES = new Set(['MAPEH', 'CL', 'CA', 'PEH', 'PMPD']);
-
-export function weightBucketForSubjectCode(code: string): WeightFractions {
-  if (MATH_SCIENCE_CODES.has(code)) return MATH_SCIENCE;
-  if (MAPEH_FAMILY_CODES.has(code)) return MAPEH_FAMILY;
-  return DEFAULT_BUCKET;
-}
+// Known-correct WW/PT/QA weight per subject CODE now lives in
+// lib/sis/subjects/weight-defaults.ts (weightBucketForSubjectCode) — that
+// module is also the Subject Setup page's create-mode default-weight
+// source (promoted out of here so the seeder's verified data and the real
+// admin UI can never drift). See that file's header for the full DepEd
+// Order No. 8 s.2015 bucket rationale.
 
 export type SectionSeed = {
   level_code: string;
