@@ -6,7 +6,7 @@
 
 **Architecture:** Phase 1 is unchanged from the already-written plan at `docs/superpowers/plans/2026-07-17-admissions-touch-tracking-and-account-cleanup.md` (referenced, not duplicated). Phase 2 implements `docs/superpowers/specs/2026-07-18-admissions-level-alias-reconciliation-design.md`. Phase 3 implements `docs/superpowers/specs/2026-07-20-manual-section-assignment-design.md`. Phase ordering for 1-3 is deliberate: Phase 2 makes `class-assignment.ts`'s level lookup correct while its auto-pick still exists; Phase 3 then deletes that auto-pick and carries the (already-correct) level-resolution forward into the new shared candidates function, so there's never a window where level names regress to the old 10-alias-only lookup.
 
-**Phase 4 is independent of Phases 1-3** — implements `docs/superpowers/specs/2026-07-20-remove-structure-defaults-template-design.md`, touches an entirely different subsystem (AY-Setup / Structure Defaults, not admissions/enrollment), shares no files with Phases 1-3, and has no ordering dependency on them in either direction. **Per explicit instruction, Phase 4 is implemented on its own branch, separate from Phases 1-3.** Phases 1-3 proceed on whatever branch that work is tracked on; do not merge the two branches' work into one PR.
+**Phase 4 is independent of Phases 1-3** — implements `docs/superpowers/specs/2026-07-20-remove-structure-defaults-template-design.md`, touches an entirely different subsystem (AY-Setup / Structure Defaults, not admissions/enrollment), and shares no files with Phases 1-3. It has no ordering dependency on them in either direction, but per updated instruction it is implemented on the **same branch** as Phases 1-3, not a separate one — "independent" here describes execution order and file overlap only, not branch/PR isolation.
 
 **Tech Stack:** Postgres/PL-pgSQL (Supabase), Next.js 16 API routes + Server Components, TanStack Query + React Hook Form + Zod, shadcn/Radix UI primitives — all consistent with the rest of this repo, no new dependencies.
 
@@ -1924,7 +1924,7 @@ git commit -m "feat(sis): wire manual section picker into the Enrolled-flip dial
 
 ## Phase 4 — Remove Structure Defaults (template)
 
-Implements `docs/superpowers/specs/2026-07-20-remove-structure-defaults-template-design.md`. **Independent of Phases 1-3 — implemented on its own branch** (per explicit instruction). No shared files, no ordering dependency in either direction; this phase can be started, gated, and shipped on its own schedule.
+Implements `docs/superpowers/specs/2026-07-20-remove-structure-defaults-template-design.md`. **Independent of Phases 1-3** in scope and ordering — no shared files, no dependency in either direction — but implemented on the **same branch** as Phases 1-3 (updated from an earlier separate-branch instruction). This phase can still be started, gated, and committed on its own schedule within that branch; it just doesn't need its own PR.
 
 ### Task 4.1: Migration — delete the template layer, make copy-forward unconditional, add confirm columns
 
