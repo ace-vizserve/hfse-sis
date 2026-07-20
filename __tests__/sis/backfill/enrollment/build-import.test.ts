@@ -43,10 +43,14 @@ describe('buildEnrollmentImport', () => {
         sheetName: 'P1 Patience(G)',
         classSectionLabel: 'P1 Patience (AM Global)',
         formTeacher: 'Ms. Kristel',
-        students: [{ indexNo: '1', fullName: 'BEDICO, Miguel Zion C.' }],
+        students: [
+          { indexNo: '1', fullName: 'BEDICO, Miguel Zion C.', marks: {} },
+        ],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        dateColumns: [],
         rejectedNames: [],
+        legendEntries: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -74,7 +78,9 @@ describe('buildEnrollmentImport', () => {
         students: [],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        dateColumns: [],
         rejectedNames: [],
+        legendEntries: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -93,10 +99,14 @@ describe('buildEnrollmentImport', () => {
         sheetName: 'YS',
         classSectionLabel: 'YS Faith',
         formTeacher: null,
-        students: [{ indexNo: '1', fullName: 'BEDICO, Miguel Zion C.' }],
+        students: [
+          { indexNo: '1', fullName: 'BEDICO, Miguel Zion C.', marks: {} },
+        ],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        dateColumns: [],
         rejectedNames: [],
+        legendEntries: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -117,10 +127,14 @@ describe('buildEnrollmentImport', () => {
         sheetName: 'P1 Obedience',
         classSectionLabel: 'P1 Obedience',
         formTeacher: 'Ms. Arlene',
-        students: [{ indexNo: '1', fullName: 'NOBODY, Matches Here' }],
+        students: [
+          { indexNo: '1', fullName: 'NOBODY, Matches Here', marks: {} },
+        ],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        dateColumns: [],
         rejectedNames: [],
+        legendEntries: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -142,10 +156,12 @@ describe('buildEnrollmentImport', () => {
         sheetName: 'P1 Obedience',
         classSectionLabel: 'P1 Obedience',
         formTeacher: 'Ms. Arlene',
-        students: [{ indexNo: '1', fullName: 'NONAME, Sample' }],
+        students: [{ indexNo: '1', fullName: 'NONAME, Sample', marks: {} }],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        dateColumns: [],
         rejectedNames: [],
+        legendEntries: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -165,12 +181,18 @@ describe('buildEnrollmentImport', () => {
         classSectionLabel: 'P1 Obedience',
         formTeacher: 'Ms. Arlene',
         students: [
-          { indexNo: '1', fullName: 'BEDICO, Miguel Zion C.' },
-          { indexNo: '2', fullName: 'BEDICO, Miguel Zion Cabrera' },
+          { indexNo: '1', fullName: 'BEDICO, Miguel Zion C.', marks: {} },
+          {
+            indexNo: '2',
+            fullName: 'BEDICO, Miguel Zion Cabrera',
+            marks: {},
+          },
         ],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        dateColumns: [],
         rejectedNames: [],
+        legendEntries: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -189,10 +211,14 @@ describe('buildEnrollmentImport', () => {
         sheetName: 'P1 Patience(G)',
         classSectionLabel: 'P1 Patience (AM Global)',
         formTeacher: 'Ms. Kristel',
-        students: [{ indexNo: '1', fullName: 'BEDICO, Miguel Zion C.' }],
+        students: [
+          { indexNo: '1', fullName: 'BEDICO, Miguel Zion C.', marks: {} },
+        ],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        dateColumns: [],
         rejectedNames: [],
+        legendEntries: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -214,12 +240,14 @@ describe('buildEnrollmentImport', () => {
         classSectionLabel: 'P1 Obedience',
         formTeacher: 'Ms. Arlene',
         students: [
-          { indexNo: '1', fullName: 'BEDICO, Miguel Zion C.' },
-          { indexNo: '1', fullName: 'ALVAREZ, Jaime D.' },
+          { indexNo: '1', fullName: 'BEDICO, Miguel Zion C.', marks: {} },
+          { indexNo: '1', fullName: 'ALVAREZ, Jaime D.', marks: {} },
         ],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        dateColumns: [],
         rejectedNames: [],
+        legendEntries: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -253,10 +281,12 @@ describe('buildEnrollmentImport', () => {
         sheetName: 'P1 Obedience',
         classSectionLabel: 'P1 Obedience',
         formTeacher: 'Ms. Arlene',
-        students: [{ indexNo: '1', fullName: "O'BRIEN, Test" }],
+        students: [{ indexNo: '1', fullName: "O'BRIEN, Test", marks: {} }],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        dateColumns: [],
         rejectedNames: [],
+        legendEntries: [],
       },
     ];
     const result = buildEnrollmentImport({
@@ -280,10 +310,14 @@ describe('buildEnrollmentImport', () => {
         sheetName: 'P1 Patience(G)',
         classSectionLabel: 'P1 Patience (AM Global)',
         formTeacher: 'Ms. Kristel',
-        students: [{ indexNo: '1', fullName: 'BEDICO, Miguel Zion C.' }],
+        students: [
+          { indexNo: '1', fullName: 'BEDICO, Miguel Zion C.', marks: {} },
+        ],
         firstDate: '8-Jan',
         lastDate: '13-Mar',
+        dateColumns: [],
         rejectedNames: ['Name'],
+        legendEntries: [],
       },
     ];
     const result = buildEnrollmentImport({
