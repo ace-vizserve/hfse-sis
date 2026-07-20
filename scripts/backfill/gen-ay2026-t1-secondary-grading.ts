@@ -35,7 +35,12 @@ const SUBJECT_FILES: { file: string; subjectCode: string }[] = [
   { file: 'Literature Grading AY2026 T1.xlsx', subjectCode: 'LIT' },
   { file: 'SS & Geo Grading AY2026 T1.xlsx', subjectCode: 'SS' },
   { file: 'Contemporary Arts Grading AY2026 T1.xlsx', subjectCode: 'CA' },
-  { file: 'PE (Sec) Grading AY2026 T1.xlsx', subjectCode: 'PEH' },
+  // Regular-track "Physical Education" — a distinct subject from the
+  // Global-track "PE and Health" (PEH). Confirmed against HFSE's own
+  // Consolidated Form, which carries two separate columns ("Physical
+  // Education" on the Regular-track tabs vs "PE & Health" on the
+  // Global-track tabs) — see ay2026-pestd-correction-apply.sql.
+  { file: 'PE (Sec) Grading AY2026 T1.xlsx', subjectCode: 'PESTD' },
 ];
 
 // Design doc §1.2 point 3: every one of the 9 subjects' T1 Secondary

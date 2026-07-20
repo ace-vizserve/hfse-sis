@@ -121,7 +121,7 @@ export function ReportCardDocument({
                 {subjects.map((row) => (
                   <tr key={row.subject.id} className="border-t border-hairline">
                     <td className="px-4 py-2 font-medium">
-                      {row.subject.name}
+                      {row.subject.report_label ?? row.subject.name}
                     </td>
                     {visibleTerms.map((t) => {
                       const termKey = `t${t.term_number}` as

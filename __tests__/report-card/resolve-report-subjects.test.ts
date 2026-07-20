@@ -14,6 +14,7 @@ function makeRow(overrides: Partial<SubjectRow> = {}): SubjectRow {
       id: 'sub-1',
       code: 'SUB1',
       name: 'Subject One',
+      report_label: null,
       is_examinable: true,
     },
     t1: emptyCell,
@@ -34,10 +35,22 @@ describe('resolveReportSubjects', () => {
   it('1. empty reportMap → output equals input, unchanged, same order', () => {
     const rows: SubjectRow[] = [
       makeRow({
-        subject: { id: 'a', code: 'A', name: 'Alpha', is_examinable: true },
+        subject: {
+          id: 'a',
+          code: 'A',
+          name: 'Alpha',
+          report_label: null,
+          is_examinable: true,
+        },
       }),
       makeRow({
-        subject: { id: 'b', code: 'B', name: 'Bravo', is_examinable: false },
+        subject: {
+          id: 'b',
+          code: 'B',
+          name: 'Bravo',
+          report_label: null,
+          is_examinable: false,
+        },
       }),
     ];
     const result = resolveReportSubjects(rows, [], new Map());
@@ -46,13 +59,25 @@ describe('resolveReportSubjects', () => {
 
   it('2. all-self-maps → unchanged, no parentheticals, including a row with no grade data', () => {
     const rowA = makeRow({
-      subject: { id: 'a', code: 'A', name: 'Alpha', is_examinable: true },
+      subject: {
+        id: 'a',
+        code: 'A',
+        name: 'Alpha',
+        report_label: null,
+        is_examinable: true,
+      },
       t1: { quarterly: 93, letter: null, is_na: false },
     });
     // No grade data at all — must still pass through (single-mapper groups
     // never data-gate).
     const rowB = makeRow({
-      subject: { id: 'b', code: 'B', name: 'Bravo', is_examinable: true },
+      subject: {
+        id: 'b',
+        code: 'B',
+        name: 'Bravo',
+        report_label: null,
+        is_examinable: true,
+      },
     });
     const rows = [rowA, rowB];
     const reportMap: ReportMapEntry[] = [
@@ -60,20 +85,90 @@ describe('resolveReportSubjects', () => {
       { subject_id: 'b', report_subject_id: 'b' },
     ];
     const reportTargets = new Map<string, ReportTargetMeta>([
-      ['a', { id: 'a', code: 'A', name: 'Alpha', is_examinable: true }],
-      ['b', { id: 'b', code: 'B', name: 'Bravo', is_examinable: true }],
+      [
+        'a',
+        {
+          id: 'a',
+          code: 'A',
+          name: 'Alpha',
+          report_label: null,
+          is_examinable: true,
+        },
+      ],
+      [
+        'b',
+        {
+          id: 'b',
+          code: 'B',
+          name: 'Bravo',
+          report_label: null,
+          is_examinable: true,
+        },
+      ],
     ]);
     const result = resolveReportSubjects(rows, reportMap, reportTargets);
     expect(result).toEqual(rows);
   });
 
+  it('2b. self-map carries a non-null report_label through untouched (does not compose into name)', () => {
+    const rowA = makeRow({
+      subject: {
+        id: 'a',
+        code: 'MAPEH',
+        name: 'MAPEH',
+        report_label: null,
+        is_examinable: false,
+      },
+      t1: { quarterly: null, letter: 'A', is_na: false },
+    });
+    const reportMap: ReportMapEntry[] = [
+      { subject_id: 'a', report_subject_id: 'a' },
+    ];
+    const reportTargets = new Map<string, ReportTargetMeta>([
+      [
+        'a',
+        {
+          id: 'a',
+          code: 'MAPEH',
+          name: 'MAPEH',
+          report_label: 'STAR',
+          is_examinable: false,
+        },
+      ],
+    ]);
+    const result = resolveReportSubjects([rowA], reportMap, reportTargets);
+    expect(result).toHaveLength(1);
+    // name stays the real catalog name — report_label is carried as its own
+    // field, never composed into `.name`. Only the render layer
+    // (report-card-document.tsx) resolves `report_label ?? name`.
+    expect(result[0].subject).toEqual({
+      id: 'a',
+      code: 'MAPEH',
+      name: 'MAPEH',
+      report_label: 'STAR',
+      is_examinable: false,
+    });
+  });
+
   it('3. fan-in, source A has data, source B is all-N.A. → one merged row labelled "{Target} (A)"', () => {
     const rowA = makeRow({
-      subject: { id: 'a', code: 'FIL', name: 'Filipino', is_examinable: false },
+      subject: {
+        id: 'a',
+        code: 'FIL',
+        name: 'Filipino',
+        report_label: null,
+        is_examinable: false,
+      },
       t1: { quarterly: null, letter: 'A', is_na: false },
     });
     const rowB = makeRow({
-      subject: { id: 'b', code: 'MAN', name: 'Mandarin', is_examinable: false },
+      subject: {
+        id: 'b',
+        code: 'MAN',
+        name: 'Mandarin',
+        report_label: null,
+        is_examinable: false,
+      },
       t1: { quarterly: null, letter: 'NA', is_na: true },
       t2: { quarterly: null, letter: 'NA', is_na: true },
       t3: { quarterly: null, letter: 'NA', is_na: true },
@@ -86,7 +181,13 @@ describe('resolveReportSubjects', () => {
     const reportTargets = new Map<string, ReportTargetMeta>([
       [
         'mt',
-        { id: 'mt', code: 'MT', name: 'Mother Tongue', is_examinable: false },
+        {
+          id: 'mt',
+          code: 'MT',
+          name: 'Mother Tongue',
+          report_label: null,
+          is_examinable: false,
+        },
       ],
     ]);
     const result = resolveReportSubjects(
@@ -99,17 +200,80 @@ describe('resolveReportSubjects', () => {
       id: 'mt',
       code: 'MT',
       name: 'Mother Tongue (Filipino)',
+      report_label: null,
       is_examinable: false,
     });
     expect(result[0].t1).toEqual(rowA.t1);
   });
 
-  it('4. fan-in, the other direction (source B has data instead) → "{Target} (B)"', () => {
+  it('3b. fan-in composes report_label (target + source) into name, not the raw catalog name', () => {
     const rowA = makeRow({
-      subject: { id: 'a', code: 'FIL', name: 'Filipino', is_examinable: false },
+      subject: {
+        id: 'a',
+        code: 'FIL',
+        name: 'Filipino',
+        report_label: 'Filipino Language',
+        is_examinable: false,
+      },
+      t1: { quarterly: null, letter: 'A', is_na: false },
     });
     const rowB = makeRow({
-      subject: { id: 'b', code: 'MAN', name: 'Mandarin', is_examinable: false },
+      subject: {
+        id: 'b',
+        code: 'MAN',
+        name: 'Mandarin',
+        report_label: null,
+        is_examinable: false,
+      },
+    });
+    const reportMap: ReportMapEntry[] = [
+      { subject_id: 'a', report_subject_id: 'mt' },
+      { subject_id: 'b', report_subject_id: 'mt' },
+    ];
+    const reportTargets = new Map<string, ReportTargetMeta>([
+      [
+        'mt',
+        {
+          id: 'mt',
+          code: 'MT',
+          name: 'Mother Tongue',
+          report_label: 'MT',
+          is_examinable: false,
+        },
+      ],
+    ]);
+    const result = resolveReportSubjects(
+      [rowA, rowB],
+      reportMap,
+      reportTargets
+    );
+    expect(result).toHaveLength(1);
+    // Target's report_label ("MT") and the winning source's report_label
+    // ("Filipino Language") both win over their raw names.
+    expect(result[0].subject.name).toBe('MT (Filipino Language)');
+    // The composed string is already final — report_label is null on the
+    // output row so no render-time fallback re-substitutes anything.
+    expect(result[0].subject.report_label).toBeNull();
+  });
+
+  it('4. fan-in, the other direction (source B has data instead) → "{Target} (B)"', () => {
+    const rowA = makeRow({
+      subject: {
+        id: 'a',
+        code: 'FIL',
+        name: 'Filipino',
+        report_label: null,
+        is_examinable: false,
+      },
+    });
+    const rowB = makeRow({
+      subject: {
+        id: 'b',
+        code: 'MAN',
+        name: 'Mandarin',
+        report_label: null,
+        is_examinable: false,
+      },
       t1: { quarterly: null, letter: 'B', is_na: false },
     });
     const reportMap: ReportMapEntry[] = [
@@ -119,7 +283,13 @@ describe('resolveReportSubjects', () => {
     const reportTargets = new Map<string, ReportTargetMeta>([
       [
         'mt',
-        { id: 'mt', code: 'MT', name: 'Mother Tongue', is_examinable: false },
+        {
+          id: 'mt',
+          code: 'MT',
+          name: 'Mother Tongue',
+          report_label: null,
+          is_examinable: false,
+        },
       ],
     ]);
     const result = resolveReportSubjects(
@@ -134,16 +304,29 @@ describe('resolveReportSubjects', () => {
 
   it('5. fan-in, neither source has data → row dropped entirely', () => {
     const rowA = makeRow({
-      subject: { id: 'a', code: 'FIL', name: 'Filipino', is_examinable: false },
+      subject: {
+        id: 'a',
+        code: 'FIL',
+        name: 'Filipino',
+        report_label: null,
+        is_examinable: false,
+      },
     });
     const rowB = makeRow({
-      subject: { id: 'b', code: 'MAN', name: 'Mandarin', is_examinable: false },
+      subject: {
+        id: 'b',
+        code: 'MAN',
+        name: 'Mandarin',
+        report_label: null,
+        is_examinable: false,
+      },
     });
     const otherRow = makeRow({
       subject: {
         id: 'z',
         code: 'MATH',
         name: 'Mathematics',
+        report_label: null,
         is_examinable: true,
       },
       t1: { quarterly: 90, letter: null, is_na: false },
@@ -156,11 +339,23 @@ describe('resolveReportSubjects', () => {
     const reportTargets = new Map<string, ReportTargetMeta>([
       [
         'mt',
-        { id: 'mt', code: 'MT', name: 'Mother Tongue', is_examinable: false },
+        {
+          id: 'mt',
+          code: 'MT',
+          name: 'Mother Tongue',
+          report_label: null,
+          is_examinable: false,
+        },
       ],
       [
         'z',
-        { id: 'z', code: 'MATH', name: 'Mathematics', is_examinable: true },
+        {
+          id: 'z',
+          code: 'MATH',
+          name: 'Mathematics',
+          report_label: null,
+          is_examinable: true,
+        },
       ],
     ]);
     const result = resolveReportSubjects(
@@ -176,7 +371,13 @@ describe('resolveReportSubjects', () => {
 
   it("6. single-mapper target that ISN'T a self-map → target's name, no parenthetical", () => {
     const rowA = makeRow({
-      subject: { id: 'a', code: 'A', name: 'Alpha', is_examinable: true },
+      subject: {
+        id: 'a',
+        code: 'A',
+        name: 'Alpha',
+        report_label: null,
+        is_examinable: true,
+      },
       t1: { quarterly: 85, letter: null, is_na: false },
     });
     const reportMap: ReportMapEntry[] = [
@@ -185,7 +386,13 @@ describe('resolveReportSubjects', () => {
     const reportTargets = new Map<string, ReportTargetMeta>([
       [
         't',
-        { id: 't', code: 'T', name: 'Target Subject', is_examinable: true },
+        {
+          id: 't',
+          code: 'T',
+          name: 'Target Subject',
+          report_label: null,
+          is_examinable: true,
+        },
       ],
     ]);
     const result = resolveReportSubjects([rowA], reportMap, reportTargets);
@@ -194,6 +401,7 @@ describe('resolveReportSubjects', () => {
       id: 't',
       code: 'T',
       name: 'Target Subject',
+      report_label: null,
       is_examinable: true,
     });
     // Cell data passes through unchanged (single-mapper groups never
@@ -208,6 +416,7 @@ describe('resolveReportSubjects', () => {
         id: 'a',
         code: 'ZED',
         name: 'Zed Subject',
+        report_label: null,
         is_examinable: false,
       },
       t1: { quarterly: null, letter: 'A', is_na: false },
@@ -217,6 +426,7 @@ describe('resolveReportSubjects', () => {
         id: 'b',
         code: 'ALP',
         name: 'Alpha Subject',
+        report_label: null,
         is_examinable: false,
       },
       t1: { quarterly: null, letter: 'B', is_na: false },
@@ -228,7 +438,13 @@ describe('resolveReportSubjects', () => {
     const reportTargets = new Map<string, ReportTargetMeta>([
       [
         'mt',
-        { id: 'mt', code: 'MT', name: 'Mother Tongue', is_examinable: false },
+        {
+          id: 'mt',
+          code: 'MT',
+          name: 'Mother Tongue',
+          report_label: null,
+          is_examinable: false,
+        },
       ],
     ]);
     expect(() =>
@@ -250,7 +466,13 @@ describe('resolveReportSubjects', () => {
     // merged label "Mother Tongue (Filipino)" should sort alphabetically by
     // "Mother Tongue…", landing between "Homeroom" and "Science".
     const homeroom = makeRow({
-      subject: { id: 'hr', code: 'HR', name: 'Homeroom', is_examinable: true },
+      subject: {
+        id: 'hr',
+        code: 'HR',
+        name: 'Homeroom',
+        report_label: null,
+        is_examinable: true,
+      },
       t1: { quarterly: 88, letter: null, is_na: false },
     });
     const filipino = makeRow({
@@ -258,6 +480,7 @@ describe('resolveReportSubjects', () => {
         id: 'fil',
         code: 'FIL',
         name: 'Filipino',
+        report_label: null,
         is_examinable: false,
       },
       t1: { quarterly: null, letter: 'A', is_na: false },
@@ -267,11 +490,18 @@ describe('resolveReportSubjects', () => {
         id: 'man',
         code: 'MAN',
         name: 'Mandarin',
+        report_label: null,
         is_examinable: false,
       },
     });
     const science = makeRow({
-      subject: { id: 'sci', code: 'SCI', name: 'Science', is_examinable: true },
+      subject: {
+        id: 'sci',
+        code: 'SCI',
+        name: 'Science',
+        report_label: null,
+        is_examinable: true,
+      },
       t1: { quarterly: 91, letter: null, is_na: false },
     });
     // Deliberately pass rows pre-sorted by their OWN (unmerged) names so the
@@ -288,10 +518,34 @@ describe('resolveReportSubjects', () => {
     const reportTargets = new Map<string, ReportTargetMeta>([
       [
         'mt',
-        { id: 'mt', code: 'MT', name: 'Mother Tongue', is_examinable: false },
+        {
+          id: 'mt',
+          code: 'MT',
+          name: 'Mother Tongue',
+          report_label: null,
+          is_examinable: false,
+        },
       ],
-      ['hr', { id: 'hr', code: 'HR', name: 'Homeroom', is_examinable: true }],
-      ['sci', { id: 'sci', code: 'SCI', name: 'Science', is_examinable: true }],
+      [
+        'hr',
+        {
+          id: 'hr',
+          code: 'HR',
+          name: 'Homeroom',
+          report_label: null,
+          is_examinable: true,
+        },
+      ],
+      [
+        'sci',
+        {
+          id: 'sci',
+          code: 'SCI',
+          name: 'Science',
+          report_label: null,
+          is_examinable: true,
+        },
+      ],
     ]);
     const result = resolveReportSubjects(rows, reportMap, reportTargets);
     expect(result.map((r) => r.subject.name)).toEqual([
@@ -299,5 +553,61 @@ describe('resolveReportSubjects', () => {
       'Mother Tongue (Filipino)',
       'Science',
     ]);
+  });
+
+  it('9. sort-position check — a non-null report_label sorts by its OWN value, not the raw name', () => {
+    // "Alpha" is relabeled to print as "Zulu" — the final sort must reflect
+    // where it's actually shown, not its catalog name's letter.
+    const alpha = makeRow({
+      subject: {
+        id: 'a',
+        code: 'A',
+        name: 'Alpha',
+        report_label: null,
+        is_examinable: true,
+      },
+    });
+    const bravo = makeRow({
+      subject: {
+        id: 'b',
+        code: 'B',
+        name: 'Bravo',
+        report_label: null,
+        is_examinable: true,
+      },
+    });
+    const reportMap: ReportMapEntry[] = [
+      { subject_id: 'a', report_subject_id: 'a' },
+      { subject_id: 'b', report_subject_id: 'b' },
+    ];
+    const reportTargets = new Map<string, ReportTargetMeta>([
+      [
+        'a',
+        {
+          id: 'a',
+          code: 'A',
+          name: 'Alpha',
+          report_label: 'Zulu',
+          is_examinable: true,
+        },
+      ],
+      [
+        'b',
+        {
+          id: 'b',
+          code: 'B',
+          name: 'Bravo',
+          report_label: null,
+          is_examinable: true,
+        },
+      ],
+    ]);
+    const result = resolveReportSubjects(
+      [alpha, bravo],
+      reportMap,
+      reportTargets
+    );
+    // Bravo ("Bravo") sorts before Alpha's relabeled "Zulu".
+    expect(result.map((r) => r.subject.id)).toEqual(['b', 'a']);
   });
 });

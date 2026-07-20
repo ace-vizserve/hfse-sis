@@ -16,6 +16,9 @@
  *   2. Annual grade matches computeAnnualGrade (lib/compute/annual.ts)
  *   3. Non-enrolled term → is_na = true  (KD #148 enrolment-coverage proration)
  *   4. FCA comment sourced from evaluation_writeups  (KD #49)
+ *   5. "Which subjects appear" is section-membership, via section_subjects
+ *      (not the level-wide subject_level_offerings) — the student's actual
+ *      section's attached subjects, deduped across transferred sections.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -83,10 +86,11 @@ function makeClient(tables: {
   academic_years?: unknown[];
   terms?: unknown[];
   section_students?: unknown[];
-  // Migration 080 dropped subject_configs.level_id — the "which subjects
-  // appear on this card" query in build-report-card.ts now reads
-  // subject_level_offerings instead (Pattern A). Keyed here to match.
-  subject_level_offerings?: unknown[];
+  // "Which subjects appear on this card" is a section-membership question
+  // (build-report-card.ts queries section_subjects → subject_configs →
+  // subjects), not a level one — subject_level_offerings is no longer
+  // queried by that file at all. Each row: { subject_config: { subject } }.
+  section_subjects?: unknown[];
   grading_sheets?: unknown[];
   grade_entries?: unknown[];
   'attendance_records:presence'?: unknown[]; // term_id, days_present, days_late
@@ -205,6 +209,7 @@ const SUBJECT_MATH = {
   id: 'sub-math',
   code: 'MATH',
   name: 'Mathematics',
+  report_label: null,
   is_examinable: true,
 };
 
@@ -215,20 +220,28 @@ const SUBJECT_FILIPINO = {
   id: 'sub-fil',
   code: 'FIL',
   name: 'Filipino',
+  report_label: null,
   is_examinable: false,
 };
 const SUBJECT_MANDARIN = {
   id: 'sub-man',
   code: 'MAN',
   name: 'Mandarin',
+  report_label: null,
   is_examinable: false,
 };
 const SUBJECT_MOTHER_TONGUE_TARGET = {
   id: 'sub-mt',
   code: 'MT',
   name: 'Mother Tongue',
+  report_label: null,
   is_examinable: false,
 };
+
+/** section_subjects fixture rows — { subject_config: { subject } } shape. */
+function sectionSubjectRows(...subjects: unknown[]) {
+  return subjects.map((subject) => ({ subject_config: { subject } }));
+}
 
 /** 4 grading sheets — one per term for Mathematics */
 const SHEETS = TERMS.map((t) => ({
@@ -296,7 +309,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [makeEnrolment()],
-        subject_level_offerings: [{ subject: SUBJECT_MATH }],
+        section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         // Hard Rule #1: quarterly for T1 = 93 (already computed + stored by the
         // server when the teacher saved scores; this test proves the card reads the
@@ -334,7 +347,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [makeEnrolment()],
-        subject_level_offerings: [{ subject: SUBJECT_MATH }],
+        section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
         'attendance_records:presence': [],
@@ -383,7 +396,7 @@ describe('buildReportCard', () => {
             enrollment_status: 'late_enrollee',
           }),
         ],
-        subject_level_offerings: [{ subject: SUBJECT_MATH }],
+        section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         // A T1 entry exists (maybe backfilled in error), but student wasn't enrolled
         // for T1 → the coverage override must null it and mark is_na=true.
@@ -426,7 +439,7 @@ describe('buildReportCard', () => {
             enrollment_status: 'late_enrollee',
           }),
         ],
-        subject_level_offerings: [{ subject: SUBJECT_MATH }],
+        section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([80, 90, 88, 85]),
         'attendance_records:presence': [],
@@ -462,7 +475,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [makeEnrolment()],
-        subject_level_offerings: [{ subject: SUBJECT_MATH }],
+        section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
         'attendance_records:presence': [],
@@ -512,7 +525,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [makeEnrolment()],
-        subject_level_offerings: [{ subject: SUBJECT_MATH }],
+        section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
         'attendance_records:presence': [],
@@ -557,7 +570,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [{ ...makeEnrolment(), section: staleSection }],
-        subject_level_offerings: [{ subject: SUBJECT_MATH }],
+        section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
         'attendance_records:presence': [],
@@ -595,7 +608,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [{ ...makeEnrolment(), section: staleSection }],
-        subject_level_offerings: [{ subject: SUBJECT_MATH }],
+        section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
         'attendance_records:presence': [],
@@ -611,6 +624,156 @@ describe('buildReportCard', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.payload.section.form_class_adviser).toBeNull();
+    });
+  });
+
+  describe('section_subjects scoping — report card subjects follow the section, not the level', () => {
+    it('a subject offered at the level but NOT attached to this section is excluded', async () => {
+      const otherSubject = {
+        id: 'sub-other',
+        code: 'OTHER',
+        name: 'Not Attached Here',
+        report_label: null,
+        is_examinable: true,
+      };
+      const supabase = makeClient({
+        students: [
+          {
+            id: STUDENT_ID,
+            student_number: 'SN-001',
+            last_name: 'Dela Cruz',
+            first_name: 'Juan',
+            middle_name: null,
+          },
+        ],
+        academic_years: [{ id: 'ay-1', label: 'AY2026' }],
+        terms: TERMS,
+        section_students: [makeEnrolment()],
+        // Only MATH is attached via section_subjects — otherSubject would
+        // have shown up under the old level-wide query, but must not here.
+        section_subjects: sectionSubjectRows(SUBJECT_MATH),
+        grading_sheets: SHEETS,
+        grade_entries: makeGradeEntries([93, 90, 88, 85]),
+        'attendance_records:presence': [],
+        'attendance_records:school_days': [],
+        evaluation_writeups: [],
+      });
+
+      const result = await buildReportCard(
+        supabase as unknown as SupabaseClient,
+        STUDENT_ID
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.payload.subjects).toHaveLength(1);
+      expect(result.payload.subjects[0].subject.id).toBe(SUBJECT_MATH.id);
+      expect(
+        result.payload.subjects.some((s) => s.subject.id === otherSubject.id)
+      ).toBe(false);
+    });
+
+    it('carries a subject-level report_label through as its own field, without touching name', async () => {
+      const relabeled = {
+        id: 'sub-relabeled',
+        code: 'MAPEH',
+        name: 'MAPEH',
+        report_label: 'STAR',
+        is_examinable: false,
+      };
+      const relabeledSheets = TERMS.map((t) => ({
+        id: `sheet-relabeled-${t.id}`,
+        term_id: t.id,
+        subject_id: relabeled.id,
+        section_id: SECTION.id,
+      }));
+      const supabase = makeClient({
+        students: [
+          {
+            id: STUDENT_ID,
+            student_number: 'SN-001',
+            last_name: 'Dela Cruz',
+            first_name: 'Juan',
+            middle_name: null,
+          },
+        ],
+        academic_years: [{ id: 'ay-1', label: 'AY2026' }],
+        terms: TERMS,
+        section_students: [makeEnrolment()],
+        section_subjects: sectionSubjectRows(relabeled),
+        grading_sheets: relabeledSheets,
+        grade_entries: [
+          {
+            id: 'ge-relabeled-t1',
+            grading_sheet_id: relabeledSheets[0].id,
+            section_student_id: 'ss-1',
+            quarterly_grade: null,
+            letter_grade: 'A',
+            is_na: false,
+            annual_letter_grade: null,
+          },
+        ],
+        'attendance_records:presence': [],
+        'attendance_records:school_days': [],
+        evaluation_writeups: [],
+      });
+
+      const result = await buildReportCard(
+        supabase as unknown as SupabaseClient,
+        STUDENT_ID
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const row = result.payload.subjects[0];
+      // name stays the real catalog name — report_label carried separately.
+      expect(row.subject.name).toBe('MAPEH');
+      expect(row.subject.report_label).toBe('STAR');
+    });
+
+    it("dedupes a subject shared across a transferred student's old + new sections", async () => {
+      const newSection = { ...SECTION, id: 'sec-2', name: 'P1 Diligence' };
+      const supabase = makeClient({
+        students: [
+          {
+            id: STUDENT_ID,
+            student_number: 'SN-001',
+            last_name: 'Dela Cruz',
+            first_name: 'Juan',
+            middle_name: null,
+          },
+        ],
+        academic_years: [{ id: 'ay-1', label: 'AY2026' }],
+        terms: TERMS,
+        section_students: [
+          {
+            ...makeEnrolment(),
+            id: 'ss-1',
+            enrollment_status: 'withdrawn',
+            withdrawal_date: '2026-04-06',
+          },
+          {
+            ...makeEnrolment(),
+            id: 'ss-2',
+            section: newSection,
+            enrollment_date: '2026-04-07',
+          },
+        ],
+        // Both the old + new section attach the same MATH subject — must
+        // collapse to exactly one report-card row, not two.
+        section_subjects: sectionSubjectRows(SUBJECT_MATH, SUBJECT_MATH),
+        grading_sheets: SHEETS,
+        grade_entries: makeGradeEntries([93, 90, 88, 85]),
+        'attendance_records:presence': [],
+        'attendance_records:school_days': [],
+        evaluation_writeups: [],
+      });
+
+      const result = await buildReportCard(
+        supabase as unknown as SupabaseClient,
+        STUDENT_ID
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.payload.subjects).toHaveLength(1);
     });
   });
 
@@ -642,14 +805,14 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [makeEnrolment()],
-        // Both fanned-in subjects are offered/graded this level. The
-        // target ("Mother Tongue") is deliberately NOT in this list — per
-        // the design, a pure fan-in target is never itself offered, only
-        // ever a display column other subjects report into.
-        subject_level_offerings: [
-          { subject: SUBJECT_FILIPINO },
-          { subject: SUBJECT_MANDARIN },
-        ],
+        // Both fanned-in subjects are attached to this section. The target
+        // ("Mother Tongue") is deliberately NOT in this list — per the
+        // design, a pure fan-in target is never itself attached, only ever
+        // a display column other subjects report into.
+        section_subjects: sectionSubjectRows(
+          SUBJECT_FILIPINO,
+          SUBJECT_MANDARIN
+        ),
         grading_sheets: [...filSheets, ...manSheets],
         grade_entries: [
           // Filipino has a real T1 grade; Mandarin has none at all (no
@@ -695,6 +858,7 @@ describe('buildReportCard', () => {
         id: SUBJECT_MOTHER_TONGUE_TARGET.id,
         code: SUBJECT_MOTHER_TONGUE_TARGET.code,
         name: 'Mother Tongue (Filipino)',
+        report_label: null,
         is_examinable: false,
       });
       // Filipino's T1 data passed through onto the merged row unchanged.
@@ -716,7 +880,7 @@ describe('buildReportCard', () => {
         academic_years: [{ id: 'ay-1', label: 'AY2026' }],
         terms: TERMS,
         section_students: [makeEnrolment()],
-        subject_level_offerings: [{ subject: SUBJECT_MATH }],
+        section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
         'attendance_records:presence': [],

@@ -8,8 +8,8 @@ import {
   SCHOOL_CONFIG_DEFAULTS,
   SECTIONS,
   SUBJECTS,
-  weightBucketForSubjectCode,
 } from './fixtures';
+import { weightBucketForSubjectCode } from '@/lib/sis/subjects/weight-defaults';
 
 // Structural seeder for the Test environment. Populates the reference +
 // AY-scoped config a school needs before students can be enrolled, grades
@@ -149,7 +149,7 @@ export async function ensureTestStructure(
   //
   // Weight is a property of the SUBJECT now, not the level it happens to
   // be taught at (the level-type-keyed weightProfileFor default-fill bug
-  // this replaces — see fixtures.ts::weightBucketForSubjectCode for the
+  // this replaces — see lib/sis/subjects/weight-defaults.ts for the
   // verified real buckets). A subject that's taught at more than one level
   // (every SUBJECTS entry here, since each is tagged to a whole level
   // TYPE) gets exactly one subject_configs row and N subject_level_

@@ -41,8 +41,26 @@ export const SubjectCreateSchema = z.object({
     .max(128, 'Keep name under 128 chars'),
   is_examinable: z.boolean(),
   grading_method: z.enum(GRADING_METHOD_VALUES),
+  // What prints on the report card, independent of the catalog `name` —
+  // e.g. a subject could be catalogued one way internally but print
+  // differently on the card. Empty/absent → null, which falls back to
+  // `name` everywhere the report card resolves a subject's label (see
+  // lib/report-card/build-report-card.ts).
+  report_label: z
+    .string()
+    .trim()
+    .max(128, 'Keep report label under 128 chars')
+    .nullable()
+    .optional()
+    .transform((s) => (s == null || s.length === 0 ? null : s)),
 });
 export type SubjectCreateInput = z.infer<typeof SubjectCreateSchema>;
+// Pre-transform shape — what an RHF form actually holds as field state
+// (report_label is optional here; the schema's transform normalizes it to
+// `string | null` only in the parsed OUTPUT). Pass this as useForm<T>'s
+// first generic when a schema has a transform, per react-hook-form's
+// TFieldValues/TTransformedValues split — see components/sis/new-subject-form.tsx.
+export type SubjectCreateFormInput = z.input<typeof SubjectCreateSchema>;
 
 // PATCH /api/sis/admin/subjects/catalog/[subjectId] — Task 2 of the
 // "Unified Subject Setup page" plan. `is_examinable` (grade type) and
@@ -58,12 +76,31 @@ export const SubjectCatalogUpdateSchema = z
   .object({
     is_examinable: z.boolean().optional(),
     grading_method: z.enum(GRADING_METHOD_VALUES).optional(),
+    // See SubjectCreateSchema.report_label for what this is. Deliberately
+    // NO `.transform()` here, unlike the create schema — this is a partial-
+    // merge schema (the route only patches keys it can tell were actually
+    // sent, via `!== undefined`), so an empty-string-means-null transform
+    // would fire even when the caller never mentioned this field at all
+    // (zod runs `.transform()` on an `.optional()` field's absent value
+    // too, turning "don't touch" into "clear it" — silently wiping an
+    // existing report_label on every is_examinable/grading_method-only
+    // save). The empty-string-to-null normalization happens in the route
+    // instead, where "was this key present" is still known.
+    report_label: z
+      .string()
+      .trim()
+      .max(128, 'Keep report label under 128 chars')
+      .nullable()
+      .optional(),
   })
   .refine(
-    (v) => v.is_examinable !== undefined || v.grading_method !== undefined,
+    (v) =>
+      v.is_examinable !== undefined ||
+      v.grading_method !== undefined ||
+      v.report_label !== undefined,
     {
       message:
-        'At least one field (is_examinable or grading_method) is required',
+        'At least one field (is_examinable, grading_method, or report_label) is required',
     }
   );
 export type SubjectCatalogUpdateInput = z.infer<
