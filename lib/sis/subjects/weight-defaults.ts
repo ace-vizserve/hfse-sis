@@ -27,9 +27,9 @@
 //     Studies, History, Literature, Humanities,
 //     Economics, CCA)                                    → 30/50/20
 //
-// Pure module, types-only imports — safe from server code, client
-// components, and the seeder alike (same guarantee as level-profiles.ts).
-import type { WeightFractions } from '@/lib/sis/level-profiles';
+// Pure module, no external imports — safe from server code, client
+// components, and the seeder alike.
+export type WeightFractions = { ww: number; pt: number; qa: number };
 
 const MATH_SCIENCE: WeightFractions = { ww: 0.4, pt: 0.4, qa: 0.2 };
 const MAPEH_FAMILY: WeightFractions = { ww: 0.2, pt: 0.6, qa: 0.2 };
