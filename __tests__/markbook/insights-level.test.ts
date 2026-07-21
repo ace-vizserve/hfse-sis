@@ -17,9 +17,13 @@ import {
   computeTermDelta,
   FAILING_BAND_KEYS,
   getWatchRowsByLevel,
+  highlightedLockTermNumber,
+  selectTopRegressionMovers,
+  type SubjectLevelDelta,
   type SubjectLevelRawPoint,
   type SubjectLevelTrendPoint,
 } from '@/lib/markbook/insights-level';
+import type { TermLockProgress } from '@/lib/markbook/dashboard';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -489,5 +493,145 @@ describe('getWatchRowsByLevel', () => {
       makePoint({ periodLabel: 'T1', avgGrade: 80 }),
     ];
     expect(getWatchRowsByLevel(points, [], 3)).toHaveLength(0);
+  });
+});
+
+// ── selectTopRegressionMovers ───────────────────────────────────────────────
+
+function makeDelta(
+  overrides: Partial<SubjectLevelDelta> = {}
+): SubjectLevelDelta {
+  return {
+    subjectName: 'Math',
+    levelCode: 'P1',
+    firstAvg: 85,
+    lastAvg: 85,
+    delta: 0,
+    termCount: 2,
+    fromPeriod: 'T1',
+    toPeriod: 'T2',
+    ...overrides,
+  };
+}
+
+describe('selectTopRegressionMovers', () => {
+  it('selects the biggest movers by |delta|, both directions', () => {
+    const deltas: SubjectLevelDelta[] = [
+      makeDelta({ subjectName: 'A', delta: -1 }),
+      makeDelta({ subjectName: 'B', delta: -8 }),
+      makeDelta({ subjectName: 'C', delta: 1.5 }),
+      makeDelta({ subjectName: 'D', delta: 6 }),
+      makeDelta({ subjectName: 'E', delta: -0.2 }),
+    ];
+    const result = selectTopRegressionMovers(deltas, 3);
+    // Top 3 by magnitude: B(-8), D(+6), C(1.5) — A(-1) and E(-0.2) excluded.
+    // Re-sorted ascending by signed delta for display: B(-8) < C(1.5) < D(6).
+    expect(result.map((r) => r.subjectName)).toEqual(['B', 'C', 'D']);
+  });
+
+  it('re-sorts the selected subset ascending by signed delta (worst first)', () => {
+    const deltas: SubjectLevelDelta[] = [
+      makeDelta({ subjectName: 'Improved', delta: 5 }),
+      makeDelta({ subjectName: 'Declined', delta: -5 }),
+    ];
+    const result = selectTopRegressionMovers(deltas, 2);
+    expect(result[0].subjectName).toBe('Declined');
+    expect(result[1].subjectName).toBe('Improved');
+  });
+
+  it('includes at least one improvement when more than `limit` declines exist', () => {
+    // 8 declines of varying magnitude + 1 improvement. A naive slice(0, 6)
+    // off the ascending-by-delta order would show only declines.
+    const deltas: SubjectLevelDelta[] = [
+      ...Array.from({ length: 8 }, (_, i) =>
+        makeDelta({ subjectName: `Decline${i}`, delta: -(i + 1) })
+      ),
+      makeDelta({ subjectName: 'OnlyImprovement', delta: 20 }),
+    ];
+    const result = selectTopRegressionMovers(deltas, 6);
+    expect(result.some((r) => r.subjectName === 'OnlyImprovement')).toBe(true);
+  });
+
+  it('default limit is 6', () => {
+    const deltas: SubjectLevelDelta[] = Array.from({ length: 10 }, (_, i) =>
+      makeDelta({ subjectName: `S${i}`, delta: -(i + 1) })
+    );
+    expect(selectTopRegressionMovers(deltas)).toHaveLength(6);
+  });
+
+  it('fewer deltas than limit → returns all of them', () => {
+    const deltas: SubjectLevelDelta[] = [
+      makeDelta({ subjectName: 'A', delta: -2 }),
+      makeDelta({ subjectName: 'B', delta: 3 }),
+    ];
+    expect(selectTopRegressionMovers(deltas, 6)).toHaveLength(2);
+  });
+
+  it('empty input → empty output', () => {
+    expect(selectTopRegressionMovers([], 6)).toHaveLength(0);
+  });
+
+  it('does not mutate the input array', () => {
+    const deltas: SubjectLevelDelta[] = [
+      makeDelta({ subjectName: 'A', delta: -2 }),
+      makeDelta({ subjectName: 'B', delta: 5 }),
+    ];
+    const copy = [...deltas];
+    selectTopRegressionMovers(deltas, 1);
+    expect(deltas).toEqual(copy);
+  });
+});
+
+// ── highlightedLockTermNumber ────────────────────────────────────────────────
+
+function makeLockProgress(
+  overrides: Partial<TermLockProgress> = {}
+): TermLockProgress {
+  return {
+    termNumber: 1,
+    termLabel: 'Term 1',
+    locked: 0,
+    open: 0,
+    ...overrides,
+  };
+}
+
+describe('highlightedLockTermNumber', () => {
+  it('highlights the term with the highest locked %', () => {
+    const progress: TermLockProgress[] = [
+      makeLockProgress({ termNumber: 1, locked: 142, open: 6 }), // 95.9%
+      makeLockProgress({ termNumber: 2, locked: 130, open: 18 }), // 87.8%
+      makeLockProgress({ termNumber: 3, locked: 90, open: 58 }), // 60.8%
+      makeLockProgress({ termNumber: 4, locked: 0, open: 148 }), // 0%
+    ];
+    expect(highlightedLockTermNumber(progress)).toBe(1);
+  });
+
+  it('ties resolve to the first term in the array', () => {
+    const progress: TermLockProgress[] = [
+      makeLockProgress({ termNumber: 2, locked: 5, open: 5 }), // 50%
+      makeLockProgress({ termNumber: 1, locked: 5, open: 5 }), // 50%
+    ];
+    expect(highlightedLockTermNumber(progress)).toBe(2);
+  });
+
+  it('a term with 0 total sheets contributes 0%, never wins over any real progress', () => {
+    const progress: TermLockProgress[] = [
+      makeLockProgress({ termNumber: 1, locked: 0, open: 0 }),
+      makeLockProgress({ termNumber: 2, locked: 1, open: 9 }), // 10%
+    ];
+    expect(highlightedLockTermNumber(progress)).toBe(2);
+  });
+
+  it('empty input → null', () => {
+    expect(highlightedLockTermNumber([])).toBeNull();
+  });
+
+  it('all-zero input → highlights the first term (all tied at 0%)', () => {
+    const progress: TermLockProgress[] = [
+      makeLockProgress({ termNumber: 1 }),
+      makeLockProgress({ termNumber: 2 }),
+    ];
+    expect(highlightedLockTermNumber(progress)).toBe(1);
   });
 });

@@ -13,7 +13,7 @@
  * No server-only imports — safe to import from client components + unit tests.
  */
 
-import { GRADE_BANDS } from './dashboard';
+import { GRADE_BANDS, type TermLockProgress } from './dashboard';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -298,6 +298,67 @@ export function getWatchRowsByLevel(
     result.push(...sorted.slice(0, maxPerLevel));
   }
   return result;
+}
+
+// ── selectTopRegressionMovers ───────────────────────────────────────────────
+
+/**
+ * Select up to `limit` (subject × level) term-over-term deltas to plot on
+ * the Insights "term-over-term regression" pill-bar chart — the biggest
+ * movers BY MAGNITUDE in EITHER direction, not just the worst regressions.
+ *
+ * `computeTermDelta`'s own output is sorted ascending by signed delta (worst
+ * regression first) — the right order for its table use-case. A magnitude-
+ * blind `termDeltas.slice(0, limit)` off that ascending order would show
+ * only declines whenever there are more than `limit` regressing pairs this
+ * AY — likely at HFSE's scale (dozens of subject×level pairs) — starving
+ * the pill chart's "improved" (mint) half of any real example even when
+ * genuine improvements exist elsewhere in the data. Selecting by |delta|
+ * first, then re-sorting the selected subset ascending for display,
+ * guarantees both directions get a fair shot at appearing while keeping the
+ * worst-first reading order the locked mockup uses.
+ *
+ * @param termDeltas  Output of `computeTermDelta` (any order accepted).
+ * @param limit       Max columns to plot (default 6 — the pill chart's
+ *                     legible column budget, matching the locked mockup).
+ */
+export function selectTopRegressionMovers(
+  termDeltas: SubjectLevelDelta[],
+  limit = 6
+): SubjectLevelDelta[] {
+  return [...termDeltas]
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    .slice(0, limit)
+    .sort((a, b) => a.delta - b.delta);
+}
+
+// ── highlightedLockTermNumber ────────────────────────────────────────────────
+
+/**
+ * Which term to visually highlight on the "sheets locked · per term" bar
+ * chart — the term with the highest locked %, ties won by whichever term
+ * appears first in `progress` (stable scan, first max wins). Mirrors the
+ * "highlight = the row with the max value" convention already used for
+ * Records Insights' late-enrollee Gantt row (`maxLateTermCount` in
+ * `app/(records)/records/insights/page.tsx`) — one shared codebase idiom
+ * for "which of these should draw the eye", not a new rule invented here.
+ *
+ * @param progress  Per-term lock counts (any order; empty → null).
+ */
+export function highlightedLockTermNumber(
+  progress: TermLockProgress[]
+): number | null {
+  let best: TermLockProgress | null = null;
+  let bestPct = -1;
+  for (const t of progress) {
+    const total = t.locked + t.open;
+    const pct = total > 0 ? (t.locked / total) * 100 : 0;
+    if (pct > bestPct) {
+      bestPct = pct;
+      best = t;
+    }
+  }
+  return best?.termNumber ?? null;
 }
 
 // ── Re-export FAILING_BAND_KEYS for tests ────────────────────────────────────
