@@ -10,6 +10,7 @@ import {
   DOCUMENT_SLOTS,
   resolveStatus,
   type DocumentGroup,
+  type DocumentStatus,
 } from '@/lib/p-files/document-config';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -149,6 +150,37 @@ export type DocumentBacklogRow = {
   missing: number;
 };
 
+export type BacklogBucket = 'valid' | 'pending' | 'rejected' | 'missing' | 'na';
+
+/**
+ * Maps a resolved `DocumentStatus` (from p-files' `resolveStatus`) into the
+ * backlog chart's 4-bucket vocabulary — `na` is excluded from every count
+ * (never a real backlog item); `expired` rolls into `missing` (Records needs
+ * to re-collect it either way); `uploaded`/`to-follow` both read as
+ * "in progress" (`pending`).
+ *
+ * Shared by the chart aggregator below AND the `backlog-by-document` drill
+ * enrichment (`lib/sis/drill.ts::enrichWithDocSlotBuckets`) so a segment
+ * click on the chart always resolves to exactly the rows the chart counted
+ * into that segment (KD #82/#124 count==drill).
+ */
+export function resolveBacklogBucket(status: DocumentStatus): BacklogBucket {
+  switch (status) {
+    case 'valid':
+      return 'valid';
+    case 'uploaded':
+    case 'to-follow':
+      return 'pending';
+    case 'rejected':
+      return 'rejected';
+    case 'expired':
+    case 'missing':
+      return 'missing';
+    case 'na':
+      return 'na';
+  }
+}
+
 // Per-slot status tally across every student's documents row. Uses the
 // canonical `resolveStatus()` helper so conditional slots (father/guardian,
 // gated by fatherEmail/guardianEmail on applications) don't inflate "Missing".
@@ -286,20 +318,16 @@ async function loadDocumentValidationBacklogUncached(
 
       const bucket = byKey.get(slot.key);
       if (!bucket) continue;
-      switch (status) {
+      switch (resolveBacklogBucket(status)) {
         case 'valid':
           bucket.valid += 1;
           break;
-        case 'uploaded':
-        case 'to-follow':
-          // 'to-follow' = parent acknowledged, awaiting upload — counts as
-          // "in progress" alongside 'uploaded' for dashboard aggregates.
+        case 'pending':
           bucket.pending += 1;
           break;
         case 'rejected':
           bucket.rejected += 1;
           break;
-        case 'expired':
         case 'missing':
           bucket.missing += 1;
           break;

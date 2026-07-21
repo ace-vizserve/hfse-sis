@@ -65,7 +65,10 @@ export async function GET(
 
   const all = await buildRecordsDrillRows(
     { ayCode, from, to },
-    { withDocs: DOC_TARGETS.has(target) }
+    {
+      withDocs: DOC_TARGETS.has(target),
+      withDocSlotBuckets: target === 'backlog-by-document',
+    }
   );
   const rangeForFilter = from && to ? { from, to } : undefined;
   let rows = applyTargetFilter(all, target, segment, rangeForFilter);

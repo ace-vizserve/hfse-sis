@@ -6,11 +6,20 @@ import {
   ENROLLED_PREREQ_STAGES,
 } from '@/lib/schemas/sis';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
-import { fetchAllPages, type PageBuilder } from '@/lib/supabase/paginate';
+import {
+  fetchAllPages,
+  fetchInChunks,
+  type PageBuilder,
+} from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 import { parseLocalDate } from '@/lib/dashboard/range';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 import { EXPIRING_SOON_THRESHOLD_DAYS } from '@/lib/sis/process';
+import { resolveBacklogBucket } from '@/lib/sis/dashboard';
+import {
+  DOCUMENT_SLOTS as PFILES_DOCUMENT_SLOTS,
+  resolveStatus,
+} from '@/lib/p-files/document-config';
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -68,6 +77,16 @@ export type RecordsDrillRow = {
   expiringDocsCount: number; // number of docs expiring within 60 days
   documentsComplete: number;
   documentsTotal: number;
+  /**
+   * Per-slot backlog bucket (slot key → 'valid' | 'pending' | 'rejected' |
+   * 'missing'), populated ONLY for the 'backlog-by-document' target by
+   * `enrichWithDocSlotBuckets`. Slots resolving to 'na' (conditional gate
+   * empty, e.g. no fatherEmail) are omitted rather than stored — mirrors
+   * the chart aggregator, which excludes 'na' from every bucket count.
+   * Drives the backlog-by-document segment-click filter (KD #82/#124
+   * count==drill) — see `applyTargetFilter`.
+   */
+  docSlotBuckets?: Record<string, 'valid' | 'pending' | 'rejected' | 'missing'>;
 };
 
 const CORE_DOC_STATUS_COLUMNS = [
@@ -97,6 +116,25 @@ const SOFT_CLOSED_APPLICATION_STATUSES = new Set(['Cancelled', 'Withdrawn']);
 // rows, never for an active row, so this check is safe on the stored field.)
 const isSoftClosed = (r: RecordsDrillRow): boolean =>
   SOFT_CLOSED_APPLICATION_STATUSES.has(r.applicationStatus);
+
+// backlog-by-document segment format = "{slotLabel}|{bucket}" (emitted by
+// components/sis/document-backlog-chart.client.tsx, e.g. "Birth
+// Certificate|missing"). Built once at module scope, not per filter call.
+// Slot labels don't contain '|', so splitting on the LAST '|' is safe even
+// though it's not strictly needed here.
+const BACKLOG_SLOT_KEY_BY_LABEL = new Map(
+  PFILES_DOCUMENT_SLOTS.map((s) => [s.label, s.key])
+);
+const BACKLOG_BUCKET_VALUES = [
+  'valid',
+  'pending',
+  'rejected',
+  'missing',
+] as const;
+type BacklogBucketValue = (typeof BACKLOG_BUCKET_VALUES)[number];
+function isBacklogBucketValue(v: string): v is BacklogBucketValue {
+  return (BACKLOG_BUCKET_VALUES as readonly string[]).includes(v);
+}
 
 // ─── Range input ────────────────────────────────────────────────────────────
 
@@ -442,6 +480,114 @@ async function enrichWithDocs(
   });
 }
 
+// Backlog-by-document enrichment — sibling to enrichWithDocs above, invoked
+// ONLY for the 'backlog-by-document' target (never touches enrichWithDocs or
+// its callers). Computes each row's per-slot bucket via the SAME
+// resolveStatus() → resolveBacklogBucket() pipeline the backlog chart's
+// dashboard aggregator uses (lib/sis/dashboard.ts::loadDocumentValidationBacklogUncached),
+// including its exact conditional-slot gating (fatherEmail / guardianEmail /
+// stpApplicationType empty ⇒ skip the slot entirely) — so a segment click
+// ("{slotLabel}|{bucket}") in applyTargetFilter always resolves to exactly
+// the rows the chart counted into that segment (KD #82/#124 count==drill).
+//
+// Uses the p-files DOCUMENT_SLOTS list (PFILES_DOCUMENT_SLOTS — key/label/
+// conditional shape), NOT the differently-shaped lib/sis/queries.ts
+// DOCUMENT_SLOTS (statusCol/expiryCol shape) that enrichWithDocs uses — the
+// chart/dashboard backlog logic is built on the p-files one because it
+// carries the `conditional` gate + the label the chart groups bars by.
+async function enrichWithDocSlotBuckets(
+  rows: RecordsDrillRow[],
+  ayCode: string
+): Promise<RecordsDrillRow[]> {
+  if (rows.length === 0) return rows;
+  const prefix = prefixFor(ayCode);
+  const docsTable = `${prefix}_enrolment_documents`;
+  const appsTable = `${prefix}_enrolment_applications`;
+  const admissions = createAdmissionsClient();
+  const enroleeNumbers = rows.map((r) => r.enroleeNumber);
+
+  // resolveStatus() never reads its `_url` param, so we only fetch the
+  // status (+ expiry, for expiring slots) columns here — no need for the
+  // raw url columns the dashboard aggregator also selects.
+  const docSelectColumns = [
+    'enroleeNumber',
+    ...PFILES_DOCUMENT_SLOTS.flatMap((s) =>
+      s.expires ? [`${s.key}Status`, `${s.key}Expiry`] : [`${s.key}Status`]
+    ),
+  ].join(', ');
+
+  type DocRow = Record<string, string | null>;
+  type GateRow = {
+    enroleeNumber: string | null;
+    fatherEmail: string | null;
+    guardianEmail: string | null;
+    stpApplicationType: string | null;
+  };
+
+  // .in('enroleeNumber', [...]) chunked — a full-AY enrolled roster
+  // combined with ~20 selected columns can overflow the PostgREST URL-length
+  // cap, which comes back as a bare HTTP 400 before any JSON error.
+  const [docsRows, gateRows] = await Promise.all([
+    fetchInChunks<DocRow>(enroleeNumbers, async (slice) => {
+      const { data, error } = await admissions
+        .from(docsTable)
+        .select(docSelectColumns)
+        .in('enroleeNumber', slice);
+      if (error) return [];
+      return (data ?? []) as unknown as DocRow[];
+    }),
+    fetchInChunks<GateRow>(enroleeNumbers, async (slice) => {
+      const { data, error } = await admissions
+        .from(appsTable)
+        .select('enroleeNumber, fatherEmail, guardianEmail, stpApplicationType')
+        .in('enroleeNumber', slice);
+      if (error) return [];
+      return (data ?? []) as unknown as GateRow[];
+    }),
+  ]);
+
+  const docsByEnrolee = new Map<string, DocRow>();
+  for (const d of docsRows) {
+    const en = d['enroleeNumber'];
+    if (typeof en === 'string') docsByEnrolee.set(en, d);
+  }
+  const gatesByEnrolee = new Map<string, GateRow>();
+  for (const g of gateRows) {
+    if (g.enroleeNumber) gatesByEnrolee.set(g.enroleeNumber, g);
+  }
+
+  return rows.map((r) => {
+    const d = docsByEnrolee.get(r.enroleeNumber);
+    if (!d) return r;
+    const gate = gatesByEnrolee.get(r.enroleeNumber);
+    const docSlotBuckets: Record<
+      string,
+      'valid' | 'pending' | 'rejected' | 'missing'
+    > = {};
+
+    for (const slot of PFILES_DOCUMENT_SLOTS) {
+      if (slot.conditional) {
+        const gateValue =
+          gate?.[
+            slot.conditional as
+              | 'fatherEmail'
+              | 'guardianEmail'
+              | 'stpApplicationType'
+          ] ?? null;
+        if (!gateValue || gateValue.trim() === '') continue; // 'na' — skip
+      }
+      const rawStatus = d[`${slot.key}Status`] ?? null;
+      const expiry = slot.expires ? (d[`${slot.key}Expiry`] ?? null) : null;
+      const status = resolveStatus(null, rawStatus, expiry, slot.expires);
+      const bucket = resolveBacklogBucket(status);
+      if (bucket === 'na') continue;
+      docSlotBuckets[slot.key] = bucket;
+    }
+
+    return { ...r, docSlotBuckets };
+  });
+}
+
 // ─── Unsynced readiness rows ────────────────────────────────────────────────
 
 // Enrolled students not yet assigned to a section_students row — the KD #90
@@ -597,7 +743,7 @@ export async function buildUnsyncedReadinessDrillRows(
 
 export async function buildRecordsDrillRows(
   input: DrillRangeInput,
-  options?: { withDocs?: boolean }
+  options?: { withDocs?: boolean; withDocSlotBuckets?: boolean }
 ): Promise<RecordsDrillRow[]> {
   // AY-scoped cache; scope/range filtering applied post-cache (per KD #56).
   const cached = await unstable_cache(
@@ -605,7 +751,11 @@ export async function buildRecordsDrillRows(
     ['records-drill', 'rows', input.ayCode],
     { revalidate: CACHE_TTL_SECONDS, tags: tags(input.ayCode) }
   )();
-  return options?.withDocs ? enrichWithDocs(cached, input.ayCode) : cached;
+  let rows = cached;
+  if (options?.withDocs) rows = await enrichWithDocs(rows, input.ayCode);
+  if (options?.withDocSlotBuckets)
+    rows = await enrichWithDocSlotBuckets(rows, input.ayCode);
+  return rows;
 }
 
 // ─── Per-target filter ──────────────────────────────────────────────────────
@@ -688,11 +838,25 @@ export function applyTargetFilter(
         (r) => (r.level ?? 'Unknown') === segment && !isSoftClosed(r)
       );
     case 'backlog-by-document': {
-      // segment format = "{slotKey}|{statusBucket}" e.g. "medical|missing"
-      // Without per-slot enrichment in the row we filter by hasMissingDocs as
-      // a proxy (segment ignored for now). The drill API can pass a richer
-      // segment if needed later.
-      return rows.filter((r) => r.hasMissingDocs && !isSoftClosed(r));
+      // No-segment path — "view all backlog" (also the CSV-export scope) —
+      // is unchanged: every row with any incomplete core doc.
+      if (!segment)
+        return rows.filter((r) => r.hasMissingDocs && !isSoftClosed(r));
+
+      // segment format = "{slotLabel}|{bucket}" e.g. "Birth Certificate|missing"
+      // (components/sis/document-backlog-chart.client.tsx). Split on the LAST
+      // '|' — slot labels never contain '|'.
+      const sepIdx = segment.lastIndexOf('|');
+      if (sepIdx === -1) return [];
+      const slotLabel = segment.slice(0, sepIdx);
+      const bucketName = segment.slice(sepIdx + 1);
+
+      const slotKey = BACKLOG_SLOT_KEY_BY_LABEL.get(slotLabel);
+      if (!slotKey || !isBacklogBucketValue(bucketName)) return [];
+
+      return rows.filter(
+        (r) => !isSoftClosed(r) && r.docSlotBuckets?.[slotKey] === bucketName
+      );
     }
     case 'class-assignment-readiness':
       return rows.filter(
