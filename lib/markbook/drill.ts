@@ -298,13 +298,9 @@ async function loadEntryRowsUncached(
   const allowedTermIds = termIdsForRange(ctx.terms, from, to);
   if (allowedTermIds.length === 0) return [];
 
-  // Sheets in this AY, restricted to the in-range terms.
-  const { data: sheetsData } = await service
-    .from('grading_sheets')
-    .select(
-      'id, term_id, section_id, subject_id, qa_total, is_locked, locked_at, teacher_name'
-    )
-    .in('term_id', allowedTermIds);
+  // Sheets in this AY, restricted to the in-range terms. Paginated —
+  // PostgREST caps a single response at 1000 rows and a large AY can carry
+  // more grading sheets than that across all sections × subjects × terms.
   type SheetLite = {
     id: string;
     term_id: string;
@@ -315,7 +311,15 @@ async function loadEntryRowsUncached(
     locked_at: string | null;
     teacher_name: string | null;
   };
-  const sheets = (sheetsData ?? []) as SheetLite[];
+  const sheets = await fetchAllPages<SheetLite>((from, to) =>
+    service
+      .from('grading_sheets')
+      .select(
+        'id, term_id, section_id, subject_id, qa_total, is_locked, locked_at, teacher_name'
+      )
+      .in('term_id', allowedTermIds)
+      .range(from, to)
+  );
   if (sheets.length === 0) return [];
   const sheetById = new Map<string, SheetLite>();
   for (const s of sheets) sheetById.set(s.id, s);
@@ -507,16 +511,28 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
 
   // Fetch sheets first so we can scope the entries + publications queries
   // by term/sheet IDs — avoids unbounded scans across all AYs' data.
+  // Paginated — PostgREST caps a single response at 1000 rows and a large
+  // AY can carry more grading sheets than that.
   const sectionIds = ctx.sections.map((s) => s.id);
-  const { data: sheetsData } = await service
-    .from('grading_sheets')
-    .select(
-      'id, term_id, section_id, subject_id, is_locked, locked_at, teacher_name'
-    )
-    .in('term_id', ctx.termIds);
-  const sheetIdsForRollup = (sheetsData ?? []).map(
-    (s) => (s as { id: string }).id
+  type SheetLite = {
+    id: string;
+    term_id: string;
+    section_id: string;
+    subject_id: string;
+    is_locked: boolean;
+    locked_at: string | null;
+    teacher_name: string | null;
+  };
+  const sheets = await fetchAllPages<SheetLite>((from, to) =>
+    service
+      .from('grading_sheets')
+      .select(
+        'id, term_id, section_id, subject_id, is_locked, locked_at, teacher_name'
+      )
+      .in('term_id', ctx.termIds)
+      .range(from, to)
   );
+  const sheetIdsForRollup = sheets.map((s) => s.id);
 
   // Chunk the sheet-IDs IN-clause so the URL doesn't blow past PostgREST's
   // URL length cap when an AY has many sheets (sibling pattern in
@@ -539,7 +555,8 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
     }
     return out;
   }
-  const [{ data: pubsData }, { data: ssRollupData }, entriesRollupData] =
+  type SsRollupLite = { section_id: string; enrollment_status: string };
+  const [{ data: pubsData }, ssRollupData, entriesRollupData] =
     await Promise.all([
       sectionIds.length > 0
         ? service
@@ -548,24 +565,16 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
             .in('term_id', ctx.termIds)
         : Promise.resolve({ data: [] }),
       sectionIds.length > 0
-        ? service
-            .from('section_students')
-            .select('section_id, enrollment_status')
-            .in('section_id', sectionIds)
-        : Promise.resolve({ data: [] }),
+        ? fetchAllPages<SsRollupLite>((from, to) =>
+            service
+              .from('section_students')
+              .select('section_id, enrollment_status')
+              .in('section_id', sectionIds)
+              .range(from, to)
+          )
+        : Promise.resolve([] as SsRollupLite[]),
       loadEntriesRollup(),
     ]);
-
-  type SheetLite = {
-    id: string;
-    term_id: string;
-    section_id: string;
-    subject_id: string;
-    is_locked: boolean;
-    locked_at: string | null;
-    teacher_name: string | null;
-  };
-  const sheets = (sheetsData ?? []) as SheetLite[];
 
   type PubLite = { section_id: string; term_id: string; publish_from: string };
   const pubKey = (sec: string, term: string) => `${sec}|${term}`;
@@ -574,9 +583,8 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
     pubByKey.set(pubKey(p.section_id, p.term_id), p.publish_from);
   }
 
-  type SsRollupLite = { section_id: string; enrollment_status: string };
   const activeStudentsBySection = new Map<string, number>();
-  for (const r of (ssRollupData ?? []) as SsRollupLite[]) {
+  for (const r of ssRollupData) {
     if (
       r.enrollment_status !== 'active' &&
       r.enrollment_status !== 'late_enrollee'

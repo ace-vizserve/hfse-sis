@@ -9,7 +9,9 @@ import {
 import {
   DOCUMENT_SLOTS,
   resolveStatus,
+  resolveBacklogBucket,
   type DocumentGroup,
+  type BacklogBucket,
 } from '@/lib/p-files/document-config';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -149,6 +151,13 @@ export type DocumentBacklogRow = {
   missing: number;
 };
 
+// `BacklogBucket` + `resolveBacklogBucket` moved to
+// `lib/p-files/document-config.ts` (imported above) — that module has no
+// `server-only` dependency, so `lib/sis/drill.ts` (imported by client-side
+// drill-sheet components) can import `resolveBacklogBucket` from there
+// without pulling `server-only` into the client bundle. See that file for
+// the function's docs.
+
 // Per-slot status tally across every student's documents row. Uses the
 // canonical `resolveStatus()` helper so conditional slots (father/guardian,
 // gated by fatherEmail/guardianEmail on applications) don't inflate "Missing".
@@ -286,20 +295,16 @@ async function loadDocumentValidationBacklogUncached(
 
       const bucket = byKey.get(slot.key);
       if (!bucket) continue;
-      switch (status) {
+      switch (resolveBacklogBucket(status)) {
         case 'valid':
           bucket.valid += 1;
           break;
-        case 'uploaded':
-        case 'to-follow':
-          // 'to-follow' = parent acknowledged, awaiting upload — counts as
-          // "in progress" alongside 'uploaded' for dashboard aggregates.
+        case 'pending':
           bucket.pending += 1;
           break;
         case 'rejected':
           bucket.rejected += 1;
           break;
-        case 'expired':
         case 'missing':
           bucket.missing += 1;
           break;

@@ -6,11 +6,20 @@ import {
   ENROLLED_PREREQ_STAGES,
 } from '@/lib/schemas/sis';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
-import { fetchAllPages } from '@/lib/supabase/paginate';
+import {
+  fetchAllPages,
+  fetchInChunks,
+  type PageBuilder,
+} from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 import { parseLocalDate } from '@/lib/dashboard/range';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 import { EXPIRING_SOON_THRESHOLD_DAYS } from '@/lib/sis/process';
+import {
+  DOCUMENT_SLOTS as PFILES_DOCUMENT_SLOTS,
+  resolveStatus,
+  resolveBacklogBucket,
+} from '@/lib/p-files/document-config';
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -24,12 +33,20 @@ function tags(ayCode: string): string[] {
 
 // ─── Targets ────────────────────────────────────────────────────────────────
 
+// NOTE: there is deliberately no 'students-by-pipeline-stage' target here.
+// It was removed as dead code — section_students.enrollment_status can only
+// ever be 'active' | 'late_enrollee' | 'withdrawn' | 'graduated', so it could
+// never represent pre-enrolment funnel segments (Submitted / Ongoing
+// Verification / Processing / Cancelled / Enrolled (Conditional)). Any chart
+// wired to it would open an always-empty drill sheet. Funnel-stage
+// segmentation lives on the ADMISSIONS module's own 'pipeline-stage' target
+// (lib/admissions/drill.ts), which PipelineStageChart is actually wired to —
+// use that instead of recreating this target here.
 export type RecordsDrillTarget =
   | 'enrollments-range'
   | 'withdrawals-range'
   | 'active-enrolled'
   | 'expiring-docs'
-  | 'students-by-pipeline-stage'
   | 'backlog-by-document'
   | 'students-by-level'
   | 'class-assignment-readiness';
@@ -60,6 +77,16 @@ export type RecordsDrillRow = {
   expiringDocsCount: number; // number of docs expiring within 60 days
   documentsComplete: number;
   documentsTotal: number;
+  /**
+   * Per-slot backlog bucket (slot key → 'valid' | 'pending' | 'rejected' |
+   * 'missing'), populated ONLY for the 'backlog-by-document' target by
+   * `enrichWithDocSlotBuckets`. Slots resolving to 'na' (conditional gate
+   * empty, e.g. no fatherEmail) are omitted rather than stored — mirrors
+   * the chart aggregator, which excludes 'na' from every bucket count.
+   * Drives the backlog-by-document segment-click filter (KD #82/#124
+   * count==drill) — see `applyTargetFilter`.
+   */
+  docSlotBuckets?: Record<string, 'valid' | 'pending' | 'rejected' | 'missing'>;
 };
 
 const CORE_DOC_STATUS_COLUMNS = [
@@ -89,6 +116,25 @@ const SOFT_CLOSED_APPLICATION_STATUSES = new Set(['Cancelled', 'Withdrawn']);
 // rows, never for an active row, so this check is safe on the stored field.)
 const isSoftClosed = (r: RecordsDrillRow): boolean =>
   SOFT_CLOSED_APPLICATION_STATUSES.has(r.applicationStatus);
+
+// backlog-by-document segment format = "{slotLabel}|{bucket}" (emitted by
+// components/sis/document-backlog-chart.client.tsx, e.g. "Birth
+// Certificate|missing"). Built once at module scope, not per filter call.
+// Slot labels don't contain '|', so splitting on the LAST '|' is safe even
+// though it's not strictly needed here.
+const BACKLOG_SLOT_KEY_BY_LABEL = new Map(
+  PFILES_DOCUMENT_SLOTS.map((s) => [s.label, s.key])
+);
+const BACKLOG_BUCKET_VALUES = [
+  'valid',
+  'pending',
+  'rejected',
+  'missing',
+] as const;
+type BacklogBucketValue = (typeof BACKLOG_BUCKET_VALUES)[number];
+function isBacklogBucketValue(v: string): v is BacklogBucketValue {
+  return (BACKLOG_BUCKET_VALUES as readonly string[]).includes(v);
+}
 
 // ─── Range input ────────────────────────────────────────────────────────────
 
@@ -434,6 +480,114 @@ async function enrichWithDocs(
   });
 }
 
+// Backlog-by-document enrichment — sibling to enrichWithDocs above, invoked
+// ONLY for the 'backlog-by-document' target (never touches enrichWithDocs or
+// its callers). Computes each row's per-slot bucket via the SAME
+// resolveStatus() → resolveBacklogBucket() pipeline the backlog chart's
+// dashboard aggregator uses (lib/sis/dashboard.ts::loadDocumentValidationBacklogUncached),
+// including its exact conditional-slot gating (fatherEmail / guardianEmail /
+// stpApplicationType empty ⇒ skip the slot entirely) — so a segment click
+// ("{slotLabel}|{bucket}") in applyTargetFilter always resolves to exactly
+// the rows the chart counted into that segment (KD #82/#124 count==drill).
+//
+// Uses the p-files DOCUMENT_SLOTS list (PFILES_DOCUMENT_SLOTS — key/label/
+// conditional shape), NOT the differently-shaped lib/sis/queries.ts
+// DOCUMENT_SLOTS (statusCol/expiryCol shape) that enrichWithDocs uses — the
+// chart/dashboard backlog logic is built on the p-files one because it
+// carries the `conditional` gate + the label the chart groups bars by.
+async function enrichWithDocSlotBuckets(
+  rows: RecordsDrillRow[],
+  ayCode: string
+): Promise<RecordsDrillRow[]> {
+  if (rows.length === 0) return rows;
+  const prefix = prefixFor(ayCode);
+  const docsTable = `${prefix}_enrolment_documents`;
+  const appsTable = `${prefix}_enrolment_applications`;
+  const admissions = createAdmissionsClient();
+  const enroleeNumbers = rows.map((r) => r.enroleeNumber);
+
+  // resolveStatus() never reads its `_url` param, so we only fetch the
+  // status (+ expiry, for expiring slots) columns here — no need for the
+  // raw url columns the dashboard aggregator also selects.
+  const docSelectColumns = [
+    'enroleeNumber',
+    ...PFILES_DOCUMENT_SLOTS.flatMap((s) =>
+      s.expires ? [`${s.key}Status`, `${s.key}Expiry`] : [`${s.key}Status`]
+    ),
+  ].join(', ');
+
+  type DocRow = Record<string, string | null>;
+  type GateRow = {
+    enroleeNumber: string | null;
+    fatherEmail: string | null;
+    guardianEmail: string | null;
+    stpApplicationType: string | null;
+  };
+
+  // .in('enroleeNumber', [...]) chunked — a full-AY enrolled roster
+  // combined with ~20 selected columns can overflow the PostgREST URL-length
+  // cap, which comes back as a bare HTTP 400 before any JSON error.
+  const [docsRows, gateRows] = await Promise.all([
+    fetchInChunks<DocRow>(enroleeNumbers, async (slice) => {
+      const { data, error } = await admissions
+        .from(docsTable)
+        .select(docSelectColumns)
+        .in('enroleeNumber', slice);
+      if (error) return [];
+      return (data ?? []) as unknown as DocRow[];
+    }),
+    fetchInChunks<GateRow>(enroleeNumbers, async (slice) => {
+      const { data, error } = await admissions
+        .from(appsTable)
+        .select('enroleeNumber, fatherEmail, guardianEmail, stpApplicationType')
+        .in('enroleeNumber', slice);
+      if (error) return [];
+      return (data ?? []) as unknown as GateRow[];
+    }),
+  ]);
+
+  const docsByEnrolee = new Map<string, DocRow>();
+  for (const d of docsRows) {
+    const en = d['enroleeNumber'];
+    if (typeof en === 'string') docsByEnrolee.set(en, d);
+  }
+  const gatesByEnrolee = new Map<string, GateRow>();
+  for (const g of gateRows) {
+    if (g.enroleeNumber) gatesByEnrolee.set(g.enroleeNumber, g);
+  }
+
+  return rows.map((r) => {
+    const d = docsByEnrolee.get(r.enroleeNumber);
+    if (!d) return r;
+    const gate = gatesByEnrolee.get(r.enroleeNumber);
+    const docSlotBuckets: Record<
+      string,
+      'valid' | 'pending' | 'rejected' | 'missing'
+    > = {};
+
+    for (const slot of PFILES_DOCUMENT_SLOTS) {
+      if (slot.conditional) {
+        const gateValue =
+          gate?.[
+            slot.conditional as
+              | 'fatherEmail'
+              | 'guardianEmail'
+              | 'stpApplicationType'
+          ] ?? null;
+        if (!gateValue || gateValue.trim() === '') continue; // 'na' — skip
+      }
+      const rawStatus = d[`${slot.key}Status`] ?? null;
+      const expiry = slot.expires ? (d[`${slot.key}Expiry`] ?? null) : null;
+      const status = resolveStatus(null, rawStatus, expiry, slot.expires);
+      const bucket = resolveBacklogBucket(status);
+      if (bucket === 'na') continue;
+      docSlotBuckets[slot.key] = bucket;
+    }
+
+    return { ...r, docSlotBuckets };
+  });
+}
+
 // ─── Unsynced readiness rows ────────────────────────────────────────────────
 
 // Enrolled students not yet assigned to a section_students row — the KD #90
@@ -467,28 +621,6 @@ async function loadUnsyncedReadinessDrillRowsUncached(
     (r) => r.id
   );
 
-  const [statusRes, appsRes, ssRes] = await Promise.all([
-    admissions
-      .from(`${prefix}_enrolment_status`)
-      .select(
-        'enroleeNumber, applicationStatus, applicationUpdatedDate, classLevel'
-      )
-      .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)']),
-    admissions
-      .from(`${prefix}_enrolment_applications`)
-      .select(
-        'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied, created_at'
-      ),
-    sectionIds.length > 0
-      ? service
-          .from('section_students')
-          .select('enrolee_number')
-          .in('section_id', sectionIds)
-      : Promise.resolve({ data: [] as { enrolee_number: string | null }[] }),
-  ]);
-
-  if (statusRes.error || appsRes.error) return [];
-
   type StatusRow = {
     enroleeNumber: string | null;
     applicationStatus: string | null;
@@ -505,24 +637,55 @@ async function loadUnsyncedReadinessDrillRowsUncached(
     created_at: string | null;
   };
 
+  // Paginated — PostgREST caps a single response at 1000 rows; these tables
+  // can exceed that as an AY grows. fetchAllPages throws on a query error
+  // (rather than returning it in an `.error` field), so it propagates up
+  // instead of the previous silent-empty-array fallback.
+  const [statusRows, appsRows, ssRows] = await Promise.all([
+    fetchAllPages<StatusRow>((from, to) =>
+      admissions
+        .from(`${prefix}_enrolment_status`)
+        .select(
+          'enroleeNumber, applicationStatus, applicationUpdatedDate, classLevel'
+        )
+        .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)'])
+        .range(from, to)
+    ),
+    fetchAllPages<AppsRow>((from, to) =>
+      admissions
+        .from(`${prefix}_enrolment_applications`)
+        .select(
+          'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied, created_at'
+        )
+        .range(from, to)
+    ),
+    sectionIds.length > 0
+      ? fetchAllPages<{ enrolee_number: string | null }>((from, to) =>
+          service
+            .from('section_students')
+            .select('enrolee_number')
+            .in('section_id', sectionIds)
+            .range(from, to)
+        )
+      : Promise.resolve([] as { enrolee_number: string | null }[]),
+  ]);
+
   // Build the set of already-assigned enroleeNumbers from section_students
   // so we can exclude them (mirrors loadClassAssignmentReadinessUncached's
   // logic for M13 count alignment).
   const assignedEnrolees = new Set(
-    ((ssRes.data ?? []) as { enrolee_number: string | null }[])
-      .map((r) => r.enrolee_number)
-      .filter((v): v is string => v !== null)
+    ssRows.map((r) => r.enrolee_number).filter((v): v is string => v !== null)
   );
 
   const appsByEnrolee = new Map<string, AppsRow>();
-  for (const a of (appsRes.data ?? []) as AppsRow[]) {
+  for (const a of appsRows) {
     if (a.enroleeNumber) appsByEnrolee.set(a.enroleeNumber, a);
   }
 
   const today = Date.now();
   const out: RecordsDrillRow[] = [];
 
-  for (const status of (statusRes.data ?? []) as StatusRow[]) {
+  for (const status of statusRows) {
     if (!status.enroleeNumber) continue;
     // Skip if already present in section_students.
     if (assignedEnrolees.has(status.enroleeNumber)) continue;
@@ -580,7 +743,7 @@ export async function buildUnsyncedReadinessDrillRows(
 
 export async function buildRecordsDrillRows(
   input: DrillRangeInput,
-  options?: { withDocs?: boolean }
+  options?: { withDocs?: boolean; withDocSlotBuckets?: boolean }
 ): Promise<RecordsDrillRow[]> {
   // AY-scoped cache; scope/range filtering applied post-cache (per KD #56).
   const cached = await unstable_cache(
@@ -588,7 +751,11 @@ export async function buildRecordsDrillRows(
     ['records-drill', 'rows', input.ayCode],
     { revalidate: CACHE_TTL_SECONDS, tags: tags(input.ayCode) }
   )();
-  return options?.withDocs ? enrichWithDocs(cached, input.ayCode) : cached;
+  let rows = cached;
+  if (options?.withDocs) rows = await enrichWithDocs(rows, input.ayCode);
+  if (options?.withDocSlotBuckets)
+    rows = await enrichWithDocSlotBuckets(rows, input.ayCode);
+  return rows;
 }
 
 // ─── Per-target filter ──────────────────────────────────────────────────────
@@ -665,22 +832,31 @@ export function applyTargetFilter(
       );
     case 'expiring-docs':
       return rows.filter((r) => r.expiringDocsCount > 0 && !isSoftClosed(r));
-    case 'students-by-pipeline-stage':
-      if (!segment) return rows.filter((r) => !isSoftClosed(r));
-      return rows.filter(
-        (r) => r.pipelineStage === segment && !isSoftClosed(r)
-      );
     case 'students-by-level':
       if (!segment) return rows.filter((r) => !isSoftClosed(r));
       return rows.filter(
         (r) => (r.level ?? 'Unknown') === segment && !isSoftClosed(r)
       );
     case 'backlog-by-document': {
-      // segment format = "{slotKey}|{statusBucket}" e.g. "medical|missing"
-      // Without per-slot enrichment in the row we filter by hasMissingDocs as
-      // a proxy (segment ignored for now). The drill API can pass a richer
-      // segment if needed later.
-      return rows.filter((r) => r.hasMissingDocs && !isSoftClosed(r));
+      // No-segment path — "view all backlog" (also the CSV-export scope) —
+      // is unchanged: every row with any incomplete core doc.
+      if (!segment)
+        return rows.filter((r) => r.hasMissingDocs && !isSoftClosed(r));
+
+      // segment format = "{slotLabel}|{bucket}" e.g. "Birth Certificate|missing"
+      // (components/sis/document-backlog-chart.client.tsx). Split on the LAST
+      // '|' — slot labels never contain '|'.
+      const sepIdx = segment.lastIndexOf('|');
+      if (sepIdx === -1) return [];
+      const slotLabel = segment.slice(0, sepIdx);
+      const bucketName = segment.slice(sepIdx + 1);
+
+      const slotKey = BACKLOG_SLOT_KEY_BY_LABEL.get(slotLabel);
+      if (!slotKey || !isBacklogBucketValue(bucketName)) return [];
+
+      return rows.filter(
+        (r) => !isSoftClosed(r) && r.docSlotBuckets?.[slotKey] === bucketName
+      );
     }
     case 'class-assignment-readiness':
       return rows.filter(
@@ -783,14 +959,6 @@ export function defaultColumnsForTarget(
         'documentsComplete',
         'daysSinceUpdate',
       ];
-    case 'students-by-pipeline-stage':
-      return [
-        'fullName',
-        'level',
-        'pipelineStage',
-        'enrollmentStatus',
-        'daysSinceUpdate',
-      ];
     case 'students-by-level':
       return [
         'fullName',
@@ -819,11 +987,6 @@ export function drillHeaderForTarget(
       return { eyebrow: 'Drill · Active', title: 'Currently enrolled' };
     case 'expiring-docs':
       return { eyebrow: 'Drill · Expiring', title: 'Documents expiring soon' };
-    case 'students-by-pipeline-stage':
-      return {
-        eyebrow: 'Drill · Stage',
-        title: segment ? `Stage: ${segment}` : 'By pipeline stage',
-      };
     case 'students-by-level':
       return {
         eyebrow: 'Drill · Level',
@@ -899,20 +1062,6 @@ export async function loadAuditEventsUncached(
   range?: { from: string; to: string }
 ): Promise<AuditDrillRow[]> {
   const service = createServiceClient();
-  let q = service
-    .from('audit_log')
-    .select(
-      'id, action, actor_email, entity_type, entity_id, context, created_at'
-    )
-    .like('action', `${modulePrefix}%`)
-    .order('created_at', { ascending: false })
-    .limit(2000);
-  if (range?.from && range?.to) {
-    q = q
-      .gte('created_at', range.from)
-      .lte('created_at', `${range.to}T23:59:59.999Z`);
-  }
-  const { data } = await q;
   type AuditRow = {
     id: string;
     action: string;
@@ -922,7 +1071,25 @@ export async function loadAuditEventsUncached(
     context: Record<string, unknown> | null;
     created_at: string;
   };
-  return ((data ?? []) as AuditRow[]).map((r) => ({
+  // Paginated — PostgREST caps a single response at 1000 rows; audit_log
+  // already exceeds that in production, so a plain .limit() silently
+  // truncates the drill sheet.
+  const rows = await fetchAllPages<AuditRow>((from, to) => {
+    let q = service
+      .from('audit_log')
+      .select(
+        'id, action, actor_email, entity_type, entity_id, context, created_at'
+      )
+      .like('action', `${modulePrefix}%`)
+      .order('created_at', { ascending: false });
+    if (range?.from && range?.to) {
+      q = q
+        .gte('created_at', range.from)
+        .lte('created_at', `${range.to}T23:59:59.999Z`);
+    }
+    return q.range(from, to);
+  });
+  return rows.map((r) => ({
     id: r.id,
     action: r.action,
     actorEmail: r.actor_email,
@@ -1010,14 +1177,20 @@ export async function loadAcademicYearsList(): Promise<AcademicYearDrillRow[]> {
         }[];
         if (sectionRows.length === 0) return new Map<string, number>();
         const sectionIds = sectionRows.map((s) => s.id);
-        const { data: ssRows } = await service
-          .from('section_students')
-          .select('section_id')
-          .in('section_id', sectionIds);
+        // Paginated — PostgREST caps a single response at 1000 rows, and
+        // this sums section_students across every AY at once (comfortably
+        // past 1000 once a few AYs are populated).
+        const ssRows = await fetchAllPages<{ section_id: string }>((from, to) =>
+          service
+            .from('section_students')
+            .select('section_id')
+            .in('section_id', sectionIds)
+            .range(from, to)
+        );
         const sectionToAy = new Map<string, string>();
         for (const s of sectionRows) sectionToAy.set(s.id, s.academic_year_id);
         const out = new Map<string, number>();
-        for (const r of (ssRows ?? []) as { section_id: string }[]) {
+        for (const r of ssRows) {
           const ay = sectionToAy.get(r.section_id);
           if (!ay) continue;
           out.set(ay, (out.get(ay) ?? 0) + 1);
@@ -1036,32 +1209,38 @@ export async function loadAcademicYearsList(): Promise<AcademicYearDrillRow[]> {
   }));
 }
 
+// NOTE: this fetches every audit_log row in range to compute per-actor
+// counts in JS. Paginated (below) to survive the 1000-row PostgREST cap,
+// but as audit_log grows into the tens of thousands of rows this should be
+// replaced with a server-side aggregate (a Postgres RPC grouping by
+// actor_id) instead of a full-table JS aggregation.
 export async function loadActorActivity(range?: {
   from: string;
   to: string;
 }): Promise<ActorActivityDrillRow[]> {
   const service = createServiceClient();
-  let q = service
-    .from('audit_log')
-    .select('actor_id, actor_email, created_at')
-    .order('created_at', { ascending: false })
-    .limit(5000);
-  if (range?.from && range?.to) {
-    q = q
-      .gte('created_at', range.from)
-      .lte('created_at', `${range.to}T23:59:59.999Z`);
-  }
-  const { data } = await q;
   type Row = {
     actor_id: string | null;
     actor_email: string | null;
     created_at: string;
   };
+  const data = await fetchAllPages<Row>((from, to) => {
+    let q = service
+      .from('audit_log')
+      .select('actor_id, actor_email, created_at')
+      .order('created_at', { ascending: false });
+    if (range?.from && range?.to) {
+      q = q
+        .gte('created_at', range.from)
+        .lte('created_at', `${range.to}T23:59:59.999Z`);
+    }
+    return q.range(from, to);
+  });
   const map = new Map<
     string,
     { email: string | null; count: number; lastAt: string }
   >();
-  for (const r of (data ?? []) as Row[]) {
+  for (const r of data) {
     const userId = r.actor_id ?? '__anon';
     const acc = map.get(userId);
     if (acc) {
@@ -1215,32 +1394,48 @@ async function loadLifecycleSnapshotUncached(
     ...DOCUMENT_SLOTS.filter((s) => s.expiryCol).map((s) => s.expiryCol!),
   ];
 
-  const [appsRes, statusRes, docsRes] = await Promise.all([
-    admissions
-      .from(`${prefix}_enrolment_applications`)
-      .select(
-        'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied'
-      ),
-    admissions
-      .from(`${prefix}_enrolment_status`)
-      .select(uniqStatusColumns.join(', ')),
-    admissions
-      .from(`${prefix}_enrolment_documents`)
-      .select(docColumns.join(', ')),
+  // Paginated — PostgREST caps a single response at 1000 rows; these are
+  // full-table scans of the per-AY admissions tables with no filter.
+  const [appsRows, statusRows, docsRows] = await Promise.all([
+    fetchAllPages<LifecycleAppLite>((from, to) =>
+      admissions
+        .from(`${prefix}_enrolment_applications`)
+        .select(
+          'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied'
+        )
+        .range(from, to)
+    ),
+    fetchAllPages<LifecycleStatusRow>((from, to) => {
+      // Dynamic column-list .select() loses PostgREST's literal-string type
+      // inference (falls back to a GenericStringError marker type) — same
+      // reason the pre-pagination code cast via `as unknown as X[]`.
+      const q = admissions
+        .from(`${prefix}_enrolment_status`)
+        .select(uniqStatusColumns.join(', '))
+        .range(from, to);
+      return q as unknown as ReturnType<PageBuilder<LifecycleStatusRow>>;
+    }),
+    fetchAllPages<LifecycleDocRow>((from, to) => {
+      const q = admissions
+        .from(`${prefix}_enrolment_documents`)
+        .select(docColumns.join(', '))
+        .range(from, to);
+      return q as unknown as ReturnType<PageBuilder<LifecycleDocRow>>;
+    }),
   ]);
 
   const apps = new Map<string, LifecycleAppLite>();
-  for (const a of (appsRes.data ?? []) as LifecycleAppLite[]) {
+  for (const a of appsRows) {
     if (a.enroleeNumber) apps.set(a.enroleeNumber, a);
   }
 
   const status = new Map<string, LifecycleStatusRow>();
-  for (const r of (statusRes.data ?? []) as unknown as LifecycleStatusRow[]) {
+  for (const r of statusRows) {
     if (r.enroleeNumber) status.set(r.enroleeNumber, r);
   }
 
   const docs = new Map<string, LifecycleDocRow>();
-  for (const r of (docsRes.data ?? []) as unknown as LifecycleDocRow[]) {
+  for (const r of docsRows) {
     if (r.enroleeNumber) docs.set(r.enroleeNumber, r);
   }
 
