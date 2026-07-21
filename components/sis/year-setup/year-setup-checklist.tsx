@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleDashed,
-  ClipboardCheck,
   ClipboardList,
   Clock,
   LayoutGrid,
@@ -66,7 +65,6 @@ import {
 const ITEM_ICONS: Record<ReadinessStepId, LucideIcon> = {
   'ay-setup': CalendarCog,
   calendar: CalendarDays,
-  'structure-confirmed': ClipboardCheck,
   sections: School,
   'subject-weights': LayoutGrid,
   advisers: Users,
@@ -368,16 +366,6 @@ export function YearSetupChecklist({
                 );
                 break;
 
-              case 'structure-confirmed':
-                action =
-                  step.status !== 'done' ? (
-                    <ConfirmStructureButton
-                      ayCode={selectedAy.ay_code}
-                      variant={primaryVariant}
-                    />
-                  ) : null;
-                break;
-
               case 'sections':
                 action = (
                   <Button variant={primaryVariant} size="sm" asChild>
@@ -579,42 +567,6 @@ function GenerateCalendarButton({
     >
       {m.isPending && <Loader2 className="size-3.5 animate-spin" />}
       Generate school days
-    </Button>
-  );
-}
-
-function ConfirmStructureButton({
-  ayCode,
-  variant = 'default',
-}: {
-  ayCode: string;
-  variant?: 'default' | 'outline';
-}) {
-  const router = useRouter();
-  const m = useMutation({
-    mutationFn: () =>
-      apiFetch(
-        '/api/sis/ay-setup/confirm-structure',
-        jsonInit('POST', { ay_code: ayCode })
-      ),
-    onSuccess: () => {
-      toast.success('Starting setup confirmed.');
-      router.refresh();
-    },
-    onError: (e) =>
-      toast.error(
-        e instanceof Error ? e.message : 'Could not confirm the starting setup.'
-      ),
-  });
-  return (
-    <Button
-      variant={variant}
-      size="sm"
-      onClick={() => m.mutate()}
-      disabled={m.isPending}
-    >
-      {m.isPending && <Loader2 className="size-3.5 animate-spin" />}
-      Confirm starting setup
     </Button>
   );
 }

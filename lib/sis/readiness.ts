@@ -4,15 +4,14 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { getLevelRows } from '@/lib/sis/levels';
 import { findEmptyLevels } from '@/lib/sis/subject-config-gaps';
 
-// Order matches the user-approved 11-step AY-Setup workflow: Academic Year
-// -> Calendar -> Confirm starting setup -> Sections -> Subject Weights ->
-// Form Advisers -> Section Subjects -> Grading Sheets -> Virtue Themes ->
-// Report-card Letterhead, with 'app-window' (early-bird applications) as
-// the lone optional item after the core 10. The 'grade-levels' step
-// (matching applicant-named levels to the catalog) was removed by
-// migration 086 alongside the whole Grade Levels admin page — the level
-// catalog is now a fixed 10 core levels (P1-P6, S1-S4), nothing to
-// reconcile against applicant demand.
+// Order matches the user-approved AY-Setup workflow: Academic Year ->
+// Calendar -> Sections -> Subject Weights -> Form Advisers -> Section
+// Subjects -> Grading Sheets -> Virtue Themes -> Report-card Letterhead,
+// with 'app-window' (early-bird applications) as the lone optional item
+// after the core 9. The 'grade-levels' step (matching applicant-named
+// levels to the catalog) was removed by migration 086 alongside the whole
+// Grade Levels admin page — the level catalog is now a fixed 10 core
+// levels (P1-P6, S1-S4), nothing to reconcile against applicant demand.
 //
 // 'sections' and 'subject-weights' are a split/decouple of an older single
 // 'classes' step: 'sections' asks "does every grade level have at least one
@@ -21,17 +20,14 @@ import { findEmptyLevels } from '@/lib/sis/subject-config-gaps';
 // that no longer depends on sections existing (a registrar can configure
 // subject weights before creating a section).
 //
-// 'structure-confirmed' (migration 089, Structure Defaults removal): a new
-// AY's starting sections/subjects/weights are now always auto-copied from
-// the most recently created prior AY (create_academic_year), rather than
-// applied from an admin-managed template. This step is the registrar's
-// explicit acknowledgement that they've reviewed that carried-forward
-// starting point — a plain done/not_started boolean keyed on
-// `academic_years.structure_confirmed_at`.
+// The 'structure-confirmed' step (migration 089, Structure Defaults
+// removal) was removed by migration 090 (Static AY Defaults): every new
+// AY's starting sections/subjects/weights now come from a fixed static
+// catalog applied identically every time (create_academic_year), so
+// there's no longer anything for the registrar to review or confirm.
 export type ReadinessStepId =
   | 'ay-setup'
   | 'calendar'
-  | 'structure-confirmed'
   | 'sections'
   | 'subject-weights'
   | 'advisers'
@@ -82,18 +78,9 @@ const STEP_META: Record<
     href: '/sis/calendar',
     required: true,
   },
-  'structure-confirmed': {
-    id: 'structure-confirmed',
-    step: 3,
-    label: 'Confirm starting setup',
-    description:
-      'Review the sections, subjects, and weights carried forward from last year, then confirm',
-    href: '/sis/ay-setup',
-    required: true,
-  },
   sections: {
     id: 'sections',
-    step: 4,
+    step: 3,
     label: 'Sections',
     description:
       'Create at least one class section for each grade level in use',
@@ -102,7 +89,7 @@ const STEP_META: Record<
   },
   'subject-weights': {
     id: 'subject-weights',
-    step: 5,
+    step: 4,
     label: 'Subject weights',
     description: 'Attach subjects and weights to every grade level in use',
     href: '/sis/admin/subjects',
@@ -110,7 +97,7 @@ const STEP_META: Record<
   },
   advisers: {
     id: 'advisers',
-    step: 6,
+    step: 5,
     label: 'Form advisers',
     description: 'Assign form class advisers',
     href: '/sis/sections',
@@ -118,7 +105,7 @@ const STEP_META: Record<
   },
   'section-subjects': {
     id: 'section-subjects',
-    step: 7,
+    step: 6,
     label: 'Section subjects',
     description: 'Confirm which subjects each section teaches',
     href: '/sis/sections',
@@ -126,7 +113,7 @@ const STEP_META: Record<
   },
   'grading-sheets': {
     id: 'grading-sheets',
-    step: 8,
+    step: 7,
     label: 'Grading sheets',
     description: 'Create grading sheets for all sections',
     href: '/markbook/sections',
@@ -134,7 +121,7 @@ const STEP_META: Record<
   },
   'virtue-themes': {
     id: 'virtue-themes',
-    step: 9,
+    step: 8,
     label: 'Virtue themes',
     description: 'Set virtue themes for each term',
     href: '/evaluation/virtue-themes',
@@ -142,7 +129,7 @@ const STEP_META: Record<
   },
   letterhead: {
     id: 'letterhead',
-    step: 10,
+    step: 9,
     label: 'Report-card letterhead',
     description: 'Configure school letterhead and branding',
     href: '/sis/admin/school-config',
@@ -150,7 +137,7 @@ const STEP_META: Record<
   },
   'app-window': {
     id: 'app-window',
-    step: 11,
+    step: 10,
     label: 'Application window',
     description: 'Open early-bird application window (optional)',
     href: '/sis/ay-setup',
@@ -213,18 +200,6 @@ export function resolveCalendarStep(input: {
     ...STEP_META['calendar'],
     status,
     fraction,
-  };
-}
-
-// Plain done/not_started boolean — no fraction, there's nothing to count.
-// `confirmedAt` comes straight from `academic_years.structure_confirmed_at`
-// (migration 089), set by `POST /api/sis/ay-setup/confirm-structure`.
-export function resolveStructureConfirmedStep(input: {
-  confirmedAt: string | null;
-}): ReadinessStep {
-  return {
-    ...STEP_META['structure-confirmed'],
-    status: input.confirmedAt ? 'done' : 'not_started',
   };
 }
 
@@ -820,7 +795,7 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   // Fetch AY row
   const { data: ayRow, error: ayError } = await db
     .from('academic_years')
-    .select('id, accepting_applications, structure_confirmed_at')
+    .select('id, accepting_applications')
     .eq('ay_code', ayCode)
     .single();
 
@@ -829,7 +804,6 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
     return buildReadiness(ayCode, [
       resolveAySetupStep({ datedTermCount: 0, totalTermCount: 0 }),
       resolveCalendarStep({ totalTerms: 0, coveredTerms: 0 }),
-      resolveStructureConfirmedStep({ confirmedAt: null }),
       resolveSectionsStep({ relevantLevelCount: 0, levelsWithSectionCount: 0 }),
       resolveSubjectWeightsStep({
         levelsInUse: 0,
@@ -850,7 +824,6 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
 
   const ayId = (ayRow as any).id;
   const accepting = (ayRow as any).accepting_applications ?? false;
-  const structureConfirmedAt = (ayRow as any).structure_confirmed_at ?? null;
 
   // Fan out 9 fetchers
   const [
@@ -878,9 +851,6 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   // Build steps, in the AY-Setup checklist's display order.
   const step1 = resolveAySetupStep(aySetup);
   const step2 = resolveCalendarStep(calendar);
-  const step2b = resolveStructureConfirmedStep({
-    confirmedAt: structureConfirmedAt,
-  });
   const step3 = resolveSectionsStep(sections);
   const step4 = resolveSubjectWeightsStep(subjectWeights);
   const step5 = resolveAdvisersStep(advisers);
@@ -893,7 +863,6 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   return buildReadiness(ayCode, [
     step1,
     step2,
-    step2b,
     step3,
     step4,
     step5,
