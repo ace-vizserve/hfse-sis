@@ -131,3 +131,74 @@ export async function getAttendanceRateTrendByAy(
 
   return shapeRateTrendPoints(ratesByAy);
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Per-term P/L/EX/A composition — for the stacked-bar chart.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type AttendanceTermMixPoint = {
+  /** Term label, e.g. 'T1'..'T4' — reuses AttritionStackedBarChart's
+   *  hardcoded "level" category-axis key so no component change is needed. */
+  level: string;
+  Present: number;
+  Late: number;
+  Excused: number;
+  Absent: number;
+};
+
+export type AttendanceTermCounts = {
+  present: number;
+  late: number;
+  excused: number;
+  absent: number;
+  encodedDays: number;
+};
+
+/**
+ * Pure shaping helper: term-number-keyed sub-counts → `AttendanceTermMixPoint[]`
+ * for `AttritionStackedBarChart`. Terms with zero encoded days are skipped
+ * entirely (no all-zero bar), mirroring `shapeRateTrendPoints`'s
+ * null-for-empty-term treatment. Separated so it's unit-testable without
+ * touching the DB — same convention as `shapeRateTrendPoints` above.
+ */
+export function shapeAttendanceMixPoints(
+  countsByTerm: Map<number, AttendanceTermCounts>
+): AttendanceTermMixPoint[] {
+  const points: AttendanceTermMixPoint[] = [];
+  for (const [term, c] of countsByTerm) {
+    if (c.encodedDays === 0) continue;
+    points.push({
+      level: `T${term}`,
+      Present: c.present,
+      Late: c.late,
+      Excused: c.excused,
+      Absent: c.absent,
+    });
+  }
+  return points;
+}
+
+/**
+ * Per-term Present/Late/Excused/Absent counts for one AY, shaped for
+ * `AttritionStackedBarChart`. Complements `getAttendanceRateTrendByAy` (which
+ * keeps only the derived rate) — this keeps the sub-counts that loader
+ * discards, from the SAME `React.cache()`-deduped `loadDailyRows(ay)` call,
+ * so this adds no extra Supabase round-trip when both are used on one page
+ * render.
+ */
+export async function getAttendanceMixByTerm(
+  ay: string
+): Promise<AttendanceTermMixPoint[]> {
+  const [rows, windows] = await Promise.all([
+    loadDailyRows(ay),
+    getDashboardWindows(ay),
+  ]);
+
+  const countsByTerm = new Map<number, AttendanceTermCounts>();
+  for (let t = 1; t <= 4; t++) {
+    const range = windows.term.byNumber[t as 1 | 2 | 3 | 4];
+    if (!range) continue;
+    countsByTerm.set(t, kpisFor(sliceDailyRows(rows, range.from, range.to)));
+  }
+  return shapeAttendanceMixPoints(countsByTerm);
+}

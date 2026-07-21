@@ -5,6 +5,8 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
+  LabelList,
   Legend,
   ResponsiveContainer,
   Tooltip,
@@ -41,6 +43,12 @@ export type GroupedBarChartProps = {
   yFormat?: YFormat;
   /** Fixed Y domain e.g. [80, 100] for rate charts. */
   yDomain?: [number, number];
+  /** Print each bar's value above it, formatted via `yFormat`. */
+  showValueLabels?: boolean;
+  /** The `x` category to visually emphasize (e.g. the current/latest
+   *  period) — its bars render at full opacity, all others dimmed. Unset
+   *  leaves every bar at its normal series fill (no behavior change). */
+  highlightX?: string;
 };
 
 // Non-muted series cycle through the chart palette; a muted series (the
@@ -96,9 +104,16 @@ function GroupedBarChartImpl({
   height = 260,
   yFormat,
   yDomain,
+  showValueLabels,
+  highlightX,
 }: GroupedBarChartProps) {
   const yFormatter = formatterFor(yFormat);
   const { fill, legend } = resolvePalette(series);
+  const labelFormatter = (label: unknown) => {
+    const v = typeof label === 'number' ? label : Number(label);
+    if (label == null || !Number.isFinite(v)) return '';
+    return yFormatter ? yFormatter(v) : String(v);
+  };
 
   const legendPalette: Record<string, ChartLegendChipColor> = {};
   series.forEach((s, i) => {
@@ -166,7 +181,30 @@ function GroupedBarChartImpl({
             maxBarSize={40}
             radius={[4, 4, 0, 0]}
             isAnimationActive={false}
-          />
+          >
+            {highlightX &&
+              data.map((row, ri) => (
+                <Cell
+                  key={ri}
+                  fill={fill[i]}
+                  fillOpacity={row.x === highlightX ? 1 : 0.45}
+                />
+              ))}
+            {showValueLabels && (
+              <LabelList
+                dataKey={s.key}
+                position="top"
+                offset={8}
+                formatter={labelFormatter}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  fontFamily: 'var(--font-mono)',
+                  fill: 'var(--color-foreground)',
+                }}
+              />
+            )}
+          </Bar>
         ))}
       </BarChart>
     </ResponsiveContainer>

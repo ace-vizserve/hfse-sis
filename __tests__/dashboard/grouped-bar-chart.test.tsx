@@ -109,4 +109,94 @@ describe('GroupedBarChart', () => {
     );
     expect(container.firstChild).toBeNull();
   });
+
+  it('highlightX renders full opacity on the matching category and dims the rest', () => {
+    const { container } = render(
+      <GroupedBarChart
+        series={[{ key: 'rate', label: 'Rate' }]}
+        data={[
+          { x: 'T1', rate: 94 },
+          { x: 'T2', rate: 92 },
+          { x: 'T3', rate: 96 },
+        ]}
+        yFormat="percent"
+        highlightX="T2"
+      />
+    );
+
+    const opacities = Array.from(
+      container.querySelectorAll('.recharts-bar-rectangle path')
+    ).map((el) => el.getAttribute('fill-opacity'));
+
+    // One bar per category (single series) — T2 (index 1) is highlighted.
+    expect(opacities).toEqual(['0.45', '1', '0.45']);
+  });
+
+  it('highlightX still resolves the muted series to grey, not a second chart colour', () => {
+    const { container } = render(
+      <GroupedBarChart
+        series={[
+          { key: 'AY2026', label: 'AY2026' },
+          { key: 'AY2025', label: 'AY2025', muted: true },
+        ]}
+        data={[{ x: 'T1', AY2026: 94, AY2025: 91 }]}
+        yFormat="percent"
+        highlightX="T1"
+      />
+    );
+
+    const fills = Array.from(
+      container.querySelectorAll('.recharts-bar-rectangle path')
+    ).map((el) => el.getAttribute('fill'));
+
+    expect(fills).toContain('var(--color-chart-1)');
+    expect(fills).toContain('var(--color-muted-foreground)');
+    expect(fills).not.toContain('var(--color-chart-2)');
+  });
+
+  it('no highlightX leaves every bar at full opacity (no behaviour change for existing callers)', () => {
+    const { container } = render(
+      <GroupedBarChart
+        series={[{ key: 'rate', label: 'Rate' }]}
+        data={[
+          { x: 'T1', rate: 94 },
+          { x: 'T2', rate: 92 },
+        ]}
+        yFormat="percent"
+      />
+    );
+
+    const bars = container.querySelectorAll('.recharts-bar-rectangle path');
+    // No <Cell> children at all when highlightX is unset — nothing to assert
+    // an opacity attribute on; the plain <Bar fill=...> path renders as-is.
+    bars.forEach((el) => expect(el.getAttribute('fill-opacity')).toBeNull());
+  });
+
+  it('showValueLabels renders the formatted value above each bar', () => {
+    const { container } = render(
+      <GroupedBarChart
+        series={[{ key: 'rate', label: 'Rate' }]}
+        data={[{ x: 'T1', rate: 94.2 }]}
+        yFormat="percent"
+        showValueLabels
+      />
+    );
+
+    const labelText = container.querySelector('.recharts-label-list text');
+    expect(labelText?.textContent).toBe('94%');
+  });
+
+  it('showValueLabels renders an empty label (not "null") for a null data point', () => {
+    const { container } = render(
+      <GroupedBarChart
+        series={[{ key: 'rate', label: 'Rate' }]}
+        data={[{ x: 'T1', rate: null }]}
+        yFormat="percent"
+        showValueLabels
+      />
+    );
+
+    const labelText = container.querySelector('.recharts-label-list text');
+    expect(labelText?.textContent ?? '').toBe('');
+  });
 });

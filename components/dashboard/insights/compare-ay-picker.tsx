@@ -9,7 +9,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select';
 import { COMPARE_NONE } from '@/lib/dashboard/comparison';
 
@@ -70,8 +69,6 @@ export function CompareAyPicker({
             <span className="text-foreground">{compareAy ?? 'None'}</span>
           </span>
         )}
-        {/* SelectValue is required by Radix but we render our own label above */}
-        <SelectValue className="sr-only" />
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={NONE_SENTINEL}>

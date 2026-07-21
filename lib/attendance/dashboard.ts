@@ -1,4 +1,5 @@
 import { unstable_cache } from 'next/cache';
+import { cache } from 'react';
 
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -91,13 +92,26 @@ async function loadDailyRowsUncached(ayCode: string): Promise<DailyRow[]> {
   return all;
 }
 
-export function loadDailyRows(ayCode: string): Promise<DailyRow[]> {
-  return unstable_cache(
-    () => loadDailyRowsUncached(ayCode),
-    ['attendance', 'daily-raw', ayCode],
-    { revalidate: CACHE_TTL_SECONDS, tags: tag(ayCode) }
-  )();
-}
+// loadDailyRows: request-scoped memoization via React's cache(), NOT
+// unstable_cache. The full-AY attendance_daily set (4 narrow columns × up to
+// 100k rows) serializes to ~3.9-8.3MB for any AY with real mid-year data —
+// past Next.js's hard 2MB unstable_cache data-cache ceiling. Every persistent
+// write was silently failing ("items over 2MB can not be cached"), surfacing
+// as repeated unhandledRejection errors on /attendance and /attendance/insights.
+//
+// Unlike drill.ts's loadEntryRows (KD #56), left plain-uncached because it has
+// a SINGLE caller, loadDailyRows has 5+ independent callers that all run
+// inside one page's Promise.all fan-out (getAttendanceKpisRange,
+// getDailyAttendanceRange, getExReasonMixRange, getTopAbsentRange, plus
+// insights-compare's getAttendanceRateTrendByAy). Plain-uncaching would
+// multiply one full-AY fetch into 5-10 per render (worse in compare mode).
+// React's cache() dedupes by argument within a single request/render, so all
+// same-ayCode callers share ONE Supabase fetch — no serialization, no 2MB
+// limit, request-scoped (never leaks across requests/users/AYs). Same pattern
+// as getAyIdByCode (lib/dashboard/ay-id.ts).
+export const loadDailyRows = cache(
+  (ayCode: string): Promise<DailyRow[]> => loadDailyRowsUncached(ayCode)
+);
 
 // ──────────────────────────────────────────────────────────────────────────
 // KPIs: attendance %, late / excused / absent counts in range.

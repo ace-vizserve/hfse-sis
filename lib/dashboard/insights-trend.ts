@@ -32,3 +32,25 @@ export function buildAyTrend(
   });
   return { data, series };
 }
+
+/** Extracts the current-AY (series[0], always the solid/primary series) line
+ * from an AyTrendResult as sparkline points, dropping null (future/
+ * un-encoded) periods so a MetricCard sparkline doesn't flatline toward
+ * zero. Returned shape structurally matches SparkPoint
+ * (components/dashboard/charts/sparkline-chart) without importing it, so
+ * this pure lib module has no dependency on the component layer. */
+export function sparklineFromAyTrend(
+  trend: AyTrendResult
+): Array<{ x: string; y: number }> {
+  const currentKey = trend.series[0]?.key;
+  if (!currentKey) return [];
+  const points: Array<{ x: string; y: number }> = [];
+  for (const row of trend.data) {
+    const x = row.x;
+    const y = row[currentKey];
+    if (typeof x === 'string' && typeof y === 'number') {
+      points.push({ x, y });
+    }
+  }
+  return points;
+}
