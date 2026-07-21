@@ -264,7 +264,7 @@ export function YearSetupChecklist({
 
   const firstOptionalId = steps.find((s) => !s.required)?.id ?? null;
 
-  // Sub-group the 11 flat rows into 3 clusters (Miller's Law — layout
+  // Sub-group the 10 flat rows into 3 clusters (Miller's Law — layout
   // redesign pass): the ids genuinely span different domains (dates/
   // calendar/staffing vs grading vs branding/admissions) with no visual
   // grouping today. Purely a label inserted between rows, same mechanism
