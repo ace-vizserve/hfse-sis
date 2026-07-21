@@ -1,23 +1,58 @@
-import { ArrowLeft, Clock, FileStack, Percent, TrendingUp } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import {
+  ArrowLeft,
+  Clock,
+  FileStack,
+  FileX,
+  GraduationCap,
+  HeartPulse,
+  HelpCircle,
+  Layers,
+  Percent,
+  Plane,
+  School,
+  TrendingUp,
+  UserMinus,
+  Wallet,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
-import { AyComparisonLineChart } from '@/components/dashboard/charts/ay-comparison-line-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
-import { InsightsSection } from '@/components/dashboard/insights/insights-section';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
-import { pickExtreme, meetsThreshold } from '@/lib/dashboard/narrative';
-import { MetricCard } from '@/components/dashboard/metric-card';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  BentoCard,
+  BentoGrid,
+} from '@/components/dashboard/insights/bento/bento-grid';
+import {
+  StatCard,
+  type StatCardDelta,
+} from '@/components/dashboard/insights/bento/stat-card';
+import {
+  SegmentedBar,
+  type SegmentedBarSegment,
+} from '@/components/dashboard/insights/bento/segmented-bar';
+import {
+  RankedBar,
+  type RankedBarLegendItem,
+  type RankedBarRow,
+} from '@/components/dashboard/insights/bento/ranked-bar';
+import {
+  RateDial,
+  type RateDialTotalRow,
+} from '@/components/dashboard/insights/bento/rate-dial';
+import {
+  PillBarChart,
+  type PillBarColumn,
+} from '@/components/dashboard/insights/bento/pill-bar-chart';
+import { ProjectListRow } from '@/components/dashboard/insights/bento/project-list-row';
+import { BadgeTooltip } from '@/components/dashboard/insights/bento/badge-tooltip';
+import {
+  qualityRampColorKey,
+  type ColorKey,
+} from '@/components/dashboard/insights/bento/tokens';
 import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
@@ -43,11 +78,17 @@ import {
   comparisonCardState,
   resolveCompareAy,
 } from '@/lib/dashboard/comparison';
-import { buildAyTrend } from '@/lib/dashboard/insights-trend';
+import {
+  buildAyTrend,
+  type AyTrendResult,
+} from '@/lib/dashboard/insights-trend';
+import { pickExtreme, meetsThreshold } from '@/lib/dashboard/narrative';
 import { summariseAyTrend } from '@/lib/dashboard/trend-delta';
 import {
   computeDelta,
+  formatDeltaLabel,
   type DashboardSearchParams,
+  type Delta,
 } from '@/lib/dashboard/range';
 import { APPLICATION_TERMINAL_REASON_LABELS } from '@/lib/schemas/sis';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -67,6 +108,145 @@ function reasonLabel(reason: string): string {
     (APPLICATION_TERMINAL_REASON_LABELS as Record<string, string>)[reason] ??
     reason
   );
+}
+
+// ── Small page-local presentation helpers ──────────────────────────────────
+// Not part of the shared bento/ library — mirrors the "mono cap + serif
+// title" text block every bento card in the locked mockups carries
+// (`.cap`/`.title`), composed here from plain Tailwind (same pattern as
+// Attendance Insights' own page-local SectionHeading).
+
+function SectionHeading({ cap, title }: { cap: string; title: string }) {
+  return (
+    <div className="mb-4">
+      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        {cap}
+      </p>
+      <p className="mt-0.5 font-serif text-base font-semibold text-foreground">
+        {title}
+      </p>
+    </div>
+  );
+}
+
+/** Resolves an existing `Delta` into the bento `StatCard`'s already-semantic
+ * up=good/down=bad direction (see `DELTA_PILL_CLASS` in tokens.ts) — mirrors
+ * `deltaChipClass`'s goodWhen resolution and Attendance Insights' own
+ * `toStatDelta`, generalised with an explicit format/unit since this page
+ * needs both a plain-percent delta (applications) and an absolute-pp one
+ * (conversion rate). */
+function toStatDelta(
+  delta: Delta | undefined,
+  goodWhen: 'up' | 'down',
+  format: 'percent' | 'absolute' = 'percent',
+  unit?: string
+): StatCardDelta | undefined {
+  if (!delta || delta.direction === 'flat') return undefined;
+  const isGood =
+    (goodWhen === 'up' && delta.direction === 'up') ||
+    (goodWhen === 'down' && delta.direction === 'down');
+  return {
+    value: formatDeltaLabel(delta, { format, unit }),
+    direction: isGood ? 'up' : 'down',
+  };
+}
+
+// "Which levels convert worst?" quality-ramp bands — below 70% is a real
+// concern, 70–80 amber, 80–90 sky, 90+ mint. A page-local judgment call (the
+// locked mockups hand-picked their own per-page cut points; tokens.ts
+// documents this as expected — see qualityRampColorKey's doc comment).
+const LEVEL_CONVERSION_THRESHOLDS = { low: 70, high: 90 };
+
+// Reason-code → icon map for the cancellation-reasons segmented bar. Bounded
+// set (APPLICATION_TERMINAL_REASON_VALUES, KD #111) + the two sentinels this
+// page's own derivation introduces ('Unspecified' when the DB reason is
+// blank, OVERFLOW_REASON_KEY for the "Other reasons" overflow bucket).
+const OVERFLOW_REASON_KEY = '__overflow__';
+const REASON_ICONS: Record<string, LucideIcon> = {
+  chose_another_school: School,
+  visa_denied: FileX,
+  lost_interest: UserMinus,
+  financial: Wallet,
+  family_relocation: Plane,
+  health: HeartPulse,
+  other: HelpCircle,
+  Unspecified: HelpCircle,
+  [OVERFLOW_REASON_KEY]: Layers,
+};
+function reasonIcon(key: string): LucideIcon {
+  return REASON_ICONS[key] ?? HelpCircle;
+}
+
+// ── "Total Revenue" pill-bar-chart reshaping (intake trend) ────────────────
+// Two always-positive monthly count series (selected AY / compare AY) —
+// structurally the exact case pill-bar-chart.tsx's doc comment calls out
+// (case 1: "up"/"down" is a visual split, not a sign). A future month in the
+// current AY is `null` in intakeTrend.data (buildAyTrend/shapeIntakeTrendPoints)
+// — that already renders as a 0-height pill pair here (no separate "gap" state
+// needed: a 0px pill and a missing pill are visually identical), so no prop
+// addition to pill-bar-chart.tsx was required.
+const INTAKE_PLOT_HEIGHT_PX = 260;
+// 3 of 5 grid intervals (156 = 3 × 52) — keeps the "0" gridline exactly on a
+// tick position for PillBarChart's evenly-spaced axisLabels. The up region
+// (156px) is taller than the down region (104px) since the selected AY is
+// the more consequential series to give headroom to.
+const INTAKE_ZERO_OFFSET_PX = 156;
+const INTAKE_GRID_INTERVALS = 5;
+
+function buildIntakePillColumns(
+  data: AyTrendResult['data'],
+  series: AyTrendResult['series']
+): {
+  columns: PillBarColumn[];
+  axisLabels: string[];
+} {
+  const currentKey = series[0]?.key;
+  const compareKey = series[1]?.key;
+  const numeric = (v: unknown): number | null =>
+    typeof v === 'number' ? v : null;
+
+  const upValues = currentKey
+    ? data
+        .map((d) => numeric(d[currentKey]))
+        .filter((v): v is number => v !== null)
+    : [];
+  const downValues = compareKey
+    ? data
+        .map((d) => numeric(d[compareKey]))
+        .filter((v): v is number => v !== null)
+    : [];
+
+  const upRegionPx = INTAKE_ZERO_OFFSET_PX;
+  const downRegionPx = INTAKE_PLOT_HEIGHT_PX - INTAKE_ZERO_OFFSET_PX;
+  const maxUp = Math.max(1, ...upValues);
+  const maxDown = Math.max(1, ...downValues);
+  const scale =
+    downValues.length > 0
+      ? Math.min(upRegionPx / maxUp, downRegionPx / maxDown)
+      : upRegionPx / maxUp;
+
+  const intervalPx = INTAKE_PLOT_HEIGHT_PX / INTAKE_GRID_INTERVALS;
+  const unit = intervalPx / scale; // data value per grid interval
+  const axisLabels = [3, 2, 1, 0, -1, -2].map((m) => {
+    const v = Math.round(m * unit);
+    if (v === 0) return '0';
+    return v < 0
+      ? `−${Math.abs(v).toLocaleString('en-SG')}`
+      : v.toLocaleString('en-SG');
+  });
+
+  const columns: PillBarColumn[] = data.map((row, i) => {
+    const upVal = currentKey ? numeric(row[currentKey]) : null;
+    const downVal = compareKey ? numeric(row[compareKey]) : null;
+    return {
+      key: `${row.x}-${i}`,
+      label: String(row.x),
+      upHeightPx: upVal !== null ? Math.round(upVal * scale) : 0,
+      downHeightPx: downVal !== null ? Math.round(downVal * scale) : 0,
+    };
+  });
+
+  return { columns, axisLabels };
 }
 
 // Admissions · Insights — a narrative, read-first companion to the operational
@@ -244,7 +424,6 @@ export default async function AdmissionsInsightsPage({
   // deliberately distinct from the real `other` reason code, whose display
   // label is already "Other" (APPLICATION_TERMINAL_REASON_LABELS) and which
   // can legitimately rank in the top 5 alongside the overflow row.
-  const OVERFLOW_REASON_KEY = '__overflow__';
   const TOP_REASON_COUNT = 5;
   const topReasons = terminal.overall.slice(0, TOP_REASON_COUNT);
   const otherReasonsCount = terminal.overall
@@ -341,6 +520,158 @@ export default async function AdmissionsInsightsPage({
           tone: (growth.pct >= 0 ? 'mint' : 'amber') as 'mint' | 'amber',
         };
 
+  // ────────────────────────────────────────────────────────────────────────
+  // Bento presentation-layer derivations — pure reshaping of the values
+  // already computed above into the shared bento primitives' prop shapes.
+  // No new queries, no changed data shapes.
+  // ────────────────────────────────────────────────────────────────────────
+
+  const applicationsStatDelta = toStatDelta(
+    applicationsDelta ?? undefined,
+    'up'
+  );
+  const applicationsCaption = applicationsDelta
+    ? `${priorApplications?.toLocaleString('en-SG')} in ${compareAy}`
+    : demandState === 'no-data'
+      ? `No data for ${compareAy}`
+      : compareAy === null
+        ? 'Pick a comparison year above'
+        : undefined;
+
+  const conversionStatDelta = toStatDelta(
+    conversionDelta ?? undefined,
+    'up',
+    'absolute',
+    'pp'
+  );
+  const conversionCaption = conversionDelta
+    ? `${priorConversionPct?.toFixed(1)}% in ${compareAy}`
+    : `${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`;
+
+  // §2 — intake trend pill-bar-chart + growth dial.
+  const { columns: intakeColumns, axisLabels: intakeAxisLabels } =
+    buildIntakePillColumns(intakeTrend.data, intakeTrend.series);
+  const showGrowthDial = growth.pct !== null && compareAy !== null;
+  const growthDialTotals: RateDialTotalRow[] = showGrowthDial
+    ? [
+        {
+          icon: FileStack,
+          iconGradient: 'indigo',
+          value: applicationsCount.toLocaleString('en-SG'),
+          label: selectedAy,
+        },
+        {
+          icon: FileStack,
+          iconGradient: 'grey',
+          value: (priorApplications ?? 0).toLocaleString('en-SG'),
+          label: compareAy ?? '',
+        },
+      ]
+    : [];
+
+  // §3 — funnel stall list. `funnel` is CUMULATIVE stage reach (Submitted
+  // includes everyone who ever reached it or beyond), not a mutually-exclusive
+  // partition of applicationsCount — so this uses ranked-bar (numbered
+  // stage-reach ranking), not segmented-bar (which requires segments to sum
+  // to 100%, per its own doc comment).
+  const funnelBars = funnel.map((stage) => {
+    const pct =
+      applicationsCount > 0
+        ? Math.max(4, Math.round((stage.count / applicationsCount) * 100))
+        : 0;
+    const isBiggestLeak =
+      biggestLeakStage !== null &&
+      stage.stage === biggestLeakStage.label &&
+      stage.dropOffPct === biggestLeakStage.dropOffPct;
+    const colorKey: ColorKey =
+      stage.stage === 'Enrolled'
+        ? 'mint'
+        : isBiggestLeak
+          ? 'destructive'
+          : 'indigo';
+    return { stage, pct, colorKey };
+  });
+  const funnelRows: RankedBarRow[] = funnelBars.map(
+    ({ stage, pct, colorKey }) => ({
+      key: stage.stage,
+      label: stage.stage,
+      pct,
+      colorKey,
+    })
+  );
+  const funnelLegend: RankedBarLegendItem[] = funnelBars.map(
+    ({ stage, colorKey }) => ({
+      key: stage.stage,
+      colorKey,
+      name: stage.stage,
+      value: `${stage.count.toLocaleString('en-SG')}`,
+    })
+  );
+
+  // §4 — conversion by level ranked-bar + legend.
+  const levelBars = levelsWorstFirst.map((row) => {
+    const isWorst = showWorstLevel && row.level === worstLevel.item!.level;
+    const colorKey: ColorKey = isWorst
+      ? 'destructive'
+      : qualityRampColorKey(row.conversionPct, LEVEL_CONVERSION_THRESHOLDS);
+    return { row, colorKey };
+  });
+  const levelRows: RankedBarRow[] = levelBars.map(({ row, colorKey }) => ({
+    key: row.level,
+    label: row.level,
+    pct: Math.max(4, row.conversionPct),
+    colorKey,
+  }));
+  const levelLegend: RankedBarLegendItem[] = levelBars.map(
+    ({ row, colorKey }) => ({
+      key: row.level,
+      colorKey,
+      name: row.level,
+      value: `${row.conversionPct}%`,
+    })
+  );
+
+  // §5 — cancellation reasons: topReasons + the overflow bucket are a genuine
+  // partition of terminal.total (otherReasonsCount is explicitly the
+  // remainder) — this DOES fit segmented-bar's "sums to 100%" contract.
+  const reasonSegments: SegmentedBarSegment[] = reasonBars.map((r) => {
+    const pct =
+      terminal.total > 0 ? Math.round((r.count / terminal.total) * 100) : 0;
+    const isTop = showTopReason && r.key === topReason.reason;
+    const colorKey: ColorKey =
+      r.key === OVERFLOW_REASON_KEY ? 'grey' : isTop ? 'amber' : 'indigo';
+    return {
+      key: r.key,
+      label: r.label,
+      value: `${r.count.toLocaleString('en-SG')} cancellation${r.count === 1 ? '' : 's'}`,
+      pct,
+      colorKey,
+      icon: reasonIcon(r.key),
+    };
+  });
+
+  // §6 — referral channels ranked-bar. Same shape as conversion-by-level
+  // (ReferralConversionRow mirrors LevelConversionRow: applied/enrolled/
+  // conversionPct) — the mockup's "no source recorded" framing doesn't exist
+  // in the real loader, so this reuses ranked-bar on the real per-source
+  // conversion data instead, placed in its own Chapter-3 section.
+  const referralRows: RankedBarRow[] = referralsByConversion.map((r) => {
+    const isBest = showBestRef && r.source === bestRef.item!.source;
+    const isWorst =
+      showBestRef &&
+      !worstRef.isTie &&
+      worstRef.item !== null &&
+      r.source === worstRef.item.source &&
+      worstRef.item.source !== bestRef.item!.source;
+    const colorKey: ColorKey = isBest ? 'mint' : isWorst ? 'amber' : 'indigo';
+    return {
+      key: r.source,
+      label: r.source,
+      pct: Math.max(4, r.conversionPct),
+      colorKey,
+    };
+  });
+
   return (
     <PageShell>
       <Link
@@ -379,113 +710,60 @@ export default async function AdmissionsInsightsPage({
         />
       </div>
 
-      {/* ═══ Chapter 1 — Demand & conversion ═══
+      {/* ═══ Demand & conversion ═══
           How much demand the funnel takes in, and how well it converts. */}
-      <div className="space-y-8 border-t-2 border-brand-indigo/25 pt-7">
-        <div className="space-y-1">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-indigo">
-            Chapter 1
-          </p>
-          <h2 className="font-serif text-[28px] font-semibold leading-tight tracking-tight text-foreground">
-            Demand &amp; conversion
-          </h2>
-        </div>
+      <div className="space-y-5 pt-2">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-indigo">
+          Demand &amp; conversion
+        </p>
 
-        {/* 1 — Funnel headline: application demand + conversion (NOT enrolled
-          headcount — that's the enrolled body, owned by Records Insights).
-          Primary-AY metrics (Conversion rate, Applications cancelled) always
-          render. Only the demand-comparison subtext reacts to `demandState`
-          (FIX 2 — matches Records' Section-1 pattern). */}
-        <InsightsSection
-          eyebrow="Headline"
-          title="Is the funnel healthy?"
-          description={
-            demandState === 'ok'
-              ? `Application demand this year compared with ${compareAy}.`
-              : compareAy === null
-                ? 'Pick a comparison year above to see year-over-year demand. Until then, this is the current cycle.'
-                : `No application data found for ${compareAy}. Try a different comparison year.`
-          }
-        >
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <MetricCard
-              label="Applications received"
-              value={applicationsCount}
+        <BentoGrid>
+          {/* row 1 — stat cards. Primary-AY metrics always render; only the
+              demand-comparison caption reacts to `demandState`. */}
+          <BentoCard span={4}>
+            <StatCard
               icon={FileStack}
-              intent="default"
-              {...(applicationsDelta
-                ? {
-                    delta: applicationsDelta,
-                    deltaGoodWhen: 'up' as const,
-                    comparisonLabel: `${priorApplications?.toLocaleString('en-SG')} in ${compareAy}`,
-                  }
-                : {
-                    subtext:
-                      demandState === 'no-data'
-                        ? `No data for ${compareAy}`
-                        : compareAy === null
-                          ? 'Pick a comparison year above'
-                          : undefined,
-                  })}
+              iconGradient="indigo"
+              value={applicationsCount.toLocaleString('en-SG')}
+              label="Applications received"
+              delta={applicationsStatDelta}
+              caption={applicationsCaption}
             />
-            <MetricCard
-              label="Conversion rate"
-              value={conversionPct}
-              format="percent"
-              icon={Percent}
-              intent="good"
-              {...(conversionDelta
-                ? {
-                    delta: conversionDelta,
-                    deltaGoodWhen: 'up' as const,
-                    deltaFormat: 'absolute' as const,
-                    deltaUnit: 'pp',
-                    comparisonLabel: `${priorConversionPct?.toFixed(1)}% in ${compareAy}`,
-                  }
-                : {
-                    subtext: `${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`,
-                  })}
-            />
-            {timeToEnroll.sampleSize > 0 && (
-              <MetricCard
-                label="Avg. days to enrol"
-                value={timeToEnroll.avgDays}
-                icon={Clock}
-                intent="default"
-                subtext={`from ${timeToEnroll.sampleSize.toLocaleString('en-SG')} ${timeToEnroll.sampleSize === 1 ? 'enrolment' : 'enrolments'} since tracking began`}
-              />
-            )}
-          </section>
-        </InsightsSection>
+          </BentoCard>
 
-        {/* 2 — Intake trend: per-month, two-AY overlay.
-          Shows applications received per month across the full Jan–Nov HFSE
-          AY window. When a comparison AY is selected, it overlays as a muted
-          dashed line so the registrar can read seasonal patterns at a glance.
-          Future months in the current AY render as gaps (null) so the line
-          doesn't misleadingly flatline to zero. */}
-        <InsightsSection
-          eyebrow="Demand"
-          title="How is intake trending?"
-          description={
-            compareAy
-              ? `Applications received per month — ${selectedAy} (solid) vs ${compareAy} (dashed).`
-              : 'Applications received per month across the academic year.'
-          }
-        >
-          {intakeTrend.data.some((d) =>
-            intakeTrend.series.some((s) => d[s.key] !== null)
-          ) ? (
-            <Card>
-              <CardHeader>
-                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  Applications per month
-                </CardDescription>
-                <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  Intake trend
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+          <BentoCard span={4}>
+            <StatCard
+              icon={Percent}
+              iconGradient="mint"
+              value={`${conversionPct}%`}
+              label="Conversion rate"
+              delta={conversionStatDelta}
+              caption={conversionCaption}
+            />
+          </BentoCard>
+
+          {/* Avg. days to enrol — CONDITIONAL: only when sampleSize > 0
+              (early-in-AY / sparse cohorts suppress it rather than show a
+              near-zero-sample average). */}
+          {timeToEnroll.sampleSize > 0 && (
+            <BentoCard span={4}>
+              <StatCard
+                icon={Clock}
+                iconGradient="sky"
+                value={`${timeToEnroll.avgDays}d`}
+                label="Avg. days to enrol"
+                caption={`${selectedAy} · n=${timeToEnroll.sampleSize.toLocaleString('en-SG')}`}
+              />
+            </BentoCard>
+          )}
+
+          {/* row 2 — intake trend + growth panel */}
+          <BentoCard span={8}>
+            <SectionHeading cap="Applications per month" title="Intake trend" />
+            {intakeTrend.data.some((d) =>
+              intakeTrend.series.some((s) => d[s.key] !== null)
+            ) ? (
+              <div className="space-y-4">
                 {intakeTrendSummary.currentValue !== null && (
                   <TrendDeltaCaption
                     value={intakeTrendSummary.currentValue.toLocaleString(
@@ -495,424 +773,202 @@ export default async function AdmissionsInsightsPage({
                     delta={intakeTrendDelta}
                   />
                 )}
-                <AyComparisonLineChart
-                  series={intakeTrend.series}
-                  data={intakeTrend.data}
-                  yFormat="number"
+                <PillBarChart
+                  columns={intakeColumns}
+                  plotHeightPx={INTAKE_PLOT_HEIGHT_PX}
+                  zeroOffsetPx={INTAKE_ZERO_OFFSET_PX}
+                  axisLabels={intakeAxisLabels}
+                  legend={[
+                    { colorKey: 'indigo', label: selectedAy },
+                    ...(compareAy
+                      ? [{ colorKey: 'grey' as const, label: compareAy }]
+                      : []),
+                  ]}
+                  defaultUpColorKey="indigo"
+                  defaultDownColorKey="grey"
                 />
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-dashed">
-              <CardContent className="p-8 text-center text-sm text-muted-foreground">
+              </div>
+            ) : (
+              <p className="py-8 text-center text-sm text-muted-foreground">
                 No applications recorded yet for this academic year.
-              </CardContent>
-            </Card>
-          )}
-        </InsightsSection>
+              </p>
+            )}
+          </BentoCard>
 
-        {/* 3 — Funnel: where applicants stall, on the REAL applicationStatus
-            pipeline (490/490 populated). Submitted → Ongoing Verification →
-            Processing → Enrolled, counted cumulatively. */}
-        <InsightsSection
-          eyebrow="Funnel"
-          title="Where do applicants stall?"
-          description={
-            biggestLeakStage
-              ? `Biggest leak: at ${biggestLeakStage.label} — ${biggestLeakStage.dropOffPct}% of applicants who reached the prior step don't move on.`
-              : 'Each bar shows how many applicants reached that stage of the application pipeline. The funnel is cumulative — every enrolled applicant also passed verification and processing.'
-          }
-        >
-          {/* 3a — Application-status pipeline funnel */}
-          <Card>
-            <CardHeader>
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Stage reach — {applicationsCount.toLocaleString('en-SG')} total
-                applications
-              </CardDescription>
-              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                {funnelTitle}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {applicationsCount === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No applications recorded yet for this academic year.
+          <BentoCard span={4}>
+            {showGrowthDial ? (
+              <RateDial
+                value={`${growth.pct}%`}
+                label="Growth"
+                caption={`${applicationsCount.toLocaleString('en-SG')} application${applicationsCount === 1 ? '' : 's'} this AY, ${growth.pct! >= 0 ? 'up' : 'down'} from ${(priorApplications ?? 0).toLocaleString('en-SG')} in ${compareAy}`}
+                colorKey="indigo"
+                totals={growthDialTotals}
+              />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-1.5 py-6 text-center">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Growth
                 </p>
-              ) : (
-                <>
-                  <ul className="space-y-3">
-                    {funnel.map((stage) => {
-                      const widthPct =
-                        applicationsCount > 0
-                          ? Math.max(
-                              4,
-                              Math.round(
-                                (stage.count / applicationsCount) * 100
-                              )
-                            )
-                          : 0;
-                      const isBiggestLeak =
-                        biggestLeakStage !== null &&
-                        stage.stage === biggestLeakStage.label &&
-                        stage.dropOffPct === biggestLeakStage.dropOffPct;
-                      return (
-                        <li key={stage.stage} className="space-y-1.5">
-                          <div className="flex items-baseline justify-between gap-3 text-sm">
-                            <span className="font-medium text-foreground">
-                              {stage.stage}
-                            </span>
-                            <span className="flex items-center gap-2 font-mono text-xs tabular-nums text-muted-foreground">
-                              {stage.count.toLocaleString('en-SG')}
-                              {stage.dropOffPct > 0 && (
-                                <>
-                                  <span className="text-destructive">
-                                    −{stage.dropOffPct}%
-                                  </span>
-                                  {isBiggestLeak && (
-                                    <Badge
-                                      variant="destructive"
-                                      className="px-1.5 py-0 text-[10px] font-semibold"
-                                    >
-                                      Biggest leak
-                                    </Badge>
-                                  )}
-                                </>
-                              )}
-                            </span>
-                          </div>
-                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                            <div
-                              className={
-                                isBiggestLeak
-                                  ? 'h-full rounded-full bg-gradient-to-r from-destructive/70 to-destructive/40'
-                                  : 'h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy'
-                              }
-                              style={{ width: `${widthPct}%` }}
-                            />
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {/* Callout (act): the biggest leak, quantified. Renders only
-                      when the loader flagged a real leak; otherwise omitted. */}
-                  {biggestLeakStage && biggestLeakStage.dropOffPct > 0 ? (
-                    <RecommendationCallout tone="act">
-                      {biggestLeakStage.dropOffPct}% of applicants fall away at{' '}
-                      {biggestLeakStage.label} — focus follow-up there to
-                      recover the most.
-                    </RecommendationCallout>
-                  ) : null}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </InsightsSection>
-      </div>
-      {/* ═══ end Chapter 1 ═══ */}
+                <p className="max-w-55 text-sm text-muted-foreground">
+                  {compareAy === null
+                    ? 'Pick a comparison year above to see year-over-year growth.'
+                    : `No application data found for ${compareAy}.`}
+                </p>
+              </div>
+            )}
+          </BentoCard>
 
-      {/* ═══ Chapter 2 — Who & why we lose ═══
+          {/* row 3 — funnel stall list */}
+          <BentoCard span={12}>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Stage reach — {applicationsCount.toLocaleString('en-SG')}{' '}
+                  total applications
+                </p>
+                <p className="mt-0.5 font-serif text-base font-semibold text-foreground">
+                  {funnelTitle}
+                </p>
+              </div>
+              {biggestLeakStage && (
+                <BadgeTooltip
+                  label="Biggest leak"
+                  colorKey="destructive"
+                  tooltip={`${biggestLeakStage.dropOffPct}% of applicants fall away at ${biggestLeakStage.label} — focus follow-up there to recover the most.`}
+                />
+              )}
+            </div>
+            {applicationsCount === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No applications recorded yet for this academic year.
+              </p>
+            ) : (
+              <>
+                <RankedBar rows={funnelRows} legend={funnelLegend} />
+                {biggestLeakStage && biggestLeakStage.dropOffPct > 0 ? (
+                  <RecommendationCallout tone="act" className="mt-5">
+                    {biggestLeakStage.dropOffPct}% of applicants fall away at{' '}
+                    {biggestLeakStage.label} — focus follow-up there to recover
+                    the most.
+                  </RecommendationCallout>
+                ) : null}
+              </>
+            )}
+          </BentoCard>
+        </BentoGrid>
+      </div>
+      {/* ═══ end Demand & conversion ═══ */}
+
+      {/* ═══ Who & why we lose ═══
           Which levels convert worst, and the reasons applicants give for
           dropping out before enrolling. */}
-      <div className="space-y-8 border-t-2 border-brand-amber/30 pt-7">
-        <div className="space-y-1">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-amber">
-            Chapter 2
-          </p>
-          <h2 className="font-serif text-[28px] font-semibold leading-tight tracking-tight text-foreground">
-            Who &amp; why we lose
-          </h2>
-        </div>
+      <div className="space-y-5 border-t border-hairline pt-7">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-amber">
+          Who &amp; why we lose
+        </p>
 
-        {/* 2.1 — Conversion by level */}
-        <InsightsSection
-          eyebrow="Conversion gaps"
-          title="Which levels convert worst?"
-          description="How many applicants at each level go on to enrol — terminal statuses excluded so this reflects the active pipeline."
-        >
-          <Card>
-            <CardHeader>
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Active pipeline only — terminal statuses excluded
-              </CardDescription>
-              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                {levelTitle}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {levelsWorstFirst.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No level data available.
-                </p>
-              ) : (
-                <>
-                  <ul className="space-y-3">
-                    {levelsWorstFirst.map((row) => {
-                      const isWorst =
-                        showWorstLevel && row.level === worstLevel.item!.level;
-                      const widthPct = Math.max(4, row.conversionPct);
-                      return (
-                        <li key={row.level} className="space-y-1.5">
-                          <div className="flex items-baseline justify-between gap-3 text-sm">
-                            <span className="font-medium text-foreground">
-                              {row.level}
-                            </span>
-                            <span className="flex items-center gap-2 font-mono text-xs tabular-nums text-muted-foreground">
-                              {row.applied.toLocaleString('en-SG')} applied ·{' '}
-                              {row.enrolled.toLocaleString('en-SG')} enrolled
-                              <span
-                                className={
-                                  isWorst
-                                    ? 'font-semibold text-brand-amber'
-                                    : 'text-foreground'
-                                }
-                              >
-                                {row.conversionPct}%
-                              </span>
-                            </span>
-                          </div>
-                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                            <div
-                              className={
-                                isWorst
-                                  ? 'h-full rounded-full bg-gradient-to-r from-brand-amber/80 to-brand-amber/40'
-                                  : 'h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy'
-                              }
-                              style={{ width: `${widthPct}%` }}
-                            />
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {/* Callout (watch): the worst-converting level, but only when
-                      its gap below the overall rate is meaningful and unambiguous. */}
-                  {showWorstLevel ? (
-                    <RecommendationCallout tone="watch">
-                      {worstLevel.item!.level} converts at{' '}
-                      {worstLevel.item!.conversionPct}% — {levelGap}pp below the{' '}
-                      {conversionPct}% overall rate. Worth a closer look at this
-                      level&rsquo;s pipeline.
-                    </RecommendationCallout>
-                  ) : null}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </InsightsSection>
+        {/* Conversion by level */}
+        <BentoCard span={12}>
+          <SectionHeading
+            cap="Active pipeline only — terminal statuses excluded"
+            title={levelTitle}
+          />
+          {levelsWorstFirst.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No level data available.
+            </p>
+          ) : (
+            <>
+              <RankedBar rows={levelRows} legend={levelLegend} />
+              {showWorstLevel ? (
+                <RecommendationCallout tone="watch" className="mt-5">
+                  {worstLevel.item!.level} converts at{' '}
+                  {worstLevel.item!.conversionPct}% — {levelGap}pp below the{' '}
+                  {conversionPct}% overall rate. Worth a closer look at this
+                  level&rsquo;s pipeline.
+                </RecommendationCallout>
+              ) : null}
+            </>
+          )}
+        </BentoCard>
 
-        {/* 2.2 — Why applicants are lost (pre-enrolment; distinct from Records'
+        {/* Why applicants are lost (pre-enrolment; distinct from Records'
             enrolled-student withdrawals). */}
         {terminal.total > 0 && (
-          <InsightsSection
-            eyebrow="Lost applicants"
-            title="Why don't they enroll?"
-            description="Reasons recorded when an application is withdrawn or cancelled before enrolling — overall and per level. (Students who leave after enrolling are in Records → Insights.)"
-          >
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                    Cancellation reasons
-                  </CardDescription>
-                  <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                    {reasonTitle}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ul className="space-y-3">
-                    {reasonBars.map((r) => {
-                      const pct =
-                        terminal.total > 0
-                          ? Math.round((r.count / terminal.total) * 100)
-                          : 0;
-                      const isTop = showTopReason && r.key === topReason.reason;
-                      return (
-                        <li key={r.key} className="space-y-1.5">
-                          <div className="flex items-baseline justify-between gap-3 text-sm">
-                            <span className="font-medium text-foreground">
-                              {r.label}
-                            </span>
-                            <span
-                              className={
-                                isTop
-                                  ? 'font-mono text-xs font-semibold tabular-nums text-brand-amber'
-                                  : 'font-mono text-xs tabular-nums text-muted-foreground'
-                              }
-                            >
-                              {r.count.toLocaleString('en-SG')} · {pct}%
-                            </span>
-                          </div>
-                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                            <div
-                              className={
-                                isTop
-                                  ? 'h-full rounded-full bg-gradient-to-r from-brand-amber/80 to-brand-amber/40'
-                                  : 'h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-navy'
-                              }
-                              style={{ width: `${Math.max(4, pct)}%` }}
-                            />
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {/* Callout (watch): the top cancellation cause + its share.
-                      Suppressed on an empty set or a tie for first. */}
-                  {showTopReason ? (
-                    <RecommendationCallout tone="watch">
-                      {reasonLabel(topReason.reason)} accounts for{' '}
-                      {topReason.count} of {terminal.total} cancellations
-                      {topReasonPct !== null ? ` (${topReasonPct}%)` : ''} — the
-                      clearest place to address drop-out.
-                    </RecommendationCallout>
-                  ) : null}
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                    Top reason per level
-                  </CardDescription>
-                  <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                    By level
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="divide-y divide-hairline">
-                    {terminal.byLevel.map((lvl) => {
-                      const lvlTopReason = lvl.reasons[0];
-                      return (
-                        <li
-                          key={lvl.level}
-                          className="flex items-baseline justify-between gap-3 py-2.5 text-sm"
-                        >
-                          <span className="font-medium text-foreground">
-                            {lvl.level}
-                          </span>
-                          <span className="min-w-0 truncate text-right text-muted-foreground">
-                            {lvlTopReason
-                              ? reasonLabel(lvlTopReason.reason)
-                              : '—'}
-                            <span className="ml-2 font-mono text-xs tabular-nums text-foreground">
-                              {lvl.count.toLocaleString('en-SG')}
-                            </span>
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </CardContent>
-              </Card>
-            </div>
-          </InsightsSection>
+          <BentoGrid>
+            <BentoCard span={6}>
+              <SectionHeading cap="Cancellation reasons" title={reasonTitle} />
+              <SegmentedBar segments={reasonSegments} />
+              {showTopReason ? (
+                <RecommendationCallout tone="watch" className="mt-5">
+                  {reasonLabel(topReason.reason)} accounts for {topReason.count}{' '}
+                  of {terminal.total} cancellations
+                  {topReasonPct !== null ? ` (${topReasonPct}%)` : ''} — the
+                  clearest place to address drop-out.
+                </RecommendationCallout>
+              ) : null}
+            </BentoCard>
+            <BentoCard span={6}>
+              <SectionHeading cap="Top reason per level" title="By level" />
+              <div>
+                {terminal.byLevel.map((lvl) => {
+                  const lvlTopReason = lvl.reasons[0];
+                  return (
+                    <ProjectListRow
+                      key={lvl.level}
+                      icon={GraduationCap}
+                      iconGradient="indigo"
+                      name={lvl.level}
+                      subtitle={
+                        lvlTopReason ? reasonLabel(lvlTopReason.reason) : '—'
+                      }
+                      value={lvl.count.toLocaleString('en-SG')}
+                    />
+                  );
+                })}
+              </div>
+            </BentoCard>
+          </BentoGrid>
         )}
       </div>
-      {/* ═══ end Chapter 2 ═══ */}
+      {/* ═══ end Who & why we lose ═══ */}
 
-      {/* ═══ Chapter 3 — Channels & segments ═══
-          Where applicants come from, which channels convert, how long they
-          take, and how applicant segments differ. */}
-      <div className="space-y-8 border-t-2 border-brand-mint/40 pt-7">
-        <div className="space-y-1">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-mint">
-            Chapter 3
-          </p>
-          <h2 className="font-serif text-[28px] font-semibold leading-tight tracking-tight text-foreground">
-            Channels &amp; segments
-          </h2>
-        </div>
+      {/* ═══ Channels & segments ═══
+          Where applicants come from, and which channels convert. */}
+      <div className="space-y-5 border-t border-hairline pt-7">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-mint">
+          Channels &amp; segments
+        </p>
 
-        <InsightsSection
-          eyebrow="Sources"
-          title="Which channels bring enrolments?"
-          description="How applicants heard about HFSE, and how well each channel converts to enrolment."
-        >
-          {/* 3.1 — Referral conversion, sorted by conversion % descending —
-              the bar encodes conversion (the story); volume stays as meta. */}
-          <Card>
-            <CardHeader>
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                All applicants (including cancelled/withdrawn) — true conversion
-                rate
-              </CardDescription>
-              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                {referralTitle}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {referralsByConversion.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No referral sources recorded yet.
-                </p>
-              ) : (
-                <>
-                  <ul className="space-y-3">
-                    {referralsByConversion.map((r) => {
-                      const isBest =
-                        showBestRef && r.source === bestRef.item!.source;
-                      const isWorst =
-                        showBestRef &&
-                        !worstRef.isTie &&
-                        worstRef.item !== null &&
-                        r.source === worstRef.item.source &&
-                        worstRef.item.source !== bestRef.item!.source;
-                      const widthPct = Math.max(2, r.conversionPct);
-                      return (
-                        <li key={r.source} className="space-y-1.5">
-                          <div className="flex items-baseline justify-between gap-3 text-sm">
-                            <span className="font-medium text-foreground">
-                              {r.source}
-                            </span>
-                            <span className="flex items-center gap-2 font-mono text-xs tabular-nums text-muted-foreground">
-                              {r.applied.toLocaleString('en-SG')} applied ·{' '}
-                              {r.enrolled.toLocaleString('en-SG')} enrolled
-                              <span
-                                className={
-                                  isBest
-                                    ? 'font-semibold text-brand-mint'
-                                    : isWorst
-                                      ? 'font-semibold text-brand-amber'
-                                      : 'text-foreground'
-                                }
-                              >
-                                {r.conversionPct}%
-                              </span>
-                            </span>
-                          </div>
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-brand-mint to-brand-sky"
-                              style={{ width: `${widthPct}%` }}
-                            />
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {/* Callout (positive): the best-converting channel, guarded by
-                      a minimum sample so a tiny channel can't win on noise.
-                      Names the worst end too when it also clears the guard. */}
-                  {showBestRef ? (
-                    <RecommendationCallout tone="positive">
-                      {bestRef.item!.source} converts best at{' '}
-                      {bestRef.item!.conversionPct}%
-                      {!worstRef.isTie &&
-                      worstRef.item !== null &&
-                      worstRef.item.source !== bestRef.item!.source
-                        ? `, ${worstRef.item.source} the lowest at ${worstRef.item.conversionPct}%`
-                        : ''}{' '}
-                      — lean into what&rsquo;s working.
-                    </RecommendationCallout>
-                  ) : null}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </InsightsSection>
+        <BentoCard span={12}>
+          <SectionHeading
+            cap="All applicants (including cancelled/withdrawn) — true conversion rate"
+            title={referralTitle}
+          />
+          {referralsByConversion.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No referral sources recorded yet.
+            </p>
+          ) : (
+            <>
+              <RankedBar rows={referralRows} />
+              {showBestRef ? (
+                <RecommendationCallout tone="positive" className="mt-5">
+                  {bestRef.item!.source} converts best at{' '}
+                  {bestRef.item!.conversionPct}%
+                  {!worstRef.isTie &&
+                  worstRef.item !== null &&
+                  worstRef.item.source !== bestRef.item!.source
+                    ? `, ${worstRef.item.source} the lowest at ${worstRef.item.conversionPct}%`
+                    : ''}{' '}
+                  — lean into what&rsquo;s working.
+                </RecommendationCallout>
+              ) : null}
+            </>
+          )}
+        </BentoCard>
       </div>
-      {/* ═══ end Chapter 3 ═══ */}
+      {/* ═══ end Channels & segments ═══ */}
 
       {/* Footer trust strip */}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
