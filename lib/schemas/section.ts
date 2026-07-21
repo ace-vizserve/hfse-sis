@@ -3,9 +3,10 @@ import { z } from 'zod';
 // POST /api/sections — create a new section under the current AY.
 //
 // Scope: mid-year additions (e.g. a late transfer needs a new homeroom).
-// AY rollover still happens via `create_academic_year` (copy-forward from
-// prior AY). Uniqueness constraint: (academic_year_id, level_id, name) —
-// API surfaces a friendly 409 on conflict.
+// AY rollover still happens via `create_academic_year`, which now seeds a
+// fixed static default catalog (migration 090) rather than copying from
+// the prior AY. Uniqueness constraint: (academic_year_id, level_id, name)
+// — API surfaces a friendly 409 on conflict.
 
 export const SECTION_CLASS_TYPES = ['Global', 'Standard'] as const;
 export type SectionClassType = (typeof SECTION_CLASS_TYPES)[number];
@@ -56,11 +57,12 @@ export const SectionCreateSchema = z.object({
   // rather than sending a hidden default.
   class_type: z.enum(SECTION_CLASS_TYPES).nullable().optional(),
   // NOTE: `schedule` is intentionally NOT here. Section schedule is set once
-  // at section creation and carried forward automatically when a new AY
-  // copies its sections from the prior AY (`create_academic_year`, migration
-  // 089); per-AY `/sis/sections` shows it read-only. The per-AY
-  // `/api/sections` create/rename routes deliberately don't write it, so
-  // it's kept off this schema to avoid advertising a field the route drops.
+  // at section creation; a new AY's sections instead get their schedule
+  // from the fixed static default catalog (`create_academic_year`,
+  // migration 090), not carried forward from any prior AY. Per-AY
+  // `/sis/sections` shows it read-only. The per-AY `/api/sections`
+  // create/rename routes deliberately don't write it, so it's kept off
+  // this schema to avoid advertising a field the route drops.
   // SCHEDULE_VALUES/SCHEDULE_LABELS live here for shared display use.
 });
 

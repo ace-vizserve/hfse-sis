@@ -14,8 +14,8 @@ const AyCode = z
 
 // POST /api/sis/ay-setup — create AY
 //
-// The RPC derives the slug and handles copy-forward server-side;
-// the client only supplies identity + label.
+// The RPC derives the slug and seeds the static default catalog
+// server-side (migration 090); the client only supplies identity + label.
 export const CreateAySchema = z.object({
   ay_code: AyCode,
   label: z
