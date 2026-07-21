@@ -7,7 +7,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 // One cheap head-count query, cached per KD #46's hoist-uncached /
 // wrap-unstable_cache idiom and tagged `sis:${ayCode}` so it invalidates
 // alongside every other sis-scoped loader (section create/delete, AY
-// rollover, template apply).
+// rollover).
 async function loadSectionsCountUncached(ayCode: string): Promise<number> {
   const ayId = await getAyIdByCode(ayCode);
   if (ayId == null) return 0;

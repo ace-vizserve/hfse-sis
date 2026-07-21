@@ -1,6 +1,6 @@
 'use client';
 
-import { GraduationCap, Loader2 } from 'lucide-react';
+import { GraduationCap, Loader2, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useMutation } from '@tanstack/react-query';
@@ -17,6 +17,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { NewSectionButton } from '@/components/markbook/new-section-button';
+import {
+  MAX_ACTIVE_PER_SECTION,
+  type AssignableLevel,
+  type AssignableSection,
+} from '@/lib/sis/class-assignment';
 
 // First-time class-section assignment for an enrolled applicant whose
 // admissions row is missing a classSection (Chunk A backend at
@@ -27,35 +33,34 @@ import {
 // level + including the live activeCount per section. Sections at
 // capacity (≥ 50 active) render disabled with a "Full" badge.
 
-export type AssignableSection = {
-  id: string;
-  name: string;
-  activeCount: number;
-};
+export type { AssignableSection };
 
 export type AssignSectionDialogProps = {
   enroleeNumber: string;
   studentName: string;
   ayCode: string;
-  levelApplied: string | null;
+  level: AssignableLevel | null;
   availableSections: AssignableSection[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
 
-const MAX_PER_SECTION = 50;
-
 export function AssignSectionDialog({
   enroleeNumber,
   studentName,
   ayCode,
-  levelApplied,
+  level,
   availableSections,
   open,
   onOpenChange,
 }: AssignSectionDialogProps) {
   const router = useRouter();
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [localSections, setLocalSections] = React.useState(availableSections);
+  React.useEffect(() => {
+    setLocalSections(availableSections);
+  }, [availableSections]);
 
   React.useEffect(() => {
     if (!open) setSelectedId(null);
@@ -63,15 +68,18 @@ export function AssignSectionDialog({
 
   const sorted = React.useMemo(
     () =>
-      [...availableSections]
-        .map((s) => ({ ...s, isAtCapacity: s.activeCount >= MAX_PER_SECTION }))
+      [...localSections]
+        .map((s) => ({
+          ...s,
+          isAtCapacity: s.activeCount >= MAX_ACTIVE_PER_SECTION,
+        }))
         .sort(
           (a, b) =>
             Number(a.isAtCapacity) - Number(b.isAtCapacity) ||
             a.activeCount - b.activeCount ||
             a.name.localeCompare(b.name)
         ),
-    [availableSections]
+    [localSections]
   );
 
   const assignMutation = useMutation({
@@ -124,10 +132,10 @@ export function AssignSectionDialog({
             Assign to a class section
           </DialogTitle>
           <DialogDescription>
-            {levelApplied ? (
+            {level?.label ? (
               <>
                 Pick a section for <strong>{studentName}</strong> at{' '}
-                <strong>{levelApplied}</strong>. Once assigned, the grading
+                <strong>{level.label}</strong>. Once assigned, the grading
                 roster will pick them up automatically.
               </>
             ) : (
@@ -142,7 +150,7 @@ export function AssignSectionDialog({
         <div className="space-y-2 py-2">
           {!hasOptions ? (
             <p className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-              No sections available for {levelApplied ?? 'this level'} in{' '}
+              No sections available for {level?.label ?? 'this level'} in{' '}
               {ayCode}. Create a section in{' '}
               <span className="font-mono text-xs">/sis/sections</span> first.
             </p>
@@ -166,7 +174,7 @@ export function AssignSectionDialog({
                 <span className="font-medium text-foreground">{s.name}</span>
                 <span className="flex items-center gap-2">
                   <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                    {s.activeCount}/{MAX_PER_SECTION} students
+                    {s.activeCount}/{MAX_ACTIVE_PER_SECTION} students
                   </span>
                   {s.isAtCapacity && (
                     <Badge
@@ -181,6 +189,43 @@ export function AssignSectionDialog({
             ))
           )}
         </div>
+
+        {level && (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setCreateOpen(true)}
+              disabled={submitting}
+              className="w-full"
+            >
+              <Plus className="size-3.5" />
+              Create a new section for {level.label}
+            </Button>
+            <NewSectionButton
+              levels={[
+                {
+                  id: level.id,
+                  code: level.code,
+                  label: level.label,
+                  level_type: level.levelType,
+                },
+              ]}
+              ayCode={ayCode}
+              open={createOpen}
+              onOpenChange={setCreateOpen}
+              initialLevelId={level.id}
+              onCreated={(section) => {
+                setLocalSections((prev) => [
+                  ...prev,
+                  { id: section.id, name: section.name, activeCount: 0 },
+                ]);
+                setSelectedId(section.id);
+              }}
+            />
+          </>
+        )}
 
         <DialogFooter>
           <Button

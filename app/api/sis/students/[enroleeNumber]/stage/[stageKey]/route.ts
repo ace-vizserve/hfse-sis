@@ -16,7 +16,7 @@ import {
   validateTerminalReason,
   type StageKey,
 } from '@/lib/schemas/sis';
-import { pickSectionForApplicant } from '@/lib/sis/class-assignment';
+import { validateSectionChoice } from '@/lib/sis/class-assignment';
 import {
   DOCUMENT_SLOTS,
   OPTIONAL_DOCUMENT_SLOT_KEYS,
@@ -423,13 +423,18 @@ export async function PATCH(
     }
   }
 
-  // 2b) Enrolled-prereq gate + auto class assignment.
+  // 2b) Enrolled-prereq gate + registrar-chosen class assignment.
   // Setting applicationStatus = 'Enrolled' requires all 5 prereq stages at
-  // their terminal values AND a section with capacity. 'Enrolled (Conditional)'
-  // deliberately bypasses this — it's the registrar override for edge cases
-  // (transfers mid-year, late-arriving documents, etc.). If the gate passes,
-  // we piggyback the class-assignment columns onto the same UPDATE so the
-  // flip is atomic at the row level.
+  // their terminal values AND a client-supplied section with capacity.
+  // 'Enrolled (Conditional)' deliberately bypasses this — it's the
+  // registrar override for edge cases (transfers mid-year, late-arriving
+  // documents, etc.). Per
+  // docs/superpowers/specs/2026-07-20-manual-section-assignment-design.md,
+  // there is deliberately no auto-pick anywhere in the system: the
+  // registrar must have already chosen a section via the picker before
+  // this PATCH is submitted (wired into EditStageDialog, Task 3.6). If the
+  // gate passes, we piggyback the class-assignment columns onto the same
+  // UPDATE so the flip is atomic at the row level.
   let classAutoAssigned = false;
   if (stageKey === 'application' && status === 'Enrolled') {
     // Re-fetch the status row with every prereq column for the gate check.
@@ -479,19 +484,27 @@ export async function PATCH(
       );
     }
 
-    // Gate passed — auto-assign a class. Need the application row's
-    // studentNumber + levelApplied / classType / preferredSchedule. The
-    // studentNumber is what syncOneStudent uses to upsert the public
-    // `students` row + section_students row; in production the parent
-    // portal writes it alongside enroleeNumber at intake, so a null here
-    // is anomalous. Fail loudly instead of letting syncOneStudent
-    // silently skip with 'no studentNumber' (which would land the row in
-    // an Enrolled status with no section roster placement).
+    // Gate passed. section_id is a required input here, not computed
+    // server-side — no auto-pick anywhere.
+    if (!parsed.data.section_id) {
+      return NextResponse.json(
+        { error: 'Pick a section before enrolling this student.' },
+        { status: 422 }
+      );
+    }
+    // Need the application row's studentNumber — what syncOneStudent uses
+    // to upsert the public `students` row + section_students row; in
+    // production the parent portal writes it alongside enroleeNumber at
+    // intake, so a null here is anomalous. Fail loudly instead of letting
+    // syncOneStudent silently skip with 'no studentNumber' (which would
+    // land the row in an Enrolled status with no section roster
+    // placement). Also carries levelApplied so validateSectionChoice can
+    // confirm the chosen section's level matches the applicant's level.
     const admissionsClient = createAdmissionsClient();
     const appsTable = `${prefix}_enrolment_applications`;
     const { data: appRow, error: appErr } = await admissionsClient
       .from(appsTable)
-      .select('studentNumber, levelApplied, classType, preferredSchedule')
+      .select('studentNumber, levelApplied')
       .eq('enroleeNumber', enroleeNumber)
       .maybeSingle();
     if (appErr || !appRow) {
@@ -507,8 +520,6 @@ export async function PATCH(
     const appLite = appRow as unknown as {
       studentNumber: string | null;
       levelApplied: string | null;
-      classType: string | null;
-      preferredSchedule: string | null;
     };
     if (!appLite.studentNumber) {
       return NextResponse.json(
@@ -519,20 +530,27 @@ export async function PATCH(
         { status: 422 }
       );
     }
-    const pick = await pickSectionForApplicant(supabase, ayCode, appLite);
-    if ('error' in pick) {
+
+    const validated = await validateSectionChoice(
+      supabase,
+      parsed.data.section_id,
+      ayCode,
+      appLite.levelApplied
+    );
+    if ('error' in validated) {
       return NextResponse.json(
-        { error: `Cannot enroll: ${pick.error}` },
+        { error: `Cannot enroll: ${validated.error}` },
         { status: 422 }
       );
     }
+
     // Merge class-assignment columns into the same update so the Enrolled
     // flip and the class write land atomically (single row UPDATE).
     const classCols = STAGE_COLUMN_MAP.class;
     const todayIso = new Date().toISOString();
     update[classCols.statusCol] = 'Finished';
-    update['classLevel'] = pick.classLevel;
-    update['classSection'] = pick.classSection;
+    update['classLevel'] = validated.section.levelLabel;
+    update['classSection'] = validated.section.name;
     update[classCols.updatedDateCol] = todayIso;
     update[classCols.updatedByCol] = auth.user.email ?? '(unknown)';
     classAutoAssigned = true;

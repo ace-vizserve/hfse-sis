@@ -13,7 +13,6 @@ import {
 import Link from 'next/link';
 
 import { UnsyncedActionCard } from '@/components/sis/unsynced-action-card';
-import type { AssignableSection } from '@/components/sis/assign-section-dialog';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -26,7 +25,7 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { canonicalizeLevelLabel } from '@/lib/sis/levels';
+import { listAssignableSections } from '@/lib/sis/class-assignment';
 import {
   getStudentDetail,
   type ApplicationRow,
@@ -93,12 +92,14 @@ export async function RecordsLitePage({
     : '(no name on file)';
 
   // 2. Available sections at this student's `levelApplied` for the
-  //    current entry's AY, with per-section active counts. Mirrors the
-  //    section query in `pickSectionForApplicant` so the dialog renders
-  //    the same candidate set the auto-pick would consider.
+  //    current entry's AY, with per-section active counts and the
+  //    resolved level (for the dialog's "create section" affordance).
+  //    Shared with the /records/unsynced queue via `listAssignableSections`.
   const levelLabel =
     detail?.application?.levelApplied ?? currentEntry.level ?? null;
-  const availableSections = await loadAvailableSections(
+  const service = createServiceClient();
+  const { level, sections: availableSections } = await listAssignableSections(
+    service,
     currentEntry.ayCode,
     levelLabel
   );
@@ -142,7 +143,7 @@ export async function RecordsLitePage({
       <UnsyncedActionCard
         enroleeNumber={currentEntry.enroleeNumber}
         ayCode={currentEntry.ayCode}
-        levelApplied={levelLabel}
+        level={level}
         studentName={studentName}
         availableSections={availableSections}
       />
@@ -483,66 +484,4 @@ function ContactPill({
       </span>
     </a>
   );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Section lookup — same shape `pickSectionForApplicant` uses, but we
-// return ALL candidates (not just the winner) so the dialog can show the
-// full picker with per-section load. Mirrors that helper's level lookup
-// + capacity-count round-trip.
-// ──────────────────────────────────────────────────────────────────────────
-
-async function loadAvailableSections(
-  ayCode: string,
-  levelLabel: string | null
-): Promise<AssignableSection[]> {
-  if (!levelLabel) return [];
-  const service = createServiceClient();
-
-  const { data: ayRow } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('ay_code', ayCode)
-    .maybeSingle();
-  if (!ayRow) return [];
-  const ayId = (ayRow as { id: string }).id;
-
-  const lookupLabel = canonicalizeLevelLabel(levelLabel) ?? levelLabel;
-  const { data: levelRow } = await service
-    .from('levels')
-    .select('id')
-    .eq('label', lookupLabel)
-    .maybeSingle();
-  if (!levelRow) return [];
-  const levelId = (levelRow as { id: string }).id;
-
-  const { data: sectionRows } = await service
-    .from('sections')
-    .select('id, name')
-    .eq('academic_year_id', ayId)
-    .eq('level_id', levelId);
-  const sections = (sectionRows ?? []) as Array<{ id: string; name: string }>;
-  if (sections.length === 0) return [];
-
-  const sectionIds = sections.map((s) => s.id);
-  const { data: activeRows } = await service
-    .from('section_students')
-    .select('section_id')
-    .eq('enrollment_status', 'active')
-    .in('section_id', sectionIds);
-  const activeCountById = new Map<string, number>();
-  for (const r of (activeRows ?? []) as Array<{ section_id: string }>) {
-    activeCountById.set(
-      r.section_id,
-      (activeCountById.get(r.section_id) ?? 0) + 1
-    );
-  }
-
-  return sections
-    .map((s) => ({
-      id: s.id,
-      name: s.name,
-      activeCount: activeCountById.get(s.id) ?? 0,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
 }

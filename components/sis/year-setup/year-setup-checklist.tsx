@@ -264,7 +264,7 @@ export function YearSetupChecklist({
 
   const firstOptionalId = steps.find((s) => !s.required)?.id ?? null;
 
-  // Sub-group the 11 flat rows into 3 clusters (Miller's Law — layout
+  // Sub-group the 10 flat rows into 3 clusters (Miller's Law — layout
   // redesign pass): the ids genuinely span different domains (dates/
   // calendar/staffing vs grading vs branding/admissions) with no visual
   // grouping today. Purely a label inserted between rows, same mechanism
@@ -378,18 +378,11 @@ export function YearSetupChecklist({
 
               case 'subject-weights':
                 action = (
-                  <>
-                    <ApplyTemplateButton
-                      ayCode={selectedAy.ay_code}
-                      variant={primaryVariant}
-                    />
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link href={step.href}>
-                        Open Subject weights{' '}
-                        <ArrowUpRight className="size-3.5" />
-                      </Link>
-                    </Button>
-                  </>
+                  <Button variant={primaryVariant} size="sm" asChild>
+                    <Link href={step.href}>
+                      Open Subject weights <ArrowUpRight className="size-3.5" />
+                    </Link>
+                  </Button>
                 );
                 break;
 
@@ -574,42 +567,6 @@ function GenerateCalendarButton({
     >
       {m.isPending && <Loader2 className="size-3.5 animate-spin" />}
       Generate school days
-    </Button>
-  );
-}
-
-function ApplyTemplateButton({
-  ayCode,
-  variant = 'default',
-}: {
-  ayCode: string;
-  variant?: 'default' | 'outline';
-}) {
-  const router = useRouter();
-  const m = useMutation({
-    mutationFn: () =>
-      apiFetch(
-        '/api/sis/admin/template/apply',
-        jsonInit('POST', { ay_codes: [ayCode] })
-      ),
-    onSuccess: () => {
-      toast.success('Class template applied.');
-      router.refresh();
-    },
-    onError: (e) =>
-      toast.error(
-        e instanceof Error ? e.message : 'Could not apply the template.'
-      ),
-  });
-  return (
-    <Button
-      variant={variant}
-      size="sm"
-      onClick={() => m.mutate()}
-      disabled={m.isPending}
-    >
-      {m.isPending && <Loader2 className="size-3.5 animate-spin" />}
-      Apply class template
     </Button>
   );
 }

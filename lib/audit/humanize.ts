@@ -136,6 +136,7 @@ const ACTION_LABELS: Record<string, string> = {
   'level.update': 'Grade level updated',
   'level.delete': 'Grade level removed',
   'level.offering.toggle': 'Level offering changed',
+  'level.alias.create': 'Level naming variant mapped',
 
   // Academic years
   'ay.create': 'Academic year created',
@@ -199,6 +200,7 @@ const ACTION_LABELS: Record<string, string> = {
   'environment.switch': 'Environment switched',
   'environment.seed': 'Demo data seeded',
   'environment.topup': 'Demo data topped up',
+  'environment.demo_accounts_removed': 'Demo accounts removed',
 
   // Parent sessions
   'parent.session.issued': 'Parent signed in',

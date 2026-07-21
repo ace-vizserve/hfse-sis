@@ -141,6 +141,61 @@ export function compareLevelLabels(
   return ai - bi;
 }
 
+export type LevelAliasRow = { raw_label: string; level_id: string };
+
+/**
+ * Resolves a raw observed level label to a `levels.id`. Pure — no DB
+ * access, unit-testable directly. Order: (1) exact match against
+ * `knownLevels[].label`, (2) `canonicalizeLevelLabel`'s legacy digit-form
+ * fallback re-checked against `knownLevels[].label`, (3) exact match
+ * against `aliases[].raw_label`. Returns null when nothing matches —
+ * callers treat that as "needs reconciliation," never guess.
+ */
+export function resolveLevelIdFromCatalog(
+  rawLabel: string | null | undefined,
+  knownLevels: LevelRow[],
+  aliases: LevelAliasRow[]
+): string | null {
+  if (rawLabel == null) return null;
+  const trimmed = rawLabel.trim();
+  if (!trimmed) return null;
+
+  const direct = knownLevels.find((l) => l.label === trimmed);
+  if (direct) return direct.id;
+
+  const canonical = canonicalizeLevelLabel(trimmed);
+  if (canonical && canonical !== trimmed) {
+    const viaLegacy = knownLevels.find((l) => l.label === canonical);
+    if (viaLegacy) return viaLegacy.id;
+  }
+
+  const viaAlias = aliases.find((a) => a.raw_label === trimmed);
+  return viaAlias ? viaAlias.level_id : null;
+}
+
+/**
+ * DB-backed wrapper around `resolveLevelIdFromCatalog`. Fetches the
+ * current levels catalog + the full alias table and resolves once.
+ */
+export async function resolveLevelId(
+  service: SupabaseClient,
+  rawLabel: string | null | undefined
+): Promise<string | null> {
+  if (rawLabel == null || !rawLabel.trim()) return null;
+
+  const [levels, aliasRes] = await Promise.all([
+    getLevelRows(service),
+    service.from('level_aliases').select('raw_label, level_id'),
+  ]);
+  if (aliasRes.error) throw aliasRes.error;
+
+  return resolveLevelIdFromCatalog(
+    rawLabel,
+    levels,
+    (aliasRes.data ?? []) as LevelAliasRow[]
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // DB-backed level rows. `levels` is a small, fixed, AY-agnostic managed
 // table: `sort_order` drives display order. Migration 086 removed the

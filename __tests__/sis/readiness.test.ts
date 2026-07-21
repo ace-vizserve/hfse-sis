@@ -153,7 +153,7 @@ describe('resolveSubjectWeightsStep', () => {
       }).status
     ).toBe('not_started');
   });
-  it('done when every in-use level is fully configured against the template', () => {
+  it('done when every in-use level has at least one subject configured', () => {
     expect(
       resolveSubjectWeightsStep({
         levelsInUse: 3,
@@ -162,7 +162,7 @@ describe('resolveSubjectWeightsStep', () => {
       }).status
     ).toBe('done');
   });
-  it('partial when some but not all levels are missing subjects the template defines — the bug this fix closes (previously read as done)', () => {
+  it('partial when some but not all levels have no subjects configured — the bug this fix closes (previously read as done)', () => {
     const step = resolveSubjectWeightsStep({
       levelsInUse: 3,
       levelsFullyConfigured: 2,

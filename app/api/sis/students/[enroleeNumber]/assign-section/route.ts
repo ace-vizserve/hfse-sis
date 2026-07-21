@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
+import { validateSectionChoice } from '@/lib/sis/class-assignment';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import { syncOneStudent } from '@/lib/sync/students';
@@ -32,8 +33,6 @@ import { syncOneStudent } from '@/lib/sync/students';
 const AssignSectionBodySchema = z.object({
   sectionId: z.string().uuid(),
 });
-
-const MAX_ACTIVE_PER_SECTION = 50;
 
 export async function POST(
   request: Request,
@@ -194,73 +193,20 @@ export async function POST(
   // run Step B + C + D.
   const resyncOnly = existingSection !== null && !alreadySynced;
 
-  // ── 3. Resolve target section ─────────────────────────────────────────
-  const { data: sectionRow, error: sectionErr } = await service
-    .from('sections')
-    .select(
-      'id, name, level_id, academic_year_id, levels!inner(label), academic_years!inner(ay_code)'
-    )
-    .eq('id', sectionId)
-    .maybeSingle();
-  if (sectionErr) {
-    return NextResponse.json(
-      { error: `Section lookup failed: ${sectionErr.message}` },
-      { status: 500 }
-    );
+  // ── 3. Resolve + validate target section ──────────────────────────────
+  // Existence + AY match + capacity re-check at write time (Hard Rule #5 —
+  // max 50 active per section) — shared with the stage route's Enrolled-flip
+  // via lib/sis/class-assignment.ts::validateSectionChoice.
+  const validated = await validateSectionChoice(
+    service,
+    sectionId,
+    ayCode,
+    appsRow.levelApplied
+  );
+  if ('error' in validated) {
+    return NextResponse.json({ error: validated.error }, { status: 422 });
   }
-  if (!sectionRow) {
-    return NextResponse.json({ error: 'Section not found.' }, { status: 404 });
-  }
-  const section = sectionRow as {
-    id: string;
-    name: string;
-    level_id: string;
-    academic_year_id: string;
-    levels: { label: string } | { label: string }[];
-    academic_years: { ay_code: string } | { ay_code: string }[];
-  };
-  const targetAyCode = Array.isArray(section.academic_years)
-    ? section.academic_years[0]?.ay_code
-    : section.academic_years?.ay_code;
-  if (targetAyCode !== ayCode) {
-    return NextResponse.json(
-      { error: 'That section belongs to a different academic year.' },
-      { status: 422 }
-    );
-  }
-  const targetLevelLabel = Array.isArray(section.levels)
-    ? section.levels[0]?.label
-    : section.levels?.label;
-  if (!targetLevelLabel) {
-    return NextResponse.json(
-      {
-        error:
-          'That section has no level label — please pick a different section.',
-      },
-      { status: 500 }
-    );
-  }
-
-  // Capacity check (Hard Rule #5 — max 50 active per section).
-  const { count: activeCount, error: capErr } = await service
-    .from('section_students')
-    .select('id', { count: 'exact', head: true })
-    .eq('section_id', section.id)
-    .eq('enrollment_status', 'active');
-  if (capErr) {
-    return NextResponse.json(
-      { error: `Capacity check failed: ${capErr.message}` },
-      { status: 500 }
-    );
-  }
-  if ((activeCount ?? 0) >= MAX_ACTIVE_PER_SECTION) {
-    return NextResponse.json(
-      {
-        error: `${section.name} is already at ${MAX_ACTIVE_PER_SECTION} students. Pick a different section.`,
-      },
-      { status: 422 }
-    );
-  }
+  const { section } = validated;
 
   // ── 4. Step A — write admissions classSection / classLevel ───────────
   // Skipped in the resync-only branch: the admissions row already has
@@ -273,7 +219,7 @@ export async function POST(
       .from(`${prefix}_enrolment_status`)
       .update({
         classSection: section.name,
-        classLevel: targetLevelLabel,
+        classLevel: section.levelLabel,
         classStatus: 'Finished',
         classUpdatedDate: nowIso,
         classUpdatedBy: actorEmail,
@@ -348,7 +294,7 @@ export async function POST(
       enroleeFullName: appsRow.enroleeFullName,
       sectionId: section.id,
       sectionName: section.name,
-      levelLabel: targetLevelLabel,
+      levelLabel: section.levelLabel,
       assignedBy: actorEmail,
       syncChange: syncResult.change,
     },
@@ -361,7 +307,7 @@ export async function POST(
   return NextResponse.json({
     ok: true,
     sectionName: section.name,
-    levelLabel: targetLevelLabel,
+    levelLabel: section.levelLabel,
     syncChange: syncResult.change,
   });
 }

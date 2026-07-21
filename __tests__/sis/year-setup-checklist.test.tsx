@@ -255,12 +255,17 @@ describe('YearSetupChecklist', () => {
       />
     );
     // First incomplete required step in READINESS is 'subject-weights'.
+    // Its action is a plain `<Button asChild><Link>…</Link></Button>` (no
+    // template-apply mutation to trigger anymore, per the Structure
+    // Defaults removal — see year-setup-checklist.tsx's 'subject-weights'
+    // case), so it paints as a link, not a `<button>` — same reason
+    // `defaultVariantElements()` above queries by class rather than role.
     const defaults = defaultVariantElements();
     expect(defaults).toHaveLength(1);
     const subjectWeightsRow = screen.getByTestId(
       'checklist-row-subject-weights'
     );
-    expect(within(subjectWeightsRow).getByRole('button')).toBe(defaults[0]);
+    expect(within(subjectWeightsRow).getByRole('link')).toBe(defaults[0]);
   });
 
   it('accents no row and shows the "All set" badge when every required item is done', () => {

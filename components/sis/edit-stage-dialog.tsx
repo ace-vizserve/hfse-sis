@@ -5,10 +5,11 @@ import { AlertTriangle, CheckCircle2, Loader2, Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
+import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -176,6 +177,39 @@ export function EditStageDialog({
     : [];
   const incompleteCount = prereqRows.filter((r) => !r.ok).length;
 
+  // Manual section picker (Task 3.6, docs/superpowers/specs/2026-07-20-manual-section-assignment-design.md).
+  // Renders inline (not a nested dialog) the moment the registrar's pending
+  // choice is "Enrolled". This is just the UI's own precondition for showing
+  // the picker (submit is gated on `sectionId` too, see `onSubmit`) — it does
+  // NOT duplicate prereq-completeness or section-validity checks. The stage
+  // PATCH route is the actual enforcement for both; on a miss it 422s with a
+  // `blockers` array that `saveMutation.onError` surfaces as a toast.
+  const requiresSectionPick =
+    stageKey === 'application' && effectiveStatus === 'Enrolled';
+
+  const [sectionId, setSectionId] = useState<string | null>(null);
+
+  const sectionsQuery = useQuery({
+    queryKey: ['assignable-sections', enroleeNumber, ayCode],
+    queryFn: () =>
+      apiFetch<{
+        level: {
+          id: string;
+          code: string;
+          label: string;
+          levelType: 'primary' | 'secondary';
+        } | null;
+        sections: { id: string; name: string; activeCount: number }[];
+      }>(
+        `/api/sis/students/${encodeURIComponent(enroleeNumber)}/assignable-sections?ay=${encodeURIComponent(ayCode)}`
+      ),
+    enabled: requiresSectionPick,
+  });
+
+  useEffect(() => {
+    if (!requiresSectionPick) setSectionId(null);
+  }, [requiresSectionPick]);
+
   const isTerminalStatus = (
     APPLICATION_TERMINAL_STATUSES as readonly string[]
   ).includes(effectiveStatus ?? '');
@@ -238,7 +272,7 @@ export function EditStageDialog({
         // rosters until the underlying reason is fixed.
         toast.warning(
           classAutoAssigned
-            ? 'Enrolled · class auto-assigned, but section roster sync was skipped'
+            ? 'Enrolled · section assigned, but roster sync was skipped'
             : 'Enrolled (Conditional) · section roster sync was skipped',
           {
             description:
@@ -248,7 +282,7 @@ export function EditStageDialog({
           }
         );
       } else if (classAutoAssigned) {
-        toast.success('Enrolled · class auto-assigned · synced to roster');
+        toast.success('Enrolled · section assigned · synced to roster');
       } else if (
         stageKey === 'application' &&
         autoSync?.change &&
@@ -331,6 +365,7 @@ export function EditStageDialog({
 
   async function onSubmit(values: StageUpdateInput) {
     if (frozen) return;
+    if (requiresSectionPick && !sectionId) return;
     const extrasPayload = {
       ...values.extras,
       ...(stageKey === 'application' &&
@@ -342,7 +377,11 @@ export function EditStageDialog({
     // Awaited inside RHF's handleSubmit so `formState.isSubmitting` stays the
     // busy signal.
     await saveMutation
-      .mutateAsync({ ...values, extras: extrasPayload })
+      .mutateAsync({
+        ...values,
+        extras: extrasPayload,
+        ...(requiresSectionPick && sectionId ? { section_id: sectionId } : {}),
+      })
       .catch(() => {});
   }
 
@@ -583,6 +622,71 @@ export function EditStageDialog({
                   </div>
                 )}
 
+                {requiresSectionPick && (
+                  <div className="space-y-2.5 rounded-md border border-hairline bg-muted/30 p-3">
+                    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Pick a section
+                    </p>
+                    {sectionsQuery.isLoading ? (
+                      <p className="text-xs text-muted-foreground">
+                        Loading sections…
+                      </p>
+                    ) : sectionsQuery.isError ? (
+                      <p className="text-xs text-destructive">
+                        {sectionsQuery.error instanceof ApiError
+                          ? sectionsQuery.error.message
+                          : "Couldn't load sections — try again."}
+                      </p>
+                    ) : !sectionsQuery.data?.level ? (
+                      <p className="text-xs text-destructive">
+                        This applicant&apos;s level name isn&apos;t recognized
+                        yet — a registrar needs to resolve it under Records →
+                        Level naming to review before this student can be
+                        enrolled.
+                      </p>
+                    ) : sectionsQuery.data.sections.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No sections exist yet for{' '}
+                        {sectionsQuery.data.level.label}.
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {[...sectionsQuery.data.sections]
+                          .sort((a, b) => a.activeCount - b.activeCount)
+                          .map((sec) => {
+                            const full =
+                              sec.activeCount >= MAX_ACTIVE_PER_SECTION;
+                            return (
+                              <button
+                                key={sec.id}
+                                type="button"
+                                disabled={full}
+                                onClick={() => setSectionId(sec.id)}
+                                aria-pressed={sectionId === sec.id}
+                                className={
+                                  'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition-colors ' +
+                                  (sectionId === sec.id
+                                    ? 'border-brand-indigo bg-accent'
+                                    : full
+                                      ? 'cursor-not-allowed border-border/60 bg-muted/30 opacity-60'
+                                      : 'border-border hover:bg-accent/40')
+                                }
+                              >
+                                <span className="font-medium text-foreground">
+                                  {sec.name}
+                                </span>
+                                <span className="font-mono tabular-nums text-muted-foreground">
+                                  {sec.activeCount}/{MAX_ACTIVE_PER_SECTION}
+                                  {full ? ' · Full' : ''}
+                                </span>
+                              </button>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <FormItem>
                   <FormLabel>Status</FormLabel>
                   <Select value={statusChoice} onValueChange={setStatusChoice}>
@@ -767,6 +871,7 @@ export function EditStageDialog({
                     size="sm"
                     disabled={
                       busy ||
+                      (requiresSectionPick && !sectionId) ||
                       (stageKey === 'application' &&
                         isTerminalStatus &&
                         (!terminalReason ||

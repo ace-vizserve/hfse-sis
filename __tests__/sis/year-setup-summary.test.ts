@@ -276,12 +276,14 @@ describe('checklistSummary', () => {
     // completeness) to `step.fraction`, which `lib/sis/readiness.ts`'s
     // `resolveSubjectWeightsStep` (renamed from `resolveClassesStep`, Task 5
     // — decoupled from section existence) now computes as levels-fully-
-    // configured vs levels-in-use (comparing each in-use level's
-    // subject_level_offerings against template_subject_level_offerings,
-    // i.e. Structure Defaults). The two tests below that used to assert on
-    // the old `ay.counts`-derived copy were deliberately rewritten to
-    // assert on the new fraction-derived, consequence-first copy — not
-    // silently left to bit-rot.
+    // configured (has ≥1 subject attached) vs levels-in-use. Post migration
+    // 089 (Structure Defaults template removed) there's no "should have"
+    // reference to compare against — the check is purely "does this level
+    // have at least one subject_level_offerings row at all"
+    // (`findEmptyLevels`, lib/sis/subject-config-gaps.ts). The two tests
+    // below that used to assert on the old `ay.counts`-derived copy were
+    // deliberately rewritten to assert on the new fraction-derived,
+    // consequence-first copy — not silently left to bit-rot.
     it('reports no classes created yet when there is no fraction', () => {
       expect(
         checklistSummary('subject-weights', {
@@ -335,9 +337,9 @@ describe('checklistSummary', () => {
         terms: [],
       });
       expect(summary).toBe(
-        "1 level is missing subjects from Structure Defaults — those subjects won't appear on report cards."
+        '1 level has no subjects configured yet — configure them so grades and report cards have somewhere to go.'
       );
-      expect(summary).toContain("won't appear on report cards");
+      expect(summary).toContain('somewhere to go');
     });
 
     it('pluralizes the gap for multiple missing levels', () => {
@@ -352,7 +354,7 @@ describe('checklistSummary', () => {
           terms: [],
         })
       ).toBe(
-        "2 levels are missing subjects from Structure Defaults — those subjects won't appear on report cards."
+        '2 levels have no subjects configured yet — configure them so grades and report cards have somewhere to go.'
       );
     });
   });

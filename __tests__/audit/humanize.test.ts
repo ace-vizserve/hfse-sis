@@ -39,6 +39,12 @@ describe('auditActionLabel', () => {
     );
   });
 
+  it('labels environment.demo_accounts_removed', () => {
+    expect(auditActionLabel('environment.demo_accounts_removed')).toBe(
+      'Demo accounts removed'
+    );
+  });
+
   it('prettifies unknown action codes so a raw code never leaks', () => {
     expect(auditActionLabel('some.brand_new.action')).toBe(
       'Some Brand New Action'

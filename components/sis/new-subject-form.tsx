@@ -44,16 +44,14 @@ export type NewSubjectResult = {
   grading_method: GradingMethod;
 };
 
-// Task 2 of the "Unified Subject Setup page" plan. Extracted out of
-// `template-manager-client.tsx`'s `NewSubjectButton` — the form BODY only
-// (fields + POST /catalog mutation), no Dialog/Sheet chrome, so it can be
-// embedded in either: the Structure Defaults page's existing centered
-// Dialog (unchanged behavior — template-manager-client.tsx now just wraps
-// this in the same DialogContent it always used) AND the new Subject Setup
-// page's "+ Add subject" Sheet drawer (Step ①). Creates a `subjects` catalog
-// row only — no weights/config, no level attachment; the caller decides
-// what happens next (both current callers just close their chrome + refresh
-// so the new, still-unconfigured subject shows up as a fresh, flagged row).
+// Originally extracted out of the (since-deleted) Structure Defaults
+// template editor's `NewSubjectButton` — the form BODY only (fields +
+// POST /catalog mutation), no Dialog/Sheet chrome, so it can be embedded
+// in a caller's own chrome. Now used solely by `subject-catalog-card.tsx`'s
+// "+ Add subject" Sheet drawer. Creates a `subjects` catalog row only — no
+// weights/config, no level attachment; the caller decides what happens
+// next (closes its chrome + refreshes so the new, still-unconfigured
+// subject shows up as a fresh, flagged row).
 export function NewSubjectForm({
   onSuccess,
   onCancel,

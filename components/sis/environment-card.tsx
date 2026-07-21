@@ -7,10 +7,11 @@ import {
   Globe,
   Loader2,
   Trash2,
+  UserX,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -68,6 +69,13 @@ type PopulatedSummary = {
   discount_codes_inserted: number;
   publications_inserted: number;
 } | null;
+
+type DemoAccount = {
+  id: string;
+  email: string;
+  reason: 'seeded_teacher' | 'seeded_for_enrolee' | 'demo_domain';
+  createdAt: string;
+};
 
 function describeTestSwitch(
   structure: StructureSummary,
@@ -244,6 +252,40 @@ export function EnvironmentCard({
     switchMutation.mutate(target);
   }
 
+  const [demoDialogOpen, setDemoDialogOpen] = useState(false);
+
+  const demoAccountsQuery = useQuery({
+    queryKey: ['sis', 'demo-accounts'],
+    queryFn: () =>
+      apiFetch<{ accounts: DemoAccount[] }>(
+        '/api/sis/admin/environment/demo-accounts'
+      ),
+    enabled: demoDialogOpen,
+  });
+
+  const removeDemoAccountsMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ removed: number; emails: string[] }>(
+        '/api/sis/admin/environment/demo-accounts',
+        jsonInit('DELETE')
+      ),
+    onSuccess: (body) => {
+      toast.success(
+        body.removed === 0
+          ? 'No demo accounts found.'
+          : `Removed ${body.removed} demo account${body.removed === 1 ? '' : 's'}.`
+      );
+      setDemoDialogOpen(false);
+      router.refresh();
+    },
+    onError: (err) => {
+      toast.error(
+        err instanceof Error ? err.message : 'Demo account removal failed'
+      );
+    },
+  });
+  const removingDemoAccounts = removeDemoAccountsMutation.isPending;
+
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2">
@@ -364,6 +406,79 @@ export function EnvironmentCard({
               >
                 {resetting && <Loader2 className="animate-spin" />}
                 Delete Test environment
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-brand-tile-destructive">
+            <UserX className="size-4" />
+          </div>
+          <div className="min-w-0 space-y-1">
+            <div className="font-serif text-sm font-semibold text-foreground">
+              Remove demo accounts
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Deletes every seeded demo/test staff account (from prior
+              switch-to-Test sessions) that shows up on the staff directory
+              regardless of which environment is active. Real HFSE staff
+              accounts are never matched. Irreversible.
+            </p>
+          </div>
+        </div>
+        <AlertDialog open={demoDialogOpen} onOpenChange={setDemoDialogOpen}>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive" size="sm" className="shrink-0">
+              <UserX />
+              Remove demo accounts
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="size-4 text-destructive" />
+                Remove demo accounts?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {demoAccountsQuery.isLoading ? (
+                  'Checking for demo accounts…'
+                ) : demoAccountsQuery.isError ? (
+                  'Could not check for demo accounts — try again.'
+                ) : (demoAccountsQuery.data?.accounts.length ?? 0) === 0 ? (
+                  'No demo accounts found. Nothing to remove.'
+                ) : (
+                  <>
+                    {demoAccountsQuery.data?.accounts.length} account
+                    {demoAccountsQuery.data?.accounts.length === 1
+                      ? ''
+                      : 's'}{' '}
+                    will be permanently deleted:{' '}
+                    {demoAccountsQuery.data?.accounts
+                      .map((a) => a.email)
+                      .join(', ')}
+                    . This cannot be undone.
+                  </>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={removingDemoAccounts}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={() => removeDemoAccountsMutation.mutate()}
+                disabled={
+                  removingDemoAccounts ||
+                  demoAccountsQuery.isLoading ||
+                  (demoAccountsQuery.data?.accounts.length ?? 0) === 0
+                }
+              >
+                {removingDemoAccounts && <Loader2 className="animate-spin" />}
+                Remove demo accounts
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

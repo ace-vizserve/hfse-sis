@@ -9,6 +9,8 @@ import {
   SECTIONS,
   SUBJECTS,
 } from './fixtures';
+import type { SectionClassType } from '@/lib/schemas/section';
+import { applyTrackBundle } from '@/lib/sis/section-track';
 import { weightBucketForSubjectCode } from '@/lib/sis/subjects/weight-defaults';
 
 // Structural seeder for the Test environment. Populates the reference +
@@ -242,27 +244,182 @@ export async function ensureTestStructure(
     }
   }
 
-  // ---- 4b. section_subjects sync ----
-  // `create_academic_year` already syncs section_subjects for whatever
-  // sections it creates from the template — but this seeder's own section
-  // upsert above (step 3) is a raw upsert straight into `sections`, not
-  // routed through that RPC, so it isn't guaranteed to be covered (e.g. if
-  // this file's SECTIONS fixture ever diverges from template_sections).
-  // Re-running the sync here is idempotent (ON CONFLICT DO NOTHING) and
-  // guarantees every section this seeder just created/touched has its
-  // section_subjects rows before step 9 generates grading sheets —
-  // create_grading_sheets_for_ay (migration 080) now resolves sheet
-  // eligibility through section_subjects instead of a level_id join, so a
-  // section missing from it would silently get zero grading sheets.
+  // ---- 4b. section_subjects: explicit per-section attachment ----
+  // The old `sync_section_subjects_for_ay` RPC blanket-attached every
+  // level-offered subject to every section — a shortcut that stopped
+  // matching reality once real section creation (app/api/sections/route.ts)
+  // was changed to start every new section with ZERO subjects attached,
+  // leaving the registrar to attach what applies explicitly (the
+  // track-bundle apply for Secondary, or the Section Subjects panel /
+  // Mother Tongue language choice for anything else). This seeder now
+  // mirrors that same explicit, per-section workflow instead of the RPC's
+  // shortcut, so seeded test data looks like something a registrar
+  // actually built, not a fixture-only shape.
+  //
+  // Still runs in this exact spot, before step 9 — create_grading_sheets_
+  // for_ay (migration 080) resolves grading-sheet eligibility THROUGH
+  // section_subjects, so any section left with none would silently get
+  // zero seeded grading sheets and the test AY's dashboards/grading pages
+  // would render empty.
   {
-    const { error } = await service.rpc('sync_section_subjects_for_ay', {
-      p_ay_code: testAy.ay_code,
-    });
-    if (error) {
-      console.error(
-        '[structural seeder] sync_section_subjects_for_ay failed:',
-        error.message
-      );
+    // Re-read sections fresh: step 3's upsert only returns rows it
+    // actually inserted (ignoreDuplicates), so a warm re-run needs a full
+    // read to see every section this seeder is responsible for — including
+    // any class_type already set by a prior run or a registrar edit, which
+    // must never be clobbered.
+    const { data: sectionRows } = await service
+      .from('sections')
+      .select('id, name, level_id, class_type')
+      .eq('academic_year_id', testAy.id);
+    const sectionsForAy = (sectionRows ?? []) as Array<{
+      id: string;
+      name: string;
+      level_id: string;
+      class_type: SectionClassType | null;
+    }>;
+    const levelById = new Map(levels.map((l) => [l.id, l]));
+
+    // subject_configs, fresh (migration 080 collapse: one row per subject
+    // per AY, keyed by subject_id — not per level) — needed to resolve
+    // Primary's offered subject codes to config ids for the direct insert
+    // below.
+    const { data: configRows } = await service
+      .from('subject_configs')
+      .select('id, subject_id')
+      .eq('academic_year_id', testAy.id);
+    const configIdBySubjectId = new Map(
+      ((configRows ?? []) as Array<{ id: string; subject_id: string }>).map(
+        (c) => [c.subject_id, c.id]
+      )
+    );
+
+    // Deterministic per-level index for each Primary section, taken from
+    // the SECTIONS fixture's own order (not DB row order, which isn't
+    // guaranteed stable) — every level's counter starts fresh at 0, since
+    // the Mother-Tongue-language choice alternates WITHIN a level (one P1
+    // section does Filipino, another P1 section does Mandarin).
+    const primaryFixtureIndexByKey = new Map<string, number>();
+    {
+      const counters = new Map<string, number>();
+      for (const s of SECTIONS) {
+        const idx = counters.get(s.level_code) ?? 0;
+        primaryFixtureIndexByKey.set(`${s.level_code}|${s.name}`, idx);
+        counters.set(s.level_code, idx + 1);
+      }
+    }
+
+    // Deterministic index for each Secondary section, sequential ACROSS the
+    // whole fixture (not reset per level) — SECTIONS has exactly one
+    // section per Secondary level (S1-S4), so a per-level index would
+    // always read 0 and every Secondary section would land on the same
+    // track. A cross-fixture index gives S1/S3 → Global, S2/S4 → Standard,
+    // so seeded test data actually exercises both tracks.
+    const secondaryFixtureIndexByKey = new Map<string, number>();
+    {
+      let i = 0;
+      for (const s of SECTIONS) {
+        const lv = levelByCode.get(s.level_code);
+        if (lv?.level_type !== 'secondary') continue;
+        secondaryFixtureIndexByKey.set(`${s.level_code}|${s.name}`, i);
+        i += 1;
+      }
+    }
+
+    const sectionSubjectRows: Array<{
+      section_id: string;
+      subject_config_id: string;
+    }> = [];
+
+    for (const section of sectionsForAy) {
+      const level = levelById.get(section.level_id);
+      if (!level) continue;
+      const key = `${level.code}|${section.name}`;
+
+      if (level.level_type === 'secondary') {
+        const idx = secondaryFixtureIndexByKey.get(key) ?? 0;
+        const assignedClassType: SectionClassType =
+          idx % 2 === 0 ? 'Global' : 'Standard';
+        // Never overwrite an already-set class_type (a prior seeder run or
+        // a registrar edit) — only assign when it's still null.
+        const classType = section.class_type ?? assignedClassType;
+
+        if (!section.class_type) {
+          const { error } = await service
+            .from('sections')
+            .update({ class_type: classType })
+            .eq('id', section.id);
+          if (error) {
+            console.error(
+              '[structural seeder] section class_type update failed:',
+              error.message
+            );
+          }
+        }
+
+        try {
+          await applyTrackBundle(service, {
+            sectionId: section.id,
+            academicYearId: testAy.id,
+            classType,
+          });
+        } catch (e) {
+          console.error(
+            '[structural seeder] applyTrackBundle failed:',
+            e instanceof Error ? e.message : e
+          );
+        }
+        continue;
+      }
+
+      // Primary: attach every subject offered at this level except pick
+      // exactly one of FIL/MANDARIN (never both) — alternating which one
+      // across sections at the same level by fixture index, matching the
+      // real "one section is Mother Tongue (Filipino), another is Mother
+      // Tongue (Mandarin)" pattern. Levels where only one of the two is
+      // offered at all (e.g. P6 — MANDARIN's fixture entry is scoped to
+      // P1-P5 only) never drop the one that IS offered.
+      const offeredForLevel = SUBJECTS.filter((subj) => {
+        if (subj.reportOnly) return false;
+        if (subj.level_type !== 'primary') return false;
+        if (subj.levelCodes && !subj.levelCodes.includes(level.code))
+          return false;
+        return true;
+      });
+      const hasFil = offeredForLevel.some((s) => s.code === 'FIL');
+      const hasMandarin = offeredForLevel.some((s) => s.code === 'MANDARIN');
+      const dropCode =
+        hasFil && hasMandarin
+          ? (primaryFixtureIndexByKey.get(key) ?? 0) % 2 === 0
+            ? 'MANDARIN'
+            : 'FIL'
+          : null;
+
+      for (const subj of offeredForLevel) {
+        if (subj.code === dropCode) continue;
+        const subject = subjectByCode.get(subj.code);
+        if (!subject) continue;
+        const configId = configIdBySubjectId.get(subject.id);
+        if (!configId) continue;
+        sectionSubjectRows.push({
+          section_id: section.id,
+          subject_config_id: configId,
+        });
+      }
+    }
+
+    if (sectionSubjectRows.length > 0) {
+      const { error } = await service
+        .from('section_subjects')
+        .upsert(sectionSubjectRows, {
+          onConflict: 'section_id,subject_config_id',
+          ignoreDuplicates: true,
+        });
+      if (error) {
+        console.error(
+          '[structural seeder] section_subjects upsert failed:',
+          error.message
+        );
+      }
     }
   }
 

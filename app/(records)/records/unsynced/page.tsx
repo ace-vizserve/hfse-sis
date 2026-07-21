@@ -1,11 +1,13 @@
 import { UserX } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
-import { UnsyncedStudentsQueue } from '@/components/sis/unsynced-students-queue';
-import type { AssignableSection } from '@/components/sis/assign-section-dialog';
+import {
+  UnsyncedStudentsQueue,
+  type AssignableLevelSections,
+} from '@/components/sis/unsynced-students-queue';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
-import { canonicalizeLevelLabel } from '@/lib/sis/levels';
+import { listAssignableSections } from '@/lib/sis/class-assignment';
 import { loadUnsyncedEnrolledStudents } from '@/lib/sis/unsynced-students';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -48,9 +50,9 @@ export default async function UnsyncedStudentsPage() {
   const rows = await loadUnsyncedEnrolledStudents(currentAy.ay_code);
 
   // Build the per-level section map up-front so each dialog open is
-  // pre-populated (no per-row fetch on click). Same shape as the lite
-  // page's loadAvailableSections — section list at the level + per-section
-  // active counts so the dialog can render the "Full" badge.
+  // pre-populated (no per-row fetch on click) — resolved level + section
+  // list with per-section active counts, same shape the lite page gets
+  // from `listAssignableSections` directly.
   const uniqueLevels = Array.from(
     new Set(
       rows
@@ -105,99 +107,26 @@ export default async function UnsyncedStudentsPage() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Section lookup — mirrors the lite page's loadAvailableSections shape but
-// fans out across multiple levels in a single batch. Returns a map keyed
-// by the level label exactly as it appears on the unsynced row's
-// levelApplied field (no canonicalization on the OUT side; only on the IN
-// side when matching against `levels.label`).
+// Section lookup — one `listAssignableSections` call per distinct level,
+// fanned out concurrently. Returns a map keyed by the level label exactly
+// as it appears on the unsynced row's levelApplied field; level resolution
+// (including alias-table lookups) is delegated entirely to the shared
+// helper (Task 3.1) instead of a hand-rolled canonicalization pass.
 // ──────────────────────────────────────────────────────────────────────────
 
 async function loadSectionsForLevels(
   ayCode: string,
   levelLabels: string[]
-): Promise<Record<string, AssignableSection[]>> {
+): Promise<Record<string, AssignableLevelSections>> {
   if (levelLabels.length === 0) return {};
   const service = createServiceClient();
 
-  const { data: ayRow } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('ay_code', ayCode)
-    .maybeSingle();
-  if (!ayRow) return {};
-  const ayId = (ayRow as { id: string }).id;
+  const entries = await Promise.all(
+    levelLabels.map(
+      async (label) =>
+        [label, await listAssignableSections(service, ayCode, label)] as const
+    )
+  );
 
-  // Canonicalize each input label so we can match `levels.label`, but
-  // keep a back-pointer so the output map preserves the original label
-  // shape used on the unsynced rows.
-  const canonicalByInput = new Map<string, string>();
-  for (const label of levelLabels) {
-    const canon = canonicalizeLevelLabel(label) ?? label;
-    canonicalByInput.set(label, canon);
-  }
-  const canonicalLabels = Array.from(new Set(canonicalByInput.values()));
-
-  const { data: levelRows } = await service
-    .from('levels')
-    .select('id, label')
-    .in('label', canonicalLabels);
-  const levelsByCanonical = new Map<string, string>();
-  for (const r of (levelRows ?? []) as Array<{ id: string; label: string }>) {
-    levelsByCanonical.set(r.label, r.id);
-  }
-
-  const levelIds = Array.from(levelsByCanonical.values());
-  if (levelIds.length === 0) return {};
-
-  const { data: sectionRows } = await service
-    .from('sections')
-    .select('id, name, level_id')
-    .eq('academic_year_id', ayId)
-    .in('level_id', levelIds);
-  const sections = (sectionRows ?? []) as Array<{
-    id: string;
-    name: string;
-    level_id: string;
-  }>;
-  if (sections.length === 0) return {};
-
-  const sectionIds = sections.map((s) => s.id);
-  const { data: activeRows } = await service
-    .from('section_students')
-    .select('section_id')
-    .eq('enrollment_status', 'active')
-    .in('section_id', sectionIds);
-  const activeCountById = new Map<string, number>();
-  for (const r of (activeRows ?? []) as Array<{ section_id: string }>) {
-    activeCountById.set(
-      r.section_id,
-      (activeCountById.get(r.section_id) ?? 0) + 1
-    );
-  }
-
-  // Bucket sections per level id, then unpack back into the per-input-label map.
-  const sectionsByLevelId = new Map<string, AssignableSection[]>();
-  for (const s of sections) {
-    const list = sectionsByLevelId.get(s.level_id) ?? [];
-    list.push({
-      id: s.id,
-      name: s.name,
-      activeCount: activeCountById.get(s.id) ?? 0,
-    });
-    sectionsByLevelId.set(s.level_id, list);
-  }
-  for (const list of sectionsByLevelId.values()) {
-    list.sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  const out: Record<string, AssignableSection[]> = {};
-  for (const [inputLabel, canonical] of canonicalByInput) {
-    const levelId = levelsByCanonical.get(canonical);
-    if (!levelId) {
-      out[inputLabel] = [];
-      continue;
-    }
-    out[inputLabel] = sectionsByLevelId.get(levelId) ?? [];
-  }
-  return out;
+  return Object.fromEntries(entries);
 }

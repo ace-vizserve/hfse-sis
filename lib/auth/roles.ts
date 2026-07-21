@@ -54,7 +54,8 @@ export type SidebarBadgeKey =
   | 'changeRequests'
   | 'pendingDocValidation'
   | 'unsyncedStudents'
-  | 'pfileAwaitingVerification';
+  | 'pfileAwaitingVerification'
+  | 'levelMismatches';
 export type SidebarBadges = Partial<Record<SidebarBadgeKey, number>>;
 
 // Informational nav-item count chips — see NavItem.countKey above.
@@ -154,6 +155,15 @@ const RECORDS_NAV: NavSection[] = [
         href: '/records/unsynced',
         label: 'Students needing setup',
         badgeKey: 'unsyncedStudents',
+      },
+      // Reconciliation queue for admissions `levelApplied` free-text values
+      // that don't match any known level (KD-adjacent to unsynced students —
+      // same "surface the gap, offer a one-click fix" pattern). Badge mirrors
+      // `countUnmatchedLevelLabels`.
+      {
+        href: '/records/level-mismatches',
+        label: 'Level naming to review',
+        badgeKey: 'levelMismatches',
       },
       // Section setup lives in SIS Admin, but the registrar can't reach the SIS
       // module (its /sis hub is school_admin+). Cross-link kept here so she can
@@ -421,27 +431,28 @@ const EVALUATION_NAV: NavSection[] = [
 // Groups mirror the landing-page sections on /sis (page.tsx).
 // Group structure restored to the production sidebar (Year Setup /
 // Organisation / Access / System) per user request (2026-07-12), carrying
-// the post-KD #154 item set and names: "Structure Defaults" (renamed from
-// Class Template), no "Sync from Admissions" (page deleted — auto-sync cron
-// per KD #90/#154), and no "Users" (accounts merged into Staff's Accounts
-// cut; /sis/admin/users is a superadmin-gated redirect stub reachable via
-// the "Staff accounts" command-palette entry or the Staff page's Accounts
-// tab). "Grade Levels" (KD #153's managed-entity page) was removed by
-// migration 086 — the volatile-level / per-AY-offering concept it managed
-// was deleted outright; the level catalog is now a fixed 10-row constant
-// (lib/sis/levels.ts) with no admin surface.
+// the post-KD #154 item set and names: no "Sync from Admissions" (page
+// deleted — auto-sync cron per KD #90/#154), and no "Users" (accounts
+// merged into Staff's Accounts cut; /sis/admin/users is a superadmin-gated
+// redirect stub reachable via the "Staff accounts" command-palette entry or
+// the Staff page's Accounts tab). "Grade Levels" (KD #153's managed-entity
+// page) was removed by migration 086 — the volatile-level / per-AY-offering
+// concept it managed was deleted outright; the level catalog is now a fixed
+// 10-row constant (lib/sis/levels.ts) with no admin surface.
 // Grouping/relatedness pass (2026-07-17): "Access" (a single-item group
 // holding only Approvers) folded into "System" — a labeled section over one
-// row wasn't grouping anything. "Organisation" reordered to Structure
-// Defaults before Subject Weights, matching the actual dependency direction
-// (Subject Weights' own gap banner sends the user to Structure Defaults
-// first when an AY is unconfigured — the old order contradicted that). The
-// sis module's `quickActionByRole` (lib/sidebar/registry.ts) was also
-// emptied out — both prior entries (AY Setup for superadmin, School
-// Calendar for school_admin) duplicated the first two rows of this very
-// "Year Setup" group, so the CTA slot added a visually-duplicate row with
-// zero click savings, unlike other modules where the quick action actually
-// skips past several groups.
+// row wasn't grouping anything. The sis module's `quickActionByRole`
+// (lib/sidebar/registry.ts) was also emptied out — both prior entries (AY
+// Setup for superadmin, School Calendar for school_admin) duplicated the
+// first two rows of this very "Year Setup" group, so the CTA slot added a
+// visually-duplicate row with zero click savings, unlike other modules
+// where the quick action actually skips past several groups.
+// Structure Defaults removed (migration 089, Structure Defaults template
+// removal): the "Structure Defaults" nav item (was "Class Template," then
+// renamed 2026-07-17) is gone — new AYs now always copy their starting
+// sections/subjects/weights forward from the most recently created prior
+// AY, so there's no admin-managed template to link to. "Organisation" now
+// holds Discount Codes + Subject Weights only.
 const SIS_NAV: NavSection[] = [
   {
     items: [
@@ -493,19 +504,6 @@ const SIS_NAV: NavSection[] = [
         href: '/sis/admin/discount-codes',
         label: 'Discount Codes',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
-      },
-      {
-        // Structure Defaults before Subject Weights: it's the source the
-        // AY-scoped weights get applied FROM (KD #66) — Subject Weights'
-        // own gap banner sends the user here first when an AY is
-        // unconfigured, so the nav order now matches that dependency
-        // direction instead of contradicting it.
-        //
-        // Label-only rename (was "Class Template"); href unchanged. Full
-        // reframe of this surface is sub-project 3, out of scope here.
-        href: '/sis/admin/template',
-        label: 'Structure Defaults',
-        requiresRoles: ['school_admin', 'superadmin'],
       },
       {
         href: '/sis/admin/subjects',
@@ -684,7 +682,6 @@ export const NAV_BY_MODULE: {
 export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   { prefix: '/sis/admin/approvers', allowed: ['superadmin'] },
   { prefix: '/sis/admin/subjects', allowed: ['school_admin', 'superadmin'] },
-  { prefix: '/sis/admin/template', allowed: ['school_admin', 'superadmin'] },
   {
     prefix: '/sis/admin/school-config',
     allowed: ['school_admin', 'superadmin'],

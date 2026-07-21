@@ -36,20 +36,11 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { CreateAySchema, type CreateAyInput } from '@/lib/schemas/ay-setup';
-import { TEMPLATE_SOURCE_SENTINEL } from '@/lib/sis/ay-setup/constants';
-
-// Source string from getCopyForwardPreview is either a real AY code
-// (`'AY2026'`) or the sentinel — render the sentinel as the human label.
-function formatSource(sourceAyCode: string): string {
-  return sourceAyCode === TEMPLATE_SOURCE_SENTINEL ? 'template' : sourceAyCode;
-}
 
 type Preview = {
-  source_ay_code: string | null;
-  sections_to_copy: number;
-  subject_configs_to_copy: number;
   ay_already_exists: boolean;
   terms_to_insert: number;
+  will_seed_defaults: boolean;
 };
 
 type Props = {
@@ -58,11 +49,6 @@ type Props = {
 };
 
 type Step = 'identity' | 'review' | 'follow-up';
-
-type CreationSummary = {
-  sections_copied: number;
-  subject_configs_copied: number;
-};
 
 const BLANK: CreateAyInput = {
   ay_code: '',
@@ -74,8 +60,6 @@ function AySetupWizard({ preview, children }: Props) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>('identity');
   const [createdAyCode, setCreatedAyCode] = useState<string | null>(null);
-  const [creationSummary, setCreationSummary] =
-    useState<CreationSummary | null>(null);
 
   const form = useForm<CreateAyInput>({
     resolver: zodResolver(CreateAySchema),
@@ -86,8 +70,8 @@ function AySetupWizard({ preview, children }: Props) {
     alreadyExisted?: boolean;
     summary?: {
       ay_existed?: boolean;
-      sections_copied?: number;
-      subject_configs_copied?: number;
+      sections_seeded?: number;
+      subject_configs_seeded?: number;
     };
   };
 
@@ -109,33 +93,25 @@ function AySetupWizard({ preview, children }: Props) {
       // as "completed" rather than "created" so the user understands
       // their existing admissions data wasn't disturbed.
       const ayExisted = body.summary?.ay_existed === true;
-      const sectionsCopied: number = body.summary?.sections_copied ?? 0;
-      const configsCopied: number = body.summary?.subject_configs_copied ?? 0;
+      const sectionsSeeded: number = body.summary?.sections_seeded ?? 0;
+      const configsSeeded: number = body.summary?.subject_configs_seeded ?? 0;
       toast.success(
         ayExisted
           ? `${values.ay_code} setup completed`
           : `${values.ay_code} created`
       );
-      // First-AY case: the RPC had no prior AY or template to copy from,
-      // so sections and subject configs were not created. Guide the user to
-      // the class template so they don't wonder why the grading setup is
-      // empty.
-      if (sectionsCopied === 0 && configsCopied === 0) {
+      // Migration 090 always seeds the static default catalog for a
+      // genuinely new AY — reaching here (past the alreadyExisted
+      // early-return above) with sectionsSeeded===0 && configsSeeded===0
+      // means the AY row already had its full sections/subjects catalog
+      // and only the missing term rows were topped up. Not a bootstrap
+      // gap anymore (that case no longer exists).
+      if (sectionsSeeded === 0 && configsSeeded === 0) {
         toast.info(
-          'No sections were copied — apply the class template to populate sections and subject weights.',
-          {
-            action: {
-              label: 'Open Class Template',
-              onClick: () => router.push('/sis/admin/template'),
-            },
-          }
+          `${values.ay_code} already had its sections and subjects configured — only the missing term dates were added.`
         );
       }
       setCreatedAyCode(values.ay_code);
-      setCreationSummary({
-        sections_copied: sectionsCopied,
-        subject_configs_copied: configsCopied,
-      });
       setStep('follow-up');
       router.refresh();
     },
@@ -154,7 +130,6 @@ function AySetupWizard({ preview, children }: Props) {
     form.reset(BLANK);
     setStep('identity');
     setCreatedAyCode(null);
-    setCreationSummary(null);
     createMutation.reset();
   }
 
@@ -186,8 +161,8 @@ function AySetupWizard({ preview, children }: Props) {
             <DialogHeader>
               <DialogTitle>Create a new academic year</DialogTitle>
               <DialogDescription>
-                Step 1 of 2 — identify the new AY. Copy-forward from the most
-                recent AY happens automatically on commit.
+                Step 1 of 2 — identify the new AY. HFSE&apos;s standard starting
+                catalog is seeded automatically on commit.
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -280,31 +255,14 @@ function AySetupWizard({ preview, children }: Props) {
                       : `${preview.terms_to_insert} added (existing terms preserved)`
                 }
               />
-              {preview.source_ay_code ? (
-                <>
-                  <ReviewRow
-                    label="Sections"
-                    value={
-                      preview.sections_to_copy === 0
-                        ? 'Already configured — none copied'
-                        : `${preview.sections_to_copy} copied from ${formatSource(preview.source_ay_code)}`
-                    }
-                  />
-                  <ReviewRow
-                    label="Subject configs"
-                    value={
-                      preview.subject_configs_to_copy === 0
-                        ? 'Already configured — none copied'
-                        : `${preview.subject_configs_to_copy} copied from ${formatSource(preview.source_ay_code)}`
-                    }
-                  />
-                </>
-              ) : (
-                <ReviewRow
-                  label="Sections & subject configs"
-                  value="None — no template configured and no prior non-test AY to copy from. Seed manually later."
-                />
-              )}
+              <ReviewRow
+                label="Sections & subjects"
+                value={
+                  preview.will_seed_defaults
+                    ? "HFSE's standard starting catalog will be created — sections, subjects, and weights, ready to edit"
+                    : 'Already configured — nothing will be added'
+                }
+              />
               <ReviewRow
                 label="Admissions tables"
                 value={
@@ -339,33 +297,13 @@ function AySetupWizard({ preview, children }: Props) {
                 {createdAyCode} created
               </DialogTitle>
               <DialogDescription>
-                {creationSummary?.sections_copied === 0 &&
-                creationSummary?.subject_configs_copied === 0
-                  ? `The AY row, 4 terms, and 4 admissions tables are live. Sections and subject weights still need to be configured.`
-                  : `The AY row, 4 terms, sections, subject configs, and 4 admissions tables are live.`}{' '}
-                The switcher now shows {createdAyCode} on every AY-scoped page.
+                The AY row, terms, sections, subject configs, and 4 admissions
+                tables are all live — HFSE&apos;s standard starting catalog,
+                ready to edit. The switcher now shows {createdAyCode} on every
+                AY-scoped page.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 py-2 text-sm">
-              {creationSummary?.sections_copied === 0 &&
-                creationSummary?.subject_configs_copied === 0 && (
-                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[13px] leading-relaxed text-amber-700 dark:text-amber-400">
-                    <strong>Next step:</strong> Open the{' '}
-                    <button
-                      type="button"
-                      className="font-semibold underline underline-offset-2 hover:no-underline"
-                      onClick={() => {
-                        handleOpenChange(false);
-                        router.push('/sis/admin/template');
-                      }}
-                    >
-                      Class Template
-                    </button>{' '}
-                    and apply it to {createdAyCode} to create sections and
-                    subject weights. Without this step, teachers cannot access
-                    grading sheets.
-                  </div>
-                )}
               <p className="text-xs leading-relaxed text-muted-foreground">
                 When you&apos;re ready to make {createdAyCode} the live AY (the
                 one every module defaults to), use{' '}
@@ -375,31 +313,22 @@ function AySetupWizard({ preview, children }: Props) {
               </p>
             </div>
             <DialogFooter>
-              {creationSummary?.sections_copied === 0 &&
-              creationSummary?.subject_configs_copied === 0 ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => handleOpenChange(false)}
-                  >
-                    Done
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      handleOpenChange(false);
-                      router.push('/sis/admin/template');
-                    }}
-                  >
-                    Open Class Template
-                  </Button>
-                </>
-              ) : (
-                <Button type="button" onClick={() => handleOpenChange(false)}>
-                  Done
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleOpenChange(false)}
+              >
+                Done
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  handleOpenChange(false);
+                  router.push('/sis/sections');
+                }}
+              >
+                Open Sections
+              </Button>
             </DialogFooter>
           </>
         )}

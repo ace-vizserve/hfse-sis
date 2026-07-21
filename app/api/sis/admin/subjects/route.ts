@@ -15,8 +15,7 @@ import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 // levels the subject is taught at is tracked separately on
 // `subject_level_offerings` via PUT /api/sis/admin/subjects/level-offerings
 // — creating a weight config here does not itself attach the subject to
-// any level. Mirrors POST /api/sis/admin/template/subject-configs (the
-// AY-agnostic Structure Defaults sibling) but scoped to one AY.
+// any level.
 export async function POST(request: NextRequest) {
   const auth = await requireRole(['school_admin', 'superadmin']);
   if ('error' in auth) return auth.error;

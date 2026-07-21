@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   STALENESS_FOLLOW_UP_VALUES,
@@ -13,6 +13,78 @@ import {
   STAGE_STATUS_OPTIONS,
   isActiveFunnelStatus,
 } from '@/lib/schemas/sis';
+
+// ──────────────────────────────────────────────────────────────────────────
+// Mocks for the end-to-end regression test below. `lib/admissions/dashboard.ts`
+// funnels every aggregate through the module-private `loadJoinedRowsUncached`
+// (KD #46 cache-wrapper pattern: uncached loaders stay unexported; only the
+// `unstable_cache`-wrapped aggregators are public). So instead of exporting
+// the private loader just to test it, this exercises it indirectly through
+// `getOutdatedApplications` — the nearest exported function whose output field
+// (`lastUpdated`) is a direct passthrough of `JoinedRow.applicationUpdatedDate`.
+//
+// `next/cache`'s `unstable_cache` is stubbed to a plain passthrough (mirrors
+// __tests__/sis/staff-list.test.ts) so the cache wrapper doesn't need a real
+// Next.js request context and every test call re-runs the loader fresh.
+// `createAdmissionsClient` is stubbed to a fake PostgREST chain
+// (`.from(table).select(...).range(...)`) returning fixed apps/status rows —
+// mirrors __tests__/admissions/parent-email-ilike-escape.test.ts's
+// `createServiceClient` mock shape.
+// ──────────────────────────────────────────────────────────────────────────
+
+vi.mock('next/cache', () => ({
+  unstable_cache:
+    (fn: (...args: unknown[]) => unknown) =>
+    (...args: unknown[]) =>
+      fn(...args),
+}));
+
+const mockAppRow = {
+  enroleeNumber: 'ENR-0001',
+  enroleeFullName: 'Doe, Jane',
+  firstName: 'Jane',
+  lastName: 'Doe',
+  levelApplied: 'P1',
+  // Deliberately old + non-null, so a reintroduced `?? a.created_at`
+  // fallback would be trivially observable in the asserted output below.
+  created_at: '2020-01-01T00:00:00.000Z',
+  howDidYouKnowAboutHFSEIS: null,
+  studentNumber: null,
+  motherEmail: null,
+  fatherEmail: null,
+};
+
+const mockStatusRow = {
+  enroleeNumber: 'ENR-0001',
+  applicationStatus: 'Submitted',
+  // The field under test — genuinely never touched since creation.
+  applicationUpdatedDate: null as string | null,
+  enrolledAt: null,
+  classLevel: 'P1',
+  levelApplied: 'P1',
+  assessmentGradeMath: null,
+  assessmentGradeEnglish: null,
+};
+
+vi.mock('@/lib/supabase/admissions', () => ({
+  createAdmissionsClient: vi.fn(() => ({
+    from: (table: string) => ({
+      select: () => ({
+        range: () => {
+          if (table.endsWith('_enrolment_applications')) {
+            return Promise.resolve({ data: [mockAppRow], error: null });
+          }
+          if (table.endsWith('_enrolment_status')) {
+            return Promise.resolve({ data: [mockStatusRow], error: null });
+          }
+          return Promise.resolve({ data: [], error: null });
+        },
+      }),
+    }),
+  })),
+}));
+
+import { getOutdatedApplications } from '@/lib/admissions/dashboard';
 
 describe('stalenessLabel — tier boundaries', () => {
   it('null day-count → Never updated', () => {
@@ -92,13 +164,37 @@ describe('isFollowUpStaleness — the shared count/deep-link predicate', () => {
   });
 
   it('null applicationUpdatedDate with no other date → Never updated tier', () => {
-    // getOutdatedApplications has NO created_at fallback for staleness
-    // (verified — created_at only feeds daysInPipeline). A row with no
-    // update stamp is simply the 'Never updated' tier, everywhere.
+    // getOutdatedApplications has no created_at fallback for staleness —
+    // applicationUpdatedDate is DB-trigger-maintained since migration 087
+    // (stamp_enrolment_status_touch), so a genuinely-untouched row reads
+    // null all the way through, no substitution. (Prior to that migration,
+    // lib/admissions/dashboard.ts silently substituted `a.created_at` for
+    // a null applicationUpdatedDate before this predicate ever saw it —
+    // this test only covered the pure helpers below in isolation and never
+    // caught that. Don't repeat that gap: an end-to-end assertion follows.)
     expect(stalenessLabel(daysSinceUpdate(null))).toBe(
       STALENESS_LABELS.unknown
     );
     expect(stalenessLabel(daysSinceUpdate(undefined))).toBe(
+      STALENESS_LABELS.unknown
+    );
+  });
+
+  it('end-to-end: loadJoinedRowsUncached no longer substitutes created_at for a null applicationUpdatedDate', async () => {
+    // Regression guard for the exact gap the comment above describes — runs
+    // the REAL lib/admissions/dashboard.ts code path (via the mocked
+    // Supabase client above), not a hand-copied expression. If the
+    // `?? a.created_at` fallback were reintroduced into
+    // loadJoinedRowsUncached, `lastUpdated` below would resolve to
+    // '2020-01-01T00:00:00.000Z' (mockAppRow.created_at) instead of null,
+    // and this assertion would fail.
+    const rows = await getOutdatedApplications('AY2026');
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].enroleeNumber).toBe('ENR-0001');
+    expect(rows[0].lastUpdated).toBeNull();
+    expect(rows[0].lastUpdated).not.toBe(mockAppRow.created_at);
+    expect(stalenessLabel(daysSinceUpdate(rows[0].lastUpdated))).toBe(
       STALENESS_LABELS.unknown
     );
   });

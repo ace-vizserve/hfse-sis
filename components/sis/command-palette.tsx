@@ -313,12 +313,6 @@ const NAV_ENTRIES: NavEntry[] = [
     icon: Settings2Icon,
   },
   {
-    href: '/sis/admin/template',
-    label: 'Structure Defaults (Sections & Subjects)',
-    group: 'Admin',
-    icon: GraduationCapIcon,
-  },
-  {
     href: '/sis/admin/discount-codes',
     label: 'Discount Codes',
     group: 'Admin',

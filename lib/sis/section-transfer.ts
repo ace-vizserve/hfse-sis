@@ -3,12 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { sgToday } from '@/lib/dates';
 import { getTermForDate } from '@/lib/sis/terms';
-
-// Max active students per section (Hard Rule #5). Mirrored from
-// lib/sis/class-assignment.ts — kept inline here to avoid a circular import
-// chain via the route handler. Single-source candidate if a third caller
-// shows up.
-const MAX_ACTIVE_PER_SECTION = 50;
+import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
 
 export type TransferTermInfo = {
   termNumber: number;

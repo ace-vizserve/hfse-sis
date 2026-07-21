@@ -56,9 +56,7 @@ export type SubjectConfigCreateInput = z.infer<
 
 // PUT /api/sis/admin/subjects/level-offerings — attach/detach a subject
 // to/from a level for a specific academic year, via
-// `subject_level_offerings` (migration 080). AY-scoped sibling of
-// `TemplateSubjectLevelOfferingToggleSchema` (lib/schemas/template.ts),
-// which is the AY-agnostic template equivalent.
+// `subject_level_offerings` (migration 080).
 export const SubjectLevelOfferingToggleSchema = z.object({
   subject_id: z.string().uuid(),
   level_id: z.string().uuid(),

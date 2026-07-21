@@ -98,9 +98,10 @@ type AppLite = {
 
 type JoinedRow = AppLite & {
   applicationStatus: string | null;
-  /** Fallback-substituted staleness timestamp: `s.applicationUpdatedDate ?? a.created_at`.
-   *  Used for the pipeline-age / RAG-tier logic. Do NOT use for "time to enrol"
-   *  — use `enrolledAt` (the raw status-table value) for that. */
+  /** DB-trigger-maintained since migration 087 — null means genuinely
+   *  never edited. Used for the staleness / pipeline-age RAG-tier logic.
+   *  Do NOT use for "time to enrol" — use `enrolledAt` (a distinct,
+   *  write-once column) for that. */
   applicationUpdatedDate: string | null;
   /** Raw `applicationUpdatedDate` from the status table — null when the admissions
    *  team never stamped it (the common case). Only non-null rows represent a
@@ -160,19 +161,16 @@ async function loadJoinedRowsUncached(ayCode: string): Promise<JoinedRow[]> {
   for (const a of apps) {
     if (!a.enroleeNumber) continue;
     const s = statusByEnrolee.get(a.enroleeNumber);
-    // Fallback: the admissions team never stamps `applicationUpdatedDate` in
-    // practice (0/471 populated in AY2026 as of 2026-04-17), so staleness
-    // against null would make every row "Never updated." Falling back to the
-    // application's `created_at` gives the real-world meaning "days since
-    // submission, if nobody has touched it." The RAG tiers and pipeline-age
-    // column then produce meaningful red/amber/green signal instead of all
-    // collapsing into the unknown bucket.
+    // applicationUpdatedDate is DB-trigger-maintained since migration 087
+    // (stamp_enrolment_status_touch) — no fallback needed. A null here now
+    // means exactly what it says: nobody has edited this application record
+    // since it was created. Historical rows from before the trigger went
+    // live will read "Never updated" until they're next touched — that is
+    // the correct, honest state, not a bug.
     out.push({
       ...a,
       applicationStatus: s?.applicationStatus ?? null,
-      // Fallback for pipeline-age / RAG tiers — keeps staleness meaningful
-      // even for rows where the team never stamped the status-table column.
-      applicationUpdatedDate: s?.applicationUpdatedDate ?? a.created_at,
+      applicationUpdatedDate: s?.applicationUpdatedDate ?? null,
       // Real write-once timestamp from the status table (migration 075).
       // NULL for all historical rows; only populated from go-live onwards.
       // Used exclusively for time-to-enrol arithmetic — never the fallback-

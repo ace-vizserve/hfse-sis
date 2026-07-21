@@ -9,9 +9,9 @@ import { createServiceClient } from '@/lib/supabase/service';
 //
 // Adds a new subject to the global `public.subjects` catalog. Brand-new
 // subjects added here flow into new AYs only after the superadmin enables
-// them at the desired levels (via the matrix POST + Apply template). The
-// subject row itself is global, not AY-scoped — every AY's subject_configs
-// references it via subject_id.
+// them at the desired levels (via the matrix POST). The subject row itself
+// is global, not AY-scoped — every AY's subject_configs references it via
+// subject_id.
 //
 // Code is normalized to uppercase + restricted to A-Z 0-9 _ - via the
 // Zod schema. Duplicate code → 409 with the existing id so the UI can

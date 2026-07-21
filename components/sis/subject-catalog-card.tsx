@@ -408,7 +408,7 @@ function WeightsCell({
   const ww = Math.round(subject.config.ww_weight * 100);
   const pt = Math.round(subject.config.pt_weight * 100);
   const qa = Math.round(subject.config.qa_weight * 100);
-  const profile = classifyProfile(ww, pt, qa);
+  const profile = classifyProfile(subject.code, ww, pt, qa);
 
   return <ProfileLegendChip profile={profile} label={`${ww}·${pt}·${qa}`} />;
 }

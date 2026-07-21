@@ -5,19 +5,28 @@ import Link from 'next/link';
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 
-import {
-  AssignSectionDialog,
-  type AssignableSection,
-} from '@/components/sis/assign-section-dialog';
+import { AssignSectionDialog } from '@/components/sis/assign-section-dialog';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { type StatusTabConfig } from '@/components/ui/data-table/types';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import type {
+  AssignableLevel,
+  AssignableSection,
+} from '@/lib/sis/class-assignment';
+import type {
   UnsyncedGapReason,
   UnsyncedStudentRow,
 } from '@/lib/sis/unsynced-students';
+
+// Per-level lookup result carried by `sectionsByLevel` — mirrors
+// `listAssignableSections`'s return shape (Task 3.1) keyed by the raw
+// `levelApplied` label exactly as it appears on the unsynced row.
+export type AssignableLevelSections = {
+  level: AssignableLevel | null;
+  sections: AssignableSection[];
+};
 
 // ──────────────────────────────────────────────────────────────────────────
 // Queue surface at /records/unsynced. Lists enrolled students whose
@@ -39,7 +48,7 @@ import type {
 type Props = {
   rows: UnsyncedStudentRow[];
   ayCode: string;
-  sectionsByLevel: Record<string, AssignableSection[]>;
+  sectionsByLevel: Record<string, AssignableLevelSections>;
 };
 
 const GAP_COPY: Record<UnsyncedGapReason, string> = {
@@ -218,10 +227,10 @@ export function UnsyncedStudentsQueue({
         <AssignSectionDialog
           enroleeNumber={dialogRow.enroleeNumber}
           ayCode={ayCode}
-          levelApplied={dialogRow.levelApplied}
+          level={sectionsByLevel[dialogRow.levelApplied ?? '']?.level ?? null}
           studentName={fullNameOf(dialogRow)}
           availableSections={
-            sectionsByLevel[dialogRow.levelApplied ?? ''] ?? []
+            sectionsByLevel[dialogRow.levelApplied ?? '']?.sections ?? []
           }
           open={true}
           onOpenChange={(open) => {

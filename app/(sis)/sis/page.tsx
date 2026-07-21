@@ -27,13 +27,11 @@ import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { listAllApproverAssignments } from '@/lib/sis/approvers/queries';
 import {
   listLevels,
-  listSubjects,
   listSubjectLevelOfferings,
 } from '@/lib/sis/subjects/queries';
-import { listTemplateSubjectLevelOfferings } from '@/lib/sis/template/queries';
 import {
-  computeSubjectConfigGaps,
-  type SubjectConfigGap,
+  findEmptyLevels,
+  type EmptyLevelGap,
 } from '@/lib/sis/subject-config-gaps';
 
 // SIS Admin Hub — a command centre, not a menu (Task V1 of the visual
@@ -95,7 +93,7 @@ export default async function SisAdminHub() {
       : Promise.resolve({} as Record<string, number>),
     currentAy
       ? loadSubjectConfigGapsForHub(currentAy.id, currentAy.ay_code)
-      : Promise.resolve([] as SubjectConfigGap[]),
+      : Promise.resolve([] as EmptyLevelGap[]),
   ]);
 
   const attentionRows = buildAttentionRows({
@@ -287,37 +285,25 @@ async function loadApproverFlowCounts(): Promise<Record<string, number>> {
   }
 }
 
-// Levels whose Structure Defaults (template_subject_level_offerings)
-// template says a subject SHOULD teach at, that this AY's
-// subject_level_offerings is missing — same computation and offerings-based
-// query shape as the warning banner on /sis/admin/subjects (migration 080
-// moved "which levels a subject teaches at" off subject_configs/
-// template_subject_configs onto these two offerings tables — see that
-// page's source, this mirrors it), scoped to every in-use level rather
-// than the page's single selected AY view. A missing attachment silently
-// drops that subject from grading-sheet creation AND the report card with
-// no visible signal anywhere else, so it earns a hub row.
+// Levels this AY with zero subjects attached at all — same check the
+// warning banner on /sis/admin/subjects uses, scoped to every level rather
+// than the page's single selected AY view. A level with no subjects
+// silently produces no grading sheets AND nothing on the report card for
+// that level, with no visible signal anywhere else, so it earns a hub row.
 async function loadSubjectConfigGapsForHubUncached(
   ayId: string
-): Promise<SubjectConfigGap[]> {
-  const [subjects, levels, offerings, templateOfferings] = await Promise.all([
-    listSubjects(),
+): Promise<EmptyLevelGap[]> {
+  const [levels, offerings] = await Promise.all([
     listLevels(),
     listSubjectLevelOfferings(ayId),
-    listTemplateSubjectLevelOfferings(),
   ]);
-  return computeSubjectConfigGaps(
-    levels,
-    subjects,
-    templateOfferings,
-    offerings
-  );
+  return findEmptyLevels(levels, offerings);
 }
 
 function loadSubjectConfigGapsForHubCached(
   ayId: string,
   ayCode: string
-): Promise<SubjectConfigGap[]> {
+): Promise<EmptyLevelGap[]> {
   return unstable_cache(
     () => loadSubjectConfigGapsForHubUncached(ayId),
     ['sis-hub-subject-config-gaps', ayId],
@@ -328,7 +314,7 @@ function loadSubjectConfigGapsForHubCached(
 async function loadSubjectConfigGapsForHub(
   ayId: string,
   ayCode: string
-): Promise<SubjectConfigGap[]> {
+): Promise<EmptyLevelGap[]> {
   try {
     return await loadSubjectConfigGapsForHubCached(ayId, ayCode);
   } catch (err) {

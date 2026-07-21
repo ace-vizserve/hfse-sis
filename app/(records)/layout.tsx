@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/sidebar';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import type { SidebarBadges } from '@/lib/auth/roles';
+import { countUnmatchedLevelLabels } from '@/lib/sis/level-review';
 import { countUnsyncedEnrolledStudents } from '@/lib/sis/unsynced-students';
 
 export default async function RecordsLayout({
@@ -39,11 +40,13 @@ export default async function RecordsLayout({
   // with the loader, so the badge refreshes whenever an admissions
   // mutation runs (which is what AssignSectionDialog triggers anyway).
   const currentAy = await getCurrentAcademicYear();
-  const unsyncedCount = currentAy
-    ? await countUnsyncedEnrolledStudents(currentAy.ay_code)
-    : 0;
+  const [unsyncedCount, levelMismatchCount] = await Promise.all([
+    currentAy ? countUnsyncedEnrolledStudents(currentAy.ay_code) : 0,
+    countUnmatchedLevelLabels(),
+  ]);
   const badges: SidebarBadges = {
     unsyncedStudents: unsyncedCount > 0 ? unsyncedCount : undefined,
+    levelMismatches: levelMismatchCount > 0 ? levelMismatchCount : undefined,
   };
 
   return (

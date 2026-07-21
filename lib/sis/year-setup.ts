@@ -103,7 +103,7 @@ export function checklistSummary(
       if (done === total)
         return `Every level's subjects are configured (${total}/${total}).`;
       const gap = total - done;
-      return `${gap} level${gap === 1 ? '' : 's'} ${gap === 1 ? 'is' : 'are'} missing subjects from Structure Defaults — those subjects won't appear on report cards.`;
+      return `${gap} level${gap === 1 ? '' : 's'} ${gap === 1 ? 'has' : 'have'} no subjects configured yet — configure them so grades and report cards have somewhere to go.`;
     }
 
     case 'advisers': {

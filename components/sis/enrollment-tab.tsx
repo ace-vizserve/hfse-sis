@@ -13,7 +13,6 @@ import {
   PenLine,
   ReceiptText,
   ShieldCheck,
-  Sparkles,
   Tags,
   Users,
   X,
@@ -1065,10 +1064,11 @@ function StageStatusTile({
   );
   const StageIcon = STAGE_ICON[stage.key];
   const stripe = statusStripeClass(stage.status);
-  // Class assignment is auto-populated by pickSectionForApplicant when
-  // applicationStatus flips to Enrolled. Post-Enrolled changes route
-  // through the dedicated section-transfer endpoint (KD #67), not the
-  // stage edit dialog. Hide the edit button here and label as auto.
+  // Class assignment is set as part of the application stage's Enrolled
+  // flip (the registrar picks a section inline in that dialog, Task 3.6) —
+  // it has no independent edit control of its own. Post-Enrolled changes
+  // route through the dedicated section-transfer endpoint (KD #67), not
+  // here. Hide the edit button and label as tied-to-enrollment.
   const autoManaged = stage.key === 'class';
 
   return (
@@ -1092,8 +1092,7 @@ function StageStatusTile({
         </div>
         {autoManaged ? (
           <Badge variant="muted" className="shrink-0 gap-1">
-            <Sparkles className="size-3" />
-            Auto
+            Set via Enrolled
           </Badge>
         ) : (
           <EditStageDialog
@@ -1114,7 +1113,7 @@ function StageStatusTile({
 
       {stage.updatedAt ? (
         <span className="pl-1 font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
-          {autoManaged && 'Auto-assigned · '}
+          {autoManaged && 'Set via Enrolled · '}
           {formatDate(stage.updatedAt)}
           {stage.updatedBy && (
             <span className="ml-1.5 normal-case text-muted-foreground/80">
@@ -1124,7 +1123,7 @@ function StageStatusTile({
         </span>
       ) : autoManaged ? (
         <span className="pl-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          Auto-assigned when Enrolled
+          Set when Enrolled
         </span>
       ) : null}
       {stage.extras && stage.extras.some((e) => !isFieldEmpty(e)) && (

@@ -13,7 +13,7 @@ import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   checkAyEmpty,
-  getCopyForwardPreview,
+  getAySetupPreview,
   listAcademicYears,
   listTermsByAy,
 } from '@/lib/sis/ay-setup/queries';
@@ -40,7 +40,7 @@ export default async function AySetupPage({
 
   // Preview for the "New AY" wizard. Uses a throwaway code so the query
   // just pulls the most-recent existing AY.
-  const preview = await getCopyForwardPreview('__NEW__');
+  const preview = await getAySetupPreview('__NEW__');
 
   // Pre-compute blockers for each AY (only matters when superadmin sees
   // the Delete button — cheap enough to always fetch for HFSE's handful

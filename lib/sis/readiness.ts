@@ -2,10 +2,10 @@ import { unstable_cache } from 'next/cache';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getLevelRows } from '@/lib/sis/levels';
-import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
+import { findEmptyLevels } from '@/lib/sis/subject-config-gaps';
 
-// Order matches the user-approved 10-step AY-Setup workflow: Academic Year
-// -> Calendar -> Sections -> Subject Weights -> Form Advisers -> Section
+// Order matches the user-approved AY-Setup workflow: Academic Year ->
+// Calendar -> Sections -> Subject Weights -> Form Advisers -> Section
 // Subjects -> Grading Sheets -> Virtue Themes -> Report-card Letterhead,
 // with 'app-window' (early-bird applications) as the lone optional item
 // after the core 9. The 'grade-levels' step (matching applicant-named
@@ -15,10 +15,16 @@ import { computeSubjectConfigGaps } from '@/lib/sis/subject-config-gaps';
 //
 // 'sections' and 'subject-weights' are a split/decouple of an older single
 // 'classes' step: 'sections' asks "does every grade level have at least one
-// class section," while 'subject-weights' asks "is every grade level fully
-// configured against Structure Defaults" — a genuinely independent,
-// parallel task that no longer depends on sections existing (a registrar
-// can configure subject weights before creating a section).
+// class section," while 'subject-weights' asks "does every grade level have
+// at least one subject configured" — a genuinely independent, parallel task
+// that no longer depends on sections existing (a registrar can configure
+// subject weights before creating a section).
+//
+// The 'structure-confirmed' step (migration 089, Structure Defaults
+// removal) was removed by migration 090 (Static AY Defaults): every new
+// AY's starting sections/subjects/weights now come from a fixed static
+// catalog applied identically every time (create_academic_year), so
+// there's no longer anything for the registrar to review or confirm.
 export type ReadinessStepId =
   | 'ay-setup'
   | 'calendar'
@@ -618,30 +624,27 @@ async function fetchSections(
   };
 }
 
-// Real completeness, not just "any subject_level_offerings row exists" — a
-// level missing even one of its template's subjects silently drops that
-// subject from grading-sheet creation AND the report card
-// (build-report-card.ts scopes subjects by subject_configs; no error, no
-// visible signal). Reuses computeSubjectConfigGaps (lib/sis/subject-config-
-// gaps.ts) — the exact same pure comparison the /sis/admin/subjects gap
-// banner uses — so this readiness step can never drift from what the
-// registrar actually sees there (count==drill discipline, KD #124/#128).
+// "Fully configured" = has at least one subject attached — not a weight- or
+// completeness-level check, just "does this level have anywhere for grades
+// to go." A level with zero subjects silently produces no grading sheets
+// AND nothing on the report card for that level (build-report-card.ts
+// scopes subjects by subject_configs; no error, no visible signal). Reuses
+// findEmptyLevels (lib/sis/subject-config-gaps.ts) — the exact same pure
+// check the /sis/admin/subjects warning banner uses — so this readiness
+// step can never drift from what the registrar actually sees there
+// (count==drill discipline, KD #124/#128).
 //
-// Post migration-080 (subject_configs collapse): weight configs no longer
-// carry a level dimension. "Which levels SHOULD teach a subject" now lives
-// on template_subject_level_offerings; "which levels DO" lives on
-// subject_level_offerings (scoped to this AY). Deliberately queried here
-// with the raw `db` client rather than importing lib/sis/subjects/queries.ts
-// or lib/sis/template/queries.ts — both declare `import 'server-only'`,
-// and this file's pure resolvers/types are consumed by client components
+// Post migration 089 (Structure Defaults template removed): there is no
+// "which levels SHOULD teach which subjects" reference left to compare
+// against — the check is now purely "which levels DO have at least one
+// subject_level_offerings row" (scoped to this AY). Deliberately queried
+// here with the raw `db` client rather than importing
+// lib/sis/subjects/queries.ts — it declares `import 'server-only'`, and
+// this file's pure resolvers/types are consumed by client components
 // (year-setup-checklist.tsx, ay-readiness-pill.tsx import real functions,
 // not just types) — pulling a server-only module in here would break the
 // client bundle (the exact KD #94 gotcha: "server-only module reaching a
 // client component via a value import in any transitively-imported file").
-//
-// A level with no template rows at all is treated as complete — nothing to
-// compare against, avoids false negatives for volatile/manually-managed
-// levels (same rule computeSubjectConfigGaps already applies).
 async function fetchSubjectWeights(
   db: SupabaseClient,
   ayId: string
@@ -656,35 +659,17 @@ async function fetchSubjectWeights(
     return { levelsInUse: 0, levelsFullyConfigured: 0, missingCount: 0 };
   }
 
-  const [
-    { data: subjectRows, error: subjectsError },
-    { data: templateRows, error: templateError },
-    { data: actualRows, error: actualError },
-  ] = await Promise.all([
-    db.from('subjects').select('id, code'),
-    db.from('template_subject_level_offerings').select('subject_id, level_id'),
-    db
-      .from('subject_level_offerings')
-      .select('subject_id, level_id')
-      .eq('academic_year_id', ayId),
-  ]);
+  const { data: actualRows, error: actualError } = await db
+    .from('subject_level_offerings')
+    .select('subject_id, level_id')
+    .eq('academic_year_id', ayId);
 
-  if (subjectsError) throw subjectsError;
-  if (templateError) throw templateError;
   if (actualError) throw actualError;
 
-  const gaps = computeSubjectConfigGaps(
-    relevantLevels,
-    (subjectRows as any[]) ?? [],
-    (templateRows as any[]) ?? [],
-    (actualRows as any[]) ?? []
-  );
+  const gaps = findEmptyLevels(relevantLevels, (actualRows as any[]) ?? []);
 
   const levelsFullyConfigured = relevantLevels.length - gaps.length;
-  const missingCount = gaps.reduce(
-    (sum, g) => sum + g.missingSubjectCodes.length,
-    0
-  );
+  const missingCount = gaps.length;
 
   return {
     levelsInUse: relevantLevels.length,
