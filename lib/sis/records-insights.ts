@@ -648,6 +648,50 @@ export function netMovementByMonth(
   });
 }
 
+export type MonthlyMovementPoint = {
+  month: string;
+  enrollments: number;
+  withdrawals: number;
+};
+
+/**
+ * Pure: buckets a pre-fetched movement-events array into one
+ * `{month, enrollments, withdrawals}` point per label in `months` (in the
+ * order given). "Enrollments" = late-enrolled + re-enrolled (mid-year
+ * joins); "withdrawals" = withdrawn. Section-transfers carry no population
+ * change and are excluded — mirrors `netMovementByMonth`'s own event-kind
+ * classification, just split into two always-positive counts instead of one
+ * signed net.
+ *
+ * Honest by construction, no clamp needed: `events` only ever contains real,
+ * already-happened audit rows, so a not-yet-arrived month simply has no
+ * events (0) — never a fabricated or clamped value (contrast
+ * `netMovementByMonth`, which reads a pre-aggregated monthly series and DOES
+ * need the `isCurrent` future-month clamp).
+ */
+export function monthlyMovementSeries(
+  events: MovementEvent[],
+  months: readonly string[]
+): MonthlyMovementPoint[] {
+  const enrollments = new Array(months.length).fill(0);
+  const withdrawals = new Array(months.length).fill(0);
+  for (const e of events) {
+    const monthIdx = Number(e.date.slice(5, 7)) - 1; // 0-based
+    if (monthIdx < 0 || monthIdx >= months.length) continue;
+    if (e.kind === 'late-enrolled' || e.kind === 're-enrolled') {
+      enrollments[monthIdx] += 1;
+    } else if (e.kind === 'withdrawn') {
+      withdrawals[monthIdx] += 1;
+    }
+    // section-transfer: no population change → skip
+  }
+  return months.map((month, i) => ({
+    month,
+    enrollments: enrollments[i],
+    withdrawals: withdrawals[i],
+  }));
+}
+
 /**
  * The in-progress calendar month for the DB-current AY's movement trend as
  * of `today` (`yyyy-MM-dd`, SGT per KD #32) — the month whose net-movement

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   currentInProgressMonthLabel,
   hasMonthlyResolution,
+  monthlyMovementSeries,
   netMovementByMonth,
   rollupMovements,
   WITHDRAWAL_CONTROLLABILITY,
@@ -282,6 +283,60 @@ describe('netMovementByMonth — isCurrent clamp', () => {
     expect(points.every((p) => p.value !== null)).toBe(true);
     const jun = points.find((p) => p.periodLabel === 'Jun')!;
     expect(jun.value).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// monthlyMovementSeries — the Insights bento rebuild's "Student movement"
+// pill-bar-chart source (2026-07-22, Phase 3). Splits enrollments (late +
+// re-enrolled) vs withdrawals into two always-positive per-month counts,
+// unlike netMovementByMonth's single signed net.
+// ---------------------------------------------------------------------------
+
+describe('monthlyMovementSeries', () => {
+  it('buckets late-enrolled + re-enrolled as enrollments, withdrawn as withdrawals', () => {
+    const events = [
+      mkEvent('late-enrolled', '2026-03-10'),
+      mkEvent('re-enrolled', '2026-03-15'),
+      mkEvent('withdrawn', '2026-03-20'),
+      mkEvent('section-transfer', '2026-03-05'), // no population change → ignored
+    ];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr'];
+    const points = monthlyMovementSeries(events, months);
+    const mar = points.find((p) => p.month === 'Mar')!;
+    expect(mar.enrollments).toBe(2);
+    expect(mar.withdrawals).toBe(1);
+    const jan = points.find((p) => p.month === 'Jan')!;
+    expect(jan.enrollments).toBe(0);
+    expect(jan.withdrawals).toBe(0);
+  });
+
+  it('returns one point per label, in order, all zeroed when no events', () => {
+    const months = ['Jan', 'Feb', 'Mar'];
+    const points = monthlyMovementSeries([], months);
+    expect(points.map((p) => p.month)).toEqual(months);
+    expect(
+      points.every((p) => p.enrollments === 0 && p.withdrawals === 0)
+    ).toBe(true);
+  });
+
+  it('drops events outside the given months window (e.g. a Dec event when only Jan–Nov is passed)', () => {
+    const events = [mkEvent('withdrawn', '2026-12-05')];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+    ];
+    const points = monthlyMovementSeries(events, months);
+    expect(points.reduce((s, p) => s + p.withdrawals, 0)).toBe(0);
   });
 });
 
