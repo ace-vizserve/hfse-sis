@@ -2,7 +2,7 @@ import * as React from 'react';
 import type { LucideIcon } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { TILE_GRADIENT, type ColorKey } from './tokens';
+import { SOFT_BADGE_CLASS, TILE_GRADIENT, type ColorKey } from './tokens';
 
 /**
  * "Project List" anatomy — icon tile + name + subtitle line, the simplest
@@ -16,6 +16,17 @@ import { TILE_GRADIENT, type ColorKey } from './tokens';
  * (`.pl2-val`, e.g. "72.4"). Omit it to get the literal base anatomy;
  * pass it to cover that second real usage without a near-duplicate component.
  *
+ * `badge` is a second additive escape hatch (Attendance Insights, KD #142
+ * bento rebuild) — insights-mockup-v4.html's "Leave-quota risk" list pairs a
+ * trailing value with a status pill (`.rk-right` = `.rk-val` + `.pill`, e.g.
+ * "5/5" + "Over"). Renders beside `value` using the same soft-badge tone as
+ * every other pill in this library. Omit for the base anatomy.
+ *
+ * `name` accepts a ReactNode (not just a string) so a row's identifier can
+ * stay a real `next/link` (KD #81 linkification) rather than flattening to
+ * plain text — a real behaviour the base anatomy's string-only type would
+ * otherwise force callers to drop.
+ *
  * Renders a single row, not a list — callers map an array of items inside a
  * `<BentoCard>`; the `first:border-t-0` rule assumes this is the first DOM
  * child when it's the first row of the mapped list.
@@ -24,9 +35,10 @@ import { TILE_GRADIENT, type ColorKey } from './tokens';
 export type ProjectListRowProps = {
   icon: LucideIcon;
   iconGradient: ColorKey;
-  name: string;
+  name: React.ReactNode;
   subtitle: string;
   value?: string;
+  badge?: { text: string; colorKey: ColorKey };
   className?: string;
 };
 
@@ -36,6 +48,7 @@ export function ProjectListRow({
   name,
   subtitle,
   value,
+  badge,
   className,
 }: ProjectListRowProps) {
   return (
@@ -61,9 +74,23 @@ export function ProjectListRow({
           {subtitle}
         </div>
       </div>
-      {value && (
-        <span className="shrink-0 font-mono text-[13px] font-bold text-foreground">
-          {value}
+      {(value || badge) && (
+        <span className="flex shrink-0 items-center gap-2">
+          {value && (
+            <span className="font-mono text-[13px] font-bold text-foreground">
+              {value}
+            </span>
+          )}
+          {badge && (
+            <span
+              className={cn(
+                'rounded-full border px-2 py-0.5 font-mono text-[10.5px] font-extrabold',
+                SOFT_BADGE_CLASS[badge.colorKey]
+              )}
+            >
+              {badge.text}
+            </span>
+          )}
         </span>
       )}
     </div>
