@@ -146,30 +146,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }
 
-  // Seed section_subjects defaults for the new section (every subject
-  // currently configured at its level) — best-effort, matches today's
-  // "subjects derive from level" behaviour until the registrar customizes
-  // this section via the Section Subjects panel. Must run BEFORE the
-  // grading-sheet bulk-create below so bulk-create/route.ts's
-  // section_subjects intersection (Phase 3) has something to intersect with.
-  const { error: syncErr } = await service.rpc('sync_section_subjects_for_ay', {
-    p_ay_code: ay.ay_code,
-  });
-  if (syncErr) {
-    console.error(
-      '[sections POST] section_subjects sync RPC failed:',
-      syncErr.message
-    );
-  }
-
-  // Track bundle-apply — when the registrar flagged this Secondary section
-  // Global/Standard (via `class_type`) at creation, additively attach the
-  // track's static subject bundle on top of whatever the level-wide sync
-  // above just seeded. Additive + on-conflict-do-nothing (same as every
-  // other section_subjects write path), so this is a no-op if the sync
-  // already covered the bundle — kept as its own explicit step so the
-  // bundle is guaranteed present even if the level-wide default set ever
-  // narrows in the future.
+  // The section starts with zero subjects attached — no level-wide default
+  // seeding happens here. The registrar attaches what applies, explicitly,
+  // via the Section Subjects panel (or, for Secondary, by flagging the
+  // section's track below). Track bundle-apply is the only automatic
+  // attachment: when the registrar flagged this Secondary section
+  // Global/Standard (via `class_type`) at creation, attach that track's
+  // static subject bundle now. Otherwise the section stays empty until the
+  // registrar attaches subjects via the Section Subjects panel.
   let trackBundleInserted = 0;
   if (class_type) {
     try {
