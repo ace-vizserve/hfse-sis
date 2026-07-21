@@ -6,7 +6,7 @@ import {
   ENROLLED_PREREQ_STAGES,
 } from '@/lib/schemas/sis';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
-import { fetchAllPages } from '@/lib/supabase/paginate';
+import { fetchAllPages, type PageBuilder } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 import { parseLocalDate } from '@/lib/dashboard/range';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
@@ -467,28 +467,6 @@ async function loadUnsyncedReadinessDrillRowsUncached(
     (r) => r.id
   );
 
-  const [statusRes, appsRes, ssRes] = await Promise.all([
-    admissions
-      .from(`${prefix}_enrolment_status`)
-      .select(
-        'enroleeNumber, applicationStatus, applicationUpdatedDate, classLevel'
-      )
-      .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)']),
-    admissions
-      .from(`${prefix}_enrolment_applications`)
-      .select(
-        'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied, created_at'
-      ),
-    sectionIds.length > 0
-      ? service
-          .from('section_students')
-          .select('enrolee_number')
-          .in('section_id', sectionIds)
-      : Promise.resolve({ data: [] as { enrolee_number: string | null }[] }),
-  ]);
-
-  if (statusRes.error || appsRes.error) return [];
-
   type StatusRow = {
     enroleeNumber: string | null;
     applicationStatus: string | null;
@@ -505,24 +483,55 @@ async function loadUnsyncedReadinessDrillRowsUncached(
     created_at: string | null;
   };
 
+  // Paginated — PostgREST caps a single response at 1000 rows; these tables
+  // can exceed that as an AY grows. fetchAllPages throws on a query error
+  // (rather than returning it in an `.error` field), so it propagates up
+  // instead of the previous silent-empty-array fallback.
+  const [statusRows, appsRows, ssRows] = await Promise.all([
+    fetchAllPages<StatusRow>((from, to) =>
+      admissions
+        .from(`${prefix}_enrolment_status`)
+        .select(
+          'enroleeNumber, applicationStatus, applicationUpdatedDate, classLevel'
+        )
+        .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)'])
+        .range(from, to)
+    ),
+    fetchAllPages<AppsRow>((from, to) =>
+      admissions
+        .from(`${prefix}_enrolment_applications`)
+        .select(
+          'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied, created_at'
+        )
+        .range(from, to)
+    ),
+    sectionIds.length > 0
+      ? fetchAllPages<{ enrolee_number: string | null }>((from, to) =>
+          service
+            .from('section_students')
+            .select('enrolee_number')
+            .in('section_id', sectionIds)
+            .range(from, to)
+        )
+      : Promise.resolve([] as { enrolee_number: string | null }[]),
+  ]);
+
   // Build the set of already-assigned enroleeNumbers from section_students
   // so we can exclude them (mirrors loadClassAssignmentReadinessUncached's
   // logic for M13 count alignment).
   const assignedEnrolees = new Set(
-    ((ssRes.data ?? []) as { enrolee_number: string | null }[])
-      .map((r) => r.enrolee_number)
-      .filter((v): v is string => v !== null)
+    ssRows.map((r) => r.enrolee_number).filter((v): v is string => v !== null)
   );
 
   const appsByEnrolee = new Map<string, AppsRow>();
-  for (const a of (appsRes.data ?? []) as AppsRow[]) {
+  for (const a of appsRows) {
     if (a.enroleeNumber) appsByEnrolee.set(a.enroleeNumber, a);
   }
 
   const today = Date.now();
   const out: RecordsDrillRow[] = [];
 
-  for (const status of (statusRes.data ?? []) as StatusRow[]) {
+  for (const status of statusRows) {
     if (!status.enroleeNumber) continue;
     // Skip if already present in section_students.
     if (assignedEnrolees.has(status.enroleeNumber)) continue;
@@ -899,20 +908,6 @@ export async function loadAuditEventsUncached(
   range?: { from: string; to: string }
 ): Promise<AuditDrillRow[]> {
   const service = createServiceClient();
-  let q = service
-    .from('audit_log')
-    .select(
-      'id, action, actor_email, entity_type, entity_id, context, created_at'
-    )
-    .like('action', `${modulePrefix}%`)
-    .order('created_at', { ascending: false })
-    .limit(2000);
-  if (range?.from && range?.to) {
-    q = q
-      .gte('created_at', range.from)
-      .lte('created_at', `${range.to}T23:59:59.999Z`);
-  }
-  const { data } = await q;
   type AuditRow = {
     id: string;
     action: string;
@@ -922,7 +917,25 @@ export async function loadAuditEventsUncached(
     context: Record<string, unknown> | null;
     created_at: string;
   };
-  return ((data ?? []) as AuditRow[]).map((r) => ({
+  // Paginated — PostgREST caps a single response at 1000 rows; audit_log
+  // already exceeds that in production, so a plain .limit() silently
+  // truncates the drill sheet.
+  const rows = await fetchAllPages<AuditRow>((from, to) => {
+    let q = service
+      .from('audit_log')
+      .select(
+        'id, action, actor_email, entity_type, entity_id, context, created_at'
+      )
+      .like('action', `${modulePrefix}%`)
+      .order('created_at', { ascending: false });
+    if (range?.from && range?.to) {
+      q = q
+        .gte('created_at', range.from)
+        .lte('created_at', `${range.to}T23:59:59.999Z`);
+    }
+    return q.range(from, to);
+  });
+  return rows.map((r) => ({
     id: r.id,
     action: r.action,
     actorEmail: r.actor_email,
@@ -1010,14 +1023,20 @@ export async function loadAcademicYearsList(): Promise<AcademicYearDrillRow[]> {
         }[];
         if (sectionRows.length === 0) return new Map<string, number>();
         const sectionIds = sectionRows.map((s) => s.id);
-        const { data: ssRows } = await service
-          .from('section_students')
-          .select('section_id')
-          .in('section_id', sectionIds);
+        // Paginated — PostgREST caps a single response at 1000 rows, and
+        // this sums section_students across every AY at once (comfortably
+        // past 1000 once a few AYs are populated).
+        const ssRows = await fetchAllPages<{ section_id: string }>((from, to) =>
+          service
+            .from('section_students')
+            .select('section_id')
+            .in('section_id', sectionIds)
+            .range(from, to)
+        );
         const sectionToAy = new Map<string, string>();
         for (const s of sectionRows) sectionToAy.set(s.id, s.academic_year_id);
         const out = new Map<string, number>();
-        for (const r of (ssRows ?? []) as { section_id: string }[]) {
+        for (const r of ssRows) {
           const ay = sectionToAy.get(r.section_id);
           if (!ay) continue;
           out.set(ay, (out.get(ay) ?? 0) + 1);
@@ -1036,32 +1055,38 @@ export async function loadAcademicYearsList(): Promise<AcademicYearDrillRow[]> {
   }));
 }
 
+// NOTE: this fetches every audit_log row in range to compute per-actor
+// counts in JS. Paginated (below) to survive the 1000-row PostgREST cap,
+// but as audit_log grows into the tens of thousands of rows this should be
+// replaced with a server-side aggregate (a Postgres RPC grouping by
+// actor_id) instead of a full-table JS aggregation.
 export async function loadActorActivity(range?: {
   from: string;
   to: string;
 }): Promise<ActorActivityDrillRow[]> {
   const service = createServiceClient();
-  let q = service
-    .from('audit_log')
-    .select('actor_id, actor_email, created_at')
-    .order('created_at', { ascending: false })
-    .limit(5000);
-  if (range?.from && range?.to) {
-    q = q
-      .gte('created_at', range.from)
-      .lte('created_at', `${range.to}T23:59:59.999Z`);
-  }
-  const { data } = await q;
   type Row = {
     actor_id: string | null;
     actor_email: string | null;
     created_at: string;
   };
+  const data = await fetchAllPages<Row>((from, to) => {
+    let q = service
+      .from('audit_log')
+      .select('actor_id, actor_email, created_at')
+      .order('created_at', { ascending: false });
+    if (range?.from && range?.to) {
+      q = q
+        .gte('created_at', range.from)
+        .lte('created_at', `${range.to}T23:59:59.999Z`);
+    }
+    return q.range(from, to);
+  });
   const map = new Map<
     string,
     { email: string | null; count: number; lastAt: string }
   >();
-  for (const r of (data ?? []) as Row[]) {
+  for (const r of data) {
     const userId = r.actor_id ?? '__anon';
     const acc = map.get(userId);
     if (acc) {
@@ -1215,32 +1240,48 @@ async function loadLifecycleSnapshotUncached(
     ...DOCUMENT_SLOTS.filter((s) => s.expiryCol).map((s) => s.expiryCol!),
   ];
 
-  const [appsRes, statusRes, docsRes] = await Promise.all([
-    admissions
-      .from(`${prefix}_enrolment_applications`)
-      .select(
-        'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied'
-      ),
-    admissions
-      .from(`${prefix}_enrolment_status`)
-      .select(uniqStatusColumns.join(', ')),
-    admissions
-      .from(`${prefix}_enrolment_documents`)
-      .select(docColumns.join(', ')),
+  // Paginated — PostgREST caps a single response at 1000 rows; these are
+  // full-table scans of the per-AY admissions tables with no filter.
+  const [appsRows, statusRows, docsRows] = await Promise.all([
+    fetchAllPages<LifecycleAppLite>((from, to) =>
+      admissions
+        .from(`${prefix}_enrolment_applications`)
+        .select(
+          'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied'
+        )
+        .range(from, to)
+    ),
+    fetchAllPages<LifecycleStatusRow>((from, to) => {
+      // Dynamic column-list .select() loses PostgREST's literal-string type
+      // inference (falls back to a GenericStringError marker type) — same
+      // reason the pre-pagination code cast via `as unknown as X[]`.
+      const q = admissions
+        .from(`${prefix}_enrolment_status`)
+        .select(uniqStatusColumns.join(', '))
+        .range(from, to);
+      return q as unknown as ReturnType<PageBuilder<LifecycleStatusRow>>;
+    }),
+    fetchAllPages<LifecycleDocRow>((from, to) => {
+      const q = admissions
+        .from(`${prefix}_enrolment_documents`)
+        .select(docColumns.join(', '))
+        .range(from, to);
+      return q as unknown as ReturnType<PageBuilder<LifecycleDocRow>>;
+    }),
   ]);
 
   const apps = new Map<string, LifecycleAppLite>();
-  for (const a of (appsRes.data ?? []) as LifecycleAppLite[]) {
+  for (const a of appsRows) {
     if (a.enroleeNumber) apps.set(a.enroleeNumber, a);
   }
 
   const status = new Map<string, LifecycleStatusRow>();
-  for (const r of (statusRes.data ?? []) as unknown as LifecycleStatusRow[]) {
+  for (const r of statusRows) {
     if (r.enroleeNumber) status.set(r.enroleeNumber, r);
   }
 
   const docs = new Map<string, LifecycleDocRow>();
-  for (const r of (docsRes.data ?? []) as unknown as LifecycleDocRow[]) {
+  for (const r of docsRows) {
     if (r.enroleeNumber) docs.set(r.enroleeNumber, r);
   }
 
