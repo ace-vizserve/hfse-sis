@@ -161,8 +161,8 @@ function AySetupWizard({ preview, children }: Props) {
             <DialogHeader>
               <DialogTitle>Create a new academic year</DialogTitle>
               <DialogDescription>
-                Step 1 of 2 — identify the new AY. Copy-forward from the most
-                recent AY happens automatically on commit.
+                Step 1 of 2 — identify the new AY. HFSE&apos;s standard starting
+                catalog is seeded automatically on commit.
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
