@@ -248,6 +248,24 @@ describe('buildAttendanceImportT3', () => {
       expect(result.stats.eventsMissingLabel).toBe(1);
       expect(result.preview).toContain('NEEDS LABEL');
       expect(joinApply(result.applyFiles)).not.toContain('school_event');
+
+      // No labeled events at all: the calendar_events apply file must be a
+      // true no-op — no placeholder row of any kind gets inserted into
+      // production. Regression guard for a bug where a "1970-01-01" /
+      // 'placeholder' row survived the `not exists` guard and was actually
+      // written to the real calendar_events table.
+      const eventsFile = result.applyFiles.find((f) =>
+        f.filename.endsWith('-events.sql')
+      );
+      expect(eventsFile).toBeDefined();
+      expect(eventsFile!.sql).not.toContain('placeholder');
+      expect(eventsFile!.sql).not.toContain('1970-01-01');
+      expect(eventsFile!.sql).toContain('begin;');
+      expect(eventsFile!.sql).toContain('commit;');
+      expect(eventsFile!.sql).toContain(
+        '-- no labeled events to insert for this term'
+      );
+      expect(eventsFile!.sql).not.toContain('insert into calendar_events');
     });
   });
 

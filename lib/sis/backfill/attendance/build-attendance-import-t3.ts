@@ -459,35 +459,37 @@ function buildApplyFiles(
     );
     lines.push('begin;');
     lines.push('');
-    lines.push('drop table if exists _ay26att3_events;');
-    lines.push('create temp table _ay26att3_events (date, category, label) as');
-    lines.push('values');
-    const rows = eventRows.map(
-      (e) =>
-        `  (date ${sqlString(e.date)}, ${sqlString(e.category)}, ${sqlString(e.label)})`
-    );
-    lines.push(
-      (rows.length
-        ? rows.join(',\n')
-        : "  (date '1970-01-01', 'other', 'placeholder')") + ';'
-    );
-    lines.push('');
-    lines.push(
-      'insert into calendar_events (term_id, start_date, end_date, label, audience, category)'
-    );
-    lines.push("select t.id, e.date, e.date, e.label, 'all', e.category");
-    lines.push('from _ay26att3_events e');
-    lines.push(`join academic_years ay on ay.ay_code = ${sqlString(ayCode)}`);
-    lines.push(
-      `join terms t on t.academic_year_id = ay.id and t.term_number = ${termNumber}`
-    );
-    lines.push('where not exists (');
-    lines.push('  select 1 from calendar_events ce');
-    lines.push('  where ce.term_id = t.id');
-    lines.push('    and ce.start_date = e.date');
-    lines.push('    and ce.end_date = e.date');
-    lines.push('    and ce.category = e.category');
-    lines.push(');');
+    if (eventRows.length === 0) {
+      lines.push('-- no labeled events to insert for this term');
+    } else {
+      lines.push('drop table if exists _ay26att3_events;');
+      lines.push(
+        'create temp table _ay26att3_events (date, category, label) as'
+      );
+      lines.push('values');
+      const rows = eventRows.map(
+        (e) =>
+          `  (date ${sqlString(e.date)}, ${sqlString(e.category)}, ${sqlString(e.label)})`
+      );
+      lines.push(rows.join(',\n') + ';');
+      lines.push('');
+      lines.push(
+        'insert into calendar_events (term_id, start_date, end_date, label, audience, category)'
+      );
+      lines.push("select t.id, e.date, e.date, e.label, 'all', e.category");
+      lines.push('from _ay26att3_events e');
+      lines.push(`join academic_years ay on ay.ay_code = ${sqlString(ayCode)}`);
+      lines.push(
+        `join terms t on t.academic_year_id = ay.id and t.term_number = ${termNumber}`
+      );
+      lines.push('where not exists (');
+      lines.push('  select 1 from calendar_events ce');
+      lines.push('  where ce.term_id = t.id');
+      lines.push('    and ce.start_date = e.date');
+      lines.push('    and ce.end_date = e.date');
+      lines.push('    and ce.category = e.category');
+      lines.push(');');
+    }
     lines.push('');
     lines.push('commit;');
     files.push({
