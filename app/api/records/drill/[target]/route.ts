@@ -20,7 +20,6 @@ const VALID_TARGETS: RecordsDrillTarget[] = [
   'withdrawals-range',
   'active-enrolled',
   'expiring-docs',
-  'students-by-pipeline-stage',
   'students-by-level',
   'backlog-by-document',
   'class-assignment-readiness',

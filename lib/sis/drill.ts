@@ -24,12 +24,20 @@ function tags(ayCode: string): string[] {
 
 // ─── Targets ────────────────────────────────────────────────────────────────
 
+// NOTE: there is deliberately no 'students-by-pipeline-stage' target here.
+// It was removed as dead code — section_students.enrollment_status can only
+// ever be 'active' | 'late_enrollee' | 'withdrawn' | 'graduated', so it could
+// never represent pre-enrolment funnel segments (Submitted / Ongoing
+// Verification / Processing / Cancelled / Enrolled (Conditional)). Any chart
+// wired to it would open an always-empty drill sheet. Funnel-stage
+// segmentation lives on the ADMISSIONS module's own 'pipeline-stage' target
+// (lib/admissions/drill.ts), which PipelineStageChart is actually wired to —
+// use that instead of recreating this target here.
 export type RecordsDrillTarget =
   | 'enrollments-range'
   | 'withdrawals-range'
   | 'active-enrolled'
   | 'expiring-docs'
-  | 'students-by-pipeline-stage'
   | 'backlog-by-document'
   | 'students-by-level'
   | 'class-assignment-readiness';
@@ -674,11 +682,6 @@ export function applyTargetFilter(
       );
     case 'expiring-docs':
       return rows.filter((r) => r.expiringDocsCount > 0 && !isSoftClosed(r));
-    case 'students-by-pipeline-stage':
-      if (!segment) return rows.filter((r) => !isSoftClosed(r));
-      return rows.filter(
-        (r) => r.pipelineStage === segment && !isSoftClosed(r)
-      );
     case 'students-by-level':
       if (!segment) return rows.filter((r) => !isSoftClosed(r));
       return rows.filter(
@@ -792,14 +795,6 @@ export function defaultColumnsForTarget(
         'documentsComplete',
         'daysSinceUpdate',
       ];
-    case 'students-by-pipeline-stage':
-      return [
-        'fullName',
-        'level',
-        'pipelineStage',
-        'enrollmentStatus',
-        'daysSinceUpdate',
-      ];
     case 'students-by-level':
       return [
         'fullName',
@@ -828,11 +823,6 @@ export function drillHeaderForTarget(
       return { eyebrow: 'Drill · Active', title: 'Currently enrolled' };
     case 'expiring-docs':
       return { eyebrow: 'Drill · Expiring', title: 'Documents expiring soon' };
-    case 'students-by-pipeline-stage':
-      return {
-        eyebrow: 'Drill · Stage',
-        title: segment ? `Stage: ${segment}` : 'By pipeline stage',
-      };
     case 'students-by-level':
       return {
         eyebrow: 'Drill · Level',
