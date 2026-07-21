@@ -38,11 +38,9 @@ import { Input } from '@/components/ui/input';
 import { CreateAySchema, type CreateAyInput } from '@/lib/schemas/ay-setup';
 
 type Preview = {
-  source_ay_code: string | null;
-  sections_to_copy: number;
-  subject_configs_to_copy: number;
   ay_already_exists: boolean;
   terms_to_insert: number;
+  will_seed_defaults: boolean;
 };
 
 type Props = {
@@ -273,31 +271,14 @@ function AySetupWizard({ preview, children }: Props) {
                       : `${preview.terms_to_insert} added (existing terms preserved)`
                 }
               />
-              {preview.source_ay_code ? (
-                <>
-                  <ReviewRow
-                    label="Sections"
-                    value={
-                      preview.sections_to_copy === 0
-                        ? 'Already configured — none copied'
-                        : `${preview.sections_to_copy} copied from ${preview.source_ay_code}`
-                    }
-                  />
-                  <ReviewRow
-                    label="Subject configs"
-                    value={
-                      preview.subject_configs_to_copy === 0
-                        ? 'Already configured — none copied'
-                        : `${preview.subject_configs_to_copy} copied from ${preview.source_ay_code}`
-                    }
-                  />
-                </>
-              ) : (
-                <ReviewRow
-                  label="Sections & subject configs"
-                  value="None — no prior non-test AY to copy from. Seed manually later."
-                />
-              )}
+              <ReviewRow
+                label="Sections & subjects"
+                value={
+                  preview.will_seed_defaults
+                    ? "HFSE's standard starting catalog will be created — sections, subjects, and weights, ready to edit"
+                    : 'Already configured — nothing will be added'
+                }
+              />
               <ReviewRow
                 label="Admissions tables"
                 value={

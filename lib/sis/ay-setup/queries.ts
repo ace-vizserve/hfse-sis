@@ -148,35 +148,30 @@ export async function listAcademicYears(): Promise<AcademicYearListItem[]> {
   return items;
 }
 
-export type CopyForwardPreview = {
-  /**
-   * Where the new AY's sections + subject_configs will be sourced from:
-   * - An AY code (`'AY2026'`) — the most recent non-test prior AY.
-   * - `null` when there's nothing to copy (target already has data, or
-   *   there's no prior AY to copy from).
-   */
-  source_ay_code: string | null;
-  sections_to_copy: number;
-  subject_configs_to_copy: number;
+export type AySetupPreview = {
   /** True when an `academic_years` row already exists for the new AY code. */
   ay_already_exists: boolean;
   /** Count of terms (T1–T4) that will actually be inserted by the RPC. */
   terms_to_insert: number;
+  /**
+   * True when the RPC will populate the static default catalog (HFSE's
+   * standard sections + subjects + weights, migration 090) because the
+   * target AY has neither sections nor subject_configs yet.
+   */
+  will_seed_defaults: boolean;
 };
 
 /**
- * Returns the counts that the AY Setup wizard will copy from on creation.
- * Mirrors `create_academic_year` post migration 089 (Structure Defaults
- * template removed): a new AY's sections/subject_configs are always copied
- * from the most recently created non-test AY, unconditionally — there is no
- * template layer to check first.
- *
- *   - The RPC skips copying if the target AY already has sections (or
- *     subject_configs). The preview reports 0 in that case.
+ * Returns what the AY Setup wizard's Review step will show before creation.
+ * Mirrors `create_academic_year` post migration 090 (static default catalog):
+ * a new AY's sections/subject_configs are seeded from a fixed baseline —
+ * never copied from a prior AY — and only when the target AY has neither
+ * sections nor subject_configs yet (matches the RPC's own idempotency
+ * guards).
  */
-export async function getCopyForwardPreview(
+export async function getAySetupPreview(
   newAyCode: string
-): Promise<CopyForwardPreview> {
+): Promise<AySetupPreview> {
   const service = createServiceClient();
 
   // Look up the target AY row first — drives idempotent-state fields.
@@ -211,48 +206,17 @@ export async function getCopyForwardPreview(
           .eq('academic_year_id', targetId)
       : Promise.resolve({ count: 0 }),
   ]);
+
   const targetHasSections = (targetSectionsRes.count ?? 0) > 0;
   const targetHasConfigs = (targetConfigsRes.count ?? 0) > 0;
 
-  // Most recent non-test prior AY — the only copy source (matches
-  // create_academic_year's v_source_ay_id resolution).
-  const { data: prior } = await service
-    .from('academic_years')
-    .select('id, ay_code')
-    .neq('ay_code', newAyCode)
-    .not('ay_code', 'ilike', 'AY9%')
-    .order('ay_code', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!prior) {
-    return {
-      source_ay_code: null,
-      sections_to_copy: 0,
-      subject_configs_to_copy: 0,
-      ay_already_exists: targetId !== null,
-      terms_to_insert: termsToInsert,
-    };
-  }
-
-  const priorId = (prior as { id: string }).id;
-  const [sectionsRes, configsRes] = await Promise.all([
-    service
-      .from('sections')
-      .select('id', { count: 'exact', head: true })
-      .eq('academic_year_id', priorId),
-    service
-      .from('subject_configs')
-      .select('id', { count: 'exact', head: true })
-      .eq('academic_year_id', priorId),
-  ]);
-
   return {
-    source_ay_code: (prior as { ay_code: string }).ay_code,
-    sections_to_copy: targetHasSections ? 0 : (sectionsRes.count ?? 0),
-    subject_configs_to_copy: targetHasConfigs ? 0 : (configsRes.count ?? 0),
     ay_already_exists: targetId !== null,
     terms_to_insert: termsToInsert,
+    // The RPC only seeds the static default catalog when the AY has
+    // NEITHER sections NOR subject_configs yet — matches
+    // create_academic_year's own idempotency guards (migration 090).
+    will_seed_defaults: !targetHasSections && !targetHasConfigs,
   };
 }
 
