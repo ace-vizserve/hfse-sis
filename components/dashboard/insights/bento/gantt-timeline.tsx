@@ -78,7 +78,7 @@ export function GanttTimeline({
                       'absolute top-0 flex h-7 items-center justify-center whitespace-nowrap rounded-full font-mono text-[10.5px] font-bold text-white',
                       BAR_GRADIENT[row.colorKey],
                       row.highlighted
-                        ? 'opacity-100 shadow-[0_8px_18px_-8px_rgba(179,84,15,0.55)]'
+                        ? 'opacity-100 shadow-brand-tile-amber'
                         : 'opacity-55'
                     )}
                     style={{
