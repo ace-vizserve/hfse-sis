@@ -65,17 +65,17 @@ export async function POST(request: Request) {
   const ayExisted = summary.ay_existed === true;
   const termsInserted =
     typeof summary.terms_inserted === 'number' ? summary.terms_inserted : 0;
-  const sectionsCopied =
-    typeof summary.sections_copied === 'number' ? summary.sections_copied : 0;
-  const configsCopied =
-    typeof summary.subject_configs_copied === 'number'
-      ? summary.subject_configs_copied
+  const sectionsSeeded =
+    typeof summary.sections_seeded === 'number' ? summary.sections_seeded : 0;
+  const configsSeeded =
+    typeof summary.subject_configs_seeded === 'number'
+      ? summary.subject_configs_seeded
       : 0;
   const alreadyExisted =
     ayExisted &&
     termsInserted === 0 &&
-    sectionsCopied === 0 &&
-    configsCopied === 0;
+    sectionsSeeded === 0 &&
+    configsSeeded === 0;
 
   await logAction({
     service: supabase,
