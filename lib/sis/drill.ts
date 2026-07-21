@@ -15,10 +15,10 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { parseLocalDate } from '@/lib/dashboard/range';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 import { EXPIRING_SOON_THRESHOLD_DAYS } from '@/lib/sis/process';
-import { resolveBacklogBucket } from '@/lib/sis/dashboard';
 import {
   DOCUMENT_SLOTS as PFILES_DOCUMENT_SLOTS,
   resolveStatus,
+  resolveBacklogBucket,
 } from '@/lib/p-files/document-config';
 
 const CACHE_TTL_SECONDS = 60;

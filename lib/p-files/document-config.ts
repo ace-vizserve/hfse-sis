@@ -262,3 +262,38 @@ export function resolveStatus(
 
   return 'missing';
 }
+
+export type BacklogBucket = 'valid' | 'pending' | 'rejected' | 'missing' | 'na';
+
+/**
+ * Maps a resolved `DocumentStatus` (from `resolveStatus` above) into the
+ * backlog chart's 4-bucket vocabulary — `na` is excluded from every count
+ * (never a real backlog item); `expired` rolls into `missing` (Records needs
+ * to re-collect it either way); `uploaded`/`to-follow` both read as
+ * "in progress" (`pending`).
+ *
+ * Shared by `lib/sis/dashboard.ts`'s backlog chart aggregator AND the
+ * `backlog-by-document` drill enrichment (`lib/sis/drill.ts::enrichWithDocSlotBuckets`)
+ * so a segment click on the chart always resolves to exactly the rows the
+ * chart counted into that segment (KD #82/#124 count==drill). Lives here
+ * (rather than in `lib/sis/dashboard.ts`, which transitively imports
+ * `server-only` via `lib/dashboard/ay-id.ts`) so client-side drill-sheet
+ * components can import it from `lib/sis/drill.ts` without pulling
+ * `server-only` into the client bundle.
+ */
+export function resolveBacklogBucket(status: DocumentStatus): BacklogBucket {
+  switch (status) {
+    case 'valid':
+      return 'valid';
+    case 'uploaded':
+    case 'to-follow':
+      return 'pending';
+    case 'rejected':
+      return 'rejected';
+    case 'expired':
+    case 'missing':
+      return 'missing';
+    case 'na':
+      return 'na';
+  }
+}

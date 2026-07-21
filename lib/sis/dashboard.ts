@@ -9,8 +9,9 @@ import {
 import {
   DOCUMENT_SLOTS,
   resolveStatus,
+  resolveBacklogBucket,
   type DocumentGroup,
-  type DocumentStatus,
+  type BacklogBucket,
 } from '@/lib/p-files/document-config';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -150,36 +151,12 @@ export type DocumentBacklogRow = {
   missing: number;
 };
 
-export type BacklogBucket = 'valid' | 'pending' | 'rejected' | 'missing' | 'na';
-
-/**
- * Maps a resolved `DocumentStatus` (from p-files' `resolveStatus`) into the
- * backlog chart's 4-bucket vocabulary — `na` is excluded from every count
- * (never a real backlog item); `expired` rolls into `missing` (Records needs
- * to re-collect it either way); `uploaded`/`to-follow` both read as
- * "in progress" (`pending`).
- *
- * Shared by the chart aggregator below AND the `backlog-by-document` drill
- * enrichment (`lib/sis/drill.ts::enrichWithDocSlotBuckets`) so a segment
- * click on the chart always resolves to exactly the rows the chart counted
- * into that segment (KD #82/#124 count==drill).
- */
-export function resolveBacklogBucket(status: DocumentStatus): BacklogBucket {
-  switch (status) {
-    case 'valid':
-      return 'valid';
-    case 'uploaded':
-    case 'to-follow':
-      return 'pending';
-    case 'rejected':
-      return 'rejected';
-    case 'expired':
-    case 'missing':
-      return 'missing';
-    case 'na':
-      return 'na';
-  }
-}
+// `BacklogBucket` + `resolveBacklogBucket` moved to
+// `lib/p-files/document-config.ts` (imported above) — that module has no
+// `server-only` dependency, so `lib/sis/drill.ts` (imported by client-side
+// drill-sheet components) can import `resolveBacklogBucket` from there
+// without pulling `server-only` into the client bundle. See that file for
+// the function's docs.
 
 // Per-slot status tally across every student's documents row. Uses the
 // canonical `resolveStatus()` helper so conditional slots (father/guardian,
