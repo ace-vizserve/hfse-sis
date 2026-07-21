@@ -20,8 +20,11 @@ describe('weightBucketForSubjectCode (fractions)', () => {
 
   it('MAPEH-family subject codes get 20/60/20', () => {
     // Migration 081 retired MUSIC/ARTS/PE/HE (4 separate letter-graded
-    // subjects) in favor of one combined numeric-graded MAPEH.
-    const mapehCodes = ['MAPEH', 'CL', 'CA', 'PEH', 'PMPD'];
+    // subjects) in favor of one combined numeric-graded MAPEH. PESTD
+    // ("Physical Education", Regular-track twin of PEH, migration 082)
+    // shares the same real 20/60/20 header — confirmed during the
+    // PE/PEH import-confusion correction.
+    const mapehCodes = ['MAPEH', 'CL', 'CA', 'PEH', 'PMPD', 'PESTD'];
     for (const code of mapehCodes) {
       expect(weightBucketForSubjectCode(code)).toEqual({
         ww: 0.2,

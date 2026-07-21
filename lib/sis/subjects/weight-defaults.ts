@@ -19,7 +19,10 @@
 //     itself + the still-independent letter-graded Christian
 //     Living/Contemporary Art/PE+Health/Pastoral — the 4
 //     non-examinable codes flipped by migration 049, KD #95,
-//     that migration 081 did NOT touch)                  → 20/60/20
+//     that migration 081 did NOT touch — plus `PESTD`,
+//     "Physical Education" the Regular-track twin of PEH,
+//     confirmed same WW(20%)/PT(60%)/QA(20%) real-file header
+//     during the PE/PEH import-confusion correction)      → 20/60/20
 //   - everything else (English, Filipino, Mandarin, Social
 //     Studies, History, Literature, Humanities,
 //     Economics, CCA)                                    → 30/50/20
@@ -33,7 +36,14 @@ const MAPEH_FAMILY: WeightFractions = { ww: 0.2, pt: 0.6, qa: 0.2 };
 const DEFAULT_BUCKET: WeightFractions = { ww: 0.3, pt: 0.5, qa: 0.2 };
 
 const MATH_SCIENCE_CODES = new Set(['MATH', 'SCI']);
-const MAPEH_FAMILY_CODES = new Set(['MAPEH', 'CL', 'CA', 'PEH', 'PMPD']);
+const MAPEH_FAMILY_CODES = new Set([
+  'MAPEH',
+  'CL',
+  'CA',
+  'PEH',
+  'PMPD',
+  'PESTD',
+]);
 
 /** Fractional (0–1) weights — the shape stored in subject_configs and
  * written by the Test seeder. Unrecognised codes fall back to the default
