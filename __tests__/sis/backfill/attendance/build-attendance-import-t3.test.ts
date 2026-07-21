@@ -269,6 +269,44 @@ describe('buildAttendanceImportT3', () => {
     });
   });
 
+  describe('calendar file handling', () => {
+    it('emits a no-op school_calendar apply file when there are no dates to classify', () => {
+      const section = buildSection({
+        section: {
+          sheetName: 'P1 Patience (Global)',
+          students: [
+            {
+              indexNo: '1',
+              fullName: 'ALVAREZ, Jaime III D.',
+              marks: {},
+            },
+          ],
+          dateColumns: [],
+        },
+      });
+      const result = buildAttendanceImportT3({
+        ...BASE_INPUT,
+        sections: [section],
+        rosterLookup: ROSTER,
+      });
+
+      // No dates at all: the school_calendar apply file must be a true
+      // no-op — no placeholder row of any kind gets inserted into
+      // production. Mirrors the calendar_events regression guard above
+      // (same bug class, symmetric fix).
+      const calendarFile = result.applyFiles.find((f) =>
+        f.filename.endsWith('-calendar.sql')
+      );
+      expect(calendarFile).toBeDefined();
+      expect(calendarFile!.sql).not.toContain('placeholder');
+      expect(calendarFile!.sql).not.toContain('1970-01-01');
+      expect(calendarFile!.sql).toContain('begin;');
+      expect(calendarFile!.sql).toContain('commit;');
+      expect(calendarFile!.sql).toContain('-- no calendar rows for this term');
+      expect(calendarFile!.sql).not.toContain('insert into school_calendar');
+    });
+  });
+
   describe('apply file chunking', () => {
     it('splits marks into multiple self-contained, ordered files, with calendar + events always first', () => {
       const result = buildAttendanceImportT3({

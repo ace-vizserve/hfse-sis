@@ -403,31 +403,31 @@ function buildApplyFiles(
     );
     lines.push('begin;');
     lines.push('');
-    lines.push('drop table if exists _ay26att3_calendar;');
-    lines.push(
-      'create temp table _ay26att3_calendar (date, day_type, hbl_overlay, label) as'
-    );
-    lines.push('values');
     const calendarRows = classifications.map(
       (c) =>
         `  (date ${sqlString(c.date)}, ${sqlString(c.dayType)}, false, ${sqlStringOrNull(c.label)})`
     );
-    lines.push(
-      (calendarRows.length
-        ? calendarRows.join(',\n')
-        : "  (date '1970-01-01', 'school_day', false, NULL)") + ';'
-    );
-    lines.push('');
-    lines.push(
-      'insert into school_calendar (term_id, date, day_type, hbl_overlay, label)'
-    );
-    lines.push('select t.id, c.date, c.day_type, c.hbl_overlay, c.label');
-    lines.push('from _ay26att3_calendar c');
-    lines.push(`join academic_years ay on ay.ay_code = ${sqlString(ayCode)}`);
-    lines.push(
-      `join terms t on t.academic_year_id = ay.id and t.term_number = ${termNumber}`
-    );
-    lines.push('on conflict (term_id, audience, date) do nothing;');
+    if (calendarRows.length === 0) {
+      lines.push('-- no calendar rows for this term');
+    } else {
+      lines.push('drop table if exists _ay26att3_calendar;');
+      lines.push(
+        'create temp table _ay26att3_calendar (date, day_type, hbl_overlay, label) as'
+      );
+      lines.push('values');
+      lines.push(calendarRows.join(',\n') + ';');
+      lines.push('');
+      lines.push(
+        'insert into school_calendar (term_id, date, day_type, hbl_overlay, label)'
+      );
+      lines.push('select t.id, c.date, c.day_type, c.hbl_overlay, c.label');
+      lines.push('from _ay26att3_calendar c');
+      lines.push(`join academic_years ay on ay.ay_code = ${sqlString(ayCode)}`);
+      lines.push(
+        `join terms t on t.academic_year_id = ay.id and t.term_number = ${termNumber}`
+      );
+      lines.push('on conflict (term_id, audience, date) do nothing;');
+    }
     lines.push('');
     lines.push('commit;');
     files.push({
