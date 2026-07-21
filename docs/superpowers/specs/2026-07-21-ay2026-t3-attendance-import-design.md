@@ -6,6 +6,8 @@
 
 **Scope:** A new phase in the ongoing AY2026 data-import project (`.claude/worktrees/ay2026-t1-enrollment-import`), following the completed T1/T2 sequences. Prerequisite already done outside this phase: the `terms` row for T3 (`start_date=2026-06-29`, `end_date=2026-09-04`) was missing from the database entirely (AY2026 predates `create_academic_year`'s auto-seeding of all 4 terms) and has been inserted directly.
 
+> **Correction (during planning, before implementation):** §2 Locked Decision #2 below originally said Phase 1's `parseSheet` is reused unmodified for roster/marks extraction. Verified against the real file and that's wrong: `parseSheet` locates the roster's date-header row by scanning for the _first_ row containing any `"D-Mon"`-shaped cell, but T3's legend rows (4–7) already contain scattered single dates in that exact shape (`"21-Jul"`, `"6-Jul"`, `"9-Aug"`, `"26-Aug"` — one per legend group) — so it locks onto row 4 (3–4 matches) instead of the real header at row 12 (68 matches). §2/§4 below are corrected to build a small T3-specific roster/marks parser (adapted from `parseSheet`'s logic — same name/index/marks extraction, but header-row detection uses "the row with the most date-shaped cells," an unambiguous rule given row 12's 68 vs. any legend row's ≤4) rather than calling `parseSheet` directly.
+
 ---
 
 ## 1. Why this phase, and what's different from T1/T2's attendance imports
@@ -25,7 +27,7 @@ Because Phase 1's roster already covers the full AY2026 student body, this phase
 ## 2. Locked decisions
 
 1. **Scope is the same 20 real sections** T1/T2 cover (all of P1–P6 and S1–S4, including the `Discipline 1/2` and `Integrity 1/2` splits) — `ADMIN_Bus Summary`, `YS`, and `Reference - Dropdown` are excluded.
-2. **`parseSheet` (Phase 1) is reused unmodified** for roster/marks extraction — it works positionally and doesn't depend on T3's different column labels. A new masthead extractor is built alongside it for the fields `parseSheet` can't give (identity fields, the 4 legend groups) rather than modifying `parseSheet` itself.
+2. **A new T3-specific roster/marks parser, adapted from `parseSheet`'s logic** (see correction above) — same name/index/marks extraction (`Full Name` = first date column − 1, `Index No` = column 0, reject non-comma names), but its own header-row detection: the row with the _most_ date-shaped cells, not the first row with _any_ match. Phase 1's `parseSheet` itself is not modified or called.
 3. **Day-type comes from the row-11 tag directly, not from blank-cell guessing**: `SH`→`school_holiday`, `PH`→`public_holiday`. Untagged columns fall back to T1/T2's existing rule (any roster cell non-blank anywhere among the 20 sections → `school_day`; every cell blank → `no_class`, covering weekends and any true gap days). `SE`/`EX`-tagged columns are `school_day` (confirmed real marks exist on `SE`-tagged dates) with an accompanying `calendar_events` row.
 4. **`calendar_events` rows are created for `SE`/`EX`-tagged dates only** (per approved design scope) — `SE`→category `school_event`, `EX`→category `term_exam` (both valid per KD #76's category enum). `SH`/`PH` dates get their holiday semantics entirely from `school_calendar.day_type`, matching KD #76's existing philosophy that day-type — not a calendar event — is the holiday signal; no `calendar_events` row is created for them.
 5. **Legend label matching**: each of the 4 legend groups' `(date-text, label)` pairs is parsed into one or more ISO dates (single `"6-Jul"`, comma-list `"13, 20, 27 July"`, or range `"14-16 July"` — all day-first with a shared trailing month, a different shape from T1's month-first ranges). A new small pure parser handles this, reusing `resolveDate`/`MONTH_MAP` from `legend-parser.ts` (generic month-name resolution) but not `parseLegendDateRange` (T1-specific month-first regex, wrong shape for T3). For each `SE`/`EX`-tagged column, the label is looked up from the matching group by date; a tagged date with no matching legend entry still gets its `calendar_events` row, with a placeholder label flagged in the preview for a human to fill in (never silently blank).
@@ -50,8 +52,8 @@ AY2026/T3/AY2026 Term 3 Attendance (1).xlsx
 scripts/backfill/gen-ay2026-t3-attendance.ts
         │  1. Parse all 20 real sheets (skip ADMIN_Bus Summary, YS,
         │     Reference - Dropdown) — new masthead extractor for
-        │     identity + legend groups, Phase 1's parseSheet reused
-        │     as-is for roster + marks
+        │     identity + legend groups, new roster/marks parser
+        │     (adapted from parseSheet's logic, own header-row rule)
         │  2. Query DB: section_students for AY2026's 20 live sections,
         │     the T3 terms row (already inserted)
         │  3. Classify each of the 68 dates via row-11 tag lookup +
@@ -70,7 +72,7 @@ ay2026-t3-attendance-apply/        ← reviewed + run manually after, chunked
 
 New files only — nothing in Phase 1/2/3's modules is modified:
 
-- `lib/sis/backfill/attendance/attendance-workbook-t3.ts` — masthead extractor (Term/Course/Section/Form Class Adviser identity + 4 legend groups) + re-export of Phase 1's `parseSheet` for roster/marks.
+- `lib/sis/backfill/attendance/attendance-workbook-t3.ts` — masthead extractor (Term/Course/Section/Form Class Adviser identity + 4 legend groups + row-11 date tags) + a T3-specific roster/marks parser (adapted from `parseSheet`'s logic, own max-date-cell-count header-row rule).
 - `lib/sis/backfill/attendance/legend-dates-t3.ts` — day-first date-list/range parser (single/comma-list/range → ISO dates), reusing `resolveDate`/`MONTH_MAP` from `legend-parser.ts`.
 - `lib/sis/backfill/attendance/day-classifier-t3.ts` — the algorithm in §3.
 - `lib/sis/backfill/attendance/build-attendance-import-t3.ts` — composer: roster + tags + legend + section-identity → `preview.sql` + chunked `apply/*.sql`.
@@ -96,8 +98,7 @@ New files only — nothing in Phase 1/2/3's modules is modified:
 
 ## 7. Testing
 
-- **Unit:** the masthead/legend-group extraction, the day-first date-list/range parser (single/comma-list/range fixtures), and the row-11-tag-driven classifier — all pure, testable against synthetic fixtures mirroring T3's real masthead shape.
-- **Reused, not retested:** Phase 1's `parseSheet` is consumed as-is (already covered by its own tests).
+- **Unit:** the masthead/legend-group extraction, the new header-row-detection + roster/marks parser (including a fixture proving it correctly skips the legend rows' scattered dates and locks onto the real 68-date header row), the day-first date-list/range parser (single/comma-list/range fixtures), and the row-11-tag-driven classifier — all pure, testable against synthetic fixtures mirroring T3's real masthead shape.
 - No integration test suite — same as every prior phase, this is operator tooling reviewed by hand via the preview report.
 
 ## 8. Out of scope
