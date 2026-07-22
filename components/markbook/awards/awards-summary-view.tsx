@@ -313,7 +313,7 @@ export function AwardsSummaryView({ payload }: { payload: MasterfilePayload }) {
           label="Students"
           value={students}
           icon={Users}
-          subtext="Enrolled at this level"
+          subtext="At this level"
         />
         <MetricCard
           label="Gold"

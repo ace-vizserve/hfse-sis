@@ -254,21 +254,21 @@ export function MasterfileDashboard({
             eyebrow="Awards"
             title="Academic Awards"
             description="Subject and Overall Academic Award recipients. Gold, Silver, and Bronze tiers."
-            href={`/records/academic-summary/awards${scopeQuery}`}
+            href={`/markbook/awards${scopeQuery}`}
             icon={Award}
           />
           <QuickLinkCard
             eyebrow="Attendance"
             title="Attendance Records"
             description="Per-term attendance totals, rates and rollups for this cohort."
-            href={`/records/academic-summary/attendance${scopeQuery}`}
+            href={`/attendance/summary${scopeQuery}`}
             icon={CalendarCheck2}
           />
           <QuickLinkCard
             eyebrow="Comments"
             title="Adviser Comments"
             description="FCA write-up completion by term — see who's submitted and who still needs to."
-            href={`/records/academic-summary/comments${scopeQuery}`}
+            href={`/evaluation/comments${scopeQuery}`}
             icon={MessageSquareText}
           />
         </div>
