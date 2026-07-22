@@ -101,7 +101,7 @@ export function HubYearBand({ readiness }: { readiness: AyReadiness | null }) {
         <Link href="/sis/ay-setup">
           {allDone ? (
             <>
-              <CheckCircle2 className="size-4" /> Year setup complete
+              <CheckCircle2 className="size-4" /> Setup in place
             </>
           ) : (
             <>

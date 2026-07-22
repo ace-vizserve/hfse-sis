@@ -200,33 +200,62 @@ describe('resolveAdvisersStep', () => {
 });
 
 describe('resolveGradingSheetsStep', () => {
-  it('not_started with zero sections, fraction is always present (0/0)', () => {
+  it('not_started with zero expected sheets, fraction is always present (0/0)', () => {
     const s = resolveGradingSheetsStep({
-      totalSections: 0,
-      sectionsWithSheets: 0,
+      totalExpectedSheets: 0,
+      totalActualSheets: 0,
     });
     expect(s.status).toBe('not_started');
     expect(s.fraction).toEqual({ done: 0, total: 0 });
   });
-  it('not_started when no sheets yet', () => {
+  it('not_started when sheets are expected but none exist yet', () => {
     const s = resolveGradingSheetsStep({
-      totalSections: 18,
-      sectionsWithSheets: 0,
+      totalExpectedSheets: 18,
+      totalActualSheets: 0,
     });
     expect(s.status).toBe('not_started');
     expect(s.fraction).toEqual({ done: 0, total: 18 });
   });
-  it('partial when some sheets', () => {
+  it('partial when some but not all expected sheets exist', () => {
     expect(
-      resolveGradingSheetsStep({ totalSections: 18, sectionsWithSheets: 5 })
-        .status
+      resolveGradingSheetsStep({
+        totalExpectedSheets: 18,
+        totalActualSheets: 5,
+      }).status
     ).toBe('partial');
   });
-  it('done when all sections covered', () => {
+  it('done when every expected sheet exists', () => {
     expect(
-      resolveGradingSheetsStep({ totalSections: 18, sectionsWithSheets: 18 })
-        .status
+      resolveGradingSheetsStep({
+        totalExpectedSheets: 18,
+        totalActualSheets: 18,
+      }).status
     ).toBe('done');
+  });
+  // The bug this fix closes: a section needing 3 subjects x 4 terms = 12
+  // sheets used to read "done" the moment ANY one sheet existed for that
+  // section (sectionsWithSheets === totalSections). Now the check is
+  // against the real per-(section, subject, term) expected count.
+  it('partial (not done) when a section has 3 subjects x 4 terms = 12 expected sheets but only 5 exist', () => {
+    const s = resolveGradingSheetsStep({
+      totalExpectedSheets: 12,
+      totalActualSheets: 5,
+    });
+    expect(s.status).toBe('partial');
+    expect(s.fraction).toEqual({ done: 5, total: 12 });
+  });
+  // Section-subjects step not done yet (no subjects attached anywhere) ->
+  // zero expected sheets. Must read not_started, never divide-by-zero and
+  // never a false "done".
+  it('not_started (never divide-by-zero, never falsely done) when no section has any subject attached yet', () => {
+    const s = resolveGradingSheetsStep({
+      totalExpectedSheets: 0,
+      totalActualSheets: 0,
+    });
+    expect(s.status).toBe('not_started');
+    expect(s.fraction).toEqual({ done: 0, total: 0 });
+    expect(Number.isFinite(s.fraction!.done)).toBe(true);
+    expect(Number.isFinite(s.fraction!.total)).toBe(true);
   });
 });
 
@@ -305,7 +334,10 @@ describe('buildReadiness', () => {
         missingCount: 0,
       }), // done, required
       resolveAdvisersStep({ sectionCount: 18, advisedSectionCount: 12 }), // partial, required
-      resolveGradingSheetsStep({ totalSections: 18, sectionsWithSheets: 0 }), // not_started, required
+      resolveGradingSheetsStep({
+        totalExpectedSheets: 18,
+        totalActualSheets: 0,
+      }), // not_started, required
       resolveVirtueThemesStep({ termsRequiringTheme: 3, termsWithTheme: 3 }), // done, required
       resolveLetterheadStep({ hasOrgName: true, hasAddress: true }), // done, required
       resolveAppWindowStep({ accepting: true }), // done, but optional — excluded from total
@@ -326,7 +358,10 @@ describe('buildReadiness', () => {
         missingCount: 0,
       }),
       resolveAdvisersStep({ sectionCount: 0, advisedSectionCount: 0 }),
-      resolveGradingSheetsStep({ totalSections: 0, sectionsWithSheets: 0 }),
+      resolveGradingSheetsStep({
+        totalExpectedSheets: 0,
+        totalActualSheets: 0,
+      }),
       resolveVirtueThemesStep({ termsRequiringTheme: 0, termsWithTheme: 0 }),
       resolveLetterheadStep({ hasOrgName: false, hasAddress: false }),
       resolveAppWindowStep({ accepting: false }),
@@ -380,7 +415,7 @@ describe('describeYearBandStatus', () => {
       resolveAySetupStep({ datedTermCount: 4, totalTermCount: 4 }),
     ]);
     const s = describeYearBandStatus(r);
-    expect(s.headline).toBe('Year setup is complete.');
+    expect(s.headline).toBe('Year setup is done.');
   });
 
   it('nothing done yet names the first incomplete step', () => {

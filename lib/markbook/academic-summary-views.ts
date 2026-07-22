@@ -237,7 +237,12 @@ export function buildAttendanceRows(
 
 // ---------- Comments ----------
 
-export type CommentStatus = 'Submitted' | 'Draft' | 'Missing';
+// 'N.A.' = the student wasn't enrolled that term (KD #148 — a late enrollee's
+// pre-join term or a withdrawn student's post-leave term). It is not a chase
+// item, so it must read distinctly from 'Missing' — matching the "N.A." label
+// already used for the same concept on the report card and masterfile export
+// (report-card-document.tsx, masterfile-export.ts).
+export type CommentStatus = 'Submitted' | 'Draft' | 'Missing' | 'N.A.';
 
 export type CommentRow = {
   studentNumber: string | null;
@@ -274,13 +279,23 @@ export function buildCommentRows(
   const out: CommentRow[] = [];
 
   for (const r of payload.rows) {
+    // Terms this student wasn't enrolled for (KD #148) read N.A., never
+    // Missing — a late enrollee's pre-join term / a withdrawn student's
+    // post-leave term isn't a chase item. Rows without enrolledTermNumbers
+    // (e.g. a stale-shaped payload) fall back to "every term is enrolled".
+    const enrolledTerms = new Set(r.enrolledTermNumbers ?? commentTermNumbers);
+
     for (const tn of commentTermNumbers) {
       const cell = r.commentsByTerm.find((c) => c.termNumber === tn);
       const text = cell?.text ? cell.text.trim() || null : null;
 
       let commentStatus: CommentStatus;
       if (!text) {
-        commentStatus = 'Missing';
+        // No comment on file — distinguish a genuine gap (Missing) from a
+        // term the student wasn't enrolled for (N.A., KD #148). Real content
+        // (Submitted/Draft below) is never overridden by coverage — a comment
+        // that somehow exists still gets shown.
+        commentStatus = enrolledTerms.has(tn) ? 'Missing' : 'N.A.';
       } else if (cell?.submitted) {
         commentStatus = 'Submitted';
       } else {

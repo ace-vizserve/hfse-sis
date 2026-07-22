@@ -312,7 +312,7 @@ describe('checklistSummary', () => {
       ).toBe('No classes created yet.');
     });
 
-    it('reports full completion when every level is configured', () => {
+    it('reports full completion when every level has a subject attached', () => {
       expect(
         checklistSummary('subject-weights', {
           step: makeStep({
@@ -323,7 +323,7 @@ describe('checklistSummary', () => {
           ay: makeAy(),
           terms: [],
         })
-      ).toBe("Every level's subjects are configured (3/3).");
+      ).toBe('Every level has at least one subject attached (3/3).');
     });
 
     it('partial state names what disappears from the report card (Phase 2 consequence-first copy)', () => {
@@ -337,7 +337,7 @@ describe('checklistSummary', () => {
         terms: [],
       });
       expect(summary).toBe(
-        '1 level has no subjects configured yet — configure them so grades and report cards have somewhere to go.'
+        '1 level has no subjects attached yet — attach some so grades and report cards have somewhere to go.'
       );
       expect(summary).toContain('somewhere to go');
     });
@@ -354,7 +354,7 @@ describe('checklistSummary', () => {
           terms: [],
         })
       ).toBe(
-        '2 levels have no subjects configured yet — configure them so grades and report cards have somewhere to go.'
+        '2 levels have no subjects attached yet — attach some so grades and report cards have somewhere to go.'
       );
     });
   });
@@ -404,7 +404,7 @@ describe('checklistSummary', () => {
       ).toBe('No classes yet.');
     });
 
-    it('reports the sheets fraction', () => {
+    it('reports the sheets fraction (unit is sheets, not classes)', () => {
       expect(
         checklistSummary('grading-sheets', {
           step: makeStep({
@@ -415,7 +415,32 @@ describe('checklistSummary', () => {
           ay: makeAy(),
           terms: [],
         })
-      ).toBe('1 of 3 classes have grading sheets.');
+      ).toBe('1 of 3 grading sheets created.');
+    });
+
+    it('reports full completion with singular/plural handling', () => {
+      expect(
+        checklistSummary('grading-sheets', {
+          step: makeStep({
+            id: 'grading-sheets',
+            status: 'done',
+            fraction: { done: 12, total: 12 },
+          }),
+          ay: makeAy(),
+          terms: [],
+        })
+      ).toBe('All 12 grading sheets created.');
+      expect(
+        checklistSummary('grading-sheets', {
+          step: makeStep({
+            id: 'grading-sheets',
+            status: 'done',
+            fraction: { done: 1, total: 1 },
+          }),
+          ay: makeAy(),
+          terms: [],
+        })
+      ).toBe('All 1 grading sheet created.');
     });
   });
 

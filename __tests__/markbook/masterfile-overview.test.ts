@@ -19,6 +19,7 @@ function row(p: Partial<MasterfileStudentRow>): MasterfileStudentRow {
     attendanceByTerm: [],
     attendanceTotal: { present: 0, late: 0, schoolDays: 0 },
     commentsByTerm: [],
+    enrolledTermNumbers: [1, 2, 3, 4],
     ...p,
   };
 }

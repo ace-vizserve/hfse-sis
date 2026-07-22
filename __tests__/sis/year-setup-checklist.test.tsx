@@ -295,7 +295,7 @@ describe('YearSetupChecklist', () => {
     );
     expect(defaultVariantElements()).toHaveLength(0);
     expect(
-      screen.getByText(/All set for Academic Year 2026/)
+      screen.getByText(/Minimums met for Academic Year 2026/)
     ).toBeInTheDocument();
   });
 

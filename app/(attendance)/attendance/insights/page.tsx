@@ -207,7 +207,7 @@ export default async function AttendanceInsightsPage({
   // students with ≥1 absence are eligible for the watchlist.
   const allTopAbsent = allRowSets.topAbsent.filter((r) => r.absences > 0);
 
-  // Split into intervene (truancy signal) vs monitor (health narrative).
+  // Split into intervene (mostly not-excused absences) vs monitor (health narrative).
   // Cap at 8 per bucket — beyond that the list becomes unactionable.
   const watchlist = splitWatchlist(allTopAbsent, 8);
 
@@ -315,8 +315,8 @@ export default async function AttendanceInsightsPage({
   const ledeDescription =
     kpis.current.encodedDays > 0
       ? interveneCount > 0
-        ? `${rate}% attendance this period — ${interveneCount} student${interveneCount === 1 ? '' : 's'} with unexplained absences warrant a follow-up.`
-        : `${rate}% attendance this period — no students with a truancy pattern right now.`
+        ? `${rate}% attendance this period — ${interveneCount} student${interveneCount === 1 ? '' : 's'} with mostly not-excused absences may be worth a follow-up call.`
+        : `${rate}% attendance this period — no students with a pattern of not-excused absences right now.`
       : 'How steadily students show up — the overall attendance rate, who is chronically absent, why students are away, and whether anyone is running over their leave quota.';
 
   // Ch1 rate narrative title — states the finding when the rate is meaningful.
@@ -338,11 +338,11 @@ export default async function AttendanceInsightsPage({
   // Ch3 A/EX mix title — describes the dominant signal.
   const absenceMixTitle =
     absenceMix.awayDays === 0
-      ? 'Unexplained vs excused'
+      ? 'Not excused vs excused'
       : absenceMix.unexplainedPct > 50
-        ? 'Mostly unexplained absences this period'
+        ? 'Mostly not-excused absences this period'
         : absenceMix.unexplainedPct > 25
-          ? 'Largely excused, with some unexplained absences'
+          ? 'Largely excused, with some not-excused absences'
           : 'Almost all absences are excused';
 
   return (
@@ -493,13 +493,13 @@ export default async function AttendanceInsightsPage({
           </h2>
         </div>
 
-        {/* 3 — Chronic absentees — split into Intervene (truancy) vs Monitor
-            (health). Switched from getTopAbsentRange → buildAllRowSets.topAbsent
+        {/* 3 — Chronic absentees — split into Intervene (mostly not-excused)
+            vs Monitor (health). Switched from getTopAbsentRange → buildAllRowSets.topAbsent
             which carries `excused` + `attendancePct` so we can do the split. */}
         <InsightsSection
           eyebrow="Watchlist"
           title="Who needs attention?"
-          description="Students with unexplained absences are split by cause — those away mostly without excuse warrant a follow-up call; those away mostly with excuse are worth monitoring but are likely unwell."
+          description="Students with absences are split by how much of that time was excused — those mostly away without an excuse are worth a follow-up call; those mostly away with an excuse are worth monitoring but are likely unwell."
         >
           {allTopAbsent.length === 0 ? (
             <Card className="border-dashed">
@@ -516,7 +516,7 @@ export default async function AttendanceInsightsPage({
                   <CardHeader>
                     <CardDescription className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-destructive">
                       <ShieldAlert className="size-3" strokeWidth={2.25} />
-                      Follow up · mostly unexplained
+                      Follow up · mostly not excused
                     </CardDescription>
                     <CardTitle className="font-serif text-xl font-semibold leading-tight tracking-tight text-foreground">
                       {interveneTitle}
@@ -525,7 +525,8 @@ export default async function AttendanceInsightsPage({
                   <CardContent className="space-y-4">
                     {watchlist.intervene.length === 0 ? (
                       <p className="py-4 text-center text-sm text-muted-foreground">
-                        No students with a truancy pattern right now.
+                        No students with a pattern of not-excused absences right
+                        now.
                       </p>
                     ) : (
                       <>
@@ -555,7 +556,7 @@ export default async function AttendanceInsightsPage({
                                 <div
                                   className="h-full bg-gradient-to-r from-destructive to-destructive/80"
                                   style={{ width: `${r.unexplainedPct}%` }}
-                                  title={`${r.absences} unexplained`}
+                                  title={`${r.absences} not excused`}
                                 />
                                 <div
                                   className="h-full bg-muted"
@@ -567,7 +568,7 @@ export default async function AttendanceInsightsPage({
                               </div>
                               <div className="flex gap-3 font-mono text-[10px] tabular-nums text-muted-foreground">
                                 <span className="text-destructive">
-                                  {r.absences}A unexplained
+                                  {r.absences}A not excused
                                 </span>
                                 <span>·</span>
                                 <span>{r.excused}EX excused</span>
@@ -584,10 +585,9 @@ export default async function AttendanceInsightsPage({
                         {/* Callout (act): quantifies the follow-up burden. */}
                         <RecommendationCallout tone="act">
                           {interveneCount} student
-                          {interveneCount === 1 ? '' : 's'} need
-                          {interveneCount === 1 ? 's' : ''} a truancy follow-up
-                          — unexplained absences are the majority of their
-                          away-days.
+                          {interveneCount === 1 ? '' : 's'} may be worth a
+                          follow-up call — absences not marked excused make up
+                          the majority of their away-days.
                         </RecommendationCallout>
                       </>
                     )}
@@ -634,7 +634,7 @@ export default async function AttendanceInsightsPage({
                               <div
                                 className="h-full bg-gradient-to-r from-brand-amber to-brand-amber/70"
                                 style={{ width: `${r.unexplainedPct}%` }}
-                                title={`${r.absences} unexplained`}
+                                title={`${r.absences} not excused`}
                               />
                               <div
                                 className="h-full bg-muted"
@@ -643,7 +643,7 @@ export default async function AttendanceInsightsPage({
                               />
                             </div>
                             <div className="flex gap-3 font-mono text-[10px] tabular-nums text-muted-foreground">
-                              <span>{r.absences}A unexplained</span>
+                              <span>{r.absences}A not excused</span>
                               <span>·</span>
                               <span className="text-brand-amber">
                                 {r.excused}EX excused
@@ -682,13 +682,14 @@ export default async function AttendanceInsightsPage({
         </div>
 
         {/* 4 — The diagnostic: why are students absent? School-wide A-vs-EX
-            split — how much of the away-time is unexplained (follow up) vs
-            excused (monitor). The EX-reason breakdown lives on the /attendance
-            dashboard (ExReasonDrillCard) — kept there, not duplicated here. */}
+            split — how much of the away-time is not marked excused (follow
+            up) vs excused (monitor). The EX-reason breakdown lives on the
+            /attendance dashboard (ExReasonDrillCard) — kept there, not
+            duplicated here. */}
         <InsightsSection
           eyebrow="Diagnosis"
           title="Why are they absent?"
-          description="The split between unexplained absences (follow up) and excused ones (monitor)."
+          description="The split between absences not marked excused (follow up) and excused ones (monitor)."
         >
           {absenceMix.awayDays === 0 ? (
             <Card className="border-dashed">
@@ -712,7 +713,7 @@ export default async function AttendanceInsightsPage({
                   <div
                     className="h-full bg-gradient-to-r from-destructive to-destructive/70 transition-all"
                     style={{ width: `${absenceMix.unexplainedPct}%` }}
-                    title={`${absenceMix.unexplained} unexplained A days`}
+                    title={`${absenceMix.unexplained} not-excused A days`}
                   />
                   <div
                     className="h-full bg-gradient-to-r from-brand-mint to-brand-mint/60"
@@ -728,7 +729,7 @@ export default async function AttendanceInsightsPage({
                       {absenceMix.unexplainedPct}%
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      Unexplained ({absenceMix.unexplained} days)
+                      Not excused ({absenceMix.unexplained} days)
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -744,9 +745,9 @@ export default async function AttendanceInsightsPage({
                 {/* Interpretive copy — derived, no hardcoded claim */}
                 <p className="text-xs text-muted-foreground">
                   {absenceMix.unexplainedPct > 50
-                    ? 'Unexplained absences are the majority of away-days this period — the watchlist above is the place to act.'
+                    ? 'Absences not marked excused are the majority of away-days this period — the watchlist above is the place to act.'
                     : absenceMix.unexplainedPct > 25
-                      ? 'Most away-days are covered by an excuse, but there is a meaningful unexplained minority worth monitoring.'
+                      ? 'Most away-days are covered by an excuse, but there is a meaningful share not marked excused worth monitoring.'
                       : 'Almost all away-days are excused — attendance is largely health-driven this period.'}
                 </p>
               </CardContent>
