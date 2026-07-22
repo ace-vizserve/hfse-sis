@@ -1,96 +1,27 @@
 import { redirect } from 'next/navigation';
 
-import { PageShell } from '@/components/ui/page-shell';
-import { MasterfileToolbar } from '@/components/markbook/masterfile-toolbar';
-import { QuickViewHeader } from '@/components/markbook/academic-summary/quick-view-header';
-import { AwardsView } from '@/components/markbook/academic-summary/awards-view';
-import { resolveAcademicSummaryScope } from '@/lib/markbook/academic-summary-scope';
-import { getSessionUser } from '@/lib/supabase/server';
-
-// Academic Summary → Awards quick-view (Task 7 of 14).
+// Academic Summary → Awards redirect stub (Task 7 of 14).
 //
-// Per-student award breakdown — Overall Academic Award or per-subject award —
-// for the selected level/class. Full-year shows the official tier (Gold/Silver/
-// Bronze/Not eligible); per-term shows provisional performance only (no tier).
-//
-// Table approach: plain shadcn <Table> primitives (same as masterfile-drill-sheet;
-// per-class ≤ 50 rows; no TanStack / virtualization needed). Siblings (Attendance,
-// Comments) should mirror this approach.
+// The Awards quick-view has been relocated to /markbook/awards as a standalone
+// three-tier analytics page. This stub preserves existing deep-links and bookmarks
+// by forwarding query params (level / class / ay) to the new location.
+// ROUTE_ACCESS still gates /records/academic-summary/awards to registrar/school_admin/superadmin.
 
-export default async function AwardsPage({
+export default async function AcademicSummaryAwardsRedirect({
   searchParams,
 }: {
-  searchParams: Promise<{ ay?: string; level?: string; class?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const session = await getSessionUser();
-  if (!session) redirect('/login');
-  if (
-    session.role !== 'registrar' &&
-    session.role !== 'school_admin' &&
-    session.role !== 'superadmin'
-  ) {
-    redirect('/');
-  }
-
   const sp = await searchParams;
-  const scope = await resolveAcademicSummaryScope(sp);
-  // Back-link preserves the full scope (AY + level + class) so returning to the
-  // hub reopens the same view, not the default level.
-  const backParams = new URLSearchParams({ ay: scope.ayCode });
-  if (scope.selectedLevelId) backParams.set('level', scope.selectedLevelId);
-  if (scope.selectedSectionId) backParams.set('class', scope.selectedSectionId);
-  const ayQuery = `?${backParams.toString()}`;
-
-  // No academic year configured at all.
-  if (scope.noAyRow) {
-    return (
-      <PageShell>
-        <QuickViewHeader
-          title="Awards"
-          subtitle="Subject awards and the Overall Academic Award by student."
-          ayQuery={ayQuery}
-        />
-        <div className="text-sm text-destructive">
-          No academic year configured.
-        </div>
-      </PageShell>
-    );
+  const params = new URLSearchParams();
+  for (const key of ['level', 'class', 'ay'] as const) {
+    const value = sp[key];
+    if (Array.isArray(value)) {
+      for (const v of value) params.append(key, v);
+    } else if (value != null) {
+      params.set(key, value);
+    }
   }
-
-  // AY exists but no levels with sections.
-  if (scope.empty || !scope.payload) {
-    return (
-      <PageShell>
-        <QuickViewHeader
-          title="Awards"
-          subtitle="Subject awards and the Overall Academic Award. Pick a subject (or Overall) and a term — full-year shows the official award tier; a single term shows provisional performance."
-          ayQuery={ayQuery}
-        />
-        <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center text-sm text-muted-foreground">
-          No levels with sections configured for this academic year.
-        </div>
-      </PageShell>
-    );
-  }
-
-  return (
-    <PageShell>
-      <QuickViewHeader
-        title="Awards"
-        subtitle="Subject awards and the Overall Academic Award. Pick a subject (or Overall) and a term — full-year shows the official award tier; a single term shows provisional performance."
-        ayQuery={ayQuery}
-      />
-
-      <MasterfileToolbar
-        ayCodes={scope.ayCodes}
-        selectedAyCode={scope.ayCode}
-        levels={scope.levels}
-        selectedLevelId={scope.selectedLevelId}
-        sections={scope.payload.sections}
-        selectedSectionId={scope.selectedSectionId}
-      />
-
-      <AwardsView payload={scope.payload} />
-    </PageShell>
-  );
+  const query = params.toString();
+  redirect(`/markbook/awards${query ? `?${query}` : ''}`);
 }
