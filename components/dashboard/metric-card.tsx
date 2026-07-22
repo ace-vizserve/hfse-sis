@@ -56,6 +56,7 @@ export type MetricCardProps = {
    */
   drillSheet?: () => React.ReactNode;
   subtext?: string;
+  tileClassName?: string;
   className?: string;
 };
 
@@ -147,6 +148,7 @@ function MetricCardImpl({
   href,
   drillSheet,
   subtext,
+  tileClassName,
   className,
 }: MetricCardProps) {
   // Mutual exclusivity: drillSheet wins, href is ignored with a runtime warning.
@@ -177,7 +179,12 @@ function MetricCardImpl({
         </CardTitle>
         {Icon && (
           <CardAction>
-            <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <div
+              className={cn(
+                'flex size-9 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-brand-tile',
+                tileClassName ?? 'from-brand-indigo to-brand-navy'
+              )}
+            >
               <Icon className="size-4" />
             </div>
           </CardAction>
