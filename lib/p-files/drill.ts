@@ -1,6 +1,11 @@
 import { unstable_cache } from 'next/cache';
 
-import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
+import { parseLocalDate } from '@/lib/dashboard/range';
+import {
+  DOCUMENT_SLOTS,
+  resolveStatus,
+  type DocumentStatus,
+} from '@/lib/p-files/document-config';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -48,12 +53,18 @@ export type PFilesDrillRow = {
   daysToExpiry: number | null;
   revisionCount: number;
   lastRevisionAt: string | null; // ISO
+  /**
+   * True when this slot is conditionally gated (fatherEmail / guardianEmail)
+   * AND the gate field is empty on the applicant — i.e. the slot isn't
+   * actually required for this student. Mirrors
+   * `lib/p-files/dashboard.ts::getCompletionByLevel`'s per-slot gate check.
+   * Only the `level-applicants` target excludes gated rows (KD #82
+   * count==drill parity with the completion-by-level chart) — every other
+   * target intentionally leaves gated rows in (their dashboard counterparts
+   * don't gate either).
+   */
+  gated: boolean;
 };
-
-// Slots the P-Files drill iterates per enrolled student. All 13
-// `DOCUMENT_SLOTS` (canonical post-KD-#96 list) minus `form12`
-// (deliberately excluded — not part of the per-student chase queue).
-const ELIGIBLE_SLOTS = DOCUMENT_SLOTS.filter((s) => s.key !== 'form12');
 
 // ─── Loader ─────────────────────────────────────────────────────────────────
 
@@ -63,7 +74,8 @@ type AppLite = {
   firstName: string | null;
   lastName: string | null;
   levelApplied: string | null;
-  classLevel: string | null;
+  fatherEmail: string | null;
+  guardianEmail: string | null;
 };
 type DocLite = Record<string, string | null>;
 type RevisionLite = {
@@ -82,30 +94,73 @@ function appName(a: AppLite): string {
   );
 }
 
-// Map raw `<slot>Status` values (KD #60: 'Valid' / 'Uploaded' / 'To follow' /
-// 'Rejected' / 'Expired') to the discrete display enum the P-Files drill UI expects.
-//   - 'Valid'      → 'On file'
-//   - 'Uploaded'   → 'Awaiting validation'
-//   - 'To follow'  → 'Promised'
-//   - 'Rejected'   → 'Rejected'
-//   - 'Expired'    → 'Expired'
-//   - null / '' / 'Missing' → 'Missing'
-//   - unknown      → 'Missing' (conservative, matches resolveStatus fallback)
-function normaliseStatus(raw: string | null): PFilesDrillRow['status'] {
-  const s = (raw ?? '').trim().toLowerCase();
-  if (s === '' || s === 'missing') return 'Missing';
-  if (s === 'valid') return 'On file';
-  if (s === 'uploaded' || s === 'pending' || s === 'pending review')
-    return 'Awaiting validation';
-  if (s === 'to follow') return 'Promised';
-  if (s === 'rejected') return 'Rejected';
-  if (s === 'expired') return 'Expired';
-  return 'Missing';
+/** Resolve a slot's `conditional` gate column value off the applicant row.
+ *  Mirrors `getCompletionByLevel`'s gate lookup — only fatherEmail /
+ *  guardianEmail are real conditional values in DOCUMENT_SLOTS today. */
+function gateValueFor(app: AppLite, column: string): string | null {
+  if (column === 'fatherEmail') return app.fatherEmail;
+  if (column === 'guardianEmail') return app.guardianEmail;
+  return null;
 }
+
+// Map the canonical `resolveStatus` result (the same classifier every
+// dashboard chart/KPI in lib/p-files/dashboard.ts uses) to the discrete
+// display enum the P-Files drill UI expects. This REPLACES the drill's old,
+// independently-written `normaliseStatus` — that copy read raw `<slot>Status`
+// strings directly and never applied the expiry backstop (a stale 'Valid'
+// row whose expiry had passed rendered as 'On file' in the drill while every
+// chart already counted it as expired).
+//   - 'valid'     → 'On file'
+//   - 'uploaded'  → 'Awaiting validation'
+//   - 'to-follow' → 'Promised'
+//   - 'rejected'  → 'Rejected'
+//   - 'expired'   → 'Expired'
+//   - 'missing'   → 'Missing'
+//   - 'na'        → 'Missing' (resolveStatus never actually returns 'na'
+//                    today — no DOCUMENT_SLOTS conditional path emits it —
+//                    kept for exhaustiveness / future-proofing, conservative
+//                    fallback matching the old normaliseStatus behaviour)
+export function documentStatusToDisplay(
+  status: DocumentStatus
+): PFilesDrillRow['status'] {
+  switch (status) {
+    case 'valid':
+      return 'On file';
+    case 'uploaded':
+      return 'Awaiting validation';
+    case 'to-follow':
+      return 'Promised';
+    case 'rejected':
+      return 'Rejected';
+    case 'expired':
+      return 'Expired';
+    case 'missing':
+      return 'Missing';
+    case 'na':
+      return 'Missing';
+    default: {
+      const _exhaustive: never = status;
+      throw new Error(`unreachable document status: ${String(_exhaustive)}`);
+    }
+  }
+}
+
+export type PFilesDrillLoadResult = {
+  rows: PFilesDrillRow[];
+  /**
+   * One row per `p_file_revisions` event (not deduped to the latest per
+   * (enrolee, slot) — that's what `rows` carries). Feeds the
+   * `revisions-on-day` target only, so a slot revised twice on different
+   * days produces 2 rows here — matching how the dashboard's weekly trend /
+   * heatmap / velocity charts count `p_file_revisions` table rows, not
+   * unique slots.
+   */
+  revisionEvents: PFilesDrillRow[];
+};
 
 async function loadPFilesRowsUncached(
   ayCode: string
-): Promise<PFilesDrillRow[]> {
+): Promise<PFilesDrillLoadResult> {
   const prefix = prefixFor(ayCode);
   const appsTable = `${prefix}_enrolment_applications`;
   const docsTable = `${prefix}_enrolment_documents`;
@@ -113,13 +168,15 @@ async function loadPFilesRowsUncached(
   const admissions = createAdmissionsClient();
   const service = createServiceClient();
 
-  // Build the docs SELECT from ELIGIBLE_SLOTS — pull every slot's status
-  // column plus the expiry column for the 8 expiring slots so each drill
-  // row carries its own per-slot expiry.
+  // Build the docs SELECT from the full DOCUMENT_SLOTS (canonical 13-slot
+  // list, KD #96) — pull every slot's status column plus the expiry column
+  // for the 8 expiring slots so each drill row carries its own per-slot
+  // expiry. Column names follow the `${key}Status` / `${key}Expiry`
+  // convention (same one lib/p-files/dashboard.ts's aggregators use).
   const docColumns = Array.from(
     new Set(
-      ELIGIBLE_SLOTS.flatMap((s) =>
-        s.expiryCol ? [s.statusCol, s.expiryCol] : [s.statusCol]
+      DOCUMENT_SLOTS.flatMap((s) =>
+        s.expires ? [`${s.key}Status`, `${s.key}Expiry`] : [`${s.key}Status`]
       )
     )
   ).join(', ');
@@ -140,7 +197,7 @@ async function loadPFilesRowsUncached(
         admissions
           .from(appsTable)
           .select(
-            'enroleeNumber, enroleeFullName, firstName, lastName, levelApplied'
+            'enroleeNumber, enroleeFullName, firstName, lastName, levelApplied, fatherEmail, guardianEmail'
           )
           .range(from, to) as unknown as P<AppLite>
     ),
@@ -193,20 +250,26 @@ async function loadPFilesRowsUncached(
     if (s.classLevel) classLevelByEnrolee.set(s.enroleeNumber, s.classLevel);
   }
 
-  // Revisions counted per (enrolee, slot)
+  // Revisions counted per (enrolee, slot) — aggregate for `rows`, and the
+  // full per-event list (grouped the same way) for `revisionEvents`.
   const revKey = (en: string, slot: string) => `${en}|${slot}`;
   const revCount = new Map<string, number>();
   const revLastAt = new Map<string, string>();
+  const revEventsByKey = new Map<string, RevisionLite[]>();
   for (const r of revisions) {
     if (!r.enrolee_number) continue;
     const k = revKey(r.enrolee_number, r.slot_key);
     revCount.set(k, (revCount.get(k) ?? 0) + 1);
     const prev = revLastAt.get(k);
     if (!prev || r.replaced_at > prev) revLastAt.set(k, r.replaced_at);
+    const list = revEventsByKey.get(k);
+    if (list) list.push(r);
+    else revEventsByKey.set(k, [r]);
   }
 
   const today = Date.now();
   const out: PFilesDrillRow[] = [];
+  const revisionEvents: PFilesDrillRow[] = [];
   for (const app of apps) {
     if (!app.enroleeNumber) continue;
     // Enrollment gate: skip funnel applicants. The status query above
@@ -217,26 +280,46 @@ async function loadPFilesRowsUncached(
     const level =
       classLevelByEnrolee.get(app.enroleeNumber) ?? app.levelApplied ?? null;
 
-    for (const slot of ELIGIBLE_SLOTS) {
-      const raw =
-        (docRow?.[slot.statusCol] as string | null | undefined) ?? null;
-      const status = normaliseStatus(raw);
+    for (const slot of DOCUMENT_SLOTS) {
+      const statusCol = `${slot.key}Status`;
+      const rawStatus =
+        (docRow?.[statusCol] as string | null | undefined) ?? null;
 
-      // Per-slot expiry — every expiring slot carries its own date.
+      // Per-slot expiry — every expiring slot carries its own date. Parsed
+      // via the shared local-midnight `parseLocalDate` (same one
+      // lib/p-files/dashboard.ts's `expiringSoon`/`expiringSoon30` KPIs use)
+      // instead of raw `Date.parse`, which interprets a bare `YYYY-MM-DD`
+      // string as UTC midnight and could skew the day count depending on
+      // the server's local timezone offset.
       let expiryDate: string | null = null;
       let daysToExpiry: number | null = null;
-      if (slot.expiryCol) {
-        const raw =
-          (docRow?.[slot.expiryCol] as string | null | undefined) ?? null;
-        expiryDate = raw;
-        const expiryMs = raw ? Date.parse(raw) : NaN;
-        daysToExpiry = !Number.isNaN(expiryMs)
-          ? Math.floor((expiryMs - today) / 86_400_000)
+      if (slot.expires) {
+        const expiryCol = `${slot.key}Expiry`;
+        const rawExpiry =
+          (docRow?.[expiryCol] as string | null | undefined) ?? null;
+        expiryDate = rawExpiry;
+        const parsedExpiry = rawExpiry ? parseLocalDate(rawExpiry) : null;
+        daysToExpiry = parsedExpiry
+          ? Math.floor((parsedExpiry.getTime() - today) / 86_400_000)
           : null;
       }
 
+      // Canonical classifier — the same one every dashboard chart/KPI uses
+      // (lib/p-files/dashboard.ts::getCompletionByLevel/getSlotStatusMix).
+      const docStatus = resolveStatus(
+        null,
+        rawStatus,
+        expiryDate,
+        slot.expires
+      );
+      const status = documentStatusToDisplay(docStatus);
+
+      const gated = slot.conditional
+        ? !(gateValueFor(app, slot.conditional)?.trim() ?? '')
+        : false;
+
       const k = revKey(app.enroleeNumber, slot.key);
-      out.push({
+      const row: PFilesDrillRow = {
         enroleeNumber: app.enroleeNumber,
         fullName: appName(app),
         level,
@@ -248,17 +331,30 @@ async function loadPFilesRowsUncached(
         daysToExpiry,
         revisionCount: revCount.get(k) ?? 0,
         lastRevisionAt: revLastAt.get(k) ?? null,
-      });
+        gated,
+      };
+      out.push(row);
+
+      const events = revEventsByKey.get(k);
+      if (events) {
+        for (const ev of events) {
+          revisionEvents.push({
+            ...row,
+            revisionCount: 1,
+            lastRevisionAt: ev.replaced_at,
+          });
+        }
+      }
     }
   }
-  return out;
+  return { rows: out, revisionEvents };
 }
 
 export async function buildPFilesDrillRows(input: {
   ayCode: string;
   from?: string;
   to?: string;
-}): Promise<PFilesDrillRow[]> {
+}): Promise<PFilesDrillLoadResult> {
   // Loader is AY-scoped; range filtering is target-specific (revisions /
   // expiry dates) and applied by `applyTargetFilter` in the API route via
   // the `range` parameter. The `from` / `to` props on this builder are
@@ -276,11 +372,12 @@ export async function buildPFilesDrillRows(input: {
 // ─── Per-target filter ──────────────────────────────────────────────────────
 
 export function applyTargetFilter(
-  rows: PFilesDrillRow[],
+  data: PFilesDrillLoadResult,
   target: PFilesDrillTarget,
   segment: string | null,
   range?: { from: string; to: string }
 ): PFilesDrillRow[] {
+  const rows = data.rows;
   switch (target) {
     case 'all-docs':
       return rows;
@@ -299,7 +396,8 @@ export function applyTargetFilter(
       // counts a slot when its raw status === 'Valid'): "expiring soon" =
       // a currently-valid document nearing expiry (renewal signal), not an
       // Uploaded/Rejected slot that happens to carry a future expiry.
-      // normaliseStatus maps raw 'Valid' → 'On file', so gate on that.
+      // documentStatusToDisplay maps resolved 'valid' → 'On file', so gate
+      // on that.
       const days = segment ? Number(segment) : 60;
       const window = Number.isFinite(days) && days > 0 ? days : 60;
       return rows.filter(
@@ -314,7 +412,7 @@ export function applyTargetFilter(
       return rows.filter((r) => r.status === 'Missing');
     case 'slot-by-status': {
       // segment = a status string emitted by <SlotStatusDrillCard> after the
-      // normaliseStatus change. Donut slices now use the discrete labels:
+      // documentStatusToDisplay mapping. Donut slices use the discrete labels:
       //   'On file'           → r.status === 'On file'
       //   'Awaiting validation' → r.status === 'Awaiting validation'
       //   'Promised'          → r.status === 'Promised'
@@ -346,28 +444,39 @@ export function applyTargetFilter(
       );
     }
     case 'level-applicants': {
-      if (!segment) return rows;
-      return rows.filter((r) => (r.level ?? 'Unknown') === segment);
+      // Excludes gated slots (a conditional slot the applicant doesn't
+      // actually need, e.g. fatherPassport when fatherEmail is empty) —
+      // matches getCompletionByLevel's per-slot gate (KD #82 count==drill).
+      // No other target applies this gate.
+      const base = rows.filter((r) => !r.gated);
+      if (!segment) return base;
+      return base.filter((r) => (r.level ?? 'Unknown') === segment);
     }
     case 'revisions-on-day': {
+      // Event-based rows (one per p_file_revisions row), not the
+      // per-(enrolee,slot)-latest-only `rows` set — matches how the
+      // dashboard's weekly trend / heatmap / velocity charts + the
+      // "Revisions (range)" KPI all count table rows, not unique slots.
+      //
       // segment = ISO date 'YYYY-MM-DD' for a specific-day click on the
       // revisions trend chart. Without segment, use the range (matches
-      // the "Revisions (range)" KPI card scope) — only rows whose
-      // most-recent revision lands inside the active picker window.
-      // No range either → return all rows that have any revision.
+      // the "Revisions (range)" KPI card scope) — only events whose
+      // timestamp lands inside the active picker window. No range either
+      // → every revision event.
+      const events = data.revisionEvents;
       if (segment) {
-        return rows.filter((r) => r.lastRevisionAt?.slice(0, 10) === segment);
+        return events.filter((r) => r.lastRevisionAt?.slice(0, 10) === segment);
       }
       if (range?.from && range?.to) {
         const from = range.from;
         const to = range.to;
-        return rows.filter((r) => {
+        return events.filter((r) => {
           if (!r.lastRevisionAt) return false;
           const day = r.lastRevisionAt.slice(0, 10);
           return day >= from && day <= to;
         });
       }
-      return rows.filter((r) => r.lastRevisionAt !== null);
+      return events;
     }
     default: {
       const _exhaustive: never = target;
@@ -437,13 +546,10 @@ export function defaultColumnsForTarget(
     case 'level-applicants':
       return ['fullName', 'level', 'slotLabel', 'status'];
     case 'revisions-on-day':
-      return [
-        'fullName',
-        'level',
-        'slotLabel',
-        'revisionCount',
-        'lastRevisionAt',
-      ];
+      // Per-event rows (KD fix) — one row per revision, so `revisionCount`
+      // (always 1) is dropped from the default set in favour of the
+      // revision date, applicant, and which slot was revised.
+      return ['fullName', 'level', 'slotLabel', 'lastRevisionAt'];
   }
 }
 
