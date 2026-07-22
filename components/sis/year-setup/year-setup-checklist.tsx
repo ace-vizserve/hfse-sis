@@ -298,7 +298,7 @@ export function YearSetupChecklist({
           </CardDescription>
           <CardTitle className="font-serif text-[22px] font-semibold text-foreground">
             {allDone
-              ? `${selectedAy.label} is ready.`
+              ? `${selectedAy.label} setup is done.`
               : `Getting ${selectedAy.label} ready.`}
           </CardTitle>
           {allDone && (
@@ -314,7 +314,7 @@ export function YearSetupChecklist({
           )}
           <p className="text-sm text-muted-foreground">
             {allDone
-              ? 'Every required item is configured.'
+              ? 'Every required item has at least the minimum in place.'
               : 'Work through each item below, in any order.'}
           </p>
         </CardHeader>

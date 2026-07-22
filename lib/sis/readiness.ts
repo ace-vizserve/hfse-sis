@@ -3,6 +3,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getLevelRows } from '@/lib/sis/levels';
 import { findEmptyLevels } from '@/lib/sis/subject-config-gaps';
+import { buildGradingSheetScopes } from '@/lib/markbook/grading-sheet-scope';
 
 // Order matches the user-approved AY-Setup workflow: Academic Year ->
 // Calendar -> Sections -> Subject Weights -> Form Advisers -> Section
@@ -90,8 +91,8 @@ const STEP_META: Record<
   'subject-weights': {
     id: 'subject-weights',
     step: 4,
-    label: 'Subject weights',
-    description: 'Attach subjects and weights to every grade level in use',
+    label: 'Subjects attached',
+    description: 'Attach at least one subject to every grade level in use',
     href: '/sis/admin/subjects',
     required: true,
   },
@@ -107,7 +108,7 @@ const STEP_META: Record<
     id: 'section-subjects',
     step: 6,
     label: 'Section subjects',
-    description: 'Confirm which subjects each section teaches',
+    description: 'Attach subjects to every section',
     href: '/sis/sections',
     required: true,
   },
@@ -115,7 +116,7 @@ const STEP_META: Record<
     id: 'grading-sheets',
     step: 7,
     label: 'Grading sheets',
-    description: 'Create grading sheets for all sections',
+    description: 'Create a grading sheet for every class, subject, and term',
     href: '/markbook/sections',
     required: true,
   },
@@ -327,19 +328,31 @@ export function resolveSectionSubjectsStep(input: {
   };
 }
 
+// "Done" once every EXPECTED grading-sheet slot for this AY actually has a
+// grading_sheets row — not merely "this section has at least one sheet
+// somewhere." The prior check counted a section as fully done the moment
+// ANY sheet existed for it (`sectionsWithSheets === totalSections`), so a
+// section needing e.g. 3 subjects x 4 terms = 12 sheets read as "done" with
+// just 1 created. `totalExpectedSheets` / `totalActualSheets` are
+// pre-aggregated by fetchGradingSheets from the same (section, subject,
+// term) scope the real bulk-create route + its dry-run preview already use
+// (lib/markbook/grading-sheet-scope.ts::buildGradingSheetScopes) — a
+// section with zero subjects attached yet (Section subjects step not done)
+// contributes zero expected sheets, so it can't divide-by-zero and can't
+// masquerade as "done".
 export function resolveGradingSheetsStep(input: {
-  totalSections: number;
-  sectionsWithSheets: number;
+  totalExpectedSheets: number;
+  totalActualSheets: number;
 }): ReadinessStep {
-  const { totalSections, sectionsWithSheets } = input;
+  const { totalExpectedSheets, totalActualSheets } = input;
   let status: ReadinessStatus;
-  const fraction = { done: sectionsWithSheets, total: totalSections };
+  const fraction = { done: totalActualSheets, total: totalExpectedSheets };
 
-  if (totalSections === 0) {
+  if (totalExpectedSheets === 0) {
     status = 'not_started';
-  } else if (sectionsWithSheets === totalSections) {
+  } else if (totalActualSheets >= totalExpectedSheets) {
     status = 'done';
-  } else if (sectionsWithSheets > 0) {
+  } else if (totalActualSheets > 0) {
     status = 'partial';
   } else {
     status = 'not_started';
@@ -463,8 +476,8 @@ export function describeYearBandStatus(readiness: AyReadiness): {
   }
   if (complete === total) {
     return {
-      headline: 'Year setup is complete.',
-      detail: 'Every required item is configured for this year.',
+      headline: 'Year setup is done.',
+      detail: 'Every required item has at least the minimum in place.',
     };
   }
   const nextStep = steps.find((s) => s.id === nextIncompleteStepId(steps));
@@ -710,34 +723,101 @@ async function fetchAdvisers(
   return { sectionCount, advisedSectionCount };
 }
 
+// Computes the real expected-vs-actual grading-sheet count for the AY.
+// "Expected" = one sheet per (section, subject, term) scope this AY should
+// have — reusing the exact same pure buildGradingSheetScopes builder the
+// Generate Sheets dialog + its dry-run preview route already use
+// (app/api/grading-sheets/bulk-create/{route.ts,preview/route.ts}), so this
+// readiness step can never drift from what "Generate sheets" actually
+// creates (count == drill discipline, KD #124/#128). A section with zero
+// subjects attached yet contributes zero expected sheets — it neither
+// inflates the denominator with slots nobody has asked for, nor divides by
+// zero, nor reads as falsely "done".
 async function fetchGradingSheets(
   db: SupabaseClient,
   ayId: string
-): Promise<{ totalSections: number; sectionsWithSheets: number }> {
-  const { data: sections, error: sectionsError } = await db
-    .from('sections')
-    .select('id')
-    .eq('academic_year_id', ayId);
+): Promise<{ totalExpectedSheets: number; totalActualSheets: number }> {
+  const [
+    { data: sectionRows, error: sectionsError },
+    { data: configRows, error: configsError },
+    { data: termRows, error: termsError },
+  ] = await Promise.all([
+    db.from('sections').select('id, level_id').eq('academic_year_id', ayId),
+    db
+      .from('subject_configs')
+      .select('id, subject_id')
+      .eq('academic_year_id', ayId),
+    db.from('terms').select('id').eq('academic_year_id', ayId),
+  ]);
 
   if (sectionsError) throw sectionsError;
-  const totalSections = sections?.length ?? 0;
+  if (configsError) throw configsError;
+  if (termsError) throw termsError;
 
-  if (totalSections === 0) {
-    return { totalSections: 0, sectionsWithSheets: 0 };
+  const sections = ((sectionRows as any[]) ?? []).map((s) => ({
+    id: s.id as string,
+    level_id: (s.level_id as string | null) ?? '',
+  }));
+  const configs = ((configRows as any[]) ?? []).map((c) => ({
+    id: c.id as string,
+    subject_id: c.subject_id as string,
+  }));
+  const terms = ((termRows as any[]) ?? []).map((t) => ({
+    id: t.id as string,
+  }));
+
+  if (sections.length === 0 || terms.length === 0) {
+    return { totalExpectedSheets: 0, totalActualSheets: 0 };
   }
 
-  const sectionIds = sections!.map((s: any) => s.id);
-  const { data: sheets, error: sheetsError } = await db
-    .from('grading_sheets')
-    .select('section_id')
+  const sectionIds = sections.map((s) => s.id);
+
+  const { data: assignmentRows, error: assignmentsError } = await db
+    .from('section_subjects')
+    .select('section_id, subject_config_id')
     .in('section_id', sectionIds);
 
-  if (sheetsError) throw sheetsError;
-  const sectionsWithSheets = new Set(
-    (sheets as any[])?.map((s: any) => s.section_id)
-  ).size;
+  if (assignmentsError) throw assignmentsError;
 
-  return { totalSections, sectionsWithSheets };
+  const assignments = ((assignmentRows as any[]) ?? []).map((a) => ({
+    section_id: a.section_id as string,
+    subject_config_id: a.subject_config_id as string,
+  }));
+
+  const scopes = buildGradingSheetScopes(sections, configs, assignments, terms);
+  const totalExpectedSheets = scopes.length;
+
+  if (totalExpectedSheets === 0) {
+    return { totalExpectedSheets: 0, totalActualSheets: 0 };
+  }
+
+  // Same (term_id, section_id, subject_id) key the preview route dedupes
+  // on — matches the table's real unique constraint (migration 001).
+  const expectedKeys = new Set(
+    scopes.map((sc) => `${sc.term_id}|${sc.section_id}|${sc.subject_id}`)
+  );
+
+  const { data: sheetRows, error: sheetsError } = await db
+    .from('grading_sheets')
+    .select('term_id, section_id, subject_id')
+    .in('section_id', sectionIds)
+    .in(
+      'term_id',
+      terms.map((t) => t.id)
+    );
+
+  if (sheetsError) throw sheetsError;
+
+  // Only count a sheet if it matches an EXPECTED scope — a stray sheet left
+  // over after a subject was later unassigned from a section shouldn't
+  // inflate "actual" past "expected".
+  let totalActualSheets = 0;
+  for (const row of (sheetRows as any[]) ?? []) {
+    const key = `${row.term_id}|${row.section_id}|${row.subject_id}`;
+    if (expectedKeys.has(key)) totalActualSheets += 1;
+  }
+
+  return { totalExpectedSheets, totalActualSheets };
 }
 
 async function fetchVirtueThemes(
@@ -815,7 +895,10 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
         totalSections: 0,
         sectionsWithSubjects: 0,
       }),
-      resolveGradingSheetsStep({ totalSections: 0, sectionsWithSheets: 0 }),
+      resolveGradingSheetsStep({
+        totalExpectedSheets: 0,
+        totalActualSheets: 0,
+      }),
       resolveVirtueThemesStep({ termsRequiringTheme: 0, termsWithTheme: 0 }),
       resolveLetterheadStep({ hasOrgName: false, hasAddress: false }),
       resolveAppWindowStep({ accepting: false }),

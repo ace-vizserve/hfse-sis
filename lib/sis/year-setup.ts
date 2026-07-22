@@ -101,9 +101,9 @@ export function checklistSummary(
       const { done, total } = step.fraction;
       if (total === 0) return 'No classes created yet.';
       if (done === total)
-        return `Every level's subjects are configured (${total}/${total}).`;
+        return `Every level has at least one subject attached (${total}/${total}).`;
       const gap = total - done;
-      return `${gap} level${gap === 1 ? '' : 's'} ${gap === 1 ? 'has' : 'have'} no subjects configured yet — configure them so grades and report cards have somewhere to go.`;
+      return `${gap} level${gap === 1 ? '' : 's'} ${gap === 1 ? 'has' : 'have'} no subjects attached yet — attach some so grades and report cards have somewhere to go.`;
     }
 
     case 'advisers': {
@@ -117,7 +117,9 @@ export function checklistSummary(
       if (!step.fraction) return 'No classes yet.';
       const { done, total } = step.fraction;
       if (total === 0) return 'No classes yet.';
-      return `${done} of ${total} class${total === 1 ? '' : 'es'} have grading sheets.`;
+      if (done >= total)
+        return `All ${total} grading sheet${total === 1 ? '' : 's'} created.`;
+      return `${done} of ${total} grading sheet${total === 1 ? '' : 's'} created.`;
     }
 
     case 'virtue-themes': {
