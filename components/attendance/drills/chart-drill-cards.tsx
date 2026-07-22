@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import * as React from 'react';
 
 import { AttendanceDrillSheet } from '@/components/attendance/drills/attendance-drill-sheet';
@@ -277,7 +278,7 @@ export function TopAbsentDrillCard({
               </TabsList>
             </Tabs>
             <Button asChild variant="outline" size="sm">
-              <a href="/attendance/sections">Mark today's attendance</a>
+              <Link href="/attendance/sections">Mark today's attendance</Link>
             </Button>
             <Button asChild variant="outline" size="sm">
               <a href={csvHref} download>

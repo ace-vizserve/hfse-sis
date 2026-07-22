@@ -256,10 +256,10 @@ export function CommentsView({ payload }: { payload: MasterfilePayload }) {
             Export CSV
           </Button>
           <Button variant="outline" size="sm" className="h-9" asChild>
-            <a href="/evaluation">
+            <Link href="/evaluation">
               <ExternalLink className="size-3.5" />
               Open Evaluation Module
-            </a>
+            </Link>
           </Button>
         </div>
       </div>
