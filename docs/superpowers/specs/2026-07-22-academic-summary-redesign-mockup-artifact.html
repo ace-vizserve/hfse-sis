@@ -1,0 +1,1062 @@
+<style>
+  /* ── Aurora Vault tokens (verbatim from app/globals.css) ─────────────── */
+  .asr {
+    --bg: #ffffff;
+    --card: #ffffff;
+    --muted: #f8fafc;
+    --secondary: #f1f5f9;
+    --ink: #0f172a;
+    --ink-2: #334155;
+    --ink-3: #475569;
+    --ink-4: #64748b;
+    --ink-5: #94a3b8;
+    --hairline: #e2e8f0;
+    --hairline-strong: #cbd5e1;
+    --indigo: #213098;
+    --indigo-deep: #18215c;
+    --navy: #0b1120;
+    --sky: #38bdf8;
+    --mint: #34d399;
+    --amber: #ed7622;
+    --bronze: #cd7f32;
+    --accent: #e9ecf8;
+    --accent-fg: #1a2570;
+    --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
+    --brand-tile: inset 0 1px 0 0 hsl(0 0% 100% / 0.18),
+      0 6px 16px -6px hsl(224 60% 20% / 0.5);
+    /* the one colour thread: stat → donut → badge */
+    --gold: var(--amber);
+    --silver: var(--ink-4);
+    --tier-bronze: var(--bronze);
+    --neutral: var(--ink-5);
+    /* fonts — Source Serif 4 / Inter / JetBrains Mono degrade to system
+       equivalents here (Artifact CSP blocks webfont CDNs); the real app
+       ships the named faces. */
+    --f-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --f-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+      "Times New Roman", serif;
+    --f-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas,
+      monospace;
+
+    font-family: var(--f-sans);
+    color: var(--ink);
+    line-height: 1.5;
+    background: var(--muted);
+    -webkit-font-smoothing: antialiased;
+    padding: 40px 24px 80px;
+    min-height: 100vh;
+  }
+  .asr *,
+  .asr *::before,
+  .asr *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  .asr .page {
+    max-width: 1160px;
+    margin: 0 auto;
+  }
+  .asr .mono {
+    font-family: var(--f-mono);
+  }
+  .asr .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+  .asr .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-4);
+  }
+  .asr .doc-note {
+    background: linear-gradient(180deg, #fff, var(--muted));
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--indigo);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 40px;
+  }
+  .asr .doc-note h2 {
+    font-family: var(--f-serif);
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .asr .doc-note p {
+    font-size: 14px;
+    color: var(--ink-3);
+    max-width: 78ch;
+  }
+  .asr .doc-note p + p {
+    margin-top: 8px;
+  }
+  .asr .section-tag {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-4);
+    margin: 48px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .asr .canvas {
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: var(--shadow-xs);
+  }
+  .asr .phead {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 32px;
+  }
+  .asr .phead h1 {
+    font-family: var(--f-serif);
+    font-size: 38px;
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin: 10px 0 8px;
+    text-wrap: balance;
+  }
+  .asr .phead .desc {
+    font-size: 15px;
+    color: var(--ink-4);
+    max-width: 46ch;
+  }
+  .asr .picker {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .asr .field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .asr .field > label {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-4);
+  }
+  .asr .select {
+    height: 36px;
+    min-width: 150px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: var(--card);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-2);
+  }
+  .asr .select .ico {
+    color: var(--ink-4);
+  }
+  .asr .select .chev {
+    margin-left: auto;
+    color: var(--ink-5);
+  }
+  .asr .grid4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+  .asr .stat {
+    background: linear-gradient(to top, rgba(33, 48, 152, 0.045), #fff);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 18px 18px 16px;
+    box-shadow: var(--shadow-xs);
+    position: relative;
+  }
+  .asr .stat .lab {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-4);
+  }
+  .asr .stat .val {
+    font-family: var(--f-serif);
+    font-size: 32px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    margin-top: 10px;
+  }
+  .asr .stat .sub {
+    font-size: 12px;
+    color: var(--ink-4);
+    margin-top: 12px;
+  }
+  .asr .tile {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    box-shadow: var(--brand-tile);
+  }
+  .asr .tile svg {
+    width: 17px;
+    height: 17px;
+  }
+  .asr .tile.indigo {
+    background: linear-gradient(135deg, #2d3eb8, var(--navy));
+  }
+  .asr .tile.gold {
+    background: linear-gradient(135deg, #f0902f, #c85d12);
+  }
+  .asr .tile.silver {
+    background: linear-gradient(135deg, #7c8ba1, #475569);
+  }
+  .asr .tile.bronze {
+    background: linear-gradient(135deg, #d98a45, #8a5320);
+  }
+  .asr .grid2 {
+    display: grid;
+    grid-template-columns: 0.85fr 1.15fr;
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .asr .panel {
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    box-shadow: var(--shadow-xs);
+    overflow: hidden;
+  }
+  .asr .panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 18px 20px 0;
+  }
+  .asr .panel-head .cap {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-4);
+  }
+  .asr .panel-head .ttl {
+    font-family: var(--f-serif);
+    font-size: 19px;
+    font-weight: 600;
+    margin-top: 5px;
+    letter-spacing: -0.01em;
+  }
+  .asr .panel-tile {
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    background: linear-gradient(135deg, #2d3eb8, var(--navy));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    box-shadow: var(--brand-tile);
+    flex-shrink: 0;
+  }
+  .asr .panel-tile svg {
+    width: 16px;
+    height: 16px;
+  }
+  .asr .panel-body {
+    padding: 18px 20px 20px;
+  }
+  .asr .donut-wrap {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+  }
+  .asr .donut {
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    position: relative;
+    background: conic-gradient(
+      var(--gold) 0 34%,
+      var(--silver) 34% 57%,
+      var(--tier-bronze) 57% 74%,
+      var(--neutral) 74% 100%
+    );
+  }
+  .asr .donut::after {
+    content: "";
+    position: absolute;
+    inset: 26px;
+    background: var(--card);
+    border-radius: 50%;
+  }
+  .asr .donut .center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+  }
+  .asr .donut .center .n {
+    font-family: var(--f-serif);
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .asr .donut .center .l {
+    font-family: var(--f-mono);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-4);
+    margin-top: 3px;
+  }
+  .asr .legend {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    flex: 1;
+  }
+  .asr .legend .row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 13px;
+  }
+  .asr .legend .sw {
+    width: 12px;
+    height: 12px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .asr .legend .nm {
+    color: var(--ink-2);
+  }
+  .asr .legend .vv {
+    margin-left: auto;
+    font-family: var(--f-mono);
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .asr .legend .pc {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    color: var(--ink-4);
+    width: 34px;
+    text-align: right;
+  }
+  .asr .bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 26px;
+    height: 150px;
+    padding: 0 6px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .asr .bargroup {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    flex: 1;
+    height: 100%;
+  }
+  .asr .bar {
+    flex: 1;
+    border-radius: 3px 3px 0 0;
+    min-height: 3px;
+  }
+  .asr .barlabels {
+    display: flex;
+    gap: 26px;
+    padding: 8px 6px 0;
+  }
+  .asr .barlabels span {
+    flex: 1;
+    text-align: center;
+    font-family: var(--f-mono);
+    font-size: 11px;
+    color: var(--ink-4);
+  }
+  .asr .barlegend {
+    display: flex;
+    gap: 16px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .asr .barlegend .row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .asr .barlegend .sw {
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+  }
+  .asr .tier3 {
+    margin-top: 16px;
+  }
+  .asr .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .asr .search {
+    height: 36px;
+    min-width: 230px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: var(--card);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    font-size: 13px;
+    color: var(--ink-5);
+  }
+  .asr .facet {
+    height: 32px;
+    border: 1px dashed var(--hairline-strong);
+    border-radius: 8px;
+    background: var(--card);
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 11px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-2);
+  }
+  .asr .facet .plus {
+    color: var(--ink-5);
+  }
+  .asr .facet .cnt {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-radius: 5px;
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 5px;
+  }
+  .asr .spacer {
+    flex: 1;
+  }
+  .asr .btn-out {
+    height: 32px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: var(--card);
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-2);
+  }
+  .asr .tablecard {
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    overflow-x: auto;
+    background: var(--card);
+  }
+  .asr table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .asr thead tr {
+    background: rgba(248, 250, 252, 0.7);
+  }
+  .asr th {
+    text-align: left;
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-4);
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--hairline);
+    white-space: nowrap;
+  }
+  .asr th.r,
+  .asr td.r {
+    text-align: right;
+  }
+  .asr td {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--hairline);
+    vertical-align: middle;
+  }
+  .asr tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .asr tbody tr:hover {
+    background: rgba(248, 250, 252, 0.6);
+  }
+  .asr .idx {
+    font-family: var(--f-mono);
+    color: var(--ink-5);
+    font-size: 13px;
+  }
+  .asr .stu {
+    font-weight: 500;
+    color: var(--indigo-deep);
+  }
+  .asr .snum {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    color: var(--ink-4);
+    margin-top: 2px;
+  }
+  .asr .cls {
+    color: var(--ink-4);
+  }
+  .asr .score {
+    font-family: var(--f-mono);
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .asr .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .asr .badge.dot::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .asr .b-active {
+    border: 1px solid var(--mint);
+    background: rgba(52, 211, 153, 0.18);
+    color: #0f5132;
+  }
+  .asr .b-late {
+    border: 1px solid rgba(237, 118, 34, 0.5);
+    background: rgba(237, 118, 34, 0.14);
+    color: #9a4a12;
+  }
+  .asr .tierbadge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .asr .t-gold {
+    background: rgba(237, 118, 34, 0.15);
+    color: var(--amber);
+  }
+  .asr .t-silver {
+    background: rgba(100, 116, 139, 0.16);
+    color: var(--ink-4);
+  }
+  .asr .t-bronze {
+    background: rgba(205, 127, 50, 0.16);
+    color: var(--bronze);
+  }
+  .asr .t-none {
+    background: var(--secondary);
+    color: var(--ink-4);
+  }
+  .asr .tfoot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+    font-family: var(--f-mono);
+    font-size: 11px;
+    color: var(--ink-4);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .asr .pagi {
+    display: flex;
+    gap: 6px;
+  }
+  .asr .pagi span {
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-3);
+    background: var(--card);
+  }
+  .asr .pagi span.on {
+    background: var(--indigo);
+    color: #fff;
+    border-color: var(--indigo);
+  }
+  .asr .fam {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .asr .fam .canvas {
+    padding: 22px;
+  }
+  .asr .fam h3 {
+    font-family: var(--f-serif);
+    font-size: 22px;
+    font-weight: 600;
+    margin: 6px 0 4px;
+  }
+  .asr .fam .desc {
+    font-size: 13px;
+    color: var(--ink-4);
+    margin-bottom: 18px;
+  }
+  .asr .mini-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .asr .mini {
+    border: 1px solid var(--hairline);
+    border-radius: 9px;
+    padding: 10px 10px 9px;
+    background: linear-gradient(to top, rgba(33, 48, 152, 0.04), #fff);
+  }
+  .asr .mini .l {
+    font-family: var(--f-mono);
+    font-size: 8.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-4);
+  }
+  .asr .mini .v {
+    font-family: var(--f-serif);
+    font-size: 22px;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+  .asr .chart-note {
+    border: 1px solid var(--hairline);
+    border-radius: 9px;
+    background: var(--muted);
+    padding: 12px 14px;
+    font-size: 12.5px;
+    color: var(--ink-3);
+    margin-bottom: 12px;
+  }
+  .asr .chart-note b {
+    color: var(--ink-2);
+    font-weight: 600;
+  }
+  .asr .cols {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .asr .col-chip {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 3px 8px;
+    color: var(--ink-3);
+    background: var(--card);
+  }
+  @media (max-width: 860px) {
+    .asr .grid4,
+    .asr .mini-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .asr .grid2,
+    .asr .fam {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="asr">
+  <div class="page">
+    <div class="doc-note">
+      <h2>Academic Summary → module pages · three-tier template</h2>
+      <p>
+        One shared page shape, rendered in the app's own design system. Every
+        page reads top-to-bottom as <b>① stat row → ② analytics → ③ filterable
+        detail table</b>. Below is the canonical page (<b>Awards</b>, on
+        Markbook) in full; the bottom strip shows how <b>Attendance</b> and
+        <b>Comments</b> fill the identical three tiers.
+      </p>
+      <p>
+        Signature: a single gold / silver / bronze colour thread runs from the
+        stat tiles → the distribution donut → the table badges, so the key and
+        the data always share the same paint (design-system §10). Everything
+        else stays quiet and on-token.
+      </p>
+    </div>
+
+    <div class="section-tag">Canonical page — /markbook/awards</div>
+
+    <div class="canvas">
+      <div class="phead">
+        <div>
+          <p class="eyebrow">Markbook · Academic awards</p>
+          <h1>Awards</h1>
+          <p class="desc">
+            Subject and overall academic awards across a level, ranked
+            best-first. Finalises when Term 4 grades are in.
+          </p>
+        </div>
+        <div class="picker">
+          <div class="field">
+            <label>Year</label>
+            <div class="select">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>
+              AY 2026
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="m6 9 6 6 6-6"></path></svg>
+            </div>
+          </div>
+          <div class="field">
+            <label>Level</label>
+            <div class="select">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
+              Primary 5
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="m6 9 6 6 6-6"></path></svg>
+            </div>
+          </div>
+          <div class="field">
+            <label>Class</label>
+            <div class="select">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              All classes
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="m6 9 6 6 6-6"></path></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid4">
+        <div class="stat">
+          <div class="lab">Students</div>
+          <div class="val tnum">35</div>
+          <div class="sub">Enrolled at this level</div>
+          <div class="tile indigo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="lab">Gold</div>
+          <div class="val tnum">12</div>
+          <div class="sub">34% of the level</div>
+          <div class="tile gold">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"></circle><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"></path></svg>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="lab">Silver</div>
+          <div class="val tnum">8</div>
+          <div class="sub">23% of the level</div>
+          <div class="tile silver">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"></circle><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"></path></svg>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="lab">Bronze</div>
+          <div class="val tnum">6</div>
+          <div class="sub">17% of the level</div>
+          <div class="tile bronze">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"></circle><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"></path></svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="cap">Distribution</div>
+              <div class="ttl">Award tiers</div>
+            </div>
+            <div class="panel-tile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="donut-wrap">
+              <div class="donut">
+                <div class="center">
+                  <div class="n tnum">35</div>
+                  <div class="l">Students</div>
+                </div>
+              </div>
+              <div class="legend">
+                <div class="row">
+                  <span class="sw" style="background: var(--gold)"></span>
+                  <span class="nm">Gold</span><span class="vv tnum">12</span><span class="pc tnum">34%</span>
+                </div>
+                <div class="row">
+                  <span class="sw" style="background: var(--silver)"></span>
+                  <span class="nm">Silver</span><span class="vv tnum">8</span><span class="pc tnum">23%</span>
+                </div>
+                <div class="row">
+                  <span class="sw" style="background: var(--tier-bronze)"></span>
+                  <span class="nm">Bronze</span><span class="vv tnum">6</span><span class="pc tnum">17%</span>
+                </div>
+                <div class="row">
+                  <span class="sw" style="background: var(--neutral)"></span>
+                  <span class="nm">Not eligible</span><span class="vv tnum">9</span><span class="pc tnum">26%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="cap">By class</div>
+              <div class="ttl">Award tiers per class</div>
+            </div>
+            <div class="panel-tile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"></path><rect x="7" y="10" width="3" height="8"></rect><rect x="12" y="6" width="3" height="12"></rect><rect x="17" y="13" width="3" height="5"></rect></svg>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="bars">
+              <div class="bargroup">
+                <div class="bar" style="height: 78%; background: var(--gold)"></div>
+                <div class="bar" style="height: 52%; background: var(--silver)"></div>
+                <div class="bar" style="height: 40%; background: var(--tier-bronze)"></div>
+                <div class="bar" style="height: 60%; background: var(--neutral)"></div>
+              </div>
+              <div class="bargroup">
+                <div class="bar" style="height: 62%; background: var(--gold)"></div>
+                <div class="bar" style="height: 44%; background: var(--silver)"></div>
+                <div class="bar" style="height: 33%; background: var(--tier-bronze)"></div>
+                <div class="bar" style="height: 48%; background: var(--neutral)"></div>
+              </div>
+              <div class="bargroup">
+                <div class="bar" style="height: 88%; background: var(--gold)"></div>
+                <div class="bar" style="height: 30%; background: var(--silver)"></div>
+                <div class="bar" style="height: 22%; background: var(--tier-bronze)"></div>
+                <div class="bar" style="height: 40%; background: var(--neutral)"></div>
+              </div>
+            </div>
+            <div class="barlabels">
+              <span>Diligence</span><span>Trust</span><span>Compassion</span>
+            </div>
+            <div class="barlegend">
+              <div class="row"><span class="sw" style="background: var(--gold)"></span>Gold</div>
+              <div class="row"><span class="sw" style="background: var(--silver)"></span>Silver</div>
+              <div class="row"><span class="sw" style="background: var(--tier-bronze)"></span>Bronze</div>
+              <div class="row"><span class="sw" style="background: var(--neutral)"></span>Not eligible</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tier3">
+        <div class="toolbar">
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+            Search students…
+          </div>
+          <div class="facet"><span class="plus">+</span> Subject</div>
+          <div class="facet"><span class="plus">+</span> Term</div>
+          <div class="facet">Tier <span class="cnt">1</span></div>
+          <div class="spacer"></div>
+          <div class="btn-out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="M7 10l5 5 5-5M12 15V3"></path></svg>
+            Export CSV
+          </div>
+        </div>
+
+        <div class="tablecard">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 44px">#</th>
+                <th>Student</th>
+                <th>Class</th>
+                <th>Status</th>
+                <th class="r">Score</th>
+                <th class="r">Award</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="idx">1</td>
+                <td><div class="stu">Alcantara, Maria Sofia</div><div class="snum">HFSE-2019-0142</div></td>
+                <td class="cls">Diligence</td>
+                <td><span class="badge dot b-active">Active</span></td>
+                <td class="r score">96.4</td>
+                <td class="r"><span class="tierbadge t-gold">Gold</span></td>
+              </tr>
+              <tr>
+                <td class="idx">2</td>
+                <td><div class="stu">Bautista, Liam Carlos</div><div class="snum">HFSE-2019-0088</div></td>
+                <td class="cls">Trust</td>
+                <td><span class="badge dot b-active">Active</span></td>
+                <td class="r score">94.1</td>
+                <td class="r"><span class="tierbadge t-gold">Gold</span></td>
+              </tr>
+              <tr>
+                <td class="idx">3</td>
+                <td><div class="stu">Cruz, Nathan Emmanuel</div><div class="snum">HFSE-2020-0203</div></td>
+                <td class="cls">Compassion</td>
+                <td><span class="badge dot b-late">Late enrollee</span></td>
+                <td class="r score">92.8</td>
+                <td class="r"><span class="tierbadge t-silver">Silver</span></td>
+              </tr>
+              <tr>
+                <td class="idx">4</td>
+                <td><div class="stu">Dela Cruz, Aria Beatrice</div><div class="snum">HFSE-2019-0117</div></td>
+                <td class="cls">Diligence</td>
+                <td><span class="badge dot b-active">Active</span></td>
+                <td class="r score">90.3</td>
+                <td class="r"><span class="tierbadge t-silver">Silver</span></td>
+              </tr>
+              <tr>
+                <td class="idx">5</td>
+                <td><div class="stu">Fernandez, Gabriel Luis</div><div class="snum">HFSE-2020-0076</div></td>
+                <td class="cls">Trust</td>
+                <td><span class="badge dot b-active">Active</span></td>
+                <td class="r score">88.9</td>
+                <td class="r"><span class="tierbadge t-bronze">Bronze</span></td>
+              </tr>
+              <tr>
+                <td class="idx">6</td>
+                <td><div class="stu">Gonzales, Isabella Mae</div><div class="snum">HFSE-2019-0155</div></td>
+                <td class="cls">Compassion</td>
+                <td><span class="badge dot b-active">Active</span></td>
+                <td class="r score">85.2</td>
+                <td class="r"><span class="tierbadge t-none">Not eligible</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="tfoot">
+          <span>35 students · AY 2026 · Primary 5 · Full year</span>
+          <div class="pagi">
+            <span>‹</span><span class="on">1</span><span>2</span><span>›</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-tag">
+      Same three tiers — /attendance/summary &amp; /evaluation/comments
+    </div>
+
+    <div class="fam">
+      <div class="canvas">
+        <p class="eyebrow">Attendance · Class summary</p>
+        <h3>Attendance Summary</h3>
+        <p class="desc">
+          Per-student present / late / absent across a level, with attendance
+          rate.
+        </p>
+        <div class="mini-grid">
+          <div class="mini"><div class="l">Avg rate</div><div class="v tnum">94.2%</div></div>
+          <div class="mini"><div class="l">≥ 95%</div><div class="v tnum">21</div></div>
+          <div class="mini"><div class="l">&lt; 85%</div><div class="v tnum">4</div></div>
+          <div class="mini"><div class="l">Absences</div><div class="v tnum">118</div></div>
+        </div>
+        <div class="chart-note">
+          <b>Tier ②</b> — a rate-band bar chart (≥95 / 85–94 / &lt;85) plus
+          avg-rate-per-class bars. Independent counts → bars, not a partition
+          donut.
+        </div>
+        <div class="cols">
+          <span class="col-chip">#</span><span class="col-chip">Student</span><span class="col-chip">Class</span><span class="col-chip">Status</span><span class="col-chip">Present</span><span class="col-chip">Late</span><span class="col-chip">Absent</span><span class="col-chip">Rate</span><span class="col-chip">School days</span>
+        </div>
+      </div>
+
+      <div class="canvas">
+        <p class="eyebrow">Evaluation · FCA comments</p>
+        <h3>Comments</h3>
+        <p class="desc">
+          Form-class-adviser write-up status per student and term (T1–T3).
+        </p>
+        <div class="mini-grid">
+          <div class="mini"><div class="l">Submitted</div><div class="v tnum">86%</div></div>
+          <div class="mini"><div class="l">Submitted</div><div class="v tnum">30</div></div>
+          <div class="mini"><div class="l">Draft</div><div class="v tnum">3</div></div>
+          <div class="mini"><div class="l">Missing</div><div class="v tnum">2</div></div>
+        </div>
+        <div class="chart-note">
+          <b>Tier ②</b> — completeness-per-section grouped bars (submitted /
+          draft / missing). Shows which advisers are behind; N.A. terms excluded
+          (not a real gap).
+        </div>
+        <div class="cols">
+          <span class="col-chip">#</span><span class="col-chip">Student</span><span class="col-chip">Class</span><span class="col-chip">Term</span><span class="col-chip">Status</span><span class="col-chip">Adviser</span><span class="col-chip">Comment</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-tag">Notes for review</div>
+    <div class="doc-note" style="border-left-color: var(--amber)">
+      <p>
+        <b>One deliberate deviation from the stock stat card:</b> the Gold /
+        Silver / Bronze tiles are tinted to their tier (amber / slate / bronze)
+        instead of the default indigo — because on an <em>awards</em> page the
+        tile colour <em>is</em> the data. It needs a one-line
+        <span class="mono">MetricCard</span> prop
+        (<span class="mono">tileClassName</span>) or a small page-local card;
+        the plan will pick one. Everywhere else the stock component is used
+        unchanged.
+      </p>
+      <p>
+        On-token throughout: no <span class="mono">bg-white</span>, no raw hex —
+        every swatch is a real <span class="mono">globals.css</span> Aurora
+        Vault value. (Fonts here fall back to system serif/mono; the app ships
+        Source Serif&nbsp;4 + JetBrains Mono.)
+      </p>
+    </div>
+  </div>
+</div>
