@@ -37,7 +37,7 @@ import {
   type MarkbookDrillTarget,
   type SheetRow,
 } from '@/lib/markbook/drill';
-import { applyTargetFilterClient } from '@/lib/markbook/drill-target-filter';
+import { applyTargetFilterClient } from '@/lib/markbook/drill-filter';
 
 // Stable reference so `rows` doesn't get a fresh [] each render while the query
 // is loading (downstream memos depend on its identity).
