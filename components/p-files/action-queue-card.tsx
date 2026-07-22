@@ -119,6 +119,7 @@ export function ActionQueueCard({
             key: row.slotKey,
             status: row.status,
             expiryDate: row.expiryDate,
+            hasFile: !!row.url,
           });
           const tone = URGENCY_TONE[kind];
           const config = DOCUMENT_SLOTS.find((s) => s.key === row.slotKey);
@@ -144,6 +145,7 @@ export function ActionQueueCard({
                       key: row.slotKey,
                       status: row.status,
                       expiryDate: row.expiryDate,
+                      hasFile: !!row.url,
                     })}
                   </p>
                 </div>

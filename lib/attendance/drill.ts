@@ -1,6 +1,7 @@
 import { unstable_cache } from 'next/cache';
 
 import { applyDateRangeFilter } from '@/lib/dashboard/drill-range';
+import { DAY_TYPE_LABELS } from '@/lib/schemas/attendance';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -9,6 +10,19 @@ import { createServiceClient } from '@/lib/supabase/service';
 // per-teacher row scoping at this layer.
 
 const CACHE_TTL_SECONDS = 60;
+
+// Day-type donut clicks send the human-readable LABEL as `segment` (e.g.
+// 'School day'), but `CalendarDayRow.dayType` stores the raw DB enum value
+// (e.g. 'school_day'). Built once at module load by inverting the shared
+// `DAY_TYPE_LABELS` map (lib/schemas/attendance.ts) — the same map
+// `lib/attendance/dashboard.ts` renders the donut segments from — so the
+// reverse-lookup can't drift out of sync with what the chart actually shows.
+const DAY_TYPE_LABEL_TO_ENUM: Record<string, string> = Object.fromEntries(
+  Object.entries(DAY_TYPE_LABELS).map(([enumValue, label]) => [
+    label,
+    enumValue,
+  ])
+);
 
 function tags(ayCode: string): string[] {
   return ['attendance-drill', `attendance-drill:${ayCode}`];
@@ -385,10 +399,19 @@ async function loadCalendarRowsUncached(
   // Column is `date` per migration 015 (school_calendar) — earlier code
   // referenced `calendar_date` which doesn't exist; PostgREST 400'd and
   // the calendar drill silently returned an empty array.
+  //
+  // Filter to the school-wide baseline (`audience='all'`) — mirrors
+  // `getDayTypeDistributionRange` in lib/attendance/dashboard.ts, which the
+  // day-type donut this drill backs is built from. Migration 037 (KD #76)
+  // lets primary + secondary each carry their own row for the same date;
+  // without this filter the drill could surface an audience-specific
+  // override row the donut never counted, producing a card-vs-drill
+  // mismatch (or double-counted dates).
   const { data } = await service
     .from('school_calendar')
     .select('term_id, date, day_type, label')
-    .in('term_id', termIds);
+    .in('term_id', termIds)
+    .eq('audience', 'all');
   type CalLite = {
     term_id: string;
     date: string;
@@ -942,17 +965,9 @@ function applyTargetFilter(
     }
     case 'day-type': {
       if (!segment) return rows;
-      // Day-type donut sends the human-readable LABEL as segment
-      // (e.g. 'School day'), but `r.dayType` stores the raw DB enum value
-      // (e.g. 'school_day'). Reverse-lookup so segment clicks match.
-      const labelToEnum: Record<string, string> = {
-        'School day': 'school_day',
-        HBL: 'hbl',
-        'Public holiday': 'public_holiday',
-        'School holiday': 'school_holiday',
-        'No class': 'no_class',
-      };
-      const target = labelToEnum[segment] ?? segment;
+      // Reverse-lookup via the shared module-level map so segment clicks
+      // match the raw DB enum value.
+      const target = DAY_TYPE_LABEL_TO_ENUM[segment] ?? segment;
       return (rows as CalendarDayRow[]).filter(
         (r) => r.dayType === target
       ) as AttendanceDrillRow[];

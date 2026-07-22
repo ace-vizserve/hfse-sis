@@ -118,6 +118,7 @@ function makePayload(): MasterfilePayload {
     attendanceTotal: { schoolDays: 165, present: 162, late: 3 },
     commentsByTerm: [{ termNumber: 1, text: 'Doing well.', submitted: true }],
     lateEnrolleeTermNumber: null,
+    enrolledTermNumbers: [1, 2, 3, 4],
   };
 
   // Withdrawn student with 0 attendance everywhere — exercises the 0-vs-blank
@@ -143,6 +144,7 @@ function makePayload(): MasterfilePayload {
     attendanceTotal: { schoolDays: 0, present: 0, late: 0 },
     commentsByTerm: [],
     lateEnrolleeTermNumber: null,
+    enrolledTermNumbers: [1, 2, 3, 4],
   };
 
   return {

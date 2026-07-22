@@ -20,6 +20,12 @@ import {
   getPtcEventsForAy,
   sgToday,
 } from '@/lib/evaluation/ptc-resolver';
+import {
+  FCA_EXCLUDED_TERM_NUMBER,
+  WITHDRAWN_ENROLLMENT_STATUS,
+  hasWriteupContent,
+  isSubmittedWriteup,
+} from '@/lib/evaluation/roster-rules';
 
 // Evaluation dashboard aggregators — read-only view over
 // `evaluation_writeups`. The Evaluation module is the sole writer
@@ -71,7 +77,7 @@ async function loadWriteupsUncached(ayCode: string): Promise<{
       .from('terms')
       .select('id, term_number')
       .eq('academic_year_id', ayId)
-      .neq('term_number', 4),
+      .neq('term_number', FCA_EXCLUDED_TERM_NUMBER),
     service.from('sections').select('id').eq('academic_year_id', ayId),
   ]);
   const termIds = (termRows ?? []).map((r) => r.id as string);
@@ -100,7 +106,7 @@ async function loadWriteupsUncached(ayCode: string): Promise<{
             .from('section_students')
             .select('student_id')
             .in('section_id', sectionIds)
-            .neq('enrollment_status', 'withdrawn')
+            .neq('enrollment_status', WITHDRAWN_ENROLLMENT_STATUS)
             .range(from, to)
         )
       : [];
@@ -130,7 +136,7 @@ async function loadWriteupsUncached(ayCode: string): Promise<{
     .filter((r) => activeStudentIds.has(r.student_id))
     .map(({ writeup, ...rest }) => ({
       ...rest,
-      has_content: !!writeup && writeup.trim().length > 0,
+      has_content: hasWriteupContent(writeup),
     }));
 
   return {
@@ -176,7 +182,9 @@ export function kpisFrom(
     return day >= from && day <= to;
   });
 
-  const submitted = inRange.filter((w) => w.submitted && w.has_content).length;
+  const submitted = inRange.filter((w) =>
+    isSubmittedWriteup({ submitted: w.submitted, hasContent: w.has_content })
+  ).length;
   const expected = totalStudents * termCount;
   const submissionPct = expected > 0 ? (submitted / expected) * 100 : 0;
 
@@ -392,7 +400,7 @@ async function resolveActiveWriteupTerm(
     .from('terms')
     .select('id, term_number, label, is_current, start_date, end_date')
     .eq('academic_year_id', ayId)
-    .neq('term_number', 4)
+    .neq('term_number', FCA_EXCLUDED_TERM_NUMBER)
     .order('term_number', { ascending: true });
   type TermRow = {
     id: string;
@@ -490,7 +498,7 @@ async function loadSectionWriteupPending(
     .from('section_students')
     .select('section_id, student_id')
     .in('section_id', sectionIds)
-    .neq('enrollment_status', 'withdrawn');
+    .neq('enrollment_status', WITHDRAWN_ENROLLMENT_STATUS);
 
   const studentIdsBySection = new Map<string, string[]>();
   const allStudentIds: string[] = [];
@@ -521,7 +529,12 @@ async function loadSectionWriteupPending(
       writeup: string | null;
       submitted: boolean;
     }>) {
-      if (w.writeup && w.writeup.trim().length > 0) {
+      if (
+        isSubmittedWriteup({
+          submitted: w.submitted,
+          hasContent: hasWriteupContent(w.writeup),
+        })
+      ) {
         submittedStudentIds.add(w.student_id);
       }
     }

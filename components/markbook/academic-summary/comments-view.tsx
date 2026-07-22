@@ -48,13 +48,17 @@ import type { MasterfilePayload } from '@/lib/markbook/masterfile';
 //   Submitted → healthy (mint — positive/complete)
 //   Draft     → warning (amber — in-progress/incomplete)
 //   Missing   → locked  (destructive — blocked/absent)
+//   N.A.      → muted   (neutral — not applicable, KD #148; never destructive,
+//                        since a term the student wasn't enrolled for is not
+//                        a problem to chase)
 const COMMENT_STATUS_TONE: Record<
   CommentStatus,
-  'healthy' | 'warning' | 'locked'
+  'healthy' | 'warning' | 'locked' | 'muted'
 > = {
   Submitted: 'healthy',
   Draft: 'warning',
   Missing: 'locked',
+  'N.A.': 'muted',
 };
 
 // ── Small download helper (client-side CSV with UTF-8 BOM) ──────────────────
@@ -130,6 +134,7 @@ const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: 'Submitted', label: 'Submitted' },
   { value: 'Draft', label: 'Draft' },
   { value: 'Missing', label: 'Missing' },
+  { value: 'N.A.', label: 'N.A. (not enrolled that term)' },
 ];
 
 // ── Main component ──────────────────────────────────────────────────────────

@@ -298,7 +298,7 @@ export function YearSetupChecklist({
           </CardDescription>
           <CardTitle className="font-serif text-[22px] font-semibold text-foreground">
             {allDone
-              ? `${selectedAy.label} is ready.`
+              ? `${selectedAy.label} setup is done.`
               : `Getting ${selectedAy.label} ready.`}
           </CardTitle>
           {allDone && (
@@ -307,14 +307,14 @@ export function YearSetupChecklist({
                 variant="outline"
                 className="h-6 gap-1 border-brand-mint bg-brand-mint/30 text-ink"
               >
-                <CheckCircle2 className="size-3" /> All set for{' '}
+                <CheckCircle2 className="size-3" /> Minimums met for{' '}
                 {selectedAy.label}
               </Badge>
             </CardAction>
           )}
           <p className="text-sm text-muted-foreground">
             {allDone
-              ? 'Every required item is configured.'
+              ? 'Every required item has at least the minimum in place.'
               : 'Work through each item below, in any order.'}
           </p>
         </CardHeader>

@@ -8,6 +8,15 @@ export type SlotUrgencyInput = {
   key: string;
   status: DocumentStatus;
   expiryDate: string | null;
+  /** Whether a file URL is actually present on this slot's row, independent
+   *  of `status`. `status === 'missing'` can happen either because the file
+   *  was truly never uploaded OR because the file exists but no status has
+   *  been set on it yet (e.g. a parent-portal write that hasn't been
+   *  reviewed). Only consumed by `urgencyDescriptor`'s 'missing' branch —
+   *  ranking/classification are unaffected. Optional; defaults to `false`
+   *  (the pre-existing "never uploaded" behaviour) so existing callers that
+   *  don't pass it are unchanged. */
+  hasFile?: boolean;
 };
 
 export type SlotUrgencyKind =
@@ -111,7 +120,9 @@ export function urgencyDescriptor(slot: SlotUrgencyInput): string {
     case 'rejected':
       return 'Rejected — needs replacement';
     case 'missing':
-      return 'Missing — never uploaded';
+      return slot.hasFile
+        ? 'On file — awaiting status update'
+        : 'Missing — never uploaded';
     case 'expiring-30':
       if (days === 0) return 'Expires today';
       return `Expires in ${days} day${days === 1 ? '' : 's'}`;

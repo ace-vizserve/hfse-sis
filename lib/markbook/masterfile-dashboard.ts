@@ -333,13 +333,18 @@ export function studentHasMissingGradeInScope(
   return { hasMissing: count > 0, count };
 }
 
-// Comment terms (T1–T3, in scope) a student has NOT written.
+// Comment terms (T1–T3, in scope) a student has NOT written — excluding any
+// term the student wasn't enrolled for (KD #148). A late enrollee's pre-join
+// term (or a withdrawn student's post-leave term) is legitimately N.A., not a
+// chase item, so it's never counted as "missing."
 export function studentMissingCommentTerms(
   r: MasterfileStudentRow,
   commentTerms: number[]
 ): number[] {
+  const enrolledTerms = new Set(r.enrolledTermNumbers ?? commentTerms);
   return commentTerms.filter(
     (tn) =>
+      enrolledTerms.has(tn) &&
       !(r.commentsByTerm ?? []).some(
         (c) => c.termNumber === tn && c.text.trim()
       )
@@ -494,12 +499,19 @@ function computeReadiness(
   const sheetsLocked = sheetsInScope.filter((s) => s.isLocked).length;
 
   // Comments written — FCA write-ups with content vs roster (T1–T3, KD #49).
+  // A term the student wasn't enrolled for (KD #148 — a late enrollee's
+  // pre-join term, or a withdrawn student's post-leave term) is excluded from
+  // the denominator: it's legitimately N.A., not "not yet written." Rows
+  // without enrolledTermNumbers (e.g. a stale-shaped payload) fall back to
+  // treating every comment term as enrolled — the pre-KD-#148 behaviour.
   const commentTerms = commentTermsInScope(payload, filters.termNumber);
   let commentsDone = 0;
   let commentsExpected = 0;
   if (commentTerms.length > 0) {
     for (const r of enrolledRows) {
+      const enrolledTerms = new Set(r.enrolledTermNumbers ?? commentTerms);
       for (const tn of commentTerms) {
+        if (!enrolledTerms.has(tn)) continue;
         commentsExpected += 1;
         if (
           (r.commentsByTerm ?? []).some(
@@ -512,11 +524,17 @@ function computeReadiness(
     }
   }
 
-  // Attendance recorded — student×term rollups present vs expected.
+  // Attendance recorded — student×term rollups present vs expected. Same KD
+  // #148 coverage exclusion as comments above (fallback: every term in scope
+  // when enrolledTermNumbers is absent, matching the pre-KD-#148 behaviour).
+  const allTermNumbers = payload.terms.map((t) => t.termNumber);
   let attDone = 0;
   let attExpected = 0;
   for (const r of enrolledRows) {
+    const enrolledTerms = new Set(r.enrolledTermNumbers ?? allTermNumbers);
     for (const ci of termIdx) {
+      const termNumber = payload.terms[ci]?.termNumber;
+      if (termNumber != null && !enrolledTerms.has(termNumber)) continue;
       const cell = (r.attendanceByTerm ?? [])[ci];
       attExpected += 1;
       if (cell && cell.schoolDays != null && cell.present != null) {

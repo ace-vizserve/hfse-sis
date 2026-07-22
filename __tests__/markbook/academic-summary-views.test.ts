@@ -109,6 +109,7 @@ type StudentOpts = {
   attendanceByTerm?: MasterfileStudentRow['attendanceByTerm'];
   attendanceTotal?: MasterfileStudentRow['attendanceTotal'];
   commentsByTerm?: { termNumber: number; text: string; submitted?: boolean }[];
+  enrolledTermNumbers?: number[];
 };
 
 function makeStudent(opts: StudentOpts): MasterfileStudentRow {
@@ -152,6 +153,8 @@ function makeStudent(opts: StudentOpts): MasterfileStudentRow {
       text: c.text,
     })),
     lateEnrolleeTermNumber: opts.lateEnrolleeTermNumber ?? null,
+    enrolledTermNumbers:
+      opts.enrolledTermNumbers ?? TERMS.map((t) => t.termNumber),
   };
 }
 
@@ -518,5 +521,112 @@ describe('buildCommentRows', () => {
   it('Draft filter only returns Draft rows', () => {
     const rows = buildCommentRows(payload, { termNumber: 1, status: 'Draft' });
     expect(rows.every((r) => r.commentStatus === 'Draft')).toBe(true);
+  });
+});
+
+// -----------------------------------------------------------------------
+// buildCommentRows — KD #148 'N.A.' status (plan finding M1/M2)
+// -----------------------------------------------------------------------
+
+describe('buildCommentRows — KD #148 enrolment-coverage N.A. status', () => {
+  // Late enrollee joining T3 — pre-join terms (T1, T2) must read N.A., not
+  // Missing, even though there's no comment on file for them.
+  const lateJoiner = makeStudent({
+    studentNumber: 'LATE2',
+    enrollmentStatus: 'late_enrollee',
+    lateEnrolleeTermNumber: 3,
+    enrolledTermNumbers: [3, 4],
+    subjectRows: [examRow(MATH_ID, [null, null, 90, 90]), nonExamRow(MUSIC_ID)],
+    commentsByTerm: [], // T3 (in-scope, enrolled) has no comment — a real gap
+  });
+
+  // Withdrew mid-T2 — the symmetric `end`-bound case: post-leave terms (T3)
+  // must read N.A., not Missing.
+  const earlyLeaver = makeStudent({
+    studentNumber: 'LEAVER2',
+    enrollmentStatus: 'withdrawn',
+    enrolledTermNumbers: [1, 2],
+    subjectRows: [examRow(MATH_ID, [85, 85, null, null]), nonExamRow(MUSIC_ID)],
+    commentsByTerm: [
+      { termNumber: 1, text: 'Good start.', submitted: true },
+      // T2 deliberately left blank — a real, in-scope gap (Missing, not N.A.)
+    ],
+  });
+
+  function buildCoveragePayload(): MasterfilePayload {
+    return {
+      ayCode: 'AY9999',
+      level: { id: 'lv1', code: 'P6', label: 'Primary 6' },
+      subjects: [MATH, MUSIC],
+      terms: TERMS,
+      sections: [{ id: 'sec-1', name: 'P6 Diamond' }],
+      selectedSectionIds: ['sec-1'],
+      rows: [lateJoiner, earlyLeaver],
+      sheets: [],
+      thresholds: THRESHOLDS,
+    };
+  }
+
+  it("a late enrollee's pre-join terms (T1, T2) read N.A., not Missing", () => {
+    const payload = buildCoveragePayload();
+    const rows = buildCommentRows(payload, { termNumber: null });
+    const late = rows.filter((r) => r.studentNumber === 'LATE2');
+    const byTerm = new Map(late.map((r) => [r.termNumber, r.commentStatus]));
+    expect(byTerm.get(1)).toBe('N.A.');
+    expect(byTerm.get(2)).toBe('N.A.');
+  });
+
+  it("a late enrollee's in-scope enrolled term (T3) with no comment still reads Missing", () => {
+    const payload = buildCoveragePayload();
+    const rows = buildCommentRows(payload, { termNumber: 3 });
+    const late = rows.find((r) => r.studentNumber === 'LATE2')!;
+    expect(late.commentStatus).toBe('Missing');
+  });
+
+  it("a withdrawn student's post-leave term (T3, the `end`-bound case) reads N.A., not Missing", () => {
+    const payload = buildCoveragePayload();
+    const rows = buildCommentRows(payload, { termNumber: 3 });
+    const leaver = rows.find((r) => r.studentNumber === 'LEAVER2')!;
+    expect(leaver.commentStatus).toBe('N.A.');
+  });
+
+  it("a withdrawn student's enrolled-but-blank term (T2) still reads Missing, not N.A.", () => {
+    const payload = buildCoveragePayload();
+    const rows = buildCommentRows(payload, { termNumber: 2 });
+    const leaver = rows.find((r) => r.studentNumber === 'LEAVER2')!;
+    expect(leaver.commentStatus).toBe('Missing');
+  });
+
+  it("a withdrawn student's enrolled term with a real comment stays Submitted (content is never overridden by coverage)", () => {
+    const payload = buildCoveragePayload();
+    const rows = buildCommentRows(payload, { termNumber: 1 });
+    const leaver = rows.find((r) => r.studentNumber === 'LEAVER2')!;
+    expect(leaver.commentStatus).toBe('Submitted');
+  });
+
+  it('status filter "N.A." isolates only the not-enrolled rows', () => {
+    const payload = buildCoveragePayload();
+    const rows = buildCommentRows(payload, {
+      termNumber: null,
+      status: 'N.A.',
+    });
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.commentStatus === 'N.A.')).toBe(true);
+  });
+
+  it('a row without enrolledTermNumbers (stale payload shape) falls back to treating every term as enrolled', () => {
+    const staleRow = {
+      ...lateJoiner,
+      enrolledTermNumbers: undefined as unknown as number[],
+      commentsByTerm: [],
+    };
+    const payload: MasterfilePayload = {
+      ...buildCoveragePayload(),
+      rows: [staleRow],
+    };
+    const rows = buildCommentRows(payload, { termNumber: 1 });
+    // No enrolledTermNumbers → every comment term treated as enrolled → a
+    // blank T1 reads Missing (the pre-KD-#148 behaviour), not N.A.
+    expect(rows[0].commentStatus).toBe('Missing');
   });
 });

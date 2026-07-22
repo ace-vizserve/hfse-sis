@@ -4,6 +4,13 @@ import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { applyDateRangeFilter } from '@/lib/dashboard/drill-range';
 import { sgToday } from '@/lib/dates';
+import {
+  FCA_EXCLUDED_TERM_NUMBER,
+  WITHDRAWN_ENROLLMENT_STATUS,
+  hasWriteupContent,
+  isFcaEligibleTermNumber,
+  isSubmittedWriteup,
+} from '@/lib/evaluation/roster-rules';
 import { resolveCurrentTerm } from '@/lib/sis/current-term';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -184,7 +191,7 @@ async function loadWriteupRowsUncached(ayCode: string): Promise<WriteupRow[]> {
       .from('terms')
       .select('id, term_number')
       .eq('academic_year_id', ayId)
-      .neq('term_number', 4),
+      .neq('term_number', FCA_EXCLUDED_TERM_NUMBER),
     service
       .from('sections')
       .select('id, name, level_id')
@@ -226,7 +233,7 @@ async function loadWriteupRowsUncached(ayCode: string): Promise<WriteupRow[]> {
     .from('section_students')
     .select('id, section_id, student_id, enrollment_status')
     .in('section_id', sectionIds)
-    .neq('enrollment_status', 'withdrawn');
+    .neq('enrollment_status', WITHDRAWN_ENROLLMENT_STATUS);
   const ss = (ssRows ?? []) as StudentSectionLite[];
   const ssById = new Map<string, StudentSectionLite>();
   for (const s of ss) ssById.set(s.id, s);
@@ -295,13 +302,16 @@ async function loadWriteupRowsUncached(ayCode: string): Promise<WriteupRow[]> {
         writeupKey(sectionStudent.student_id, term.id)
       );
       const draftLen = (w?.writeup ?? '').trim().length;
+      const hasContent = draftLen > 0;
       // KD #120: 'submitted' requires the submitted flag AND non-empty content
       // — an emptied-but-still-submitted write-up reads as 'missing' (matches
       // the KPI numerator in lib/evaluation/dashboard.ts::kpisFrom, the chase
       // loader below, and publish-readiness; count == drill per KD #124).
+      // Shared rule: lib/evaluation/roster-rules.ts::isSubmittedWriteup.
       let status: WriteupRow['status'] = 'missing';
-      if (w?.submitted && draftLen > 0) status = 'submitted';
-      else if (draftLen > 0) status = 'draft';
+      if (isSubmittedWriteup({ submitted: !!w?.submitted, hasContent }))
+        status = 'submitted';
+      else if (hasContent) status = 'draft';
 
       let daysToSubmit: number | null = null;
       if (w?.submitted_at) {
@@ -403,7 +413,8 @@ async function loadChaseStateUncached(
   if (terms.length === 0) return null;
 
   const currentTerm = resolveCurrentTerm(terms, getToday());
-  if (!currentTerm || currentTerm.term_number === 4) return null;
+  if (!currentTerm || !isFcaEligibleTermNumber(currentTerm.term_number))
+    return null;
   const termId = currentTerm.id;
   const termNumber = currentTerm.term_number;
 
@@ -443,7 +454,7 @@ async function loadChaseStateUncached(
     .from('section_students')
     .select('section_id, student_id, enrollment_status')
     .in('section_id', sectionIds)
-    .neq('enrollment_status', 'withdrawn');
+    .neq('enrollment_status', WITHDRAWN_ENROLLMENT_STATUS);
   const roster = (ssRows ?? []) as Array<{
     section_id: string;
     student_id: string;
@@ -467,7 +478,16 @@ async function loadChaseStateUncached(
         student_id: string;
         writeup: string | null;
       }>) {
-        if (w.writeup && w.writeup.trim().length > 0)
+        // submitted=true is already guaranteed by the query's
+        // .eq('submitted', true) filter above — apply the shared rule anyway
+        // (rather than checking content alone) so this call site can't
+        // silently diverge from the other sites if that filter ever changes.
+        if (
+          isSubmittedWriteup({
+            submitted: true,
+            hasContent: hasWriteupContent(w.writeup),
+          })
+        )
           submittedStudentIds.add(w.student_id);
       }
     }

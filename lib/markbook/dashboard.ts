@@ -13,6 +13,7 @@ import {
   type RangeResult,
 } from '@/lib/dashboard/range';
 import type { VelocityPoint } from '@/lib/dashboard/velocity';
+import { GRADE_BANDS, type GradeBand } from '@/lib/markbook/drill-filter';
 import { termIdsForRange } from '@/lib/markbook/term-range';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -37,17 +38,16 @@ function tag(academicYearId: string): string[] {
 
 // HFSE-standard mastery bands (DepEd Phil. Sec style — widely used in intl
 // schools following the K–12 grading framework). Buckets are inclusive-low,
-// inclusive-high except the last which is 95–100.
+// inclusive-high except the last which is 90–100.
+//
+// Canonical definition moved to lib/markbook/drill-filter.ts (client-safe;
+// also the vocabulary the 'grade-bucket-entries' drill target filters by) —
+// re-exported here so existing consumers (insights-level.ts,
+// __tests__/markbook/grade-distribution.test.ts) keep resolving
+// `GRADE_BANDS`/`GradeBand` from '@/lib/markbook/dashboard' unchanged.
 // fallow-ignore-next-line unused-export
-export const GRADE_BANDS = [
-  { key: 'dnm', label: '< 75 (DNM)', lo: 0, hi: 74 },
-  { key: 'fs', label: '75–79 (FS)', lo: 75, hi: 79 },
-  { key: 's', label: '80–84 (S)', lo: 80, hi: 84 },
-  { key: 'vs', label: '85–89 (VS)', lo: 85, hi: 89 },
-  { key: 'o', label: '90–100 (O)', lo: 90, hi: 100 },
-] as const;
-
-export type GradeBand = (typeof GRADE_BANDS)[number]['key'];
+export { GRADE_BANDS };
+export type { GradeBand };
 
 export type GradeBucket = {
   key: GradeBand;

@@ -2,6 +2,11 @@ import { unstable_cache } from 'next/cache';
 
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { applyDateRangeFilter } from '@/lib/dashboard/drill-range';
+import {
+  applyTargetFilter,
+  classifyGradeBucket,
+  type GradeBand,
+} from '@/lib/markbook/drill-filter';
 import { termIdsForRange } from '@/lib/markbook/term-range';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -94,7 +99,15 @@ export type GradeEntryRow = {
   rawScore: number | null;
   maxScore: number;
   computedGrade: number | null;
-  gradeBucket: GradeBucketKey | null;
+  gradeBucket: GradeBand | null;
+  // Sheet-level examinable flag (from `subjects.is_examinable`, KD #95) +
+  // entry-level N.A. flag (Hard Rule #3) — carried so the
+  // 'grade-bucket-entries' target can filter to exactly the rows the
+  // grade-distribution histogram counts (loadGradeDistributionUncached in
+  // dashboard.ts), without every OTHER entry-kind target (grade-entries,
+  // teacher-entry-velocity) losing rows it's supposed to keep.
+  isExaminable: boolean;
+  isNa: boolean;
   isLocked: boolean;
   enteredAt: string; // ISO created_at
   enteredBy: string | null; // teacher email
@@ -135,51 +148,22 @@ export type ChangeRequestRow = {
   requestedBy: string;
   requestedAt: string;
   resolvedAt: string | null;
+  // Raw `reviewed_at` — the timestamp the "decided" set + avg-decision-hours
+  // KPI (loadChangeRequestSummaryUncached / loadMarkbookKpisForRange, both in
+  // dashboard.ts) key on. Distinct from `resolvedAt` (`applied_at ??
+  // reviewed_at`, display-only) — a request that's been applied can carry a
+  // LATER applied_at than its reviewed_at, so filtering 'decided' on
+  // resolvedAt would diverge from what the KPI actually averages over.
+  reviewedAt: string | null;
 };
 
 export type MarkbookDrillRow = GradeEntryRow | SheetRow | ChangeRequestRow;
 
-// ---------------------------------------------------------------------------
-// Grade buckets — DepEd-style mastery bands matching `GRADE_BANDS` in
-// `lib/markbook/dashboard.ts`. Kept inline here to avoid a circular import.
-
-export type GradeBucketKey = 'dnm' | 'fs' | 's' | 'vs' | 'o';
-
-const GRADE_BUCKET_BOUNDS: Record<GradeBucketKey, { lo: number; hi: number }> =
-  {
-    dnm: { lo: 0, hi: 74 },
-    fs: { lo: 75, hi: 79 },
-    s: { lo: 80, hi: 84 },
-    vs: { lo: 85, hi: 89 },
-    o: { lo: 90, hi: 100 },
-  };
-
-// HFSE Singapore-school report-card bands — matches the legend in
-// components/report-card/report-card-document.tsx. No DepEd codes; the
-// dashboard tier uses the same words as the printed card.
-const GRADE_BUCKET_LABEL: Record<GradeBucketKey, string> = {
-  dnm: 'Below Minimum (< 75)',
-  fs: 'Fairly Satisfactory (75–79)',
-  s: 'Satisfactory (80–84)',
-  vs: 'Very Satisfactory (85–89)',
-  o: 'Outstanding (90–100)',
-};
-
-function classifyGradeBucket(grade: number | null): GradeBucketKey | null {
-  if (grade == null || !Number.isFinite(grade)) return null;
-  for (const k of ['dnm', 'fs', 's', 'vs', 'o'] as GradeBucketKey[]) {
-    const b = GRADE_BUCKET_BOUNDS[k];
-    if (grade >= b.lo && grade <= b.hi) return k;
-  }
-  return null;
-}
-
-function findBucketByLabel(label: string): GradeBucketKey | null {
-  for (const k of Object.keys(GRADE_BUCKET_LABEL) as GradeBucketKey[]) {
-    if (GRADE_BUCKET_LABEL[k] === label) return k;
-  }
-  return null;
-}
+// Back-compat alias — `GradeBucketKey` used to be defined locally here; the
+// canonical band-key type now lives in `lib/markbook/drill-filter.ts` as
+// `GradeBand`. No other file in the repo imports `GradeBucketKey` (verified),
+// but the alias costs nothing to keep.
+export type GradeBucketKey = GradeBand;
 
 // ---------------------------------------------------------------------------
 // Range input
@@ -211,7 +195,12 @@ type TermLite = {
   start_date: string | null;
   end_date: string | null;
 };
-type SubjectLite = { id: string; code: string; name: string };
+type SubjectLite = {
+  id: string;
+  code: string;
+  name: string;
+  is_examinable: boolean | null;
+};
 
 async function resolveAyContext(ayCode: string): Promise<{
   ayId: string | null;
@@ -221,6 +210,7 @@ async function resolveAyContext(ayCode: string): Promise<{
   termIds: string[];
   subjects: Map<string, string>;
   subjectNames: Map<string, string>;
+  subjectExaminable: Map<string, boolean>;
 }> {
   const service = createServiceClient();
   const { data: ayRow } = await service
@@ -238,6 +228,7 @@ async function resolveAyContext(ayCode: string): Promise<{
       termIds: [],
       subjects: new Map(),
       subjectNames: new Map(),
+      subjectExaminable: new Map(),
     };
   }
   const [sectionsRes, levelsRes, termsRes, subjectsRes] = await Promise.all([
@@ -250,7 +241,11 @@ async function resolveAyContext(ayCode: string): Promise<{
       .from('terms')
       .select('id, term_number, academic_year_id, label, start_date, end_date')
       .eq('academic_year_id', ayId),
-    service.from('subjects').select('id, code, name'),
+    // is_examinable per KD #95 — mirrors loadGradeDistributionUncached's
+    // subjects!inner(is_examinable) join (dashboard.ts), so the
+    // 'grade-bucket-entries' drill target can apply the identical
+    // examinable-only filter without a second round-trip per sheet.
+    service.from('subjects').select('id, code, name, is_examinable'),
   ]);
   const sections = (sectionsRes.data ?? []) as SectionLite[];
   const levels = new Map<string, string>();
@@ -259,9 +254,11 @@ async function resolveAyContext(ayCode: string): Promise<{
   const terms = (termsRes.data ?? []) as TermLite[];
   const subjects = new Map<string, string>();
   const subjectNames = new Map<string, string>();
+  const subjectExaminable = new Map<string, boolean>();
   for (const s of (subjectsRes.data ?? []) as SubjectLite[]) {
     subjects.set(s.id, s.code);
     subjectNames.set(s.id, s.name);
+    subjectExaminable.set(s.id, s.is_examinable === true);
   }
   return {
     ayId,
@@ -271,6 +268,7 @@ async function resolveAyContext(ayCode: string): Promise<{
     termIds: terms.map((t) => t.id),
     subjects,
     subjectNames,
+    subjectExaminable,
   };
 }
 
@@ -298,13 +296,9 @@ async function loadEntryRowsUncached(
   const allowedTermIds = termIdsForRange(ctx.terms, from, to);
   if (allowedTermIds.length === 0) return [];
 
-  // Sheets in this AY, restricted to the in-range terms.
-  const { data: sheetsData } = await service
-    .from('grading_sheets')
-    .select(
-      'id, term_id, section_id, subject_id, qa_total, is_locked, locked_at, teacher_name'
-    )
-    .in('term_id', allowedTermIds);
+  // Sheets in this AY, restricted to the in-range terms. Paginated —
+  // PostgREST caps a single response at 1000 rows and a large AY can carry
+  // more grading sheets than that across all sections × subjects × terms.
   type SheetLite = {
     id: string;
     term_id: string;
@@ -315,7 +309,15 @@ async function loadEntryRowsUncached(
     locked_at: string | null;
     teacher_name: string | null;
   };
-  const sheets = (sheetsData ?? []) as SheetLite[];
+  const sheets = await fetchAllPages<SheetLite>((from, to) =>
+    service
+      .from('grading_sheets')
+      .select(
+        'id, term_id, section_id, subject_id, qa_total, is_locked, locked_at, teacher_name'
+      )
+      .in('term_id', allowedTermIds)
+      .range(from, to)
+  );
   if (sheets.length === 0) return [];
   const sheetById = new Map<string, SheetLite>();
   for (const s of sheets) sheetById.set(s.id, s);
@@ -360,6 +362,12 @@ async function loadEntryRowsUncached(
     qa_score: number | null;
     quarterly_grade: number | null;
     letter_grade: string | null;
+    // is_na per Hard Rule #3 — an N.A. row's quarterly_grade is computed
+    // from placeholder zeros, not a real grade (mirrors dashboard.ts's
+    // grade-distribution histogram, which excludes these). Selected here
+    // (not just for the histogram-mirroring target) so it's available on
+    // every entry row without a second query.
+    is_na: boolean | null;
     created_at: string;
   };
   const CHUNK = 200;
@@ -370,7 +378,7 @@ async function loadEntryRowsUncached(
           service
             .from('grade_entries')
             .select(
-              'id, grading_sheet_id, section_student_id, ww_scores, pt_scores, qa_score, quarterly_grade, letter_grade, created_at'
+              'id, grading_sheet_id, section_student_id, ww_scores, pt_scores, qa_score, quarterly_grade, letter_grade, is_na, created_at'
             )
             .in('grading_sheet_id', sheetIds.slice(i * CHUNK, (i + 1) * CHUNK))
             .range(from, to)
@@ -484,6 +492,8 @@ async function loadEntryRowsUncached(
       maxScore: qaTotal,
       computedGrade: e.quarterly_grade,
       gradeBucket: classifyGradeBucket(e.quarterly_grade),
+      isExaminable: ctx.subjectExaminable.get(sheet.subject_id) ?? false,
+      isNa: e.is_na === true,
       isLocked: sheet.is_locked,
       enteredAt: e.created_at,
       enteredBy: teacherEmail,
@@ -507,16 +517,28 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
 
   // Fetch sheets first so we can scope the entries + publications queries
   // by term/sheet IDs — avoids unbounded scans across all AYs' data.
+  // Paginated — PostgREST caps a single response at 1000 rows and a large
+  // AY can carry more grading sheets than that.
   const sectionIds = ctx.sections.map((s) => s.id);
-  const { data: sheetsData } = await service
-    .from('grading_sheets')
-    .select(
-      'id, term_id, section_id, subject_id, is_locked, locked_at, teacher_name'
-    )
-    .in('term_id', ctx.termIds);
-  const sheetIdsForRollup = (sheetsData ?? []).map(
-    (s) => (s as { id: string }).id
+  type SheetLite = {
+    id: string;
+    term_id: string;
+    section_id: string;
+    subject_id: string;
+    is_locked: boolean;
+    locked_at: string | null;
+    teacher_name: string | null;
+  };
+  const sheets = await fetchAllPages<SheetLite>((from, to) =>
+    service
+      .from('grading_sheets')
+      .select(
+        'id, term_id, section_id, subject_id, is_locked, locked_at, teacher_name'
+      )
+      .in('term_id', ctx.termIds)
+      .range(from, to)
   );
+  const sheetIdsForRollup = sheets.map((s) => s.id);
 
   // Chunk the sheet-IDs IN-clause so the URL doesn't blow past PostgREST's
   // URL length cap when an AY has many sheets (sibling pattern in
@@ -539,7 +561,8 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
     }
     return out;
   }
-  const [{ data: pubsData }, { data: ssRollupData }, entriesRollupData] =
+  type SsRollupLite = { section_id: string; enrollment_status: string };
+  const [{ data: pubsData }, ssRollupData, entriesRollupData] =
     await Promise.all([
       sectionIds.length > 0
         ? service
@@ -548,24 +571,16 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
             .in('term_id', ctx.termIds)
         : Promise.resolve({ data: [] }),
       sectionIds.length > 0
-        ? service
-            .from('section_students')
-            .select('section_id, enrollment_status')
-            .in('section_id', sectionIds)
-        : Promise.resolve({ data: [] }),
+        ? fetchAllPages<SsRollupLite>((from, to) =>
+            service
+              .from('section_students')
+              .select('section_id, enrollment_status')
+              .in('section_id', sectionIds)
+              .range(from, to)
+          )
+        : Promise.resolve([] as SsRollupLite[]),
       loadEntriesRollup(),
     ]);
-
-  type SheetLite = {
-    id: string;
-    term_id: string;
-    section_id: string;
-    subject_id: string;
-    is_locked: boolean;
-    locked_at: string | null;
-    teacher_name: string | null;
-  };
-  const sheets = (sheetsData ?? []) as SheetLite[];
 
   type PubLite = { section_id: string; term_id: string; publish_from: string };
   const pubKey = (sec: string, term: string) => `${sec}|${term}`;
@@ -574,9 +589,8 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
     pubByKey.set(pubKey(p.section_id, p.term_id), p.publish_from);
   }
 
-  type SsRollupLite = { section_id: string; enrollment_status: string };
   const activeStudentsBySection = new Map<string, number>();
-  for (const r of (ssRollupData ?? []) as SsRollupLite[]) {
+  for (const r of ssRollupData) {
     if (
       r.enrollment_status !== 'active' &&
       r.enrollment_status !== 'late_enrollee'
@@ -713,6 +727,7 @@ async function loadChangeRequestRowsUncached(
       requestedBy: r.requested_by_email,
       requestedAt: r.requested_at,
       resolvedAt: r.applied_at ?? r.reviewed_at,
+      reviewedAt: r.reviewed_at,
     });
   }
   return out;
@@ -1012,170 +1027,6 @@ function applyTeacherFilter(
   return (rows as ChangeRequestRow[]).filter((r) =>
     allow.has(r.sectionId)
   ) as MarkbookDrillRow[];
-}
-
-// ---------------------------------------------------------------------------
-// Target filter — narrow universal row set to the rows the user expected.
-
-function applyTargetFilter(
-  rows: MarkbookDrillRow[],
-  target: MarkbookDrillTarget,
-  segment?: string | null,
-  range?: { from?: string; to?: string }
-): MarkbookDrillRow[] {
-  switch (target) {
-    case 'grade-entries':
-      return rows;
-    case 'sheets-locked': {
-      // Match the dashboard KPI exactly: only sheets that were LOCKED inside
-      // the active range count. The scope filter at applyScopeFilter()
-      // intentionally lets unlocked sheets through (so the UI can show
-      // pending work), so the target filter has to enforce the range gate
-      // for this drill specifically.
-      const from = range?.from;
-      const to = range?.to;
-      if (from && to) {
-        return (rows as SheetRow[]).filter((r) => {
-          if (!r.isLocked || !r.lockedAt) return false;
-          const day = r.lockedAt.slice(0, 10);
-          return day >= from && day <= to;
-        }) as MarkbookDrillRow[];
-      }
-      return (rows as SheetRow[]).filter(
-        (r) => r.isLocked
-      ) as MarkbookDrillRow[];
-    }
-    case 'change-requests':
-      if (!segment) return rows;
-      // 'decided' = the set the avg-decision-time KPI averages over: any
-      // request with a reviewed_at AND a terminal status. Keeps the drill
-      // aligned with the headline number when the user clicks it.
-      if (segment === 'decided') {
-        return (rows as ChangeRequestRow[]).filter(
-          (r) =>
-            r.resolvedAt != null &&
-            (r.status === 'approved' ||
-              r.status === 'rejected' ||
-              r.status === 'applied')
-        ) as MarkbookDrillRow[];
-      }
-      return (rows as ChangeRequestRow[]).filter(
-        (r) => r.status === segment
-      ) as MarkbookDrillRow[];
-    case 'publication-coverage':
-      if (!segment) return rows;
-      if (segment === 'published') {
-        return (rows as SheetRow[]).filter(
-          (r) => r.isPublished
-        ) as MarkbookDrillRow[];
-      }
-      if (segment === 'not-published') {
-        return (rows as SheetRow[]).filter(
-          (r) => !r.isPublished
-        ) as MarkbookDrillRow[];
-      }
-      return rows;
-    case 'grade-bucket-entries': {
-      if (!segment) return rows;
-      // Accept either the bucket key ('o', 'vs', …) or the bucket label.
-      const key =
-        (segment as GradeBucketKey) in GRADE_BUCKET_LABEL
-          ? (segment as GradeBucketKey)
-          : findBucketByLabel(segment);
-      if (!key) return rows;
-      return (rows as GradeEntryRow[]).filter(
-        (r) => r.gradeBucket === key
-      ) as MarkbookDrillRow[];
-    }
-    case 'term-sheet-status': {
-      // The chart (`SheetProgressChart`) emits human labels like
-      // 'Term 1 · Locked' / 'Term 1 · Open'. The legacy regex expected the
-      // compact 'T1:locked' form and silently fell through to `return rows`
-      // (= every sheet) when the label form came in — same class of bug as
-      // term-publication-status had before its dual-regex fix. Accept both.
-      // Bare 'T<n>' returns all sheets in that term.
-      if (!segment) return rows;
-      const compact = /^T(\d+)(?::(locked|open))?$/i.exec(segment);
-      const labelled = /^Term\s+(\d+)\s*[·.\-]\s*(Locked|Open)$/i.exec(segment);
-      const m = compact ?? labelled;
-      if (!m) return rows;
-      const termNumber = Number(m[1]);
-      const status = (m[2] ?? '').toLowerCase() as 'locked' | 'open' | '';
-      return (rows as SheetRow[]).filter((r) => {
-        if (r.termNumber !== termNumber) return false;
-        if (status === 'locked') return r.isLocked;
-        if (status === 'open') return !r.isLocked;
-        return true;
-      }) as MarkbookDrillRow[];
-    }
-    case 'term-publication-status': {
-      if (!segment) return rows;
-      // The chart (`PublicationCoverageChart`) emits human labels like
-      // 'Term 1 · Published' / 'Term 1 · Unpublished'. The legacy regex
-      // expected the compact 'T1:not-published' form and silently fell
-      // through to `return rows` (= every sheet) when the label form
-      // came in. Accept both formats.
-      const compact = /^T(\d+)(?::(published|not-published))?$/i.exec(segment);
-      const labelled =
-        /^Term\s+(\d+)\s*[·.\-]\s*(Published|Unpublished)$/i.exec(segment);
-      const m = compact ?? labelled;
-      if (!m) return rows;
-      const termNumber = Number(m[1]);
-      const raw = (m[2] ?? '').toLowerCase();
-      const status: 'published' | 'not-published' | '' =
-        raw === 'published'
-          ? 'published'
-          : raw === 'unpublished' || raw === 'not-published'
-            ? 'not-published'
-            : '';
-      const filtered = (rows as SheetRow[]).filter((r) => {
-        if (r.termNumber !== termNumber) return false;
-        if (status === 'published') return r.isPublished;
-        if (status === 'not-published') return !r.isPublished;
-        return true;
-      });
-      // The chart counts SECTIONS-with-this-publication-status per term,
-      // not sheets. Dedupe by sectionId so the drill returns one row per
-      // section (matching the bar height the user clicked) instead of
-      // one row per (section × subject) sheet. Keeps the first sheet
-      // encountered as the section's representative — section-level
-      // fields (sectionName, level, termNumber, isPublished) are uniform
-      // across all of a section's sheets in the same term, so the choice
-      // of representative doesn't change the displayed data.
-      const seenSection = new Set<string>();
-      const out: SheetRow[] = [];
-      for (const r of filtered) {
-        if (seenSection.has(r.sectionId)) continue;
-        seenSection.add(r.sectionId);
-        out.push(r);
-      }
-      return out as MarkbookDrillRow[];
-    }
-    case 'sheet-readiness-section': {
-      // Segment = section name. Show non-locked sheets in that section so
-      // the user sees the open-sheet backlog drilled-into.
-      if (!segment) {
-        return (rows as SheetRow[]).filter(
-          (r) => !r.isLocked
-        ) as MarkbookDrillRow[];
-      }
-      return (rows as SheetRow[]).filter(
-        (r) => r.sectionName === segment && !r.isLocked
-      ) as MarkbookDrillRow[];
-    }
-    case 'teacher-entry-velocity': {
-      // Segment = teacher email. Show entries by that teacher; if no segment,
-      // return all entries (teacher view will still group by enteredBy).
-      if (!segment) return rows;
-      return (rows as GradeEntryRow[]).filter(
-        (r) => r.enteredBy === segment
-      ) as MarkbookDrillRow[];
-    }
-    default: {
-      const _exhaustive: never = target;
-      throw new Error(`unreachable target: ${String(_exhaustive)}`);
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------

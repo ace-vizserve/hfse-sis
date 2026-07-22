@@ -999,6 +999,15 @@ export function getApplicationsByLevelRange(
 // Each applicant is bucketed as complete (5/5), partial (1–4), or missing (0)
 // based on the 5 core document-status columns. We join the docs table to the
 // existing cached joined rows in memory rather than refetching apps+status.
+//
+// "Present" is resolved via the shared `resolveStatus` classifier from
+// `lib/p-files/document-config.ts` — the same one
+// `loadAdmissionsCompletenessForChaseUncached` below already uses — so a
+// status only counts toward `complete` when it resolves to `'valid'`.
+// A naive "not literally the string 'missing'" check (the prior behaviour
+// here) miscounted 'Rejected' / 'Expired' / 'Uploaded' (parent uploaded,
+// not yet validated) / 'To follow' as present, so an applicant with an
+// active chase item could still show "5/5 Complete" on this chart.
 // ──────────────────────────────────────────────────────────────────────────
 
 const CORE_DOC_STATUS_COLUMNS = [
@@ -1009,8 +1018,24 @@ const CORE_DOC_STATUS_COLUMNS = [
   'idPictureStatus',
 ] as const;
 
+// Maps each core status column to the `DOCUMENT_SLOTS` expiry shape it
+// needs for `resolveStatus` — only `passport` expires (KD #60); the other
+// 4 core slots are non-expiring, so they pass `expires: false` and a null
+// expiry date. `resolveStatus`'s `url` parameter is provably unused (typed
+// `_url` in its signature), so we never need to fetch/pass a URL here.
+const CORE_DOC_SLOT_META: Record<
+  (typeof CORE_DOC_STATUS_COLUMNS)[number],
+  { expires: boolean; expiryColumn: 'passportExpiry' | null }
+> = {
+  medicalStatus: { expires: false, expiryColumn: null },
+  passportStatus: { expires: true, expiryColumn: 'passportExpiry' },
+  birthCertStatus: { expires: false, expiryColumn: null },
+  educCertStatus: { expires: false, expiryColumn: null },
+  idPictureStatus: { expires: false, expiryColumn: null },
+};
+
 type DocCompletionDocRow = Record<
-  (typeof CORE_DOC_STATUS_COLUMNS)[number] | 'enroleeNumber',
+  (typeof CORE_DOC_STATUS_COLUMNS)[number] | 'enroleeNumber' | 'passportExpiry',
   string | null
 >;
 
@@ -1025,14 +1050,25 @@ export type DocCompletionRow = {
 
 export type DocCompletionResult = DocCompletionRow[];
 
-function countPresentDocs(d: DocCompletionDocRow | undefined): number {
+type ResolveStatusFn = (
+  url: string | null,
+  rawStatus: string | null,
+  expiryDate: string | null,
+  expires: boolean
+) => import('@/lib/p-files/document-config').DocumentStatus;
+
+export function countPresentDocs(
+  d: DocCompletionDocRow | undefined,
+  resolveStatus: ResolveStatusFn
+): number {
   if (!d) return 0;
   let n = 0;
   for (const col of CORE_DOC_STATUS_COLUMNS) {
-    const v = d[col];
-    if (v !== null && v !== undefined) {
-      const s = String(v).trim();
-      if (s !== '' && s.toLowerCase() !== 'missing') n += 1;
+    const meta = CORE_DOC_SLOT_META[col];
+    const rawStatus = d[col];
+    const expiryDate = meta.expiryColumn ? d[meta.expiryColumn] : null;
+    if (resolveStatus(null, rawStatus, expiryDate, meta.expires) === 'valid') {
+      n += 1;
     }
   }
   return n;
@@ -1041,6 +1077,12 @@ function countPresentDocs(d: DocCompletionDocRow | undefined): number {
 async function loadDocumentCompletionByLevelUncached(
   ayCode: string
 ): Promise<DocCompletionResult> {
+  // Lazy-import p-files config to avoid circular collisions if this module
+  // is ever re-imported from p-files queries — mirrors
+  // loadAdmissionsCompletenessForChaseUncached below, which already does
+  // this for the same module.
+  const { resolveStatus } = await import('@/lib/p-files/document-config');
+
   const prefix = prefixFor(ayCode);
   const docsTable = `${prefix}_enrolment_documents`;
   const supabase = createAdmissionsClient();
@@ -1049,7 +1091,9 @@ async function loadDocumentCompletionByLevelUncached(
     loadJoinedRows(ayCode),
     supabase
       .from(docsTable)
-      .select(`enroleeNumber, ${CORE_DOC_STATUS_COLUMNS.join(', ')}`),
+      .select(
+        `enroleeNumber, ${CORE_DOC_STATUS_COLUMNS.join(', ')}, passportExpiry`
+      ),
   ]);
 
   if (docsRes.error) {
@@ -1093,7 +1137,10 @@ async function loadDocumentCompletionByLevelUncached(
       missing: 0,
     };
     bucket.total += 1;
-    const present = countPresentDocs(docsByEnrolee.get(r.enroleeNumber));
+    const present = countPresentDocs(
+      docsByEnrolee.get(r.enroleeNumber),
+      resolveStatus
+    );
     if (present === CORE_DOC_STATUS_COLUMNS.length) bucket.complete += 1;
     else if (present === 0) bucket.missing += 1;
     else bucket.partial += 1;

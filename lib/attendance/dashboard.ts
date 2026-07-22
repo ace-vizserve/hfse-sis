@@ -2,6 +2,7 @@ import { unstable_cache } from 'next/cache';
 import { cache } from 'react';
 
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
+import { DAY_TYPE_LABELS } from '@/lib/schemas/attendance';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -485,15 +486,8 @@ async function loadDayTypeDistributionRangeUncached(
   for (const row of (data ?? []) as Array<{ day_type: string }>) {
     counts[row.day_type] = (counts[row.day_type] ?? 0) + 1;
   }
-  const LABEL: Record<string, string> = {
-    school_day: 'School day',
-    hbl: 'HBL',
-    public_holiday: 'Public holiday',
-    school_holiday: 'School holiday',
-    no_class: 'No class',
-  };
   return Object.entries(counts).map(([k, v]) => ({
-    name: LABEL[k] ?? k,
+    name: DAY_TYPE_LABELS[k as keyof typeof DAY_TYPE_LABELS] ?? k,
     value: v,
   }));
 }
