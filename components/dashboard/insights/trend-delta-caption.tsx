@@ -32,10 +32,12 @@ const DIRECTION_ICON: Record<TrendDeltaDirection, typeof ArrowUp> = {
 
 // §9.3 semantic recipe: mint = healthy/improving, amber = attention/declining,
 // muted = no meaningful change. Icon + text together carry the signal so
-// direction is never colour-only.
+// direction is never colour-only. Same gradient-wash recipe as MetricCard's
+// delta chip (KD #84 flat→gradient sweep) — these two pills sit in the same
+// visual role on the same pages, so they read as one consistent chip family.
 const DIRECTION_CLASSES: Record<TrendDeltaDirection, string> = {
-  up: 'bg-brand-mint/15 text-ink',
-  down: 'bg-brand-amber/15 text-ink',
+  up: 'bg-gradient-to-b from-brand-mint/35 to-brand-mint/15 text-ink',
+  down: 'bg-gradient-to-b from-brand-amber/35 to-brand-amber/15 text-ink',
   flat: 'bg-muted text-muted-foreground',
 };
 

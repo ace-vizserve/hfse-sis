@@ -475,6 +475,96 @@ export async function getAssessmentOutcomes(
   return out;
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Conversion by entrance assessment outcome — does passing/failing the
+// entrance assessment predict who actually enrolls? This is genuinely new
+// information: getAssessmentOutcomes (above) only counts pass/fail volume,
+// never cross-referenced against enrollment. Unlike that function, this one
+// does NOT exclude Cancelled/Withdrawn from the denominator — matching
+// computeReferralConversion's "count ALL applicants for true conversion
+// rate" convention (lib/admissions/insights-funnel.ts), since the question
+// here is "of everyone with this assessment result, how many converted,"
+// and a withdrawn applicant who passed the assessment but left anyway is
+// real signal, not noise to filter out.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type AssessmentConversionRow = {
+  subject: 'Math' | 'English';
+  outcome: 'Pass' | 'Fail' | 'Not assessed';
+  applied: number;
+  enrolled: number;
+  conversionPct: number;
+};
+
+function assessmentOutcomeLabel(
+  o: ReturnType<typeof classifyAssessment>
+): AssessmentConversionRow['outcome'] {
+  return o === 'pass' ? 'Pass' : o === 'fail' ? 'Fail' : 'Not assessed';
+}
+
+/** Pure — exported for unit tests. */
+export function computeConversionByAssessment(
+  rows: Pick<
+    JoinedRow,
+    'applicationStatus' | 'assessmentGradeMath' | 'assessmentGradeEnglish'
+  >[]
+): AssessmentConversionRow[] {
+  const buckets = new Map<
+    string,
+    {
+      subject: 'Math' | 'English';
+      outcome: AssessmentConversionRow['outcome'];
+      applied: number;
+      enrolled: number;
+    }
+  >();
+  const bump = (
+    subject: 'Math' | 'English',
+    outcome: AssessmentConversionRow['outcome'],
+    isEnrolled: boolean
+  ) => {
+    const key = `${subject}:${outcome}`;
+    const bucket = buckets.get(key) ?? {
+      subject,
+      outcome,
+      applied: 0,
+      enrolled: 0,
+    };
+    bucket.applied += 1;
+    if (isEnrolled) bucket.enrolled += 1;
+    buckets.set(key, bucket);
+  };
+
+  for (const r of rows) {
+    const isEnrolled =
+      r.applicationStatus === 'Enrolled' ||
+      r.applicationStatus === 'Enrolled (Conditional)';
+    bump(
+      'Math',
+      assessmentOutcomeLabel(classifyAssessment(r.assessmentGradeMath)),
+      isEnrolled
+    );
+    bump(
+      'English',
+      assessmentOutcomeLabel(classifyAssessment(r.assessmentGradeEnglish)),
+      isEnrolled
+    );
+  }
+
+  return Array.from(buckets.values()).map((b) => ({
+    ...b,
+    conversionPct:
+      b.applied > 0 ? Math.round((b.enrolled / b.applied) * 1000) / 10 : 0,
+  }));
+}
+
+export async function getConversionByAssessment(
+  ayCode: string
+): Promise<AssessmentConversionRow[]> {
+  const rows = await loadJoinedRows(ayCode);
+  return computeConversionByAssessment(rows);
+}
+
 export type ReferralSource = {
   source: string;
   count: number;

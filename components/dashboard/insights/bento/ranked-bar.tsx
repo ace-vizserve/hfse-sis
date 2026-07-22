@@ -1,6 +1,11 @@
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { BAR_GRADIENT, DOT_GRADIENT, type ColorKey } from './tokens';
 
 /**
@@ -15,6 +20,16 @@ import { BAR_GRADIENT, DOT_GRADIENT, type ColorKey } from './tokens';
  * mockups only ever apply it to values roughly ≥65-70%; a track that thin
  * clips its own text). For a heavily skewed distribution (e.g. 87/5/4/4),
  * use `segmented-bar` or put the label outside the track instead.
+ *
+ * Interactivity is a hover-only value tooltip, never a click-through — an
+ * earlier version of this component opened a full drill-down sheet per bar,
+ * but several of those drills silently disagreed with the number the bar
+ * itself represented (the drill's underlying row filter didn't share the
+ * same status/scope exclusions as the aggregate powering the bar — see
+ * app/(admissions)/admissions/insights/page.tsx's git history). A tooltip
+ * can only ever restate a number the caller already computed for the bar,
+ * so it can't drift out of sync with what's on screen the way a
+ * separately-queried drill can.
  */
 
 export type RankedBarRow = {
@@ -23,6 +38,8 @@ export type RankedBarRow = {
   label: string;
   pct: number;
   colorKey: ColorKey;
+  /** Optional hover-reveal detail, e.g. "62 of 90 applicants · 69%". Omit for no tooltip. */
+  tooltip?: React.ReactNode;
 };
 
 export type RankedBarLegendItem = {
@@ -43,11 +60,8 @@ export function RankedBar({ rows, legend, className }: RankedBarProps) {
   return (
     <div className={cn('flex items-start gap-8', className)}>
       <div className="min-w-0 flex-[1.3]">
-        {rows.map((row, i) => (
-          <div key={row.key} className="mb-2.5 flex items-center gap-2.5">
-            <span className="w-3 shrink-0 font-mono text-[11px] text-muted-foreground">
-              {i + 1}
-            </span>
+        {rows.map((row, i) => {
+          const track = (
             <div className="h-[26px] flex-1 overflow-hidden rounded-full bg-muted">
               <div
                 className={cn(
@@ -59,8 +73,33 @@ export function RankedBar({ rows, legend, className }: RankedBarProps) {
                 {row.label}
               </div>
             </div>
-          </div>
-        ))}
+          );
+          const rowContent = (
+            <div className="mb-2.5 flex items-center gap-2.5">
+              <span className="w-3 shrink-0 font-mono text-[11px] text-muted-foreground">
+                {i + 1}
+              </span>
+              {track}
+            </div>
+          );
+          return row.tooltip ? (
+            <Tooltip key={row.key}>
+              <TooltipTrigger asChild>
+                <div tabIndex={0} className="outline-hidden">
+                  {rowContent}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent
+                side="top"
+                className="text-left font-sans text-[11.5px] font-normal leading-relaxed"
+              >
+                {row.tooltip}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <React.Fragment key={row.key}>{rowContent}</React.Fragment>
+          );
+        })}
         <div className="mt-0.5 flex justify-between pl-[22px]">
           {['0%', '25%', '50%', '75%', '100%'].map((tick) => (
             <span

@@ -2,11 +2,14 @@ import { describe, it, expect } from 'vitest';
 import {
   currentInProgressMonthLabel,
   hasMonthlyResolution,
+  isTerminalLevel,
   monthlyMovementSeries,
   netMovementByMonth,
   rollupMovements,
+  TERMINAL_LEVEL_CODES,
   WITHDRAWAL_CONTROLLABILITY,
 } from '@/lib/sis/records-insights';
+import { LEVEL_LABELS } from '@/lib/sis/levels';
 import type { AyTrendPoint } from '@/lib/dashboard/insights-trend';
 import {
   WITHDRAWAL_REASON_VALUES,
@@ -633,5 +636,41 @@ describe('rollupMovements — controllability breakdown', () => {
     const { controllability } = rollupMovements([]);
     expect(controllability.total).toBe(0);
     expect(controllability.controllablePct).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isTerminalLevel — retention excludes the graduating (S4) cohort
+// ---------------------------------------------------------------------------
+describe('isTerminalLevel', () => {
+  it('matches the terminal short code S4', () => {
+    expect(isTerminalLevel('S4')).toBe(true);
+  });
+
+  it('matches the terminal word-form label', () => {
+    // Whatever LEVEL_LABELS maps S4 to (e.g. "Secondary 4") must also match,
+    // since loadEnrolledStudentData stores the label form.
+    expect(isTerminalLevel(LEVEL_LABELS['S4'])).toBe(true);
+  });
+
+  it('tolerates surrounding whitespace', () => {
+    expect(isTerminalLevel('  S4  ')).toBe(true);
+  });
+
+  it('does NOT match non-terminal levels', () => {
+    const codes = ['P1', 'P6', 'S1', 'S3'] as const;
+    for (const code of codes) {
+      expect(isTerminalLevel(code)).toBe(false);
+      expect(isTerminalLevel(LEVEL_LABELS[code])).toBe(false);
+    }
+  });
+
+  it('does NOT match empty / unknown level (missing data is not terminal)', () => {
+    expect(isTerminalLevel('')).toBe(false);
+    expect(isTerminalLevel('Unknown')).toBe(false);
+  });
+
+  it('S4 is the only terminal code in the fixed P1–S4 catalog', () => {
+    expect([...TERMINAL_LEVEL_CODES]).toEqual(['S4']);
   });
 });

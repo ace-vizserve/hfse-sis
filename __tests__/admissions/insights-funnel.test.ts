@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   computeConversionByLevel,
   computeReferralConversion,
+  computeWithdrawnByLevel,
   sortLevelsByConversionAsc,
   type LevelConversionRow,
 } from '@/lib/admissions/insights-funnel';
@@ -138,6 +139,82 @@ describe('computeReferralConversion', () => {
 
   it('returns empty array for empty input', () => {
     expect(computeReferralConversion([])).toEqual([]);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// computeWithdrawnByLevel
+// ──────────────────────────────────────────────────────────────────────────
+describe('computeWithdrawnByLevel', () => {
+  it('counts only Withdrawn applications, not Cancelled or active', () => {
+    const rows = [
+      { levelApplied: 'P1', applicationStatus: 'Withdrawn' },
+      { levelApplied: 'P1', applicationStatus: 'Withdrawn' },
+      { levelApplied: 'P1', applicationStatus: 'Cancelled' },
+      { levelApplied: 'P1', applicationStatus: 'Enrolled' },
+      { levelApplied: 'P1', applicationStatus: 'Processing' },
+    ];
+    const result = computeWithdrawnByLevel(rows);
+    expect(result).toEqual([{ level: 'P1', count: 2 }]);
+  });
+
+  it('groups withdrawals per level', () => {
+    const rows = [
+      { levelApplied: 'P1', applicationStatus: 'Withdrawn' },
+      { levelApplied: 'S2', applicationStatus: 'Withdrawn' },
+      { levelApplied: 'S2', applicationStatus: 'Withdrawn' },
+    ];
+    const result = computeWithdrawnByLevel(rows);
+    expect(result).toEqual([
+      { level: 'P1', count: 1 },
+      { level: 'S2', count: 2 },
+    ]);
+  });
+
+  it('only emits levels with ≥1 withdrawal (no zero-count slices)', () => {
+    const rows = [
+      { levelApplied: 'P1', applicationStatus: 'Withdrawn' },
+      { levelApplied: 'P2', applicationStatus: 'Enrolled' },
+      { levelApplied: 'P3', applicationStatus: 'Processing' },
+    ];
+    const result = computeWithdrawnByLevel(rows);
+    expect(result.map((r) => r.level)).toEqual(['P1']);
+  });
+
+  it('defaults null/blank levelApplied to Unknown, sorted last', () => {
+    const rows = [
+      { levelApplied: 'P1', applicationStatus: 'Withdrawn' },
+      { levelApplied: null, applicationStatus: 'Withdrawn' },
+      { levelApplied: '   ', applicationStatus: 'Withdrawn' },
+    ];
+    const result = computeWithdrawnByLevel(rows);
+    expect(result).toEqual([
+      { level: 'P1', count: 1 },
+      { level: 'Unknown', count: 2 },
+    ]);
+  });
+
+  it('sorts canonical levels P1..S4 before Unknown', () => {
+    const rows = [
+      { levelApplied: 'S1', applicationStatus: 'Withdrawn' },
+      { levelApplied: 'P3', applicationStatus: 'Withdrawn' },
+      { levelApplied: null, applicationStatus: 'Withdrawn' },
+      { levelApplied: 'P1', applicationStatus: 'Withdrawn' },
+    ];
+    const result = computeWithdrawnByLevel(rows);
+    expect(result.map((r) => r.level)).toEqual(['P1', 'P3', 'S1', 'Unknown']);
+  });
+
+  it('returns empty array when no withdrawals', () => {
+    const rows = [
+      { levelApplied: 'P1', applicationStatus: 'Enrolled' },
+      { levelApplied: 'P2', applicationStatus: 'Cancelled' },
+    ];
+    expect(computeWithdrawnByLevel(rows)).toEqual([]);
+  });
+
+  it('returns empty array for empty input', () => {
+    expect(computeWithdrawnByLevel([])).toEqual([]);
   });
 });
 

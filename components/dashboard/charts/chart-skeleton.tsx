@@ -8,6 +8,7 @@ export type ChartKind =
   | 'donut'
   | 'multi-trend'
   | 'multi-bar'
+  | 'composed'
   | 'sparkline';
 
 // Heights match each chart's default <ResponsiveContainer height={...}> so the
@@ -18,6 +19,7 @@ const HEIGHT_BY_KIND: Record<ChartKind, string> = {
   donut: 'h-[220px]',
   'multi-trend': 'h-[240px]',
   'multi-bar': 'h-[260px]',
+  composed: 'h-[300px]',
   sparkline: 'h-10',
 };
 

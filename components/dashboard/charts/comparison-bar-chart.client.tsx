@@ -43,6 +43,14 @@ export type ComparisonBarChartProps = {
   orientation?: 'vertical' | 'horizontal';
   yFormat?: YFormat;
   onSegmentClick?: (category: string) => void;
+  /**
+   * Tilt vertical-orientation category labels -30° so long names (e.g.
+   * "Ongoing Verification") don't collide at 6+ buckets. Default true keeps
+   * every existing caller's layout unchanged. Set false for short, fixed-
+   * width labels (e.g. a 5-tier "1★"..."5★" scale) — rotating a 2-character
+   * label buys nothing and can render the glyph oddly at an angle.
+   */
+  rotateLabels?: boolean;
 };
 
 function ComparisonBarChartImpl({
@@ -51,6 +59,7 @@ function ComparisonBarChartImpl({
   orientation = 'vertical',
   yFormat,
   onSegmentClick,
+  rotateLabels = true,
 }: ComparisonBarChartProps) {
   const yFormatter = formatterFor(yFormat);
   const showCmp = data.some((d) => typeof d.comparison === 'number');
@@ -101,10 +110,11 @@ function ComparisonBarChartImpl({
               // collide on charts with 6+ buckets (e.g. "Applications by
               // level", "Documents collected by level"). Anchor at the end
               // of the rotated text + reserve enough axis height to avoid
-              // clipping.
-              angle={-30}
-              textAnchor="end"
-              height={56}
+              // clipping. Short fixed-width labels (rotateLabels=false) stay
+              // flat and horizontal — nothing to avoid colliding with.
+              angle={rotateLabels ? -30 : 0}
+              textAnchor={rotateLabels ? 'end' : 'middle'}
+              height={rotateLabels ? 56 : 28}
             />
             <YAxis
               tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}

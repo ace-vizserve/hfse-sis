@@ -10,6 +10,7 @@ import {
   type WithdrawalReason,
 } from '@/lib/schemas/enrolment';
 import { getLevelDistribution, type LevelCount } from '@/lib/sis/dashboard';
+import { LEVEL_LABELS } from '@/lib/sis/levels';
 import { getMovementEvents, type MovementEvent } from '@/lib/sis/movements';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -277,6 +278,35 @@ export function rollupMovements(events: MovementEvent[]): MovementRollup {
 // ──────────────────────────────────────────────────────────────────────────
 
 /**
+ * Terminal grade codes. A prior-year student in one of these levels GRADUATED
+ * — their absence the next year is completion, not attrition — so they are
+ * excluded from retention entirely (both the overall rate below AND the
+ * by-level breakdown on the Insights page, which imports `isTerminalLevel`).
+ * Post-migration 086 the catalog is a fixed P1–P6 / S1–S4, so S4 is the only
+ * terminal level; a set keeps it obvious and extensible.
+ */
+export const TERMINAL_LEVEL_CODES: ReadonlySet<string> = new Set(['S4']);
+
+// Every terminal code is a real catalog key, so the mapped labels are all
+// defined — no filtering needed.
+const TERMINAL_LEVEL_LABELS: ReadonlySet<string> = new Set(
+  [...TERMINAL_LEVEL_CODES].map(
+    (code) => LEVEL_LABELS[code as keyof typeof LEVEL_LABELS]
+  )
+);
+
+/**
+ * True when a level value is a terminal grade. Accepts BOTH the word-form
+ * label ("Secondary 4") and the short code ("S4") because
+ * `loadEnrolledStudentData` stores the label but falls back to the code when
+ * `levels.label` is null — so callers can pass whichever they hold.
+ */
+export function isTerminalLevel(levelValue: string): boolean {
+  const v = levelValue.trim();
+  return TERMINAL_LEVEL_CODES.has(v) || TERMINAL_LEVEL_LABELS.has(v);
+}
+
+/**
  * Returns both a flat Set of student_numbers AND a map of
  * student_number → level label for per-level retention bucketing.
  * The level label is the canonical word-form from `levels.label`
@@ -380,7 +410,14 @@ export type LevelRetentionRow = {
   pct: number | null;
 };
 
-/** Of priorAy's enrolled students, how many are also enrolled in currentAy. */
+/**
+ * Of priorAy's enrolled students, how many are also enrolled in currentAy.
+ *
+ * The prior-year TERMINAL grade (S4) is excluded from the denominator: those
+ * students graduated, so their absence this year is completion, not attrition
+ * — counting them would deflate the rate. Consistent with the by-level
+ * breakdown, which excludes the same cohort via `isTerminalLevel`.
+ */
 async function loadRecordsRetention(
   currentAy: string,
   priorAy: string | null
@@ -394,13 +431,20 @@ async function loadRecordsRetention(
       pct: null,
     };
   }
-  const [current, prior] = await Promise.all([
+  const [currentNumbers, priorData] = await Promise.all([
     loadEnrolledStudentNumbers(currentAy),
-    loadEnrolledStudentNumbers(priorAy),
+    loadEnrolledStudentData(priorAy),
   ]);
   let returned = 0;
-  for (const sn of prior) if (current.has(sn)) returned += 1;
-  const priorTotal = prior.size;
+  let priorTotal = 0;
+  for (const sn of priorData.studentNumbers) {
+    // A student with no level on record is NOT assumed terminal — counted, so
+    // the exclusion never over-reaches on missing data.
+    const level = priorData.levelByStudentNumber.get(sn) ?? '';
+    if (isTerminalLevel(level)) continue;
+    priorTotal += 1;
+    if (currentNumbers.has(sn)) returned += 1;
+  }
   return {
     priorAy,
     returned,

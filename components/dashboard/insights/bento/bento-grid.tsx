@@ -56,7 +56,13 @@ export function BentoCard({ span, children, className }: BentoCardProps) {
   return (
     <div
       className={cn(
-        'col-span-12 rounded-xl border border-hairline bg-card p-6 shadow-sm',
+        // 18px radius + a soft, barely-there shadow are load-bearing for the
+        // "floating card" read every locked mockup has — the design-system
+        // token scale tops out at rounded-xl (10px, --radius-xl), well short
+        // of it, so this is an arbitrary value rather than a token (no color
+        // involved, so Hard Rule #7 doesn't apply to it). shadow-xs is the
+        // closest existing token to the mockups' bespoke two-layer recipe.
+        'col-span-12 rounded-[18px] border border-hairline bg-card px-6 py-[22px] shadow-xs',
         SPAN_CLASSES[span],
         className
       )}

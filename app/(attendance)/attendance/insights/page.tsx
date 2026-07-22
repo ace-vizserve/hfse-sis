@@ -2,56 +2,50 @@ import {
   AlertTriangle,
   ArrowLeft,
   CalendarCheck,
-  CheckCircle2,
+  CalendarX,
   Clock,
+  Filter,
   HeartHandshake,
+  Layers,
   ShieldAlert,
-  ShieldCheck,
   TrendingUp,
   Umbrella,
   User,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
 
 import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
-import { SparklineChart } from '@/components/dashboard/charts/sparkline-chart';
+import {
+  LabeledPieChart,
+  type LabeledPieSlice,
+} from '@/components/dashboard/charts/labeled-pie-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
+import { MetricCard } from '@/components/dashboard/metric-card';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
 import {
-  BentoCard,
-  BentoGrid,
-} from '@/components/dashboard/insights/bento/bento-grid';
-import {
-  StatCard,
-  type StatCardDelta,
-} from '@/components/dashboard/insights/bento/stat-card';
-import { SegmentedBar } from '@/components/dashboard/insights/bento/segmented-bar';
-import { ProjectListRow } from '@/components/dashboard/insights/bento/project-list-row';
-import {
-  BarStack,
-  type BarStackBar,
-  type BarStackColumn,
-} from '@/components/dashboard/insights/bento/bar-stack';
-import {
-  DOT_GRADIENT,
-  TILE_GRADIENT,
-  type ColorKey,
-} from '@/components/dashboard/insights/bento/tokens';
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
 import { cn } from '@/lib/utils';
 import { getAttendanceKpisRange } from '@/lib/attendance/dashboard';
-import { buildAllRowSets } from '@/lib/attendance/drill';
 import {
-  computeAbsenceMix,
-  isApproachingVlQuota,
-  splitWatchlist,
-} from '@/lib/attendance/insights-watchlist';
+  buildAllRowSets,
+  getTopAbsentByTerm,
+  type TermWindowInput,
+} from '@/lib/attendance/drill';
+import { isApproachingVlQuota } from '@/lib/attendance/insights-watchlist';
 import {
   getAttendanceMixByTerm,
   getAttendanceRateTrendByAy,
@@ -64,10 +58,8 @@ import {
 } from '@/lib/dashboard/comparison';
 import {
   computeDelta,
-  formatDeltaLabel,
   resolveRange,
   type DashboardSearchParams,
-  type Delta,
   type RangeInput,
 } from '@/lib/dashboard/range';
 import {
@@ -85,106 +77,139 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 const ALLOWED_ROLES = new Set(['registrar', 'school_admin', 'superadmin']);
 
-// ── Small page-local presentation helpers ──────────────────────────────────
-// Not part of the shared bento/ library — these are just the repeated
-// "mono cap + serif title" and "gradient icon tile + cap/title" text blocks
-// every bento card in the locked mockup carries (`.cap`/`.title`/`.perf-head`),
-// composed here from plain Tailwind so the library stays free of one-off
-// page-specific text layouts.
+// The P/L/EX/A attendance partition, in one place — the school-wide mix donut
+// and the per-term composition bars both read the same series so colours can
+// never drift (design system §10.2). Real CSS custom properties only (Hard
+// Rule #7): mint=present, sky=late, amber=excused, destructive=absent.
+type MixSeries = { key: string; label: string; color: string };
+const ATTENDANCE_MIX_SERIES: MixSeries[] = [
+  { key: 'present', label: 'Present', color: 'var(--color-brand-mint)' },
+  { key: 'late', label: 'Late', color: 'var(--color-chart-3)' },
+  { key: 'excused', label: 'Excused', color: 'var(--color-brand-amber)' },
+  { key: 'absent', label: 'Absent', color: 'var(--color-destructive)' },
+];
 
-function SectionHeading({ cap, title }: { cap: string; title: string }) {
+// Roster-row icon-tile gradients, keyed by semantic tone (real Aurora Vault
+// tokens; the canonical recipe is `from-brand-indigo to-brand-navy`).
+type RosterTone = 'indigo' | 'destructive' | 'amber' | 'mint';
+const ROSTER_TILE: Record<RosterTone, string> = {
+  indigo: 'from-brand-indigo to-brand-navy',
+  destructive: 'from-destructive to-destructive/80',
+  amber: 'from-brand-amber to-brand-amber/80',
+  mint: 'from-brand-mint to-brand-sky',
+};
+const ROSTER_BADGE: Record<'destructive' | 'amber', string> = {
+  destructive:
+    'border-destructive/40 bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive',
+  amber:
+    'border-brand-amber bg-gradient-to-b from-brand-amber/25 to-brand-amber/10 text-ink',
+};
+
+// ── Page-local presentation helpers — same shell the Admissions/Records
+// Insights pages use (mono cap + serif title + gradient icon tile). ─────────
+
+function InsightChartCard({
+  cap,
+  title,
+  icon: Icon,
+  scopeNote,
+  children,
+}: {
+  cap: string;
+  title: string;
+  icon: LucideIcon;
+  scopeNote?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="mb-4">
-      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        {cap}
-      </p>
-      <p className="mt-0.5 font-serif text-base font-semibold text-foreground">
-        {title}
-      </p>
+    <Card>
+      <CardHeader>
+        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+          {cap}
+        </CardDescription>
+        <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+          {title}
+        </CardTitle>
+        {scopeNote && (
+          <span className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-full border border-brand-indigo-soft/50 bg-gradient-to-b from-brand-indigo/12 to-brand-indigo/4 px-2.5 py-1 font-mono text-[10.5px] font-semibold text-brand-indigo-deep">
+            {scopeNote}
+          </span>
+        )}
+        <CardAction>
+          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <Icon className="size-4" />
+          </div>
+        </CardAction>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
+
+function EmptyChartState({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2 py-10 text-center">
+      <div className="flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+        <Filter className="size-4" />
+      </div>
+      <p className="max-w-70 text-sm text-muted-foreground">{message}</p>
     </div>
   );
 }
 
-function TileHeading({
+// One roster row — gradient icon tile + name + subtitle + right value + an
+// optional status badge. Replaces the bento ProjectListRow.
+function RosterRow({
   icon: Icon,
   iconGradient,
-  cap,
-  title,
+  name,
+  subtitle,
+  value,
+  badge,
 }: {
   icon: LucideIcon;
-  iconGradient: ColorKey;
-  cap: string;
-  title: string;
+  iconGradient: RosterTone;
+  name: ReactNode;
+  subtitle: string;
+  value: string;
+  badge?: { text: string; tone: 'destructive' | 'amber' };
 }) {
   return (
-    <div className="mb-5 flex items-center gap-3">
+    <div className="flex items-center gap-3.5 border-t border-hairline py-3 first:border-t-0 first:pt-1">
       <div
         className={cn(
-          'flex size-9 items-center justify-center rounded-xl',
-          TILE_GRADIENT[iconGradient]
+          'flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br text-white shadow-brand-tile',
+          ROSTER_TILE[iconGradient]
         )}
       >
         <Icon className="size-4" />
       </div>
-      <div>
-        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          {cap}
-        </p>
-        <p className="mt-0.5 font-serif text-base font-semibold text-foreground">
-          {title}
-        </p>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[13.5px] font-semibold text-foreground">
+          {name}
+        </div>
+        <div className="truncate text-[11.5px] text-muted-foreground">
+          {subtitle}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {badge && (
+          <span
+            className={cn(
+              'rounded-full border px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider',
+              ROSTER_BADGE[badge.tone]
+            )}
+          >
+            {badge.text}
+          </span>
+        )}
+        <span className="font-mono text-[12px] font-bold tabular-nums text-foreground">
+          {value}
+        </span>
       </div>
     </div>
   );
 }
-
-function EmptyStateCard({ children }: { children: React.ReactNode }) {
-  return (
-    <BentoCard span={12} className="border-dashed">
-      <p className="py-6 text-center text-sm text-muted-foreground">
-        {children}
-      </p>
-    </BentoCard>
-  );
-}
-
-/** Resolves an existing `Delta` into the bento `StatCard`'s already-semantic
- * up=good/down=bad direction (see `DELTA_PILL_CLASS` in tokens.ts) — mirrors
- * the `deltaGoodWhen` resolution `MetricCard`'s `DeltaChip` used to do. */
-function toStatDelta(
-  delta: Delta | undefined,
-  goodWhen: 'up' | 'down'
-): StatCardDelta | undefined {
-  if (!delta || delta.direction === 'flat') return undefined;
-  const isGood =
-    (goodWhen === 'up' && delta.direction === 'up') ||
-    (goodWhen === 'down' && delta.direction === 'down');
-  return {
-    value: formatDeltaLabel(delta, { format: 'absolute', unit: 'pp' }),
-    direction: isGood ? 'up' : 'down',
-  };
-}
-
-/** Term-composition quality tier — mirrors `rateHealthTitle`'s 95/90 cuts. */
-function compositionQualityBadge(pct: number): {
-  text: string;
-  colorKey: ColorKey;
-} {
-  if (pct >= 95) return { text: 'Good', colorKey: 'mint' };
-  if (pct >= 90) return { text: 'Watch', colorKey: 'amber' };
-  return { text: 'Needs attention', colorKey: 'destructive' };
-}
-
-// Decorative-only skeleton widths for a term with no encoded data yet — no
-// numeric claim is attached (no value/badge rendered alongside), matching
-// the muted/dashed "nothing yet" treatment used elsewhere in the design
-// system (§7.6) rather than fabricating a plausible-looking composition.
-const MUTED_COMPOSITION_SKELETON: BarStackBar[] = [
-  { key: 'a', pct: 88, colorKey: 'grey' },
-  { key: 'b', pct: 55, colorKey: 'grey' },
-  { key: 'c', pct: 36, colorKey: 'grey' },
-  { key: 'd', pct: 24, colorKey: 'grey' },
-];
 
 // Attendance · Insights — the "Attendance Health" companion to the operational
 // dashboard. Are we attending steadily, who is chronically absent, why are
@@ -255,23 +280,14 @@ export default async function AttendanceInsightsPage({
 
   const schoolConfig = await getSchoolConfig();
 
-  // Comparison-AY headline rate, when a comparison year is set. Previously
-  // this was hard-forced to the comparison AY's WHOLE calendar year
-  // (`defaultPreset: 'thisAY'`) while `rangeInput` above resolves the
-  // selected AY's current TERM window — comparing a single term's rate
-  // against a full year's rate is an apples-to-oranges scope mismatch that
-  // can silently inflate or deflate the "vs {compareAy}" delta.
-  //
-  // Fix: align the comparison to the SAME term when it's derivable — find
-  // which term number `rangeInput` resolved to (by matching it against the
-  // selected AY's own `windows.term.byNumber`), then look up that same term
-  // number in the comparison AY's own terms. When `rangeInput` doesn't match
-  // a term window (a custom date range, or the between-terms/cross-AY
-  // fallback in `getDashboardWindows`), there is no well-defined "same term"
-  // to align to — fall back to the comparison AY's whole year, same as
-  // before (the card copy already reads generically as "compared with
-  // {compareAy}", not "same term as {compareAy}", so this fallback never
-  // overclaims scope parity).
+  // Comparison-AY headline rate, when a comparison year is set. Align the
+  // comparison to the SAME term when it's derivable — find which term number
+  // `rangeInput` resolved to (by matching it against the selected AY's own
+  // `windows.term.byNumber`), then look up that same term number in the
+  // comparison AY's own terms. When `rangeInput` doesn't match a term window
+  // (custom range, or between-terms/cross-AY fallback), fall back to the
+  // comparison AY's whole year (the card copy reads generically, so the
+  // fallback never overclaims scope parity).
   const selectedTermNumber = compareAy
     ? (
         Object.entries(windows.term.byNumber) as [
@@ -309,48 +325,49 @@ export default async function AttendanceInsightsPage({
 
   const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
 
-  const [kpis, allRowSets, priorKpis, rateTrendPoints, mixByTerm] =
-    await Promise.all([
-      getAttendanceKpisRange(rangeInput),
-      buildAllRowSets({
-        ayCode: selectedAy,
-        from: rangeInput.from,
-        to: rangeInput.to,
-        vacationTermId: currentTermId,
-        defaultVlAllowance: schoolConfig.defaultVlAllowancePerTerm,
-      }),
-      priorRangeInput
-        ? getAttendanceKpisRange(priorRangeInput)
-        : Promise.resolve(null),
-      getAttendanceRateTrendByAy(trendAys),
-      // Reuses the same React.cache()-deduped loadDailyRows(selectedAy) that
-      // getAttendanceKpisRange/getAttendanceRateTrendByAy already trigger
-      // above — no extra Supabase round-trip.
-      getAttendanceMixByTerm(selectedAy),
-    ]);
+  // Term windows (T1–T4) for the per-term absence watchlist — only terms whose
+  // date window is defined in the selected AY.
+  const absenceTermWindows: TermWindowInput[] = ([1, 2, 3, 4] as const)
+    .map((n) => {
+      const w = windows.term.byNumber[n];
+      return w ? { termNumber: n, from: w.from, to: w.to } : null;
+    })
+    .filter(
+      (t): t is { termNumber: 1 | 2 | 3 | 4; from: string; to: string } =>
+        t !== null
+    );
+
+  const [
+    kpis,
+    allRowSets,
+    priorKpis,
+    rateTrendPoints,
+    mixByTerm,
+    topAbsentByTerm,
+  ] = await Promise.all([
+    getAttendanceKpisRange(rangeInput),
+    buildAllRowSets({
+      ayCode: selectedAy,
+      from: rangeInput.from,
+      to: rangeInput.to,
+      vacationTermId: currentTermId,
+      defaultVlAllowance: schoolConfig.defaultVlAllowancePerTerm,
+    }),
+    priorRangeInput
+      ? getAttendanceKpisRange(priorRangeInput)
+      : Promise.resolve(null),
+    getAttendanceRateTrendByAy(trendAys),
+    getAttendanceMixByTerm(selectedAy),
+    // Top 5 most-absent students per term (whole-year view, not range-scoped).
+    getTopAbsentByTerm(selectedAy, absenceTermWindows, 5),
+  ]);
 
   // ── Derived row sets (already computed — no extra DB work) ─────────────────
 
-  // Full topAbsent array from buildAllRowSets (carries absences + excused +
-  // attendancePct). The old getTopAbsentRange call is replaced by this; all
-  // students with ≥1 absence are eligible for the watchlist.
-  const allTopAbsent = allRowSets.topAbsent.filter((r) => r.absences > 0);
-
-  // Split into intervene (truancy signal) vs monitor (health narrative).
-  // Cap at 8 per bucket — beyond that the list becomes unactionable.
-  const watchlist = splitWatchlist(allTopAbsent, 8);
-
-  // A-vs-EX mix for the school-wide split card.
-  const absenceMix = computeAbsenceMix(
-    kpis.current.absent,
-    kpis.current.excused
-  );
-  // Same computation on the already-fetched, term-aligned prior-period KPIs
-  // — powers the §1 "Absence mix" comparison card. Null when there's no
-  // comparison AY/period at all (priorKpis itself is null in that case).
-  const priorAbsenceMix = priorKpis
-    ? computeAbsenceMix(priorKpis.current.absent, priorKpis.current.excused)
-    : null;
+  // Per-term absence watchlist — only terms that actually have ≥1 absence.
+  // Reasons for a plain Absent mark aren't tracked, so this ranks WHO is
+  // absent most per term, nothing about WHY.
+  const termsWithAbsences = topAbsentByTerm.filter((t) => t.rows.length > 0);
 
   // Quota rows — over quota and approaching (used allowance but not breached).
   const compassionateOver = allRowSets.compassionate.filter(
@@ -373,75 +390,35 @@ export default async function AttendanceInsightsPage({
       ? Math.round(priorKpis.current.attendancePct * 10) / 10
       : null;
 
-  // True when the selected/current period itself has any encoded attendance —
-  // independent of whether a comparison AY is chosen. `windows.term.thisTerm`
-  // resolves to "the term containing today" (KD #79 cascade), which can be a
-  // term that exists but hasn't been encoded yet (e.g. today sits in T3
-  // before T3's import has run) — without this guard the headline silently
-  // renders a literal 0.0% (kpisFor returns 0, not null, for an empty slice)
-  // instead of an honest "not yet encoded" state, contradicting the
-  // term-trend chart below it (which already treats zero-encoded-days as a
-  // gap, not 0%).
+  // True when the selected/current period itself has any encoded attendance.
   const hasCurrentPeriodData = kpis.current.encodedDays > 0;
 
-  // Rate comparison card state — encodedDays > 0 means that AY has
-  // actual attendance marks, so we can show a meaningful comparison.
+  // Rate comparison card state — encodedDays > 0 means real marks.
   const hasRateData = (priorKpis?.current.encodedDays ?? 0) > 0;
   const rateState = comparisonCardState(compareAy, hasRateData);
 
-  // Rate is itself a %, so we do a plain vs-prior comparison rather than a
-  // percent-of-growth badge. growthDelta is reserved for count-based metrics.
-  // Gate on `hasRateData` (same signal as Section 1) so the hero badge and
-  // the section card always agree — prevents a misleading "X% vs 0%" when the
-  // comparison AY exists but has no encoded attendance days (FIX 1).
-  // Short-circuit on `hasCurrentPeriodData` first — a real comparison AY rate
-  // is meaningless paired with a bogus current-side 0 (FIX 2).
   const growthBadge = hasCurrentPeriodData
     ? rateBadge(rate, priorRate, hasRateData, compareAy)
     : { label: 'Not yet encoded', tone: 'muted' as const };
 
-  // Build the per-term two-AY trend. `buildAyTrend` is pure — safe to call on
-  // the server. Only show the chart when at least one AY has a non-null value.
+  // Per-term two-AY trend. `buildAyTrend` is pure — safe on the server.
   const rateTrend = buildAyTrend(
     rateTrendPoints,
     ['T1', 'T2', 'T3', 'T4'],
     trendAys
   );
   const haveTrend = rateTrendPoints.some((p) => p.value !== null);
-  // §1 "Attendance rate" sparkline — the current-AY per-term line already
-  // computed for §2, previewed at tile scale. Always reads the dashboard-
-  // rollup % (never the sheet-export formula, KD #151) since it's derived
-  // from the same rateTrend data driving the section below.
   const rateSparkline = sparklineFromAyTrend(rateTrend);
 
-  // §1 "Absence mix" comparison card — % of absences unexplained, this
-  // period vs. the same term last AY. Delta only renders when BOTH periods
-  // have real away-days; a zero-away-days period isn't "0% unexplained",
-  // it's "no data" (mirrors §4's own awayDays===0 empty state).
-  const absenceMixDelta =
-    absenceMix.awayDays > 0 &&
-    priorAbsenceMix !== null &&
-    priorAbsenceMix.awayDays > 0
-      ? computeDelta(absenceMix.unexplainedPct, priorAbsenceMix.unexplainedPct)
-      : undefined;
-
-  // Grouped-bar presentation labels (design: "Insights Trend Charts —
-  // Redesign Preview"): the current-AY series reads "This year (AYxxxx)" in
-  // the legend; the comparison series keeps its bare AY code and stays
-  // `muted` (buildAyTrend already marks every non-first series muted, which
-  // GroupedBarChart renders as neutral grey — never a second blue).
+  // Grouped-bar trend labels: current-AY series reads "This year (AYxxxx)"; the
+  // comparison series keeps its bare AY code + stays muted (grey).
   const rateTrendSeries = rateTrend.series.map((s, i) =>
     i === 0 ? { ...s, label: `This year (${selectedAy})` } : s
   );
 
-  // Headline + delta caption sat above the trend chart (KD-style honesty
-  // guard: summariseAyTrend anchors the comparison at the same term index as
-  // the current AY's latest data, so no fake delta ever renders).
+  // Headline + delta caption above the trend chart (honesty guard:
+  // summariseAyTrend anchors the comparison at the same term index).
   const rateTrendSummary = summariseAyTrend(rateTrend.data, rateTrend.series);
-  // Round to 1dp (matches summariseSeriesMovement's convention elsewhere on
-  // this page family) and derive the arrow direction from THAT rounded value
-  // — deriving it from the raw delta let a genuine +0.4pt move read "+0 pts"
-  // next to an up arrow, a visible inconsistency (bug-hunt finding).
   const rateTrendDeltaAbs = rateTrendSummary.delta
     ? Math.round(rateTrendSummary.delta.abs * 10) / 10
     : null;
@@ -470,48 +447,16 @@ export default async function AttendanceInsightsPage({
       : undefined;
 
   // ────────────────────────────────────────────────────────────────────────
-  // Derived narrative — every finding-title + RecommendationCallout below is
-  // templated from these live values, each with a tie/empty/threshold neutral
-  // fallback. No hardcoded section names, percentages, or "worst" claims in
-  // literals. (Storytelling pass.)
+  // Derived narrative — every finding-title + RecommendationCallout is
+  // templated from live values with a neutral fallback. (Storytelling pass.)
   // ────────────────────────────────────────────────────────────────────────
 
-  // Lede: attendance rate + the intervene count. Neutral fallback when no data.
-  const interveneCount = watchlist.intervene.length;
   const ledeDescription =
     kpis.current.encodedDays > 0
-      ? interveneCount > 0
-        ? `${rate}% attendance this period — ${interveneCount} student${interveneCount === 1 ? '' : 's'} with unexplained absences warrant a follow-up.`
-        : `${rate}% attendance this period — no students with a truancy pattern right now.`
-      : 'How steadily students show up — the overall attendance rate, who is chronically absent, why students are away, and whether anyone is running over their leave quota.';
+      ? `${rate}% attendance this period. The watchlist ranks the top 5 most-absent students in each term.`
+      : 'How steadily students show up — the overall attendance rate, who has been absent the most per term, and whether anyone is running over their leave quota.';
 
-  // Ch2 watchlist — intervene title: states the count (neutral when zero).
-  const interveneTitle =
-    interveneCount > 0
-      ? `${interveneCount} student${interveneCount === 1 ? '' : 's'} to follow up with`
-      : 'Intervene';
-
-  // Ch3 A/EX mix title — describes the dominant signal.
-  const absenceMixTitle =
-    absenceMix.awayDays === 0
-      ? 'Unexplained vs excused'
-      : absenceMix.unexplainedPct > 50
-        ? 'Mostly unexplained absences this period'
-        : absenceMix.unexplainedPct > 25
-          ? 'Largely excused, with some unexplained absences'
-          : 'Almost all absences are excused';
-
-  // ────────────────────────────────────────────────────────────────────────
-  // Bento presentation-layer derivations — pure arithmetic/shaping over the
-  // values already computed above (kpis / allRowSets / mixByTerm). No new
-  // queries, no changed data shapes — this only reshapes existing numbers
-  // into the shared bento primitives' prop shapes.
-  // ────────────────────────────────────────────────────────────────────────
-
-  const rateStatDelta = toStatDelta(
-    hasCurrentPeriodData ? rateDelta : undefined,
-    'up'
-  );
+  // ── Rate stat-card caption (delta context) ────────────────────────────────
   const rateCaption = !hasCurrentPeriodData
     ? 'No attendance encoded yet'
     : rateState === 'ok' && priorRate !== null
@@ -520,135 +465,47 @@ export default async function AttendanceInsightsPage({
         ? `No data for ${compareAy}`
         : 'This period';
 
-  const absenceMixStatDelta = toStatDelta(absenceMixDelta, 'down');
-  const absenceMixCaption = absenceMixDelta
-    ? `vs ${compareAy} · ${priorAbsenceMix!.unexplainedPct}% unexplained`
-    : `${absenceMix.unexplained} of ${absenceMix.awayDays} away-days unexplained`;
+  // ── Chart-data derivations (pure reshaping into chart-prop shapes) ─────────
 
-  // "Attendance mix" ranked/segmented bar (§2) — the whole-period P/L/EX/A
-  // partition, straight from kpis.current (same source the row-1 stat cards
-  // read). Guarded the same way as the rate/late tiles: an empty array
-  // renders the section's own "not yet encoded" state instead of a fake
-  // all-zero bar.
-  const mixSegments =
+  // Attendance mix (period) — the P/L/EX/A partition as a labelled pie: every
+  // marked day is exactly one status, so the four slices are a genuine share
+  // of the encoded-days total. The % is rendered ON each slice (thin slices
+  // fall back to the legend). Colours align with ATTENDANCE_MIX_SERIES order
+  // so the pie, composition bars, and legend never drift.
+  const attendanceMixPieData: LabeledPieSlice[] =
     hasCurrentPeriodData && kpis.current.encodedDays > 0
       ? [
-          {
-            key: 'present',
-            label: 'Present',
-            value: `${kpis.current.present} days`,
-            pct: Math.round(
-              (kpis.current.present / kpis.current.encodedDays) * 100
-            ),
-            colorKey: 'mint' as const,
-            icon: CheckCircle2,
-          },
-          {
-            key: 'late',
-            label: 'Late',
-            value: `${kpis.current.late} days`,
-            pct: Math.round(
-              (kpis.current.late / kpis.current.encodedDays) * 100
-            ),
-            colorKey: 'sky' as const,
-            icon: Clock,
-          },
-          {
-            key: 'excused',
-            label: 'Excused',
-            value: `${kpis.current.excused} days`,
-            pct: Math.round(
-              (kpis.current.excused / kpis.current.encodedDays) * 100
-            ),
-            colorKey: 'amber' as const,
-            icon: ShieldCheck,
-          },
-          {
-            key: 'absent',
-            label: 'Absent',
-            value: `${kpis.current.absent} days`,
-            pct: Math.round(
-              (kpis.current.absent / kpis.current.encodedDays) * 100
-            ),
-            colorKey: 'destructive' as const,
-            icon: AlertTriangle,
-          },
+          { name: 'Present', value: kpis.current.present },
+          { name: 'Late', value: kpis.current.late },
+          { name: 'Excused', value: kpis.current.excused },
+          { name: 'Absent', value: kpis.current.absent },
         ]
       : [];
+  const attendanceMixColors = ATTENDANCE_MIX_SERIES.map((s) => s.color);
 
-  // "What's behind the rate" bar-stack (§3) — one column per term, sourced
-  // from mixByTerm (already loaded above). Terms with no encoded rows render
-  // a muted decorative skeleton instead of a fabricated composition.
-  const compositionColumns: BarStackColumn[] = [1, 2, 3, 4].map((t) => {
+  // Composition per term — grouped (non-stacked) bars, one cluster per term.
+  // Values are each status's SHARE of that term's marked days (%), not raw
+  // counts, so a term with more encoded days doesn't dwarf a lighter one and
+  // the comparison stays a like-for-like mix (same proportion semantic the
+  // stacked version had). Present dominates the y-axis by nature — the small
+  // Late/Excused/Absent bars sit near the floor.
+  const compositionData = [1, 2, 3, 4].map((t) => {
     const point = mixByTerm.find((p) => p.level === `T${t}`);
-    if (!point) {
-      return {
-        key: `T${t}`,
-        label: `Term ${t}`,
-        muted: true,
-        bars: MUTED_COMPOSITION_SKELETON,
-      };
-    }
-    const total = point.Present + point.Late + point.Excused + point.Absent;
-    const pct =
-      total > 0
-        ? Math.round(
-            ((point.Present + point.Late + point.Excused) / total) * 100
-          )
-        : 0;
+    const total =
+      (point?.Present ?? 0) +
+      (point?.Late ?? 0) +
+      (point?.Excused ?? 0) +
+      (point?.Absent ?? 0);
+    const pct = (n: number) =>
+      total > 0 ? Math.round((n / total) * 1000) / 10 : 0;
     return {
-      key: `T${t}`,
-      label: `Term ${t}`,
-      value: `${pct}%`,
-      badge: compositionQualityBadge(pct),
-      bars: [
-        {
-          key: 'present',
-          pct: total > 0 ? (point.Present / total) * 100 : 0,
-          colorKey: 'mint' as const,
-        },
-        {
-          key: 'late',
-          pct: total > 0 ? (point.Late / total) * 100 : 0,
-          colorKey: 'sky' as const,
-        },
-        {
-          key: 'excused',
-          pct: total > 0 ? (point.Excused / total) * 100 : 0,
-          colorKey: 'amber' as const,
-        },
-        {
-          key: 'absent',
-          pct: total > 0 ? (point.Absent / total) * 100 : 0,
-          colorKey: 'destructive' as const,
-        },
-      ],
+      x: `T${t}`,
+      present: pct(point?.Present ?? 0),
+      late: pct(point?.Late ?? 0),
+      excused: pct(point?.Excused ?? 0),
+      absent: pct(point?.Absent ?? 0),
     };
   });
-
-  // "Why are they absent?" segmented bar (§4) — the school-wide A-vs-EX
-  // partition, same numbers as the row-1 "Unexplained of absences" tile.
-  const absenceMixSegments =
-    absenceMix.awayDays > 0
-      ? [
-          {
-            key: 'unexplained',
-            label: 'Unexplained',
-            value: `${absenceMix.unexplained} days`,
-            pct: absenceMix.unexplainedPct,
-            colorKey: 'destructive' as const,
-            icon: AlertTriangle,
-          },
-          {
-            key: 'excused',
-            label: 'Excused',
-            value: `${absenceMix.excused} days`,
-            pct: absenceMix.excusedPct,
-            colorKey: 'mint' as const,
-            icon: ShieldCheck,
-          },
-        ]
-      : [];
 
   return (
     <PageShell>
@@ -688,80 +545,75 @@ export default async function AttendanceInsightsPage({
           Attendance health
         </p>
 
-        <BentoGrid>
-          {/* row 1 — stat cards */}
-          <BentoCard span={3}>
-            <StatCard
-              icon={CalendarCheck}
-              iconGradient="mint"
-              value={hasCurrentPeriodData ? `${rate.toFixed(1)}%` : '—'}
-              label="Attendance rate this period"
-              delta={rateStatDelta}
-              caption={rateCaption}
-            />
-            {rateSparkline.length > 1 && (
-              <div className="-mx-1 mt-3 h-10 w-full">
-                <SparklineChart points={rateSparkline} />
-              </div>
-            )}
-          </BentoCard>
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard
+            label="Attendance rate this period"
+            value={hasCurrentPeriodData ? rate : '—'}
+            format="percent"
+            icon={CalendarCheck}
+            delta={hasCurrentPeriodData ? rateDelta : undefined}
+            deltaGoodWhen="up"
+            deltaFormat="absolute"
+            deltaUnit="pp"
+            subtext={rateCaption}
+            sparkline={rateSparkline.length > 1 ? rateSparkline : undefined}
+          />
+          <MetricCard
+            label="Days absent this period"
+            value={hasCurrentPeriodData ? kpis.current.absent : '—'}
+            format="number"
+            icon={CalendarX}
+            subtext={
+              hasCurrentPeriodData
+                ? 'Marked absent (reason not tracked)'
+                : 'Not yet encoded'
+            }
+          />
+          <MetricCard
+            label="Late incidents this period"
+            value={hasCurrentPeriodData ? kpis.current.late : '—'}
+            format="number"
+            icon={Clock}
+            subtext={hasCurrentPeriodData ? 'This period' : 'Not yet encoded'}
+          />
+          <MetricCard
+            label="Over their leave quota"
+            value={compassionateOver.length + vacationOver.length}
+            format="number"
+            icon={ShieldAlert}
+            subtext="Leave quotas"
+          />
+        </section>
 
-          {absenceMix.awayDays > 0 ? (
-            <BentoCard span={3}>
-              <StatCard
-                icon={AlertTriangle}
-                iconGradient="amber"
-                value={`${absenceMix.unexplainedPct}%`}
-                label="Unexplained of absences"
-                delta={absenceMixStatDelta}
-                caption={absenceMixCaption}
-              />
-            </BentoCard>
-          ) : null}
-
-          <BentoCard span={3}>
-            <StatCard
-              icon={Clock}
-              iconGradient="sky"
-              value={hasCurrentPeriodData ? kpis.current.late : '—'}
-              label="Late incidents this period"
-              caption={hasCurrentPeriodData ? 'This period' : 'Not yet encoded'}
-            />
-          </BentoCard>
-
-          <BentoCard span={3}>
-            <StatCard
-              icon={ShieldAlert}
-              iconGradient="indigo"
-              value={compassionateOver.length + vacationOver.length}
-              label="Over their leave quota"
-              caption="Leave quotas"
-            />
-          </BentoCard>
-
-          {/* row 2 — attendance mix + term trend */}
-          <BentoCard span={7}>
-            <SectionHeading cap="This period" title="Attendance mix" />
-            {mixSegments.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                No attendance encoded yet — the mix will appear once this period
-                has marks.
-              </p>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <InsightChartCard
+            cap="This period"
+            title="Attendance mix"
+            icon={CalendarCheck}
+          >
+            {attendanceMixPieData.length === 0 ? (
+              <EmptyChartState message="No attendance encoded yet — the mix appears once this period has marks." />
             ) : (
-              <SegmentedBar segments={mixSegments} />
+              <>
+                <LabeledPieChart
+                  data={attendanceMixPieData}
+                  colors={attendanceMixColors}
+                />
+                <p className="mt-4 font-mono text-[10.5px] text-muted-foreground">
+                  {kpis.current.encodedDays.toLocaleString('en-SG')} days marked
+                  this period
+                </p>
+              </>
             )}
-          </BentoCard>
+          </InsightChartCard>
 
-          <BentoCard span={5}>
-            <SectionHeading
-              cap="Attendance rate per term"
-              title="Term-by-term attendance"
-            />
+          <InsightChartCard
+            cap="Attendance rate per term"
+            title="Term-by-term attendance"
+            icon={TrendingUp}
+          >
             {!haveTrend ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                No attendance data encoded yet — the chart will appear once
-                terms have marks.
-              </p>
+              <EmptyChartState message="No attendance data encoded yet — the chart appears once terms have marks." />
             ) : (
               <div className="space-y-4">
                 {rateTrendSummary.currentValue !== null && (
@@ -781,296 +633,165 @@ export default async function AttendanceInsightsPage({
                 />
               </div>
             )}
-          </BentoCard>
+          </InsightChartCard>
+        </div>
 
-          {/* row 3 — composition per term */}
-          <BentoCard span={12}>
-            <TileHeading
-              icon={TrendingUp}
-              iconGradient="indigo"
-              cap="Composition, term by term"
-              title="What's behind the rate"
+        <InsightChartCard
+          cap="Composition, term by term"
+          title="What's behind the rate"
+          icon={Layers}
+        >
+          {mixByTerm.length === 0 ? (
+            <EmptyChartState message="No attendance data encoded yet — the composition appears once terms have marks." />
+          ) : (
+            <GroupedBarChart
+              series={ATTENDANCE_MIX_SERIES}
+              data={compositionData}
+              yFormat="percent"
+              height={260}
             />
-            {mixByTerm.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                No attendance data encoded yet — the composition chart will
-                appear once terms have marks.
-              </p>
-            ) : (
-              <>
-                <BarStack columns={compositionColumns} />
-                <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10.5px] text-muted-foreground">
-                  {(
-                    [
-                      ['Present', 'mint'],
-                      ['Late', 'sky'],
-                      ['Excused', 'amber'],
-                      ['Absent', 'destructive'],
-                    ] as [string, ColorKey][]
-                  ).map(([label, key]) => (
-                    <span
-                      key={label}
-                      className="inline-flex items-center gap-1.5"
-                    >
-                      <span
-                        className={cn('size-2.5 rounded-sm', DOT_GRADIENT[key])}
-                      />
-                      {label}
-                    </span>
-                  ))}
-                </div>
-              </>
-            )}
-          </BentoCard>
-        </BentoGrid>
+          )}
+        </InsightChartCard>
       </div>
       {/* ═══ end Attendance health ═══ */}
 
-      {/* ═══ Who to act on — chronic absentee watchlist ═══ */}
+      {/* ═══ Absence watchlist — top 5 most absent per term ═══ */}
       <div className="space-y-5 border-t border-hairline pt-7">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-amber">
-          Who to act on
+          Absence watchlist
+        </p>
+        <p className="-mt-3 text-xs text-muted-foreground">
+          The top 5 students by days absent in each term. Reasons aren&rsquo;t
+          tracked in-system — this ranks who, not why.
         </p>
 
-        {allTopAbsent.length === 0 ? (
-          <EmptyStateCard>
-            No absences recorded in this period — every student has been showing
-            up.
-          </EmptyStateCard>
+        {termsWithAbsences.length === 0 ? (
+          <InsightChartCard
+            cap="Ranked by days absent"
+            title="No absences recorded"
+            icon={CalendarX}
+          >
+            <EmptyChartState message="No absences recorded this year — every student has been showing up." />
+          </InsightChartCard>
         ) : (
-          <BentoGrid>
-            {/* Intervene bucket */}
-            <BentoCard span={6}>
-              <p className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-destructive">
-                <ShieldAlert className="size-3" strokeWidth={2.25} />
-                Follow up · mostly unexplained
-              </p>
-              <p className="mt-0.5 mb-1 font-serif text-base font-semibold leading-tight text-foreground">
-                {interveneTitle}
-              </p>
-              {watchlist.intervene.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No students with a truancy pattern right now.
-                </p>
-              ) : (
-                <>
-                  <div className="mt-2">
-                    {watchlist.intervene.map((r) => (
-                      <div key={r.studentSectionId}>
-                        <ProjectListRow
-                          icon={User}
-                          iconGradient="indigo"
-                          name={
-                            <IdentifierLink
-                              href={`/attendance/students/${r.studentNumber}`}
-                            >
-                              {r.studentName}
-                            </IdentifierLink>
-                          }
-                          subtitle={r.sectionName}
-                          value={`${r.attendancePct}%`}
-                        />
-                        <div className="-mt-1.5 mb-2 space-y-1 pl-[46px]">
-                          <div className="flex h-1.5 w-full overflow-hidden rounded-full">
-                            <div
-                              className="h-full bg-gradient-to-r from-destructive to-destructive/80"
-                              style={{ width: `${r.unexplainedPct}%` }}
-                              title={`${r.absences} unexplained`}
-                            />
-                            <div
-                              className="h-full bg-muted"
-                              style={{ width: `${100 - r.unexplainedPct}%` }}
-                              title={`${r.excused} excused`}
-                            />
-                          </div>
-                          <div className="flex gap-2 font-mono text-[10px] tabular-nums text-muted-foreground">
-                            <span className="text-destructive">
-                              {r.absences}A unexplained
-                            </span>
-                            <span>·</span>
-                            <span>{r.excused}EX excused</span>
-                            {r.lates > 0 && (
-                              <>
-                                <span>·</span>
-                                <span>{r.lates} late</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <RecommendationCallout tone="act" className="mt-2">
-                    {interveneCount} student
-                    {interveneCount === 1 ? '' : 's'} need
-                    {interveneCount === 1 ? 's' : ''} a truancy follow-up —
-                    unexplained absences are the majority of their away-days.
-                  </RecommendationCallout>
-                </>
-              )}
-            </BentoCard>
-
-            {/* Monitor bucket */}
-            <BentoCard span={6}>
-              <p className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-amber">
-                <ShieldCheck className="size-3" strokeWidth={2.25} />
-                Health streak · mostly excused
-              </p>
-              <p className="mt-0.5 mb-1 font-serif text-base font-semibold text-foreground">
-                Monitor
-              </p>
-              {watchlist.monitor.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No students with a prolonged health absence pattern.
-                </p>
-              ) : (
-                <div className="mt-2">
-                  {watchlist.monitor.map((r) => (
-                    <div key={r.studentSectionId}>
-                      <ProjectListRow
-                        icon={User}
-                        iconGradient="indigo"
-                        name={
-                          <IdentifierLink
-                            href={`/attendance/students/${r.studentNumber}`}
-                          >
-                            {r.studentName}
-                          </IdentifierLink>
-                        }
-                        subtitle={r.sectionName}
-                        value={`${r.attendancePct}%`}
-                      />
-                      <div className="-mt-1.5 mb-2 space-y-1 pl-[46px]">
-                        <div className="flex h-1.5 w-full overflow-hidden rounded-full">
-                          <div
-                            className="h-full bg-gradient-to-r from-brand-amber to-brand-amber/70"
-                            style={{ width: `${r.unexplainedPct}%` }}
-                            title={`${r.absences} unexplained`}
-                          />
-                          <div
-                            className="h-full bg-muted"
-                            style={{ width: `${100 - r.unexplainedPct}%` }}
-                            title={`${r.excused} excused`}
-                          />
-                        </div>
-                        <div className="flex gap-2 font-mono text-[10px] tabular-nums text-muted-foreground">
-                          <span>{r.absences}A unexplained</span>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {termsWithAbsences.map((t) => (
+              <InsightChartCard
+                key={t.termNumber}
+                cap="Top 5 · ranked by days absent"
+                title={`Term ${t.termNumber}`}
+                icon={CalendarX}
+              >
+                {t.rows.map((r) => (
+                  <div key={r.studentSectionId}>
+                    <RosterRow
+                      icon={User}
+                      iconGradient="indigo"
+                      name={
+                        <IdentifierLink
+                          href={`/attendance/students/${r.studentNumber}`}
+                        >
+                          {r.studentName}
+                        </IdentifierLink>
+                      }
+                      subtitle={r.sectionName}
+                      value={`${r.absences} absent`}
+                    />
+                    <div className="-mt-1.5 mb-2 flex gap-2 pl-[46px] font-mono text-[10px] tabular-nums text-muted-foreground">
+                      <span>{r.attendancePct}% attendance</span>
+                      {r.excused > 0 && (
+                        <>
                           <span>·</span>
-                          <span className="text-brand-amber">
-                            {r.excused}EX excused
-                          </span>
-                          {r.lates > 0 && (
-                            <>
-                              <span>·</span>
-                              <span>{r.lates} late</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
+                          <span>{r.excused} excused leave</span>
+                        </>
+                      )}
+                      {r.lates > 0 && (
+                        <>
+                          <span>·</span>
+                          <span>{r.lates} late</span>
+                        </>
+                      )}
                     </div>
-                  ))}
-                </div>
-              )}
-            </BentoCard>
-          </BentoGrid>
+                  </div>
+                ))}
+              </InsightChartCard>
+            ))}
+          </div>
         )}
       </div>
-      {/* ═══ end Who to act on ═══ */}
+      {/* ═══ end Absence watchlist ═══ */}
 
-      {/* ═══ Causes & limits — why they're away + leave-quota risk ═══ */}
+      {/* ═══ Leave quotas — the reason-tracked leaves (vacation/compassionate) ═══ */}
       <div className="space-y-5 border-t border-hairline pt-7">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-mint">
-          Causes &amp; limits
+          Leave quotas
         </p>
 
-        {absenceMix.awayDays === 0 ? (
-          <EmptyStateCard>No absences recorded in this period.</EmptyStateCard>
-        ) : (
-          <BentoCard span={12}>
-            <SectionHeading cap="Away-day mix" title={absenceMixTitle} />
-            <SegmentedBar segments={absenceMixSegments} />
-            <p className="mt-4 text-xs text-muted-foreground">
-              {absenceMix.unexplainedPct > 50
-                ? 'Unexplained absences are the majority of away-days this period — the watchlist above is the place to act.'
-                : absenceMix.unexplainedPct > 25
-                  ? 'Most away-days are covered by an excuse, but there is a meaningful unexplained minority worth monitoring.'
-                  : 'Almost all away-days are excused — attendance is largely health-driven this period.'}
-            </p>
-          </BentoCard>
-        )}
-
         {!haveQuotaRisk ? (
-          <EmptyStateCard>
-            No student is over or approaching a leave quota this period.
-            Everyone is within their allowance.
-          </EmptyStateCard>
+          <InsightChartCard
+            cap="Leave quotas"
+            title="Everyone is within allowance"
+            icon={HeartHandshake}
+          >
+            <EmptyChartState message="No student is over or approaching a leave quota this period." />
+          </InsightChartCard>
         ) : (
           <>
-            <BentoGrid>
-              {/* Compassionate — over quota only (per-year, at-quota is fine mid-year) */}
-              <BentoCard span={6}>
-                <p className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  <HeartHandshake className="size-3" strokeWidth={2.25} />
-                  Compassionate leave · per year
-                </p>
-                <p className="mt-0.5 mb-1 font-serif text-base font-semibold text-foreground">
-                  Over quota
-                </p>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {/* Compassionate — over quota only (per-year) */}
+              <InsightChartCard
+                cap="Compassionate leave · per year"
+                title="Over quota"
+                icon={HeartHandshake}
+              >
                 {compassionateOver.length === 0 ? (
                   <p className="py-6 text-center text-sm text-muted-foreground">
                     No one over the compassionate-leave allowance.
                   </p>
                 ) : (
-                  <div className="mt-2">
-                    {compassionateOver.map((r) => (
-                      <ProjectListRow
-                        key={r.studentSectionId}
-                        icon={AlertTriangle}
-                        iconGradient="destructive"
-                        name={
-                          r.studentNumber ? (
-                            <IdentifierLink
-                              href={`/attendance/students/${r.studentNumber}`}
-                            >
-                              {r.studentName}
-                            </IdentifierLink>
-                          ) : (
-                            r.studentName
-                          )
-                        }
-                        subtitle={r.sectionName}
-                        value={`${r.used} / ${r.allowance} used`}
-                        badge={{ text: 'Over', colorKey: 'destructive' }}
-                      />
-                    ))}
-                  </div>
+                  compassionateOver.map((r) => (
+                    <RosterRow
+                      key={r.studentSectionId}
+                      icon={AlertTriangle}
+                      iconGradient="destructive"
+                      name={
+                        r.studentNumber ? (
+                          <IdentifierLink
+                            href={`/attendance/students/${r.studentNumber}`}
+                          >
+                            {r.studentName}
+                          </IdentifierLink>
+                        ) : (
+                          r.studentName
+                        )
+                      }
+                      subtitle={r.sectionName}
+                      value={`${r.used} / ${r.allowance} used`}
+                      badge={{ text: 'Over', tone: 'destructive' }}
+                    />
+                  ))
                 )}
-              </BentoCard>
+              </InsightChartCard>
 
-              {/* Vacation leave — over quota + approaching tier */}
-              <BentoCard span={6}>
-                <p className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  <Umbrella className="size-3" strokeWidth={2.25} />
-                  Vacation leave · per term
-                </p>
-                <p className="mt-0.5 mb-1 font-serif text-base font-semibold text-foreground">
-                  Over quota
-                  {vacationApproaching.length > 0 && (
-                    <span className="ml-2 font-mono text-xs font-normal text-brand-amber">
-                      +{vacationApproaching.length} approaching
-                    </span>
-                  )}
-                </p>
+              {/* Vacation — over quota + approaching (per term) */}
+              <InsightChartCard
+                cap="Vacation leave · per term"
+                title={
+                  vacationApproaching.length > 0
+                    ? `Over quota · +${vacationApproaching.length} approaching`
+                    : 'Over quota'
+                }
+                icon={Umbrella}
+              >
                 {vacationOver.length === 0 &&
                 vacationApproaching.length === 0 ? (
                   <p className="py-6 text-center text-sm text-muted-foreground">
                     No one over the vacation-leave allowance this term.
                   </p>
                 ) : (
-                  <div className="mt-2">
-                    {/* Over quota — destructive signal */}
+                  <>
                     {vacationOver.map((r) => (
-                      <ProjectListRow
+                      <RosterRow
                         key={`over-${r.studentSectionId}`}
                         icon={AlertTriangle}
                         iconGradient="destructive"
@@ -1087,10 +808,9 @@ export default async function AttendanceInsightsPage({
                         }
                         subtitle={r.sectionName}
                         value={`${r.usedThisTerm} / ${r.allowance} used`}
-                        badge={{ text: 'Over', colorKey: 'destructive' }}
+                        badge={{ text: 'Over', tone: 'destructive' }}
                       />
                     ))}
-                    {/* Approaching separator */}
                     {vacationApproaching.length > 0 && (
                       <>
                         {vacationOver.length > 0 && (
@@ -1107,7 +827,7 @@ export default async function AttendanceInsightsPage({
                           </div>
                         )}
                         {vacationApproaching.map((r) => (
-                          <ProjectListRow
+                          <RosterRow
                             key={`approaching-${r.studentSectionId}`}
                             icon={Clock}
                             iconGradient="amber"
@@ -1124,18 +844,16 @@ export default async function AttendanceInsightsPage({
                             }
                             subtitle={r.sectionName}
                             value={`${r.usedThisTerm} / ${r.allowance} used`}
-                            badge={{ text: 'Approaching', colorKey: 'amber' }}
+                            badge={{ text: 'Approaching', tone: 'amber' }}
                           />
                         ))}
                       </>
                     )}
-                  </div>
+                  </>
                 )}
-              </BentoCard>
-            </BentoGrid>
+              </InsightChartCard>
+            </div>
 
-            {/* Callout (act/watch): summarise quota risk when any rows exist.
-                Over-quota = act; approaching-only = watch. Both guarded by counts. */}
             {compassionateOver.length > 0 || vacationOver.length > 0 ? (
               <RecommendationCallout tone="act">
                 {[

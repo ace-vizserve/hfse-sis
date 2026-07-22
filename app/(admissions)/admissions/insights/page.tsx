@@ -1,70 +1,62 @@
 import {
   ArrowLeft,
+  ClipboardCheck,
   Clock,
   FileStack,
-  FileX,
+  Filter,
   GraduationCap,
-  HeartPulse,
-  HelpCircle,
-  Layers,
+  Info,
+  Megaphone,
   Percent,
-  Plane,
-  School,
+  Star,
   TrendingUp,
-  UserMinus,
-  Wallet,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
 
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
+import { MetricCard } from '@/components/dashboard/metric-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
 import {
-  BentoCard,
-  BentoGrid,
-} from '@/components/dashboard/insights/bento/bento-grid';
+  TrendChart,
+  type TrendPoint,
+} from '@/components/dashboard/charts/trend-chart';
 import {
-  StatCard,
-  type StatCardDelta,
-} from '@/components/dashboard/insights/bento/stat-card';
+  ComparisonBarChart,
+  type ComparisonBarPoint,
+} from '@/components/dashboard/charts/comparison-bar-chart';
+import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
 import {
-  SegmentedBar,
-  type SegmentedBarSegment,
-} from '@/components/dashboard/insights/bento/segmented-bar';
+  DonutChart,
+  type DonutSlice,
+} from '@/components/dashboard/charts/donut-chart';
 import {
-  RankedBar,
-  type RankedBarLegendItem,
-  type RankedBarRow,
-} from '@/components/dashboard/insights/bento/ranked-bar';
-import {
-  RateDial,
-  type RateDialTotalRow,
-} from '@/components/dashboard/insights/bento/rate-dial';
-import {
-  PillBarChart,
-  type PillBarColumn,
-} from '@/components/dashboard/insights/bento/pill-bar-chart';
-import { ProjectListRow } from '@/components/dashboard/insights/bento/project-list-row';
-import { BadgeTooltip } from '@/components/dashboard/insights/bento/badge-tooltip';
-import {
-  qualityRampColorKey,
-  type ColorKey,
-} from '@/components/dashboard/insights/bento/tokens';
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
+import { cn } from '@/lib/utils';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   getAverageTimeToEnrollment,
+  getConversionByAssessment,
   getConversionFunnel,
+  type AssessmentConversionRow,
 } from '@/lib/admissions/dashboard';
 import {
-  getConversionByLevel,
   getReferralConversion,
-  sortLevelsByConversionAsc,
+  getWithdrawnByLevel,
 } from '@/lib/admissions/insights-funnel';
+import { getAdmissionsFeedback } from '@/lib/admissions/feedback';
 import {
   getAdmissionsTerminalReasons,
   growthDelta,
@@ -78,17 +70,12 @@ import {
   comparisonCardState,
   resolveCompareAy,
 } from '@/lib/dashboard/comparison';
-import {
-  buildAyTrend,
-  type AyTrendResult,
-} from '@/lib/dashboard/insights-trend';
+import { buildAyTrend } from '@/lib/dashboard/insights-trend';
 import { pickExtreme, meetsThreshold } from '@/lib/dashboard/narrative';
 import { summariseAyTrend } from '@/lib/dashboard/trend-delta';
 import {
   computeDelta,
-  formatDeltaLabel,
   type DashboardSearchParams,
-  type Delta,
 } from '@/lib/dashboard/range';
 import { APPLICATION_TERMINAL_REASON_LABELS } from '@/lib/schemas/sis';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -111,142 +98,99 @@ function reasonLabel(reason: string): string {
 }
 
 // ── Small page-local presentation helpers ──────────────────────────────────
-// Not part of the shared bento/ library — mirrors the "mono cap + serif
-// title" text block every bento card in the locked mockups carries
-// (`.cap`/`.title`), composed here from plain Tailwind (same pattern as
-// Attendance Insights' own page-local SectionHeading).
+// Composed from the app's own established chart-panel idiom (mono
+// CardDescription eyebrow + serif CardTitle + gradient icon tile in
+// CardAction — docs/context/09a-design-patterns.md §7.4/§8), same
+// composition the sibling operational Admissions dashboard already uses
+// around its own TrendChart. Page-scoped since only this page's 4 chart
+// panels share the exact shell.
 
-function SectionHeading({ cap, title }: { cap: string; title: string }) {
+function InsightChartCard({
+  cap,
+  title,
+  icon: Icon,
+  scopeNote,
+  children,
+}: {
+  cap: string;
+  title: string;
+  icon: LucideIcon;
+  /** A visible badge stating exactly what population this chart counts —
+   * use whenever two charts on the page could be mistaken for the same
+   * scope (e.g. one excludes cancelled/withdrawn applicants, one doesn't).
+   * A mono caption alone is too easy to skim past when the stakes are
+   * "these two conversion % bars aren't measuring the same thing." */
+  scopeNote?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="mb-4">
-      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        {cap}
-      </p>
-      <p className="mt-0.5 font-serif text-base font-semibold text-foreground">
-        {title}
-      </p>
+    <Card>
+      <CardHeader>
+        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+          {cap}
+        </CardDescription>
+        <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+          {title}
+        </CardTitle>
+        {scopeNote && (
+          <span className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-full border border-brand-indigo-soft/50 bg-gradient-to-b from-brand-indigo/12 to-brand-indigo/4 px-2.5 py-1 font-mono text-[10.5px] font-semibold text-brand-indigo-deep">
+            <Info className="size-3" />
+            {scopeNote}
+          </span>
+        )}
+        <CardAction>
+          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <Icon className="size-4" />
+          </div>
+        </CardAction>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
+
+// One row for "top reason per level" — the ProjectListRow replacement. Too
+// small to promote to components/; only used here.
+function TopReasonRow({
+  level,
+  reason,
+  count,
+}: {
+  level: string;
+  reason: string;
+  count: number;
+}) {
+  return (
+    <div className="flex items-center gap-3.5 border-t border-hairline py-3 first:border-t-0 first:pt-1">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+        <GraduationCap className="size-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[13.5px] font-semibold text-foreground">
+          {level}
+        </div>
+        <div className="truncate text-[11.5px] text-muted-foreground">
+          {reason}
+        </div>
+      </div>
+      <span className="shrink-0 font-mono text-[13px] font-bold text-foreground">
+        {count.toLocaleString('en-SG')}
+      </span>
     </div>
   );
 }
 
-/** Resolves an existing `Delta` into the bento `StatCard`'s already-semantic
- * up=good/down=bad direction (see `DELTA_PILL_CLASS` in tokens.ts) — mirrors
- * `deltaChipClass`'s goodWhen resolution and Attendance Insights' own
- * `toStatDelta`, generalised with an explicit format/unit since this page
- * needs both a plain-percent delta (applications) and an absolute-pp one
- * (conversion rate). */
-function toStatDelta(
-  delta: Delta | undefined,
-  goodWhen: 'up' | 'down',
-  format: 'percent' | 'absolute' = 'percent',
-  unit?: string
-): StatCardDelta | undefined {
-  if (!delta || delta.direction === 'flat') return undefined;
-  const isGood =
-    (goodWhen === 'up' && delta.direction === 'up') ||
-    (goodWhen === 'down' && delta.direction === 'down');
-  return {
-    value: formatDeltaLabel(delta, { format, unit }),
-    direction: isGood ? 'up' : 'down',
-  };
-}
-
-// "Which levels convert worst?" quality-ramp bands — below 70% is a real
-// concern, 70–80 amber, 80–90 sky, 90+ mint. A page-local judgment call (the
-// locked mockups hand-picked their own per-page cut points; tokens.ts
-// documents this as expected — see qualityRampColorKey's doc comment).
-const LEVEL_CONVERSION_THRESHOLDS = { low: 70, high: 90 };
-
-// Reason-code → icon map for the cancellation-reasons segmented bar. Bounded
-// set (APPLICATION_TERMINAL_REASON_VALUES, KD #111) + the two sentinels this
-// page's own derivation introduces ('Unspecified' when the DB reason is
-// blank, OVERFLOW_REASON_KEY for the "Other reasons" overflow bucket).
-const OVERFLOW_REASON_KEY = '__overflow__';
-const REASON_ICONS: Record<string, LucideIcon> = {
-  chose_another_school: School,
-  visa_denied: FileX,
-  lost_interest: UserMinus,
-  financial: Wallet,
-  family_relocation: Plane,
-  health: HeartPulse,
-  other: HelpCircle,
-  Unspecified: HelpCircle,
-  [OVERFLOW_REASON_KEY]: Layers,
-};
-function reasonIcon(key: string): LucideIcon {
-  return REASON_ICONS[key] ?? HelpCircle;
-}
-
-// ── "Total Revenue" pill-bar-chart reshaping (intake trend) ────────────────
-// Two always-positive monthly count series (selected AY / compare AY) —
-// structurally the exact case pill-bar-chart.tsx's doc comment calls out
-// (case 1: "up"/"down" is a visual split, not a sign). A future month in the
-// current AY is `null` in intakeTrend.data (buildAyTrend/shapeIntakeTrendPoints)
-// — that already renders as a 0-height pill pair here (no separate "gap" state
-// needed: a 0px pill and a missing pill are visually identical), so no prop
-// addition to pill-bar-chart.tsx was required.
-const INTAKE_PLOT_HEIGHT_PX = 260;
-// 3 of 5 grid intervals (156 = 3 × 52) — keeps the "0" gridline exactly on a
-// tick position for PillBarChart's evenly-spaced axisLabels. The up region
-// (156px) is taller than the down region (104px) since the selected AY is
-// the more consequential series to give headroom to.
-const INTAKE_ZERO_OFFSET_PX = 156;
-const INTAKE_GRID_INTERVALS = 5;
-
-function buildIntakePillColumns(
-  data: AyTrendResult['data'],
-  series: AyTrendResult['series']
-): {
-  columns: PillBarColumn[];
-  axisLabels: string[];
-} {
-  const currentKey = series[0]?.key;
-  const compareKey = series[1]?.key;
-  const numeric = (v: unknown): number | null =>
-    typeof v === 'number' ? v : null;
-
-  const upValues = currentKey
-    ? data
-        .map((d) => numeric(d[currentKey]))
-        .filter((v): v is number => v !== null)
-    : [];
-  const downValues = compareKey
-    ? data
-        .map((d) => numeric(d[compareKey]))
-        .filter((v): v is number => v !== null)
-    : [];
-
-  const upRegionPx = INTAKE_ZERO_OFFSET_PX;
-  const downRegionPx = INTAKE_PLOT_HEIGHT_PX - INTAKE_ZERO_OFFSET_PX;
-  const maxUp = Math.max(1, ...upValues);
-  const maxDown = Math.max(1, ...downValues);
-  const scale =
-    downValues.length > 0
-      ? Math.min(upRegionPx / maxUp, downRegionPx / maxDown)
-      : upRegionPx / maxUp;
-
-  const intervalPx = INTAKE_PLOT_HEIGHT_PX / INTAKE_GRID_INTERVALS;
-  const unit = intervalPx / scale; // data value per grid interval
-  const axisLabels = [3, 2, 1, 0, -1, -2].map((m) => {
-    const v = Math.round(m * unit);
-    if (v === 0) return '0';
-    return v < 0
-      ? `−${Math.abs(v).toLocaleString('en-SG')}`
-      : v.toLocaleString('en-SG');
-  });
-
-  const columns: PillBarColumn[] = data.map((row, i) => {
-    const upVal = currentKey ? numeric(row[currentKey]) : null;
-    const downVal = compareKey ? numeric(row[compareKey]) : null;
-    return {
-      key: `${row.x}-${i}`,
-      label: String(row.x),
-      upHeightPx: upVal !== null ? Math.round(upVal * scale) : 0,
-      downHeightPx: downVal !== null ? Math.round(downVal * scale) : 0,
-    };
-  });
-
-  return { columns, axisLabels };
+// A non-blank empty-state body for a chart panel (§7.6) — icon + serif line
+// + a sentence of guidance, never a bare muted <p>.
+function EmptyChartState({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2 py-10 text-center">
+      <div className="flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+        <Filter className="size-4" />
+      </div>
+      <p className="max-w-70 text-sm text-muted-foreground">{message}</p>
+    </div>
+  );
 }
 
 // Admissions · Insights — a narrative, read-first companion to the operational
@@ -308,21 +252,31 @@ export default async function AdmissionsInsightsPage({
     priorFunnel,
     terminal,
     intakeTrendPoints,
-    conversionByLevel,
+    withdrawnByLevel,
     referralConversion,
     timeToEnroll,
+    assessmentConversion,
+    feedback,
+    priorFeedback,
   ] = await Promise.all([
     getConversionFunnel(selectedAy),
     compareAy ? getConversionFunnel(compareAy) : Promise.resolve(null),
     getAdmissionsTerminalReasons(selectedAy),
     getIntakeTrendByAy(trendAyRequests),
-    // Conversion breakdowns (by level / referral).
-    getConversionByLevel(selectedAy),
+    // Withdrawn applications per level (pre-enrolment; applicationStatus).
+    getWithdrawnByLevel(selectedAy),
     getReferralConversion(selectedAy),
     // Time to enrol — real enrolledAt timestamp (migration 075). sampleSize=0
     // is expected on existing data; folded into §1's headline row when it has
     // data, hidden entirely otherwise (no lib change, KD #140 honesty rule).
     getAverageTimeToEnrollment(selectedAy),
+    // Does entrance assessment performance predict enrollment? Genuinely new
+    // cross-cut — see lib/admissions/dashboard.ts::getConversionByAssessment.
+    getConversionByAssessment(selectedAy),
+    // Parent satisfaction with the application FORM itself — nothing to do
+    // with the pipeline/funnel. lib/admissions/feedback.ts (KD #102).
+    getAdmissionsFeedback(selectedAy),
+    compareAy ? getAdmissionsFeedback(compareAy) : Promise.resolve(null),
   ]);
 
   // AY-wide funnel figures (whole-year, not the picker-windowed range count).
@@ -408,14 +362,60 @@ export default async function AdmissionsInsightsPage({
         }
       : null;
 
-  // Levels sorted worst-converter-first so the bar list is scannable without
-  // reading the callout below it (requirement: ascending on conversionPct).
-  const levelsWorstFirst = sortLevelsByConversionAsc(conversionByLevel);
+  // Application-experience rating distribution — parent satisfaction with
+  // the ONLINE APPLICATION FORM itself (feedbackRating, 1-5), collected
+  // after submission. Nothing to do with applicationStatus/the funnel; this
+  // page has never touched this dimension of the schema before. The
+  // dedicated /admissions/feedback page lists individual responses — this is
+  // the distribution shape + year-over-year average, which that page doesn't
+  // show. A 1-5 star rating is an ordinal histogram — the proper chart for
+  // that shape is a plain ordered bar chart (how every star-rating UI shows
+  // it), not a donut/radial: bar length is a precise, directly comparable
+  // magnitude judgment; a partition-style chart trades that precision for a
+  // "share of whole" framing this data doesn't need. Every tier renders
+  // (including zero-count ones) so a gap in the distribution is visible,
+  // not silently dropped.
+  const ratingChartData: ComparisonBarPoint[] = [1, 2, 3, 4, 5].map(
+    (stars) => ({
+      category: `${stars}★`,
+      current: feedback.rows.filter((r) => r.feedbackRating === stars).length,
+    })
+  );
+  const priorAvgRating = priorFeedback?.stats.avgRating ?? null;
+  const ratingDelta =
+    feedback.stats.avgRating !== null && priorAvgRating !== null
+      ? Math.round((feedback.stats.avgRating - priorAvgRating) * 10) / 10
+      : null;
+  const RATING_DELTA_MIN = 0.3;
+  const showRatingDelta =
+    ratingDelta !== null && Math.abs(ratingDelta) >= RATING_DELTA_MIN;
 
-  // Referrals sorted best-converter-first — the bar now encodes conversion %
-  // (the story), volume stays visible as mono meta text alongside it.
-  const referralsByConversion = [...referralConversion].sort(
-    (a, b) => b.conversionPct - a.conversionPct
+  // Withdrawn applications by level — total + the level bearing the most,
+  // for the callout below the donut.
+  const totalWithdrawn = withdrawnByLevel.reduce((sum, r) => sum + r.count, 0);
+  const topWithdrawnLevel = pickExtreme(
+    withdrawnByLevel,
+    (r) => r.count,
+    'max'
+  );
+  const topWithdrawnPct =
+    topWithdrawnLevel.item !== null && totalWithdrawn > 0
+      ? Math.round((topWithdrawnLevel.item.count / totalWithdrawn) * 100)
+      : null;
+  const showTopWithdrawnLevel =
+    !topWithdrawnLevel.isTie && topWithdrawnLevel.item !== null;
+  const withdrawnTitle = showTopWithdrawnLevel
+    ? `${topWithdrawnLevel.item!.level} loses the most applicants`
+    : 'Withdrawals by level';
+
+  // Referrals restricted to sources with a real enough sample to trust a
+  // RATE claim — a 1-applicant channel that happened to enrol reads as
+  // "100% conversion," technically true, statistically meaningless. This
+  // guards the best/worst-converter callout text only (below); it does NOT
+  // gate the chart, which shows volume mix instead of rate (see §6).
+  const REFERRAL_MIN_SAMPLE = 5;
+  const eligibleRefs = referralConversion.filter(
+    (r) => r.applied >= REFERRAL_MIN_SAMPLE
   );
 
   // Cancellation reasons — top 5 + an overflow bucket for the sorted bar list.
@@ -438,7 +438,7 @@ export default async function AdmissionsInsightsPage({
     ...(otherReasonsCount > 0
       ? [
           {
-            key: OVERFLOW_REASON_KEY,
+            key: 'other_reasons',
             label: 'Other reasons',
             count: otherReasonsCount,
           },
@@ -453,45 +453,70 @@ export default async function AdmissionsInsightsPage({
   // claims in literals. (Storytelling pass.)
   // ────────────────────────────────────────────────────────────────────────
 
-  // 3a — Funnel: biggest leak, derived above from the real applicationStatus
-  // pipeline (largest stage-to-stage drop, or null when none). Title states the
-  // finding; callout (act) quantifies the drop. Neutral when no leak.
-  const funnelTitle = biggestLeakStage
-    ? `Applicants drop most at ${biggestLeakStage.label}`
-    : 'Application pipeline';
-
-  // 3b — Conversion by level: worst-converting level, but only claim it when
-  // the gap below the overall conversion rate is meaningful (≥ 10pp) and there
-  // is no tie. Otherwise stay neutral.
-  const worstLevel = pickExtreme(
-    conversionByLevel,
-    (r) => r.conversionPct,
-    'min'
-  );
-  const levelGap =
-    worstLevel.value !== null ? conversionPct - worstLevel.value : null;
-  const LEVEL_GAP_PP = 10;
-  const showWorstLevel =
-    !worstLevel.isTie &&
-    worstLevel.item !== null &&
-    meetsThreshold(levelGap, LEVEL_GAP_PP);
-  const levelTitle = showWorstLevel
-    ? `${worstLevel.item!.level} converts the least`
-    : 'Conversion by level';
-
-  // 5c — Referral channels: best + worst converting source, each guarded by a
-  // minimum sample so a 1-of-1 channel can't masquerade as the "best". Title
-  // names both ends when both clear the guard; neutral otherwise.
-  const REFERRAL_MIN_SAMPLE = 5;
-  const eligibleRefs = referralConversion.filter(
-    (r) => r.applied >= REFERRAL_MIN_SAMPLE
-  );
+  // 5c — Referral channels: best + worst converting source, from the same
+  // sample-guarded `eligibleRefs` computed above. Title names both ends
+  // when both clear the guard; neutral otherwise.
   const bestRef = pickExtreme(eligibleRefs, (r) => r.conversionPct, 'max');
   const worstRef = pickExtreme(eligibleRefs, (r) => r.conversionPct, 'min');
   const showBestRef = !bestRef.isTie && bestRef.item !== null;
   const referralTitle = showBestRef
     ? `${bestRef.item!.source} converts best`
     : 'Referral sources: conversion';
+
+  // 3c — Assessment performance vs conversion: does passing/failing the
+  // entrance assessment predict enrollment? Guarded by a minimum sample on
+  // BOTH the pass and fail buckets (a 1-applicant fail bucket converting at
+  // 0% isn't a real signal) and a minimum gap so noise doesn't read as a
+  // finding.
+  const findAssessmentRow = (
+    subject: AssessmentConversionRow['subject'],
+    outcome: AssessmentConversionRow['outcome']
+  ) =>
+    assessmentConversion.find(
+      (r) => r.subject === subject && r.outcome === outcome
+    );
+  const ASSESSMENT_MIN_SAMPLE = 5;
+  const assessmentGaps = (['Math', 'English'] as const)
+    .map((subject) => {
+      const pass = findAssessmentRow(subject, 'Pass');
+      const fail = findAssessmentRow(subject, 'Fail');
+      if (
+        !pass ||
+        !fail ||
+        pass.applied < ASSESSMENT_MIN_SAMPLE ||
+        fail.applied < ASSESSMENT_MIN_SAMPLE
+      )
+        return null;
+      return {
+        subject,
+        gap: pass.conversionPct - fail.conversionPct,
+        passPct: pass.conversionPct,
+        failPct: fail.conversionPct,
+      };
+    })
+    .filter(
+      (
+        g
+      ): g is {
+        subject: 'Math' | 'English';
+        gap: number;
+        passPct: number;
+        failPct: number;
+      } => g !== null
+    );
+  const biggestAssessmentGap = pickExtreme(
+    assessmentGaps,
+    (g) => Math.abs(g.gap),
+    'max'
+  );
+  const ASSESSMENT_GAP_MIN_PP = 10;
+  const showAssessmentGap =
+    !biggestAssessmentGap.isTie &&
+    biggestAssessmentGap.item !== null &&
+    meetsThreshold(biggestAssessmentGap.value, ASSESSMENT_GAP_MIN_PP);
+  const assessmentTitle = showAssessmentGap
+    ? `${biggestAssessmentGap.item!.subject} performance predicts enrollment`
+    : 'Does assessment performance predict enrollment?';
 
   // 4 — Terminal reasons: top cancellation cause (terminal.overall is already
   // sorted desc). Title names it; callout quantifies its share. Neutral when
@@ -521,15 +546,11 @@ export default async function AdmissionsInsightsPage({
         };
 
   // ────────────────────────────────────────────────────────────────────────
-  // Bento presentation-layer derivations — pure reshaping of the values
-  // already computed above into the shared bento primitives' prop shapes.
-  // No new queries, no changed data shapes.
+  // Chart-primitive presentation derivations — pure reshaping of the values
+  // already computed above into each chart component's prop shape. No new
+  // queries, no changed data shapes.
   // ────────────────────────────────────────────────────────────────────────
 
-  const applicationsStatDelta = toStatDelta(
-    applicationsDelta ?? undefined,
-    'up'
-  );
   const applicationsCaption = applicationsDelta
     ? `${priorApplications?.toLocaleString('en-SG')} in ${compareAy}`
     : demandState === 'no-data'
@@ -538,139 +559,107 @@ export default async function AdmissionsInsightsPage({
         ? 'Pick a comparison year above'
         : undefined;
 
-  const conversionStatDelta = toStatDelta(
-    conversionDelta ?? undefined,
-    'up',
-    'absolute',
-    'pp'
-  );
   const conversionCaption = conversionDelta
     ? `${priorConversionPct?.toFixed(1)}% in ${compareAy}`
     : `${enrolledCount.toLocaleString('en-SG')} of ${applicationsCount.toLocaleString('en-SG')} applicants enrolled`;
 
-  // §2 — intake trend pill-bar-chart + growth dial.
-  const { columns: intakeColumns, axisLabels: intakeAxisLabels } =
-    buildIntakePillColumns(intakeTrend.data, intakeTrend.series);
-  const showGrowthDial = growth.pct !== null && compareAy !== null;
-  const growthDialTotals: RateDialTotalRow[] = showGrowthDial
-    ? [
-        {
-          icon: FileStack,
-          iconGradient: 'indigo',
-          value: applicationsCount.toLocaleString('en-SG'),
-          label: selectedAy,
-        },
-        {
-          icon: FileStack,
-          iconGradient: 'grey',
-          value: (priorApplications ?? 0).toLocaleString('en-SG'),
-          label: compareAy ?? '',
-        },
-      ]
-    : [];
-
-  // §3 — funnel stall list. `funnel` is CUMULATIVE stage reach (Submitted
-  // includes everyone who ever reached it or beyond), not a mutually-exclusive
-  // partition of applicationsCount — so this uses ranked-bar (numbered
-  // stage-reach ranking), not segmented-bar (which requires segments to sum
-  // to 100%, per its own doc comment).
-  const funnelBars = funnel.map((stage) => {
-    const pct =
-      applicationsCount > 0
-        ? Math.max(4, Math.round((stage.count / applicationsCount) * 100))
-        : 0;
-    const isBiggestLeak =
-      biggestLeakStage !== null &&
-      stage.stage === biggestLeakStage.label &&
-      stage.dropOffPct === biggestLeakStage.dropOffPct;
-    const colorKey: ColorKey =
-      stage.stage === 'Enrolled'
-        ? 'mint'
-        : isBiggestLeak
-          ? 'destructive'
-          : 'indigo';
-    return { stage, pct, colorKey };
-  });
-  const funnelRows: RankedBarRow[] = funnelBars.map(
-    ({ stage, pct, colorKey }) => ({
-      key: stage.stage,
-      label: stage.stage,
-      pct,
-      colorKey,
-    })
-  );
-  const funnelLegend: RankedBarLegendItem[] = funnelBars.map(
-    ({ stage, colorKey }) => ({
-      key: stage.stage,
-      colorKey,
-      name: stage.stage,
-      value: `${stage.count.toLocaleString('en-SG')}`,
-    })
+  // §2 — intake trend: current + optional comparison series for TrendChart.
+  // Both are index-aligned (same Jan..Nov month order from buildAyTrend), so
+  // TrendChart's default alignComparison holds. A future month in the
+  // current AY is `null` in intakeTrend.data — passed through as-is so it
+  // renders as an honest chart gap (recharts skips null area points); the
+  // TrendPoint type says `y: number` but this mirrors the same pragmatic
+  // null-passthrough every other AyTrendResult-consuming chart in this app
+  // already relies on.
+  const intakeCurrentKey = intakeTrend.series[0]?.key;
+  const intakeCompareKey = intakeTrend.series[1]?.key;
+  const intakeCurrentPts = (
+    intakeCurrentKey
+      ? intakeTrend.data.map((row) => ({
+          x: String(row.x),
+          y: row[intakeCurrentKey],
+        }))
+      : []
+  ) as TrendPoint[];
+  const intakeComparePts = (
+    intakeCompareKey
+      ? intakeTrend.data.map((row) => ({
+          x: String(row.x),
+          y: row[intakeCompareKey],
+        }))
+      : null
+  ) as TrendPoint[] | null;
+  const haveIntakeData = intakeTrend.data.some((d) =>
+    intakeTrend.series.some((s) => d[s.key] !== null)
   );
 
-  // §4 — conversion by level ranked-bar + legend.
-  const levelBars = levelsWorstFirst.map((row) => {
-    const isWorst = showWorstLevel && row.level === worstLevel.item!.level;
-    const colorKey: ColorKey = isWorst
-      ? 'destructive'
-      : qualityRampColorKey(row.conversionPct, LEVEL_CONVERSION_THRESHOLDS);
-    return { row, colorKey };
-  });
-  const levelRows: RankedBarRow[] = levelBars.map(({ row, colorKey }) => ({
-    key: row.level,
-    label: row.level,
-    pct: Math.max(4, row.conversionPct),
-    colorKey,
+  // §4 — withdrawn applications by level. Every withdrawn applicant belongs
+  // to exactly one level, so this is a genuine partition of the total-
+  // withdrawn count — the honest fit for a donut (like the by-source volume
+  // donut), and it reads which levels are shedding the most applicants at a
+  // glance no matter how many levels appear.
+  const withdrawnDonutData: DonutSlice[] = withdrawnByLevel.map((row) => ({
+    name: row.level,
+    value: row.count,
   }));
-  const levelLegend: RankedBarLegendItem[] = levelBars.map(
-    ({ row, colorKey }) => ({
-      key: row.level,
-      colorKey,
-      name: row.level,
-      value: `${row.conversionPct}%`,
-    })
-  );
 
   // §5 — cancellation reasons: topReasons + the overflow bucket are a genuine
   // partition of terminal.total (otherReasonsCount is explicitly the
-  // remainder) — this DOES fit segmented-bar's "sums to 100%" contract.
-  const reasonSegments: SegmentedBarSegment[] = reasonBars.map((r) => {
-    const pct =
-      terminal.total > 0 ? Math.round((r.count / terminal.total) * 100) : 0;
-    const isTop = showTopReason && r.key === topReason.reason;
-    const colorKey: ColorKey =
-      r.key === OVERFLOW_REASON_KEY ? 'grey' : isTop ? 'amber' : 'indigo';
-    return {
-      key: r.key,
-      label: r.label,
-      value: `${r.count.toLocaleString('en-SG')} cancellation${r.count === 1 ? '' : 's'}`,
-      pct,
-      colorKey,
-      icon: reasonIcon(r.key),
-    };
-  });
+  // remainder) — DonutChart is the correct fit for a mutually-exclusive share.
+  const reasonDonutData: DonutSlice[] = reasonBars.map((r) => ({
+    name: r.label,
+    value: r.count,
+  }));
 
-  // §6 — referral channels ranked-bar. Same shape as conversion-by-level
-  // (ReferralConversionRow mirrors LevelConversionRow: applied/enrolled/
-  // conversionPct) — the mockup's "no source recorded" framing doesn't exist
-  // in the real loader, so this reuses ranked-bar on the real per-source
-  // conversion data instead, placed in its own Chapter-3 section.
-  const referralRows: RankedBarRow[] = referralsByConversion.map((r) => {
-    const isBest = showBestRef && r.source === bestRef.item!.source;
-    const isWorst =
-      showBestRef &&
-      !worstRef.isTie &&
-      worstRef.item !== null &&
-      r.source === worstRef.item.source &&
-      worstRef.item.source !== bestRef.item!.source;
-    const colorKey: ColorKey = isBest ? 'mint' : isWorst ? 'amber' : 'indigo';
-    return {
-      key: r.source,
-      label: r.source,
-      pct: Math.max(4, r.conversionPct),
-      colorKey,
-    };
-  });
+  // §4b — assessment performance vs conversion. Matches the operational
+  // dashboard's AssessmentOutcomesChart visual language (subject on the
+  // x-axis, one clustered bar per outcome, legend) — but GROUPED, not
+  // STACKED like that chart, since these are three independent conversion
+  // RATES per subject, not parts of one whole that sum to 100% the way
+  // pass/fail/unknown VOLUME does on the dashboard's version. A treemap was
+  // tried here and reverted: with only 6 buckets (2 subjects × 3 outcomes)
+  // a treemap's area/colour channels are overkill — it earns its keep with
+  // dozens of leaves — and bucketing rate into 4 colour tiers throws away
+  // precision a bar's continuous y-axis keeps.
+  const ASSESSMENT_SERIES: {
+    key: 'pass' | 'fail' | 'notAssessed';
+    label: AssessmentConversionRow['outcome'];
+  }[] = [
+    { key: 'pass', label: 'Pass' },
+    { key: 'fail', label: 'Fail' },
+    { key: 'notAssessed', label: 'Not assessed' },
+  ];
+  const assessmentGroupedData = (['Math', 'English'] as const)
+    .map((subject) => ({
+      x: subject,
+      pass: findAssessmentRow(subject, 'Pass')?.conversionPct ?? null,
+      fail: findAssessmentRow(subject, 'Fail')?.conversionPct ?? null,
+      notAssessed:
+        findAssessmentRow(subject, 'Not assessed')?.conversionPct ?? null,
+    }))
+    .filter(
+      (row) =>
+        row.pass !== null || row.fail !== null || row.notAssessed !== null
+    );
+
+  // §6 — referral channels: WHERE applicants come from, not how well each
+  // converts. Every applicant has exactly one source, so volume-by-source
+  // is a genuine partition of the applicant pool — the honest fit for a
+  // donut, unlike conversion RATE per source (independent percentages that
+  // don't sum to anything, tried as a scatter/radar/bar this session and
+  // reverted each time — small/skewed per-channel samples made every rate
+  // chart either misleading or visually degenerate). Rate is still the
+  // headline finding, but it lives in the guarded callout text below the
+  // chart, not in the chart itself. Every source is shown here (no n≥5
+  // filter) — a small volume slice is honest; the same channel's RATE
+  // masquerading as reliable at that volume is not.
+  const totalReferralApplicants = referralConversion.reduce(
+    (sum, r) => sum + r.applied,
+    0
+  );
+  const referralDonutData: DonutSlice[] = referralConversion
+    .filter((r) => r.applied > 0)
+    .map((r) => ({ name: r.source, value: r.applied }));
 
   return (
     <PageShell>
@@ -717,52 +706,64 @@ export default async function AdmissionsInsightsPage({
           Demand &amp; conversion
         </p>
 
-        <BentoGrid>
-          {/* row 1 — stat cards. Primary-AY metrics always render; only the
-              demand-comparison caption reacts to `demandState`. */}
-          <BentoCard span={4}>
-            <StatCard
-              icon={FileStack}
-              iconGradient="indigo"
-              value={applicationsCount.toLocaleString('en-SG')}
-              label="Applications received"
-              delta={applicationsStatDelta}
-              caption={applicationsCaption}
-            />
-          </BentoCard>
-
-          <BentoCard span={4}>
-            <StatCard
-              icon={Percent}
-              iconGradient="mint"
-              value={`${conversionPct}%`}
-              label="Conversion rate"
-              delta={conversionStatDelta}
-              caption={conversionCaption}
-            />
-          </BentoCard>
-
+        {/* Stat cards. Primary-AY metrics always render; only the demand-
+            comparison caption reacts to `demandState`. The dedicated growth
+            panel from the earlier version is gone — applicationsDelta already
+            renders as this card's own delta chip, and growth is also stated
+            in the hero badge, so a third growth visual was redundant. */}
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <MetricCard
+            label="Applications received"
+            value={applicationsCount}
+            format="number"
+            icon={FileStack}
+            delta={applicationsDelta ?? undefined}
+            deltaGoodWhen="up"
+            comparisonLabel={applicationsCaption}
+          />
+          <MetricCard
+            label="Conversion rate"
+            value={conversionPct}
+            format="percent"
+            icon={Percent}
+            delta={conversionDelta ?? undefined}
+            deltaGoodWhen="up"
+            deltaFormat="absolute"
+            deltaUnit="pp"
+            comparisonLabel={conversionCaption}
+          />
           {/* Avg. days to enrol — CONDITIONAL: only when sampleSize > 0
               (early-in-AY / sparse cohorts suppress it rather than show a
               near-zero-sample average). */}
           {timeToEnroll.sampleSize > 0 && (
-            <BentoCard span={4}>
-              <StatCard
-                icon={Clock}
-                iconGradient="sky"
-                value={`${timeToEnroll.avgDays}d`}
-                label="Avg. days to enrol"
-                caption={`${selectedAy} · n=${timeToEnroll.sampleSize.toLocaleString('en-SG')}`}
-              />
-            </BentoCard>
+            <MetricCard
+              label="Avg. days to enrol"
+              value={timeToEnroll.avgDays}
+              format="days"
+              icon={Clock}
+              subtext={`${selectedAy} · n=${timeToEnroll.sampleSize.toLocaleString('en-SG')}`}
+            />
           )}
+        </section>
 
-          {/* row 2 — intake trend + growth panel */}
-          <BentoCard span={8}>
-            <SectionHeading cap="Applications per month" title="Intake trend" />
-            {intakeTrend.data.some((d) =>
-              intakeTrend.series.some((s) => d[s.key] !== null)
-            ) ? (
+        {/* Intake trend + application experience share a row — neither needs
+            full width (the trend reads fine at half width; the rating
+            histogram is a 5-bar chart that looked lost in a full-width
+            card), and pairing them cuts the empty canvas both had on their
+            own row. */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <InsightChartCard
+            cap={`Applications per month${compareAy ? ` · ${selectedAy} vs ${compareAy}` : ` · ${selectedAy}`}`}
+            title={
+              intakeTrendDelta?.direction === 'up'
+                ? 'Applications are picking up'
+                : intakeTrendDelta?.direction === 'down'
+                  ? 'Applications are slowing'
+                  : 'Intake trend'
+            }
+            icon={TrendingUp}
+          >
+            {haveIntakeData ? (
               <div className="space-y-4">
                 {intakeTrendSummary.currentValue !== null && (
                   <TrendDeltaCaption
@@ -773,89 +774,67 @@ export default async function AdmissionsInsightsPage({
                     delta={intakeTrendDelta}
                   />
                 )}
-                <PillBarChart
-                  columns={intakeColumns}
-                  plotHeightPx={INTAKE_PLOT_HEIGHT_PX}
-                  zeroOffsetPx={INTAKE_ZERO_OFFSET_PX}
-                  axisLabels={intakeAxisLabels}
-                  legend={[
-                    { colorKey: 'indigo', label: selectedAy },
-                    ...(compareAy
-                      ? [{ colorKey: 'grey' as const, label: compareAy }]
-                      : []),
-                  ]}
-                  defaultUpColorKey="indigo"
-                  defaultDownColorKey="grey"
+                <TrendChart
+                  label="Applications"
+                  current={intakeCurrentPts}
+                  comparison={intakeComparePts}
+                  yFormat="number"
                 />
               </div>
             ) : (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                No applications recorded yet for this academic year.
-              </p>
+              <EmptyChartState message="No applications recorded yet for this academic year." />
             )}
-          </BentoCard>
+          </InsightChartCard>
 
-          <BentoCard span={4}>
-            {showGrowthDial ? (
-              <RateDial
-                value={`${growth.pct}%`}
-                label="Growth"
-                caption={`${applicationsCount.toLocaleString('en-SG')} application${applicationsCount === 1 ? '' : 's'} this AY, ${growth.pct! >= 0 ? 'up' : 'down'} from ${(priorApplications ?? 0).toLocaleString('en-SG')} in ${compareAy}`}
-                colorKey="indigo"
-                totals={growthDialTotals}
-              />
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-1.5 py-6 text-center">
-                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Growth
-                </p>
-                <p className="max-w-55 text-sm text-muted-foreground">
-                  {compareAy === null
-                    ? 'Pick a comparison year above to see year-over-year growth.'
-                    : `No application data found for ${compareAy}.`}
-                </p>
-              </div>
-            )}
-          </BentoCard>
-
-          {/* row 3 — funnel stall list */}
-          <BentoCard span={12}>
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Stage reach — {applicationsCount.toLocaleString('en-SG')}{' '}
-                  total applications
-                </p>
-                <p className="mt-0.5 font-serif text-base font-semibold text-foreground">
-                  {funnelTitle}
-                </p>
-              </div>
-              {biggestLeakStage && (
-                <BadgeTooltip
-                  label="Biggest leak"
-                  colorKey="destructive"
-                  tooltip={`${biggestLeakStage.dropOffPct}% of applicants fall away at ${biggestLeakStage.label} — focus follow-up there to recover the most.`}
-                />
-              )}
-            </div>
-            {applicationsCount === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                No applications recorded yet for this academic year.
-              </p>
+          {/* Application experience — parent satisfaction with the online
+              application FORM, nothing to do with pipeline stage/status.
+              Genuinely untouched dimension of the schema (feedbackRating on
+              ay{{YYYY}}_enrolment_applications, KD #102). The dedicated
+              /admissions/feedback page lists individual responses; this is
+              the rating distribution + year-over-year average, which page
+              doesn't show. */}
+          <InsightChartCard
+            cap="Application experience"
+            title={
+              feedback.stats.avgRating !== null
+                ? `${feedback.stats.avgRating.toFixed(1)}/5 average rating`
+                : 'How did the application form feel?'
+            }
+            icon={Star}
+          >
+            {feedback.stats.ratingCount === 0 ? (
+              <EmptyChartState message="No parents have rated the application form yet this academic year." />
             ) : (
               <>
-                <RankedBar rows={funnelRows} legend={funnelLegend} />
-                {biggestLeakStage && biggestLeakStage.dropOffPct > 0 ? (
-                  <RecommendationCallout tone="act" className="mt-5">
-                    {biggestLeakStage.dropOffPct}% of applicants fall away at{' '}
-                    {biggestLeakStage.label} — focus follow-up there to recover
-                    the most.
+                <ComparisonBarChart
+                  data={ratingChartData}
+                  orientation="vertical"
+                  yFormat="number"
+                  height={200}
+                  rotateLabels={false}
+                />
+                <p className="mt-3 font-mono text-[10.5px] text-muted-foreground">
+                  {feedback.stats.ratingCount.toLocaleString('en-SG')} response
+                  {feedback.stats.ratingCount === 1 ? '' : 's'}
+                  {feedback.stats.consentRate !== null
+                    ? ` · ${feedback.stats.consentRate}% open to follow-up`
+                    : ''}
+                </p>
+                {showRatingDelta ? (
+                  <RecommendationCallout
+                    tone={ratingDelta! > 0 ? 'positive' : 'watch'}
+                    className="mt-5"
+                  >
+                    Average rating is {ratingDelta! > 0 ? 'up' : 'down'}{' '}
+                    {Math.abs(ratingDelta!).toFixed(1)} vs {compareAy} (
+                    {priorAvgRating!.toFixed(1)} →{' '}
+                    {feedback.stats.avgRating!.toFixed(1)}).
                   </RecommendationCallout>
                 ) : null}
               </>
             )}
-          </BentoCard>
-        </BentoGrid>
+          </InsightChartCard>
+        </div>
       </div>
       {/* ═══ end Demand & conversion ═══ */}
 
@@ -867,38 +846,90 @@ export default async function AdmissionsInsightsPage({
           Who &amp; why we lose
         </p>
 
-        {/* Conversion by level */}
-        <BentoCard span={12}>
-          <SectionHeading
-            cap="Active pipeline only — terminal statuses excluded"
-            title={levelTitle}
-          />
-          {levelsWorstFirst.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No level data available.
-            </p>
-          ) : (
-            <>
-              <RankedBar rows={levelRows} legend={levelLegend} />
-              {showWorstLevel ? (
-                <RecommendationCallout tone="watch" className="mt-5">
-                  {worstLevel.item!.level} converts at{' '}
-                  {worstLevel.item!.conversionPct}% — {levelGap}pp below the{' '}
-                  {conversionPct}% overall rate. Worth a closer look at this
-                  level&rsquo;s pipeline.
-                </RecommendationCallout>
-              ) : null}
-            </>
-          )}
-        </BentoCard>
+        {/* Withdrawals by level + entrance assessment share a row — same
+            reasoning as the pair above: neither is dense enough to earn a
+            full-width row on its own. */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <InsightChartCard
+            cap="By level"
+            title={withdrawnTitle}
+            icon={GraduationCap}
+            scopeNote="Withdrawn applications — families who pulled out before enrolling"
+          >
+            {withdrawnDonutData.length === 0 ? (
+              <EmptyChartState message="No applications have been withdrawn this academic year." />
+            ) : (
+              <>
+                <DonutChart
+                  data={withdrawnDonutData}
+                  centerValue={totalWithdrawn.toLocaleString('en-SG')}
+                  centerLabel="Withdrawn"
+                />
+                {showTopWithdrawnLevel ? (
+                  <RecommendationCallout tone="watch" className="mt-5">
+                    {topWithdrawnLevel.item!.level} accounts for{' '}
+                    {topWithdrawnLevel.item!.count} of {totalWithdrawn}{' '}
+                    withdrawn application
+                    {totalWithdrawn === 1 ? '' : 's'}
+                    {topWithdrawnPct !== null ? ` (${topWithdrawnPct}%)` : ''} —
+                    the level shedding the most applicants before enrolment.
+                  </RecommendationCallout>
+                ) : null}
+              </>
+            )}
+          </InsightChartCard>
+
+          {/* Assessment performance vs conversion — new cross-cut: does
+              passing/failing the entrance assessment predict who enrolls?
+              Never shown anywhere else; the operational dashboard's
+              assessment chart shows pass/fail volume only, not tied to
+              enrollment. */}
+          <InsightChartCard
+            cap="Entrance assessment"
+            title={assessmentTitle}
+            icon={ClipboardCheck}
+            scopeNote="All applicants — includes cancelled/withdrawn"
+          >
+            {assessmentGroupedData.length === 0 ? (
+              <EmptyChartState message="No assessment results recorded yet for this academic year." />
+            ) : (
+              <>
+                <GroupedBarChart
+                  series={ASSESSMENT_SERIES.map((s) => ({
+                    key: s.key,
+                    label: s.label,
+                  }))}
+                  data={assessmentGroupedData}
+                  yFormat="percent"
+                  height={240}
+                />
+                {showAssessmentGap ? (
+                  <RecommendationCallout tone="watch" className="mt-5">
+                    {biggestAssessmentGap.item!.subject} applicants who passed
+                    enrol at {biggestAssessmentGap.item!.passPct}%, versus{' '}
+                    {biggestAssessmentGap.item!.failPct}% for those who failed —
+                    a {biggestAssessmentGap.value}pp gap.
+                  </RecommendationCallout>
+                ) : null}
+              </>
+            )}
+          </InsightChartCard>
+        </div>
 
         {/* Why applicants are lost (pre-enrolment; distinct from Records'
             enrolled-student withdrawals). */}
         {terminal.total > 0 && (
-          <BentoGrid>
-            <BentoCard span={6}>
-              <SectionHeading cap="Cancellation reasons" title={reasonTitle} />
-              <SegmentedBar segments={reasonSegments} />
+          <div className="grid gap-4 lg:grid-cols-2">
+            <InsightChartCard
+              cap="Cancellation reasons"
+              title={reasonTitle}
+              icon={Megaphone}
+            >
+              <DonutChart
+                data={reasonDonutData}
+                centerValue={terminal.total.toLocaleString('en-SG')}
+                centerLabel="Cancellations"
+              />
               {showTopReason ? (
                 <RecommendationCallout tone="watch" className="mt-5">
                   {reasonLabel(topReason.reason)} accounts for {topReason.count}{' '}
@@ -907,28 +938,30 @@ export default async function AdmissionsInsightsPage({
                   clearest place to address drop-out.
                 </RecommendationCallout>
               ) : null}
-            </BentoCard>
-            <BentoCard span={6}>
-              <SectionHeading cap="Top reason per level" title="By level" />
+            </InsightChartCard>
+
+            <InsightChartCard
+              cap="Top reason per level"
+              title="By level"
+              icon={GraduationCap}
+            >
               <div>
                 {terminal.byLevel.map((lvl) => {
                   const lvlTopReason = lvl.reasons[0];
                   return (
-                    <ProjectListRow
+                    <TopReasonRow
                       key={lvl.level}
-                      icon={GraduationCap}
-                      iconGradient="indigo"
-                      name={lvl.level}
-                      subtitle={
+                      level={lvl.level}
+                      reason={
                         lvlTopReason ? reasonLabel(lvlTopReason.reason) : '—'
                       }
-                      value={lvl.count.toLocaleString('en-SG')}
+                      count={lvl.count}
                     />
                   );
                 })}
               </div>
-            </BentoCard>
-          </BentoGrid>
+            </InsightChartCard>
+          </div>
         )}
       </div>
       {/* ═══ end Who & why we lose ═══ */}
@@ -940,18 +973,21 @@ export default async function AdmissionsInsightsPage({
           Channels &amp; segments
         </p>
 
-        <BentoCard span={12}>
-          <SectionHeading
-            cap="All applicants (including cancelled/withdrawn) — true conversion rate"
-            title={referralTitle}
-          />
-          {referralsByConversion.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No referral sources recorded yet.
-            </p>
+        <InsightChartCard
+          cap="By source"
+          title={referralTitle}
+          icon={Megaphone}
+          scopeNote="All applicants — includes cancelled/withdrawn"
+        >
+          {referralDonutData.length === 0 ? (
+            <EmptyChartState message="No referral sources recorded yet." />
           ) : (
             <>
-              <RankedBar rows={referralRows} />
+              <DonutChart
+                data={referralDonutData}
+                centerValue={totalReferralApplicants.toLocaleString('en-SG')}
+                centerLabel="Applicants"
+              />
               {showBestRef ? (
                 <RecommendationCallout tone="positive" className="mt-5">
                   {bestRef.item!.source} converts best at{' '}
@@ -966,7 +1002,7 @@ export default async function AdmissionsInsightsPage({
               ) : null}
             </>
           )}
-        </BentoCard>
+        </InsightChartCard>
       </div>
       {/* ═══ end Channels & segments ═══ */}
 

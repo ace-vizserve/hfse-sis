@@ -1,38 +1,44 @@
 import {
+  Activity,
   ArrowLeft,
   BarChart3,
   ClipboardCheck,
+  Filter,
   GitPullRequestArrow,
   GraduationCap,
+  Lock,
+  TrendingDown,
   Timer,
+  type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
 
+import {
+  CategoryLineChart,
+  type CategoryLinePoint,
+} from '@/components/dashboard/charts/category-line-chart';
+import {
+  ComparisonBarChart,
+  type ComparisonBarPoint,
+} from '@/components/dashboard/charts/comparison-bar-chart';
 import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
+import { MetricCard } from '@/components/dashboard/metric-card';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
 import {
-  BentoCard,
-  BentoGrid,
-} from '@/components/dashboard/insights/bento/bento-grid';
-import { StatCard } from '@/components/dashboard/insights/bento/stat-card';
-import {
-  RankedBar,
-  type RankedBarRow,
-} from '@/components/dashboard/insights/bento/ranked-bar';
-import {
-  PillBarChart,
-  type PillBarColumn,
-} from '@/components/dashboard/insights/bento/pill-bar-chart';
-import { ProjectListRow } from '@/components/dashboard/insights/bento/project-list-row';
-import { BadgeTooltip } from '@/components/dashboard/insights/bento/badge-tooltip';
-import { qualityRampColorKey } from '@/components/dashboard/insights/bento/tokens';
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
-import { cn } from '@/lib/utils';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { buildCompareCells } from '@/lib/dashboard/compare';
 import { resolveCompareAy } from '@/lib/dashboard/comparison';
@@ -58,7 +64,6 @@ import {
 import {
   buildSubjectLevelPoints,
   computeTermDelta,
-  getWatchRowsByLevel,
   highlightedLockTermNumber,
   selectTopRegressionMovers,
   type SubjectLevelTrendPoint,
@@ -73,101 +78,60 @@ const ALLOWED_ROLES = new Set(['registrar', 'school_admin', 'superadmin']);
 // future band re-definition.
 const TOP_BAND_KEYS = new Set(['vs', 'o']);
 
-// Minimum magnitude for a regression to be called out in a RecommendationCallout.
-// Below this threshold we don't claim "biggest regression" — noise, not signal.
 const REGRESSION_MIN_PTS = 3;
-
-// Minimum pending change-request count to surface a throughput bottleneck callout.
 const PENDING_CR_MIN = 3;
-
-// GroupedBarChart reads cleanly with up to 5 distinct-hue bar series; beyond
-// that hues repeat and the chart tangles. Only the subjects that moved most
-// across the AY's terms are plotted — the rest are named in the section copy.
 const TOP_SUBJECT_LIMIT = 5;
-
-// "Subjects to watch" ranked-bar quality-ramp cut points — 75 and 85 aren't
-// hand-picked for this page; they're GRADE_BANDS' own DNM/FS boundary (75)
-// and S/VS boundary (85), the same "did not meet" / "very satisfactory"
-// thresholds already governing grade computation elsewhere (lib/markbook/
-// dashboard.ts) — reused, not invented.
-const WATCH_QUALITY_THRESHOLDS = { low: 75, high: 85 };
-
-// "Term-over-term regression" pill-bar chart — up to this many (subject ×
-// level) pairs, selected by |delta| via selectTopRegressionMovers (see that
-// function's doc comment for why magnitude, not the ascending-by-delta table
-// order, drives selection). 260px plot height with both the "From" and "To"
-// halves independently spanning the TRUE 0-100 grade scale (not an auto-fit
-// scale cropped to whatever range this AY's values cluster in) — per the
-// locked mockup's own design note: bars read close in height because the
-// values genuinely ARE close; the exact numbers + delta pill still carry the
-// precise signal (same tradeoff already made for Population-by-level bars
-// on Records Insights). zeroOffsetPx sits at the plot's vertical midpoint so
-// each half gets an identical 0-100-point pixel budget; axis labels mirror
-// the "up" half's ticks with a minus sign on the "down" half purely as a
-// labelling convention (same convention Records' movement chart and
-// Admissions' intake chart already use for their own always-positive
-// up/down splits).
+// Up to this many (subject × level) pairs plotted in the term-over-term
+// movement chart, selected by |delta| via selectTopRegressionMovers.
 const REGRESSION_CHART_LIMIT = 6;
-const REGRESSION_PLOT_HEIGHT_PX = 260;
-const REGRESSION_ZERO_OFFSET_PX = REGRESSION_PLOT_HEIGHT_PX / 2;
-const REGRESSION_AXIS_LABELS = ['100', '50', '0', '−50', '−100'];
 
-// "Sheets locked · per term" bar chart sizing.
-const LOCK_BAR_MAX_HEIGHT_PX = 130;
+// ── Page-local presentation helpers — same shell the other Insights pages
+// use (mono cap + serif title + gradient icon tile). ────────────────────────
 
-// ── Small page-local presentation helpers ──────────────────────────────────
-// Not part of the shared bento/ library — mirrors the "mono cap + serif
-// title" text block every bento card in the locked mockups carries, composed
-// here from plain Tailwind (same pattern as Attendance/Admissions/Records
-// Insights' own page-local SectionHeading; the ellipsis "more" affordance
-// the mockup pairs with several of these headers is decorative-only in the
-// mockup — no defined action — and was likewise dropped by every prior
-// phase of this redesign).
-
-function SectionHeading({ cap, title }: { cap: string; title: string }) {
+function InsightChartCard({
+  cap,
+  title,
+  icon: Icon,
+  action,
+  children,
+}: {
+  cap: string;
+  title: string;
+  icon: LucideIcon;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div className="mb-4">
-      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        {cap}
-      </p>
-      <p className="mt-0.5 font-serif text-base font-semibold text-foreground">
-        {title}
-      </p>
-    </div>
+    <Card>
+      <CardHeader>
+        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+          {cap}
+        </CardDescription>
+        <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+          {title}
+        </CardTitle>
+        <CardAction>
+          {action ?? (
+            <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <Icon className="size-4" />
+            </div>
+          )}
+        </CardAction>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   );
 }
 
-// Minimal shape buildRegressionColumns actually needs — avoids importing
-// SubjectLevelDelta just for this local helper's parameter type.
-type SubjectLevelTrendDeltaLike = {
-  subjectName: string;
-  levelCode: string;
-  firstAvg: number;
-  lastAvg: number;
-  delta: number;
-};
-
-/**
- * Reshape the selected regression movers into PillBarChart columns. "From"
- * (the earliest recorded term's average) always renders in neutral grey — a
- * baseline value, not tied to a specific direction; "To" (the latest term's
- * average) is coloured by the pair's own sign — destructive for a decline,
- * mint for an improvement, matching the mv-legend's two "To" entries.
- * PillBarChart natively supports both a per-column colour override
- * (upColorKey/downColorKey) and a two-line "\n" label, so no primitive
- * extension was needed for this card.
- */
-function buildRegressionColumns(
-  movers: SubjectLevelTrendDeltaLike[]
-): PillBarColumn[] {
-  const pxPerGradePoint = REGRESSION_ZERO_OFFSET_PX / 100;
-  return movers.map((d) => ({
-    key: `${d.subjectName}-${d.levelCode}`,
-    label: `${d.subjectName}\n${d.levelCode}`,
-    upHeightPx: Math.round(d.firstAvg * pxPerGradePoint),
-    downHeightPx: Math.round(d.lastAvg * pxPerGradePoint),
-    downColorKey: d.delta < 0 ? 'destructive' : 'mint',
-  }));
+function EmptyChartState({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2 py-10 text-center">
+      <div className="flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+        <Filter className="size-4" />
+      </div>
+      <p className="max-w-70 text-sm text-muted-foreground">{message}</p>
+    </div>
+  );
 }
 
 // Markbook · Insights — the "Academic Performance" companion to the operational
@@ -213,8 +177,7 @@ export default async function MarkbookInsightsPage({
   );
 
   // Resolve the selected AY's UUID — getGradeDistribution is keyed by id
-  // (uuid), the rest by code. Mirrors the markbook dashboard page.
-  // Also resolve the comparison AY's UUID when one is set.
+  // (uuid), the rest by code. Also resolve the comparison AY's UUID when set.
   const [{ data: ayRow }, { data: compareAyRow }] = await Promise.all([
     service
       .from('academic_years')
@@ -232,9 +195,8 @@ export default async function MarkbookInsightsPage({
   const ayId = (ayRow as { id: string } | null)?.id ?? null;
   const compareAyId = (compareAyRow as { id: string } | null)?.id ?? null;
 
-  // Subject-performance trend needs term cells (termId + termNumber). When a
-  // comparison AY is selected we include both AYs so the trend chart can show
-  // two series per subject. getSubjectPerformanceTrend reads only
+  // Subject-performance trend needs term cells (termId + termNumber). Include
+  // both AYs when a comparison is set. getSubjectPerformanceTrend reads only
   // cell.{termId,termNumber,ayCode} — the `data` payload is irrelevant.
   const [trendCells, levelTrendCells] = await Promise.all([
     buildCompareCells({
@@ -243,13 +205,8 @@ export default async function MarkbookInsightsPage({
       terms: [1, 2, 3, 4],
     }),
     // Level breakdown always uses the primary AY only — comparison AY context
-    // is for the school-wide trend chart; the level watchlist is diagnostic,
-    // so mixing AYs would obscure the signal.
-    buildCompareCells({
-      kind: 'term',
-      ays: [selectedAy],
-      terms: [1, 2, 3, 4],
-    }),
+    // is for the school-wide trend chart; the level watchlist is diagnostic.
+    buildCompareCells({ kind: 'term', ays: [selectedAy], terms: [1, 2, 3, 4] }),
   ]);
   const trendCellResults = trendCells.map((cell) => ({
     cell,
@@ -278,9 +235,7 @@ export default async function MarkbookInsightsPage({
     getSubjectLevelTrend(levelTrendCellResults),
   ]);
 
-  // Headline: total graded + share in the top band(s). totalGraded is only a
-  // denominator here now (the "Grades recorded" stat card it used to feed was
-  // cut, KD-mockup-locked decision — see the note below the hero).
+  // Headline: total graded + share in the top band(s).
   const totalGraded = (gradeDist ?? []).reduce((s, b) => s + b.count, 0);
   const topBandCount = (gradeDist ?? [])
     .filter((b) => TOP_BAND_KEYS.has(b.key))
@@ -288,7 +243,6 @@ export default async function MarkbookInsightsPage({
   const topBandPct =
     totalGraded > 0 ? Math.round((topBandCount / totalGraded) * 100) : null;
 
-  // Comparison AY top-band share (null when no comparison dist or it's empty).
   function computeTopBandPct(dist: typeof gradeDist): number | null {
     if (!dist) return null;
     const total = dist.reduce((s, b) => s + b.count, 0);
@@ -302,8 +256,7 @@ export default async function MarkbookInsightsPage({
   const compareTopBandPct = computeTopBandPct(compareGradeDist);
   const growthBadge = topBandBadge(topBandPct, compareTopBandPct, compareAy);
 
-  // Term periods across whichever AYs are in scope — the shared x-axis for
-  // both the subject trend chart and the level-breakdown watchlists below.
+  // Term periods across whichever AYs are in scope — shared x-axis.
   const periods = [
     ...new Set(
       trendCells
@@ -312,21 +265,13 @@ export default async function MarkbookInsightsPage({
     ),
   ].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
 
-  // ── Subjects to watch (school-wide, unchanged) ─────────────────────────────
-  // From the LATEST term that has any trend data in the PRIMARY AY, the lowest-
-  // averaging subjects. Always primary-AY only — comparison is context, not the
-  // target of the watchlist.
+  // ── Subjects to watch (school-wide) ────────────────────────────────────────
   const primaryTrendPoints = trendPoints.filter((p) => p.ayCode === selectedAy);
   const latestPeriodWithData = [...periods]
     .reverse()
     .find((p) => primaryTrendPoints.some((pt) => pt.periodLabel === p));
 
-  // ── Performance trend chart, top-N-by-movement bars ───────────────────────
-  // A bar series per subject reads cleanly up to GroupedBarChart's 5-hue
-  // budget; beyond that hues repeat and the chart tangles. So we plot only
-  // the subjects that moved most from their first to their latest recorded
-  // term this AY — deliberately CURRENT-AY-ONLY (the AY-over-AY read for
-  // Markbook already lives in the hero's topBandBadge and on /markbook/compare).
+  // ── Performance trend chart, top-N-by-movement bars (current-AY only) ──────
   const topMovementSubjects = selectTopMovementSubjects(
     primaryTrendPoints,
     periods,
@@ -343,21 +288,10 @@ export default async function MarkbookInsightsPage({
     [selectedAy]
   );
 
-  // ── Trend-section visibility gate ─────────────────────────────────────────
-  // Gated on what's ACTUALLY plotted (trendBarSeries/primaryTrendPoints,
-  // built current-AY-only from the top-movement subjects) — not on the raw
-  // trendPoints matrix, which stays non-empty from the comparison AY alone at
-  // AY rollover (current AY has no grades yet). Gating on that matrix rendered
-  // an empty, axes-only chart instead of hiding the section.
   const haveTrend = primaryTrendPoints.length > 0 && trendBarSeries.length > 0;
 
-  // Overall average per period across every plotted-AY subject (not just the
-  // 5 plotted bars) — the honest schoolwide headline behind the chart.
-  // summariseSeriesMovement (tested, lib/dashboard/trend-delta.ts) turns the
-  // per-period points into the latest value + a first→latest movement delta
-  // ("+X vs T1"), and returns delta: null on a single data point so no
-  // movement is ever fabricated. Its periodLabel is by construction the same
-  // "latest period with data" as `latestPeriodWithData` above.
+  // Overall average per period across every plotted-AY subject (the honest
+  // schoolwide headline behind the chart).
   const overallTrendSummary = summariseSeriesMovement(
     periods.map((period) => {
       const values = primaryTrendPoints
@@ -384,27 +318,47 @@ export default async function MarkbookInsightsPage({
         .slice(0, 6)
     : [];
 
-  // ── Level-breakdown layer ─────────────────────────────────────────────────
-  // Converts raw aggregation points (sum/count per subject×level×term) into
-  // typed trend points, then derives: delta list, per-level watch rows.
-  // Primary AY only (level diagnostics are current-AY specific).
+  // ── Level-breakdown layer (primary AY only) ────────────────────────────────
   const levelPoints: SubjectLevelTrendPoint[] =
     buildSubjectLevelPoints(rawLevelPoints);
-
-  // Level periods are always the primary AY only, so reuse `periods`.
   const termDeltas = computeTermDelta(levelPoints);
-  const watchRowsByLevel = getWatchRowsByLevel(levelPoints, periods);
+
+  // Per-level average across its subjects in the latest period (unweighted
+  // mean of subject averages — a diagnostic level signal, not an exact GA),
+  // plus the mean across levels as the "school average" baseline.
+  const levelAvgByLevel = (() => {
+    if (!latestPeriodWithData)
+      return [] as { levelCode: string; avg: number }[];
+    const byLevel = new Map<string, number[]>();
+    for (const p of levelPoints) {
+      if (p.periodLabel !== latestPeriodWithData || p.avgGrade === null)
+        continue;
+      const arr = byLevel.get(p.levelCode) ?? [];
+      arr.push(p.avgGrade);
+      byLevel.set(p.levelCode, arr);
+    }
+    return [...byLevel.entries()].map(([levelCode, avgs]) => ({
+      levelCode,
+      avg:
+        Math.round((avgs.reduce((a, b) => a + b, 0) / avgs.length) * 10) / 10,
+    }));
+  })();
+  const schoolAvgAcrossLevels =
+    levelAvgByLevel.length > 0
+      ? Math.round(
+          (levelAvgByLevel.reduce((s, l) => s + l.avg, 0) /
+            levelAvgByLevel.length) *
+            10
+        ) / 10
+      : 0;
 
   // ── Throughput ────────────────────────────────────────────────────────────
   const crs = changeRequests;
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Derived narrative — every finding-title + RecommendationCallout below is
-  // templated from live computed values, each with a tie/empty/threshold neutral
-  // fallback. No hardcoded subject names, level codes, or "worst" in literals.
+  // Derived narrative — templated from live values with neutral fallbacks.
   // ──────────────────────────────────────────────────────────────────────────
 
-  // Lede: most-regressed (subject × level) pair, guarded by magnitude.
   // `termDeltas` is sorted ascending by delta (biggest regression first).
   const biggestRegression = termDeltas[0] ?? null;
   const showRegression =
@@ -415,8 +369,6 @@ export default async function MarkbookInsightsPage({
     ? `${biggestRegression.subjectName} (${biggestRegression.levelCode}) fell ${Math.abs(biggestRegression.delta).toFixed(1)} pts from ${biggestRegression.fromPeriod} to ${biggestRegression.toPeriod} — the biggest drop across all subjects and levels.`
     : 'How students are performing in graded subjects, which subjects need attention, and how steadily grades are moving across the year.';
 
-  // Subjects-to-watch title: worst subject in the watchlist (guard: list
-  // must be non-empty and no tie with the second-worst avg).
   const worstWatchRow = watchRows[0] ?? null;
   const watchTie =
     watchRows.length > 1 && watchRows[0].avgGrade === watchRows[1].avgGrade;
@@ -425,13 +377,10 @@ export default async function MarkbookInsightsPage({
     ? `${worstWatchRow.subjectName} averages lowest in ${latestPeriodWithData ?? 'the latest term'}`
     : 'Subjects to watch';
 
-  // Term-over-term regression callout (same as lede, reused in the
-  // regression pill-chart's badge tooltip + callout).
   const regressionCalloutText = showRegression
     ? `${biggestRegression!.subjectName} (${biggestRegression!.levelCode}) dropped ${Math.abs(biggestRegression!.delta).toFixed(1)} pts from ${biggestRegression!.fromPeriod} to ${biggestRegression!.toPeriod}.`
     : null;
 
-  // Grading bottleneck: pending CRs or unlocked overdue sheets.
   const pendingCrs = crs?.byStatus.pending ?? 0;
   const unlockedSheets = lockProgress.reduce((s, t) => s + t.open, 0);
   const showCrBottleneck = meetsThreshold(pendingCrs, PENDING_CR_MIN);
@@ -441,33 +390,61 @@ export default async function MarkbookInsightsPage({
       ? `${unlockedSheets} grading sheet${unlockedSheets === 1 ? '' : 's'} still open`
       : 'Grading throughput';
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // Bento presentation-layer derivations — pure reshaping of the values
-  // already computed above into the shared bento primitives' prop shapes.
-  // No new queries, no changed data shapes.
-  // ──────────────────────────────────────────────────────────────────────────
+  // ── Chart-data derivations ─────────────────────────────────────────────────
 
-  // Subjects-to-watch ranked bar — the average IS the 0-100 width %.
-  const watchRankedRows: RankedBarRow[] = watchRows.map((r) => {
-    const avg = r.avgGrade ?? 0;
-    return {
-      key: r.subjectName,
-      label: `${r.subjectName} · ${avg.toFixed(1)}`,
-      pct: Math.max(4, Math.round(avg)),
-      colorKey: qualityRampColorKey(avg, WATCH_QUALITY_THRESHOLDS),
-    };
-  });
+  // Subjects to watch — avg per subject, worst-first (watchRows is already
+  // sorted ascending by avg) as a ranked horizontal bar. The old per-bar
+  // quality-ramp colour is dropped (single hue) — these are the LOW subjects
+  // by construction, and the worst-first order + exact averages carry it.
+  const watchBarData: ComparisonBarPoint[] = watchRows.map((r) => ({
+    category: r.subjectName,
+    current: Math.round((r.avgGrade ?? 0) * 10) / 10,
+  }));
 
-  // Term-over-term regression pill chart — top movers by magnitude (both
-  // directions), reshaped into PillBarChart columns.
+  // Which levels are struggling — the actual average grade traced across the
+  // level progression P1→P6→S1→S4 (natural code order), with the school
+  // average drawn as a reference line. Real grades on the line + a "below the
+  // line = struggling" reference read far clearer than a delta-from-average.
+  const levelLineData: CategoryLinePoint[] = [...levelAvgByLevel]
+    .sort((a, b) =>
+      a.levelCode.localeCompare(b.levelCode, undefined, { numeric: true })
+    )
+    .map((l) => ({ x: l.levelCode, y: l.avg }));
+
+  // Term-over-term movement — paired First→Latest bars per (subject × level):
+  // the actual first-term grade (comparison, muted) beside the latest-term
+  // grade (current). "Fell the most" reads as the current bar being visibly
+  // shorter than its first-term bar — actual grades, not an abstract delta.
+  // Biggest decline first.
   const regressionMovers = selectTopRegressionMovers(
     termDeltas,
     REGRESSION_CHART_LIMIT
   );
-  const regressionColumns = buildRegressionColumns(regressionMovers);
+  const regressionPairData: ComparisonBarPoint[] = [...regressionMovers]
+    .sort((a, b) => a.delta - b.delta)
+    .map((d) => ({
+      category: `${d.subjectName} · ${d.levelCode}`,
+      current: Math.round(d.lastAvg * 10) / 10,
+      comparison: Math.round(d.firstAvg * 10) / 10,
+    }));
 
-  // Sheets-locked bar chart — per-term % + which term to visually highlight.
+  // Sheets locked · per term — lock % per term as a single-series grouped bar,
+  // with the term to highlight (KD-style: the earliest term still with open
+  // sheets) dimmed-vs-emphasised via GroupedBarChart's highlightX.
   const highlightTermNumber = highlightedLockTermNumber(lockProgress);
+  const highlightTermLabel =
+    lockProgress.find((t) => t.termNumber === highlightTermNumber)?.termLabel ??
+    undefined;
+  const lockBarData = lockProgress.map((t) => {
+    const total = t.locked + t.open;
+    return {
+      x: t.termLabel,
+      locked: total > 0 ? Math.round((t.locked / total) * 100) : 0,
+    };
+  });
+  const LOCK_SERIES = [
+    { key: 'locked', label: 'Sheets locked', color: 'var(--color-brand-mint)' },
+  ];
 
   return (
     <PageShell>
@@ -501,62 +478,23 @@ export default async function MarkbookInsightsPage({
         />
       </div>
 
-      <BentoGrid className="pt-2">
-        {/* Throughput — 3 stat cards, opening the page (moved up from the
-            bottom; only these 3 moved, "Sheets locked · per term" stays at
-            the bottom). Replaces the old "Grades recorded" / "In the top
-            bands" headline cards, which were cut (see report). */}
-        {crs ? (
-          <>
-            <BentoCard span={4}>
-              <StatCard
-                icon={GitPullRequestArrow}
-                iconGradient="indigo"
-                value={crs.total.toLocaleString('en-SG')}
-                label="Change requests (30d)"
-                caption="Post-lock edits filed"
-              />
-            </BentoCard>
-            <BentoCard span={4}>
-              <StatCard
-                icon={ClipboardCheck}
-                iconGradient="amber"
-                value={crs.byStatus.pending.toLocaleString('en-SG')}
-                label="Pending decisions"
-                caption="Awaiting an approver"
-              />
-            </BentoCard>
-            <BentoCard span={4}>
-              <StatCard
-                icon={Timer}
-                iconGradient="sky"
-                value={
-                  crs.avgDecisionHours === null
-                    ? '—'
-                    : `${crs.avgDecisionHours}h`
-                }
-                label="Avg decision time"
-                caption={
-                  crs.avgDecisionHours === null
-                    ? 'No decisions in the window'
-                    : 'Request to decision'
-                }
-              />
-            </BentoCard>
-          </>
-        ) : null}
+      {/* ═══ Academic performance ═══ */}
+      <div className="space-y-5 pt-2">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-indigo">
+          Academic performance
+        </p>
 
         {/* Subject performance trend, full width. */}
         {haveTrend ? (
-          <BentoCard span={12}>
-            <SectionHeading
-              cap={
-                totalSubjectCount > topMovementSubjects.length
-                  ? `${topMovementSubjects.length} of ${totalSubjectCount} subjects shown · those that moved most across the terms`
-                  : 'Average quarterly grade per examinable subject, term by term'
-              }
-              title="How does performance move across terms?"
-            />
+          <InsightChartCard
+            cap={
+              totalSubjectCount > topMovementSubjects.length
+                ? `${topMovementSubjects.length} of ${totalSubjectCount} subjects · those that moved most across the terms`
+                : 'Average quarterly grade per examinable subject, term by term'
+            }
+            title="How does performance move across terms?"
+            icon={Activity}
+          >
             {overallTrendSummary.currentValue !== null && (
               <TrendDeltaCaption
                 value={overallTrendSummary.currentValue.toString()}
@@ -565,9 +503,6 @@ export default async function MarkbookInsightsPage({
                 className="mb-4"
               />
             )}
-            {/* [60,100] per the approved design mock — grouped bars read
-                clearly at this compressed range without the empty 0–60
-                headroom a full grade-scale domain would add. */}
             <GroupedBarChart
               series={trendBarSeries}
               data={trendBarData}
@@ -576,27 +511,29 @@ export default async function MarkbookInsightsPage({
               height={280}
               highlightX={overallTrendSummary.periodLabel ?? undefined}
             />
-          </BentoCard>
+          </InsightChartCard>
         ) : null}
 
-        {/* Subjects to watch (true worst-first ranked bar) + which levels
-            are struggling (per-level lowest subject). The level card
-            auto-hides entirely when empty; the watch card always renders
-            (dashed empty-state when there's nothing to rank yet) and widens
-            to the full row when its companion is hidden. */}
-        <BentoCard span={watchRowsByLevel.length > 0 ? 7 : 12}>
-          {watchRows.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Not enough graded subjects yet to rank — this fills in as grades
-              are entered.
-            </p>
+        {/* Subjects to watch — full-width row. */}
+        <InsightChartCard
+          cap={
+            latestPeriodWithData
+              ? `Lowest average · ${latestPeriodWithData}`
+              : 'Lowest average'
+          }
+          title={watchTitle}
+          icon={TrendingDown}
+        >
+          {watchBarData.length === 0 ? (
+            <EmptyChartState message="Not enough graded subjects yet to rank — this fills in as grades are entered." />
           ) : (
             <>
-              <SectionHeading
-                cap={`Lowest average · ${latestPeriodWithData}`}
-                title={watchTitle}
+              <ComparisonBarChart
+                data={watchBarData}
+                orientation="horizontal"
+                yFormat="number"
+                height={Math.max(200, watchBarData.length * 42 + 40)}
               />
-              <RankedBar rows={watchRankedRows} />
               {showWorstWatch ? (
                 <RecommendationCallout tone="watch" className="mt-5">
                   {worstWatchRow!.subjectName} averaged{' '}
@@ -607,133 +544,122 @@ export default async function MarkbookInsightsPage({
               ) : null}
             </>
           )}
-        </BentoCard>
+        </InsightChartCard>
 
-        {watchRowsByLevel.length > 0 ? (
-          <BentoCard span={5}>
-            <SectionHeading
-              cap={`Lowest subject per level · ${latestPeriodWithData}`}
-              title="Which levels are struggling?"
+        {/* Which levels are struggling — full-width row, actual average grade
+            traced across the level progression, vs a school-average line. */}
+        {levelLineData.length > 0 ? (
+          <InsightChartCard
+            cap={`Average grade per level · ${latestPeriodWithData}`}
+            title="Which levels are struggling?"
+            icon={GraduationCap}
+          >
+            <CategoryLineChart
+              data={levelLineData}
+              yFormat="number"
+              referenceValue={schoolAvgAcrossLevels}
+              referenceLabel={`School avg ${schoolAvgAcrossLevels}`}
+              height={280}
             />
-            <div>
-              {watchRowsByLevel.map((r) => (
-                <ProjectListRow
-                  key={`${r.levelCode}-${r.subjectName}`}
-                  icon={GraduationCap}
-                  iconGradient="amber"
-                  name={r.levelCode}
-                  subtitle={r.subjectName}
-                  value={r.avgGrade?.toFixed(1) ?? '—'}
-                />
-              ))}
-            </div>
-          </BentoCard>
+          </InsightChartCard>
         ) : null}
 
-        {/* Term-over-term regression, full width. */}
-        {termDeltas.length > 0 ? (
-          <BentoCard span={12}>
-            <div className="mb-1 flex items-start justify-between gap-3">
-              <SectionHeading
-                cap="Δ from first to latest recorded term · 0-100 grade scale"
-                title={
-                  showRegression
-                    ? `${biggestRegression!.subjectName} (${biggestRegression!.levelCode}) fell the most`
-                    : 'Term-over-term movement'
-                }
-              />
-              {showRegression ? (
-                <BadgeTooltip
-                  label="Biggest drop"
-                  colorKey="destructive"
-                  tooltip={regressionCalloutText}
-                />
-              ) : null}
-            </div>
-            <PillBarChart
-              columns={regressionColumns}
-              plotHeightPx={REGRESSION_PLOT_HEIGHT_PX}
-              zeroOffsetPx={REGRESSION_ZERO_OFFSET_PX}
-              axisLabels={REGRESSION_AXIS_LABELS}
-              legend={[
-                { colorKey: 'grey', label: 'From' },
-                { colorKey: 'destructive', label: 'To · declined' },
-                { colorKey: 'mint', label: 'To · improved' },
-              ]}
-              defaultUpColorKey="grey"
-              defaultDownColorKey="destructive"
+        {/* Term-over-term movement, full width — first-term vs latest-term
+            actual grades side by side. */}
+        {regressionPairData.length > 0 ? (
+          <InsightChartCard
+            cap="First term vs latest recorded term · actual averages"
+            title={
+              showRegression
+                ? `${biggestRegression!.subjectName} (${biggestRegression!.levelCode}) fell the most`
+                : 'Term-over-term movement'
+            }
+            icon={TrendingDown}
+          >
+            <ComparisonBarChart
+              data={regressionPairData}
+              orientation="horizontal"
+              yFormat="number"
+              height={Math.max(220, regressionPairData.length * 48 + 48)}
             />
             {regressionCalloutText ? (
               <RecommendationCallout tone="watch" className="mt-5">
                 {regressionCalloutText}
               </RecommendationCallout>
             ) : null}
-          </BentoCard>
+          </InsightChartCard>
+        ) : null}
+      </div>
+      {/* ═══ end Academic performance ═══ */}
+
+      {/* ═══ Grading throughput ═══ */}
+      <div className="space-y-5 border-t border-hairline pt-7">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-mint">
+          Grading throughput
+        </p>
+
+        {crs ? (
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <MetricCard
+              label="Change requests (30d)"
+              value={crs.total}
+              format="number"
+              icon={GitPullRequestArrow}
+              subtext="Post-lock edits filed"
+            />
+            <MetricCard
+              label="Pending decisions"
+              value={crs.byStatus.pending}
+              format="number"
+              icon={ClipboardCheck}
+              subtext="Awaiting an approver"
+            />
+            <MetricCard
+              label="Avg decision time"
+              value={
+                crs.avgDecisionHours === null ? '—' : `${crs.avgDecisionHours}h`
+              }
+              format="raw"
+              icon={Timer}
+              subtext={
+                crs.avgDecisionHours === null
+                  ? 'No decisions in the window'
+                  : 'Request to decision'
+              }
+            />
+          </section>
         ) : null}
 
-        {/* Sheets locked · per term, full width, at the bottom. */}
-        <BentoCard span={12}>
-          <SectionHeading
-            cap="Sheets locked · per term"
-            title={throughputTitle}
-          />
-          {lockProgress.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No grading sheets created yet for this year.
-            </p>
+        {/* Sheets locked · per term. */}
+        <InsightChartCard
+          cap="Sheets locked · per term"
+          title={throughputTitle}
+          icon={Lock}
+        >
+          {lockBarData.length === 0 ? (
+            <EmptyChartState message="No grading sheets created yet for this year." />
           ) : (
             <>
-              <div
-                className="flex items-end gap-3 pt-4"
-                style={{ height: 168 }}
-              >
-                {lockProgress.map((t) => {
-                  const total = t.locked + t.open;
-                  const pct =
-                    total > 0 ? Math.round((t.locked / total) * 100) : 0;
-                  const isHighlighted = t.termNumber === highlightTermNumber;
-                  const barHeightPx = Math.max(
-                    4,
-                    Math.round((pct / 100) * LOCK_BAR_MAX_HEIGHT_PX)
-                  );
-                  return (
-                    <div
-                      key={t.termNumber}
-                      className="flex h-full flex-1 flex-col items-center justify-end"
-                    >
-                      <span className="mb-1.5 font-mono text-[11px] font-extrabold text-foreground">
-                        {pct}%
-                      </span>
-                      <div
-                        className={cn(
-                          'w-full max-w-[30px] rounded-t-md rounded-b-[3px] bg-gradient-to-t from-brand-mint to-brand-sky',
-                          isHighlighted
-                            ? 'opacity-100 shadow-brand-tile-mint'
-                            : pct === 0
-                              ? 'opacity-20'
-                              : 'opacity-30'
-                        )}
-                        style={{ height: barHeightPx }}
-                      />
-                      <span className="mt-2.5 text-center font-mono text-[10px] font-semibold text-muted-foreground">
-                        {t.termLabel} · {t.locked.toLocaleString('en-SG')}/
-                        {total.toLocaleString('en-SG')}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+              <GroupedBarChart
+                series={LOCK_SERIES}
+                data={lockBarData}
+                yFormat="percent"
+                yDomain={[0, 100]}
+                showValueLabels
+                height={220}
+                highlightX={highlightTermLabel}
+              />
               {showCrBottleneck ? (
                 <RecommendationCallout tone="act" className="mt-4">
-                  {pendingCrs} change request
-                  {pendingCrs === 1 ? '' : 's'} still awaiting a decision —
-                  grades locked pending approval.
+                  {pendingCrs} change request{pendingCrs === 1 ? '' : 's'} still
+                  awaiting a decision — grades locked pending approval.
                 </RecommendationCallout>
               ) : null}
             </>
           )}
-        </BentoCard>
-      </BentoGrid>
+        </InsightChartCard>
+      </div>
+      {/* ═══ end Grading throughput ═══ */}
 
       {/* Footer trust strip */}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">

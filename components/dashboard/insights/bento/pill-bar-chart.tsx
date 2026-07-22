@@ -1,6 +1,11 @@
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { BAR_GRADIENT, DOT_GRADIENT, type ColorKey } from './tokens';
 
 /**
@@ -18,6 +23,12 @@ import { BAR_GRADIENT, DOT_GRADIENT, type ColorKey } from './tokens';
  * takes resolved pixel heights/positions and a colour per pill — the caller
  * does the scale math (data value → px) and picks per-column colours, so the
  * component never needs to know which case it's in.
+ *
+ * Interactivity is a hover-only value tooltip per column, never a click-
+ * through — see `ranked-bar.tsx`'s doc comment for why: a tooltip can only
+ * restate a number the caller already computed for that column (the exact
+ * value driving `upHeightPx`/`downHeightPx`), so it can't disagree with what
+ * the pills show. A click-through into a separately-queried drill can.
  */
 
 export type PillBarColumn = {
@@ -29,6 +40,8 @@ export type PillBarColumn = {
   /** Falls back to `defaultUpColorKey` / `defaultDownColorKey` when omitted. */
   upColorKey?: ColorKey;
   downColorKey?: ColorKey;
+  /** Optional hover-reveal detail for this column, e.g. "Mar: 42 applications". Omit for no tooltip. */
+  tooltip?: React.ReactNode;
 };
 
 export type PillBarChartProps = {
@@ -118,8 +131,8 @@ export function PillBarChart({
               const upColor = BAR_GRADIENT[col.upColorKey ?? defaultUpColorKey];
               const downColor =
                 BAR_GRADIENT[col.downColorKey ?? defaultDownColorKey];
-              return (
-                <div key={col.key} className="relative h-full flex-1">
+              const pills = (
+                <>
                   {col.upHeightPx > 0 && (
                     <div
                       className={cn(
@@ -146,6 +159,28 @@ export function PillBarChart({
                       }}
                     />
                   )}
+                </>
+              );
+              return col.tooltip ? (
+                <Tooltip key={col.key}>
+                  <TooltipTrigger asChild>
+                    <div
+                      tabIndex={0}
+                      className="relative h-full flex-1 outline-hidden"
+                    >
+                      {pills}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="top"
+                    className="text-left font-sans text-[11.5px] font-normal leading-relaxed"
+                  >
+                    {col.tooltip}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <div key={col.key} className="relative h-full flex-1">
+                  {pills}
                 </div>
               );
             })}

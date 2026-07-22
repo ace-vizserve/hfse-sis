@@ -219,6 +219,50 @@ export function sortLevelsByConversionAsc(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Withdrawn applications by level
+// ──────────────────────────────────────────────────────────────────────────
+
+export type LevelWithdrawnRow = {
+  level: string;
+  count: number;
+};
+
+type WithdrawnRow = {
+  levelApplied: string | null;
+  applicationStatus: string | null;
+};
+
+/**
+ * Count WITHDRAWN applications per level — applicants who pulled out before
+ * enrolling. Keyed on `applicationStatus === 'Withdrawn'` (populated 490/490
+ * in prod), NOT `applicationTerminalReason` (unstamped in prod → hollow).
+ *
+ * Scope is deliberately pre-enrolment: on the admissions side, an enrolled
+ * student who later leaves keeps `applicationStatus === 'Enrolled'` and only
+ * flips `section_students.enrollment_status` (KD #150) — that's a Records
+ * concern, not counted here. This is strictly "families who withdrew their
+ * application."
+ *
+ * Distinct from `'Cancelled'` (a separate terminal status). Every withdrawn
+ * applicant has exactly one level, so the output is a genuine partition of
+ * the total-withdrawn count — the honest shape for a donut. Only levels with
+ * ≥1 withdrawal appear; canonical level order (Unknown last).
+ */
+export function computeWithdrawnByLevel(
+  rows: WithdrawnRow[]
+): LevelWithdrawnRow[] {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    if (r.applicationStatus !== 'Withdrawn') continue;
+    const level = (r.levelApplied ?? '').trim() || 'Unknown';
+    counts.set(level, (counts.get(level) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([level, count]) => ({ level, count }))
+    .sort((a, b) => compareLevels(a.level, b.level));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Referral conversion
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -295,6 +339,18 @@ export async function getConversionByLevel(
     rows.map((r) => ({
       levelApplied: r.levelApplied,
       statusLevel: null, // not available in this loader; levelApplied is the best we have
+      applicationStatus: r.applicationStatus,
+    }))
+  );
+}
+
+export async function getWithdrawnByLevel(
+  ayCode: string
+): Promise<LevelWithdrawnRow[]> {
+  const rows = await loadFunnelRows(ayCode);
+  return computeWithdrawnByLevel(
+    rows.map((r) => ({
+      levelApplied: r.levelApplied,
       applicationStatus: r.applicationStatus,
     }))
   );

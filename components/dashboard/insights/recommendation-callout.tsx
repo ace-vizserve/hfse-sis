@@ -28,18 +28,25 @@ const DEFAULT_ICONS: Record<Tone, LucideIcon> = {
   act: ArrowRight,
 };
 
+// Gradient washes, never flat single-stop tints (KD #84 flat→gradient sweep):
+// each state carries a top→bottom falloff so the strip reads as a crafted
+// surface, matching the wider-surface recipe used by p-files recent-activity
+// + notify-dialog. The left-border accent + icon remain the non-colour-only
+// signal channels (§9.3).
 const TONE_CLASSES: Record<Tone, { container: string; icon: string }> = {
   positive: {
-    container: 'border-l-2 border-l-brand-mint bg-brand-mint/15 text-ink',
+    container:
+      'border-l-2 border-l-brand-mint bg-gradient-to-b from-brand-mint/20 to-brand-mint/5 text-ink',
     icon: 'text-foreground',
   },
   watch: {
-    container: 'border-l-2 border-l-brand-amber bg-brand-amber/15 text-ink',
+    container:
+      'border-l-2 border-l-brand-amber bg-gradient-to-b from-brand-amber/20 to-brand-amber/5 text-ink',
     icon: 'text-brand-amber',
   },
   act: {
     container:
-      'border-l-2 border-l-destructive bg-destructive/10 text-destructive',
+      'border-l-2 border-l-destructive bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive',
     icon: 'text-destructive',
   },
 };

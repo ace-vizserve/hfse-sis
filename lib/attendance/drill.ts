@@ -841,6 +841,51 @@ export function buildAllRowSets(input: {
   )();
 }
 
+// ─── Top-absent students per term ────────────────────────────────────────────
+
+export type TermWindowInput = { termNumber: number; from: string; to: string };
+export type TermTopAbsent = { termNumber: number; rows: TopAbsentDrillRow[] };
+
+async function topAbsentByTermUncached(
+  ayCode: string,
+  terms: TermWindowInput[],
+  limit: number
+): Promise<TermTopAbsent[]> {
+  // Load the AY's entries once, then roll up each term window in memory.
+  const entriesAll = await loadEntryRows(ayCode);
+  return terms.map((t) => {
+    const scoped = applyScopeFilter(entriesAll, {
+      ayCode,
+      from: t.from,
+      to: t.to,
+    });
+    // rollupTopAbsent already sorts by absences desc, then lates desc.
+    const rows = rollupTopAbsent(scoped)
+      .filter((r) => r.absences > 0)
+      .slice(0, limit);
+    return { termNumber: t.termNumber, rows };
+  });
+}
+
+/**
+ * Top-N most-absent students for each given term window. Reasons for a plain
+ * Absent (A) mark aren't tracked in-system, so this ranks WHO is absent most
+ * per term — nothing about WHY. Rows carry the same shape as the other
+ * top-absent surfaces (absences / lates / excused / attendancePct).
+ */
+export function getTopAbsentByTerm(
+  ayCode: string,
+  terms: TermWindowInput[],
+  limit = 5
+): Promise<TermTopAbsent[]> {
+  const key = terms.map((t) => `${t.termNumber}:${t.from}:${t.to}`).join(',');
+  return unstable_cache(
+    () => topAbsentByTermUncached(ayCode, terms, limit),
+    ['attendance-drill', 'top-absent-by-term', ayCode, key, String(limit)],
+    { revalidate: CACHE_TTL_SECONDS, tags: tags(ayCode) }
+  )();
+}
+
 // ─── Target filter ──────────────────────────────────────────────────────────
 
 function applyTargetFilter(
