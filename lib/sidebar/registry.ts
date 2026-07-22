@@ -88,6 +88,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/markbook/sections': Users,
       '/markbook/change-requests': FileText,
       '/markbook/report-cards': FileText,
+      '/markbook/awards': Award,
       '/markbook/audit-log': History,
     },
     quickActionByRole: {
@@ -117,6 +118,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/sis/calendar': CalendarDays,
       '/attendance/import': FileUp,
       '/attendance/audit-log': History,
+      '/attendance/summary': CalendarCheck,
     },
     // No quick action for any role — teacher's would-be target (Sections)
     // is already the second row of nav, right under Dashboard, with an
@@ -172,9 +174,6 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/sis/sections': LayoutGrid,
       '/records/audit-log': History,
       '/records/academic-summary': BookOpen,
-      '/records/academic-summary/awards': Award,
-      '/records/academic-summary/attendance': CalendarCheck,
-      '/records/academic-summary/comments': MessageSquare,
     },
     quickActionByRole: {
       registrar: {
@@ -258,6 +257,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/evaluation/sections?term=2': CalendarRange,
       '/evaluation/sections?term=3': CalendarClock,
       '/evaluation/virtue-themes': Sparkles,
+      '/evaluation/comments': MessageSquare,
       '/evaluation/audit-log': History,
     },
     // No quick action for any role — teacher's would-be target (All

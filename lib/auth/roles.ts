@@ -187,29 +187,16 @@ const RECORDS_NAV: NavSection[] = [
       { href: '/records/cohorts/pass-expiry', label: 'Pass expiry' },
     ],
   },
-  // Academic Summary hub + quick views (KD #95/#127). Labelled group so the
-  // three quick views read as sub-items under the hub.
+  // Academic Summary hub (KD #95/#127). The Awards/Attendance/Comments
+  // quick views were relocated to their owning modules (Markbook/
+  // Attendance/Evaluation respectively) in the Academic Summary module
+  // redesign — this hub link is what remains.
   {
     label: 'Academic Summary',
     items: [
       {
         href: '/records/academic-summary',
         label: 'Overview',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
-      },
-      {
-        href: '/records/academic-summary/awards',
-        label: 'Awards',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
-      },
-      {
-        href: '/records/academic-summary/attendance',
-        label: 'Attendance',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
-      },
-      {
-        href: '/records/academic-summary/comments',
-        label: 'Comments',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
     ],
@@ -231,6 +218,11 @@ const ATTENDANCE_NAV: NavSection[] = [
       {
         href: '/attendance/insights',
         label: 'Insights',
+        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+      },
+      {
+        href: '/attendance/summary',
+        label: 'Attendance Summary',
         requiresRoles: ['registrar', 'school_admin', 'superadmin'],
       },
     ],
@@ -390,7 +382,14 @@ const EVALUATION_NAV: NavSection[] = [
   },
   {
     label: 'Write-ups',
-    items: [{ href: '/evaluation/sections', label: 'All terms' }],
+    items: [
+      { href: '/evaluation/sections', label: 'All terms' },
+      {
+        href: '/evaluation/comments',
+        label: 'Comments',
+        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+      },
+    ],
   },
   {
     label: 'Setup',
@@ -590,7 +589,10 @@ export const NAV_BY_MODULE: {
         items: [{ href: '/markbook/sections', label: 'Sections' }],
       },
       {
-        items: [{ href: '/markbook/report-cards', label: 'Report Cards' }],
+        items: [
+          { href: '/markbook/report-cards', label: 'Report Cards' },
+          { href: '/markbook/awards', label: 'Awards' },
+        ],
       },
       {
         label: 'Admin',
@@ -619,7 +621,10 @@ export const NAV_BY_MODULE: {
         items: [{ href: '/markbook/sections', label: 'Sections' }],
       },
       {
-        items: [{ href: '/markbook/report-cards', label: 'Report Cards' }],
+        items: [
+          { href: '/markbook/report-cards', label: 'Report Cards' },
+          { href: '/markbook/awards', label: 'Awards' },
+        ],
       },
       {
         label: 'Admin',
@@ -652,7 +657,10 @@ export const NAV_BY_MODULE: {
         items: [{ href: '/markbook/sections', label: 'Sections' }],
       },
       {
-        items: [{ href: '/markbook/report-cards', label: 'Report Cards' }],
+        items: [
+          { href: '/markbook/report-cards', label: 'Report Cards' },
+          { href: '/markbook/awards', label: 'Awards' },
+        ],
       },
       {
         label: 'Admin',
@@ -732,6 +740,12 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
     prefix: '/attendance/calendar',
     allowed: ['registrar', 'school_admin', 'superadmin'],
   },
+  // Attendance Summary (Academic Summary redesign) is registrar+ only —
+  // must precede the broader /attendance rule so the longer prefix wins.
+  {
+    prefix: '/attendance/summary',
+    allowed: ['registrar', 'school_admin', 'superadmin'],
+  },
   {
     prefix: '/attendance',
     allowed: ['teacher', 'registrar', 'school_admin', 'superadmin'],
@@ -744,6 +758,12 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
     prefix: '/evaluation/virtue-themes',
     allowed: ['registrar', 'school_admin', 'superadmin'],
   },
+  // Comments (Academic Summary redesign) is registrar+ only — must precede
+  // the broader /evaluation rule so the longer prefix wins.
+  {
+    prefix: '/evaluation/comments',
+    allowed: ['registrar', 'school_admin', 'superadmin'],
+  },
   {
     prefix: '/evaluation',
     allowed: ['teacher', 'registrar', 'school_admin', 'superadmin'],
@@ -753,6 +773,12 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   // /markbook rule so the longer prefix wins.
   {
     prefix: '/markbook/masterfile',
+    allowed: ['registrar', 'school_admin', 'superadmin'],
+  },
+  // Awards (Academic Summary redesign) is registrar+ only — must precede
+  // the broader /markbook rule so the longer prefix wins.
+  {
+    prefix: '/markbook/awards',
     allowed: ['registrar', 'school_admin', 'superadmin'],
   },
   {
