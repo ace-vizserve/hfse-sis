@@ -122,7 +122,8 @@ function daysFromExpiry(expiryDate: string | null | undefined): number | null {
 // hierarchy stays clean.
 function urgencyLine(
   kind: SlotUrgencyKind,
-  expiryDate: string | null | undefined
+  expiryDate: string | null | undefined,
+  hasFileUrl: boolean
 ): { text: string; tone: string } | null {
   const days = daysFromExpiry(expiryDate);
   switch (kind) {
@@ -140,10 +141,18 @@ function urgencyLine(
     case 'rejected':
       return { text: 'Rejected — needs replacement', tone: 'text-destructive' };
     case 'missing':
-      return {
-        text: 'Missing — never uploaded',
-        tone: 'text-muted-foreground',
-      };
+      // A file may exist even when status reads 'missing' (e.g. a
+      // parent-portal upload that hasn't had its status set yet) — say so
+      // honestly instead of implying nothing was ever uploaded.
+      return hasFileUrl
+        ? {
+            text: 'On file — awaiting status update',
+            tone: 'text-muted-foreground',
+          }
+        : {
+            text: 'Missing — never uploaded',
+            tone: 'text-muted-foreground',
+          };
     case 'to-follow':
       return { text: 'To follow — parent committed', tone: 'text-primary' };
     case 'expiring-30':
@@ -271,8 +280,9 @@ export function DocumentCard({
     key: slotKey,
     status,
     expiryDate: expiryDate ?? null,
+    hasFile: !!url,
   });
-  const urgency = urgencyLine(urgencyKind, expiryDate);
+  const urgency = urgencyLine(urgencyKind, expiryDate, !!url);
   const shellClass = shellByUrgency(urgencyKind);
   const expiryFormatted =
     expires && expiryDate
