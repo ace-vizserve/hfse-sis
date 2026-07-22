@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { Trophy } from 'lucide-react';
 import { MetricCard } from '@/components/dashboard/metric-card';

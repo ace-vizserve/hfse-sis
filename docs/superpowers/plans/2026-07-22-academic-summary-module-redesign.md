@@ -306,6 +306,7 @@ const STATUS_TO_ENROLLMENT: Record<
 
 ```tsx
 // __tests__/markbook/awards-summary-view.test.tsx
+import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { AwardsSummaryView } from '@/components/markbook/awards/awards-summary-view';
 import type { MasterfilePayload } from '@/lib/markbook/masterfile';
