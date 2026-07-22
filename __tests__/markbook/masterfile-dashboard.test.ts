@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   computeMasterfileDashboard,
+  commentTermsInScope,
+  studentMissingCommentTerms,
   type MasterfileDashboardFilters,
 } from '@/lib/markbook/masterfile-dashboard';
 import type {
@@ -155,6 +157,8 @@ function student(
       ...c,
     })),
     lateEnrolleeTermNumber: partial.lateEnrolleeTermNumber ?? null,
+    enrolledTermNumbers:
+      partial.enrolledTermNumbers ?? TERMS.map((t) => t.termNumber),
   };
 }
 
@@ -456,5 +460,176 @@ describe('computeMasterfileDashboard — filters', () => {
     // Only Math cells counted: 3 students × 4 terms = 12 expected, C missing 1 → 11.
     expect(d.readiness.gradesEntered.expected).toBe(12);
     expect(d.readiness.gradesEntered.done).toBe(11);
+  });
+});
+
+// -----------------------------------------------------------------------
+// KD #148 honesty fix (plan finding M1/M2): a term a student wasn't enrolled
+// for must not count toward "comments expected" / "attendance expected" —
+// it's legitimately N.A., not a chase item. The grade-side needs NO separate
+// test here: cellFilled() already treats isNa===true as filled (verified by
+// inspection — see task report), so once the loader (lib/markbook/
+// masterfile.ts) populates isNa correctly via enrolledTermNumbers, the grade
+// readiness metric is automatically honest with zero changes to this file's
+// grade-counting code. These tests instead target the two loops that DID
+// need a direct code change: the comments + attendance "expected" loops in
+// computeReadiness.
+// -----------------------------------------------------------------------
+
+describe('computeMasterfileDashboard — KD #148 enrolment-coverage exclusion', () => {
+  function buildCoverageFixture(): MasterfilePayload {
+    // LATE — late enrollee joining T3. Pre-join terms (T1, T2) are excluded
+    // from enrolledTermNumbers, mirroring what the fixed masterfile.ts loader
+    // now produces: no grade_entries row + no attendance rollup for those
+    // terms (both null), and (deliberately) no adviser comment either — none
+    // of that should read as "missing," only the T3 gap (a real, in-scope
+    // blank) should.
+    const late = student({
+      studentNumber: 'LATE',
+      fullName: 'Late, Joiner',
+      enrollmentStatus: 'late_enrollee',
+      lateEnrolleeTermNumber: 3,
+      enrolledTermNumbers: [3, 4],
+      subjectRows: [
+        examRow(MATH.id, [null, null, 90, 90]),
+        examRow(SCI.id, [null, null, 90, 90]),
+        nonExamRow(MUSIC.id, [null, null, 'A', 'A']),
+      ],
+      attendanceByTerm: [
+        { termId: 't1', schoolDays: null, present: null, late: null },
+        { termId: 't2', schoolDays: null, present: null, late: null },
+        { termId: 't3', schoolDays: 50, present: 48, late: 1 },
+        { termId: 't4', schoolDays: 50, present: 50, late: 0 },
+      ],
+      attendanceTotal: { present: 98, late: 1, schoolDays: 100 },
+      commentsByTerm: [], // T3 comment not yet written — a real, in-scope gap
+    });
+
+    // EARLY_LEAVER — active from year start, withdrew mid-T2 (before T3/T4
+    // started). Post-leave terms (T3, T4) are excluded from
+    // enrolledTermNumbers, exercising the interval's `end` bound (the
+    // symmetric half of the late-join case above).
+    const earlyLeaver = student({
+      studentNumber: 'LEAVER',
+      fullName: 'Early, Leaver',
+      enrollmentStatus: 'withdrawn',
+      enrolledTermNumbers: [1, 2],
+      subjectRows: [
+        examRow(MATH.id, [85, 85, null, null], false),
+        examRow(SCI.id, [85, 85, null, null], false),
+        nonExamRow(MUSIC.id, ['A', 'A', null, null]),
+      ],
+      attendanceByTerm: [
+        { termId: 't1', schoolDays: 50, present: 48, late: 0 },
+        { termId: 't2', schoolDays: 50, present: 47, late: 1 },
+        { termId: 't3', schoolDays: null, present: null, late: null },
+        { termId: 't4', schoolDays: null, present: null, late: null },
+      ],
+      attendanceTotal: { present: 95, late: 1, schoolDays: 100 },
+      commentsByTerm: [
+        { termNumber: 1, text: 'Settled in well.' },
+        { termNumber: 2, text: 'Withdrew mid-term.' },
+      ],
+    });
+
+    return {
+      ayCode: 'AY9999',
+      level: { id: 'lvl-p5', code: 'P5', label: 'Primary 5' },
+      subjects: [MATH, SCI, MUSIC],
+      terms: TERMS,
+      sections: [{ id: 'sec-1', name: 'P5 Diamond' }],
+      selectedSectionIds: ['sec-1'],
+      rows: [late, earlyLeaver],
+      sheets: [],
+      thresholds: THRESHOLDS,
+    };
+  }
+
+  it("comments expected excludes a late enrollee's pre-join terms", () => {
+    const payload = buildCoverageFixture();
+    // Status filter restricted to 'late_enrollee' so withdrawn (LEAVER) isn't
+    // pulled in by the withdrawn-cohort special case and muddy the count.
+    const d = computeMasterfileDashboard(payload, {
+      termNumber: null,
+      status: 'late_enrollee',
+      subjectId: null,
+    });
+    // Comment terms in scope: T1,T2,T3 (KD #49). LATE is only enrolled T3,T4
+    // → only T3 counts as expected (1), not 3.
+    expect(d.readiness.commentsWritten.expected).toBe(1);
+    expect(d.readiness.commentsWritten.done).toBe(0); // T3 comment blank
+  });
+
+  it("comments expected excludes a withdrawn student's post-leave terms (the symmetric `end`-bound case)", () => {
+    const payload = buildCoverageFixture();
+    // Status filter = 'withdrawn' so the readiness computation includes the
+    // withdrawn cohort per its explicit-inspection carve-out.
+    const d = computeMasterfileDashboard(payload, {
+      termNumber: null,
+      status: 'withdrawn',
+      subjectId: null,
+    });
+    // LEAVER is enrolled T1,T2 only → comment terms in scope (T1-T3)
+    // intersected with coverage = T1,T2 → 2 expected, both written → 2 done.
+    expect(d.readiness.commentsWritten.expected).toBe(2);
+    expect(d.readiness.commentsWritten.done).toBe(2);
+  });
+
+  it("attendance expected excludes a late enrollee's pre-join terms", () => {
+    const payload = buildCoverageFixture();
+    const d = computeMasterfileDashboard(payload, {
+      termNumber: null,
+      status: 'late_enrollee',
+      subjectId: null,
+    });
+    // 4 terms total, but only T3,T4 are in LATE's coverage → 2 expected, both
+    // have real rollup rows → 2 done.
+    expect(d.readiness.attendanceRecorded.expected).toBe(2);
+    expect(d.readiness.attendanceRecorded.done).toBe(2);
+  });
+
+  it("attendance expected excludes a withdrawn student's post-leave terms", () => {
+    const payload = buildCoverageFixture();
+    const d = computeMasterfileDashboard(payload, {
+      termNumber: null,
+      status: 'withdrawn',
+      subjectId: null,
+    });
+    // LEAVER covers T1,T2 only → 2 expected, both recorded → 2 done.
+    expect(d.readiness.attendanceRecorded.expected).toBe(2);
+    expect(d.readiness.attendanceRecorded.done).toBe(2);
+  });
+
+  it('before/after: without the coverage gate the same fixture would over-count (regression guard)', () => {
+    // Sanity-checks the fixture itself: if coverage were ignored (the
+    // pre-fix behaviour), LATE's comments-expected would be 3 (T1,T2,T3) and
+    // attendance-expected would be 4 — both inflated by the pre-join terms
+    // that have no real data. The fixed behaviour (tested above) is 1 and 2
+    // respectively. This documents the concrete before → after delta cited
+    // in the task report.
+    const payload = buildCoverageFixture();
+    const d = computeMasterfileDashboard(payload, {
+      termNumber: null,
+      status: 'late_enrollee',
+      subjectId: null,
+    });
+    expect(d.readiness.commentsWritten.expected).toBeLessThan(3);
+    expect(d.readiness.attendanceRecorded.expected).toBeLessThan(4);
+  });
+
+  it("studentMissingCommentTerms excludes a late enrollee's pre-join terms from the chase list", () => {
+    const payload = buildCoverageFixture();
+    const late = payload.rows.find((r) => r.studentNumber === 'LATE')!;
+    const commentTerms = commentTermsInScope(payload, null); // [1,2,3]
+    // Only T3 is a real gap; T1/T2 are N.A., not chase items.
+    expect(studentMissingCommentTerms(late, commentTerms)).toEqual([3]);
+  });
+
+  it("studentMissingCommentTerms excludes a withdrawn student's post-leave terms from the chase list", () => {
+    const payload = buildCoverageFixture();
+    const leaver = payload.rows.find((r) => r.studentNumber === 'LEAVER')!;
+    const commentTerms = commentTermsInScope(payload, null); // [1,2,3]
+    // T1,T2 both written; T3 is post-leave (N.A.), not a real gap.
+    expect(studentMissingCommentTerms(leaver, commentTerms)).toEqual([]);
   });
 });

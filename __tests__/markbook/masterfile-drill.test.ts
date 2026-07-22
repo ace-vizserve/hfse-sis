@@ -166,6 +166,8 @@ function student(
       ...c,
     })),
     lateEnrolleeTermNumber: partial.lateEnrolleeTermNumber ?? null,
+    enrolledTermNumbers:
+      partial.enrolledTermNumbers ?? TERMS.map((t) => t.termNumber),
   };
 }
 

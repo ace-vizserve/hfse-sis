@@ -20,6 +20,10 @@ import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
+import {
+  isEnrolledForTerm,
+  type EnrolmentInterval,
+} from '@/lib/report-card/enrolment-coverage';
 
 // HFSE Masterfile — registrar-facing cross-subject grid (KD #95).
 //
@@ -53,7 +57,11 @@ export type MasterfileCell = {
   quarterly: number | null;
   // Non-examinable cells: letter grade or null.
   letter: string | null;
-  // True when the student joined after this term started — render as "N.A."
+  // True when a real grade_entries.is_na row exists, OR (when no grade entry
+  // exists at all for this cell) the student's enrolment coverage doesn't
+  // overlap this term — a late enrollee's pre-join term or a withdrawn
+  // student's post-leave term. Render as "N.A." KD #148's coverage rule,
+  // reused from lib/report-card/enrolment-coverage.ts.
   isNa: boolean;
 };
 
@@ -116,6 +124,13 @@ export type MasterfileStudentRow = {
   // Resolved joining term for late enrollees (explicit override → date-derived →
   // null). null for active/withdrawn students or when unresolvable. KD #111/#68.
   lateEnrolleeTermNumber: number | null;
+  // Term numbers this student's enrolment coverage overlaps (union of all their
+  // section_students rows in the AY, KD #67 transfer-safe). Drives the N.A.
+  // distinction: a term NOT in this list means the student wasn't enrolled that
+  // term (pre-join or post-withdrawal), so a blank cell there is legitimately
+  // N.A., not "not yet entered." A term with unset dates is conservatively
+  // treated as covered (never fabricates an N.A. from missing calendar data).
+  enrolledTermNumbers: number[];
 };
 
 // One grading sheet in the selected scope, with just the fields the dashboard
@@ -208,6 +223,32 @@ export function buildFormAdviserNameMap(
     out.set(a.section_id, nameById.get(a.teacher_user_id) ?? a.teacher_user_id);
   }
   return out;
+}
+
+// Pure — resolves the term numbers a student's enrolment coverage overlaps
+// (KD #148, reusing lib/report-card/enrolment-coverage.ts's interval math the
+// same way build-report-card.ts does). Extracted so the loader's per-cell
+// N.A. decision + the readiness/comment coverage gates are unit-testable
+// without mocking the surrounding Supabase call graph — same rationale as
+// resolveLateEnrolleeTerm / buildFormAdviserNameMap above.
+//
+// A term with unset start/end dates is conservatively treated as covered, so
+// an unconfigured calendar never fabricates an N.A.
+export function computeEnrolledTermNumbers(
+  coverage: EnrolmentInterval[],
+  terms: {
+    termNumber: number;
+    startDate: string | null;
+    endDate: string | null;
+  }[]
+): number[] {
+  return terms
+    .filter((t) =>
+      t.startDate && t.endDate
+        ? isEnrolledForTerm(coverage, t.startDate, t.endDate)
+        : true
+    )
+    .map((t) => t.termNumber);
 }
 
 export async function loadMasterfile(
@@ -394,7 +435,7 @@ async function loadMasterfileUncached(
   const { data: enrolmentsRaw } = await service
     .from('section_students')
     .select(
-      'id, section_id, enrollment_status, created_at, late_enrollee_term_number, enrollment_date, index_number, student:students(id, student_number, last_name, first_name, middle_name)'
+      'id, section_id, enrollment_status, created_at, late_enrollee_term_number, enrollment_date, withdrawal_date, index_number, student:students(id, student_number, last_name, first_name, middle_name)'
     )
     .in('section_id', filterIds)
     .order('index_number');
@@ -406,6 +447,7 @@ async function loadMasterfileUncached(
     created_at: string | null;
     late_enrollee_term_number: number | null;
     enrollment_date: string | null;
+    withdrawal_date: string | null;
     index_number: number | null;
     student:
       | {
@@ -440,6 +482,7 @@ async function loadMasterfileUncached(
       createdAt: string | null;
       lateTermOverride: number | null;
       enrollmentDate: string | null;
+      withdrawalDate: string | null;
       indexNumber: number | null;
     }>;
   };
@@ -455,6 +498,7 @@ async function loadMasterfileUncached(
       createdAt: e.created_at,
       lateTermOverride: e.late_enrollee_term_number ?? null,
       enrollmentDate: e.enrollment_date ?? null,
+      withdrawalDate: e.withdrawal_date ?? null,
       indexNumber: e.index_number ?? null,
     };
     if (existing) {
@@ -646,6 +690,25 @@ async function loadMasterfileUncached(
 
     const studentEnrolmentIds = new Set(group.enrolments.map((e) => e.id));
 
+    // Per-term enrolment coverage (KD #148, reused from build-report-card.ts).
+    // Union of every section_students row this student holds in the AY — a
+    // mid-year transfer (KD #67) leaves one withdrawn + one active row, both
+    // must count. A term with unset dates is conservatively treated as
+    // covered so an unconfigured calendar never fabricates an N.A.
+    const coverage: EnrolmentInterval[] = group.enrolments.map((e) => ({
+      start: e.enrollmentDate,
+      end: e.withdrawalDate,
+    }));
+    const enrolledTermNumbers: number[] = computeEnrolledTermNumbers(
+      coverage,
+      terms.map((t) => ({
+        termNumber: t.term_number,
+        startDate: t.start_date,
+        endDate: t.end_date,
+      }))
+    );
+    const enrolledTermNumberSet = new Set(enrolledTermNumbers);
+
     // Subject rows.
     const subjectRows: MasterfileSubjectRow[] = subjects.map((sub) => {
       let annualLetter: string | null = null;
@@ -664,7 +727,14 @@ async function loadMasterfileUncached(
             studentEnrolmentIds.has(en.section_student_id)
         );
         if (candidates.length === 0) {
-          return { quarterly: null, letter: null, isNa: false };
+          // No grade_entries row at all for this (term × subject) — distinguish
+          // a genuine gap from a term the student wasn't enrolled for (KD
+          // #148): the latter is N.A., not "not yet entered."
+          return {
+            quarterly: null,
+            letter: null,
+            isNa: !enrolledTermNumberSet.has(t.term_number),
+          };
         }
         // Prefer entries with actual data over blanks.
         const filled = candidates.filter(
@@ -825,6 +895,7 @@ async function loadMasterfileUncached(
       attendanceTotal,
       commentsByTerm,
       lateEnrolleeTermNumber,
+      enrolledTermNumbers,
     });
   }
 
