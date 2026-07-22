@@ -22,7 +22,8 @@
     --accent: #e9ecf8;
     --accent-fg: #1a2570;
     --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-    --brand-tile: inset 0 1px 0 0 hsl(0 0% 100% / 0.18),
+    --brand-tile:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.18),
       0 6px 16px -6px hsl(224 60% 20% / 0.5);
     /* the one colour thread: stat → donut → badge */
     --gold: var(--amber);
@@ -32,11 +33,12 @@
     /* fonts — Source Serif 4 / Inter / JetBrains Mono degrade to system
        equivalents here (Artifact CSP blocks webfont CDNs); the real app
        ships the named faces. */
-    --f-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    --f-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
-      "Times New Roman", serif;
-    --f-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas,
-      monospace;
+    --f-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --f-serif:
+      'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia,
+      'Times New Roman', serif;
+    --f-mono:
+      ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
 
     font-family: var(--f-sans);
     color: var(--ink);
@@ -307,7 +309,7 @@
     );
   }
   .asr .donut::after {
-    content: "";
+    content: '';
     position: absolute;
     inset: 26px;
     background: var(--card);
@@ -559,7 +561,7 @@
     font-weight: 600;
   }
   .asr .badge.dot::before {
-    content: "";
+    content: '';
     width: 6px;
     height: 6px;
     border-radius: 50%;
@@ -725,10 +727,11 @@
       <h2>Academic Summary → module pages · three-tier template</h2>
       <p>
         One shared page shape, rendered in the app's own design system. Every
-        page reads top-to-bottom as <b>① stat row → ② analytics → ③ filterable
-        detail table</b>. Below is the canonical page (<b>Awards</b>, on
-        Markbook) in full; the bottom strip shows how <b>Attendance</b> and
-        <b>Comments</b> fill the identical three tiers.
+        page reads top-to-bottom as
+        <b>① stat row → ② analytics → ③ filterable detail table</b>. Below is
+        the canonical page (<b>Awards</b>, on Markbook) in full; the bottom
+        strip shows how <b>Attendance</b> and <b>Comments</b> fill the identical
+        three tiers.
       </p>
       <p>
         Signature: a single gold / silver / bronze colour thread runs from the
@@ -754,25 +757,91 @@
           <div class="field">
             <label>Year</label>
             <div class="select">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>
+              <svg
+                class="ico"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                width="15"
+                height="15"
+              >
+                <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+                <path d="M16 2v4M8 2v4M3 10h18"></path>
+              </svg>
               AY 2026
-              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="m6 9 6 6 6-6"></path></svg>
+              <svg
+                class="chev"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                width="14"
+                height="14"
+              >
+                <path d="m6 9 6 6 6-6"></path>
+              </svg>
             </div>
           </div>
           <div class="field">
             <label>Level</label>
             <div class="select">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
+              <svg
+                class="ico"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                width="15"
+                height="15"
+              >
+                <path d="M22 10v6M2 10l10-5 10 5-10 5z"></path>
+                <path d="M6 12v5c3 3 9 3 12 0v-5"></path>
+              </svg>
               Primary 5
-              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="m6 9 6 6 6-6"></path></svg>
+              <svg
+                class="chev"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                width="14"
+                height="14"
+              >
+                <path d="m6 9 6 6 6-6"></path>
+              </svg>
             </div>
           </div>
           <div class="field">
             <label>Class</label>
             <div class="select">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              <svg
+                class="ico"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                width="15"
+                height="15"
+              >
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path
+                  d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
+                ></path>
+              </svg>
               All classes
-              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="m6 9 6 6 6-6"></path></svg>
+              <svg
+                class="chev"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                width="14"
+                height="14"
+              >
+                <path d="m6 9 6 6 6-6"></path>
+              </svg>
             </div>
           </div>
         </div>
@@ -784,7 +853,18 @@
           <div class="val tnum">35</div>
           <div class="sub">Enrolled at this level</div>
           <div class="tile indigo">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path
+                d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
+              ></path>
+            </svg>
           </div>
         </div>
         <div class="stat">
@@ -792,7 +872,15 @@
           <div class="val tnum">12</div>
           <div class="sub">34% of the level</div>
           <div class="tile gold">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"></circle><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"></path></svg>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="8" r="6"></circle>
+              <path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"></path>
+            </svg>
           </div>
         </div>
         <div class="stat">
@@ -800,7 +888,15 @@
           <div class="val tnum">8</div>
           <div class="sub">23% of the level</div>
           <div class="tile silver">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"></circle><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"></path></svg>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="8" r="6"></circle>
+              <path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"></path>
+            </svg>
           </div>
         </div>
         <div class="stat">
@@ -808,7 +904,15 @@
           <div class="val tnum">6</div>
           <div class="sub">17% of the level</div>
           <div class="tile bronze">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"></circle><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"></path></svg>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="8" r="6"></circle>
+              <path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"></path>
+            </svg>
           </div>
         </div>
       </div>
@@ -821,7 +925,15 @@
               <div class="ttl">Award tiers</div>
             </div>
             <div class="panel-tile">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path>
+                <path d="M22 12A10 10 0 0 0 12 2v10z"></path>
+              </svg>
             </div>
           </div>
           <div class="panel-body">
@@ -835,19 +947,27 @@
               <div class="legend">
                 <div class="row">
                   <span class="sw" style="background: var(--gold)"></span>
-                  <span class="nm">Gold</span><span class="vv tnum">12</span><span class="pc tnum">34%</span>
+                  <span class="nm">Gold</span><span class="vv tnum">12</span
+                  ><span class="pc tnum">34%</span>
                 </div>
                 <div class="row">
                   <span class="sw" style="background: var(--silver)"></span>
-                  <span class="nm">Silver</span><span class="vv tnum">8</span><span class="pc tnum">23%</span>
+                  <span class="nm">Silver</span><span class="vv tnum">8</span
+                  ><span class="pc tnum">23%</span>
                 </div>
                 <div class="row">
-                  <span class="sw" style="background: var(--tier-bronze)"></span>
-                  <span class="nm">Bronze</span><span class="vv tnum">6</span><span class="pc tnum">17%</span>
+                  <span
+                    class="sw"
+                    style="background: var(--tier-bronze)"
+                  ></span>
+                  <span class="nm">Bronze</span><span class="vv tnum">6</span
+                  ><span class="pc tnum">17%</span>
                 </div>
                 <div class="row">
                   <span class="sw" style="background: var(--neutral)"></span>
-                  <span class="nm">Not eligible</span><span class="vv tnum">9</span><span class="pc tnum">26%</span>
+                  <span class="nm">Not eligible</span
+                  ><span class="vv tnum">9</span
+                  ><span class="pc tnum">26%</span>
                 </div>
               </div>
             </div>
@@ -861,38 +981,94 @@
               <div class="ttl">Award tiers per class</div>
             </div>
             <div class="panel-tile">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"></path><rect x="7" y="10" width="3" height="8"></rect><rect x="12" y="6" width="3" height="12"></rect><rect x="17" y="13" width="3" height="5"></rect></svg>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 3v18h18"></path>
+                <rect x="7" y="10" width="3" height="8"></rect>
+                <rect x="12" y="6" width="3" height="12"></rect>
+                <rect x="17" y="13" width="3" height="5"></rect>
+              </svg>
             </div>
           </div>
           <div class="panel-body">
             <div class="bars">
               <div class="bargroup">
-                <div class="bar" style="height: 78%; background: var(--gold)"></div>
-                <div class="bar" style="height: 52%; background: var(--silver)"></div>
-                <div class="bar" style="height: 40%; background: var(--tier-bronze)"></div>
-                <div class="bar" style="height: 60%; background: var(--neutral)"></div>
+                <div
+                  class="bar"
+                  style="height: 78%; background: var(--gold)"
+                ></div>
+                <div
+                  class="bar"
+                  style="height: 52%; background: var(--silver)"
+                ></div>
+                <div
+                  class="bar"
+                  style="height: 40%; background: var(--tier-bronze)"
+                ></div>
+                <div
+                  class="bar"
+                  style="height: 60%; background: var(--neutral)"
+                ></div>
               </div>
               <div class="bargroup">
-                <div class="bar" style="height: 62%; background: var(--gold)"></div>
-                <div class="bar" style="height: 44%; background: var(--silver)"></div>
-                <div class="bar" style="height: 33%; background: var(--tier-bronze)"></div>
-                <div class="bar" style="height: 48%; background: var(--neutral)"></div>
+                <div
+                  class="bar"
+                  style="height: 62%; background: var(--gold)"
+                ></div>
+                <div
+                  class="bar"
+                  style="height: 44%; background: var(--silver)"
+                ></div>
+                <div
+                  class="bar"
+                  style="height: 33%; background: var(--tier-bronze)"
+                ></div>
+                <div
+                  class="bar"
+                  style="height: 48%; background: var(--neutral)"
+                ></div>
               </div>
               <div class="bargroup">
-                <div class="bar" style="height: 88%; background: var(--gold)"></div>
-                <div class="bar" style="height: 30%; background: var(--silver)"></div>
-                <div class="bar" style="height: 22%; background: var(--tier-bronze)"></div>
-                <div class="bar" style="height: 40%; background: var(--neutral)"></div>
+                <div
+                  class="bar"
+                  style="height: 88%; background: var(--gold)"
+                ></div>
+                <div
+                  class="bar"
+                  style="height: 30%; background: var(--silver)"
+                ></div>
+                <div
+                  class="bar"
+                  style="height: 22%; background: var(--tier-bronze)"
+                ></div>
+                <div
+                  class="bar"
+                  style="height: 40%; background: var(--neutral)"
+                ></div>
               </div>
             </div>
             <div class="barlabels">
               <span>Diligence</span><span>Trust</span><span>Compassion</span>
             </div>
             <div class="barlegend">
-              <div class="row"><span class="sw" style="background: var(--gold)"></span>Gold</div>
-              <div class="row"><span class="sw" style="background: var(--silver)"></span>Silver</div>
-              <div class="row"><span class="sw" style="background: var(--tier-bronze)"></span>Bronze</div>
-              <div class="row"><span class="sw" style="background: var(--neutral)"></span>Not eligible</div>
+              <div class="row">
+                <span class="sw" style="background: var(--gold)"></span>Gold
+              </div>
+              <div class="row">
+                <span class="sw" style="background: var(--silver)"></span>Silver
+              </div>
+              <div class="row">
+                <span class="sw" style="background: var(--tier-bronze)"></span
+                >Bronze
+              </div>
+              <div class="row">
+                <span class="sw" style="background: var(--neutral)"></span>Not
+                eligible
+              </div>
             </div>
           </div>
         </div>
@@ -901,7 +1077,17 @@
       <div class="tier3">
         <div class="toolbar">
           <div class="search">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              width="15"
+              height="15"
+            >
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.3-4.3"></path>
+            </svg>
             Search students…
           </div>
           <div class="facet"><span class="plus">+</span> Subject</div>
@@ -909,7 +1095,17 @@
           <div class="facet">Tier <span class="cnt">1</span></div>
           <div class="spacer"></div>
           <div class="btn-out">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="M7 10l5 5 5-5M12 15V3"></path></svg>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              width="14"
+              height="14"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <path d="M7 10l5 5 5-5M12 15V3"></path>
+            </svg>
             Export CSV
           </div>
         </div>
@@ -929,7 +1125,10 @@
             <tbody>
               <tr>
                 <td class="idx">1</td>
-                <td><div class="stu">Alcantara, Maria Sofia</div><div class="snum">HFSE-2019-0142</div></td>
+                <td>
+                  <div class="stu">Alcantara, Maria Sofia</div>
+                  <div class="snum">HFSE-2019-0142</div>
+                </td>
                 <td class="cls">Diligence</td>
                 <td><span class="badge dot b-active">Active</span></td>
                 <td class="r score">96.4</td>
@@ -937,7 +1136,10 @@
               </tr>
               <tr>
                 <td class="idx">2</td>
-                <td><div class="stu">Bautista, Liam Carlos</div><div class="snum">HFSE-2019-0088</div></td>
+                <td>
+                  <div class="stu">Bautista, Liam Carlos</div>
+                  <div class="snum">HFSE-2019-0088</div>
+                </td>
                 <td class="cls">Trust</td>
                 <td><span class="badge dot b-active">Active</span></td>
                 <td class="r score">94.1</td>
@@ -945,35 +1147,55 @@
               </tr>
               <tr>
                 <td class="idx">3</td>
-                <td><div class="stu">Cruz, Nathan Emmanuel</div><div class="snum">HFSE-2020-0203</div></td>
+                <td>
+                  <div class="stu">Cruz, Nathan Emmanuel</div>
+                  <div class="snum">HFSE-2020-0203</div>
+                </td>
                 <td class="cls">Compassion</td>
                 <td><span class="badge dot b-late">Late enrollee</span></td>
                 <td class="r score">92.8</td>
-                <td class="r"><span class="tierbadge t-silver">Silver</span></td>
+                <td class="r">
+                  <span class="tierbadge t-silver">Silver</span>
+                </td>
               </tr>
               <tr>
                 <td class="idx">4</td>
-                <td><div class="stu">Dela Cruz, Aria Beatrice</div><div class="snum">HFSE-2019-0117</div></td>
+                <td>
+                  <div class="stu">Dela Cruz, Aria Beatrice</div>
+                  <div class="snum">HFSE-2019-0117</div>
+                </td>
                 <td class="cls">Diligence</td>
                 <td><span class="badge dot b-active">Active</span></td>
                 <td class="r score">90.3</td>
-                <td class="r"><span class="tierbadge t-silver">Silver</span></td>
+                <td class="r">
+                  <span class="tierbadge t-silver">Silver</span>
+                </td>
               </tr>
               <tr>
                 <td class="idx">5</td>
-                <td><div class="stu">Fernandez, Gabriel Luis</div><div class="snum">HFSE-2020-0076</div></td>
+                <td>
+                  <div class="stu">Fernandez, Gabriel Luis</div>
+                  <div class="snum">HFSE-2020-0076</div>
+                </td>
                 <td class="cls">Trust</td>
                 <td><span class="badge dot b-active">Active</span></td>
                 <td class="r score">88.9</td>
-                <td class="r"><span class="tierbadge t-bronze">Bronze</span></td>
+                <td class="r">
+                  <span class="tierbadge t-bronze">Bronze</span>
+                </td>
               </tr>
               <tr>
                 <td class="idx">6</td>
-                <td><div class="stu">Gonzales, Isabella Mae</div><div class="snum">HFSE-2019-0155</div></td>
+                <td>
+                  <div class="stu">Gonzales, Isabella Mae</div>
+                  <div class="snum">HFSE-2019-0155</div>
+                </td>
                 <td class="cls">Compassion</td>
                 <td><span class="badge dot b-active">Active</span></td>
                 <td class="r score">85.2</td>
-                <td class="r"><span class="tierbadge t-none">Not eligible</span></td>
+                <td class="r">
+                  <span class="tierbadge t-none">Not eligible</span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -1001,10 +1223,22 @@
           rate.
         </p>
         <div class="mini-grid">
-          <div class="mini"><div class="l">Avg rate</div><div class="v tnum">94.2%</div></div>
-          <div class="mini"><div class="l">≥ 95%</div><div class="v tnum">21</div></div>
-          <div class="mini"><div class="l">&lt; 85%</div><div class="v tnum">4</div></div>
-          <div class="mini"><div class="l">Absences</div><div class="v tnum">118</div></div>
+          <div class="mini">
+            <div class="l">Avg rate</div>
+            <div class="v tnum">94.2%</div>
+          </div>
+          <div class="mini">
+            <div class="l">≥ 95%</div>
+            <div class="v tnum">21</div>
+          </div>
+          <div class="mini">
+            <div class="l">&lt; 85%</div>
+            <div class="v tnum">4</div>
+          </div>
+          <div class="mini">
+            <div class="l">Absences</div>
+            <div class="v tnum">118</div>
+          </div>
         </div>
         <div class="chart-note">
           <b>Tier ②</b> — a rate-band bar chart (≥95 / 85–94 / &lt;85) plus
@@ -1012,7 +1246,13 @@
           donut.
         </div>
         <div class="cols">
-          <span class="col-chip">#</span><span class="col-chip">Student</span><span class="col-chip">Class</span><span class="col-chip">Status</span><span class="col-chip">Present</span><span class="col-chip">Late</span><span class="col-chip">Absent</span><span class="col-chip">Rate</span><span class="col-chip">School days</span>
+          <span class="col-chip">#</span><span class="col-chip">Student</span
+          ><span class="col-chip">Class</span
+          ><span class="col-chip">Status</span
+          ><span class="col-chip">Present</span
+          ><span class="col-chip">Late</span><span class="col-chip">Absent</span
+          ><span class="col-chip">Rate</span
+          ><span class="col-chip">School days</span>
         </div>
       </div>
 
@@ -1023,10 +1263,22 @@
           Form-class-adviser write-up status per student and term (T1–T3).
         </p>
         <div class="mini-grid">
-          <div class="mini"><div class="l">Submitted</div><div class="v tnum">86%</div></div>
-          <div class="mini"><div class="l">Submitted</div><div class="v tnum">30</div></div>
-          <div class="mini"><div class="l">Draft</div><div class="v tnum">3</div></div>
-          <div class="mini"><div class="l">Missing</div><div class="v tnum">2</div></div>
+          <div class="mini">
+            <div class="l">Submitted</div>
+            <div class="v tnum">86%</div>
+          </div>
+          <div class="mini">
+            <div class="l">Submitted</div>
+            <div class="v tnum">30</div>
+          </div>
+          <div class="mini">
+            <div class="l">Draft</div>
+            <div class="v tnum">3</div>
+          </div>
+          <div class="mini">
+            <div class="l">Missing</div>
+            <div class="v tnum">2</div>
+          </div>
         </div>
         <div class="chart-note">
           <b>Tier ②</b> — completeness-per-section grouped bars (submitted /
@@ -1034,7 +1286,11 @@
           (not a real gap).
         </div>
         <div class="cols">
-          <span class="col-chip">#</span><span class="col-chip">Student</span><span class="col-chip">Class</span><span class="col-chip">Term</span><span class="col-chip">Status</span><span class="col-chip">Adviser</span><span class="col-chip">Comment</span>
+          <span class="col-chip">#</span><span class="col-chip">Student</span
+          ><span class="col-chip">Class</span><span class="col-chip">Term</span
+          ><span class="col-chip">Status</span
+          ><span class="col-chip">Adviser</span
+          ><span class="col-chip">Comment</span>
         </div>
       </div>
     </div>
@@ -1046,10 +1302,10 @@
         Silver / Bronze tiles are tinted to their tier (amber / slate / bronze)
         instead of the default indigo — because on an <em>awards</em> page the
         tile colour <em>is</em> the data. It needs a one-line
-        <span class="mono">MetricCard</span> prop
-        (<span class="mono">tileClassName</span>) or a small page-local card;
-        the plan will pick one. Everywhere else the stock component is used
-        unchanged.
+        <span class="mono">MetricCard</span> prop (<span class="mono"
+          >tileClassName</span
+        >) or a small page-local card; the plan will pick one. Everywhere else
+        the stock component is used unchanged.
       </p>
       <p>
         On-token throughout: no <span class="mono">bg-white</span>, no raw hex —
