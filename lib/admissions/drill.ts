@@ -3,6 +3,12 @@ import { unstable_cache } from 'next/cache';
 import { applyDateRangeFilter } from '@/lib/dashboard/drill-range';
 import { prefixFor } from '@/lib/admissions/_shared';
 import {
+  daysSinceUpdate as stalenessDaysSinceUpdate,
+  isFollowUpStaleness,
+  stalenessLabel,
+} from '@/lib/admissions/staleness';
+import {
+  APPLICATION_TERMINAL_STATUSES,
   STAGE_COLUMN_MAP,
   STAGE_KEYS,
   isActiveFunnelStatus,
@@ -67,6 +73,13 @@ export type DrillRow = {
   enrollmentDate: string | null; // ISO
   daysToEnroll: number | null;
   daysSinceUpdate: number | null;
+  /**
+   * Raw (non-fallback) days since `applicationUpdatedDate` was last
+   * touched — null when never stamped. Internal to the 'outdated' target's
+   * filter (mirrors getOutdatedApplications in dashboard.ts exactly); NOT
+   * rendered as a column — `daysSinceUpdate` above is the displayed value.
+   */
+  rawDaysSinceUpdate: number | null;
   daysInPipeline: number;
   hasMissingDocs: boolean;
   documentsComplete: number; // count of present core docs
@@ -166,6 +179,10 @@ async function loadDrillRowsUncached(input: {
     enroleeNumber: string | null;
     applicationStatus: string | null;
     applicationUpdatedDate: string | null;
+    /** Write-once enrolment timestamp added by migration 075 — the real
+     *  "when did this applicant enrol" column. Distinct from
+     *  applicationUpdatedDate (a general last-touched signal). */
+    enrolledAt: string | null;
     classLevel: string | null;
     levelApplied: string | null;
     assessmentGradeMath: string | number | null;
@@ -181,6 +198,7 @@ async function loadDrillRowsUncached(input: {
     'enroleeNumber',
     'applicationStatus',
     'applicationUpdatedDate',
+    'enrolledAt',
     'classLevel',
     'levelApplied',
     'assessmentGradeMath',
@@ -244,10 +262,15 @@ async function loadDrillRowsUncached(input: {
     // `updated` keeps the created_at fallback for staleness/pipeline-age columns
     // (same as dashboard.ts JoinedRow.applicationUpdatedDate).
     const updated = s?.applicationUpdatedDate ?? a.created_at ?? null;
-    // `enrolledAt` is the raw status-table value — null when never stamped.
-    // Used for daysToEnroll / enrollmentDate so un-stamped rows don't produce
-    // spurious 0-day durations.
-    const enrolledAt = s?.applicationUpdatedDate ?? null;
+    // `enrolledAt` is the REAL write-once status-table column (migration 075
+    // — stamped the moment a student first reaches Enrolled / Enrolled
+    // (Conditional)) — null when never stamped. Used for daysToEnroll /
+    // enrollmentDate so un-stamped rows don't produce spurious durations.
+    // Distinct from `applicationUpdatedDate` (a general last-touched signal
+    // that has nothing to do with when the applicant actually enrolled) —
+    // see dashboard.ts's JoinedRow.enrolledAt doc comment for the same
+    // distinction on the chart side.
+    const enrolledAt = s?.enrolledAt ?? null;
 
     const createdMs = a.created_at ? Date.parse(a.created_at) : NaN;
     const updatedMs = updated ? Date.parse(updated) : NaN;
@@ -270,6 +293,17 @@ async function loadDrillRowsUncached(input: {
     const daysInPipeline = !Number.isNaN(createdMs)
       ? Math.floor((today - createdMs) / 86_400_000)
       : 0;
+    // Raw (non-fallback) staleness input — used exclusively by the
+    // 'outdated' target so its inclusion rule is byte-identical to
+    // getOutdatedApplications (dashboard.ts), which reads
+    // applicationUpdatedDate directly with no created_at substitution. A
+    // NULL here must stay NULL (= "Never updated", the most urgent tier per
+    // staleness.ts) — `daysSinceUpdate` above intentionally keeps the
+    // created_at fallback for the displayed "Days since update" column and
+    // must not be reused for this filter.
+    const rawDaysSinceUpdate = stalenessDaysSinceUpdate(
+      s?.applicationUpdatedDate ?? null
+    );
 
     out.push({
       enroleeNumber: a.enroleeNumber,
@@ -312,6 +346,7 @@ async function loadDrillRowsUncached(input: {
       enrollmentDate,
       daysToEnroll,
       daysSinceUpdate,
+      rawDaysSinceUpdate,
       daysInPipeline,
       // Doc fields default to all-missing; enrichWithDocs() upgrades them
       // for callers that need doc data.
@@ -438,11 +473,20 @@ export async function buildDrillRows(
 // Analytical targets (conversion / time-to-enroll / referral / assessment /
 // funnel-stage) intentionally return the full pipeline because the metrics
 // they compute require seeing enrolled outcomes.
-const ACTIVE_FUNNEL_STATUSES = new Set([
-  'Submitted',
-  'Ongoing Verification',
-  'Processing',
-]);
+
+// "Not terminal" — everyone except Cancelled/Withdrawn (includes Enrolled +
+// Enrolled (Conditional)). Distinct from ACTIVE_FUNNEL_STAGES (which also
+// excludes Enrolled); this is the definition the `assessment`, `referral`,
+// and `doc-completion` charts actually use (getAssessmentOutcomes /
+// getReferralSourceBreakdown / getDocumentCompletionByLevel in
+// dashboard.ts) — drop terminal-status noise but keep the enrolled cohort.
+const APPLICATION_TERMINAL_STATUS_SET = new Set<string>(
+  APPLICATION_TERMINAL_STATUSES
+);
+
+function isTerminalStatus(status: string): boolean {
+  return APPLICATION_TERMINAL_STATUS_SET.has(status);
+}
 
 export function applyTargetFilter(
   rows: DrillRow[],
@@ -457,7 +501,7 @@ export function applyTargetFilter(
       // a January application). Funnel-only filtering would hide rows
       // that have since progressed to Enrolled / Cancelled / Withdrawn.
       // Funnel-shape targets (`pipeline-stage`, `doc-completion`, chase)
-      // still narrow to ACTIVE_FUNNEL_STATUSES below.
+      // still narrow their scope below.
       return rows;
     case 'enrolled':
       return rows.filter(
@@ -505,33 +549,47 @@ export function applyTargetFilter(
       return rows.filter(
         (r) => r.pipelineStage === segment || r.status === segment
       );
-    case 'referral':
-      if (!segment) return rows;
+    case 'referral': {
+      // Excludes Cancelled/Withdrawn — mirrors getReferralSourceBreakdown,
+      // which skips terminal statuses so referral attribution reflects the
+      // funnel marketing actually drove forward, not all-time inquiry inputs.
+      const referralRows = rows.filter((r) => !isTerminalStatus(r.status));
+      if (!segment) return referralRows;
       if (segment === 'Not specified') {
-        return rows.filter((r) => !r.referralSource);
+        return referralRows.filter((r) => !r.referralSource);
       }
       if (segment.startsWith('__other__:')) {
         // ReferralDrillCard encodes the named top-N sources after the prefix
         // so we can exclude them exactly, rather than guessing which sources
         // were collapsed into "Other".
         const named = new Set(segment.slice(10).split('|').filter(Boolean));
-        return rows.filter(
+        return referralRows.filter(
           (r) => r.referralSource != null && !named.has(r.referralSource)
         );
       }
-      return rows.filter((r) => r.referralSource === segment);
-    case 'assessment':
-      if (!segment) return rows;
+      return referralRows.filter((r) => r.referralSource === segment);
+    }
+    case 'assessment': {
+      // Excludes Cancelled/Withdrawn — mirrors getAssessmentOutcomes, which
+      // skips terminal statuses so the donut reflects the active funnel +
+      // enrolled cohort, not applicants who never completed an assessment.
+      const assessmentRows = rows.filter((r) => !isTerminalStatus(r.status));
+      if (!segment) return assessmentRows;
       if (segment.includes(':')) {
         const colonIdx = segment.indexOf(':');
         const subject = segment.slice(0, colonIdx);
         const outcome = segment.slice(colonIdx + 1);
         if (subject === 'math')
-          return rows.filter((r) => r.assessmentMathOutcome === outcome);
+          return assessmentRows.filter(
+            (r) => r.assessmentMathOutcome === outcome
+          );
         if (subject === 'eng')
-          return rows.filter((r) => r.assessmentEnglishOutcome === outcome);
+          return assessmentRows.filter(
+            (r) => r.assessmentEnglishOutcome === outcome
+          );
       }
-      return rows.filter((r) => r.assessmentOutcome === segment);
+      return assessmentRows.filter((r) => r.assessmentOutcome === segment);
+    }
     case 'time-to-enroll-bucket': {
       if (!segment) return rows.filter((r) => r.daysToEnroll !== null);
       const bucket = parseTimeToEnrollBucket(segment);
@@ -546,28 +604,35 @@ export function applyTargetFilter(
       if (!segment) return rows;
       return rows.filter((r) => r.level === segment);
     case 'doc-completion': {
-      // Admissions cares about completeness for funnel applicants only;
-      // enrolled-side missing-doc work belongs to P-Files renewal queue.
-      const funnelOnly = rows.filter((r) =>
-        ACTIVE_FUNNEL_STATUSES.has(r.status)
-      );
-      if (!segment) return funnelOnly.filter((r) => r.hasMissingDocs);
+      // Matches getDocumentCompletionByLevel (dashboard.ts): "not terminal"
+      // — everyone except Cancelled/Withdrawn, which DELIBERATELY includes
+      // Enrolled / Enrolled (Conditional). The chart intentionally shows
+      // upload progress across the whole cohort (not just the active
+      // funnel), so the drill widens to match it rather than staying
+      // narrowed to ACTIVE_FUNNEL_STAGES.
+      const notTerminal = rows.filter((r) => !isTerminalStatus(r.status));
+      if (!segment) return notTerminal.filter((r) => r.hasMissingDocs);
       // segment can be a level string OR "missing" / "complete"
       if (segment === 'missing')
-        return funnelOnly.filter((r) => r.hasMissingDocs);
+        return notTerminal.filter((r) => r.hasMissingDocs);
       if (segment === 'complete')
-        return funnelOnly.filter((r) => !r.hasMissingDocs);
-      return funnelOnly.filter((r) => r.level === segment);
+        return notTerminal.filter((r) => !r.hasMissingDocs);
+      return notTerminal.filter((r) => r.level === segment);
     }
     case 'outdated':
       // Outdated = stale & in the active funnel. Same scope predicate as
       // getOutdatedApplications (the dashboard count) and the
       // /admissions/applications list — shared isActiveFunnelStatus, so the
-      // drill rows always equal the count (count == drill, KD #124). Kept
-      // tiers: never-updated (null) / >= 7 days = STALENESS_FOLLOW_UP_VALUES.
+      // drill rows always equal the count (count == drill, KD #124). Staleness
+      // routes through the SAME shared helpers getOutdatedApplications uses
+      // (lib/admissions/staleness.ts), applied to `rawDaysSinceUpdate` (the
+      // RAW applicationUpdatedDate, no created_at fallback) — a NULL there is
+      // "Never updated", the most urgent tier, and must stay included. Using
+      // the fallback-substituted `daysSinceUpdate` here would silently
+      // exclude genuinely-never-updated recent applications.
       return rows.filter((r) => {
         if (!isActiveFunnelStatus(r.status)) return false;
-        return r.daysSinceUpdate === null || r.daysSinceUpdate >= 7;
+        return isFollowUpStaleness(stalenessLabel(r.rawDaysSinceUpdate));
       });
     default:
       return rows;
