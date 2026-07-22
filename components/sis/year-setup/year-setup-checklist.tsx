@@ -307,7 +307,7 @@ export function YearSetupChecklist({
                 variant="outline"
                 className="h-6 gap-1 border-brand-mint bg-brand-mint/30 text-ink"
               >
-                <CheckCircle2 className="size-3" /> All set for{' '}
+                <CheckCircle2 className="size-3" /> Minimums met for{' '}
                 {selectedAy.label}
               </Badge>
             </CardAction>
