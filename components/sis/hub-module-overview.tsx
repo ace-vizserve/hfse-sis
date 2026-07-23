@@ -60,6 +60,9 @@ export function HubModuleOverview({ rows }: { rows: HubModuleOverviewRow[] }) {
               <p className="mt-0.5 font-serif text-xl font-semibold tabular-nums text-foreground">
                 {row.value}
               </p>
+              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                {row.sub}
+              </p>
             </div>
           </Link>
         );

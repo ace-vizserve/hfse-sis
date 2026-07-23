@@ -20,7 +20,6 @@ import { getMarkbookKpisRange } from '@/lib/markbook/dashboard';
 import { getEvaluationKpisRange } from '@/lib/evaluation/dashboard';
 import { getPFilesKpisRange } from '@/lib/p-files/dashboard';
 import { getHubKpis } from '@/lib/sis/dashboard';
-import { growthDelta } from '@/lib/dashboard/growth';
 import { sgToday } from '@/lib/dates';
 import type { RangeInput } from '@/lib/dashboard/range';
 
@@ -28,6 +27,10 @@ export type HubModuleOverviewRow = {
   key: string;
   label: string;
   value: string;
+  /** Plain-English description of what `value` counts — the module name
+   * alone ("Records") doesn't say whether 404 means students, applications,
+   * or something else, so every row carries an explicit descriptor. */
+  sub: string;
   href: string;
   tone: 'indigo' | 'amber';
 };
@@ -45,8 +48,7 @@ function isoDaysAgo(days: number, todayIso: string): string {
 }
 
 async function loadHubModuleOverviewUncached(
-  ayCode: string,
-  compareAyCode: string | null
+  ayCode: string
 ): Promise<HubModuleOverviewRow[]> {
   const today = sgToday();
   const weekAgo = isoDaysAgo(6, today);
@@ -66,45 +68,30 @@ async function loadHubModuleOverviewUncached(
     cmpTo: null,
   };
 
-  const [
-    admissions,
-    attendance,
-    markbook,
-    evaluation,
-    pfiles,
-    hubKpis,
-    priorHubKpis,
-  ] = await Promise.all([
-    getAdmissionsKpisRange(weekRange),
-    getAttendanceKpisRange(todayRange),
-    getMarkbookKpisRange(weekRange),
-    getEvaluationKpisRange(weekRange),
-    getPFilesKpisRange(weekRange),
-    getHubKpis(ayCode),
-    compareAyCode ? getHubKpis(compareAyCode) : Promise.resolve(null),
-  ]);
-
-  const enrolledGrowth = growthDelta(
-    hubKpis.enrolledStudents,
-    priorHubKpis?.enrolledStudents ?? null
-  );
-  const enrolledSuffix =
-    enrolledGrowth.pct != null
-      ? `${enrolledGrowth.pct >= 0 ? '+' : ''}${Math.round(hubKpis.enrolledStudents - (priorHubKpis?.enrolledStudents ?? 0))} YoY`
-      : '';
+  const [admissions, attendance, markbook, evaluation, pfiles, hubKpis] =
+    await Promise.all([
+      getAdmissionsKpisRange(weekRange),
+      getAttendanceKpisRange(todayRange),
+      getMarkbookKpisRange(weekRange),
+      getEvaluationKpisRange(weekRange),
+      getPFilesKpisRange(weekRange),
+      getHubKpis(ayCode),
+    ]);
 
   return [
     {
       key: 'admissions',
       label: 'Admissions',
       value: `${admissions.current.applicationsInRange}`,
+      sub: 'New applications this week',
       href: '/admissions',
       tone: 'indigo',
     },
     {
       key: 'records',
       label: 'Records',
-      value: `${hubKpis.enrolledStudents}${enrolledSuffix ? `, ${enrolledSuffix}` : ''}`,
+      value: `${hubKpis.enrolledStudents}`,
+      sub: 'Enrolled students',
       href: '/records',
       tone: 'indigo',
     },
@@ -112,6 +99,7 @@ async function loadHubModuleOverviewUncached(
       key: 'attendance',
       label: 'Attendance',
       value: `${attendance.current.attendancePct.toFixed(1)}%`,
+      sub: 'Attendance rate today',
       href: '/attendance',
       tone: 'indigo',
     },
@@ -119,6 +107,7 @@ async function loadHubModuleOverviewUncached(
       key: 'markbook',
       label: 'Markbook',
       value: `${markbook.current.lockedPct.toFixed(0)}%`,
+      sub: 'Grading sheets locked',
       href: '/markbook',
       tone: 'indigo',
     },
@@ -126,6 +115,7 @@ async function loadHubModuleOverviewUncached(
       key: 'evaluation',
       label: 'Evaluation',
       value: `${evaluation.current.submissionPct.toFixed(0)}%`,
+      sub: 'Write-ups submitted',
       href: '/evaluation',
       tone: 'indigo',
     },
@@ -133,6 +123,7 @@ async function loadHubModuleOverviewUncached(
       key: 'p-files',
       label: 'P-Files',
       value: `${pfiles.current.expiringSoon30}`,
+      sub: 'Docs expiring within 30 days',
       href: '/p-files',
       tone: pfiles.current.expiringSoon30 > 0 ? 'amber' : 'indigo',
     },
@@ -140,12 +131,11 @@ async function loadHubModuleOverviewUncached(
 }
 
 export function getHubModuleOverview(
-  ayCode: string,
-  compareAyCode: string | null
+  ayCode: string
 ): Promise<HubModuleOverviewRow[]> {
   return unstable_cache(
-    () => loadHubModuleOverviewUncached(ayCode, compareAyCode),
-    ['sis-hub-module-overview', ayCode, compareAyCode ?? ''],
+    () => loadHubModuleOverviewUncached(ayCode),
+    ['sis-hub-module-overview', ayCode],
     { tags: ['sis', `sis:${ayCode}`], revalidate: 120 }
   )();
 }

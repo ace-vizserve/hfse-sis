@@ -156,7 +156,7 @@ export default async function SisAdminHub() {
       : Promise.resolve([] as EmptyLevelGap[]),
     ayCode ? getHubSnapshot(ayCode).catch(() => null) : Promise.resolve(null),
     ayCode
-      ? getHubModuleOverview(ayCode, compareAyCode).catch(
+      ? getHubModuleOverview(ayCode).catch(
           () => [] as Awaited<ReturnType<typeof getHubModuleOverview>>
         )
       : Promise.resolve([] as Awaited<ReturnType<typeof getHubModuleOverview>>),
@@ -171,10 +171,11 @@ export default async function SisAdminHub() {
       : Promise.resolve(null),
   ]);
 
-  // Enrolled-students growth-delta chip (design spec §4.3) — built from the
-  // same growthDelta() helper lib/sis/hub-module-overview.ts uses for the
-  // Records row, but reshaped into HubStat's Delta type (abs/pct/direction),
-  // which is distinct from growthDelta's Growth shape (current/prior/pct).
+  // Enrolled-students growth-delta chip (design spec §4.3) — the sole owner
+  // of the YoY comparison now (the Module overview row's Records card just
+  // shows a plain "Enrolled students" count, no crammed delta text). Built
+  // via growthDelta(), reshaped into HubStat's Delta type (abs/pct/direction),
+  // which is distinct from growthDelta's own Growth shape (current/prior/pct).
   let enrolledDelta: Delta | undefined;
   if (hubKpis && priorHubKpis) {
     const growth = growthDelta(
