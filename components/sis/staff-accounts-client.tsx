@@ -5,11 +5,13 @@ import {
   Ban,
   CheckCircle2,
   Copy,
+  GraduationCap,
   KeyRound,
   Loader2,
   Pencil,
   RefreshCw,
   Shield,
+  Trash2,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -19,10 +21,19 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
-import { StaffAvatar } from '@/components/sis/staff-visuals';
+import {
+  AssignmentChips,
+  StaffAvatar,
+  type AssignmentChipFca,
+  type AssignmentChipSubject,
+} from '@/components/sis/staff-visuals';
+import {
+  StaffAssignmentSheet,
+  type StaffSheetTeacher,
+} from '@/components/sis/staff-assignment-sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { DataTable } from '@/components/ui/data-table';
+import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import {
   Dialog,
@@ -33,6 +44,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -45,6 +60,11 @@ import {
 import { ROLES, type Role } from '@/lib/auth/roles';
 import { TABLE_COPY } from '@/lib/copy/data-table';
 import type { AdminUserRow } from '@/lib/sis/users/queries';
+
+type AssignmentSummary = {
+  fcaSection: AssignmentChipFca;
+  subjectAssignments: AssignmentChipSubject[];
+};
 
 // ─── Role labels ──────────────────────────────────────────────────────────────
 
@@ -61,7 +81,10 @@ const ROLE_LABEL: Record<Role, string> = {
 
 function buildColumns(
   currentUserId: string,
-  canManage: boolean
+  canManage: boolean,
+  ayCode: string,
+  assignmentsByUserId: Record<string, AssignmentSummary>,
+  onManageAssignments: (teacher: StaffSheetTeacher) => void
 ): ColumnDef<AdminUserRow>[] {
   return [
     {
@@ -103,6 +126,34 @@ function buildColumns(
         return Array.isArray(value)
           ? value.includes(roleVal)
           : roleVal === value;
+      },
+    },
+    {
+      id: 'assignments',
+      accessorFn: (row) => {
+        const a = assignmentsByUserId[row.id];
+        if (row.role !== 'teacher') return '';
+        if (!a || (!a.fcaSection && a.subjectAssignments.length === 0))
+          return 'No assignments';
+        const parts: string[] = [];
+        if (a.fcaSection) parts.push(`FCA: ${a.fcaSection.name}`);
+        for (const s of a.subjectAssignments) {
+          parts.push(`${s.subjectCode}: ${s.sectionName}`);
+        }
+        return parts.join('; ');
+      },
+      header: 'Assignments',
+      cell: ({ row }) => {
+        if (row.original.role !== 'teacher') {
+          return <span className="text-sm text-muted-foreground">—</span>;
+        }
+        const a = assignmentsByUserId[row.original.id];
+        return (
+          <AssignmentChips
+            fcaSection={a?.fcaSection ?? null}
+            subjectAssignments={a?.subjectAssignments ?? []}
+          />
+        );
       },
     },
     {
@@ -180,18 +231,43 @@ function buildColumns(
       id: 'actions',
       header: '',
       cell: ({ row }) => (
-        <div className="flex items-center justify-end gap-2">
-          {canManage && (
-            <EditUserButton
+        <div className="flex justify-end">
+          <RowActionsMenu>
+            <EditUserMenuItem
               user={row.original}
               isSelf={row.original.id === currentUserId}
+              canManage={canManage}
             />
-          )}
-          <ToggleDisabledButton
-            user={row.original}
-            isSelf={row.original.id === currentUserId}
-            canManage={canManage}
-          />
+            {row.original.role === 'teacher' && (
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  onManageAssignments({
+                    userId: row.original.id,
+                    name: row.original.display_name,
+                    email: row.original.email,
+                  });
+                }}
+              >
+                <GraduationCap className="size-3.5" />
+                Manage teaching assignments
+              </DropdownMenuItem>
+            )}
+            <ToggleDisabledMenuItem
+              user={row.original}
+              isSelf={row.original.id === currentUserId}
+              canManage={canManage}
+            />
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled
+              className="text-destructive focus:text-destructive"
+              title="Not built yet — no route exists to delete a staff account. Disable instead, or ask for this to be built."
+            >
+              <Trash2 className="size-3.5" />
+              Delete
+            </DropdownMenuItem>
+          </RowActionsMenu>
         </div>
       ),
       enableSorting: false,
@@ -263,7 +339,7 @@ function RoleSelect({
   );
 }
 
-function ToggleDisabledButton({
+function ToggleDisabledMenuItem({
   user,
   isSelf,
   canManage,
@@ -292,18 +368,18 @@ function ToggleDisabledButton({
   });
   const busy = toggleMutation.isPending;
 
-  function toggleDisabled() {
+  function toggleDisabled(e: Event) {
+    e.preventDefault();
     toggleMutation.mutate(!user.disabled);
   }
 
   return (
-    <Button
-      type="button"
-      size="sm"
-      variant={user.disabled ? 'default' : 'destructive'}
+    <DropdownMenuItem
       disabled={busy || isSelf || !canManage}
-      onClick={toggleDisabled}
-      className="gap-1.5"
+      onSelect={toggleDisabled}
+      className={
+        user.disabled ? undefined : 'text-destructive focus:text-destructive'
+      }
       title={
         !canManage
           ? 'Only superadmins can enable or disable accounts'
@@ -320,38 +396,41 @@ function ToggleDisabledButton({
         <Ban className="size-3.5" />
       )}
       {user.disabled ? 'Enable' : 'Disable'}
-    </Button>
+    </DropdownMenuItem>
   );
 }
 
 // ─── Edit user ────────────────────────────────────────────────────────────────
 
-function EditUserButton({
+function EditUserMenuItem({
   user,
   isSelf,
+  canManage,
 }: {
   user: AdminUserRow;
   isSelf: boolean;
+  canManage: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={isSelf}
-        onClick={() => setOpen(true)}
-        className="gap-1.5"
+      <DropdownMenuItem
+        disabled={isSelf || !canManage}
+        onSelect={(e) => {
+          e.preventDefault();
+          setOpen(true);
+        }}
         title={
-          isSelf
-            ? 'Edit your own account at /account'
-            : `Edit ${user.display_name}`
+          !canManage
+            ? 'Only superadmins can edit staff accounts'
+            : isSelf
+              ? 'Edit your own account at /account'
+              : `Edit ${user.display_name}`
         }
       >
         <Pencil className="size-3.5" />
-        Edit
-      </Button>
+        Edit User
+      </DropdownMenuItem>
       <EditUserDialog open={open} onOpenChange={setOpen} user={user} />
     </>
   );
@@ -557,14 +636,32 @@ export function StaffAccountsClient({
   users,
   currentUserId,
   canManage,
+  ayCode,
+  assignmentsByUserId,
 }: {
   users: AdminUserRow[];
   currentUserId: string;
   canManage: boolean;
+  ayCode: string;
+  assignmentsByUserId: Record<string, AssignmentSummary>;
 }) {
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [selectedTeacher, setSelectedTeacher] =
+    useState<StaffSheetTeacher | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
-  const columns = buildColumns(currentUserId, canManage);
+  function handleManageAssignments(teacher: StaffSheetTeacher) {
+    setSelectedTeacher(teacher);
+    setSheetOpen(true);
+  }
+
+  const columns = buildColumns(
+    currentUserId,
+    canManage,
+    ayCode,
+    assignmentsByUserId,
+    handleManageAssignments
+  );
 
   const toolbarTrailing = canManage ? (
     <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} />
@@ -575,65 +672,73 @@ export function StaffAccountsClient({
   );
 
   return (
-    <DataTable<AdminUserRow>
-      data={users}
-      columns={columns}
-      getRowId={(row) => row.id}
-      searchKeys={['email', 'display_name', (row) => row.role ?? '']}
-      searchPlaceholder="Search email, name, or role…"
-      statusTabs={[
-        {
-          value: 'all',
-          label: 'All',
-          predicate: () => true,
-          isDefault: true,
-        },
-        {
-          value: 'active',
-          label: 'Active',
-          predicate: (r: AdminUserRow) => !r.disabled,
-        },
-        {
-          value: 'disabled',
-          label: 'Disabled',
-          predicate: (r: AdminUserRow) => Boolean(r.disabled),
-        },
-      ]}
-      facets={[
-        {
-          columnId: 'role',
-          label: 'Role',
-          valueOptions: ROLES.map((r) => r),
-        },
-      ]}
-      toolbarTrailing={toolbarTrailing}
-      // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
-      url={{ enabled: true, namespace: 'users' }}
-      initialSort={[{ id: 'user', desc: false }]}
-      // "Member since" shown by default now (layout redesign pass) — hiding
-      // one of only 6 columns behind the Columns menu on a table this
-      // narrow was complexity added, not removed (Tesler's Law/Choice
-      // Overload); the menu itself stays for anyone who wants to hide it.
-      pageSize={25}
-      emptyState={{
-        icon: Users,
-        title: 'No staff users yet.',
-        ...(canManage
-          ? {
-              cta: {
-                label: 'Invite user',
-                onClick: () => setInviteOpen(true),
-              },
-            }
-          : {
-              body: 'Ask a superadmin to add the first staff account.',
-            }),
-      }}
-      emptyFilteredState={{
-        title: 'No users match.',
-        body: 'Try clearing filters or adjusting the search.',
-      }}
-    />
+    <>
+      <DataTable<AdminUserRow>
+        data={users}
+        columns={columns}
+        getRowId={(row) => row.id}
+        searchKeys={['email', 'display_name', (row) => row.role ?? '']}
+        searchPlaceholder="Search email, name, or role…"
+        statusTabs={[
+          {
+            value: 'all',
+            label: 'All',
+            predicate: () => true,
+            isDefault: true,
+          },
+          {
+            value: 'active',
+            label: 'Active',
+            predicate: (r: AdminUserRow) => !r.disabled,
+          },
+          {
+            value: 'disabled',
+            label: 'Disabled',
+            predicate: (r: AdminUserRow) => Boolean(r.disabled),
+          },
+        ]}
+        facets={[
+          {
+            columnId: 'role',
+            label: 'Role',
+            valueOptions: ROLES.map((r) => r),
+          },
+        ]}
+        toolbarTrailing={toolbarTrailing}
+        // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+        url={{ enabled: true, namespace: 'users' }}
+        initialSort={[{ id: 'user', desc: false }]}
+        // "Member since" shown by default now (layout redesign pass) — hiding
+        // one of only 6 columns behind the Columns menu on a table this
+        // narrow was complexity added, not removed (Tesler's Law/Choice
+        // Overload); the menu itself stays for anyone who wants to hide it.
+        pageSize={25}
+        emptyState={{
+          icon: Users,
+          title: 'No staff users yet.',
+          ...(canManage
+            ? {
+                cta: {
+                  label: 'Invite user',
+                  onClick: () => setInviteOpen(true),
+                },
+              }
+            : {
+                body: 'Ask a superadmin to add the first staff account.',
+              }),
+        }}
+        emptyFilteredState={{
+          title: 'No users match.',
+          body: 'Try clearing filters or adjusting the search.',
+        }}
+      />
+      <StaffAssignmentSheet
+        teacher={selectedTeacher}
+        ayCode={ayCode}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+      />
+    </>
   );
 }
 

@@ -79,19 +79,27 @@ export default async function StaffPage({
   // header chip + tab counts (Task V3) — both are cheap: they share the
   // single 5-min-cached listUsers() call underlying every helper in
   // lib/auth/staff-list.ts, so this adds no new backend round-trip.
-  const [assignments, accounts, staffCount, teacherList] = await Promise.all([
-    view === 'assignments'
-      ? Promise.all([
-          loadStaffAssignments(ayCode),
-          getSectionStaffingCoverage(ayCode),
-        ])
-      : null,
-    view === 'accounts' ? listStaffUsers() : null,
-    getStaffCount(),
-    getTeacherList(),
-  ]);
+  const [assignments, accounts, staffCount, teacherList, accountAssignments] =
+    await Promise.all([
+      view === 'assignments'
+        ? Promise.all([
+            loadStaffAssignments(ayCode),
+            getSectionStaffingCoverage(ayCode),
+          ])
+        : null,
+      view === 'accounts' ? listStaffUsers() : null,
+      getStaffCount(),
+      getTeacherList(),
+      view === 'accounts' ? loadStaffAssignments(ayCode) : null,
+    ]);
 
   const [rows, coverage] = assignments ?? [[], null];
+  const assignmentsByUserId = new Map(
+    (accountAssignments ?? []).map((r) => [
+      r.userId,
+      { fcaSection: r.fcaSection, subjectAssignments: r.subjectAssignments },
+    ])
+  );
   const totalTeachers = rows.filter((r) => !r.disabled).length;
   const withFca = coverage?.withAdviser ?? 0;
   const sectionsMissingFca = coverage
@@ -319,6 +327,8 @@ export default async function StaffPage({
                   users={accounts}
                   currentUserId={sessionUser.id}
                   canManage={canManageAccounts}
+                  ayCode={ayCode}
+                  assignmentsByUserId={Object.fromEntries(assignmentsByUserId)}
                 />
               </CardContent>
             </Card>
