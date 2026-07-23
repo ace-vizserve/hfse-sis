@@ -50,10 +50,10 @@ import type { AdminUserRow } from '@/lib/sis/users/queries';
 
 const ROLE_LABEL: Record<Role, string> = {
   teacher: 'Teacher',
-  academic_coordinator: 'Registrar',
+  academic_coordinator: 'Academic Coordinator',
   school_admin: TABLE_COPY.schoolAdmin,
   superadmin: 'Superadmin',
-  p_file_officer: 'P-Files',
+  p_file_officer: 'P-File Officer',
   admissions: 'Admissions',
 };
 
