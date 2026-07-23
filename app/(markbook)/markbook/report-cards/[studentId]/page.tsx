@@ -23,7 +23,9 @@ export default async function ReportCardPreview({
   ]);
   const role = sessionUser?.role ?? null;
   const canManage =
-    role === 'registrar' || role === 'school_admin' || role === 'superadmin';
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin';
 
   const result = await buildReportCard(supabase, studentId);
   if (!result.ok) {

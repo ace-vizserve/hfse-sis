@@ -20,12 +20,12 @@ export default async function EvaluationLayout({
   const { id, email, role } = sessionUser;
   const allowed: Array<typeof role> = [
     'teacher',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ];
   if (!role || !allowed.includes(role)) {
-    if (role === 'p-file') redirect('/p-files');
+    if (role === 'p_file_officer') redirect('/p-files');
     if (!role) redirect('/login');
     redirect('/');
   }

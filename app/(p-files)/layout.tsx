@@ -21,7 +21,11 @@ export default async function PFilesLayout({
   if (!sessionUser) redirect('/login');
 
   const { id, email, role } = sessionUser;
-  if (role !== 'p-file' && role !== 'school_admin' && role !== 'superadmin')
+  if (
+    role !== 'p_file_officer' &&
+    role !== 'school_admin' &&
+    role !== 'superadmin'
+  )
     redirect('/');
 
   const cookieStore = await cookies();

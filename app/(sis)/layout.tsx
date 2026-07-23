@@ -30,11 +30,11 @@ export default async function SisLayout({
   // bare Admin Hub link is gated so they see no dead links.
   if (
     role !== 'admissions' &&
-    role !== 'registrar' &&
+    role !== 'academic_coordinator' &&
     role !== 'school_admin' &&
     role !== 'superadmin'
   ) {
-    if (role === 'p-file') redirect('/p-files');
+    if (role === 'p_file_officer') redirect('/p-files');
     if (!role) redirect('/login');
     redirect('/');
   }
@@ -55,7 +55,9 @@ export default async function SisLayout({
   // school_admin + superadmin); admissions (single Discount Codes link)
   // and any other role skip the fetch entirely.
   const canSeeYearNav =
-    role === 'registrar' || role === 'school_admin' || role === 'superadmin';
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin';
   const [sectionsCount, staffCount] =
     canSeeYearNav && currentAy
       ? await Promise.all([

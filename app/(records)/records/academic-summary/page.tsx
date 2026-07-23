@@ -45,7 +45,7 @@ export default async function AcademicSummaryPage({
   const session = await getSessionUser();
   if (!session) redirect('/login');
   if (
-    session.role !== 'registrar' &&
+    session.role !== 'academic_coordinator' &&
     session.role !== 'school_admin' &&
     session.role !== 'superadmin'
   ) {

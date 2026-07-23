@@ -14,7 +14,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 const ALLOWED_ROLES: Role[] = [
   'admissions',
-  'registrar',
+  'academic_coordinator',
   'school_admin',
   'superadmin',
 ];

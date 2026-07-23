@@ -19,7 +19,7 @@ import { FeedbackTable } from './feedback-table';
 
 const ALLOWED_ROLES: Role[] = [
   'admissions',
-  'registrar',
+  'academic_coordinator',
   'school_admin',
   'superadmin',
 ];

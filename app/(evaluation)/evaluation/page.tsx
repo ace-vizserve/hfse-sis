@@ -78,7 +78,7 @@ export default async function EvaluationHub({
   const resolvedSearch = await searchParams;
 
   const canToggle =
-    sessionUser.role === 'registrar' ||
+    sessionUser.role === 'academic_coordinator' ||
     sessionUser.role === 'school_admin' ||
     sessionUser.role === 'superadmin';
 

@@ -47,7 +47,7 @@ export default async function StaffPage({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
-    sessionUser.role !== 'registrar' &&
+    sessionUser.role !== 'academic_coordinator' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'
   ) {
@@ -55,7 +55,7 @@ export default async function StaffPage({
   }
 
   const params = await searchParams;
-  const canSeeAccounts = sessionUser.role !== 'registrar';
+  const canSeeAccounts = sessionUser.role !== 'academic_coordinator';
   const requestedView: StaffView =
     params.view === 'accounts' ? 'accounts' : 'assignments';
   // A registrar hitting ?view=accounts directly (bookmark, typed URL) falls

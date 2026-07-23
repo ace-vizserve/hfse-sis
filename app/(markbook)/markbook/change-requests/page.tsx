@@ -29,7 +29,9 @@ export default async function AdminChangeRequestsPage({
   const { role } = sessionUser;
   if (
     !role ||
-    (role !== 'school_admin' && role !== 'superadmin' && role !== 'registrar')
+    (role !== 'school_admin' &&
+      role !== 'superadmin' &&
+      role !== 'academic_coordinator')
   ) {
     redirect('/');
   }
@@ -183,7 +185,7 @@ export default async function AdminChangeRequestsPage({
         rows={rows}
         canDecide={canDecide}
         actorEmail={sessionUser.email || null}
-        showNotAppliedFilter={role === 'registrar'}
+        showNotAppliedFilter={role === 'academic_coordinator'}
         initialSheetIdFilter={sheet_id}
         initialRequestId={reqParam ?? null}
         initialAction={

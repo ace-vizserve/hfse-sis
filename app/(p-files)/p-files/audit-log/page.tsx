@@ -30,7 +30,7 @@ export default async function PFilesAuditLogPage({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
-    sessionUser.role !== 'p-file' &&
+    sessionUser.role !== 'p_file_officer' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'
   )

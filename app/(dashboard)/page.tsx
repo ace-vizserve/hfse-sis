@@ -43,7 +43,7 @@ export default async function Home() {
   // pick. Everyone else (teacher, registrar, school_admin, superadmin)
   // sees the centered tile picker, scoped to the modules they can open.
   if (!role) redirect('/login');
-  if (role === 'p-file') redirect('/p-files');
+  if (role === 'p_file_officer') redirect('/p-files');
   if (role === 'admissions') redirect('/admissions');
   // Only modules the role can actually open are rendered — disabled tiles
   // are dropped entirely (no dimmed-and-locked treatment).

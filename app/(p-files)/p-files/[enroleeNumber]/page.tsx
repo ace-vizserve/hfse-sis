@@ -73,7 +73,7 @@ export default async function StudentDocumentDetailPage({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
-    sessionUser.role !== 'p-file' &&
+    sessionUser.role !== 'p_file_officer' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'
   ) {
@@ -157,7 +157,7 @@ export default async function StudentDocumentDetailPage({
 
   const docRow = student.rawDocRow;
   const canWrite =
-    sessionUser.role === 'p-file' || sessionUser.role === 'superadmin';
+    sessionUser.role === 'p_file_officer' || sessionUser.role === 'superadmin';
 
   const pct =
     student.total > 0

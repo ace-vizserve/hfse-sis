@@ -156,7 +156,7 @@ export default async function AdmissionsDashboard({
   if (!sessionUser) redirect('/login');
   if (
     sessionUser.role !== 'admissions' &&
-    sessionUser.role !== 'registrar' &&
+    sessionUser.role !== 'academic_coordinator' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'
   ) {
@@ -167,7 +167,8 @@ export default async function AdmissionsDashboard({
   // chase documents, and validate uploads. school_admin/admin/superadmin
   // are oversight: same KPIs + analytics, no priority/chase top-of-fold.
   const isOperational =
-    sessionUser.role === 'admissions' || sessionUser.role === 'registrar';
+    sessionUser.role === 'admissions' ||
+    sessionUser.role === 'academic_coordinator';
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);

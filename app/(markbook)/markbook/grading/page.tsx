@@ -98,7 +98,9 @@ export default async function GradingListPage({
   const userId = (claims?.sub as string | undefined) ?? null;
   const role = getRoleFromClaims(claims);
   const canCreate =
-    role === 'registrar' || role === 'school_admin' || role === 'superadmin';
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin';
 
   // Current AY — needed before we can scope the sheets query, so awaited
   // up front rather than batched with the others.

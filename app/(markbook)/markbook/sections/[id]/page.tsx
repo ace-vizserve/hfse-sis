@@ -59,7 +59,7 @@ export default async function SectionRosterPage({
   const supabase = await createClient();
   const sessionUser = await getSessionUser();
   const canManage =
-    sessionUser?.role === 'registrar' ||
+    sessionUser?.role === 'academic_coordinator' ||
     sessionUser?.role === 'school_admin' ||
     sessionUser?.role === 'superadmin';
 

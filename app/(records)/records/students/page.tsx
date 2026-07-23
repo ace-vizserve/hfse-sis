@@ -49,7 +49,7 @@ export default async function RecordsStudentsPage({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
-    sessionUser.role !== 'registrar' &&
+    sessionUser.role !== 'academic_coordinator' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'
   ) {
@@ -80,7 +80,7 @@ export default async function RecordsStudentsPage({
     listStudents(selectedAy, 'name_asc'),
     countUnsyncedEnrolledStudents(selectedAy),
   ]);
-  const isOperational = sessionUser.role === 'registrar';
+  const isOperational = sessionUser.role === 'academic_coordinator';
 
   // Records is the permanent cross-year record of enrolled students only.
   // Pre-enrolment applications live on /admissions/applications.

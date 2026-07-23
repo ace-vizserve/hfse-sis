@@ -23,11 +23,11 @@ export default async function RecordsLayout({
 
   const { id, email, role } = sessionUser;
   if (
-    role !== 'registrar' &&
+    role !== 'academic_coordinator' &&
     role !== 'school_admin' &&
     role !== 'superadmin'
   ) {
-    if (role === 'p-file') redirect('/p-files');
+    if (role === 'p_file_officer') redirect('/p-files');
     if (!role) redirect('/login');
     redirect('/');
   }

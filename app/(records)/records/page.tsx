@@ -85,7 +85,7 @@ export default async function RecordsDashboard({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
-    sessionUser.role !== 'registrar' &&
+    sessionUser.role !== 'academic_coordinator' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'
   ) {
@@ -97,7 +97,7 @@ export default async function RecordsDashboard({
   // (chase queue strip, "Documents to collect" action list, class-assignment
   // readiness) only matter to the registrar; oversight users see the
   // dashboard framed as a school-wide overview.
-  const isOperational = sessionUser.role === 'registrar';
+  const isOperational = sessionUser.role === 'academic_coordinator';
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);

@@ -12,7 +12,11 @@ import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
-const ALLOWED_ROLES: Role[] = ['registrar', 'school_admin', 'superadmin'];
+const ALLOWED_ROLES: Role[] = [
+  'academic_coordinator',
+  'school_admin',
+  'superadmin',
+];
 
 export default async function RecordsCohortsPassExpiryPage({
   searchParams,

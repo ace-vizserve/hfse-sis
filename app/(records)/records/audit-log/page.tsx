@@ -25,7 +25,7 @@ export default async function SisAuditLogPage({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
-    sessionUser.role !== 'registrar' &&
+    sessionUser.role !== 'academic_coordinator' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'
   ) {
@@ -35,7 +35,7 @@ export default async function SisAuditLogPage({
   // Registrar is the primary operator (KD #37, KD #74); school_admin + superadmin
   // are read-only oversight. All three can export a read-only log.
   const canExport =
-    sessionUser.role === 'registrar' ||
+    sessionUser.role === 'academic_coordinator' ||
     sessionUser.role === 'school_admin' ||
     sessionUser.role === 'superadmin';
   const params = await searchParams;

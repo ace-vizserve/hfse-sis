@@ -141,7 +141,7 @@ export default async function PFilesDashboard({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
-    sessionUser.role !== 'p-file' &&
+    sessionUser.role !== 'p_file_officer' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'
   ) {
@@ -153,7 +153,7 @@ export default async function PFilesDashboard({
   // panel, and chase narrative are officer-only — admins can't act on
   // them and the framing ("you owe these reminders") doesn't fit.
   const isOfficer =
-    sessionUser.role === 'p-file' || sessionUser.role === 'superadmin';
+    sessionUser.role === 'p_file_officer' || sessionUser.role === 'superadmin';
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
