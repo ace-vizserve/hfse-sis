@@ -9,7 +9,7 @@ import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 import { NewSheetForm } from './new-sheet-form';
 
-// Only registrar + superadmin can create new grading sheets — matches the
+// Only academic_coordinator + superadmin can create new grading sheets — matches the
 // sidebar registry in lib/auth/roles.ts and the API gate at
 // /api/grading-sheets POST. proxy.ts admits teacher + school_admin onto
 // /markbook/* for read access, so we must defend at the page level too.
