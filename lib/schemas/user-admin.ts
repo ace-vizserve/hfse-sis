@@ -7,10 +7,10 @@ import { z } from 'zod';
 
 const RoleEnum = z.enum([
   'teacher',
-  'registrar',
+  'academic_coordinator',
   'school_admin',
   'superadmin',
-  'p-file',
+  'p_file_officer',
   'admissions',
 ]);
 export type AssignableRole = z.infer<typeof RoleEnum>;

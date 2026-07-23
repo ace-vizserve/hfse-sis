@@ -2,18 +2,18 @@ import type { User } from '@supabase/supabase-js';
 
 export type Role =
   | 'teacher'
-  | 'registrar'
+  | 'academic_coordinator'
   | 'school_admin'
   | 'superadmin'
-  | 'p-file'
+  | 'p_file_officer'
   | 'admissions';
 
 export const ROLES: Role[] = [
   'teacher',
-  'registrar',
+  'academic_coordinator',
   'school_admin',
   'superadmin',
-  'p-file',
+  'p_file_officer',
   'admissions',
 ];
 
