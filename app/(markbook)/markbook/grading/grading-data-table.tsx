@@ -31,6 +31,7 @@ import {
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import { cn } from '@/lib/utils';
 
 // Self-contained per-row "Lock sheet" menu item. Owns its own AlertDialog +
 // useMutation so it doesn't couple to the parent's bulk-lock state machine.
@@ -318,19 +319,32 @@ const COLUMNS: ColumnDef<GradingSheetRow>[] = [
           </Badge>
         );
       }
-      const variant =
+      // Same 3-tier severity signal the prior badge conveyed (mint at 100%,
+      // amber from 50-99%, destructive below 50%) — a sheet stuck at 20%
+      // graded near a deadline should still read as alarming, not just
+      // "not yet mint".
+      const barClass =
         graded_pct === 100
-          ? 'success'
+          ? 'bg-brand-mint'
           : graded_pct >= 50
-            ? 'warning'
-            : 'blocked';
-      const icon =
-        graded_pct === 100 ? <CheckCircle2 className="h-3 w-3" /> : null;
+            ? 'bg-brand-amber'
+            : 'bg-destructive';
       return (
-        <Badge variant={variant} className={BADGE_CLASS}>
-          {icon}
-          {graded_count}/{total_students} · {graded_pct}%
-        </Badge>
+        <div className="flex items-center gap-2.5">
+          <span className="font-mono text-[13px] tabular-nums text-foreground">
+            {graded_count}
+            <span className="text-muted-foreground">/{total_students}</span>
+          </span>
+          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn('h-full transition-all', barClass)}
+              style={{ width: `${graded_pct}%` }}
+            />
+          </div>
+          <span className="w-9 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+            {graded_pct}%
+          </span>
+        </div>
       );
     },
     sortingFn: (a, b) => a.original.graded_pct - b.original.graded_pct,
