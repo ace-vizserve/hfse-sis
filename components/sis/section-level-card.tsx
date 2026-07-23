@@ -70,7 +70,9 @@ export function SectionLevelCard({
   const [addOpen, setAddOpen] = useState(false);
 
   const isRegistrarPlus =
-    role === 'registrar' || role === 'school_admin' || role === 'superadmin';
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin';
 
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card">

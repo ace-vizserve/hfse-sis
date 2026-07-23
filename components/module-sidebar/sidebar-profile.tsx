@@ -15,10 +15,10 @@ import { createClient } from '@/lib/supabase/client';
 
 const ROLE_LABEL: Record<Role, string> = {
   teacher: 'Teacher',
-  registrar: 'Registrar',
+  academic_coordinator: 'Registrar',
   school_admin: 'School Admin',
   superadmin: 'Superadmin',
-  'p-file': 'P-File Officer',
+  p_file_officer: 'P-File Officer',
   admissions: 'Admissions',
 };
 

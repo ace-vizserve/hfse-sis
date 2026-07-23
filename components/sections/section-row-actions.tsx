@@ -84,7 +84,9 @@ export function SectionRowActions({
   classType,
 }: SectionRowActionsProps) {
   const isRegistrarPlus =
-    role === 'registrar' || role === 'school_admin' || role === 'superadmin';
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin';
 
   // Controlled dialog open state — mirrors the AyRowActions pattern in
   // ay-setup-data-table.tsx so the dropdown closes cleanly before the dialog

@@ -24,12 +24,12 @@ describe('tallyStaffByRole', () => {
     const users = [
       makeUser('teacher'),
       makeUser('teacher'),
-      makeUser('registrar'),
+      makeUser('academic_coordinator'),
       makeUser(null),
     ];
     const tally = tallyStaffByRole(users);
     expect(tally.teacher).toBe(2);
-    expect(tally.registrar).toBe(1);
+    expect(tally.academic_coordinator).toBe(1);
     expect(tally.school_admin).toBe(0);
   });
 });

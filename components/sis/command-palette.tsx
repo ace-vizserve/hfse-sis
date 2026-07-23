@@ -391,7 +391,7 @@ function pathnameOnly(href: string): string {
 const STUDENT_SEARCH_ROLES: Role[] = [
   'teacher',
   'admissions',
-  'registrar',
+  'academic_coordinator',
   'school_admin',
   'superadmin',
 ];

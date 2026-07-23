@@ -42,7 +42,7 @@ export async function getSidebarChangeRequestCount(
 
   if (role === 'teacher') {
     query = query.eq('requested_by', userId).eq('status', 'pending');
-  } else if (role === 'registrar') {
+  } else if (role === 'academic_coordinator') {
     query = query.eq('status', 'approved');
   } else if (role === 'school_admin' || role === 'superadmin') {
     query = query

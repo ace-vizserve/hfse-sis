@@ -12,10 +12,10 @@ import type { Role } from '@/lib/auth/roles';
 // locally per the plan's fallback instruction.
 const ROLE_LABELS: Record<Role, string> = {
   teacher: 'Teachers',
-  registrar: 'Registrar',
+  academic_coordinator: 'Registrar',
   school_admin: 'School admin',
   superadmin: 'Superadmin',
-  'p-file': 'P-Files officer',
+  p_file_officer: 'P-Files officer',
   admissions: 'Admissions',
 };
 

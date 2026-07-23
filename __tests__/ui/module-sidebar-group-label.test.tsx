@@ -74,7 +74,7 @@ function renderSidebar(counts?: Record<string, string>) {
     <SidebarProvider>
       <ModuleSidebar
         module="records"
-        role="p-file"
+        role="p_file_officer"
         email="test@hfse.test"
         userId="user-1"
         counts={counts}

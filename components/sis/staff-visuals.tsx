@@ -74,19 +74,19 @@ export function StaffAvatar({
 // to dark ink) rather than inventing a new palette for this pass.
 const ROLE_CHIP_TONE: Record<Role, string> = {
   teacher: 'bg-brand-sky/15 text-brand-sky',
-  registrar: 'bg-brand-mint/25 text-ink',
+  academic_coordinator: 'bg-brand-mint/25 text-ink',
   school_admin: 'bg-brand-indigo/10 text-brand-indigo',
   superadmin: 'bg-brand-indigo/10 text-brand-indigo',
-  'p-file': 'bg-muted text-muted-foreground',
+  p_file_officer: 'bg-muted text-muted-foreground',
   admissions: 'bg-muted text-muted-foreground',
 };
 
 const ROLE_CHIP_LABEL: Record<Role, string> = {
   teacher: 'Teacher',
-  registrar: 'Registrar',
+  academic_coordinator: 'Registrar',
   school_admin: TABLE_COPY.schoolAdmin,
   superadmin: 'Superadmin',
-  'p-file': 'P-Files',
+  p_file_officer: 'P-Files',
   admissions: 'Admissions',
 };
 

@@ -87,17 +87,17 @@ const PFILES_NAV: NavSection[] = [
       {
         href: '/p-files?expiring=30',
         label: 'Within 30 days',
-        requiresRoles: ['p-file', 'school_admin', 'superadmin'],
+        requiresRoles: ['p_file_officer', 'school_admin', 'superadmin'],
       },
       {
         href: '/p-files?expiring=60',
         label: 'Within 60 days',
-        requiresRoles: ['p-file', 'school_admin', 'superadmin'],
+        requiresRoles: ['p_file_officer', 'school_admin', 'superadmin'],
       },
       {
         href: '/p-files?expiring=90',
         label: 'Within 90 days',
-        requiresRoles: ['p-file', 'school_admin', 'superadmin'],
+        requiresRoles: ['p_file_officer', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -113,7 +113,7 @@ const PFILES_NAV: NavSection[] = [
         href: '/p-files/document-validation',
         label: 'Document validation',
         badgeKey: 'pfileAwaitingVerification',
-        requiresRoles: ['p-file', 'school_admin', 'superadmin'],
+        requiresRoles: ['p_file_officer', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -137,7 +137,7 @@ const RECORDS_NAV: NavSection[] = [
       {
         href: '/records/insights',
         label: 'Insights',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -172,7 +172,7 @@ const RECORDS_NAV: NavSection[] = [
       {
         href: '/sis/sections',
         label: 'Section setup',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -197,7 +197,7 @@ const RECORDS_NAV: NavSection[] = [
       {
         href: '/records/academic-summary',
         label: 'Overview',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -218,12 +218,12 @@ const ATTENDANCE_NAV: NavSection[] = [
       {
         href: '/attendance/insights',
         label: 'Insights',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
       {
         href: '/attendance/summary',
         label: 'Attendance Summary',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -235,12 +235,12 @@ const ATTENDANCE_NAV: NavSection[] = [
         // registrars work out of Attendance and need a one-click path.
         href: '/sis/calendar',
         label: 'School Calendar',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
       {
         href: '/attendance/import',
         label: 'Import',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -262,7 +262,7 @@ const ADMISSIONS_NAV: NavSection[] = [
         label: 'Insights',
         requiresRoles: [
           'admissions',
-          'registrar',
+          'academic_coordinator',
           'school_admin',
           'superadmin',
         ],
@@ -299,7 +299,7 @@ const ADMISSIONS_NAV: NavSection[] = [
         label: 'Discount Codes',
         requiresRoles: [
           'admissions',
-          'registrar',
+          'academic_coordinator',
           'school_admin',
           'superadmin',
         ],
@@ -346,14 +346,14 @@ const ADMISSIONS_NAV: NavSection[] = [
       {
         href: '/records/students',
         label: 'Enrolled students',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
       {
         href: '/admissions?status=expired',
         label: 'Expired documents',
         requiresRoles: [
           'admissions',
-          'registrar',
+          'academic_coordinator',
           'school_admin',
           'superadmin',
         ],
@@ -387,7 +387,7 @@ const EVALUATION_NAV: NavSection[] = [
       {
         href: '/evaluation/comments',
         label: 'Comments',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -397,7 +397,7 @@ const EVALUATION_NAV: NavSection[] = [
       {
         href: '/evaluation/virtue-themes',
         label: 'Virtue themes',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -417,7 +417,7 @@ const EVALUATION_NAV: NavSection[] = [
       {
         href: '/evaluation/audit-log',
         label: 'Audit Log',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -480,19 +480,19 @@ const SIS_NAV: NavSection[] = [
       {
         href: '/sis/calendar',
         label: 'School Calendar',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
       {
         href: '/sis/sections',
         label: 'Sections',
         countKey: 'sectionsCount',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
       {
         href: '/sis/admin/staff',
         label: 'Staff',
         countKey: 'staffCount',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -502,7 +502,7 @@ const SIS_NAV: NavSection[] = [
       {
         href: '/sis/admin/discount-codes',
         label: 'Discount Codes',
-        requiresRoles: ['registrar', 'school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
       {
         href: '/sis/admin/subjects',
@@ -570,7 +570,7 @@ export const NAV_BY_MODULE: {
         ],
       },
     ],
-    registrar: [
+    academic_coordinator: [
       {
         items: [
           { href: '/markbook', label: 'Dashboard' },
@@ -707,7 +707,7 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
     // catch-all (school_admin/superadmin only). Matches the page's own
     // inline guard (app/(sis)/sis/admin/staff/page.tsx).
     prefix: '/sis/admin/staff',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     // Discount codes are operationally owned by admissions (they assign codes
@@ -716,88 +716,104 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
     // in the Admissions sidebar. This longer prefix wins over the broader
     // `/sis` rule, so admissions is scoped to this one route, not all of /sis.
     prefix: '/sis/admin/discount-codes',
-    allowed: ['admissions', 'registrar', 'school_admin', 'superadmin'],
+    allowed: [
+      'admissions',
+      'academic_coordinator',
+      'school_admin',
+      'superadmin',
+    ],
   },
   { prefix: '/sis/ay-setup', allowed: ['school_admin', 'superadmin'] },
   {
     prefix: '/sis/calendar',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     prefix: '/sis/sections',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   { prefix: '/sis/audit-log', allowed: ['school_admin', 'superadmin'] },
   {
     prefix: '/admin/admissions',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     prefix: '/attendance/import',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     prefix: '/attendance/calendar',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   // Attendance Summary (Academic Summary redesign) is registrar+ only —
   // must precede the broader /attendance rule so the longer prefix wins.
   {
     prefix: '/attendance/summary',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     prefix: '/attendance',
-    allowed: ['teacher', 'registrar', 'school_admin', 'superadmin'],
+    allowed: ['teacher', 'academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     prefix: '/evaluation/audit-log',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     prefix: '/evaluation/virtue-themes',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   // Comments (Academic Summary redesign) is registrar+ only — must precede
   // the broader /evaluation rule so the longer prefix wins.
   {
     prefix: '/evaluation/comments',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     prefix: '/evaluation',
-    allowed: ['teacher', 'registrar', 'school_admin', 'superadmin'],
+    allowed: ['teacher', 'academic_coordinator', 'school_admin', 'superadmin'],
   },
   // Masterfile is registrar+ only — KD #95 restricts the cross-subject
   // view to operational/oversight roles. Must precede the broader
   // /markbook rule so the longer prefix wins.
   {
     prefix: '/markbook/masterfile',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   // Awards (Academic Summary redesign) is registrar+ only — must precede
   // the broader /markbook rule so the longer prefix wins.
   {
     prefix: '/markbook/awards',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     prefix: '/markbook',
-    allowed: ['teacher', 'registrar', 'school_admin', 'superadmin'],
+    allowed: ['teacher', 'academic_coordinator', 'school_admin', 'superadmin'],
   },
-  { prefix: '/p-files', allowed: ['p-file', 'school_admin', 'superadmin'] },
+  {
+    prefix: '/p-files',
+    allowed: ['p_file_officer', 'school_admin', 'superadmin'],
+  },
   {
     prefix: '/admissions',
-    allowed: ['admissions', 'registrar', 'school_admin', 'superadmin'],
+    allowed: [
+      'admissions',
+      'academic_coordinator',
+      'school_admin',
+      'superadmin',
+    ],
   },
   // Academic Summary (the consolidated masterfile, KD #95) — registrar+ only.
   // Matches the same role set as /records overall, but kept explicit so the
   // restriction is documented at the route and longer-prefix-wins holds.
   {
     prefix: '/records/academic-summary',
-    allowed: ['registrar', 'school_admin', 'superadmin'],
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
-  { prefix: '/records', allowed: ['registrar', 'school_admin', 'superadmin'] },
+  {
+    prefix: '/records',
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
+  },
   { prefix: '/sis', allowed: ['school_admin', 'superadmin'] },
 ];
 

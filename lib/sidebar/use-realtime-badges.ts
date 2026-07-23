@@ -39,7 +39,7 @@ function subscribeChannels(
     let filter: string | null = null;
     if (role === 'teacher') {
       filter = `requested_by=eq.${userId}`;
-    } else if (role === 'registrar') {
+    } else if (role === 'academic_coordinator') {
       filter = `status=eq.approved`;
     } else if (role === 'school_admin' || role === 'superadmin') {
       filter = `status=eq.pending`;
@@ -75,7 +75,7 @@ function subscribeChannels(
             .eq('grading_sheet.section.academic_year_id', currentAyId);
           if (role === 'teacher') {
             query = query.eq('requested_by', userId).eq('status', 'pending');
-          } else if (role === 'registrar') {
+          } else if (role === 'academic_coordinator') {
             query = query.eq('status', 'approved');
           } else if (role === 'school_admin') {
             // Designated approver scope (KD #41): only requests this admin is
@@ -115,7 +115,11 @@ const PFILE_VERIFICATION_ACTIONS = [
 
 // Roles that see the pfileAwaitingVerification badge. Mirrors the p-files
 // layout gate (p-file, school_admin, superadmin per KD #31 + KD #74).
-const PFILE_BADGE_ROLES: Role[] = ['p-file', 'school_admin', 'superadmin'];
+const PFILE_BADGE_ROLES: Role[] = [
+  'p_file_officer',
+  'school_admin',
+  'superadmin',
+];
 
 export function useRealtimeBadges(
   role: Role | null,

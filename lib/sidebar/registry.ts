@@ -99,7 +99,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       // a teacher's rows to their own sheets already, so the `mine`
       // toggle the old CTA's `?grading.mine=1` set had nothing left to
       // filter.
-      registrar: MARKBOOK_QUICK_REGISTRAR,
+      academic_coordinator: MARKBOOK_QUICK_REGISTRAR,
       // school_admin is the consolidated approver pool (Sprint 33) and
       // gets the same quick action as registrar.
       school_admin: MARKBOOK_QUICK_REGISTRAR,
@@ -151,7 +151,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       // expiring within 30 days. Already-expired surfaces as a sidebar
       // nav item one click away. School admin / admin / superadmin are
       // read-only on P-Files (KD #31).
-      'p-file': {
+      p_file_officer: {
         label: 'Expiring ≤30 days',
         href: '/p-files?expiring=30',
         icon: CalendarClock,
@@ -176,7 +176,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/records/academic-summary': BookOpen,
     },
     quickActionByRole: {
-      registrar: {
+      academic_coordinator: {
         label: 'Browse students',
         href: '/records/students',
         icon: Users,
@@ -227,7 +227,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
         href: '/admissions?status=to-follow',
         icon: CalendarClock,
       },
-      registrar: {
+      academic_coordinator: {
         label: 'Open applications',
         href: '/admissions/applications',
         icon: FileStack,

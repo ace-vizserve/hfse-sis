@@ -86,7 +86,9 @@ export function SectionsOverview({
   }, [groups, search, segment]);
 
   const isRegistrarPlus =
-    role === 'registrar' || role === 'school_admin' || role === 'superadmin';
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin';
 
   function handleExport() {
     const rows = groups.flatMap((g) =>
