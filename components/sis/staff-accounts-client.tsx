@@ -82,7 +82,6 @@ const ROLE_LABEL: Record<Role, string> = {
 function buildColumns(
   currentUserId: string,
   canManage: boolean,
-  ayCode: string,
   assignmentsByUserId: Record<string, AssignmentSummary>,
   onManageAssignments: (teacher: StaffSheetTeacher) => void
 ): ColumnDef<AdminUserRow>[] {
@@ -262,7 +261,7 @@ function buildColumns(
             <DropdownMenuItem
               disabled
               className="text-destructive focus:text-destructive"
-              title="Not built yet — no route exists to delete a staff account. Disable instead, or ask for this to be built."
+              title="Deleting accounts isn't available yet — use Disable instead, or ask for this to be added."
             >
               <Trash2 className="size-3.5" />
               Delete
@@ -658,7 +657,6 @@ export function StaffAccountsClient({
   const columns = buildColumns(
     currentUserId,
     canManage,
-    ayCode,
     assignmentsByUserId,
     handleManageAssignments
   );
