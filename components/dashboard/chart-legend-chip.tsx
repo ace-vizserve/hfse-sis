@@ -1,5 +1,4 @@
-import * as React from 'react';
-import { cn } from '@/lib/utils';
+import { Badge } from '../ui/badge';
 
 export type ChartLegendChipColor =
   | 'chart-1'
@@ -44,20 +43,14 @@ export function ChartLegendChip({
   className,
 }: ChartLegendChipProps) {
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 rounded-md border border-transparent bg-gradient-to-b px-2 py-0.5 font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.14em] text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)]',
-        chipGradientByColor[color],
-        className
-      )}
-    >
+    <Badge>
       <span>{label}</span>
       {count !== undefined && (
         <span className="font-mono text-[10px] tabular-nums text-white/80">
           {count}
         </span>
       )}
-    </span>
+    </Badge>
   );
 }
 

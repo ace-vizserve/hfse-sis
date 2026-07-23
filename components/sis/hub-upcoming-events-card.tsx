@@ -1,6 +1,7 @@
-import Link from 'next/link';
 import { ArrowRightIcon, CalendarDays } from 'lucide-react';
+import Link from 'next/link';
 
+import { EVENT_CATEGORY_LEGEND_COLOR } from '@/components/attendance/calendar/calendar-cell';
 import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 import {
   Card,
@@ -11,13 +12,12 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import { EVENT_CATEGORY_LEGEND_COLOR } from '@/components/attendance/calendar/calendar-cell';
 import {
   EVENT_CATEGORY_LABELS,
   type EventCategory,
 } from '@/lib/schemas/attendance';
 import type { UpcomingCalendarEvent } from '@/lib/sis/dashboard';
+import { cn } from '@/lib/utils';
 
 /**
  * HubUpcomingEventsCard — the SIS Admin hub's "Coming up" panel (Task V1,
@@ -52,11 +52,11 @@ export function DateBox({ iso }: { iso: string }) {
     .toLocaleDateString('en-SG', { month: 'short', timeZone: 'UTC' })
     .toUpperCase();
   return (
-    <div className="flex w-10 shrink-0 flex-col items-center rounded-lg border border-border bg-muted/40 py-1">
-      <span className="font-serif text-[15px] font-semibold leading-none tabular-nums text-foreground">
+    <div className="flex w-16 shrink-0 flex-col items-center rounded-lg border border-border bg-destructive py-2 text-white">
+      <span className="font-serif text-lg font-bold leading-none tabular-nums">
         {day}
       </span>
-      <span className="mt-1 font-mono text-[8.5px] uppercase tracking-wider text-muted-foreground">
+      <span className="mt-1 font-mono text-sm uppercase tracking-wider">
         {month}
       </span>
     </div>
