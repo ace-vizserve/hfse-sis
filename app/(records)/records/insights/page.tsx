@@ -86,7 +86,11 @@ import {
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
-const ALLOWED_ROLES = new Set(['registrar', 'school_admin', 'superadmin']);
+const ALLOWED_ROLES = new Set([
+  'academic_coordinator',
+  'school_admin',
+  'superadmin',
+]);
 
 const TERM_LABELS: Record<number, string> = {
   1: 'Term 1',

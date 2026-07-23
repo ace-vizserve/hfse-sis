@@ -13,7 +13,11 @@ import { getSessionUser } from '@/lib/supabase/server';
 // app/(markbook)/markbook/awards/page.tsx exactly. Only the header and the
 // mounted view differ (module page header + AttendanceSummaryView).
 
-const ALLOWED_ROLES = new Set(['registrar', 'school_admin', 'superadmin']);
+const ALLOWED_ROLES = new Set([
+  'academic_coordinator',
+  'school_admin',
+  'superadmin',
+]);
 
 export default async function AttendanceSummaryPage({
   searchParams,

@@ -13,7 +13,7 @@ vi.mock('@/lib/auth/require-role', () => ({
   requireRole: vi.fn(() =>
     Promise.resolve({
       user: { id: 'u-registrar', email: 'registrar@hfse.test' },
-      role: 'registrar',
+      role: 'academic_coordinator',
     })
   ),
 }));

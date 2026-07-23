@@ -13,7 +13,7 @@ import { NewSheetForm } from './new-sheet-form';
 // sidebar registry in lib/auth/roles.ts and the API gate at
 // /api/grading-sheets POST. proxy.ts admits teacher + school_admin onto
 // /markbook/* for read access, so we must defend at the page level too.
-const ALLOWED_ROLES = new Set(['registrar', 'superadmin']);
+const ALLOWED_ROLES = new Set(['academic_coordinator', 'superadmin']);
 
 export default async function NewGradingSheetPage() {
   const sessionUser = await getSessionUser();

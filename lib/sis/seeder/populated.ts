@@ -2624,7 +2624,7 @@ async function seedTeacherAssignments(
   }
   const STAFF_ROLES = new Set([
     'teacher',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);

@@ -317,7 +317,11 @@ describe('decideChangeRequest', () => {
       service,
       requestId: 'req-1',
       action: 'approve',
-      actingUser: { id: 'reg-1', email: 'r@hfse.test', role: 'registrar' },
+      actingUser: {
+        id: 'reg-1',
+        email: 'r@hfse.test',
+        role: 'academic_coordinator',
+      },
       via: 'in_app',
     });
 

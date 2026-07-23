@@ -27,11 +27,12 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ enroleeNumber: string; slotKey: string }> }
 ) {
-  // 'admissions' added Sprint 37 (KD #70). 'p-file' added alongside the P-Files
-  // document-validation page so officers can approve / reject enrolled-student slots.
-  // 'registrar' added per KD #37: Records is the sole writer of 'Rejected' for
-  // enrolled students; 'school_admin' intentionally excluded (read-only oversight,
-  // KD #74 + KD #31).
+  // 'admissions' added Sprint 37 (KD #70). 'p_file_officer' added alongside the
+  // P-Files document-validation page so officers can approve / reject
+  // enrolled-student slots.
+  // 'academic_coordinator' added per KD #37: Records is the sole writer of
+  // 'Rejected' for enrolled students; 'school_admin' intentionally excluded
+  // (read-only oversight, KD #74 + KD #31).
   const auth = await requireRole([
     'academic_coordinator',
     'superadmin',

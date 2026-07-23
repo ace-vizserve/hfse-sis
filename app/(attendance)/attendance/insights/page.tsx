@@ -75,7 +75,11 @@ import { getSchoolConfig } from '@/lib/sis/school-config';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
-const ALLOWED_ROLES = new Set(['registrar', 'school_admin', 'superadmin']);
+const ALLOWED_ROLES = new Set([
+  'academic_coordinator',
+  'school_admin',
+  'superadmin',
+]);
 
 // The P/L/EX/A attendance partition, in one place — the school-wide mix donut
 // and the per-term composition bars both read the same series so colours can

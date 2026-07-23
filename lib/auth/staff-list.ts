@@ -121,7 +121,9 @@ export async function getApproverEmailList(): Promise<string[]> {
  */
 export async function getRegistrarEmailList(): Promise<string[]> {
   const all = await _loadAllStaff();
-  return all.filter((u) => u.role === 'registrar').map((u) => u.email);
+  return all
+    .filter((u) => u.role === 'academic_coordinator')
+    .map((u) => u.email);
 }
 
 /**
