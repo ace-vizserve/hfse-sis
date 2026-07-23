@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpIcon, MinusIcon } from 'lucide-react';
 import Link from 'next/link';
 
 import {
@@ -10,6 +11,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import type { Delta } from '@/lib/dashboard/range';
+import { formatDeltaLabel } from '@/lib/dashboard/range';
 
 /**
  * HubStat — the SIS Admin hub's stat-band tile (Task V1,
@@ -43,6 +46,20 @@ const TONE_CLASS: Record<HubStatTone, string> = {
   muted: 'bg-muted text-muted-foreground',
 };
 
+// Same gradient-wash recipe as MetricCard's DeltaChip (components/dashboard/metric-card.tsx)
+// — duplicated rather than imported, matching this file's existing precedent of not
+// depending on MetricCard internals (see the file's own doc comment).
+function hubDeltaChipClass(delta: Delta, goodWhen: 'up' | 'down'): string {
+  if (delta.direction === 'flat')
+    return 'border-border bg-muted text-muted-foreground';
+  const isGood =
+    (goodWhen === 'up' && delta.direction === 'up') ||
+    (goodWhen === 'down' && delta.direction === 'down');
+  return isGood
+    ? 'border-brand-mint bg-gradient-to-b from-brand-mint/35 to-brand-mint/15 text-ink'
+    : 'border-destructive/40 bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive';
+}
+
 export function HubStat({
   label,
   value,
@@ -51,6 +68,9 @@ export function HubStat({
   subtext,
   href,
   emphasize,
+  delta,
+  deltaGoodWhen = 'up',
+  comparisonLabel,
 }: {
   label: string;
   value: string | number;
@@ -63,6 +83,15 @@ export function HubStat({
   /** Pareto-primary tile — the one number checked day-to-day gets a
    * stronger border + slightly larger value type than its siblings. */
   emphasize?: boolean;
+  /** Optional comparison delta (e.g. vs prior AY). When set, renders a
+   * gradient-wash chip in the footer in place of `subtext`. */
+  delta?: Delta;
+  /** Which direction reads as "good" for the mint/destructive chip tint.
+   * Defaults to 'up' (more is better). */
+  deltaGoodWhen?: 'up' | 'down';
+  /** Short label under the delta chip (e.g. "vs AY2025"). Only rendered
+   * alongside a `delta`. */
+  comparisonLabel?: string;
 }) {
   const inner = (
     <Card
@@ -96,9 +125,32 @@ export function HubStat({
           </div>
         </CardAction>
       </CardHeader>
-      {subtext && (
-        <CardFooter>
-          <p className="text-xs text-muted-foreground">{subtext}</p>
+      {(delta || subtext) && (
+        <CardFooter className="flex-col items-start gap-1">
+          {delta && (
+            <div
+              data-slot="delta-chip"
+              className={cn(
+                'inline-flex items-center gap-1 self-start rounded border px-2 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider',
+                hubDeltaChipClass(delta, deltaGoodWhen)
+              )}
+            >
+              {delta.direction === 'up' ? (
+                <ArrowUpIcon className="size-3" strokeWidth={2.5} />
+              ) : delta.direction === 'down' ? (
+                <ArrowDownIcon className="size-3" strokeWidth={2.5} />
+              ) : (
+                <MinusIcon className="size-3" strokeWidth={2.5} />
+              )}
+              {formatDeltaLabel(delta, { format: 'absolute' })}
+            </div>
+          )}
+          {delta && comparisonLabel && (
+            <p className="text-xs text-muted-foreground">{comparisonLabel}</p>
+          )}
+          {subtext && !delta && (
+            <p className="text-xs text-muted-foreground">{subtext}</p>
+          )}
         </CardFooter>
       )}
     </Card>
