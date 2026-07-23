@@ -25,6 +25,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getStaffCount, getTeacherList } from '@/lib/auth/staff-list';
 import { getSectionStaffingCoverage } from '@/lib/sis/dashboard';
 import { loadStaffAssignments } from '@/lib/sis/staff';
+import { computeStaffFamilies } from '@/lib/sis/staff-families';
 import { listStaffUsers } from '@/lib/sis/users/queries';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
@@ -263,29 +264,65 @@ export default async function StaffPage({
             </Card>
           </>
         ) : view === 'accounts' && accounts ? (
-          <Card>
-            <CardHeader>
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                {accounts.length} staff user{accounts.length === 1 ? '' : 's'}
-                {!canManageAccounts ? ' · Read-only for your role' : ''}
-              </CardDescription>
-              <CardTitle className="font-serif text-lg font-semibold tracking-tight text-foreground">
-                <span className="inline-flex items-center gap-2">
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-                    <UserCog className="size-4" />
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {computeStaffFamilies(accounts).map((family) => (
+                <Card key={family.key} data-slot="card" className="gap-0 py-0">
+                  <CardHeader className="border-b border-border py-5">
+                    <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                      {family.label}
+                    </CardDescription>
+                    <CardTitle className="font-serif text-3xl tabular-nums text-foreground">
+                      {family.total}
+                    </CardTitle>
+                    <CardAction>
+                      <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                        <Users2 className="size-4" />
+                      </div>
+                    </CardAction>
+                  </CardHeader>
+                  <div className="flex flex-col gap-2 px-6 py-4">
+                    {family.roles.map((r) => (
+                      <div
+                        key={r.role}
+                        className="flex items-center justify-between text-sm"
+                      >
+                        <span className="text-muted-foreground">{r.label}</span>
+                        <span className="font-mono tabular-nums text-foreground">
+                          {r.count}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                  Directory
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <StaffAccountsClient
-                users={accounts}
-                currentUserId={sessionUser.id}
-                canManage={canManageAccounts}
-              />
-            </CardContent>
-          </Card>
+                </Card>
+              ))}
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  {accounts.length} staff user
+                  {accounts.length === 1 ? '' : 's'}
+                  {!canManageAccounts ? ' · Read-only for your role' : ''}
+                </CardDescription>
+                <CardTitle className="font-serif text-lg font-semibold tracking-tight text-foreground">
+                  <span className="inline-flex items-center gap-2">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                      <UserCog className="size-4" />
+                    </div>
+                    Directory
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <StaffAccountsClient
+                  users={accounts}
+                  currentUserId={sessionUser.id}
+                  canManage={canManageAccounts}
+                />
+              </CardContent>
+            </Card>
+          </>
         ) : null}
       </div>
     </PageShell>
