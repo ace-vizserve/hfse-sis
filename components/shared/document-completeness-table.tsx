@@ -9,6 +9,7 @@ import { IdentifierLink } from '@/components/ui/identifier-link';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Card,
   CardContent,
@@ -239,12 +240,51 @@ type PFilesProps = {
 
 type Props = AdmissionsProps | PFilesProps;
 
+// ─── Row-selection checkbox column ────────────────────────────────────────────
+// Prepended to buildColumns()'s output only when bulk-remind is enabled for
+// this table (mirrors the pre-migration hand-rolled checkbox column + the
+// grading-data-table.tsx SELECT_COLUMN reference pattern, KD #131). Select-all
+// operates on the current page only.
+
+const SELECT_COLUMN: ColumnDef<CommonRow> = {
+  id: 'select',
+  header: ({ table }) => {
+    const pageRows = table.getRowModel().rows;
+    const selectedCount = pageRows.filter((r) => r.getIsSelected()).length;
+    const allSelected =
+      pageRows.length > 0 && selectedCount === pageRows.length;
+    const someSelected = selectedCount > 0 && !allSelected;
+    return (
+      <Checkbox
+        checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+        onCheckedChange={(value) => {
+          for (const r of pageRows) r.toggleSelected(!!value);
+        }}
+        disabled={pageRows.length === 0}
+        aria-label="Select all on this page"
+      />
+    );
+  },
+  cell: ({ row }) => (
+    <Checkbox
+      checked={row.getIsSelected()}
+      onCheckedChange={(value) => row.toggleSelected(!!value)}
+      aria-label={`Select ${row.original.fullName}`}
+    />
+  ),
+  enableSorting: false,
+  enableHiding: false,
+};
+
 // ─── Column definitions (module-discriminated) ────────────────────────────────
 
 function buildColumns(
   module: Module,
   slotHeaders: { key: string; label: string }[],
-  actionHref: (enroleeNumber: string) => string
+  actionHref: (enroleeNumber: string) => string,
+  bulkRemindEnabled: boolean,
+  onRemindOne: (items: BulkNotifyItem[]) => void,
+  bulkRemindWindowDays: number | null
 ): ColumnDef<CommonRow>[] {
   const identifierLabel = module === 'admissions' ? 'Applicant' : 'Student';
 
@@ -346,7 +386,48 @@ function buildColumns(
     ),
   });
 
-  return columns;
+  columns.push({
+    id: 'actions',
+    header: '',
+    cell: ({ row }) => {
+      const href = actionHref(row.original.enroleeNumber);
+      const items = bulkRemindEnabled
+        ? module === 'admissions'
+          ? admissionsBulkTargets(row.original as AdmissionsCompleteness)
+          : pfilesBulkTargets(
+              row.original as StudentCompleteness,
+              bulkRemindWindowDays
+            )
+        : [];
+      return (
+        <div className="inline-flex items-center justify-end gap-2">
+          {bulkRemindEnabled && items.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+              aria-label={`Send reminder to ${row.original.fullName}`}
+              onClick={() => onRemindOne(items)}
+            >
+              <Mail className="size-3" />
+              Remind
+            </Button>
+          )}
+          <Link
+            href={href}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            View
+            <ArrowUpRight className="size-3" />
+          </Link>
+        </div>
+      );
+    },
+    enableSorting: false,
+    enableHiding: false,
+  });
+
+  return bulkRemindEnabled ? [SELECT_COLUMN, ...columns] : columns;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -358,13 +439,34 @@ export function DocumentCompletenessTable(props: Props) {
       ? (props.bulkRemindWindowDays ?? null)
       : null;
 
-  // Kept for Task 2 (selection + bulk/per-row reminder wiring) — not yet
-  // consumed by the shell in this task.
-  const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = React.useState(false);
   // Per-row "Send reminder" — opens BulkNotifyDialog seeded for a single row.
   const [perRowOpen, setPerRowOpen] = React.useState(false);
   const [perRowItems, setPerRowItems] = React.useState<BulkNotifyItem[]>([]);
+  const [bulkItems, setBulkItems] = React.useState<BulkNotifyItem[]>([]);
+  // Bumped after a successful bulk send to clear the shell's row selection
+  // (and drop the bulk-action footer) — see DataTableProps.selectionResetSignal.
+  const [selectionResetSignal, setSelectionResetSignal] = React.useState(0);
+
+  function handleRemindOne(items: BulkNotifyItem[]) {
+    setPerRowItems(items);
+    setPerRowOpen(true);
+  }
+
+  function handleSendReminders(selectedRows: CommonRow[]) {
+    const out: BulkNotifyItem[] = [];
+    for (const s of selectedRows) {
+      if (module === 'admissions') {
+        out.push(...admissionsBulkTargets(s as AdmissionsCompleteness));
+      } else {
+        out.push(
+          ...pfilesBulkTargets(s as StudentCompleteness, bulkRemindWindowDays)
+        );
+      }
+    }
+    setBulkItems(out);
+    setBulkOpen(true);
+  }
 
   const querySuffix = ayCode ? `?ay=${encodeURIComponent(ayCode)}` : '';
 
@@ -389,25 +491,6 @@ export function DocumentCompletenessTable(props: Props) {
       ),
     ].sort();
   }, [module, students]);
-
-  // Kept for Task 2 (bulk-remind footer) — computed against `students` since
-  // the shell owns filtering now.
-  const bulkItems = React.useMemo(() => {
-    if (!bulkRemindEnabled || selected.size === 0)
-      return [] as BulkNotifyItem[];
-    const out: BulkNotifyItem[] = [];
-    for (const s of students) {
-      if (!selected.has(s.enroleeNumber)) continue;
-      if (module === 'admissions') {
-        out.push(...admissionsBulkTargets(s as AdmissionsCompleteness));
-      } else {
-        out.push(
-          ...pfilesBulkTargets(s as StudentCompleteness, bulkRemindWindowDays)
-        );
-      }
-    }
-    return out;
-  }, [bulkRemindEnabled, selected, students, module, bulkRemindWindowDays]);
 
   const slotHeaders = React.useMemo(() => {
     const seen = new Map<string, string>();
@@ -441,8 +524,16 @@ export function DocumentCompletenessTable(props: Props) {
   }
 
   const columns = React.useMemo(
-    () => buildColumns(module, slotHeaders, actionHref),
-    [module, slotHeaders, actionHref]
+    () =>
+      buildColumns(
+        module,
+        slotHeaders,
+        actionHref,
+        bulkRemindEnabled,
+        handleRemindOne,
+        bulkRemindWindowDays
+      ),
+    [module, slotHeaders, actionHref, bulkRemindEnabled, bulkRemindWindowDays]
   );
 
   const statusOptions: { value: string; label: string }[] =
@@ -512,8 +603,44 @@ export function DocumentCompletenessTable(props: Props) {
           pageSize={25}
           emptyState={{ icon: Search, title: emptyLabel }}
           emptyFilteredState={{ title: emptyLabel }}
+          selection={
+            bulkRemindEnabled
+              ? {
+                  enabled: true,
+                  bulkActions: [
+                    {
+                      key: 'send-reminders',
+                      label: 'Send reminders',
+                      icon: Mail,
+                      onTrigger: handleSendReminders,
+                    },
+                  ],
+                }
+              : undefined
+          }
+          selectionResetSignal={selectionResetSignal}
         />
       </CardContent>
+      {bulkRemindEnabled && (
+        <>
+          <BulkNotifyDialog
+            items={bulkItems}
+            module={module}
+            open={bulkOpen}
+            onOpenChange={setBulkOpen}
+            onSuccess={() => setSelectionResetSignal((n) => n + 1)}
+          />
+          <BulkNotifyDialog
+            items={perRowItems}
+            module={module}
+            open={perRowOpen}
+            onOpenChange={(open) => {
+              setPerRowOpen(open);
+              if (!open) setPerRowItems([]);
+            }}
+          />
+        </>
+      )}
     </Card>
   );
 }
