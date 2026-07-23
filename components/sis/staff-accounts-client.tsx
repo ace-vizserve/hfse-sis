@@ -2,8 +2,6 @@
 
 import type { ColumnDef } from '@tanstack/react-table';
 import {
-  Ban,
-  CheckCircle2,
   Copy,
   GraduationCap,
   KeyRound,
@@ -31,10 +29,10 @@ import {
   StaffAssignmentSheet,
   type StaffSheetTeacher,
 } from '@/components/sis/staff-assignment-sheet';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -159,16 +157,13 @@ function buildColumns(
       id: 'user_status',
       accessorFn: (row) => (row.disabled ? 'Disabled' : 'Active'),
       header: 'Status',
-      cell: ({ row }) =>
-        row.original.disabled ? (
-          <Badge variant="blocked">
-            <Ban className="size-3" /> Disabled
-          </Badge>
-        ) : (
-          <Badge variant="success">
-            <CheckCircle2 className="size-3" /> Active
-          </Badge>
-        ),
+      cell: ({ row }) => (
+        <UserStatusToggle
+          user={row.original}
+          isSelf={row.original.id === currentUserId}
+          canManage={canManage}
+        />
+      ),
       filterFn: (row, _id, value) => {
         if (!value || (Array.isArray(value) && value.length === 0)) return true;
         const statusVal = row.original.disabled ? 'Disabled' : 'Active';
@@ -252,11 +247,6 @@ function buildColumns(
                 Manage teaching assignments
               </DropdownMenuItem>
             )}
-            <ToggleDisabledMenuItem
-              user={row.original}
-              isSelf={row.original.id === currentUserId}
-              canManage={canManage}
-            />
             <DropdownMenuSeparator />
             <DropdownMenuItem
               disabled
@@ -338,7 +328,15 @@ function RoleSelect({
   );
 }
 
-function ToggleDisabledMenuItem({
+// Inline Status toggle — mirrors the established Switch idiom already used
+// for AY-setup's per-row "Accepting applications" toggle
+// (ay-accepting-applications-toggle.tsx): Tier-2 mutation (no local
+// optimistic value, the Switch reflects the server-provided `disabled`
+// prop; a successful flip router.refresh()es to re-read it). Replaces the
+// prior overflow-menu-only Enable/Disable action — Role already got an
+// inline Select on this same table, so Status gets the same first-class
+// treatment instead of staying a click-through-the-menu action.
+function UserStatusToggle({
   user,
   isSelf,
   canManage,
@@ -367,35 +365,24 @@ function ToggleDisabledMenuItem({
   });
   const busy = toggleMutation.isPending;
 
-  function toggleDisabled(e: Event) {
-    e.preventDefault();
-    toggleMutation.mutate(!user.disabled);
-  }
+  const disabledReason = !canManage
+    ? 'Only superadmins can enable or disable accounts'
+    : isSelf
+      ? 'You cannot disable your own account here'
+      : undefined;
 
   return (
-    <DropdownMenuItem
-      disabled={busy || isSelf || !canManage}
-      onSelect={toggleDisabled}
-      className={
-        user.disabled ? undefined : 'text-destructive focus:text-destructive'
-      }
-      title={
-        !canManage
-          ? 'Only superadmins can enable or disable accounts'
-          : isSelf
-            ? 'You cannot disable your own account here'
-            : undefined
-      }
-    >
-      {busy ? (
-        <Loader2 className="size-3.5 animate-spin" />
-      ) : user.disabled ? (
-        <CheckCircle2 className="size-3.5" />
-      ) : (
-        <Ban className="size-3.5" />
-      )}
-      {user.disabled ? 'Enable' : 'Disable'}
-    </DropdownMenuItem>
+    <div className="flex items-center gap-2" title={disabledReason}>
+      <Switch
+        checked={!user.disabled}
+        disabled={busy || isSelf || !canManage}
+        onCheckedChange={(v) => toggleMutation.mutate(!v)}
+        aria-label={`${user.disabled ? 'Enable' : 'Disable'} ${user.email}`}
+      />
+      <span className="whitespace-nowrap text-[13px] font-medium text-foreground">
+        {user.disabled ? 'Disabled' : 'Active'}
+      </span>
+    </div>
   );
 }
 
