@@ -87,8 +87,8 @@ export async function PATCH(
   // Per-module role gate.
   const allowedRoles =
     moduleKey === 'admissions'
-      ? ['admissions', 'registrar', 'school_admin', 'superadmin']
-      : ['p-file', 'superadmin'];
+      ? ['admissions', 'academic_coordinator', 'school_admin', 'superadmin']
+      : ['p_file_officer', 'superadmin'];
   const auth = await requireRole(
     allowedRoles as import('@/lib/auth/roles').Role[]
   );

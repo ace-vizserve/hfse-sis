@@ -24,7 +24,7 @@ export default async function AdmissionsLayout({
   const { id, email, role } = sessionUser;
   const allowed = [
     'admissions',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ] as const;
