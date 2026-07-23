@@ -2,19 +2,8 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpRight,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  ChevronsUpDown,
-  Mail,
-  Search,
-  X,
-} from 'lucide-react';
+import { ArrowUpRight, Mail, Search } from 'lucide-react';
+import type { ColumnDef } from '@tanstack/react-table';
 
 import { IdentifierLink } from '@/components/ui/identifier-link';
 
@@ -27,23 +16,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { DataTable } from '@/components/ui/data-table';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import {
   BulkNotifyDialog,
   type BulkNotifyItem,
@@ -265,44 +239,114 @@ type PFilesProps = {
 
 type Props = AdmissionsProps | PFilesProps;
 
-// ─── Sort state ───────────────────────────────────────────────────────────────
+// ─── Column definitions (module-discriminated) ────────────────────────────────
 
-type SortKey = 'name' | 'level' | 'pct' | 'status4' | null;
-type SortDir = 'asc' | 'desc';
+function buildColumns(
+  module: Module,
+  slotHeaders: { key: string; label: string }[],
+  actionHref: (enroleeNumber: string) => string
+): ColumnDef<CommonRow>[] {
+  const identifierLabel = module === 'admissions' ? 'Applicant' : 'Student';
 
-// ─── Sortable column header button ───────────────────────────────────────────
+  const columns: ColumnDef<CommonRow>[] = [
+    {
+      id: 'name',
+      accessorFn: (row) => row.fullName,
+      header: ({ column }) => (
+        <SortableHeader column={column}>{identifierLabel}</SortableHeader>
+      ),
+      cell: ({ row }) => (
+        <div>
+          <IdentifierLink
+            href={actionHref(row.original.enroleeNumber)}
+            className="text-sm"
+          >
+            {row.original.fullName}
+          </IdentifierLink>
+          <div className="font-mono text-[10px] text-muted-foreground">
+            {row.original.studentNumber ?? row.original.enroleeNumber}
+          </div>
+        </div>
+      ),
+      enableHiding: false,
+    },
+    {
+      id: 'level',
+      accessorFn: (row) => row.level ?? '',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Level</SortableHeader>
+      ),
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
+          {row.original.level ?? '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'status4',
+      accessorFn: (row) =>
+        module === 'admissions'
+          ? ((row as AdmissionsCompleteness).applicationStatus ?? '')
+          : ((row as StudentCompleteness).section ?? ''),
+      header: ({ column }) => (
+        <SortableHeader column={column}>
+          {module === 'admissions' ? 'Status' : 'Section'}
+        </SortableHeader>
+      ),
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
+          {module === 'admissions'
+            ? ((row.original as AdmissionsCompleteness).applicationStatus ??
+              '—')
+            : ((row.original as StudentCompleteness).section ?? '—')}
+        </span>
+      ),
+    },
+  ];
 
-function SortButton({
-  label,
-  sortKey,
-  currentKey,
-  currentDir,
-  onSort,
-}: {
-  label: string;
-  sortKey: SortKey;
-  currentKey: SortKey;
-  currentDir: SortDir;
-  onSort: (key: SortKey) => void;
-}) {
-  const isActive = currentKey === sortKey;
-  const Icon = isActive
-    ? currentDir === 'asc'
-      ? ArrowUp
-      : ArrowDown
-    : ChevronsUpDown;
-  return (
-    <button
-      type="button"
-      onClick={() => onSort(sortKey)}
-      className="inline-flex cursor-pointer items-center gap-1 font-mono text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
-    >
-      {label}
-      <Icon
-        className={`size-3 ${isActive ? 'text-foreground' : 'text-muted-foreground/60'}`}
-      />
-    </button>
-  );
+  for (const h of slotHeaders) {
+    columns.push({
+      id: `slot:${h.key}`,
+      accessorFn: (row) =>
+        row.slots.find((sl) => sl.key === h.key)?.status ?? '',
+      header: () => (
+        <span
+          className="inline-block max-w-[60px] truncate text-center text-[10px]"
+          title={h.label}
+        >
+          {abbreviateSlotLabel(h.label)}
+        </span>
+      ),
+      cell: ({ row }) => {
+        const status = row.original.slots.find(
+          (sl) => sl.key === h.key
+        )?.status;
+        return (
+          <div className="text-center">
+            {status ? (
+              <StatusDot status={status} />
+            ) : (
+              <span className="text-[10px] text-muted-foreground">—</span>
+            )}
+          </div>
+        );
+      },
+      enableSorting: false,
+    });
+  }
+
+  columns.push({
+    id: 'pct',
+    accessorFn: (row) => pct(row.total, row.complete),
+    header: ({ column }) => <SortableHeader column={column}>%</SortableHeader>,
+    cell: ({ row }) => (
+      <div className="text-center">
+        <CompletePct pct={pct(row.original.total, row.original.complete)} />
+      </div>
+    ),
+  });
+
+  return columns;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -314,23 +358,13 @@ export function DocumentCompletenessTable(props: Props) {
       ? (props.bulkRemindWindowDays ?? null)
       : null;
 
-  // Status filter — typed loosely internally since the valid options differ
-  const [statusFilter, setStatusFilter] = React.useState<string>(
-    props.initialStatusFilter ?? 'all'
-  );
-  const [search, setSearch] = React.useState('');
-  const [levelFilter, setLevelFilter] = React.useState('all');
-  // P-Files only: section sub-filter
-  const [sectionFilter, setSectionFilter] = React.useState('all');
-  const [pageIndex, setPageIndex] = React.useState(0);
-  const [pageSize, setPageSize] = React.useState(25);
+  // Kept for Task 2 (selection + bulk/per-row reminder wiring) — not yet
+  // consumed by the shell in this task.
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = React.useState(false);
   // Per-row "Send reminder" — opens BulkNotifyDialog seeded for a single row.
   const [perRowOpen, setPerRowOpen] = React.useState(false);
   const [perRowItems, setPerRowItems] = React.useState<BulkNotifyItem[]>([]);
-  const [sortKey, setSortKey] = React.useState<SortKey>(null);
-  const [sortDir, setSortDir] = React.useState<SortDir>('asc');
 
   const querySuffix = ayCode ? `?ay=${encodeURIComponent(ayCode)}` : '';
 
@@ -347,141 +381,22 @@ export function DocumentCompletenessTable(props: Props) {
   // Section list is only relevant for P-Files
   const sections = React.useMemo(() => {
     if (module !== 'p-files') return [];
-    const base =
-      levelFilter === 'all'
-        ? (students as StudentCompleteness[])
-        : (students as StudentCompleteness[]).filter(
-            (s) => s.level === levelFilter
-          );
     return [
-      ...new Set(base.map((s) => s.section).filter((s): s is string => !!s)),
+      ...new Set(
+        (students as StudentCompleteness[])
+          .map((s) => s.section)
+          .filter((s): s is string => !!s)
+      ),
     ].sort();
-  }, [module, students, levelFilter]);
+  }, [module, students]);
 
-  const filtered = React.useMemo(() => {
-    return students.filter((s) => {
-      if (levelFilter !== 'all' && s.level !== levelFilter) return false;
-      if (module === 'p-files' && sectionFilter !== 'all') {
-        if ((s as StudentCompleteness).section !== sectionFilter) return false;
-      }
-      if (search) {
-        const needle = search.toLowerCase();
-        const haystack =
-          `${s.fullName} ${s.studentNumber ?? ''} ${s.enroleeNumber}`.toLowerCase();
-        if (!haystack.includes(needle)) return false;
-      }
-      if (
-        statusFilter === 'to-follow' &&
-        ((s as AdmissionsCompleteness).toFollow ?? 0) === 0
-      )
-        return false;
-      if (
-        statusFilter === 'rejected' &&
-        ((s as AdmissionsCompleteness).rejected ?? 0) === 0
-      )
-        return false;
-      if (
-        statusFilter === 'uploaded' &&
-        ((s as AdmissionsCompleteness).uploaded ?? 0) === 0
-      )
-        return false;
-      if (statusFilter === 'expired' && s.expired === 0) return false;
-      return true;
-    });
-  }, [students, search, levelFilter, sectionFilter, module, statusFilter]);
-
-  // Reset to page 0 when filters or sort change
-  React.useEffect(() => {
-    setPageIndex(0);
-  }, [search, levelFilter, sectionFilter, statusFilter, sortKey, sortDir]);
-
-  // Drop selections that no longer match the visible filtered set
-  React.useEffect(() => {
-    setSelected((prev) => {
-      const visibleIds = new Set(filtered.map((s) => s.enroleeNumber));
-      const next = new Set<string>();
-      for (const id of prev) if (visibleIds.has(id)) next.add(id);
-      return next;
-    });
-  }, [filtered]);
-
-  function handleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(key);
-      setSortDir('asc');
-    }
-  }
-
-  const sorted = React.useMemo(() => {
-    if (sortKey === null) return filtered;
-    return [...filtered].sort((a, b) => {
-      let cmp = 0;
-      if (sortKey === 'name') {
-        cmp = a.fullName.localeCompare(b.fullName, undefined, {
-          sensitivity: 'base',
-        });
-      } else if (sortKey === 'level') {
-        const al = a.level ?? '';
-        const bl = b.level ?? '';
-        cmp = al.localeCompare(bl, undefined, { sensitivity: 'base' });
-      } else if (sortKey === 'pct') {
-        // pct helper guards divide-by-zero (returns 0 when total===0)
-        cmp = pct(a.total, a.complete) - pct(b.total, b.complete);
-      } else if (sortKey === 'status4') {
-        // 4th col: applicationStatus (admissions) or section (p-files)
-        const av =
-          module === 'admissions'
-            ? ((a as AdmissionsCompleteness).applicationStatus ?? '')
-            : ((a as StudentCompleteness).section ?? '');
-        const bv =
-          module === 'admissions'
-            ? ((b as AdmissionsCompleteness).applicationStatus ?? '')
-            : ((b as StudentCompleteness).section ?? '');
-        cmp = av.localeCompare(bv, undefined, { sensitivity: 'base' });
-      }
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [filtered, sortKey, sortDir, module]);
-
-  const pageCount = Math.max(Math.ceil(sorted.length / pageSize), 1);
-  const paged = sorted.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
-
-  const pageIds = React.useMemo(
-    () => paged.map((s) => s.enroleeNumber),
-    [paged]
-  );
-  const allPageSelected =
-    pageIds.length > 0 && pageIds.every((id) => selected.has(id));
-  const somePageSelected =
-    !allPageSelected && pageIds.some((id) => selected.has(id));
-
-  function togglePage(checked: boolean) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      for (const id of pageIds) {
-        if (checked) next.add(id);
-        else next.delete(id);
-      }
-      return next;
-    });
-  }
-
-  function toggleRow(id: string, checked: boolean) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  }
-
+  // Kept for Task 2 (bulk-remind footer) — computed against `students` since
+  // the shell owns filtering now.
   const bulkItems = React.useMemo(() => {
     if (!bulkRemindEnabled || selected.size === 0)
       return [] as BulkNotifyItem[];
     const out: BulkNotifyItem[] = [];
-    for (const s of filtered) {
+    for (const s of students) {
       if (!selected.has(s.enroleeNumber)) continue;
       if (module === 'admissions') {
         out.push(...admissionsBulkTargets(s as AdmissionsCompleteness));
@@ -492,13 +407,7 @@ export function DocumentCompletenessTable(props: Props) {
       }
     }
     return out;
-  }, [bulkRemindEnabled, selected, filtered, module, bulkRemindWindowDays]);
-
-  const hasFilter =
-    search.length > 0 ||
-    levelFilter !== 'all' ||
-    (module === 'p-files' && sectionFilter !== 'all') ||
-    statusFilter !== 'all';
+  }, [bulkRemindEnabled, selected, students, module, bulkRemindWindowDays]);
 
   const slotHeaders = React.useMemo(() => {
     const seen = new Map<string, string>();
@@ -532,473 +441,80 @@ export function DocumentCompletenessTable(props: Props) {
       : `/p-files/${enroleeNumber}${querySuffix}`;
   }
 
-  // How many fixed columns before slot columns (used for colSpan on empty state)
-  // Checkbox + Identifier + Level + (Status|Section) + slots + % + Action
-  const fixedColCount = 5 + (bulkRemindEnabled ? 1 : 0);
+  const columns = React.useMemo(
+    () => buildColumns(module, slotHeaders, actionHref),
+    [module, slotHeaders, actionHref]
+  );
+
+  const statusOptions: { value: string; label: string }[] =
+    module === 'admissions'
+      ? [
+          { value: 'to-follow', label: TABLE_COPY.awaitingParentReply },
+          { value: 'rejected', label: TABLE_COPY.sentBackToParent },
+          { value: 'uploaded', label: TABLE_COPY.awaitingValidation },
+          { value: 'expired', label: TABLE_COPY.lapsedReupload },
+        ]
+      : [{ value: 'expired', label: TABLE_COPY.lapsedReupload }];
 
   return (
     <Card>
       <CardHeader className="gap-2">
         <CardTitle>{cardTitle}</CardTitle>
         <CardDescription>{cardDescription}</CardDescription>
-
-        {/* ── Toolbar ── */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <div className="relative w-full sm:w-auto sm:min-w-[240px]">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name or number…"
-              className="pl-8"
-            />
-          </div>
-
-          {/* Level filter */}
-          <Select
-            value={levelFilter}
-            onValueChange={(v) => {
-              setLevelFilter(v);
-              setSectionFilter('all');
-            }}
-          >
-            <SelectTrigger className="h-9 w-[160px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All levels</SelectItem>
-              {levels.map((l) => (
-                <SelectItem key={l} value={l}>
-                  {l}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* P-Files: section sub-filter */}
-          {module === 'p-files' && (
-            <Select value={sectionFilter} onValueChange={setSectionFilter}>
-              <SelectTrigger className="h-9 w-[160px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All sections</SelectItem>
-                {sections.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-
-          {/* Status filter */}
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-9 w-[180px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {module === 'admissions' ? (
-                <>
-                  <SelectItem value="to-follow">
-                    {TABLE_COPY.awaitingParentReply}
-                  </SelectItem>
-                  <SelectItem value="rejected">
-                    {TABLE_COPY.sentBackToParent}
-                  </SelectItem>
-                  <SelectItem value="uploaded">
-                    {TABLE_COPY.awaitingValidation}
-                  </SelectItem>
-                  <SelectItem value="expired">
-                    {TABLE_COPY.lapsedReupload}
-                  </SelectItem>
-                </>
-              ) : (
-                <SelectItem value="expired">
-                  {TABLE_COPY.lapsedReupload}
-                </SelectItem>
-              )}
-            </SelectContent>
-          </Select>
-
-          {hasFilter && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setSearch('');
-                setLevelFilter('all');
-                setSectionFilter('all');
-                setStatusFilter('all');
-              }}
-            >
-              <X className="h-3 w-3" />
-              Clear
-            </Button>
-          )}
-
-          <div className="ml-auto font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-            {filtered.length} of {students.length}
-          </div>
-        </div>
       </CardHeader>
-
       <CardContent className="px-0">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                {bulkRemindEnabled && (
-                  <TableHead className="w-10 px-2">
-                    <Checkbox
-                      aria-label="Select all on this page"
-                      checked={
-                        allPageSelected
-                          ? true
-                          : somePageSelected
-                            ? 'indeterminate'
-                            : false
-                      }
-                      onCheckedChange={(v) => togglePage(v === true)}
-                    />
-                  </TableHead>
-                )}
-                <TableHead className="sticky left-0 bg-muted/40 px-4">
-                  <SortButton
-                    label={identifierLabel}
-                    sortKey="name"
-                    currentKey={sortKey}
-                    currentDir={sortDir}
-                    onSort={handleSort}
-                  />
-                </TableHead>
-                <TableHead className="whitespace-nowrap px-2">
-                  <SortButton
-                    label="Level"
-                    sortKey="level"
-                    currentKey={sortKey}
-                    currentDir={sortDir}
-                    onSort={handleSort}
-                  />
-                </TableHead>
-
-                {/* 4th column: applicationStatus (admissions) vs Section (p-files) */}
-                {module === 'admissions' ? (
-                  <TableHead className="whitespace-nowrap px-2">
-                    <SortButton
-                      label="Status"
-                      sortKey="status4"
-                      currentKey={sortKey}
-                      currentDir={sortDir}
-                      onSort={handleSort}
-                    />
-                  </TableHead>
-                ) : (
-                  <TableHead className="whitespace-nowrap px-2">
-                    <SortButton
-                      label="Section"
-                      sortKey="status4"
-                      currentKey={sortKey}
-                      currentDir={sortDir}
-                      onSort={handleSort}
-                    />
-                  </TableHead>
-                )}
-
-                {slotHeaders.map((h) => (
-                  <TableHead
-                    key={h.key}
-                    className="px-1 text-center"
-                    title={h.label}
-                  >
-                    <span className="inline-block max-w-[60px] truncate text-[10px]">
-                      {abbreviateSlotLabel(h.label)}
-                    </span>
-                  </TableHead>
-                ))}
-                <TableHead className="px-2 text-center">
-                  <SortButton
-                    label="%"
-                    sortKey="pct"
-                    currentKey={sortKey}
-                    currentDir={sortDir}
-                    onSort={handleSort}
-                  />
-                </TableHead>
-                <TableHead className="px-2 text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paged.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={slotHeaders.length + fixedColCount}
-                    className="py-10 text-center text-sm text-muted-foreground"
-                  >
-                    {emptyLabel}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                paged.map((s) => {
-                  const rowPct = pct(s.total, s.complete);
-                  const slotMap = new Map(
-                    s.slots.map((sl) => [sl.key, sl.status])
-                  );
-                  const isSelected = selected.has(s.enroleeNumber);
-
-                  // Identifier link: KD #81 — linkified primary identifier
-                  const href = actionHref(s.enroleeNumber);
-
-                  return (
-                    <TableRow
-                      key={s.enroleeNumber}
-                      data-selected={isSelected || undefined}
-                    >
-                      {bulkRemindEnabled && (
-                        <TableCell className="px-2">
-                          <Checkbox
-                            aria-label={`Select ${s.fullName}`}
-                            checked={isSelected}
-                            onCheckedChange={(v) =>
-                              toggleRow(s.enroleeNumber, v === true)
-                            }
-                          />
-                        </TableCell>
-                      )}
-
-                      {/* Linkified primary identifier (KD #81) */}
-                      <TableCell className="sticky left-0 bg-background px-4">
-                        <IdentifierLink href={href} className="text-sm">
-                          {s.fullName}
-                        </IdentifierLink>
-                        <div className="font-mono text-[10px] text-muted-foreground">
-                          {s.studentNumber ?? s.enroleeNumber}
-                        </div>
-                      </TableCell>
-
-                      <TableCell className="whitespace-nowrap px-2 text-xs text-muted-foreground">
-                        {s.level ?? '—'}
-                      </TableCell>
-
-                      {/* 4th col: applicationStatus vs section */}
-                      {module === 'admissions' ? (
-                        <TableCell className="whitespace-nowrap px-2 text-xs text-muted-foreground">
-                          {(s as AdmissionsCompleteness).applicationStatus ??
-                            '—'}
-                        </TableCell>
-                      ) : (
-                        <TableCell className="whitespace-nowrap px-2 text-xs text-muted-foreground">
-                          {(s as StudentCompleteness).section ?? '—'}
-                        </TableCell>
-                      )}
-
-                      {slotHeaders.map((h) => {
-                        const status = slotMap.get(h.key);
-                        return (
-                          <TableCell key={h.key} className="px-1 text-center">
-                            {status ? (
-                              <StatusDot status={status} />
-                            ) : (
-                              <span className="text-[10px] text-muted-foreground">
-                                —
-                              </span>
-                            )}
-                          </TableCell>
-                        );
-                      })}
-
-                      <TableCell className="px-2 text-center">
-                        <CompletePct pct={rowPct} />
-                      </TableCell>
-
-                      {/* Trailing action cell: optional per-row reminder + view link */}
-                      <TableCell className="px-2 text-right">
-                        <div className="inline-flex items-center justify-end gap-2">
-                          {bulkRemindEnabled &&
-                            (() => {
-                              // Compute the reminder targets once; only show the
-                              // button when there's actually something to send
-                              // (a fully-complete row has zero targets).
-                              const items =
-                                module === 'admissions'
-                                  ? admissionsBulkTargets(
-                                      s as AdmissionsCompleteness
-                                    )
-                                  : pfilesBulkTargets(
-                                      s as StudentCompleteness,
-                                      bulkRemindWindowDays
-                                    );
-                              if (items.length === 0) return null;
-                              return (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-                                  aria-label={`Send reminder to ${s.fullName}`}
-                                  onClick={() => {
-                                    setPerRowItems(items);
-                                    setPerRowOpen(true);
-                                  }}
-                                >
-                                  <Mail className="size-3" />
-                                  Remind
-                                </Button>
-                              );
-                            })()}
-                          <Link
-                            href={href}
-                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                          >
-                            View
-                            <ArrowUpRight className="size-3" />
-                          </Link>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </div>
+        <DataTable<CommonRow>
+          data={students}
+          columns={columns}
+          getRowId={(row) => row.enroleeNumber}
+          searchKeys={['fullName', 'studentNumber', 'enroleeNumber']}
+          searchPlaceholder="Search by name or number…"
+          facets={[
+            { columnId: 'level', label: 'Level', valueOptions: levels },
+            ...(module === 'p-files' && sections.length > 0
+              ? [
+                  {
+                    columnId: 'status4',
+                    label: 'Section',
+                    valueOptions: sections,
+                  },
+                ]
+              : []),
+          ]}
+          statusTabs={[
+            {
+              value: 'all',
+              label: 'All',
+              predicate: () => true,
+              isDefault:
+                props.initialStatusFilter === undefined ||
+                props.initialStatusFilter === 'all',
+            },
+            ...statusOptions.map((opt) => ({
+              value: opt.value,
+              label: opt.label,
+              predicate: (row: CommonRow) => {
+                if (opt.value === 'expired') return row.expired > 0;
+                if (module === 'admissions') {
+                  const a = row as AdmissionsCompleteness;
+                  if (opt.value === 'to-follow') return a.toFollow > 0;
+                  if (opt.value === 'rejected') return a.rejected > 0;
+                  if (opt.value === 'uploaded') return a.uploaded > 0;
+                }
+                return false;
+              },
+              isDefault: props.initialStatusFilter === opt.value,
+            })),
+          ]}
+          csv={{ filename: `${countLabel}-completeness.csv` }}
+          url={{ enabled: true, namespace: 'completeness' }}
+          initialSort={[{ id: 'name', desc: false }]}
+          pageSizeOptions={[10, 25, 50, 100]}
+          pageSize={25}
+          emptyState={{ icon: Search, title: emptyLabel }}
+          emptyFilteredState={{ title: emptyLabel }}
+        />
       </CardContent>
-
-      {/* Pagination */}
-      <div className="flex flex-col-reverse items-start gap-3 border-t border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
-          {filtered.length}{' '}
-          {filtered.length === 1 ? countLabel : `${countLabel}s`}
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              Rows per page
-            </span>
-            <Select
-              value={`${pageSize}`}
-              onValueChange={(v) => {
-                setPageSize(Number(v));
-                setPageIndex(0);
-              }}
-            >
-              <SelectTrigger className="h-8 w-[70px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent side="top">
-                {[10, 25, 50, 100].map((n) => (
-                  <SelectItem key={n} value={`${n}`}>
-                    {n}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
-            Page {pageIndex + 1} of {pageCount}
-          </div>
-
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => setPageIndex(0)}
-              disabled={pageIndex === 0}
-            >
-              <ChevronsLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
-              disabled={pageIndex === 0}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() =>
-                setPageIndex((p) => Math.min(pageCount - 1, p + 1))
-              }
-              disabled={pageIndex >= pageCount - 1}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => setPageIndex(pageCount - 1)}
-              disabled={pageIndex >= pageCount - 1}
-            >
-              <ChevronsRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Bulk-remind footer — officer/operational roles only */}
-      {bulkRemindEnabled && selected.size > 0 && (
-        <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-border bg-card px-6 py-3 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.04)]">
-          <div className="flex items-center gap-3">
-            <Mail className="size-4 text-brand-amber" />
-            <span className="text-sm">
-              {selected.size}{' '}
-              {selected.size === 1 ? countLabel : `${countLabel}s`} selected
-              {' · '}
-              <span className="font-mono text-[11px] text-muted-foreground">
-                {bulkItems.length} reminder{bulkItems.length === 1 ? '' : 's'}{' '}
-                queued
-              </span>
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelected(new Set())}
-            >
-              Clear
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setBulkOpen(true)}
-              disabled={bulkItems.length === 0}
-            >
-              <Mail className="size-3.5" />
-              Send reminders
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {bulkRemindEnabled && (
-        <BulkNotifyDialog
-          items={bulkItems}
-          module={module}
-          open={bulkOpen}
-          onOpenChange={setBulkOpen}
-          onSuccess={() => setSelected(new Set())}
-        />
-      )}
-
-      {/* Per-row reminder dialog — seeded for a single student */}
-      {bulkRemindEnabled && (
-        <BulkNotifyDialog
-          items={perRowItems}
-          module={module}
-          open={perRowOpen}
-          onOpenChange={(open) => {
-            setPerRowOpen(open);
-            if (!open) setPerRowItems([]);
-          }}
-        />
-      )}
     </Card>
   );
 }
