@@ -240,6 +240,24 @@ type PFilesProps = {
 
 type Props = AdmissionsProps | PFilesProps;
 
+// ─── facetFilterFn (verbatim copy from SisSectionsDataTable / EvaluationSectionsList /
+//     markbook/sections-data-table.tsx — exact-membership match for multi-select
+//     facets. Without this, TanStack's default 'auto' filterFn falls back to
+//     includesString, which stringifies the selected-values array and does a
+//     substring match — single-select works by coincidence, multi-select silently
+//     returns zero rows.) ─────────────────────────────────────────────────────────
+
+function facetFilterFn(
+  row: { getValue: (id: string) => unknown },
+  id: string,
+  value: unknown
+) {
+  if (!value || (Array.isArray(value) && value.length === 0)) return true;
+  return Array.isArray(value)
+    ? value.includes(row.getValue(id))
+    : row.getValue(id) === value;
+}
+
 // ─── Row-selection checkbox column ────────────────────────────────────────────
 // Prepended to buildColumns()'s output only when bulk-remind is enabled for
 // this table (mirrors the pre-migration hand-rolled checkbox column + the
@@ -321,6 +339,7 @@ function buildColumns(
           {row.original.level ?? '—'}
         </span>
       ),
+      filterFn: facetFilterFn,
     },
     {
       id: 'status4',
@@ -341,6 +360,7 @@ function buildColumns(
             : ((row.original as StudentCompleteness).section ?? '—')}
         </span>
       ),
+      filterFn: facetFilterFn,
     },
   ];
 
@@ -448,10 +468,10 @@ export function DocumentCompletenessTable(props: Props) {
   // (and drop the bulk-action footer) — see DataTableProps.selectionResetSignal.
   const [selectionResetSignal, setSelectionResetSignal] = React.useState(0);
 
-  function handleRemindOne(items: BulkNotifyItem[]) {
+  const handleRemindOne = React.useCallback((items: BulkNotifyItem[]) => {
     setPerRowItems(items);
     setPerRowOpen(true);
-  }
+  }, []);
 
   function handleSendReminders(selectedRows: CommonRow[]) {
     const out: BulkNotifyItem[] = [];
@@ -517,11 +537,13 @@ export function DocumentCompletenessTable(props: Props) {
       ? 'Pre-enrolment scope — Submitted / Ongoing Verification / Processing. Click a row to view the application.'
       : 'Per-student breakdown. Click a row to view details.';
 
-  function actionHref(enroleeNumber: string): string {
-    return module === 'admissions'
-      ? `/admissions/applications/${enroleeNumber}${querySuffix}`
-      : `/p-files/${enroleeNumber}${querySuffix}`;
-  }
+  const actionHref = React.useCallback(
+    (enroleeNumber: string): string =>
+      module === 'admissions'
+        ? `/admissions/applications/${enroleeNumber}${querySuffix}`
+        : `/p-files/${enroleeNumber}${querySuffix}`,
+    [module, querySuffix]
+  );
 
   const columns = React.useMemo(
     () =>
@@ -533,7 +555,14 @@ export function DocumentCompletenessTable(props: Props) {
         handleRemindOne,
         bulkRemindWindowDays
       ),
-    [module, slotHeaders, actionHref, bulkRemindEnabled, bulkRemindWindowDays]
+    [
+      module,
+      slotHeaders,
+      actionHref,
+      bulkRemindEnabled,
+      handleRemindOne,
+      bulkRemindWindowDays,
+    ]
   );
 
   const statusOptions: { value: string; label: string }[] =
