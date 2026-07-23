@@ -124,7 +124,7 @@ Or by pasting each file from `supabase/migrations/` into the Supabase SQL editor
 Supabase dashboard → Authentication → Users → invite by email. After the user sets a password, open their row and set `app_metadata` to:
 
 ```json
-{ "role": "registrar" }
+{ "role": "academic_coordinator" }
 ```
 
 (Or `teacher` / `admin` / `superadmin`.)
