@@ -8,8 +8,10 @@ export type StaffFamily = {
 };
 
 // Display-only grouping (KD #155) — not a schema/access concept. Each role
-// appears in exactly one family; order within a family matches ROLES'
-// declaration order in lib/auth/roles.ts.
+// appears in exactly one family; role order within each family matches the
+// approved mockup (not necessarily ROLES' declaration order in
+// lib/auth/roles.ts — e.g. 'admissions' is listed before 'p_file_officer'
+// here to read naturally against the "Admissions & Enrollment" label).
 export function computeStaffFamilies(
   accounts: { role: Role | null }[]
 ): StaffFamily[] {
