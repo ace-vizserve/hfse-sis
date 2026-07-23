@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -55,7 +56,7 @@ import { FacetDropdown } from './facet-dropdown';
 import { filterRows } from './filter-rows';
 import { FilterChip } from './filter-chip';
 import { DataTablePagination } from './pagination';
-import type { DataTableProps, FacetConfig } from './types';
+import type { DataTableProps, ExpandableConfig, FacetConfig } from './types';
 import { useUrlState } from './use-url-state';
 
 export { RowActionsMenu } from './row-actions-menu';
@@ -107,6 +108,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     hidePagination = false,
     selection,
     selectionResetSignal,
+    expandable,
     csv,
     url = { enabled: false },
     emptyState,
@@ -144,6 +146,12 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     Object.entries(initial.facets ?? {}).map(([id, value]) => ({ id, value }))
   );
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  // Tracks which group KEYS are collapsed — inverted (vs. tracking expanded
+  // keys) so a freshly-seen group defaults to expanded with zero entries,
+  // matching the "declutter via one summary line, not by hiding" intent.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
+    new Set()
+  );
   const [exportOpen, setExportOpen] = useState(false);
   // Gates mounting the (dynamically-imported) export sheet — stays false
   // until the user opens it once, then stays true so closing/reopening
@@ -644,6 +652,63 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
                     />
                   </TableCell>
                 </TableRow>
+              ) : expandable?.enabled ? (
+                (() => {
+                  const rows = table.getRowModel().rows;
+                  const groups: { key: string; rows: typeof rows }[] = [];
+                  const indexByKey = new Map<string, number>();
+                  for (const r of rows) {
+                    const key = expandable.groupBy(r.original);
+                    let idx = indexByKey.get(key);
+                    if (idx === undefined) {
+                      idx = groups.length;
+                      indexByKey.set(key, idx);
+                      groups.push({ key, rows: [] });
+                    }
+                    groups[idx].rows.push(r);
+                  }
+                  return groups.map((g) => {
+                    const isExpanded = !collapsedGroups.has(g.key);
+                    const toggle = () =>
+                      setCollapsedGroups((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(g.key)) next.delete(g.key);
+                        else next.add(g.key);
+                        return next;
+                      });
+                    return (
+                      <Fragment key={g.key}>
+                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableCell colSpan={columns.length} className="p-0">
+                            {expandable.renderGroupHeader({
+                              key: g.key,
+                              rows: g.rows.map((r) => r.original),
+                              isExpanded,
+                              toggle,
+                            })}
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded &&
+                          g.rows.map((r) => (
+                            <TableRow
+                              key={r.id}
+                              className="group"
+                              data-state={r.getIsSelected() && 'selected'}
+                            >
+                              {r.getVisibleCells().map((c) => (
+                                <TableCell key={c.id}>
+                                  {flexRender(
+                                    c.column.columnDef.cell,
+                                    c.getContext()
+                                  )}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+                      </Fragment>
+                    );
+                  });
+                })()
               ) : (
                 table.getRowModel().rows.map((r) => (
                   <TableRow

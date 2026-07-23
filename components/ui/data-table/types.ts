@@ -125,6 +125,26 @@ export type SelectionConfig<TRow> = {
   enableRowSelection?: (row: TRow) => boolean;
 };
 
+export type ExpandableConfig<TRow> = {
+  enabled: boolean;
+  /** Rows sharing the same key are grouped under one collapsible parent
+   *  row. Grouping is applied to the CURRENT PAGE's rows only (after
+   *  filter/sort/pagination) — a group can't span two pages. Acceptable
+   *  for the small internal-triage-queue volumes this targets; revisit
+   *  with group-aware pagination if a future consumer needs it. */
+  groupBy: (row: TRow) => string;
+  /** Renders the parent row's content — spans the full column width (a
+   *  single `colSpan={columns.length}` cell). Receives the group's member
+   *  rows in their already-filtered/sorted order, current expand state,
+   *  and a toggle callback. All groups start expanded by default. */
+  renderGroupHeader: (group: {
+    key: string;
+    rows: TRow[];
+    isExpanded: boolean;
+    toggle: () => void;
+  }) => import('react').ReactNode;
+};
+
 export type DataTableProps<TRow> = {
   data: TRow[];
   columns: ColumnDef<TRow>[];
@@ -159,6 +179,7 @@ export type DataTableProps<TRow> = {
   /** Changing this value (e.g. an incrementing counter) clears the current
    *  row selection. Use after a bulk action completes to drop the footer. */
   selectionResetSignal?: number;
+  expandable?: ExpandableConfig<TRow>;
   csv?: CsvConfig<TRow>;
   url?: UrlStateConfig;
 
