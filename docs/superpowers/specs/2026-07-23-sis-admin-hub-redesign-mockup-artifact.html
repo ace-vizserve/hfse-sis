@@ -24,15 +24,18 @@
     --brand-tile:
       inset 0 1px 0 0 hsl(0 0% 100% / 0.18),
       0 6px 16px -6px hsl(224 60% 20% / 0.5);
-    --brand-tile-mint: inset 0 1px 0 0 hsl(0 0% 100% / 0.35),
+    --brand-tile-mint:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.35),
       0 6px 16px -6px hsl(160 60% 40% / 0.4);
-    --brand-tile-amber: inset 0 1px 0 0 hsl(0 0% 100% / 0.25),
+    --brand-tile-amber:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.25),
       0 6px 16px -6px hsl(25 80% 40% / 0.45);
     --f-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-    --f-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia,
+    --f-serif:
+      'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia,
       'Times New Roman', serif;
-    --f-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas,
-      monospace;
+    --f-mono:
+      ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
 
     font-family: var(--f-sans);
     color: var(--ink);
@@ -116,7 +119,11 @@
     height: 20px;
     padding: 0 8px;
     border-radius: 999px;
-    background: linear-gradient(180deg, rgba(52, 211, 153, 0.28), rgba(52, 211, 153, 0.12));
+    background: linear-gradient(
+      180deg,
+      rgba(52, 211, 153, 0.28),
+      rgba(52, 211, 153, 0.12)
+    );
     border: 1px solid rgba(52, 211, 153, 0.55);
     color: #0f5132;
     font-family: var(--f-mono);
@@ -715,7 +722,11 @@
     font-size: 10.5px;
     font-weight: 700;
     border: 1px solid rgba(52, 211, 153, 0.6);
-    background: linear-gradient(180deg, rgba(52, 211, 153, 0.32), rgba(52, 211, 153, 0.12));
+    background: linear-gradient(
+      180deg,
+      rgba(52, 211, 153, 0.32),
+      rgba(52, 211, 153, 0.12)
+    );
     color: #0f5132;
   }
   .ahm .stat .sub {
@@ -1135,12 +1146,12 @@
         Everything the year band, stat row, needs-attention, coming-up, and
         quick actions already do is kept as-is below. Three new sections are
         added for reaction: <b>School Snapshot</b> (whole-school context: level
-        headcounts, staff, section capacity, current term), a <b>Module
-        overview</b> row (one live number per module — the cross-module glance
-        "admins live here" needs), and a <b>Recent activity</b> feed (pulled
-        from the governance data that already exists on <span class="mono"
-          >/sis/audit-log</span
-        >, just not surfaced here).
+        headcounts, staff, section capacity, current term), a
+        <b>Module overview</b> row (one live number per module — the
+        cross-module glance "admins live here" needs), and a
+        <b>Recent activity</b> feed (pulled from the governance data that
+        already exists on <span class="mono">/sis/audit-log</span>, just not
+        surfaced here).
       </p>
       <p>
         This is a kitchen-sink draft for divergence — tell me what stays, what
@@ -1176,13 +1187,53 @@
           <div class="health-head">
             <div>
               <div class="cap">System · Readiness</div>
-              <div class="ttl"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg> All systems ready</div>
+              <div class="ttl">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--mint)"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M21.801 10A10 10 0 1 1 17 3.335" />
+                  <path d="m9 11 3 3L22 4" />
+                </svg>
+                All systems ready
+              </div>
             </div>
-            <span class="mono" style="font-size: 10px; color: var(--ink-4); text-transform: uppercase; letter-spacing: 0.12em;">Last admin action 12m ago</span>
+            <span
+              class="mono"
+              style="
+                font-size: 10px;
+                color: var(--ink-4);
+                text-transform: uppercase;
+                letter-spacing: 0.12em;
+              "
+              >Last admin action 12m ago</span
+            >
           </div>
           <div class="health-body">
             <div class="health-cell">
-              <div class="tile-sm tile-indigo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg></div>
+              <div class="tile-sm tile-indigo">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M8 2v4" />
+                  <path d="M16 2v4" />
+                  <rect width="18" height="18" x="3" y="4" rx="2" />
+                  <path d="M3 10h18" />
+                </svg>
+              </div>
               <div>
                 <div class="lab">Academic year</div>
                 <div class="v">AY2026</div>
@@ -1190,36 +1241,82 @@
               </div>
             </div>
             <div class="health-cell">
-              <div class="tile-sm tile-indigo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></div>
+              <div class="tile-sm tile-indigo">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+                  />
+                  <path d="m9 12 2 2 4-4" />
+                </svg>
+              </div>
               <div>
                 <div class="lab">Approvers</div>
                 <div class="v">2 flows</div>
-                <div class="sub">Grade Change: 3 assigned · Enrolment: 2 assigned</div>
+                <div class="sub">
+                  Grade Change: 3 assigned · Enrolment: 2 assigned
+                </div>
               </div>
             </div>
             <div class="health-cell">
-              <div class="tile-sm tile-indigo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></div>
+              <div class="tile-sm tile-indigo">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M5 12h14" />
+                  <path d="m12 5 7 7-7 7" />
+                </svg>
+              </div>
               <div>
                 <div class="lab">Manage</div>
-                <div class="v" style="color: var(--indigo-deep);">Approver assignments</div>
+                <div class="v" style="color: var(--indigo-deep)">
+                  Approver assignments
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Year band (kept) -->
-        <div class="yearband" style="position: relative;">
+        <div class="yearband" style="position: relative">
           <div class="frac">8<small> / 9 ready</small></div>
           <div class="mid">
-            <p class="line"><b>Almost there.</b> <span>Grading sheets still needs attention.</span></p>
+            <p class="line">
+              <b>Almost there.</b>
+              <span>Grading sheets still needs attention.</span>
+            </p>
             <div class="segs">
-              <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span
+              ><span></span><span></span><span></span>
               <span class="pending"></span>
             </div>
           </div>
-          <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0;">
+          <div
+            style="
+              display: flex;
+              flex-direction: column;
+              align-items: flex-end;
+              gap: 5px;
+              flex-shrink: 0;
+            "
+          >
             <span class="new-tag">NEW</span>
-            <div style="display: flex; gap: 8px;">
+            <div style="display: flex; gap: 8px">
               <a class="btn btn-outline">Summary</a>
               <a class="btn btn-primary">Finish setup →</a>
             </div>
@@ -1239,69 +1336,207 @@
               <a href="#">Full checklist →</a>
             </div>
 
-          <div class="step-divider"><span class="cap">Core setup</span></div>
-          <div class="step-row">
-            <div class="ring" style="background: conic-gradient(var(--mint) 0% 100%, var(--secondary) 100% 100%);"><span class="pct">✓</span></div>
-            <div class="step-lab"><div class="t1">Academic year &amp; term dates</div><div class="t2">4 of 4 terms dated</div></div>
-            <span class="step-badge done">Ready</span>
-          </div>
-          <div class="step-row">
-            <div class="ring" style="background: conic-gradient(var(--mint) 0% 100%, var(--secondary) 100% 100%);"><span class="pct">✓</span></div>
-            <div class="step-lab"><div class="t1">School calendar</div><div class="t2">4 of 4 terms covered</div></div>
-            <span class="step-badge done">Ready</span>
-          </div>
+            <div class="step-divider"><span class="cap">Core setup</span></div>
+            <div class="step-row">
+              <div
+                class="ring"
+                style="
+                  background: conic-gradient(
+                    var(--mint) 0% 100%,
+                    var(--secondary) 100% 100%
+                  );
+                "
+              >
+                <span class="pct">✓</span>
+              </div>
+              <div class="step-lab">
+                <div class="t1">Academic year &amp; term dates</div>
+                <div class="t2">4 of 4 terms dated</div>
+              </div>
+              <span class="step-badge done">Ready</span>
+            </div>
+            <div class="step-row">
+              <div
+                class="ring"
+                style="
+                  background: conic-gradient(
+                    var(--mint) 0% 100%,
+                    var(--secondary) 100% 100%
+                  );
+                "
+              >
+                <span class="pct">✓</span>
+              </div>
+              <div class="step-lab">
+                <div class="t1">School calendar</div>
+                <div class="t2">4 of 4 terms covered</div>
+              </div>
+              <span class="step-badge done">Ready</span>
+            </div>
 
-          <div class="step-divider"><span class="cap">Grading &amp; staffing</span></div>
-          <div class="step-row">
-            <div class="ring" style="background: conic-gradient(var(--mint) 0% 100%, var(--secondary) 100% 100%);"><span class="pct">✓</span></div>
-            <div class="step-lab"><div class="t1">Sections</div><div class="t2">10 of 10 levels</div></div>
-            <span class="step-badge done">Ready</span>
-          </div>
-          <div class="step-row">
-            <div class="ring" style="background: conic-gradient(var(--mint) 0% 100%, var(--secondary) 100% 100%);"><span class="pct">✓</span></div>
-            <div class="step-lab"><div class="t1">Subjects attached</div><div class="t2">10 of 10 levels</div></div>
-            <span class="step-badge done">Ready</span>
-          </div>
-          <div class="step-row">
-            <div class="ring" style="background: conic-gradient(var(--mint) 0% 100%, var(--secondary) 100% 100%);"><span class="pct">✓</span></div>
-            <div class="step-lab"><div class="t1">Form advisers</div><div class="t2">24 of 24 sections</div></div>
-            <span class="step-badge done">Ready</span>
-          </div>
-          <div class="step-row">
-            <div class="ring" style="background: conic-gradient(var(--mint) 0% 100%, var(--secondary) 100% 100%);"><span class="pct">✓</span></div>
-            <div class="step-lab"><div class="t1">Section subjects</div><div class="t2">24 of 24 sections</div></div>
-            <span class="step-badge done">Ready</span>
-          </div>
-          <div class="step-row">
-            <div class="ring" style="background: conic-gradient(var(--amber) 0% 85%, var(--secondary) 85% 100%);"><span class="pct">85%</span></div>
-            <div class="step-lab"><div class="t1">Grading sheets</div><div class="t2">142 of 168 sheets · 26 missing across 4 sections</div></div>
-            <span class="step-badge partial">142/168</span>
-          </div>
+            <div class="step-divider">
+              <span class="cap">Grading &amp; staffing</span>
+            </div>
+            <div class="step-row">
+              <div
+                class="ring"
+                style="
+                  background: conic-gradient(
+                    var(--mint) 0% 100%,
+                    var(--secondary) 100% 100%
+                  );
+                "
+              >
+                <span class="pct">✓</span>
+              </div>
+              <div class="step-lab">
+                <div class="t1">Sections</div>
+                <div class="t2">10 of 10 levels</div>
+              </div>
+              <span class="step-badge done">Ready</span>
+            </div>
+            <div class="step-row">
+              <div
+                class="ring"
+                style="
+                  background: conic-gradient(
+                    var(--mint) 0% 100%,
+                    var(--secondary) 100% 100%
+                  );
+                "
+              >
+                <span class="pct">✓</span>
+              </div>
+              <div class="step-lab">
+                <div class="t1">Subjects attached</div>
+                <div class="t2">10 of 10 levels</div>
+              </div>
+              <span class="step-badge done">Ready</span>
+            </div>
+            <div class="step-row">
+              <div
+                class="ring"
+                style="
+                  background: conic-gradient(
+                    var(--mint) 0% 100%,
+                    var(--secondary) 100% 100%
+                  );
+                "
+              >
+                <span class="pct">✓</span>
+              </div>
+              <div class="step-lab">
+                <div class="t1">Form advisers</div>
+                <div class="t2">24 of 24 sections</div>
+              </div>
+              <span class="step-badge done">Ready</span>
+            </div>
+            <div class="step-row">
+              <div
+                class="ring"
+                style="
+                  background: conic-gradient(
+                    var(--mint) 0% 100%,
+                    var(--secondary) 100% 100%
+                  );
+                "
+              >
+                <span class="pct">✓</span>
+              </div>
+              <div class="step-lab">
+                <div class="t1">Section subjects</div>
+                <div class="t2">24 of 24 sections</div>
+              </div>
+              <span class="step-badge done">Ready</span>
+            </div>
+            <div class="step-row">
+              <div
+                class="ring"
+                style="
+                  background: conic-gradient(
+                    var(--amber) 0% 85%,
+                    var(--secondary) 85% 100%
+                  );
+                "
+              >
+                <span class="pct">85%</span>
+              </div>
+              <div class="step-lab">
+                <div class="t1">Grading sheets</div>
+                <div class="t2">
+                  142 of 168 sheets · 26 missing across 4 sections
+                </div>
+              </div>
+              <span class="step-badge partial">142/168</span>
+            </div>
 
-          <div class="step-divider"><span class="cap">Branding &amp; admissions</span></div>
-          <div class="step-row">
-            <div class="ring" style="background: conic-gradient(var(--mint) 0% 100%, var(--secondary) 100% 100%);"><span class="pct">✓</span></div>
-            <div class="step-lab"><div class="t1">Virtue themes</div><div class="t2">3 of 3 terms (T1–T3)</div></div>
-            <span class="step-badge done">Ready</span>
-          </div>
-          <div class="step-row">
-            <div class="ring" style="background: conic-gradient(var(--mint) 0% 100%, var(--secondary) 100% 100%);"><span class="pct">✓</span></div>
-            <div class="step-lab"><div class="t1">Report-card letterhead</div><div class="t2">School name &amp; address set</div></div>
-            <span class="step-badge done">Ready</span>
-          </div>
+            <div class="step-divider">
+              <span class="cap">Branding &amp; admissions</span>
+            </div>
+            <div class="step-row">
+              <div
+                class="ring"
+                style="
+                  background: conic-gradient(
+                    var(--mint) 0% 100%,
+                    var(--secondary) 100% 100%
+                  );
+                "
+              >
+                <span class="pct">✓</span>
+              </div>
+              <div class="step-lab">
+                <div class="t1">Virtue themes</div>
+                <div class="t2">3 of 3 terms (T1–T3)</div>
+              </div>
+              <span class="step-badge done">Ready</span>
+            </div>
+            <div class="step-row">
+              <div
+                class="ring"
+                style="
+                  background: conic-gradient(
+                    var(--mint) 0% 100%,
+                    var(--secondary) 100% 100%
+                  );
+                "
+              >
+                <span class="pct">✓</span>
+              </div>
+              <div class="step-lab">
+                <div class="t1">Report-card letterhead</div>
+                <div class="t2">School name &amp; address set</div>
+              </div>
+              <span class="step-badge done">Ready</span>
+            </div>
 
-          <div class="step-divider"><span class="cap">Optional</span></div>
-          <div class="step-row optional">
-            <div class="ring" style="background: conic-gradient(var(--ink-5) 0% 4%, var(--secondary) 4% 100%);"><span class="pct">–</span></div>
-            <div class="step-lab"><div class="t1">Application window</div><div class="t2">Not open — early-bird for next AY</div></div>
-            <span class="step-badge not-started">Optional</span>
-          </div>
-          <div class="popover-hint">Esc or click away to close</div>
+            <div class="step-divider"><span class="cap">Optional</span></div>
+            <div class="step-row optional">
+              <div
+                class="ring"
+                style="
+                  background: conic-gradient(
+                    var(--ink-5) 0% 4%,
+                    var(--secondary) 4% 100%
+                  );
+                "
+              >
+                <span class="pct">–</span>
+              </div>
+              <div class="step-lab">
+                <div class="t1">Application window</div>
+                <div class="t2">Not open — early-bird for next AY</div>
+              </div>
+              <span class="step-badge not-started">Optional</span>
+            </div>
+            <div class="popover-hint">Esc or click away to close</div>
           </div>
         </div>
 
         <!-- NEW: School Snapshot -->
-        <div class="section-tag"><span class="new-tag">NEW</span> School Snapshot</div>
+        <div class="section-tag">
+          <span class="new-tag">NEW</span> School Snapshot
+        </div>
         <div class="snapshot">
           <div class="snapshot-head">
             <div class="ttl">The school, at a glance</div>
@@ -1310,80 +1545,284 @@
             <div class="snap-col">
               <div class="lab">Enrolled by level</div>
               <div class="level-rows">
-                <div class="level-row"><span class="lvl">P1</span><div class="bar-track"><div class="bar-fill" style="width: 84%"></div></div><span class="n">42</span></div>
-                <div class="level-row"><span class="lvl">P2</span><div class="bar-track"><div class="bar-fill" style="width: 78%"></div></div><span class="n">39</span></div>
-                <div class="level-row"><span class="lvl">P3</span><div class="bar-track"><div class="bar-fill" style="width: 88%"></div></div><span class="n">44</span></div>
-                <div class="level-row"><span class="lvl">P4</span><div class="bar-track"><div class="bar-fill" style="width: 80%"></div></div><span class="n">40</span></div>
-                <div class="level-row"><span class="lvl">P5</span><div class="bar-track"><div class="bar-fill" style="width: 70%"></div></div><span class="n">35</span></div>
-                <div class="level-row"><span class="lvl">P6</span><div class="bar-track"><div class="bar-fill" style="width: 62%"></div></div><span class="n">31</span></div>
-                <div class="level-row"><span class="lvl">S1</span><div class="bar-track"><div class="bar-fill sec" style="width: 56%"></div></div><span class="n">28</span></div>
-                <div class="level-row"><span class="lvl">S2</span><div class="bar-track"><div class="bar-fill sec" style="width: 52%"></div></div><span class="n">26</span></div>
-                <div class="level-row"><span class="lvl">S3</span><div class="bar-track"><div class="bar-fill sec" style="width: 48%"></div></div><span class="n">24</span></div>
-                <div class="level-row"><span class="lvl">S4</span><div class="bar-track"><div class="bar-fill sec" style="width: 42%"></div></div><span class="n">21</span></div>
+                <div class="level-row">
+                  <span class="lvl">P1</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: 84%"></div>
+                  </div>
+                  <span class="n">42</span>
+                </div>
+                <div class="level-row">
+                  <span class="lvl">P2</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: 78%"></div>
+                  </div>
+                  <span class="n">39</span>
+                </div>
+                <div class="level-row">
+                  <span class="lvl">P3</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: 88%"></div>
+                  </div>
+                  <span class="n">44</span>
+                </div>
+                <div class="level-row">
+                  <span class="lvl">P4</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: 80%"></div>
+                  </div>
+                  <span class="n">40</span>
+                </div>
+                <div class="level-row">
+                  <span class="lvl">P5</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: 70%"></div>
+                  </div>
+                  <span class="n">35</span>
+                </div>
+                <div class="level-row">
+                  <span class="lvl">P6</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: 62%"></div>
+                  </div>
+                  <span class="n">31</span>
+                </div>
+                <div class="level-row">
+                  <span class="lvl">S1</span>
+                  <div class="bar-track">
+                    <div class="bar-fill sec" style="width: 56%"></div>
+                  </div>
+                  <span class="n">28</span>
+                </div>
+                <div class="level-row">
+                  <span class="lvl">S2</span>
+                  <div class="bar-track">
+                    <div class="bar-fill sec" style="width: 52%"></div>
+                  </div>
+                  <span class="n">26</span>
+                </div>
+                <div class="level-row">
+                  <span class="lvl">S3</span>
+                  <div class="bar-track">
+                    <div class="bar-fill sec" style="width: 48%"></div>
+                  </div>
+                  <span class="n">24</span>
+                </div>
+                <div class="level-row">
+                  <span class="lvl">S4</span>
+                  <div class="bar-track">
+                    <div class="bar-fill sec" style="width: 42%"></div>
+                  </div>
+                  <span class="n">21</span>
+                </div>
               </div>
             </div>
             <div class="snap-col">
               <div class="lab">Staff</div>
               <div class="big-stat tnum">41</div>
               <div class="big-stat-sub">Active accounts</div>
-              <div class="staff-rows" style="margin-top: 14px;">
-                <div class="staff-row"><span class="role">Teachers</span><span class="n tnum">34</span></div>
-                <div class="staff-row"><span class="role">Registrar</span><span class="n tnum">1</span></div>
-                <div class="staff-row"><span class="role">School admin</span><span class="n tnum">4</span></div>
-                <div class="staff-row"><span class="role">Superadmin</span><span class="n tnum">2</span></div>
+              <div class="staff-rows" style="margin-top: 14px">
+                <div class="staff-row">
+                  <span class="role">Teachers</span
+                  ><span class="n tnum">34</span>
+                </div>
+                <div class="staff-row">
+                  <span class="role">Registrar</span
+                  ><span class="n tnum">1</span>
+                </div>
+                <div class="staff-row">
+                  <span class="role">School admin</span
+                  ><span class="n tnum">4</span>
+                </div>
+                <div class="staff-row">
+                  <span class="role">Superadmin</span
+                  ><span class="n tnum">2</span>
+                </div>
               </div>
             </div>
             <div class="snap-col">
               <div class="lab">Sections</div>
               <div class="big-stat tnum">24</div>
               <div class="big-stat-sub">Active this year</div>
-              <p style="font-size: 11.5px; color: var(--ink-4); margin-top: 12px;">Avg. 13.8 students / section</p>
+              <p
+                style="font-size: 11.5px; color: var(--ink-4); margin-top: 12px"
+              >
+                Avg. 13.8 students / section
+              </p>
               <div class="util-track"><div class="util-fill"></div></div>
-              <p style="font-size: 10.5px; color: var(--ink-4); margin-top: 6px;">68% of 50-student cap, avg.</p>
+              <p
+                style="font-size: 10.5px; color: var(--ink-4); margin-top: 6px"
+              >
+                68% of 50-student cap, avg.
+              </p>
             </div>
             <div class="snap-col">
               <div class="lab">Current term</div>
-              <div class="big-stat" style="font-size: 22px;">Term 2</div>
-              <div class="term-pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg> 18 days left</div>
-              <p style="font-size: 11.5px; color: var(--ink-4); margin-top: 12px;">Feb 16 – Jun 6, 2026</p>
+              <div class="big-stat" style="font-size: 22px">Term 2</div>
+              <div class="term-pill">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M8 2v4" />
+                  <path d="M16 2v4" />
+                  <rect width="18" height="18" x="3" y="4" rx="2" />
+                  <path d="M3 10h18" />
+                </svg>
+                18 days left
+              </div>
+              <p
+                style="font-size: 11.5px; color: var(--ink-4); margin-top: 12px"
+              >
+                Feb 16 – Jun 6, 2026
+              </p>
             </div>
           </div>
         </div>
 
         <!-- Stat row (kept, deltas new) -->
-        <div class="section-tag">Stat row <span class="new-tag" style="margin-left: 2px;">+ deltas NEW</span></div>
+        <div class="section-tag">
+          Stat row
+          <span class="new-tag" style="margin-left: 2px">+ deltas NEW</span>
+        </div>
         <div class="grid4">
           <div class="stat">
             <div class="lab">Enrolled students</div>
             <div class="val tnum">330</div>
-            <div class="tile tile-indigo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-            <div class="delta"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg> +12 vs AY2025</div>
+            <div class="tile tile-indigo">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </div>
+            <div class="delta">
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 19V5" />
+                <path d="m5 12 7-7 7 7" />
+              </svg>
+              +12 vs AY2025
+            </div>
           </div>
           <div class="stat">
             <div class="lab">Active sections</div>
             <div class="val tnum">24</div>
-            <div class="tile tile-indigo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg></div>
+            <div class="tile tile-indigo">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect width="7" height="7" x="3" y="3" rx="1" />
+                <rect width="7" height="7" x="14" y="3" rx="1" />
+                <rect width="7" height="7" x="14" y="14" rx="1" />
+                <rect width="7" height="7" x="3" y="14" rx="1" />
+              </svg>
+            </div>
             <div class="sub">Across 10 levels</div>
           </div>
           <div class="stat">
             <div class="lab">Grade changes waiting</div>
             <div class="val tnum">3</div>
-            <div class="tile tile-amber"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg></div>
+            <div class="tile tile-amber">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="m16 3 4 4-4 4" />
+                <path d="M20 7H4" />
+                <path d="m8 21-4-4 4-4" />
+                <path d="M4 17h16" />
+              </svg>
+            </div>
             <div class="sub">Awaiting approval</div>
           </div>
           <div class="stat">
             <div class="lab">Report cards open</div>
             <div class="val tnum">8</div>
-            <div class="tile tile-mint"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></div>
+            <div class="tile tile-mint">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 7v14" />
+                <path
+                  d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
+                />
+              </svg>
+            </div>
             <div class="sub">Open to parents now</div>
           </div>
         </div>
 
         <!-- NEW: Module overview -->
-        <div class="section-tag"><span class="new-tag">NEW</span> Module overview</div>
+        <div class="section-tag">
+          <span class="new-tag">NEW</span> Module overview
+        </div>
         <div class="grid6">
           <div class="mcard">
-            <div class="tile-sm tile-indigo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></div>
+            <div class="tile-sm tile-indigo">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"
+                />
+                <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+                <path d="M10 9H8" />
+                <path d="M16 13H8" />
+                <path d="M16 17H8" />
+              </svg>
+            </div>
             <div>
               <div class="m-lab">Admissions</div>
               <div class="m-val tnum">12</div>
@@ -1391,7 +1830,23 @@
             </div>
           </div>
           <div class="mcard">
-            <div class="tile-sm tile-indigo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+            <div class="tile-sm tile-indigo">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </div>
             <div>
               <div class="m-lab">Records</div>
               <div class="m-val tnum">330</div>
@@ -1399,7 +1854,21 @@
             </div>
           </div>
           <div class="mcard">
-            <div class="tile-sm tile-indigo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg></div>
+            <div class="tile-sm tile-indigo">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M21.801 10A10 10 0 1 1 17 3.335" />
+                <path d="m9 11 3 3L22 4" />
+              </svg>
+            </div>
             <div>
               <div class="m-lab">Attendance</div>
               <div class="m-val tnum">94.2%</div>
@@ -1407,7 +1876,23 @@
             </div>
           </div>
           <div class="mcard">
-            <div class="tile-sm tile-indigo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></div>
+            <div class="tile-sm tile-indigo">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 7v14" />
+                <path
+                  d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
+                />
+              </svg>
+            </div>
             <div>
               <div class="m-lab">Markbook</div>
               <div class="m-val tnum">82%</div>
@@ -1415,7 +1900,22 @@
             </div>
           </div>
           <div class="mcard">
-            <div class="tile-sm tile-indigo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+            <div class="tile-sm tile-indigo">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                />
+              </svg>
+            </div>
             <div>
               <div class="m-lab">Evaluation</div>
               <div class="m-val tnum">91%</div>
@@ -1423,7 +1923,25 @@
             </div>
           </div>
           <div class="mcard">
-            <div class="tile-sm tile-amber"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+            <div class="tile-sm tile-amber">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"
+                />
+                <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+                <path d="M12 9v4" />
+                <path d="M12 17h.01" />
+              </svg>
+            </div>
             <div>
               <div class="m-lab">P-Files</div>
               <div class="m-val tnum">14</div>
@@ -1438,21 +1956,48 @@
           <div class="panel">
             <div class="panel-head">
               <div class="cap">3 items</div>
-              <div class="ttl"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--destructive)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> Needs attention</div>
+              <div class="ttl">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--destructive)"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"
+                  />
+                  <path d="M12 9v4" />
+                  <path d="M12 17h.01" />
+                </svg>
+                Needs attention
+              </div>
             </div>
             <div class="row">
               <span class="dot d"></span>
-              <div class="txt"><div class="t1">Obedience (P1) has no form adviser</div><div class="t2">Blocks report-card publish</div></div>
+              <div class="txt">
+                <div class="t1">Obedience (P1) has no form adviser</div>
+                <div class="t2">Blocks report-card publish</div>
+              </div>
               <span class="meta">→</span>
             </div>
             <div class="row">
               <span class="dot a"></span>
-              <div class="txt"><div class="t1">Grade Change flow has only 1 approver</div><div class="t2">Needs a second approver</div></div>
+              <div class="txt">
+                <div class="t1">Grade Change flow has only 1 approver</div>
+                <div class="t2">Needs a second approver</div>
+              </div>
               <span class="meta">→</span>
             </div>
             <div class="row">
               <span class="dot a"></span>
-              <div class="txt"><div class="t1">S3 has no subjects configured</div><div class="t2">Blocks grading sheets</div></div>
+              <div class="txt">
+                <div class="t1">S3 has no subjects configured</div>
+                <div class="t2">Blocks grading sheets</div>
+              </div>
               <span class="meta">→</span>
             </div>
             <div class="panel-pad-bottom"></div>
@@ -1460,22 +2005,51 @@
           <div class="panel">
             <div class="panel-head">
               <div class="cap">Next 14 days</div>
-              <div class="ttl"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg> Coming up</div>
+              <div class="ttl">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M8 2v4" />
+                  <path d="M16 2v4" />
+                  <rect width="18" height="18" x="3" y="4" rx="2" />
+                  <path d="M3 10h18" />
+                </svg>
+                Coming up
+              </div>
             </div>
             <div class="evt-row">
-              <div class="datebox"><span class="mo">Feb</span><span class="d">24</span></div>
-              <div class="txt"><div class="t1">Term 2 Exam Week begins</div><div class="t2">All levels</div></div>
+              <div class="datebox">
+                <span class="mo">Feb</span><span class="d">24</span>
+              </div>
+              <div class="txt">
+                <div class="t1">Term 2 Exam Week begins</div>
+                <div class="t2">All levels</div>
+              </div>
             </div>
             <div class="evt-row">
-              <div class="datebox"><span class="mo">Mar</span><span class="d">02</span></div>
-              <div class="txt"><div class="t1">Parent-Teacher Conference</div><div class="t2">Secondary</div></div>
+              <div class="datebox">
+                <span class="mo">Mar</span><span class="d">02</span>
+              </div>
+              <div class="txt">
+                <div class="t1">Parent-Teacher Conference</div>
+                <div class="t2">Secondary</div>
+              </div>
             </div>
             <div class="panel-pad-bottom"></div>
           </div>
         </div>
 
         <!-- NEW: Recent activity -->
-        <div class="section-tag"><span class="new-tag">NEW</span> Recent activity</div>
+        <div class="section-tag">
+          <span class="new-tag">NEW</span> Recent activity
+        </div>
         <div class="activity">
           <div class="activity-head">
             <div>
@@ -1485,27 +2059,37 @@
           </div>
           <div class="act-row">
             <div class="who">AV</div>
-            <div class="txt"><b>Amier V.</b> updated School Config — CEO signature name</div>
+            <div class="txt">
+              <b>Amier V.</b> updated School Config — CEO signature name
+            </div>
             <div class="when">2h ago</div>
           </div>
           <div class="act-row">
             <div class="who">CT</div>
-            <div class="txt"><b>Chandana T.</b> applied the class template to AY2027</div>
+            <div class="txt">
+              <b>Chandana T.</b> applied the class template to AY2027
+            </div>
             <div class="when">5h ago</div>
           </div>
           <div class="act-row">
             <div class="who">AV</div>
-            <div class="txt"><b>Amier V.</b> assigned an approver to the Grade Change flow</div>
+            <div class="txt">
+              <b>Amier V.</b> assigned an approver to the Grade Change flow
+            </div>
             <div class="when">Yesterday</div>
           </div>
           <div class="act-row">
             <div class="who">JD</div>
-            <div class="txt"><b>Joann D.</b> created a new registrar account</div>
+            <div class="txt">
+              <b>Joann D.</b> created a new registrar account
+            </div>
             <div class="when">2 days ago</div>
           </div>
           <div class="act-row">
             <div class="who">AV</div>
-            <div class="txt"><b>Amier V.</b> switched the active academic year to AY2026</div>
+            <div class="txt">
+              <b>Amier V.</b> switched the active academic year to AY2026
+            </div>
             <div class="when">3 days ago</div>
           </div>
           <div class="activity-foot"><a href="#">View full audit log →</a></div>
@@ -1517,34 +2101,98 @@
              (top actors, top actions, auth events) because these two are
              genuinely cross-module — no single module dashboard can show
              "activity by module" or "system-wide activity trend." -->
-        <div class="section-tag"><span class="new-tag">NEW</span> Activity &amp; health</div>
-        <div class="grid2" style="grid-template-columns: 3fr 2fr;">
+        <div class="section-tag">
+          <span class="new-tag">NEW</span> Activity &amp; health
+        </div>
+        <div class="grid2" style="grid-template-columns: 3fr 2fr">
           <div class="chart-panel">
             <div class="chart-panel-head">
               <div>
                 <div class="cap">Last 14 days</div>
                 <div class="ttl">System activity trend</div>
               </div>
-              <div class="chart-panel-tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
+              <div class="chart-panel-tile">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+                  <polyline points="16 7 22 7 22 13" />
+                </svg>
+              </div>
             </div>
             <div class="chart-panel-body">
               <div class="trend-caption">
                 <span class="n tnum">95</span>
                 <span class="c">events today · up from 52 two weeks ago</span>
               </div>
-              <svg viewBox="0 0 320 120" width="100%" height="118" preserveAspectRatio="none" style="overflow: visible;">
+              <svg
+                viewBox="0 0 320 120"
+                width="100%"
+                height="118"
+                preserveAspectRatio="none"
+                style="overflow: visible"
+              >
                 <defs>
                   <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#213098" stop-opacity="0.22" />
+                    <stop
+                      offset="0%"
+                      stop-color="#213098"
+                      stop-opacity="0.22"
+                    />
                     <stop offset="100%" stop-color="#213098" stop-opacity="0" />
                   </linearGradient>
                 </defs>
-                <line x1="10" y1="24" x2="310" y2="24" stroke="#e2e8f0" stroke-width="1" />
-                <line x1="10" y1="66" x2="310" y2="66" stroke="#e2e8f0" stroke-width="1" />
-                <line x1="10" y1="108" x2="310" y2="108" stroke="#e2e8f0" stroke-width="1" />
-                <path d="M10,62 L33,54 L56,57 L79,46 L102,51 L125,66 L148,60 L171,45 L195,48 L218,38 L241,43 L264,31 L287,36 L310,24 L310,108 L10,108 Z" fill="url(#trendFill)" />
-                <path d="M10,62 L33,54 L56,57 L79,46 L102,51 L125,66 L148,60 L171,45 L195,48 L218,38 L241,43 L264,31 L287,36 L310,24" fill="none" stroke="#213098" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round" />
-                <circle cx="310" cy="24" r="4" fill="#213098" stroke="#fff" stroke-width="2" />
+                <line
+                  x1="10"
+                  y1="24"
+                  x2="310"
+                  y2="24"
+                  stroke="#e2e8f0"
+                  stroke-width="1"
+                />
+                <line
+                  x1="10"
+                  y1="66"
+                  x2="310"
+                  y2="66"
+                  stroke="#e2e8f0"
+                  stroke-width="1"
+                />
+                <line
+                  x1="10"
+                  y1="108"
+                  x2="310"
+                  y2="108"
+                  stroke="#e2e8f0"
+                  stroke-width="1"
+                />
+                <path
+                  d="M10,62 L33,54 L56,57 L79,46 L102,51 L125,66 L148,60 L171,45 L195,48 L218,38 L241,43 L264,31 L287,36 L310,24 L310,108 L10,108 Z"
+                  fill="url(#trendFill)"
+                />
+                <path
+                  d="M10,62 L33,54 L56,57 L79,46 L102,51 L125,66 L148,60 L171,45 L195,48 L218,38 L241,43 L264,31 L287,36 L310,24"
+                  fill="none"
+                  stroke="#213098"
+                  stroke-width="2.25"
+                  stroke-linejoin="round"
+                  stroke-linecap="round"
+                />
+                <circle
+                  cx="310"
+                  cy="24"
+                  r="4"
+                  fill="#213098"
+                  stroke="#fff"
+                  stroke-width="2"
+                />
               </svg>
               <div class="trend-xaxis">
                 <span>14 days ago</span>
@@ -1560,17 +2208,75 @@
                 <div class="cap">This week</div>
                 <div class="ttl">Activity by module</div>
               </div>
-              <div class="chart-panel-tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div>
+              <div class="chart-panel-tile">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M3 3v18h18" />
+                  <path d="M18 17V9" />
+                  <path d="M13 17V5" />
+                  <path d="M8 17v-3" />
+                </svg>
+              </div>
             </div>
             <div class="chart-panel-body">
               <div class="mod-bars">
-                <div class="mod-bar-row"><span class="m-lab">Markbook</span><div class="mod-bar-track"><div class="mod-bar-fill" style="width: 100%"></div></div><span class="m-val tnum">312</span></div>
-                <div class="mod-bar-row"><span class="m-lab">Attendance</span><div class="mod-bar-track"><div class="mod-bar-fill" style="width: 91%"></div></div><span class="m-val tnum">284</span></div>
-                <div class="mod-bar-row"><span class="m-lab">Records</span><div class="mod-bar-track"><div class="mod-bar-fill" style="width: 64%"></div></div><span class="m-val tnum">198</span></div>
-                <div class="mod-bar-row"><span class="m-lab">Admissions</span><div class="mod-bar-track"><div class="mod-bar-fill" style="width: 46%"></div></div><span class="m-val tnum">142</span></div>
-                <div class="mod-bar-row"><span class="m-lab">Evaluation</span><div class="mod-bar-track"><div class="mod-bar-fill" style="width: 31%"></div></div><span class="m-val tnum">96</span></div>
-                <div class="mod-bar-row"><span class="m-lab">P-Files</span><div class="mod-bar-track"><div class="mod-bar-fill" style="width: 24%"></div></div><span class="m-val tnum">74</span></div>
-                <div class="mod-bar-row"><span class="m-lab">SIS Admin</span><div class="mod-bar-track"><div class="mod-bar-fill" style="width: 19%"></div></div><span class="m-val tnum">58</span></div>
+                <div class="mod-bar-row">
+                  <span class="m-lab">Markbook</span>
+                  <div class="mod-bar-track">
+                    <div class="mod-bar-fill" style="width: 100%"></div>
+                  </div>
+                  <span class="m-val tnum">312</span>
+                </div>
+                <div class="mod-bar-row">
+                  <span class="m-lab">Attendance</span>
+                  <div class="mod-bar-track">
+                    <div class="mod-bar-fill" style="width: 91%"></div>
+                  </div>
+                  <span class="m-val tnum">284</span>
+                </div>
+                <div class="mod-bar-row">
+                  <span class="m-lab">Records</span>
+                  <div class="mod-bar-track">
+                    <div class="mod-bar-fill" style="width: 64%"></div>
+                  </div>
+                  <span class="m-val tnum">198</span>
+                </div>
+                <div class="mod-bar-row">
+                  <span class="m-lab">Admissions</span>
+                  <div class="mod-bar-track">
+                    <div class="mod-bar-fill" style="width: 46%"></div>
+                  </div>
+                  <span class="m-val tnum">142</span>
+                </div>
+                <div class="mod-bar-row">
+                  <span class="m-lab">Evaluation</span>
+                  <div class="mod-bar-track">
+                    <div class="mod-bar-fill" style="width: 31%"></div>
+                  </div>
+                  <span class="m-val tnum">96</span>
+                </div>
+                <div class="mod-bar-row">
+                  <span class="m-lab">P-Files</span>
+                  <div class="mod-bar-track">
+                    <div class="mod-bar-fill" style="width: 24%"></div>
+                  </div>
+                  <span class="m-val tnum">74</span>
+                </div>
+                <div class="mod-bar-row">
+                  <span class="m-lab">SIS Admin</span>
+                  <div class="mod-bar-track">
+                    <div class="mod-bar-fill" style="width: 19%"></div>
+                  </div>
+                  <span class="m-val tnum">58</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1579,14 +2285,129 @@
         <!-- Quick actions (kept) -->
         <div class="section-tag">Quick actions</div>
         <div class="qa-grid">
-          <div class="qa"><div class="tile-sm tile-indigo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg></div><div><div class="lab">New section</div><div class="sub">Sections</div></div></div>
-          <div class="qa"><div class="tile-sm tile-mint"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></div><div><div class="lab">Generate sheets</div><div class="sub">Grading</div></div></div>
-          <div class="qa"><div class="tile-sm tile-indigo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 21a8 8 0 0 1 13.292-6"/><circle cx="10" cy="8" r="5"/><path d="M19 16v6"/><path d="M22 19h-6"/></svg></div><div><div class="lab">New staff member</div><div class="sub">Staff</div></div></div>
-          <div class="qa"><div class="tile-sm" style="background: linear-gradient(135deg, #dc4a37, #b23a2c); box-shadow: var(--brand-tile-amber);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.18 4.18A2 2 0 0 0 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 1.82-1.18"/><path d="M21 15.5V6a2 2 0 0 0-2-2H9.5"/><path d="M16 2v4"/><path d="M3 10h7"/><path d="M21 10h-5.5"/><line x1="2" x2="22" y1="2" y2="22"/></svg></div><div><div class="lab">Add a closure</div><div class="sub">Calendar</div></div></div>
+          <div class="qa">
+            <div class="tile-sm tile-indigo">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect width="7" height="7" x="3" y="3" rx="1" />
+                <rect width="7" height="7" x="14" y="3" rx="1" />
+                <rect width="7" height="7" x="14" y="14" rx="1" />
+                <rect width="7" height="7" x="3" y="14" rx="1" />
+              </svg>
+            </div>
+            <div>
+              <div class="lab">New section</div>
+              <div class="sub">Sections</div>
+            </div>
+          </div>
+          <div class="qa">
+            <div class="tile-sm tile-mint">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
+                <path
+                  d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"
+                />
+                <path d="M12 11h4" />
+                <path d="M12 16h4" />
+                <path d="M8 11h.01" />
+                <path d="M8 16h.01" />
+              </svg>
+            </div>
+            <div>
+              <div class="lab">Generate sheets</div>
+              <div class="sub">Grading</div>
+            </div>
+          </div>
+          <div class="qa">
+            <div class="tile-sm tile-indigo">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M2 21a8 8 0 0 1 13.292-6" />
+                <circle cx="10" cy="8" r="5" />
+                <path d="M19 16v6" />
+                <path d="M22 19h-6" />
+              </svg>
+            </div>
+            <div>
+              <div class="lab">New staff member</div>
+              <div class="sub">Staff</div>
+            </div>
+          </div>
+          <div class="qa">
+            <div
+              class="tile-sm"
+              style="
+                background: linear-gradient(135deg, #dc4a37, #b23a2c);
+                box-shadow: var(--brand-tile-amber);
+              "
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M4.18 4.18A2 2 0 0 0 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 1.82-1.18"
+                />
+                <path d="M21 15.5V6a2 2 0 0 0-2-2H9.5" />
+                <path d="M16 2v4" />
+                <path d="M3 10h7" />
+                <path d="M21 10h-5.5" />
+                <line x1="2" x2="22" y1="2" y2="22" />
+              </svg>
+            </div>
+            <div>
+              <div class="lab">Add a closure</div>
+              <div class="sub">Calendar</div>
+            </div>
+          </div>
         </div>
 
         <div class="trust">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"
+            />
+          </svg>
           <span>AY2026</span>
           <span>·</span>
           <span>Refreshes every 2 minutes</span>
@@ -1594,28 +2415,35 @@
       </div>
     </div>
 
-    <div class="doc-note" style="border-left-color: var(--amber); margin-top: 32px; margin-bottom: 0;">
+    <div
+      class="doc-note"
+      style="
+        border-left-color: var(--amber);
+        margin-top: 32px;
+        margin-bottom: 0;
+      "
+    >
       <p>
-        <b>Open questions for you:</b> (1) Is this too dense for a page
-        "admins live in" every day, or does more context here actually reduce
-        clicking around? (2) Module overview — real numbers, or should each
-        card just deep-link into that module's own dashboard without
-        duplicating a metric? (3) Recent activity — governance/config changes
-        only (as shown), or does it need grade-change and enrollment events
-        too? (4) Anything here that should just not exist.
+        <b>Open questions for you:</b> (1) Is this too dense for a page "admins
+        live in" every day, or does more context here actually reduce clicking
+        around? (2) Module overview — real numbers, or should each card just
+        deep-link into that module's own dashboard without duplicating a metric?
+        (3) Recent activity — governance/config changes only (as shown), or does
+        it need grade-change and enrollment events too? (4) Anything here that
+        should just not exist.
       </p>
       <p>
-        <b>On the readiness step detail:</b> a "Summary" button on the year
-        band opens it as a real <span class="mono">Popover</span> (the same
-        primitive already used elsewhere for facet filters / inline editors)
-        anchored right under the button — shown open here for review, but by
-        default the hub stays exactly as compact as it is today; the detail
-        only exists when someone actually clicks for it, and closes on
-        click-away or Escape. Costs zero permanent page height, which was the
-        whole point of moving it out of an always-visible inline panel. Real
-        data note: the numbers/labels/grouping ("Core setup" / "Grading &amp;
-        staffing" / "Branding &amp; admissions" / "Optional") are pulled
-        directly from the existing <span class="mono">getAyReadiness()</span>
+        <b>On the readiness step detail:</b> a "Summary" button on the year band
+        opens it as a real <span class="mono">Popover</span> (the same primitive
+        already used elsewhere for facet filters / inline editors) anchored
+        right under the button — shown open here for review, but by default the
+        hub stays exactly as compact as it is today; the detail only exists when
+        someone actually clicks for it, and closes on click-away or Escape.
+        Costs zero permanent page height, which was the whole point of moving it
+        out of an always-visible inline panel. Real data note: the
+        numbers/labels/grouping ("Core setup" / "Grading &amp; staffing" /
+        "Branding &amp; admissions" / "Optional") are pulled directly from the
+        existing <span class="mono">getAyReadiness()</span>
         engine and the full checklist page's own clustering — nothing invented,
         this is genuinely what the system already tracks per step.
       </p>
