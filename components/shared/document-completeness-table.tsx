@@ -420,7 +420,6 @@ export function DocumentCompletenessTable(props: Props) {
   }, [students]);
 
   // Module-specific strings
-  const identifierLabel = module === 'admissions' ? 'Applicant' : 'Student';
   const emptyLabel =
     module === 'admissions'
       ? 'No applicants match the current filters.'
