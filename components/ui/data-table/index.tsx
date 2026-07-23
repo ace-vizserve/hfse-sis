@@ -56,7 +56,7 @@ import { FacetDropdown } from './facet-dropdown';
 import { filterRows } from './filter-rows';
 import { FilterChip } from './filter-chip';
 import { DataTablePagination } from './pagination';
-import type { DataTableProps, ExpandableConfig, FacetConfig } from './types';
+import type { DataTableProps, FacetConfig } from './types';
 import { useUrlState } from './use-url-state';
 
 export { RowActionsMenu } from './row-actions-menu';
