@@ -270,8 +270,8 @@ export default async function EvaluationHub({
               </Link>
             ) : (
               <span>
-                Ask the registrar to set the virtue theme in Evaluation → Virtue
-                themes.
+                Ask the academic coordinator to set the virtue theme in
+                Evaluation → Virtue themes.
               </span>
             )}
           </AlertDescription>

@@ -246,7 +246,7 @@ export default async function EvaluationSectionsPickerPage({
               Virtue theme not set for {selectedTerm.label}.
             </p>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Registrar sets the virtue theme in{' '}
+              The academic coordinator sets the virtue theme in{' '}
               <Link
                 href="/evaluation/virtue-themes"
                 className="font-medium text-brand-amber underline underline-offset-2"
@@ -256,7 +256,7 @@ export default async function EvaluationSectionsPickerPage({
               . Until it&apos;s set,{' '}
               {isTeacher
                 ? 'the write-up fields are locked.'
-                : "advisers can't start writing (registrars can still edit if needed)."}
+                : "advisers can't start writing (academic coordinators can still edit if needed)."}
             </p>
           </div>
         </div>
@@ -311,7 +311,7 @@ export default async function EvaluationSectionsPickerPage({
             </p>
             <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
               {isTeacher
-                ? 'You have no form adviser assignments. Ask the registrar to assign one in SIS Admin → Sections.'
+                ? 'You have no form adviser assignments. Ask the academic coordinator to assign one in SIS Admin → Sections.'
                 : 'Create sections in SIS Admin → Sections for the current academic year.'}
             </p>
           </CardContent>
