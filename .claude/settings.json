@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vitest *)",
+      "Bash(npx next *)",
+      "Bash(echo \"EXIT:$?\")",
+      "Read(//tmp/**)",
+      "Bash(mkdir -p \"/c/Users/Ace/AppData/Local/Temp/claude/c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook/aebe5fa0-94e1-410b-968e-c4a4daa13e23/scratchpad\")",
+      "Bash(npx tsc *)",
+      "Bash(grep -nE '#[0-9a-fA-F]{3,8}\\\\b|oklch\\\\\\(|slate-|zinc-|gray-|bg-white|bg-black' 'app/\\(admissions\\)/admissions/insights/page.tsx' 'app/\\(attendance\\)/attendance/insights/page.tsx' 'app/\\(markbook\\)/markbook/insights/page.tsx' 'app/\\(records\\)/records/insights/page.tsx' components/dashboard/charts/chart-skeleton.tsx components/dashboard/charts/grouped-bar-chart.client.tsx components/dashboard/charts/radial-gauge-chart.tsx components/dashboard/charts/radial-gauge-chart.client.tsx components/dashboard/insights/compare-ay-picker.tsx components/dashboard/metric-card.tsx lib/attendance/dashboard.ts lib/attendance/insights-compare.ts lib/dashboard/insights-trend.ts)",
+      "Bash(grep -noE \"#[0-9a-fA-F]{3,8}\\\\b|oklch\\\\\\(|slate-|zinc-|gray-|bg-white|bg-black\" components/dashboard/metric-card.tsx)",
+      "Bash(grep -niE \"#[0-9a-f]{3,6}\\\\b|oklch\\\\\\(|\\\\bslate-|\\\\bzinc-|\\\\bgray-|bg-white|bg-black\" \"app/\\(admissions\\)/admissions/insights/page.tsx\")",
+      "Bash(grep -niE \"#[0-9a-f]{3,6}\\\\b|oklch\\\\\\(|\\\\bslate-|\\\\bzinc-|\\\\bgray-|bg-white|bg-black\" \"c:\\\\Users\\\\Ace\\\\OneDrive - HFSE International School\\\\Desktop\\\\hfse-vizserve projects\\\\hfse-markbook\\\\app\\\\\\(admissions\\)\\\\admissions\\\\insights\\\\page.tsx\")",
+      "Bash(tee /tmp/vitest-out.log)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Ace\\AppData\\Local\\Temp\\claude\\c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook\\aebe5fa0-94e1-410b-968e-c4a4daa13e23\\scratchpad"
+    ]
+  }
+}
