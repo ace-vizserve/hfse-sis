@@ -25,7 +25,7 @@ export function ModuleSidebarHeader({ module, role }: SidebarHeaderProps) {
   const Icon = config.icon;
 
   // Allowed staff modules in lifecycle order. Parents (null role) +
-  // p-file officers reach only one module — render a non-interactive
+  // p_file_officer users reach only one module — render a non-interactive
   // brand tile instead of a popover trigger.
   const allowedModules = MODULE_ORDER.filter((m) =>
     isRouteAllowed(SIDEBAR_REGISTRY[m].primaryHref, role)

@@ -24,8 +24,9 @@ export type SlotStatusKind =
 //     awaiting validation). Used by Admissions during the application
 //     funnel — copy stresses "completing the application" rather than
 //     "renewing existing docs".
-//   - 'rejection': fired automatically when a P-Files officer or registrar
-//     rejects a parent-uploaded document via the document validation queue.
+//   - 'rejection': fired automatically when a P-File Officer or academic
+//     coordinator rejects a parent-uploaded document via the document
+//     validation queue.
 //     Includes the specific rejection reason so the parent knows exactly
 //     what to fix before re-uploading. Bypasses the runNotify() 24h cooldown
 //     because rejection is a discrete event, not a recurring chase reminder.

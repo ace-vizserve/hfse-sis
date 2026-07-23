@@ -381,7 +381,7 @@ export default async function PFilesDashboard({
               : kpisResult.current.expiringSoon > 0
                 ? `${kpisResult.current.expiringSoon} document${kpisResult.current.expiringSoon === 1 ? '' : 's'} expire within 60 days. Nothing due in the next 30 — but renewal outreach now saves a chase later.`
                 : 'All tracked documents are current. Keep an eye on the 60-day window as the term progresses.'
-            : 'Read-only view of student document completeness. The P-Files officer owns chasing, validation, and renewal — this surface is for oversight.'
+            : 'Read-only view of student document completeness. The P-File Officer owns chasing, validation, and renewal — this surface is for oversight.'
         }
         badges={[
           { label: selectedAy },

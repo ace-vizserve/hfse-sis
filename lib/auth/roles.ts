@@ -71,7 +71,7 @@ const PFILES_NAV: NavSection[] = [
   },
   {
     // Quick filters land on the dashboard with a `?status=` preset so the
-    // P-Files officer can jump straight to the work queue (oversight role —
+    // P-File Officer can jump straight to the work queue (oversight role —
     // school_admin — sees the same lists but in read-only mode).
     label: 'Quick filters',
     items: [{ href: '/p-files?status=expired', label: 'Expired documents' }],

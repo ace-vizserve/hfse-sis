@@ -42,8 +42,9 @@ export async function POST(
   const { slotKey } = parsed.data;
   const moduleKey = resolveModule(parsed.data.module);
 
-  // Per-module role gate: admissions chase is wider (admissions team + registrar
-  // + school_admin); P-Files renewal chase is scoped to p-file officers + superadmin.
+  // Per-module role gate: admissions chase is wider (admissions team + academic
+  // coordinator + school_admin); P-Files renewal chase is scoped to p_file_officer
+  // users + superadmin.
   const allowedRoles =
     moduleKey === 'admissions'
       ? ['admissions', 'academic_coordinator', 'school_admin', 'superadmin']
