@@ -9,6 +9,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   CalendarClock,
+  ChevronRight,
   GalleryHorizontalEndIcon,
   ListIcon,
 } from 'lucide-react';
@@ -24,6 +25,7 @@ import type {
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { Toggle } from '@/components/ui/toggle';
+import { cn } from '@/lib/utils';
 import type { ValidationQueueRow } from '@/lib/admissions/document-validation';
 
 import { RejectDialog } from './reject-dialog';
@@ -33,6 +35,70 @@ type Props = {
   rows: ValidationQueueRow[];
   ayCode: string;
 };
+
+function ValidationGroupHeader({
+  rows,
+  isExpanded,
+  toggle,
+  ayCode,
+}: {
+  rows: ValidationQueueRow[];
+  isExpanded: boolean;
+  toggle: () => void;
+  ayCode: string;
+}) {
+  const first = rows[0];
+  return (
+    // A <button> can't legally contain the <a> that IdentifierLink
+    // renders (HTML forbids interactive content inside <button>) — use
+    // a keyboard-accessible div instead (role="button" + tabIndex +
+    // Enter/Space handling), same substitution React docs recommend
+    // whenever a clickable container must wrap a link.
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={toggle}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggle();
+        }
+      }}
+      aria-expanded={isExpanded}
+      className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <ChevronRight
+        className={cn(
+          'size-4 shrink-0 text-muted-foreground transition-transform',
+          isExpanded && 'rotate-90'
+        )}
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1">
+        {/* IdentifierLink doesn't accept onClick — wrap it so the link
+            navigates without also toggling the group (the wrapping
+            div's onClick would otherwise fire on every click inside). */}
+        <span onClick={(e) => e.stopPropagation()}>
+          <IdentifierLink
+            href={`/admissions/applications/${encodeURIComponent(first.enroleeNumber)}?ay=${encodeURIComponent(ayCode)}`}
+          >
+            {first.fullName}
+          </IdentifierLink>
+        </span>
+        <span className="ml-2 font-mono text-[10px] text-muted-foreground">
+          {first.enroleeNumber}
+        </span>
+      </div>
+      <span className="whitespace-nowrap text-xs text-muted-foreground">
+        {first.levelApplied ?? '—'}
+      </span>
+      <Badge variant="outline">{first.applicationStatus}</Badge>
+      <Badge variant="secondary" className="font-mono text-[10px] tabular-nums">
+        {rows.length} document{rows.length === 1 ? '' : 's'}
+      </Badge>
+    </div>
+  );
+}
 
 export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
   const router = useRouter();
@@ -113,24 +179,6 @@ export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
 
   const columns = React.useMemo<ColumnDef<ValidationQueueRow>[]>(
     () => [
-      {
-        accessorKey: 'fullName',
-        header: ({ column }) => (
-          <SortableHeader column={column}>Student</SortableHeader>
-        ),
-        cell: ({ row }) => (
-          <div className="space-y-0.5">
-            <IdentifierLink
-              href={`/admissions/applications/${encodeURIComponent(row.original.enroleeNumber)}?ay=${encodeURIComponent(ayCode)}`}
-            >
-              {row.original.fullName}
-            </IdentifierLink>
-            <div className="font-mono text-[10px] text-muted-foreground">
-              {row.original.enroleeNumber}
-            </div>
-          </div>
-        ),
-      },
       {
         accessorKey: 'slotLabel',
         header: ({ column }) => (
@@ -336,6 +384,18 @@ export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
         url={{ enabled: true, namespace: 'validation' }}
         initialSort={[{ id: 'fullName', desc: false }]}
         pageSize={25}
+        expandable={{
+          enabled: true,
+          groupBy: (row) => row.enroleeNumber,
+          renderGroupHeader: ({ rows, isExpanded, toggle }) => (
+            <ValidationGroupHeader
+              rows={rows}
+              isExpanded={isExpanded}
+              toggle={toggle}
+              ayCode={ayCode}
+            />
+          ),
+        }}
       />
       <RejectDialog
         open={rejectTarget != null}
