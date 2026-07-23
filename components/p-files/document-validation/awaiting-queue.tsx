@@ -324,6 +324,9 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
         // so the two tables' filters don't collide in the URL (KD #84).
         url={{ enabled: true, namespace: 'awaiting' }}
         pageSize={25}
+        // Level + section render once in the group header (keyed by enroleeNumber); hide the redundant per-row
+        // cells while keeping both columns filterable via their facets.
+        initialColumnVisibility={{ levelApplied: false, classSection: false }}
         expandable={{
           enabled: true,
           groupBy: (row) => row.enroleeNumber,

@@ -383,6 +383,12 @@ export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
         // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
         url={{ enabled: true, namespace: 'validation' }}
         pageSize={25}
+        // Level + status render once in the group header (keyed by enroleeNumber); hide the redundant per-row
+        // cells while keeping both columns filterable via their facets.
+        initialColumnVisibility={{
+          levelApplied: false,
+          applicationStatus: false,
+        }}
         expandable={{
           enabled: true,
           groupBy: (row) => row.enroleeNumber,

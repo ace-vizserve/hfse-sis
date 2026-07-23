@@ -372,6 +372,9 @@ export function ExpiringQueue({ rows }: Props) {
       url={{ enabled: true, namespace: 'expiring' }}
       initialSort={[{ id: 'daysUntilExpiry', desc: false }]}
       pageSize={25}
+      // Level + section render once in the group header (keyed by enroleeNumber); hide the redundant per-row
+      // cells while keeping both columns filterable via their facets.
+      initialColumnVisibility={{ levelApplied: false, classSection: false }}
       expandable={{
         enabled: true,
         groupBy: (row) => row.enroleeNumber,
