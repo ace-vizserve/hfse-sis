@@ -2,21 +2,35 @@ import { Activity, BookOpen, GitBranch, LayoutGrid, Users } from 'lucide-react';
 import { unstable_cache } from 'next/cache';
 import { redirect } from 'next/navigation';
 
+import type { ComparisonBarPoint } from '@/components/dashboard/charts/comparison-bar-chart';
+import { AuditDailyTrendCard } from '@/components/sis/audit-daily-trend-card';
+import { AuditByModuleDrillCard } from '@/components/sis/drills/audit-by-module-drill-card';
 import { HubAttentionFeed } from '@/components/sis/hub-attention-feed';
+import { HubModuleOverview } from '@/components/sis/hub-module-overview';
 import { HubQuickActions } from '@/components/sis/hub-quick-actions';
+import { HubSnapshotCard } from '@/components/sis/hub-snapshot-card';
 import { HubStat } from '@/components/sis/hub-stat';
 import { HubUpcomingEventsCard } from '@/components/sis/hub-upcoming-events-card';
 import { HubYearBand } from '@/components/sis/hub-year-band';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
+import { StructuralChangesFeedCard } from '@/components/sis/structural-changes-feed-card';
 import { SystemHealthStrip } from '@/components/sis/system-health-strip';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+import { resolveCompareAy } from '@/lib/dashboard/comparison';
+import type { RangeInput } from '@/lib/dashboard/range';
+import { sgToday } from '@/lib/dates';
 import { buildAttentionRows } from '@/lib/sis/hub-attention';
+import { getHubModuleOverview } from '@/lib/sis/hub-module-overview';
+import { getHubSnapshot } from '@/lib/sis/hub-snapshot';
 import { isTestAyCode } from '@/lib/sis/environment';
 import {
+  getAuditActivityByModule,
+  getAuditDailyTrend,
   getClassAssignmentReadiness,
   getHubKpis,
+  getStructuralChangeFeed,
   getUpcomingCalendarEvents,
 } from '@/lib/sis/dashboard';
 import { getSystemHealth } from '@/lib/sis/health';
@@ -51,8 +65,44 @@ export default async function SisAdminHub() {
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
   const ayCode = currentAy?.ay_code ?? '';
+
+  // Plain RangeInput objects built directly via raw Date.UTC math (KD #32) —
+  // the hub has no date-range picker, so none of the shared Preset windows
+  // apply here (see lib/dashboard/range.ts's Preset union).
+  const today = sgToday();
+  const isoDaysAgo = (days: number) => {
+    const d = new Date(
+      Date.UTC(
+        Number(today.slice(0, 4)),
+        Number(today.slice(5, 7)) - 1,
+        Number(today.slice(8, 10))
+      )
+    );
+    d.setUTCDate(d.getUTCDate() - days);
+    return d.toISOString().slice(0, 10);
+  };
+  const trendRange: RangeInput = {
+    ayCode,
+    from: isoDaysAgo(13),
+    to: today,
+    cmpFrom: null,
+    cmpTo: null,
+  };
+  const weekRange: RangeInput = {
+    ayCode,
+    from: isoDaysAgo(6),
+    to: today,
+    cmpFrom: null,
+    cmpTo: null,
+  };
+
   const ayReadiness = currentAy
     ? await getAyReadiness(currentAy.ay_code)
+    : null;
+
+  const ayCodes = ayCode ? await listAyCodes(service) : [];
+  const compareAyCode = ayCode
+    ? resolveCompareAy(undefined, ayCodes, ayCode)
     : null;
 
   // System-health strip is superadmin-only (approver counts are sensitive to
@@ -68,6 +118,11 @@ export default async function SisAdminHub() {
     unassignedAdviserSections,
     approverFlowCounts,
     subjectConfigGapsForHub,
+    hubSnapshot,
+    moduleOverview,
+    structuralChanges,
+    auditTrend,
+    auditByModule,
   ] = await Promise.all([
     role === 'superadmin' ? getSystemHealth() : Promise.resolve(null),
     ayCode ? getHubKpis(ayCode).catch(() => null) : Promise.resolve(null),
@@ -94,6 +149,21 @@ export default async function SisAdminHub() {
     currentAy
       ? loadSubjectConfigGapsForHub(currentAy.id, currentAy.ay_code)
       : Promise.resolve([] as EmptyLevelGap[]),
+    ayCode ? getHubSnapshot(ayCode).catch(() => null) : Promise.resolve(null),
+    ayCode
+      ? getHubModuleOverview(ayCode, compareAyCode).catch(
+          () => [] as Awaited<ReturnType<typeof getHubModuleOverview>>
+        )
+      : Promise.resolve([] as Awaited<ReturnType<typeof getHubModuleOverview>>),
+    getStructuralChangeFeed().catch(
+      () => [] as Awaited<ReturnType<typeof getStructuralChangeFeed>>
+    ),
+    ayCode
+      ? getAuditDailyTrend(trendRange).catch(() => null)
+      : Promise.resolve(null),
+    ayCode
+      ? getAuditActivityByModule(weekRange).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   const attentionRows = buildAttentionRows({
@@ -103,6 +173,19 @@ export default async function SisAdminHub() {
     approverFlowCounts,
     subjectConfigGaps: subjectConfigGapsForHub,
   });
+
+  // Mirrors the identical chartData derivation on /sis/audit-log's Overview
+  // tab (KD #154) — same RangeResult<AuditModulePoint[]> shape, same
+  // current[i]/comparison[i] index alignment.
+  const auditByModuleData: ComparisonBarPoint[] = auditByModule
+    ? auditByModule.current.map((row, i) => ({
+        category: row.module,
+        current: row.count,
+        ...(auditByModule.comparison
+          ? { comparison: auditByModule.comparison[i]?.count ?? 0 }
+          : {}),
+      }))
+    : [];
 
   return (
     <PageShell>
@@ -143,6 +226,8 @@ export default async function SisAdminHub() {
 
       <HubYearBand readiness={ayReadiness} />
 
+      {hubSnapshot && <HubSnapshotCard snapshot={hubSnapshot} />}
+
       {hubKpis && (
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <HubStat
@@ -182,6 +267,8 @@ export default async function SisAdminHub() {
         </section>
       )}
 
+      {moduleOverview.length > 0 && <HubModuleOverview rows={moduleOverview} />}
+
       <section className="grid gap-3 lg:grid-cols-5">
         <div className="lg:col-span-3">
           <HubAttentionFeed rows={attentionRows} />
@@ -190,6 +277,24 @@ export default async function SisAdminHub() {
           <HubUpcomingEventsCard events={upcomingEvents} />
         </div>
       </section>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <StructuralChangesFeedCard rows={structuralChanges} />
+        {auditTrend && (
+          <AuditDailyTrendCard
+            current={auditTrend.current}
+            comparison={auditTrend.comparison}
+          />
+        )}
+      </div>
+
+      {auditByModuleData.length > 0 && (
+        <AuditByModuleDrillCard
+          data={auditByModuleData}
+          rangeFrom={weekRange.from}
+          rangeTo={weekRange.to}
+        />
+      )}
 
       <HubQuickActions />
 
