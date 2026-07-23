@@ -4,6 +4,7 @@ import { ArrowRight, CalendarCog, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { HubReadinessPopover } from '@/components/sis/hub-readiness-popover';
 import {
   READINESS_SEGMENT_CLASS,
   describeYearBandStatus,
@@ -92,24 +93,22 @@ export function HubYearBand({ readiness }: { readiness: AyReadiness | null }) {
         </div>
       </div>
 
-      <Button
-        asChild
-        size="sm"
-        variant={allDone ? 'outline' : 'default'}
-        className="shrink-0"
-      >
-        <Link href="/sis/ay-setup">
-          {allDone ? (
-            <>
-              <CheckCircle2 className="size-4" /> Setup in place
-            </>
-          ) : (
-            <>
-              Finish setup <ArrowRight className="size-4" />
-            </>
-          )}
-        </Link>
-      </Button>
+      <div className="flex shrink-0 items-center gap-2">
+        <HubReadinessPopover readiness={readiness} />
+        <Button asChild size="sm" variant={allDone ? 'outline' : 'default'}>
+          <Link href="/sis/ay-setup">
+            {allDone ? (
+              <>
+                <CheckCircle2 className="size-4" /> Setup in place
+              </>
+            ) : (
+              <>
+                Finish setup <ArrowRight className="size-4" />
+              </>
+            )}
+          </Link>
+        </Button>
+      </div>
     </Card>
   );
 }
