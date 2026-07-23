@@ -2,15 +2,20 @@
 //
 // Composed per-module "at a glance" row for the SIS Admin hub: one live KPI
 // per operational module (Admissions/Records/Attendance/Markbook/Evaluation/
-// P-Files), each drawn from that module's own already-cached `get*KpisRange`
-// loader (or `getHubKpis` for Records). Follows the KD #46 cache-wrapper
-// pattern (hoist the uncached composition, wrap per-call with
-// `unstable_cache`) — the same choice `lib/sis/hub-snapshot.ts` makes when it
-// composes `getLevelDistribution` (itself already cached) inside its own
-// `unstable_cache`. Re-wrapping here is deliberate, not redundant: it gives
-// this specific (ayCode, compareAyCode) fan-out its own short-lived cache
+// P-Files), each drawn from that module's own already-cached loader. Follows
+// the KD #46 cache-wrapper pattern (hoist the uncached composition, wrap
+// per-call with `unstable_cache`) — the same choice `lib/sis/hub-snapshot.ts`
+// makes when it composes `getLevelDistribution` (itself already cached)
+// inside its own `unstable_cache`. Re-wrapping here is deliberate, not
+// redundant: it gives this specific ayCode fan-out its own short-lived cache
 // entry instead of re-running all 6 module calls (each already cheap thanks
 // to their own cache, but still 6 round-trips) on every hub render.
+//
+// Records deliberately does NOT show `enrolledStudents` — that number is
+// already the hub's own "Enrolled students" stat tile (with its own
+// growth-delta chip), so repeating it here would be pure duplication with
+// no new information. Instead this card surfaces the unsynced-students
+// backlog (KD #90) — a genuinely different, actionable Records signal.
 import 'server-only';
 import { unstable_cache } from 'next/cache';
 
@@ -19,7 +24,7 @@ import { getAttendanceKpisRange } from '@/lib/attendance/dashboard';
 import { getMarkbookKpisRange } from '@/lib/markbook/dashboard';
 import { getEvaluationKpisRange } from '@/lib/evaluation/dashboard';
 import { getPFilesKpisRange } from '@/lib/p-files/dashboard';
-import { getHubKpis } from '@/lib/sis/dashboard';
+import { countUnsyncedEnrolledStudents } from '@/lib/sis/unsynced-students';
 import { sgToday } from '@/lib/dates';
 import type { RangeInput } from '@/lib/dashboard/range';
 
@@ -68,14 +73,14 @@ async function loadHubModuleOverviewUncached(
     cmpTo: null,
   };
 
-  const [admissions, attendance, markbook, evaluation, pfiles, hubKpis] =
+  const [admissions, attendance, markbook, evaluation, pfiles, unsyncedCount] =
     await Promise.all([
       getAdmissionsKpisRange(weekRange),
       getAttendanceKpisRange(todayRange),
       getMarkbookKpisRange(weekRange),
       getEvaluationKpisRange(weekRange),
       getPFilesKpisRange(weekRange),
-      getHubKpis(ayCode),
+      countUnsyncedEnrolledStudents(ayCode),
     ]);
 
   return [
@@ -90,10 +95,10 @@ async function loadHubModuleOverviewUncached(
     {
       key: 'records',
       label: 'Records',
-      value: `${hubKpis.enrolledStudents}`,
-      sub: 'Enrolled students',
-      href: '/records',
-      tone: 'indigo',
+      value: `${unsyncedCount}`,
+      sub: 'Pending sync from Admissions',
+      href: '/records/unsynced',
+      tone: unsyncedCount > 0 ? 'amber' : 'indigo',
     },
     {
       key: 'attendance',
