@@ -19,7 +19,8 @@ import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { resolveCompareAy } from '@/lib/dashboard/comparison';
-import type { RangeInput } from '@/lib/dashboard/range';
+import { growthDelta } from '@/lib/dashboard/growth';
+import type { Delta, RangeInput } from '@/lib/dashboard/range';
 import { sgToday } from '@/lib/dates';
 import { buildAttentionRows } from '@/lib/sis/hub-attention';
 import { getHubModuleOverview } from '@/lib/sis/hub-module-overview';
@@ -113,6 +114,7 @@ export default async function SisAdminHub() {
   const [
     health,
     hubKpis,
+    priorHubKpis,
     unassignedStudents,
     upcomingEvents,
     unassignedAdviserSections,
@@ -126,6 +128,9 @@ export default async function SisAdminHub() {
   ] = await Promise.all([
     role === 'superadmin' ? getSystemHealth() : Promise.resolve(null),
     ayCode ? getHubKpis(ayCode).catch(() => null) : Promise.resolve(null),
+    compareAyCode
+      ? getHubKpis(compareAyCode).catch(() => null)
+      : Promise.resolve(null),
     ayCode
       ? getClassAssignmentReadiness(ayCode).catch(
           () => [] as Awaited<ReturnType<typeof getClassAssignmentReadiness>>
@@ -165,6 +170,24 @@ export default async function SisAdminHub() {
       ? getAuditActivityByModule(weekRange).catch(() => null)
       : Promise.resolve(null),
   ]);
+
+  // Enrolled-students growth-delta chip (design spec §4.3) — built from the
+  // same growthDelta() helper lib/sis/hub-module-overview.ts uses for the
+  // Records row, but reshaped into HubStat's Delta type (abs/pct/direction),
+  // which is distinct from growthDelta's Growth shape (current/prior/pct).
+  let enrolledDelta: Delta | undefined;
+  if (hubKpis && priorHubKpis) {
+    const growth = growthDelta(
+      hubKpis.enrolledStudents,
+      priorHubKpis.enrolledStudents
+    );
+    const abs = hubKpis.enrolledStudents - priorHubKpis.enrolledStudents;
+    enrolledDelta = {
+      abs,
+      pct: growth.pct,
+      direction: abs > 0 ? 'up' : abs < 0 ? 'down' : 'flat',
+    };
+  }
 
   const attentionRows = buildAttentionRows({
     unassigned: unassignedStudents,
@@ -235,6 +258,10 @@ export default async function SisAdminHub() {
             value={hubKpis.enrolledStudents}
             icon={Users}
             tone="brand"
+            delta={enrolledDelta}
+            comparisonLabel={
+              enrolledDelta && compareAyCode ? `vs ${compareAyCode}` : undefined
+            }
           />
           <HubStat
             label="Active sections"

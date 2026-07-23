@@ -81,6 +81,11 @@ async function loadHubSnapshotUncached(ayCode: string): Promise<HubSnapshot> {
       : Promise.resolve({ data: [] as { id: string }[] }),
   ]);
 
+  // "Active accounts" on the School Snapshot card must not count
+  // disabled/banned staff — listStaffUsers() returns every user with a
+  // non-null role, including disabled ones (KD #87 provisioning model).
+  const activeStaffUsers = staffUsers.filter((u) => !u.disabled);
+
   const sectionIds = ((sectionsRes.data ?? []) as { id: string }[]).map(
     (s) => s.id
   );
@@ -104,8 +109,8 @@ async function loadHubSnapshotUncached(ayCode: string): Promise<HubSnapshot> {
 
   return {
     levelCounts,
-    staffByRole: tallyStaffByRole(staffUsers),
-    totalStaff: staffUsers.length,
+    staffByRole: tallyStaffByRole(activeStaffUsers),
+    totalStaff: activeStaffUsers.length,
     activeSections: sectionIds.length,
     avgRosterSize: averageRosterSize(rosterCounts),
     currentTermLabel: currentTerm ? `Term ${currentTerm.term_number}` : null,
