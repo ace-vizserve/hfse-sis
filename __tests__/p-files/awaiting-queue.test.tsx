@@ -5,7 +5,7 @@
  *  - approve → row removed immediately (optimistic), toast.success + refresh
  *  - error → row is restored (rollback) and the route-specific message shows.
  */
-import { screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -49,9 +49,10 @@ const ROW: PFileValidationRow = {
 };
 
 function approveButton() {
-  // The actions cell renders Approve + Reject; scope to the row.
-  const cell = screen.getByText('Ada Lovelace').closest('tr') as HTMLElement;
-  return within(cell).getByRole('button', { name: /approve/i });
+  // Rows are grouped by student (expandable, KD's data-table shell); the
+  // fixture has exactly one document row under one (always-expanded) group
+  // header, so the Approve button is unambiguous without row-scoping.
+  return screen.getByRole('button', { name: /approve/i });
 }
 
 describe('AwaitingQueue (Tier-1 optimistic)', () => {
