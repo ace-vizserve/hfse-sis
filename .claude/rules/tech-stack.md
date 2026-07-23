@@ -28,3 +28,6 @@ load: on-demand
 - `cookies()` / `headers()` / `params` / `searchParams` are async — always `await`.
 - Use `@supabase/ssr`, not the deprecated `@supabase/auth-helpers-nextjs`.
 - `next/navigation` for server-component redirects; never `next/router`.
+- Internal navigation always uses `next/link` — a raw `<a href="/...">` forces a full hard reload, bypassing the router entirely (perf-patterns.md §11).
+- `experimental.staleTimes.dynamic` in `next.config.ts` is `0` by default — since nearly every page here is dynamically-rendered (KD #35's `cookies()`-based auth check), that makes `loading.tsx` re-fire on every revisit to an already-loaded page. Raised to `30` (perf-patterns.md §11).
+- `next.config.ts` edits require a full server restart — never picked up by HMR on a running `next dev`/`next start` process.
