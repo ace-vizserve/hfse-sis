@@ -19,7 +19,11 @@ import { getCurrentAcademicYear } from '@/lib/academic-year';
 // to make the label resolvable. Affected applications simply become
 // normal "level known, section not yet assigned" rows in /records/unsynced.
 export async function POST(request: Request) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

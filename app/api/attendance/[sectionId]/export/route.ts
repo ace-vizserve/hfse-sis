@@ -42,7 +42,7 @@ export async function GET(
   // requireRole returns { user: { id, email }, role } on success,
   // or { error: NextResponse } on failure — so role lives at auth.role.
   const auth = await requireRole([
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
     'teacher',

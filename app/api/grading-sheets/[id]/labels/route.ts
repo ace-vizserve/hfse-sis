@@ -17,7 +17,7 @@ export async function PATCH(
 ) {
   const auth = await requireRole([
     'teacher',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);
@@ -35,7 +35,7 @@ export async function PATCH(
   }
 
   const isManager =
-    auth.role === 'registrar' ||
+    auth.role === 'academic_coordinator' ||
     auth.role === 'school_admin' ||
     auth.role === 'superadmin';
 

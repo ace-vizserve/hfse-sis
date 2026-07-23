@@ -20,7 +20,7 @@ import {
 // they processed earlier in the year).
 
 const ALLOWED_ROLES = [
-  'registrar',
+  'academic_coordinator',
   'school_admin',
   'superadmin',
   'admissions',

@@ -38,7 +38,7 @@ async function invalidateForSection(
 export async function GET(request: NextRequest) {
   const auth = await requireRole([
     'teacher',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
   const mine = request.nextUrl.searchParams.get('mine') === '1';
 
   const isManager =
-    auth.role === 'registrar' ||
+    auth.role === 'academic_coordinator' ||
     auth.role === 'school_admin' ||
     auth.role === 'superadmin';
 
@@ -71,7 +71,11 @@ export async function GET(request: NextRequest) {
 // role='form_adviser' â€” subject_id must be null; unique per section.
 // role='subject_teacher' â€” subject_id required; unique per (teacher, section, subject).
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const body = (await request.json().catch(() => null)) as {

@@ -21,7 +21,11 @@ const MAX_IDS = 200;
 // Already-locked sheets are skipped (not an error). Hard Rule #5 — locking
 // itself needs no approval; it ENABLES the post-lock change-request flow.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   let body: unknown;

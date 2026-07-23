@@ -35,11 +35,15 @@ const REGISTRAR_ONLY_TARGETS = new Set<EvaluationDrillTarget>([
 
 const ALLOWED_ROLES = [
   'teacher',
-  'registrar',
+  'academic_coordinator',
   'school_admin',
   'superadmin',
 ] as const;
-const REGISTRAR_PLUS = new Set(['registrar', 'school_admin', 'superadmin']);
+const REGISTRAR_PLUS = new Set([
+  'academic_coordinator',
+  'school_admin',
+  'superadmin',
+]);
 
 export async function GET(
   req: Request,

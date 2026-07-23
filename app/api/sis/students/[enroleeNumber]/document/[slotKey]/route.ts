@@ -33,10 +33,10 @@ export async function PATCH(
   // enrolled students; 'school_admin' intentionally excluded (read-only oversight,
   // KD #74 + KD #31).
   const auth = await requireRole([
-    'registrar',
+    'academic_coordinator',
     'superadmin',
     'admissions',
-    'p-file',
+    'p_file_officer',
   ]);
   if ('error' in auth) return auth.error;
 
@@ -71,7 +71,7 @@ export async function PATCH(
   //     the admissions funnel's job).
   // Closes the gap where the shared UI queues were split but the write route
   // wasn't (an admissions user could approve/reject an enrolled student's doc).
-  if (auth.role === 'admissions' || auth.role === 'p-file') {
+  if (auth.role === 'admissions' || auth.role === 'p_file_officer') {
     const enrolled = await isStudentEnrolled(ayCode, enroleeNumber);
     if (enrolled && auth.role === 'admissions') {
       return NextResponse.json(
@@ -83,7 +83,7 @@ export async function PATCH(
         { status: 403 }
       );
     }
-    if (!enrolled && auth.role === 'p-file') {
+    if (!enrolled && auth.role === 'p_file_officer') {
       return NextResponse.json(
         {
           error:

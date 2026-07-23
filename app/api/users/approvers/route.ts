@@ -12,7 +12,7 @@ import { listApproversForFlow } from '@/lib/sis/approvers/queries';
 export async function GET(request: Request) {
   const auth = await requireRole([
     'teacher',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);

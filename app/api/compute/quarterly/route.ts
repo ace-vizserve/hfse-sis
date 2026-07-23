@@ -7,7 +7,7 @@ import { computeQuarterly, type ComputeInput } from '@/lib/compute/quarterly';
 export async function POST(request: NextRequest) {
   const auth = await requireRole([
     'teacher',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);

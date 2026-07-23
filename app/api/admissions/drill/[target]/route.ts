@@ -31,7 +31,7 @@ const VALID_TARGETS: DrillTarget[] = [
 
 const ALLOWED_ROLES = [
   'admissions',
-  'registrar',
+  'academic_coordinator',
   'school_admin',
   'superadmin',
 ] as const;

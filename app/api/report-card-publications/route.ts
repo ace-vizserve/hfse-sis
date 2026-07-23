@@ -11,7 +11,11 @@ import { computePublishReadiness } from '@/lib/markbook/publish-readiness';
 // GET /api/report-card-publications?section_id=...
 // Registrar+ only. Returns all publications for a section.
 export async function GET(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const sectionId = request.nextUrl.searchParams.get('section_id');
@@ -36,7 +40,11 @@ export async function GET(request: NextRequest) {
 // report card publication window. Parents whose children are enrolled in the
 // section can view their child's report card within [publish_from, publish_until].
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const body = (await request.json().catch(() => null)) as {

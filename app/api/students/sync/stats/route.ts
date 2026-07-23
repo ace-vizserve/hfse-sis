@@ -9,7 +9,11 @@ import { requireCurrentAyCode } from '@/lib/academic-year';
 // Preview endpoint — returns what WOULD happen on sync without writing anything.
 // Accepts optional ?ay=AY2026 query param; falls back to current AY.
 export async function GET(request: Request) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   try {

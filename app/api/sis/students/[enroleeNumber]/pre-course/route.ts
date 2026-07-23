@@ -28,7 +28,11 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ enroleeNumber: string }> }
 ) {
-  const auth = await requireRole(['admissions', 'registrar', 'superadmin']);
+  const auth = await requireRole([
+    'admissions',
+    'academic_coordinator',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const { enroleeNumber } = await params;

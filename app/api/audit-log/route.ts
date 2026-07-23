@@ -5,7 +5,11 @@ import { createClient } from '@/lib/supabase/server';
 // GET /api/audit-log?sheet_id=&entry_id=
 // Returns post-lock edit history. Registrar / admin / superadmin only.
 export async function GET(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const supabase = await createClient();

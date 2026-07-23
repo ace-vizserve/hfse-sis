@@ -11,7 +11,7 @@ export async function GET(
 ) {
   const auth = await requireRole([
     'teacher',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);

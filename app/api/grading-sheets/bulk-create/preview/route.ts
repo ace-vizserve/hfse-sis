@@ -17,7 +17,11 @@ import { createServiceClient } from '@/lib/supabase/service';
 // own header button still goes straight to the confirm-and-generate POST,
 // it doesn't need a picker).
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const body = (await request.json().catch(() => null)) as {

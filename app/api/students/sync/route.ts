@@ -16,7 +16,11 @@ import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tag
 //   * Withdrawn students keep their row; enrollment_status flips to 'withdrawn'.
 //   * Never delete; every mutation goes through update/insert only.
 export async function POST(request: Request) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const service = createServiceClient();

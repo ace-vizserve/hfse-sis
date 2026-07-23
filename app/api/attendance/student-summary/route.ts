@@ -31,7 +31,7 @@ export type StudentSummaryResponse = {
 export async function GET(req: NextRequest) {
   const auth = await requireRole([
     'teacher',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);

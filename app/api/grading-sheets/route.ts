@@ -16,7 +16,7 @@ import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 export async function GET(request: NextRequest) {
   const auth = await requireRole([
     'teacher',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);
@@ -63,7 +63,11 @@ export async function GET(request: NextRequest) {
 // Creates a sheet for (term, section, subject) and seeds one grade_entries row
 // per active / late_enrollee student in the section.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const raw = await request.json().catch(() => null);

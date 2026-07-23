@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   const auth = await requireRole([
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
     'admissions',

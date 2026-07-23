@@ -55,7 +55,11 @@ export async function PATCH(
 ) {
   // Per KD #74: admissions IS the operational role for /admissions/* writes.
   // school_admin is read-only oversight and must not silently overwrite stage data.
-  const auth = await requireRole(['admissions', 'registrar', 'superadmin']);
+  const auth = await requireRole([
+    'admissions',
+    'academic_coordinator',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const { enroleeNumber, stageKey: rawStage } = await params;

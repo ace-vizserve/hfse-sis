@@ -36,7 +36,11 @@ const VALID_TARGETS: AttendanceDrillTarget[] = [
   'vacation-leave-quota',
 ];
 
-const ALLOWED_ROLES = ['registrar', 'school_admin', 'superadmin'] as const;
+const ALLOWED_ROLES = [
+  'academic_coordinator',
+  'school_admin',
+  'superadmin',
+] as const;
 
 export async function GET(
   req: Request,

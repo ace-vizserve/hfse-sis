@@ -46,7 +46,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 export async function POST(request: Request) {
   const auth = await requireRole([
     'admissions',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);

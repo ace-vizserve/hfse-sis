@@ -24,7 +24,11 @@ import { requireCurrentAyCode } from '@/lib/academic-year';
 //
 // Registrar+ only. Audit action: `attendance.calendar.upsert`.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -183,7 +187,11 @@ export async function POST(request: NextRequest) {
 // Removes the calendar entry for a specific (term, date, audience).
 // Default audience='all' â€” matches the legacy single-row-per-date behavior.
 export async function DELETE(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const termId = request.nextUrl.searchParams.get('termId');

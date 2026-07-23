@@ -24,7 +24,11 @@ import { createServiceClient } from '@/lib/supabase/service';
 //
 // Registrar+ only.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const body = (await request.json().catch(() => null)) as {

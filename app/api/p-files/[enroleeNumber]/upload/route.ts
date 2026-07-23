@@ -66,7 +66,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ enroleeNumber: string }> }
 ) {
-  const auth = await requireRole(['p-file', 'superadmin']);
+  const auth = await requireRole(['p_file_officer', 'superadmin']);
   if ('error' in auth) return auth.error;
 
   const { enroleeNumber } = await params;

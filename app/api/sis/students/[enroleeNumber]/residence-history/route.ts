@@ -22,7 +22,11 @@ export async function PATCH(
   { params }: { params: Promise<{ enroleeNumber: string }> }
 ) {
   // Per KD #74: admissions is the operational writer; school_admin is read-only oversight.
-  const auth = await requireRole(['admissions', 'registrar', 'superadmin']);
+  const auth = await requireRole([
+    'admissions',
+    'academic_coordinator',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const { enroleeNumber } = await params;

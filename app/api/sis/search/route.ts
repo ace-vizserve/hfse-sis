@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   // users included for command-palette lookup in the Admissions module.
   const auth = await requireRole([
     'admissions',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);

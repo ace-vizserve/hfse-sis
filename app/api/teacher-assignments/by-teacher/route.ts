@@ -25,7 +25,11 @@ type RawAssignment = {
 // Returns the teacher's current assignments + all sections + all subjects
 // for the current AY. Used by the StaffAssignmentSheet to populate pickers.
 export async function GET(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const teacherId = request.nextUrl.searchParams.get('teacherId');

@@ -26,7 +26,11 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 export async function GET(req: NextRequest) {
   // Page is registrar | school_admin | superadmin — mirror it here.
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const service = createServiceClient();

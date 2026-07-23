@@ -6,7 +6,11 @@ import { getTeacherList } from '@/lib/auth/staff-list';
 // is 'teacher'. Used by the assignments UI to populate the teacher picker.
 // Registrar+ only.
 export async function GET() {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const list = await getTeacherList();

@@ -16,7 +16,11 @@ import { requireCurrentAyCode } from '@/lib/academic-year';
 // `category`, `audience`, `tentative` default to 'other' / 'all' / false
 // (migration 037).
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -94,7 +98,11 @@ export async function POST(request: NextRequest) {
 // Updates an existing calendar_events row. Used by the "Confirm dates"
 // affordance (flips tentative=false) and for editing other fields.
 export async function PATCH(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -162,7 +170,11 @@ export async function PATCH(request: NextRequest) {
 
 // DELETE /api/attendance/calendar/events?id=...
 export async function DELETE(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const id = request.nextUrl.searchParams.get('id');

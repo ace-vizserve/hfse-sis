@@ -26,7 +26,7 @@ import { requireCurrentAyCode } from '@/lib/academic-year';
 export async function PATCH(request: NextRequest) {
   const auth = await requireRole([
     'teacher',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);

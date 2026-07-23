@@ -11,7 +11,7 @@ import { applyTrackBundle } from '@/lib/sis/section-track';
 export async function GET() {
   const auth = await requireRole([
     'teacher',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);
@@ -69,7 +69,11 @@ export async function GET() {
 
 // POST /api/sections â€” mid-year section create under the current AY.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['registrar', 'school_admin', 'superadmin']);
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

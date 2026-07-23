@@ -14,7 +14,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 export async function POST(request: Request) {
   const auth = await requireRole([
     'admissions',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);

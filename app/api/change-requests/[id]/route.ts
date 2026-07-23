@@ -24,7 +24,7 @@ export async function PATCH(
 ) {
   const auth = await requireRole([
     'teacher',
-    'registrar',
+    'academic_coordinator',
     'school_admin',
     'superadmin',
   ]);
