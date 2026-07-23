@@ -55,4 +55,29 @@ describe('computeStaffFamilies', () => {
       true
     );
   });
+
+  it('returns families and roles in the documented display order', () => {
+    const families = computeStaffFamilies([]);
+
+    expect(families.map((f) => f.key)).toEqual([
+      'academics',
+      'admissions-enrollment',
+      'admin',
+    ]);
+
+    expect(
+      families.find((f) => f.key === 'academics')!.roles.map((r) => r.role)
+    ).toEqual(['teacher', 'academic_coordinator']);
+    // Deliberately NOT ROLES' declaration order (which lists p_file_officer
+    // before admissions) — 'admissions' reads first here to match the
+    // "Admissions & Enrollment" family label.
+    expect(
+      families
+        .find((f) => f.key === 'admissions-enrollment')!
+        .roles.map((r) => r.role)
+    ).toEqual(['admissions', 'p_file_officer']);
+    expect(
+      families.find((f) => f.key === 'admin')!.roles.map((r) => r.role)
+    ).toEqual(['school_admin', 'superadmin']);
+  });
 });

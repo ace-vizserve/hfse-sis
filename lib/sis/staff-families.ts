@@ -7,8 +7,9 @@ export type StaffFamily = {
   roles: { role: Role; label: string; count: number }[];
 };
 
-// Display-only grouping (KD #155) — not a schema/access concept. Each role
-// appears in exactly one family; role order within each family matches the
+// Display-only grouping (docs/superpowers/plans/2026-07-23-staff-page-family-cards.md)
+// — not a schema/access concept. Each role appears in exactly one family;
+// role order within each family matches the
 // approved mockup (not necessarily ROLES' declaration order in
 // lib/auth/roles.ts — e.g. 'admissions' is listed before 'p_file_officer'
 // here to read naturally against the "Admissions & Enrollment" label).
