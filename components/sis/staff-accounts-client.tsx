@@ -511,8 +511,8 @@ function EditUserDialog({
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        if (!o && !saving) onOpenChange(false);
-        else onOpenChange(o);
+        if (saving) return;
+        onOpenChange(o);
       }}
     >
       <DialogContent className="sm:max-w-xl!">
@@ -684,8 +684,8 @@ function DeleteUserDialog({
     <AlertDialog
       open={open}
       onOpenChange={(o) => {
-        if (!o && !busy) onOpenChange(false);
-        else onOpenChange(o);
+        if (busy) return;
+        onOpenChange(o);
       }}
     >
       <AlertDialogContent>
