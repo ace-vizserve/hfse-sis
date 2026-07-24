@@ -15,8 +15,8 @@ import type { Role } from '@/lib/auth/roles';
 //
 // `role` writes to `app_metadata.role` (KD #2). `disabled: true` bans the
 // user for 100 years (effectively indefinite); `disabled: false` clears the
-// ban. No hard-delete path — that would orphan `created_by` audit rows and
-// the existing FKs are `references auth.users(id)` without CASCADE.
+// ban. Hard delete lives in the `DELETE` handler below it, scoped to
+// zero-activity accounts only — see that handler's doc comment.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

@@ -100,7 +100,11 @@ export async function getUserFootprint(
   userId: string,
   role: Role | null
 ): Promise<string[]> {
-  const columns = role ? ROLE_FOOTPRINT_COLUMNS[role] : ALL_FOOTPRINT_COLUMNS;
+  // An unrecognized role (stale data, corruption) falls back to checking
+  // every table rather than throwing — same "unknown → check everything"
+  // intent as the explicit null-role case below.
+  const columns =
+    (role && ROLE_FOOTPRINT_COLUMNS[role]) || ALL_FOOTPRINT_COLUMNS;
 
   const results = await Promise.all(
     columns.map(async ({ table, column }) => {
