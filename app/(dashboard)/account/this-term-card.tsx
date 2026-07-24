@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { AlertTriangle, TrendingUp } from 'lucide-react';
 import type { StatRow } from '@/lib/account/this-term-stats';
 
 /**
@@ -18,19 +19,32 @@ export function ThisTermCard({ stats }: { stats: StatRow[] }) {
       </CardHeader>
       <CardContent className="border-t border-border p-0">
         <dl className="divide-y divide-border">
-          {stats.map((s) => (
-            <div
-              key={s.label}
-              className="flex items-center justify-between px-6 py-3"
-            >
-              <dt className="text-sm text-muted-foreground">{s.label}</dt>
-              <dd
-                className={`font-mono text-base font-bold ${s.tone === 'warning' ? 'text-brand-amber' : 'text-brand-indigo'}`}
+          {stats.map((s) => {
+            const Icon = s.tone === 'warning' ? AlertTriangle : TrendingUp;
+            const iconBg =
+              s.tone === 'warning' ? 'bg-brand-amber/10' : 'bg-brand-indigo/10';
+            const iconColor =
+              s.tone === 'warning' ? 'text-brand-amber' : 'text-brand-indigo';
+
+            return (
+              <div
+                key={s.label}
+                className="flex items-center justify-between px-6 py-3"
               >
-                {s.value}
-              </dd>
-            </div>
-          ))}
+                <div className="flex items-center gap-3">
+                  <div className={`shrink-0 rounded p-1 ${iconBg}`}>
+                    <Icon className={`h-5 w-5 ${iconColor}`} />
+                  </div>
+                  <dt className="text-sm text-muted-foreground">{s.label}</dt>
+                </div>
+                <dd
+                  className={`font-mono text-base font-bold ${s.tone === 'warning' ? 'text-brand-amber' : 'text-brand-indigo'}`}
+                >
+                  {s.value}
+                </dd>
+              </div>
+            );
+          })}
         </dl>
       </CardContent>
     </Card>
