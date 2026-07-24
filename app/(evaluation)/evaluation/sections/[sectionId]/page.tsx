@@ -179,8 +179,8 @@ export default async function EvaluationSectionRosterPage({
           <p className="mt-1 text-amber-800/80 dark:text-amber-200/80">
             {sessionUser.role === 'teacher' ? (
               <>
-                Write-up fields are locked until Joann sets the theme in SIS
-                Admin.
+                Write-up fields are locked until the academic coordinator sets
+                the theme in SIS Admin.
               </>
             ) : (
               <>
@@ -191,7 +191,8 @@ export default async function EvaluationSectionRosterPage({
                 >
                   Evaluation → Virtue themes
                 </Link>
-                . Editing stays possible for registrar+ in the meantime.
+                . Editing stays possible for academic coordinators and above in
+                the meantime.
               </>
             )}
           </p>

@@ -37,7 +37,13 @@ export function SchoolConfigPreview({ config }: { config: SchoolConfig }) {
       <ReportCardLetterhead config={config} />
       <ReportCardSignatureBlock
         isFinal
-        formClassAdviser="Joann R."
+        // Not a real config field — school config has no notion of a
+        // per-section form class adviser (that's set per section, KD #3),
+        // so this preview always shows a generic placeholder rather than a
+        // specific person's name. Passing `null` here would fall back to
+        // the same "Form Teacher" text as the caption line right below it,
+        // rendering as a duplicated label — this placeholder avoids that.
+        formClassAdviser="Adviser Name"
         principalName={config.principalName}
         ceoName={config.ceoName}
       />
