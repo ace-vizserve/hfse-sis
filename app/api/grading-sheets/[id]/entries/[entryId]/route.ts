@@ -14,6 +14,13 @@ import { notifyRequestApplied } from '@/lib/notifications/email-change-request';
 import { fetchApproverEmails, fetchLabels } from '@/lib/change-requests/labels';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
+import {
+  slotMetaSatisfied,
+  slotRosterScored,
+  type SlotKind,
+} from '@/lib/grading/first-score-gate';
+import { mergeSlotLabel } from '@/lib/grading/slot-label-sanitize';
+import type { SlotLabels, SlotMeta } from '@/lib/schemas/grading-sheet';
 
 // PATCH /api/grading-sheets/[id]/entries/[entryId]
 // Rules (Sprint 9):
@@ -56,6 +63,18 @@ export async function PATCH(
     };
     // Rejected — legacy clients. Return a clear error if present.
     approval_reference?: string;
+    // First-score label gate (unlocked/direct path only) — the client's
+    // opportunity to satisfy a slot's label requirement atomically with the
+    // score write. See the gate block below.
+    slot_label?: {
+      kind: 'ww' | 'pt' | 'qa';
+      index: number | null;
+      meta: {
+        label: string | null;
+        date?: string | null;
+        page?: string | null;
+      };
+    };
   } | null;
   if (!body)
     return NextResponse.json({ error: 'invalid body' }, { status: 400 });
@@ -75,7 +94,7 @@ export async function PATCH(
     service
       .from('grading_sheets')
       .select(
-        `id, ww_totals, pt_totals, qa_total, is_locked,
+        `id, ww_totals, pt_totals, qa_total, is_locked, slot_labels,
          subject:subjects(is_examinable),
          subject_config:subject_configs(ww_weight, pt_weight, qa_weight)`
       )
@@ -102,6 +121,7 @@ export async function PATCH(
     pt_totals: number[];
     qa_total: number | null;
     is_locked: boolean;
+    slot_labels: SlotLabels | null;
     subject: { is_examinable: boolean } | { is_examinable: boolean }[] | null;
     subject_config:
       | { ww_weight: number; pt_weight: number; qa_weight: number }
@@ -399,6 +419,91 @@ export async function PATCH(
     pt_weight: Number(config.pt_weight),
     qa_weight: Number(config.qa_weight),
   });
+
+  // ----- First-score label gate (unlocked/direct path only; Hard Rule #5's
+  // locked change-request/correction paths are never touched by this) -----
+  if (!sheet.is_locked) {
+    const { data: rosterRaw } = await service
+      .from('grade_entries')
+      .select('id, ww_scores, pt_scores, qa_score')
+      .eq('grading_sheet_id', sheetId);
+    const others = (
+      (rosterRaw ?? []) as {
+        id: string;
+        ww_scores: (number | null)[] | null;
+        pt_scores: (number | null)[] | null;
+        qa_score: number | null;
+      }[]
+    )
+      .filter((r) => r.id !== entryId)
+      .map((r) => ({
+        ww_scores: (r.ww_scores ?? []) as (number | null)[],
+        pt_scores: (r.pt_scores ?? []) as (number | null)[],
+        qa_score: r.qa_score,
+      }));
+
+    const prevWw = (entry.ww_scores as (number | null)[] | null) ?? [];
+    const prevPt = (entry.pt_scores as (number | null)[] | null) ?? [];
+    const prevQa = entry.qa_score as number | null;
+    const labels = (sheet.slot_labels ?? {}) as SlotLabels;
+
+    const incomingSatisfies = (kind: SlotKind, idx: number | null) =>
+      !!body.slot_label &&
+      body.slot_label.kind === kind &&
+      (body.slot_label.index ?? null) === idx &&
+      slotMetaSatisfied(kind, body.slot_label.meta);
+
+    const violations: string[] = [];
+    const checkSlot = (
+      kind: SlotKind,
+      idx: number | null,
+      newVal: number | null,
+      prevVal: number | null,
+      existingMeta: unknown
+    ) => {
+      if (newVal == null || prevVal != null) return; // not a genuine new score
+      if (slotRosterScored(kind, idx, others)) return; // grandfathered
+      if (slotMetaSatisfied(kind, existingMeta as SlotMeta | string | null))
+        return; // already labeled
+      if (incomingSatisfies(kind, idx)) return; // client supplying it now
+      violations.push(
+        kind === 'qa' ? 'QA' : `${kind.toUpperCase()}${(idx as number) + 1}`
+      );
+    };
+
+    ww_scores.forEach((v, i) =>
+      checkSlot('ww', i, v, prevWw[i] ?? null, labels.ww?.[i])
+    );
+    pt_scores.forEach((v, i) =>
+      checkSlot('pt', i, v, prevPt[i] ?? null, labels.pt?.[i])
+    );
+    checkSlot('qa', null, qa_score, prevQa, labels.qa);
+
+    if (violations.length > 0) {
+      const needsDate = violations.some((v) => v !== 'QA');
+      return NextResponse.json(
+        {
+          error: `Add a description${needsDate ? ' and date administered' : ''} before entering the first score for ${violations.join(', ')}.`,
+          code: 'label_required',
+          slots: violations,
+        },
+        { status: 422 }
+      );
+    }
+
+    if (body.slot_label) {
+      const merged = mergeSlotLabel(
+        sheet.slot_labels as SlotLabels | null,
+        body.slot_label
+      );
+      const { error: lblErr } = await service
+        .from('grading_sheets')
+        .update({ slot_labels: merged })
+        .eq('id', sheetId);
+      if (lblErr)
+        return NextResponse.json({ error: lblErr.message }, { status: 500 });
+    }
+  }
 
   let updated: Record<string, unknown> | null = null;
   if (sheet.is_locked && appliedChangeRequest) {
