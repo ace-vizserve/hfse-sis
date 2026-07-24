@@ -176,13 +176,14 @@ describe('ScoreEntryGrid — first-score label gate', () => {
     const [aliceWw] = scoreInputs(container);
     await typeAndBlur(aliceWw, '8');
 
-    // Slot-code prefix is `kind.toUpperCase()` (WW1/PT1/QA) — matches the
-    // server's own violation-message construction (entries-label-gate.test.ts
-    // asserts `body.slots` === ['WW1']), not the ActivityRow "W1" shorthand
-    // used elsewhere in the read-only Activity labels panel.
+    // The dialog title uses the grid's own "W1"/"PT1"/"QA" shorthand (matches
+    // the column header + the ActivityRow code chips) — deliberately distinct
+    // from the server's internal "WW1"/"PT1" violation-message vocabulary
+    // (entries-label-gate.test.ts asserts `body.slots` === ['WW1']), which is
+    // an audit/error-body channel the teacher never sees on the happy path.
     await waitFor(() =>
       expect(
-        screen.getByText(/label ww1 before its first score/i)
+        screen.getByText(/label w1 before its first score/i)
       ).toBeInTheDocument()
     );
     expect(fetchSpy).not.toHaveBeenCalled();

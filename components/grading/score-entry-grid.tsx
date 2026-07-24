@@ -1125,7 +1125,9 @@ export function ScoreEntryGrid({
           slotCode={
             pendingFirstScore.kind === 'qa'
               ? 'QA'
-              : `${pendingFirstScore.kind.toUpperCase()}${(pendingFirstScore.slotIndex as number) + 1}`
+              : pendingFirstScore.kind === 'ww'
+                ? `W${(pendingFirstScore.slotIndex as number) + 1}`
+                : `PT${(pendingFirstScore.slotIndex as number) + 1}`
           }
           seedMeta={pendingFirstScore.seedMeta}
           onConfirm={handleFirstScoreConfirm}
