@@ -115,7 +115,7 @@ export default async function SisSectionDetailPage({
     supabase
       .from('section_students')
       .select(
-        'id, index_number, enrollment_status, bus_no, classroom_officer_role, withdrawal_reason, withdrawal_notes, late_enrollee_term_number, student:students(id, student_number, last_name, first_name, middle_name)'
+        'id, index_number, enrollment_status, bus_no, classroom_officer_role, academics_notes, admin_notes, withdrawal_reason, withdrawal_notes, late_enrollee_term_number, student:students(id, student_number, last_name, first_name, middle_name)'
       )
       .eq('section_id', id)
       .order('index_number', { ascending: true }),
@@ -188,6 +188,8 @@ export default async function SisSectionDetailPage({
     enrollment_status: 'active' | 'late_enrollee' | 'withdrawn';
     bus_no: string | null;
     classroom_officer_role: string | null;
+    academics_notes: string | null;
+    admin_notes: string | null;
     withdrawal_reason: string | null;
     withdrawal_notes: string | null;
     late_enrollee_term_number: number | null;
@@ -326,6 +328,8 @@ export default async function SisSectionDetailPage({
         status: r.enrollment_status,
         bus_no: r.bus_no,
         classroom_officer_role: r.classroom_officer_role,
+        academics_notes: r.academics_notes,
+        admin_notes: r.admin_notes,
         withdrawal_reason: r.withdrawal_reason,
         withdrawal_notes: r.withdrawal_notes,
         late_enrollee_term_number: r.late_enrollee_term_number,
@@ -375,6 +379,8 @@ export default async function SisSectionDetailPage({
     enrollmentStatus: s.status,
     busNo: s.bus_no,
     classroomOfficerRole: s.classroom_officer_role,
+    academicsNotes: s.academics_notes,
+    adminNotes: s.admin_notes,
     withdrawalReason: s.withdrawal_reason ?? null,
     withdrawalNotes: s.withdrawal_notes ?? null,
     lateEnrolleTermNumber: s.late_enrollee_term_number ?? null,

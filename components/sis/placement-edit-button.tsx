@@ -29,6 +29,8 @@ export function PlacementEditButton(props: {
     withdrawal_reason: string | null;
     withdrawal_notes: string | null;
     late_enrollee_term_number: number | null;
+    academics_notes: string | null;
+    admin_notes: string | null;
   };
 }) {
   return (

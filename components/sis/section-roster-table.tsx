@@ -25,6 +25,8 @@ export type SectionRosterRow = {
   enrollmentStatus: 'active' | 'late_enrollee' | 'withdrawn';
   busNo?: string | null;
   classroomOfficerRole?: string | null;
+  academicsNotes?: string | null;
+  adminNotes?: string | null;
   withdrawalReason?: string | null;
   withdrawalNotes?: string | null;
   lateEnrolleTermNumber?: number | null;
@@ -247,6 +249,8 @@ export function SectionRosterTable({
                   withdrawal_reason: r.withdrawalReason ?? null,
                   withdrawal_notes: r.withdrawalNotes ?? null,
                   late_enrollee_term_number: r.lateEnrolleTermNumber ?? null,
+                  academics_notes: r.academicsNotes ?? null,
+                  admin_notes: r.adminNotes ?? null,
                 }}
               >
                 <Button

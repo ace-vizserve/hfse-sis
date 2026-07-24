@@ -75,6 +75,8 @@ export function EnrolmentEditSheet({
     withdrawal_reason: string | null;
     withdrawal_notes: string | null;
     late_enrollee_term_number: number | null;
+    academics_notes: string | null;
+    admin_notes: string | null;
   };
   studentName: string;
   indexNumber: number;
@@ -84,6 +86,10 @@ export function EnrolmentEditSheet({
   const [open, setOpen] = useState(false);
   const [busNo, setBusNo] = useState(initial.bus_no ?? '');
   const [officer, setOfficer] = useState(initial.classroom_officer_role ?? '');
+  const [academicsNotes, setAcademicsNotes] = useState(
+    initial.academics_notes ?? ''
+  );
+  const [adminNotes, setAdminNotes] = useState(initial.admin_notes ?? '');
   const [status, setStatus] = useState<EnrollmentStatus>(
     initial.enrollment_status
   );
@@ -152,6 +158,8 @@ export function EnrolmentEditSheet({
     if (next) {
       setBusNo(initial.bus_no ?? '');
       setOfficer(initial.classroom_officer_role ?? '');
+      setAcademicsNotes(initial.academics_notes ?? '');
+      setAdminNotes(initial.admin_notes ?? '');
       setStatus(initial.enrollment_status);
       setWithdrawalReason(
         (initial.withdrawal_reason as WithdrawalReason) ?? ''
@@ -258,6 +266,18 @@ export function EnrolmentEditSheet({
       classroom_officer_role: officer,
       enrollment_status: status,
     };
+    // Notes fields are only sent when actually edited — admin_notes is
+    // school_admin/superadmin-only server-side (Task 2's 403 backstop), and
+    // sending it unconditionally would 403 every save (even an unrelated
+    // bus-number edit) for an academic_coordinator who never touched it.
+    const nextAcademicsNotes = academicsNotes.trim() || null;
+    if (nextAcademicsNotes !== (initial.academics_notes ?? null)) {
+      body.academics_notes = nextAcademicsNotes;
+    }
+    const nextAdminNotes = adminNotes.trim() || null;
+    if (nextAdminNotes !== (initial.admin_notes ?? null)) {
+      body.admin_notes = nextAdminNotes;
+    }
     if (isWithdrawing) {
       body.withdrawal_reason = withdrawalReason || null;
       body.withdrawal_notes = withdrawalNotes.trim() || null;
@@ -382,6 +402,37 @@ export function EnrolmentEditSheet({
                 />
                 <p className="text-[11px] text-muted-foreground">
                   Display-only. No reporting impact.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="academicsNotes">Academics notes</Label>
+                <Textarea
+                  id="academicsNotes"
+                  value={academicsNotes}
+                  onChange={(e) => setAcademicsNotes(e.target.value)}
+                  placeholder="e.g. Needs reading support"
+                  maxLength={200}
+                  rows={2}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Shown in the attendance sheet&apos;s Details view.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="adminNotes">Admin notes</Label>
+                <Textarea
+                  id="adminNotes"
+                  value={adminNotes}
+                  onChange={(e) => setAdminNotes(e.target.value)}
+                  placeholder="e.g. Fee balance pending"
+                  maxLength={200}
+                  rows={2}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Shown in the attendance sheet&apos;s Details view. Only school
+                  admins can save changes here.
                 </p>
               </div>
 
