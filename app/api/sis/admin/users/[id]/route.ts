@@ -200,10 +200,17 @@ export async function DELETE(
     null;
 
   if (role === 'superadmin') {
-    const { data: listData } = await service.auth.admin.listUsers({
-      perPage: 1000,
-    });
-    const usersForCheck = (listData?.users ?? []).map((u) => ({
+    const { data: listData, error: listError } =
+      await service.auth.admin.listUsers({
+        perPage: 1000,
+      });
+    if (listError || !listData?.users) {
+      return NextResponse.json(
+        { error: 'Could not verify the superadmin count — try again.' },
+        { status: 500 }
+      );
+    }
+    const usersForCheck = listData.users.map((u) => ({
       id: u.id,
       role:
         (u.app_metadata as { role?: string } | null)?.role ??
