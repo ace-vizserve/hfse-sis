@@ -4,8 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { createClient } from '@/lib/supabase/server';
 import type { SlotMeta } from '@/lib/schemas/grading-sheet';
 import { logAction } from '@/lib/audit/log-action';
-
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+import { sanitizeLabel, sanitizeMeta } from '@/lib/grading/slot-label-sanitize';
 
 // PATCH /api/grading-sheets/[id]/labels
 // Updates slot_labels on a grading sheet. Teachers are blocked when the sheet
@@ -87,32 +86,6 @@ export async function PATCH(
       return NextResponse.json({ error: 'sheet is locked' }, { status: 423 });
     }
   }
-
-  // Sanitize per-field: trim, enforce max length, coerce empty to null.
-  const sanitizeLabel = (v: string | null | undefined): string | null => {
-    if (v == null) return null;
-    const t = String(v).trim().slice(0, 120);
-    return t || null;
-  };
-  const sanitizePage = (v: string | null | undefined): string | null => {
-    if (v == null) return null;
-    const t = String(v).trim().slice(0, 40);
-    return t || null;
-  };
-  const sanitizeDate = (v: string | null | undefined): string | null => {
-    if (v == null) return null;
-    const t = String(v).trim();
-    if (t === 'Ongoing') return 'Ongoing';
-    return ISO_DATE_RE.test(t) ? t : null;
-  };
-  const sanitizeMeta = (m: SlotMeta | null | undefined): SlotMeta | null => {
-    if (m == null) return null;
-    return {
-      label: sanitizeLabel(m.label),
-      date: sanitizeDate(m.date),
-      page: sanitizePage(m.page),
-    };
-  };
 
   const newLabels: Record<string, unknown> = {};
   if ('ww' in body) newLabels.ww = (body.ww ?? []).map(sanitizeMeta);
