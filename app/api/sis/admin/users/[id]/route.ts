@@ -4,6 +4,8 @@ import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { UpdateUserSchema } from '@/lib/schemas/user-admin';
+import { getUserFootprint, isLastSuperadmin } from '@/lib/sis/user-deletion';
+import type { Role } from '@/lib/auth/roles';
 
 // PATCH /api/sis/admin/users/[id] — update role, enabled state, and/or
 // identity fields.
@@ -155,6 +157,94 @@ export async function PATCH(
       context: { email: before.email, passwordReset: true },
     });
   }
+
+  return NextResponse.json({ ok: true });
+}
+
+// DELETE /api/sis/admin/users/[id] — permanently remove a user account.
+//
+// Only succeeds when the account has zero recorded activity anywhere the
+// system tracks (lib/sis/user-deletion.ts::getUserFootprint, scoped to the
+// account's current role — see the design spec's known limitation on role
+// changes over time). Historied accounts stay on Disable (the PATCH route
+// above) — this is deliberately not a general-purpose delete.
+//
+// Superadmin only. Always blocks self-delete and deleting the last
+// remaining superadmin, independent of the footprint check.
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireRole(['superadmin']);
+  if ('error' in auth) return auth.error;
+
+  const { id } = await params;
+  if (id === auth.user.id) {
+    return NextResponse.json(
+      { error: 'You cannot delete your own account.' },
+      { status: 403 }
+    );
+  }
+
+  const service = createServiceClient();
+
+  const { data: beforeRes, error: beforeErr } =
+    await service.auth.admin.getUserById(id);
+  if (beforeErr || !beforeRes?.user) {
+    return NextResponse.json({ error: 'user not found' }, { status: 404 });
+  }
+  const before = beforeRes.user;
+  const role: Role | null =
+    (before.app_metadata as { role?: Role } | null)?.role ??
+    (before.user_metadata as { role?: Role } | null)?.role ??
+    null;
+
+  if (role === 'superadmin') {
+    const { data: listData } = await service.auth.admin.listUsers({
+      perPage: 1000,
+    });
+    const usersForCheck = (listData?.users ?? []).map((u) => ({
+      id: u.id,
+      role:
+        (u.app_metadata as { role?: string } | null)?.role ??
+        (u.user_metadata as { role?: string } | null)?.role ??
+        null,
+    }));
+    if (isLastSuperadmin(usersForCheck, id)) {
+      return NextResponse.json(
+        {
+          error:
+            'This is the last superadmin account — promote another account first.',
+        },
+        { status: 409 }
+      );
+    }
+  }
+
+  const footprint = await getUserFootprint(service, id, role);
+  if (footprint.length > 0) {
+    return NextResponse.json(
+      {
+        error: `Can't delete — this account has activity in: ${footprint.join(', ')}. Use Disable instead.`,
+        tables: footprint,
+      },
+      { status: 409 }
+    );
+  }
+
+  const { error: deleteErr } = await service.auth.admin.deleteUser(id);
+  if (deleteErr) {
+    return NextResponse.json({ error: deleteErr.message }, { status: 500 });
+  }
+
+  await logAction({
+    service,
+    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    action: 'user.delete',
+    entityType: 'user_account',
+    entityId: id,
+    context: { email: before.email, role },
+  });
 
   return NextResponse.json({ ok: true });
 }
