@@ -153,7 +153,7 @@ async function fillDescriptionAndSave(description: string) {
 
 async function markOngoing() {
   const { fireEvent } = await import('@testing-library/react');
-  fireEvent.click(screen.getByRole('button', { name: /mark as ongoing/i }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /ongoing/i }));
 }
 
 async function clickSave() {

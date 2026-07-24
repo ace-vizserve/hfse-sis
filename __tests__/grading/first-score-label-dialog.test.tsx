@@ -25,10 +25,10 @@ describe('FirstScoreLabelDialog', () => {
 
     // DateAdministeredField (components/grading/date-administered-field.tsx)
     // renders a DatePicker (popover + calendar — not practical to drive in
-    // jsdom) plus a plain "Mark as ongoing" quick-set button. 'Ongoing' is a
-    // valid satisfied date per slotMetaSatisfied, so clicking it is the
-    // simplest real interaction that exercises the date requirement.
-    fireEvent.click(screen.getByRole('button', { name: /mark as ongoing/i }));
+    // jsdom) plus an "Ongoing" checkbox. 'Ongoing' is a valid satisfied date
+    // per slotMetaSatisfied, so checking it is the simplest real interaction
+    // that exercises the date requirement.
+    fireEvent.click(screen.getByRole('checkbox', { name: /ongoing/i }));
     expect(save).not.toBeDisabled();
   });
 

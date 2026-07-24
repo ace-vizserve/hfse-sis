@@ -15,6 +15,7 @@ import type { SlotMeta, SlotLabels } from '@/lib/schemas/grading-sheet';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -24,6 +25,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   Table,
   TableBody,
@@ -1283,8 +1292,10 @@ function ScoringGuide({
   /** Persist all labels (called on blur of an editable field). */
   commit?: () => void;
 }) {
-  // When the guide is editable, default it open so editors land on the rows.
-  const [expanded, setExpanded] = useState(canEditLabels);
+  // Editors live in a drawer, opened on demand — the trigger strip stays one
+  // fixed-height row regardless of roster size or slot count (KD-pending:
+  // Activity labels drawer redesign).
+  const [open, setOpen] = useState(false);
 
   const effectiveWw = (i: number): SlotMeta | null => {
     return labels.ww[i] ?? null;
@@ -1314,16 +1325,14 @@ function ScoringGuide({
   ].filter(Boolean);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-gradient-to-t from-primary/5 to-card">
-      {/* Toggle row — always visible */}
+    <Sheet open={open} onOpenChange={setOpen}>
+      {/* Trigger strip — fixed height regardless of roster/slot count; the
+          editors themselves live in the drawer below. */}
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center gap-2 rounded-lg border border-border bg-gradient-to-t from-primary/5 to-card px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
       >
-        <ChevronRight
-          className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
-        />
         {canEditLabels && (
           <span className="shrink-0 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground">
             Activity labels
@@ -1354,13 +1363,28 @@ function ScoringGuide({
             Saving…
           </span>
         )}
+        <span
+          className={`inline-flex shrink-0 items-center gap-1 font-mono text-[11px] font-semibold text-brand-indigo ${saving ? '' : 'ml-auto'}`}
+        >
+          Manage
+          <ChevronRight className="h-3.5 w-3.5" />
+        </span>
       </button>
 
-      {/* Expanded grouped list */}
-      {expanded && (
-        <div className="divide-y divide-border/40 border-t border-border/40">
+      <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-xl md:max-w-2xl">
+        <SheetHeader className="border-b border-border px-4 py-4">
+          <SheetTitle>Activity labels</SheetTitle>
+          <SheetDescription>
+            Description
+            {wwTotals.length + ptTotals.length > 0
+              ? ' and date administered, per Written Work / Performance Task.'
+              : '.'}{' '}
+            {saving ? 'Saving…' : 'Saves automatically.'}
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex-1 divide-y divide-border/40 overflow-y-auto">
           {wwTotals.length > 0 && (
-            <div className="px-3 py-3">
+            <div className="px-4 py-4">
               <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                 Written Works ({wwPct}%)
               </p>
@@ -1382,7 +1406,7 @@ function ScoringGuide({
             </div>
           )}
           {ptTotals.length > 0 && (
-            <div className="px-3 py-3">
+            <div className="px-4 py-4">
               <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                 Performance Tasks ({ptPct}%)
               </p>
@@ -1403,7 +1427,7 @@ function ScoringGuide({
               </div>
             </div>
           )}
-          <div className="px-3 py-3">
+          <div className="px-4 py-4">
             <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               Quarterly Assessment ({qaPct}%)
             </p>
@@ -1420,8 +1444,17 @@ function ScoringGuide({
             />
           </div>
         </div>
-      )}
-    </div>
+        <SheetFooter className="border-t border-border px-4 py-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setOpen(false)}
+          >
+            Done
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
