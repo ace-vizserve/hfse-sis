@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache';
 
+import { ROLES } from '@/lib/auth/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export type StaffMember = {
@@ -154,11 +155,25 @@ export async function getStaffDisplayNameById(): Promise<
 
 /**
  * Returns a count of active (non-disabled) staff accounts — used by the SIS
- * Admin sidebar's Staff count chip (SIS Admin visual pass, Task V2). Shares
- * the same 5-min cached listUsers() call as every other helper in this file
- * — no new query, just a length over the already-cached list.
+ * Admin sidebar's Staff count chip (SIS Admin visual pass, Task V2) and the
+ * Staff page's header/Accounts-tab count. Shares the same 5-min cached
+ * listUsers() call as every other helper in this file — no new query, just
+ * a length over the already-cached list.
+ *
+ * Filters to a real staff role (matches lib/sis/users/queries.ts's
+ * `listStaffUsers`) — the underlying `auth.users` table is shared with
+ * parent accounts (role: null, KD #11), so counting every non-disabled row
+ * without this filter counts parents as "staff" too. That bug is what made
+ * this show a flat 1000 — the raw listUsers() fetch is capped at
+ * `perPage: 1000`, so once total accounts (staff + parents) grew past that
+ * ceiling, the unfiltered count just reported the fetch cap itself.
  */
 export async function getStaffCount(): Promise<number> {
   const all = await _loadAllStaff();
-  return all.filter((u) => !u.disabled).length;
+  return all.filter(
+    (u) =>
+      !u.disabled &&
+      u.role != null &&
+      (ROLES as readonly string[]).includes(u.role)
+  ).length;
 }

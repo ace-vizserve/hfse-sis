@@ -3,6 +3,12 @@
  * email-keyed getStaffDisplayEntries(), added to resolve a
  * `teacher_assignments.teacher_user_id` to a display name (report card /
  * masterfile form-adviser fix). Shares the same cached listUsers() call.
+ *
+ * getStaffCount() — regression coverage for the "sidebar/Accounts-tab shows
+ * a flat 1000" bug: the roster below deliberately mixes staff (various
+ * roles), a disabled staff account, and role:null parent accounts (the
+ * shared auth.users table also holds parent logins, KD #11) to prove the
+ * count only includes non-disabled, real-role staff.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -34,6 +40,30 @@ vi.mock('@/lib/supabase/service', () => ({
                   app_metadata: { role: 'teacher' },
                   user_metadata: {},
                 },
+                {
+                  id: 'user-3',
+                  email: 'admin.person@hfse.edu.sg',
+                  app_metadata: { role: 'school_admin' },
+                  user_metadata: { full_name: 'Admin Person' },
+                },
+                {
+                  id: 'user-4-disabled',
+                  email: 'disabled.teacher@hfse.edu.sg',
+                  app_metadata: { role: 'teacher', disabled: true },
+                  user_metadata: { full_name: 'Disabled Teacher' },
+                },
+                {
+                  id: 'parent-1',
+                  email: 'parent1@gmail.com',
+                  app_metadata: {},
+                  user_metadata: { full_name: 'Some Parent' },
+                },
+                {
+                  id: 'parent-2',
+                  email: 'parent2@gmail.com',
+                  app_metadata: {},
+                  user_metadata: {},
+                },
               ],
             },
           })
@@ -44,6 +74,7 @@ vi.mock('@/lib/supabase/service', () => ({
 }));
 
 import {
+  getStaffCount,
   getStaffDisplayEntries,
   getStaffDisplayNameById,
 } from '@/lib/auth/staff-list';
@@ -63,5 +94,14 @@ describe('getStaffDisplayNameById', () => {
     expect(Array.from(byId.values()).sort()).toEqual(
       Array.from(byEmail.values()).sort()
     );
+  });
+});
+
+describe('getStaffCount', () => {
+  it('counts only non-disabled, real-role staff — excludes parents and disabled accounts', async () => {
+    // Roster: 3 active staff (user-1, user-2, user-3), 1 disabled staff
+    // (excluded), 2 parents with role:null (excluded — the exact bug this
+    // guards: parents sharing auth.users must never count as "staff").
+    await expect(getStaffCount()).resolves.toBe(3);
   });
 });
