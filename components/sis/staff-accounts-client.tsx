@@ -34,6 +34,16 @@ import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { Switch } from '@/components/ui/switch';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -248,14 +258,11 @@ function buildColumns(
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              disabled
-              className="text-destructive focus:text-destructive"
-              title="Deleting accounts isn't available yet — use Disable instead, or ask for this to be added."
-            >
-              <Trash2 className="size-3.5" />
-              Delete
-            </DropdownMenuItem>
+            <DeleteUserMenuItem
+              user={row.original}
+              isSelf={row.original.id === currentUserId}
+              canManage={canManage}
+            />
           </RowActionsMenu>
         </div>
       ),
@@ -606,6 +613,107 @@ function EditUserDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Delete user ──────────────────────────────────────────────────────────────
+
+function DeleteUserMenuItem({
+  user,
+  isSelf,
+  canManage,
+}: {
+  user: AdminUserRow;
+  isSelf: boolean;
+  canManage: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <DropdownMenuItem
+        disabled={isSelf || !canManage}
+        className="text-destructive focus:text-destructive"
+        onSelect={(e) => {
+          e.preventDefault();
+          setOpen(true);
+        }}
+        title={
+          !canManage
+            ? 'Only superadmins can delete staff accounts'
+            : isSelf
+              ? 'You cannot delete your own account'
+              : `Delete ${user.display_name}`
+        }
+      >
+        <Trash2 className="size-3.5" />
+        Delete
+      </DropdownMenuItem>
+      <DeleteUserDialog open={open} onOpenChange={setOpen} user={user} />
+    </>
+  );
+}
+
+function DeleteUserDialog({
+  open,
+  onOpenChange,
+  user,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  user: AdminUserRow;
+}) {
+  const router = useRouter();
+
+  const deleteMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/sis/admin/users/${user.id}`, jsonInit('DELETE')),
+    onSuccess: () => {
+      toast.success(`Deleted: ${user.email}`);
+      onOpenChange(false);
+      router.refresh();
+    },
+    onError: (e) => {
+      // The route's has_activity / last-superadmin messages are precise —
+      // never flatten them into a generic message (KD #24).
+      toast.error(e instanceof Error ? e.message : 'delete failed');
+    },
+  });
+  const busy = deleteMutation.isPending;
+
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o && !busy) onOpenChange(false);
+        else onOpenChange(o);
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this account?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently removes <strong>{user.email}</strong>. It only
+            succeeds if the account has never done anything the system tracks —
+            if it has, you&apos;ll see exactly where, and should use Disable
+            instead.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => {
+              e.preventDefault();
+              deleteMutation.mutate();
+            }}
+            disabled={busy}
+            variant="destructive"
+          >
+            {busy && <Loader2 className="mr-1 size-3.5 animate-spin" />}
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
