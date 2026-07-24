@@ -25,7 +25,7 @@ import {
 export default async function PFilesAuditLogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; pageSize?: string }>;
+  searchParams: Promise<{ page?: string; pageSize?: string; actor?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -43,6 +43,7 @@ export default async function PFilesAuditLogPage({
   const page = Math.max(Number(params.page ?? 1), 1);
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
+  const actorFilter = params.actor?.trim();
 
   const supabase = await createClient();
 
@@ -57,13 +58,17 @@ export default async function PFilesAuditLogPage({
     'sis.documents.auto-revive',
   ] as const;
 
-  const { data, count, error } = await supabase
+  let q = supabase
     .from('audit_log')
     .select(
       'id, actor_email, action, entity_type, entity_id, context, created_at',
       { count: 'exact' }
     )
-    .in('action', PFILES_AUDIT_ALLOWLIST)
+    .in('action', PFILES_AUDIT_ALLOWLIST);
+
+  if (actorFilter) q = q.eq('actor_email', actorFilter);
+
+  const { data, count, error } = await q
     .order('created_at', { ascending: false })
     .range(from, to);
 

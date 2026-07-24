@@ -20,7 +20,7 @@ import {
 export default async function SisAuditLogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; pageSize?: string }>;
+  searchParams: Promise<{ page?: string; pageSize?: string; actor?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -84,13 +84,19 @@ export default async function SisAuditLogPage({
     'pfile.mark.promised',
     'enrolment.metadata.update',
   ] as const;
-  const { data, count, error } = await supabase
+  const actorFilter = params.actor?.trim();
+
+  let q = supabase
     .from('audit_log')
     .select(
       'id, actor_email, action, entity_type, entity_id, context, created_at',
       { count: 'exact' }
     )
-    .in('action', RECORDS_AUDIT_ALLOWLIST)
+    .in('action', RECORDS_AUDIT_ALLOWLIST);
+
+  if (actorFilter) q = q.eq('actor_email', actorFilter);
+
+  const { data, count, error } = await q
     .order('created_at', { ascending: false })
     .range(from, to);
 

@@ -161,6 +161,7 @@ type SisAuditLogSearchParams = DashboardSearchParams & {
   view?: string;
   page?: string;
   pageSize?: string;
+  actor?: string;
 };
 
 export default async function SisAuditLogPage({
@@ -203,15 +204,21 @@ export default async function SisAuditLogPage({
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
+    const actorFilter = params.actor?.trim();
+
     const supabase = await createClient();
 
-    const { data, count, error } = await supabase
+    let q = supabase
       .from('audit_log')
       .select(
         'id, actor_email, action, entity_type, entity_id, context, created_at',
         { count: 'exact' }
       )
-      .in('action', SIS_AUDIT_ALLOWLIST)
+      .in('action', SIS_AUDIT_ALLOWLIST);
+
+    if (actorFilter) q = q.eq('actor_email', actorFilter);
+
+    const { data, count, error } = await q
       .order('created_at', { ascending: false })
       .range(from, to);
 

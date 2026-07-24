@@ -41,7 +41,7 @@ const ADMISSIONS_AUDIT_ACTIONS = [
 export default async function AdmissionsAuditLogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; pageSize?: string }>;
+  searchParams: Promise<{ page?: string; pageSize?: string; actor?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -61,18 +61,23 @@ export default async function AdmissionsAuditLogPage({
   const page = Math.max(Number(params.page ?? 1), 1);
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
+  const actorFilter = params.actor?.trim();
 
   const supabase = await createClient();
 
   // Widen prefix filter per KD #83: section transfers emit student.*, AY
   // accepting-applications toggles emit ay.*, so limit to sis.% missed them.
-  const { data, count, error } = await supabase
+  let q = supabase
     .from('audit_log')
     .select(
       'id, actor_email, action, entity_type, entity_id, context, created_at',
       { count: 'exact' }
     )
-    .in('action', ADMISSIONS_AUDIT_ACTIONS)
+    .in('action', ADMISSIONS_AUDIT_ACTIONS);
+
+  if (actorFilter) q = q.eq('actor_email', actorFilter);
+
+  const { data, count, error } = await q
     .order('created_at', { ascending: false })
     .range(from, to);
 
