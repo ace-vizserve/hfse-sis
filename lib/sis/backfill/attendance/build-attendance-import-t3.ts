@@ -17,6 +17,11 @@ import {
 } from './day-classifier-t3';
 import type { LegendGroupT3, ParsedSectionT3 } from './attendance-workbook-t3';
 import type { RosterLookupEntry } from './build-attendance-import';
+import {
+  buildEventAudienceMap,
+  audienceFor,
+  type Audience,
+} from './event-audience';
 
 export type { RosterLookupEntry };
 
@@ -153,6 +158,21 @@ export function buildAttendanceImportT3(
     if (allDatesISO[i] === null) unparseableDateHeaders.push(raw);
   });
 
+  // --- Event audience (per date+category, derived from which level TYPES
+  // actually carried the row-11 tag — see event-audience.ts) ---
+  const datesByRaw: Record<string, string> = {};
+  allDatesRaw.forEach((raw, i) => {
+    const iso = allDatesISO[i];
+    if (iso) datesByRaw[raw] = iso;
+  });
+  const eventAudienceMap = buildEventAudienceMap(
+    coreSections.map(({ parsed, levelCode }) => ({
+      levelCode,
+      dateTagsByRawDate: parsed.dateTags,
+    })),
+    datesByRaw
+  );
+
   // --- Row-11 tags (shared across sections for a given date — first found wins) ---
   const tagByDate = new Map<string, string>();
   for (let i = 0; i < allDatesRaw.length; i++) {
@@ -272,7 +292,8 @@ export function buildAttendanceImportT3(
     ayCode,
     termNumber,
     classifications,
-    markChunks
+    markChunks,
+    eventAudienceMap
   );
 
   return {
@@ -387,7 +408,8 @@ function buildApplyFiles(
   ayCode: string,
   termNumber: number,
   classifications: DateClassificationT3[],
-  markChunks: AttendanceRow[][]
+  markChunks: AttendanceRow[][],
+  eventAudienceMap: Map<string, Audience>
 ): ApplySqlFile[] {
   const totalFiles = 2 + markChunks.length + 1; // calendar + events + marks chunks + rollups
   const files: ApplySqlFile[] = [];
@@ -444,12 +466,14 @@ function buildApplyFiles(
       date: string;
       category: EventCategoryT3;
       label: string;
+      audience: Audience;
     }[] = classifications
       .filter((c) => c.event !== null && c.event.label !== null)
       .map((c) => ({
         date: c.date,
         category: c.event!.category,
         label: c.event!.label as string,
+        audience: audienceFor(eventAudienceMap, c.date, c.event!.category),
       }));
     const lines = applyFileHeader(
       termNumber,
@@ -464,19 +488,21 @@ function buildApplyFiles(
     } else {
       lines.push('drop table if exists _ay26att3_events;');
       lines.push(
-        'create temp table _ay26att3_events (date, category, label) as'
+        'create temp table _ay26att3_events (date, category, label, audience) as'
       );
       lines.push('values');
       const rows = eventRows.map(
         (e) =>
-          `  (date ${sqlString(e.date)}, ${sqlString(e.category)}, ${sqlString(e.label)})`
+          `  (date ${sqlString(e.date)}, ${sqlString(e.category)}, ${sqlString(e.label)}, ${sqlString(e.audience)})`
       );
       lines.push(rows.join(',\n') + ';');
       lines.push('');
       lines.push(
         'insert into calendar_events (term_id, start_date, end_date, label, audience, category)'
       );
-      lines.push("select t.id, e.date, e.date, e.label, 'all', e.category");
+      lines.push(
+        'select t.id, e.date, e.date, e.label, e.audience, e.category'
+      );
       lines.push('from _ay26att3_events e');
       lines.push(`join academic_years ay on ay.ay_code = ${sqlString(ayCode)}`);
       lines.push(
