@@ -1,4 +1,5 @@
 import { Badge } from '../ui/badge';
+import { cn } from '@/lib/utils';
 
 export type ChartLegendChipColor =
   | 'chart-1'
@@ -43,7 +44,7 @@ export function ChartLegendChip({
   className,
 }: ChartLegendChipProps) {
   return (
-    <Badge>
+    <Badge className={cn(chipGradientByColor[color], className)}>
       <span>{label}</span>
       {count !== undefined && (
         <span className="font-mono text-[10px] tabular-nums text-white/80">
