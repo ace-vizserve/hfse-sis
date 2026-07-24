@@ -111,7 +111,7 @@ export async function PATCH(
   if ('admin_notes' in parsed.data && !isAdminRole) {
     return NextResponse.json(
       {
-        error: 'admin_notes is editable by school_admin only',
+        error: 'admin_notes is editable by school_admin or superadmin only',
         code: 'field_forbidden',
       },
       { status: 403 }
