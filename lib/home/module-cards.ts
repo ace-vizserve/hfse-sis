@@ -129,7 +129,7 @@ async function buildMarkbookCard(
     );
     if (pending > 0) {
       card.badge = {
-        label: `${pending} CR ${pending === 1 ? 'pending' : 'pending'}`,
+        label: `${pending} ${pending === 1 ? 'CR' : 'CRs'} pending`,
         tone: 'warning',
       };
     }
