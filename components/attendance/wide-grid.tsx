@@ -516,6 +516,12 @@ export function AttendanceWideGrid({
     ? (cells.get(keyFor(activeCell.enrolmentId, activeCell.iso)) ?? null)
     : null;
 
+  // Resolve the active metadata-editor row, same defensive-lookup pattern as
+  // activeEnrolment above (never a non-null assertion on a derived find()).
+  const activeMetaEnrolment = activeMetaEnrolmentId
+    ? (enrolments.find((e) => e.enrolmentId === activeMetaEnrolmentId) ?? null)
+    : null;
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -936,11 +942,9 @@ export function AttendanceWideGrid({
           if (!o) setActiveMetaEnrolmentId(null);
         }}
       >
-        {activeMetaEnrolmentId && (
+        {activeMetaEnrolment && activeMetaEnrolmentId && (
           <EnrolmentMetaEditor
-            enrolment={
-              enrolments.find((e) => e.enrolmentId === activeMetaEnrolmentId)!
-            }
+            enrolment={activeMetaEnrolment}
             canEditBusCare={canEditBusCare}
             canEditAcademics={canEditAcademics}
             canEditAdmin={canEditAdmin}
