@@ -19,13 +19,7 @@ export function ModuleCardGrid({ cards }: { cards: ModuleCard[] }) {
                 {card.module}
               </span>
               {card.badge ? (
-                <Badge
-                  variant={
-                    card.badge.tone === 'success' ? 'success' : 'warning'
-                  }
-                >
-                  {card.badge.label}
-                </Badge>
+                <Badge variant={card.badge.tone}>{card.badge.label}</Badge>
               ) : null}
             </div>
             <ModuleCardChartView chart={card.chart} />

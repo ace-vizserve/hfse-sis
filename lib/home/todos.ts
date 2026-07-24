@@ -1,6 +1,9 @@
+import { unstable_cache } from 'next/cache';
+
 import type { Role } from '@/lib/auth/roles';
 import type { PriorityPayload } from '@/lib/dashboard/priority';
 import { createServiceClient } from '@/lib/supabase/service';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { sgToday } from '@/lib/dates';
 
 export type HomeTodoItem = {
@@ -9,9 +12,47 @@ export type HomeTodoItem = {
   text: string;
   href: string;
   kind: 'review' | 'change-request';
-  aging?: { label: string; tone: 'success' | 'warning' };
+  aging?: { label: string; tone: 'success' | 'warning' | 'destructive' };
   requestId?: string;
 };
+
+/**
+ * Shared `academic_years.id` lookup by `ay_code` — used by every to-do
+ * source in this module that needs to scope a service-client query to the
+ * current AY. Returns `null` when the AY row doesn't exist; callers decide
+ * their own empty-result shape (`[]` vs `null`).
+ */
+async function resolveAyId(
+  service: SupabaseClient,
+  ayCode: string
+): Promise<string | null> {
+  const { data: ayRow } = await service
+    .from('academic_years')
+    .select('id')
+    .eq('ay_code', ayCode)
+    .maybeSingle();
+  return (ayRow as { id: string } | null)?.id ?? null;
+}
+
+/**
+ * Runs `fn` over `items` in fixed-size concurrent batches (default 5) —
+ * matches the bulk-publish dialog's per-section readiness fetch pattern
+ * (KD #139/#145), so a large AY's section count doesn't fan out an
+ * unbounded `Promise.all` in one shot.
+ */
+async function mapInChunks<T, R>(
+  items: T[],
+  chunkSize: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const batch = items.slice(i, i + chunkSize);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
 
 function fromPriority(
   id: string,
@@ -48,11 +89,12 @@ async function teacherTodos(
 
 function agingFor(requestedAt: string): {
   label: string;
-  tone: 'success' | 'warning';
+  tone: 'success' | 'warning' | 'destructive';
 } {
   const days = Math.floor((Date.now() - Date.parse(requestedAt)) / 86_400_000);
   const label = days === 1 ? '1 day' : `${days} days`;
-  return { label, tone: days < 3 ? 'success' : 'warning' };
+  const tone = days > 7 ? 'destructive' : days >= 3 ? 'warning' : 'success';
+  return { label, tone };
 }
 
 type RawCrRow = {
@@ -78,12 +120,7 @@ async function schoolAdminChangeRequestTodos(
   userId: string
 ): Promise<HomeTodoItem[]> {
   const service = createServiceClient();
-  const { data: ayRow } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('ay_code', ayCode)
-    .maybeSingle();
-  const ayId = (ayRow as { id: string } | null)?.id;
+  const ayId = await resolveAyId(service, ayCode);
   if (!ayId) return [];
 
   const { data, error } = await service
@@ -172,19 +209,17 @@ async function pFilesValidationTodo(
  * source that isn't a single existing count helper (flagged in the design
  * spec as the item most worth a second look). Scans every section in the
  * AY via the same per-section cumulativeCommentGaps call the bulk-publish
- * dialog already fans out client-side (KD #139) — same cost profile,
- * just server-side and capped to a count + first offending section.
+ * dialog already fans out client-side (KD #139), but throttled server-side
+ * to batches of 5 concurrent sections (mapInChunks) rather than one
+ * unbounded Promise.all — and cached 60s under the `sis:${ayCode}` tag
+ * (KD #54 convention) since this runs on every page load for 3 of the 4
+ * roles that reach `/`.
  */
-async function reportCardGapsTodo(
+async function loadReportCardGapsTodoUncached(
   ayCode: string
 ): Promise<HomeTodoItem | null> {
   const service = createServiceClient();
-  const { data: ayRow } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('ay_code', ayCode)
-    .maybeSingle();
-  const ayId = (ayRow as { id: string } | null)?.id;
+  const ayId = await resolveAyId(service, ayCode);
   if (!ayId) return null;
 
   const { data: terms } = await service
@@ -219,17 +254,15 @@ async function reportCardGapsTodo(
     virtue_theme: t.virtue_theme,
   }));
 
-  const gapsPerSection = await Promise.all(
-    sectionRows.map(async (s) => ({
-      section: s,
-      gaps: await cumulativeCommentGaps(
-        service,
-        s.id,
-        allTerms,
-        currentTerm.term_number
-      ),
-    }))
-  );
+  const gapsPerSection = await mapInChunks(sectionRows, 5, async (s) => ({
+    section: s,
+    gaps: await cumulativeCommentGaps(
+      service,
+      s.id,
+      allTerms,
+      currentTerm.term_number
+    ),
+  }));
   const sectionsWithGaps = gapsPerSection.filter((r) =>
     r.gaps.some((g) => g.missing.length > 0 || g.virtueMissing)
   );
@@ -243,6 +276,14 @@ async function reportCardGapsTodo(
     href: `/evaluation/sections/${sectionsWithGaps[0].section.id}`,
     kind: 'review',
   };
+}
+
+function reportCardGapsTodo(ayCode: string): Promise<HomeTodoItem | null> {
+  return unstable_cache(
+    loadReportCardGapsTodoUncached,
+    ['home', 'report-card-gaps', ayCode],
+    { tags: [`sis:${ayCode}`], revalidate: 60 }
+  )(ayCode);
 }
 
 /**

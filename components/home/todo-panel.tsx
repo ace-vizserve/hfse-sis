@@ -36,7 +36,11 @@ export function TodoPanel({
             <span className="flex-1 text-sm text-foreground">{item.text}</span>
             {item.aging ? (
               <Badge
-                variant={item.aging.tone === 'success' ? 'success' : 'warning'}
+                variant={
+                  item.aging.tone === 'destructive'
+                    ? 'blocked'
+                    : item.aging.tone
+                }
               >
                 {item.aging.label}
               </Badge>
