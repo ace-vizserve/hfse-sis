@@ -9,8 +9,9 @@ import {
 } from '@/lib/markbook/dashboard';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import { getStaffCount } from '@/lib/auth/staff-list';
-import { getPFilesKpisRange, getPFilesPriority } from '@/lib/p-files/dashboard';
+import { getPFilesKpisRange } from '@/lib/p-files/dashboard';
 import { getOutdatedApplications } from '@/lib/admissions/dashboard';
+import { getExpiringDocuments } from '@/lib/sis/dashboard';
 
 export type StatRow = {
   label: string;
@@ -41,11 +42,14 @@ type Params = {
  * so the from/to values passed here don't affect the result — a single-day
  * "today" range is used only to satisfy the required shape.
  *
- * `getPFilesPriority` takes `{ ayCode }` (not a bare string) and its
- * `PriorityPayload.headline.value` is overdue-count + due-within-14-days
- * count combined — there is no separate `overdueCount` field on the real
- * type, so the "Needs urgent attention" row reads `headline.value` and is
- * labelled to match what that number actually represents.
+ * p_file_officer's "Already expired" row derives `overdue.length` the same
+ * way `getPFilesPriority` computes its internal `overdue` array
+ * (lib/p-files/dashboard.ts:759) — calling the already-cached
+ * `getExpiringDocuments(ayCode, 60, 10_000)` directly and filtering to
+ * `daysUntilExpiry < 0` — rather than reading `getPFilesPriority`'s
+ * `headline.value`, which is overdue-count + due-within-14-days count
+ * combined and would double-count against the adjacent "Expiring within
+ * 30 days" row.
  */
 export async function getThisTermStats(params: Params): Promise<StatRow[]> {
   const { role, userId, ayCode, supabase, service } = params;
@@ -118,6 +122,15 @@ export async function getThisTermStats(params: Params): Promise<StatRow[]> {
       const count = await getStaffCount();
       return { label: 'Active staff accounts', value: count };
     });
+    // Test-environment convention (KD #52): a test AY's code matches
+    // ^AY9 (e.g. AY9999); production AYs don't. Synchronous facts, no
+    // dashboard call, so no push() wrapper is needed.
+    rows.push({
+      label: 'Environment',
+      value: /^AY9/.test(ayCode) ? 'Test' : 'Production',
+      tone: 'default',
+    });
+    rows.push({ label: 'Current AY', value: ayCode, tone: 'default' });
     return rows;
   }
 
@@ -138,10 +151,11 @@ export async function getThisTermStats(params: Params): Promise<StatRow[]> {
       };
     });
     await push(async () => {
-      const priority = await getPFilesPriority({ ayCode });
+      const expiring = await getExpiringDocuments(ayCode, 60, 10_000);
+      const overdue = expiring.filter((r) => r.daysUntilExpiry < 0);
       return {
-        label: 'Needs urgent attention',
-        value: priority.headline.value,
+        label: 'Already expired',
+        value: overdue.length,
         tone: 'warning',
       };
     });

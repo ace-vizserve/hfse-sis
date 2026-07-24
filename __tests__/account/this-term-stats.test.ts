@@ -33,11 +33,20 @@ vi.mock('@/lib/p-files/dashboard', () => ({
   getPFilesKpisRange: vi.fn(() =>
     Promise.resolve({ current: { expiringSoon30: 12 } })
   ),
-  // Real shape: PriorityPayload — there is no `overdueCount` field. The
-  // function's `headline.value` is overdue-count + due-within-14-days count
-  // combined (see lib/p-files/dashboard.ts::getPFilesPriority), so the stat
-  // row below reads `headline.value`, not a nonexistent `overdueCount`.
-  getPFilesPriority: vi.fn(() => Promise.resolve({ headline: { value: 3 } })),
+}));
+vi.mock('@/lib/sis/dashboard', () => ({
+  // Real shape: ExpiringDocRow[] (lib/sis/dashboard.ts::getExpiringDocuments).
+  // Mix of overdue (negative daysUntilExpiry) and due-soon (non-negative) so
+  // the "Already expired" row is provably filtered, not the combined total.
+  getExpiringDocuments: vi.fn(() =>
+    Promise.resolve([
+      { daysUntilExpiry: -5 },
+      { daysUntilExpiry: -1 },
+      { daysUntilExpiry: 0 },
+      { daysUntilExpiry: 10 },
+      { daysUntilExpiry: 20 },
+    ])
+  ),
 }));
 vi.mock('@/lib/admissions/dashboard', () => ({
   getOutdatedApplications: vi.fn(() => Promise.resolve(new Array(5).fill({}))),
@@ -45,7 +54,8 @@ vi.mock('@/lib/admissions/dashboard', () => ({
 
 import { getThisTermStats } from '@/lib/account/this-term-stats';
 import { getMarkbookKpisRange } from '@/lib/markbook/dashboard';
-import { getPFilesKpisRange, getPFilesPriority } from '@/lib/p-files/dashboard';
+import { getPFilesKpisRange } from '@/lib/p-files/dashboard';
+import { getExpiringDocuments } from '@/lib/sis/dashboard';
 import { getStaffCount } from '@/lib/auth/staff-list';
 
 const base = {
@@ -97,19 +107,36 @@ describe('getThisTermStats', () => {
     ]);
   });
 
-  it('superadmin: active staff count', async () => {
+  it('superadmin: active staff count + environment (production AY) + current AY', async () => {
     const rows = await getThisTermStats({ ...base, role: 'superadmin' });
-    expect(rows).toEqual([{ label: 'Active staff accounts', value: 28 }]);
+    expect(rows).toEqual([
+      { label: 'Active staff accounts', value: 28 },
+      { label: 'Environment', value: 'Production', tone: 'default' },
+      { label: 'Current AY', value: 'AY2026', tone: 'default' },
+    ]);
   });
 
-  it('p_file_officer: expiring-soon count + priority headline (real getPFilesPriority shape)', async () => {
+  it('superadmin: environment reads "Test" for a test AY code (^AY9)', async () => {
+    const rows = await getThisTermStats({
+      ...base,
+      role: 'superadmin',
+      ayCode: 'AY9999',
+    });
+    expect(rows).toEqual([
+      { label: 'Active staff accounts', value: 28 },
+      { label: 'Environment', value: 'Test', tone: 'default' },
+      { label: 'Current AY', value: 'AY9999', tone: 'default' },
+    ]);
+  });
+
+  it('p_file_officer: expiring-soon count + already-expired count (filtered from getExpiringDocuments, not the combined priority headline)', async () => {
     const rows = await getThisTermStats({ ...base, role: 'p_file_officer' });
     expect(rows).toEqual([
       { label: 'Expiring within 30 days', value: 12, tone: 'warning' },
-      { label: 'Needs urgent attention', value: 3, tone: 'warning' },
+      // Mock data has exactly 2 rows with daysUntilExpiry < 0 (-5, -1).
+      { label: 'Already expired', value: 2, tone: 'warning' },
     ]);
-    // Real PFilesPriorityInput is { ayCode: string } — not a bare string.
-    expect(getPFilesPriority).toHaveBeenCalledWith({ ayCode: 'AY2026' });
+    expect(getExpiringDocuments).toHaveBeenCalledWith('AY2026', 60, 10_000);
     expect(getPFilesKpisRange).toHaveBeenCalledWith(
       expect.objectContaining({
         ayCode: 'AY2026',
@@ -128,9 +155,15 @@ describe('getThisTermStats', () => {
     ]);
   });
 
-  it('omits a role branch row entirely when its underlying call throws (no fake zero)', async () => {
+  it('omits a role branch row entirely when its underlying call throws (no fake zero) — sync rows still ship', async () => {
     vi.mocked(getStaffCount).mockRejectedValueOnce(new Error('boom'));
     const rows = await getThisTermStats({ ...base, role: 'superadmin' });
-    expect(rows).toEqual([]);
+    // "Active staff accounts" is omitted (its push() threw); Environment +
+    // Current AY are plain synchronous facts with nothing that can throw,
+    // so they still ship.
+    expect(rows).toEqual([
+      { label: 'Environment', value: 'Production', tone: 'default' },
+      { label: 'Current AY', value: 'AY2026', tone: 'default' },
+    ]);
   });
 });
