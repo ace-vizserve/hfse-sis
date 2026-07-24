@@ -136,6 +136,7 @@ const SIS_AUDIT_ALLOWLIST = [
   'user.role.update',
   'user.disable',
   'user.enable',
+  'user.delete',
   // Environment + seeder (KD #52)
   'environment.switch',
   'environment.seed',

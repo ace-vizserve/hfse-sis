@@ -30,6 +30,10 @@ describe('auditActionLabel', () => {
     expect(auditActionLabel('parent.session.issued')).toBe('Parent signed in');
   });
 
+  it('user.delete → "User deleted"', () => {
+    expect(auditActionLabel('user.delete')).toBe('User deleted');
+  });
+
   it('labels the grade-level admin actions', () => {
     expect(auditActionLabel('level.create')).toBe('Grade level added');
     expect(auditActionLabel('level.update')).toBe('Grade level updated');
@@ -61,6 +65,10 @@ describe('auditActionTone', () => {
     expect(auditActionTone('user.disable')).toBe('destructive');
     expect(auditActionTone('sis.documents.auto-expire')).toBe('destructive');
     expect(auditActionTone('ay.delete')).toBe('destructive');
+  });
+
+  it('user.delete → destructive (generic "delete" match)', () => {
+    expect(auditActionTone('user.delete')).toBe('destructive');
   });
 
   it('classifies warning actions', () => {
@@ -231,6 +239,15 @@ describe('auditContextSummary — per-action templates', () => {
       rows_renumbered: 18,
     });
     expect(out).toBe('18 students renumbered');
+  });
+
+  it('user.delete reports email + role, same shape as user.create', () => {
+    const out = auditContextSummary('user.delete', {
+      email: 'exteacher@hfse.edu.sg',
+      role: 'teacher',
+    });
+    expect(out).toContain('exteacher@hfse.edu.sg');
+    expect(out).toContain('Teacher');
   });
 });
 
