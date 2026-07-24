@@ -63,6 +63,8 @@ export default async function SisAuditLogPage({
     'sis.allowance.update',
     'sis.vl_allowance.update',
     'sis.student.assign_section',
+    'sis.student.auto_sync_batch',
+    'level.alias.create',
     'student.sync',
     'student.add',
     'student.section.transfer',

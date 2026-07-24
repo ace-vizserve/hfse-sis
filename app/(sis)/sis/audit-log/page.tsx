@@ -87,7 +87,10 @@ const SIS_AUDIT_ALLOWLIST = [
   'approver.revoke',
   // Subject catalog (KD #72)
   'subject.create',
+  'subject_config.create',
   'subject_config.update',
+  'subject_level_offering.toggle',
+  'subject_report_map.update',
   'subject.catalog.update',
   // Master class template (KD #66, #72)
   'template.section.create',
@@ -103,6 +106,8 @@ const SIS_AUDIT_ALLOWLIST = [
   'section.rename',
   'section.delete',
   'section.realphabetize',
+  'section.index.generate',
+  'section.track.assign',
   'section.subject.assign',
   'section.subject.remove',
   'section.subjects.load_defaults',
@@ -111,11 +116,14 @@ const SIS_AUDIT_ALLOWLIST = [
   'assignment.delete',
   // Grade levels & progression (migration 078) — the admin page + write
   // routes were removed by migration 086; kept in this allowlist so
-  // historical rows stay visible (Hard Rule #6, append-only).
+  // historical rows stay visible (Hard Rule #6, append-only). sis.level.create
+  // is the same removed feature's later action name (was missed when this
+  // cluster was first written — audit-log-coverage sweep, 2026-07-24).
   'level.create',
   'level.update',
   'level.delete',
   'level.offering.toggle',
+  'sis.level.create',
   // School calendar (/sis/calendar) — full trail incl. events + auto-seed
   'attendance.calendar.upsert',
   'attendance.calendar.delete',
@@ -133,6 +141,7 @@ const SIS_AUDIT_ALLOWLIST = [
   // User provisioning (KD #87)
   'user.invite',
   'user.create',
+  'user.info.update',
   'user.role.update',
   'user.disable',
   'user.enable',
@@ -141,6 +150,7 @@ const SIS_AUDIT_ALLOWLIST = [
   'environment.switch',
   'environment.seed',
   'environment.topup',
+  'environment.demo_accounts_removed',
   // Session issuance (Phase 7 — visibility for security review)
   'user.login',
   'parent.session.issued',

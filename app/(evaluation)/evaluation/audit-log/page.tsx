@@ -23,8 +23,6 @@ import {
   type MergedRow,
 } from '@/app/(markbook)/markbook/audit-log/audit-log-data-table';
 
-// evaluation.term.open + evaluation.term.close are in the enum but never
-// emitted (window concept removed), so they're intentionally excluded.
 const EVALUATION_AUDIT_ALLOWLIST = [
   'evaluation.writeup.save',
   'evaluation.writeup.submit',

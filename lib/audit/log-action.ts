@@ -3,145 +3,149 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 // Comprehensive audit action taxonomy. Any mutation that touches real data
 // should log one of these via `logAction()`. Matches the `action` column
 // values expected by the audit-log UI; keep them in sync.
-export type AuditAction =
-  | 'sheet.create'
-  | 'sheet.bulk_create'
-  | 'sheet.lock'
-  | 'sheet.unlock'
-  | 'sheet.unlock_force_with_pending_crs'
-  | 'sheet.unlock_force_deadline_passed'
-  | 'sheet.lock_overdue_batch'
-  | 'sheet.labels.update'
-  | 'entry.update'
-  | 'totals.update'
-  | 'student.sync'
-  | 'student.add'
-  | 'student.section.transfer'
-  | 'student.withdrawal.cascade'
-  | 'student.reenrolment.cascade'
-  | 'sis.student.assign_section'
-  | 'sis.student.auto_sync_batch'
-  | 'enrolment.metadata.update'
-  | 'assignment.create'
-  | 'assignment.delete'
-  | 'section.create'
-  | 'section.rename'
-  | 'section.delete'
-  | 'section.realphabetize'
-  | 'section.index.generate'
-  | 'section.subject.assign'
-  | 'section.subject.remove'
-  | 'section.subjects.load_defaults'
-  | 'section.subjects.attach_many'
-  | 'section.track.assign'
-  | 'attendance.update'
-  | 'attendance.daily.update'
-  | 'attendance.daily.correct'
-  | 'attendance.import.bulk'
-  | 'attendance.calendar.upsert'
-  | 'attendance.calendar.delete'
-  | 'attendance.calendar.autoseed'
-  | 'attendance.calendar.copy_from_prior_ay'
-  | 'attendance.event.create'
-  | 'attendance.event.update'
-  | 'attendance.event.delete'
-  | 'comment.update'
-  | 'publication.create'
-  | 'publication.delete'
-  | 'grade_change_requested'
-  | 'grade_change_approved'
-  | 'grade_change_rejected'
-  | 'grade_change_cancelled'
-  | 'grade_change_applied'
-  | 'grade_change_undo_rejection'
-  | 'grade_correction'
-  | 'pfile.upload'
-  | 'pfile.reminder.sent'
-  | 'pfile.reminder.bulk'
-  | 'pfile.mark.promised'
-  | 'admissions.reminder.sent'
-  | 'admissions.reminder.bulk'
-  | 'admissions.mark.promised'
-  | 'admissions.level_label.remap'
-  | 'sis.profile.update'
-  | 'sis.family.update'
-  | 'sis.stage.update'
-  | 'sis.stp.update'
-  | 'sis.precourse.update'
-  | 'sis.discount_code.create'
-  | 'sis.discount_code.update'
-  | 'sis.discount_code.expire'
-  | 'sis.document.approve'
-  | 'sis.document.reject'
-  | 'sis.documents.auto-expire'
-  | 'sis.documents.auto-revive'
-  | 'sis.allowance.update'
-  | 'sis.vl_allowance.update'
-  | 'sis.level.create'
+//
+// Single source of truth: `AuditAction` is DERIVED from this const array
+// (not the other way around) so there is one list, not a type + a separate
+// runtime mirror that could drift. `ALL_AUDIT_ACTIONS` is what
+// __tests__/audit/allowlist-coverage.test.ts enumerates to confirm every
+// action is reachable from at least one module's /audit-log page.
+export const ALL_AUDIT_ACTIONS = [
+  'sheet.create',
+  'sheet.bulk_create',
+  'sheet.lock',
+  'sheet.unlock',
+  'sheet.unlock_force_with_pending_crs',
+  'sheet.unlock_force_deadline_passed',
+  'sheet.lock_overdue_batch',
+  'sheet.labels.update',
+  'entry.update',
+  'totals.update',
+  'student.sync',
+  'student.add',
+  'student.section.transfer',
+  'student.withdrawal.cascade',
+  'student.reenrolment.cascade',
+  'sis.student.assign_section',
+  'sis.student.auto_sync_batch',
+  'enrolment.metadata.update',
+  'assignment.create',
+  'assignment.delete',
+  'section.create',
+  'section.rename',
+  'section.delete',
+  'section.realphabetize',
+  'section.index.generate',
+  'section.subject.assign',
+  'section.subject.remove',
+  'section.subjects.load_defaults',
+  'section.subjects.attach_many',
+  'section.track.assign',
+  'attendance.update',
+  'attendance.daily.update',
+  'attendance.daily.correct',
+  'attendance.import.bulk',
+  'attendance.calendar.upsert',
+  'attendance.calendar.delete',
+  'attendance.calendar.autoseed',
+  'attendance.calendar.copy_from_prior_ay',
+  'attendance.event.create',
+  'attendance.event.update',
+  'attendance.event.delete',
+  'comment.update',
+  'publication.create',
+  'publication.delete',
+  'grade_change_requested',
+  'grade_change_approved',
+  'grade_change_rejected',
+  'grade_change_cancelled',
+  'grade_change_applied',
+  'grade_change_undo_rejection',
+  'grade_correction',
+  'pfile.upload',
+  'pfile.reminder.sent',
+  'pfile.reminder.bulk',
+  'pfile.mark.promised',
+  'admissions.reminder.sent',
+  'admissions.reminder.bulk',
+  'admissions.mark.promised',
+  'sis.profile.update',
+  'sis.family.update',
+  'sis.stage.update',
+  'sis.stp.update',
+  'sis.precourse.update',
+  'sis.discount_code.create',
+  'sis.discount_code.update',
+  'sis.discount_code.expire',
+  'sis.document.approve',
+  'sis.document.reject',
+  'sis.documents.auto-expire',
+  'sis.documents.auto-revive',
+  'sis.allowance.update',
+  'sis.vl_allowance.update',
+  'sis.level.create',
   // 'level.create'/'level.update'/'level.delete'/'level.offering.toggle'
   // backed the Grade Levels admin CRUD (KD #153) — removed by migration 086
   // alongside the whole page. Retained here for back-compat with historical
   // audit_log rows (Hard Rule #6, append-only); no code emits them anymore.
-  | 'level.create'
-  | 'level.update'
-  | 'level.delete'
-  | 'level.offering.toggle'
-  | 'level.alias.create'
-  | 'ay.create'
-  | 'ay.switch_current'
-  | 'ay.accepting_applications.toggle'
-  | 'ay.delete'
-  | 'ay.term_dates.update'
-  | 'ay.term_virtue.update'
-  | 'ay.term_grading_lock.update'
-  | 'evaluation.writeup.save'
-  | 'evaluation.writeup.submit'
-  | 'evaluation.writeup.resubmit'
-  | 'evaluation.term.open'
-  | 'evaluation.term.close'
-  | 'evaluation.checklist_item.create'
-  | 'evaluation.checklist_item.update'
-  | 'evaluation.checklist_item.delete'
-  | 'evaluation.checklist_item.reorder'
-  | 'evaluation.checklist_item.copy_from'
-  | 'evaluation.checklist_response.save'
-  | 'evaluation.subject_comment.save'
-  | 'evaluation.ptc_feedback.save'
-  | 'ay.copy_teacher_assignments'
-  | 'approver.assign'
-  | 'approver.revoke'
-  | 'subject_config.update'
-  | 'subject_config.create'
-  | 'subject_level_offering.toggle'
-  | 'subject_report_map.update'
-  | 'subject.catalog.update'
-  | 'template.section.create'
-  | 'template.section.update'
-  | 'template.section.delete'
-  | 'template.subject_config.create'
-  | 'template.subject_config.update'
-  | 'template.subject_config.delete'
-  | 'template.subject_config.bulk_delete'
-  | 'template.subject_level_offering.toggle'
-  | 'template.subject_level_offering.detach_all'
-  | 'subject.create'
-  | 'template.apply'
-  | 'school_config.update'
-  | 'user.invite'
-  | 'user.create'
-  | 'user.info.update'
-  | 'user.role.update'
-  | 'user.disable'
-  | 'user.enable'
-  | 'user.delete'
-  | 'environment.switch'
-  | 'environment.seed'
-  | 'environment.topup'
-  | 'environment.demo_accounts_removed'
-  | 'grade_entry.annual_letter.update'
-  | 'user.login'
-  | 'parent.session.issued'
-  | 'parent.session.cleared';
+  'level.create',
+  'level.update',
+  'level.delete',
+  'level.offering.toggle',
+  'level.alias.create',
+  'ay.create',
+  'ay.switch_current',
+  'ay.accepting_applications.toggle',
+  'ay.delete',
+  'ay.term_dates.update',
+  'ay.term_virtue.update',
+  'ay.term_grading_lock.update',
+  'evaluation.writeup.save',
+  'evaluation.writeup.submit',
+  'evaluation.writeup.resubmit',
+  'evaluation.checklist_item.create',
+  'evaluation.checklist_item.update',
+  'evaluation.checklist_item.delete',
+  'evaluation.checklist_item.reorder',
+  'evaluation.checklist_item.copy_from',
+  'evaluation.checklist_response.save',
+  'evaluation.subject_comment.save',
+  'evaluation.ptc_feedback.save',
+  'ay.copy_teacher_assignments',
+  'approver.assign',
+  'approver.revoke',
+  'subject_config.update',
+  'subject_config.create',
+  'subject_level_offering.toggle',
+  'subject_report_map.update',
+  'subject.catalog.update',
+  'template.section.create',
+  'template.section.update',
+  'template.section.delete',
+  'template.subject_config.create',
+  'template.subject_config.update',
+  'template.subject_config.delete',
+  'template.subject_config.bulk_delete',
+  'subject.create',
+  'template.apply',
+  'school_config.update',
+  'user.invite',
+  'user.create',
+  'user.info.update',
+  'user.role.update',
+  'user.disable',
+  'user.enable',
+  'user.delete',
+  'environment.switch',
+  'environment.seed',
+  'environment.topup',
+  'environment.demo_accounts_removed',
+  'grade_entry.annual_letter.update',
+  'user.login',
+  'parent.session.issued',
+  'parent.session.cleared',
+] as const;
+
+export type AuditAction = (typeof ALL_AUDIT_ACTIONS)[number];
 
 export type AuditEntityType =
   | 'grading_sheet'

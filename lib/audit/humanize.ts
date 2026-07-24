@@ -12,6 +12,7 @@
 // Label maps are IMPORTED from the schema modules (single source of truth) —
 // they are not redefined here.
 
+import type { AuditAction } from '@/lib/audit/log-action';
 import {
   ATTENDANCE_STATUS_LABELS,
   EX_REASON_LABELS,
@@ -33,8 +34,10 @@ import {
 // ─────────────────────────────────────────────────────────────────────────
 
 // Concise human label for every member of the AuditAction union in
-// lib/audit/log-action.ts. Unknown codes fall through to prettify().
-const ACTION_LABELS: Record<string, string> = {
+// lib/audit/log-action.ts. Typed as Record<AuditAction, string> (not
+// Record<string, string>) so adding a new AuditAction WITHOUT a label here
+// is a compile error, not a silent prettify() fallback at runtime.
+const ACTION_LABELS: Record<AuditAction, string> = {
   // Grading sheets
   'sheet.create': 'Sheet created',
   'sheet.bulk_create': 'Sheets created',
@@ -70,9 +73,14 @@ const ACTION_LABELS: Record<string, string> = {
   // Sections
   'section.create': 'Section created',
   'section.rename': 'Section renamed',
+  'section.delete': 'Section removed',
   'section.realphabetize': 'Roster re-alphabetized',
   'section.index.generate': 'Class index generated',
   'section.track.assign': 'Section track set',
+  'section.subject.assign': 'Subject attached to section',
+  'section.subject.remove': 'Subject removed from section',
+  'section.subjects.load_defaults': 'Default subjects loaded',
+  'section.subjects.attach_many': 'Subjects attached in bulk',
 
   // Attendance
   'attendance.update': 'Attendance updated',
@@ -110,7 +118,6 @@ const ACTION_LABELS: Record<string, string> = {
   'admissions.reminder.sent': 'Reminder sent',
   'admissions.reminder.bulk': 'Reminders sent',
   'admissions.mark.promised': 'Marked as promised',
-  'admissions.level_label.remap': 'Level labels remapped',
 
   // SIS / admissions edits
   'sis.profile.update': 'Profile updated',
@@ -152,8 +159,6 @@ const ACTION_LABELS: Record<string, string> = {
   'evaluation.writeup.save': 'Write-up saved',
   'evaluation.writeup.submit': 'Write-up submitted',
   'evaluation.writeup.resubmit': 'Write-up resubmitted',
-  'evaluation.term.open': 'Evaluation term opened',
-  'evaluation.term.close': 'Evaluation term closed',
   'evaluation.checklist_item.create': 'Topic added',
   'evaluation.checklist_item.update': 'Topic updated',
   'evaluation.checklist_item.delete': 'Topic removed',
@@ -180,9 +185,6 @@ const ACTION_LABELS: Record<string, string> = {
   'template.subject_config.update': 'Template subject updated',
   'template.subject_config.delete': 'Template subject removed',
   'template.subject_config.bulk_delete': 'Template subjects removed',
-  'template.subject_level_offering.toggle': 'Template subject level updated',
-  'template.subject_level_offering.detach_all':
-    'Template subject detached from all levels',
   'subject.create': 'Subject created',
   'template.apply': 'Template applied',
   'school_config.update': 'School settings updated',
@@ -209,7 +211,7 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 export function auditActionLabel(action: string): string {
-  return ACTION_LABELS[action] ?? prettify(action);
+  return ACTION_LABELS[action as AuditAction] ?? prettify(action);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
