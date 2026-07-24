@@ -53,6 +53,12 @@ import {
   resolveNonExaminableLetter,
   type NonExaminableLetter,
 } from '@/lib/compute/letter-grade';
+import {
+  slotMetaSatisfied,
+  slotRosterScored,
+  type SlotKind,
+} from '@/lib/grading/first-score-gate';
+import { FirstScoreLabelDialog } from './first-score-label-dialog';
 
 export type GradeRow = {
   entry_id: string;
@@ -169,6 +175,34 @@ export function ScoreEntryGrid({
   const savedRowsRef = useRef<Map<string, GradeRow>>(
     new Map(initialRows.map((r) => [r.entry_id, r]))
   );
+
+  // Roster-wide "does this slot already hold a committed score?" — read from
+  // savedRowsRef (server-confirmed truth), never from `rows` (which updates
+  // optimistically on every keystroke via onLocalChange, so by commit time it
+  // would already reflect the just-typed value and the gate would never
+  // fire). Mirrors exactly what the entries PATCH route independently checks.
+  const slotAlreadyScored = useCallback(
+    (kind: SlotKind, index: number | null): boolean =>
+      slotRosterScored(kind, index, Array.from(savedRowsRef.current.values())),
+    []
+  );
+
+  // First-score label gate — set when a genuine first score for a slot needs
+  // a label before it can save (see commitScore below). Rendering the dialog
+  // conditionally on this being non-null (rather than an always-mounted
+  // instance with `open` toggled) is deliberate: FirstScoreLabelDialog seeds
+  // its internal label/date/page state from `seedMeta` only on mount, so a
+  // persistent instance would leak a previously-labeled slot's state into a
+  // newly-gated one.
+  const [pendingFirstScore, setPendingFirstScore] = useState<{
+    entryId: string;
+    kind: SlotKind;
+    slotIndex: number | null;
+    target: Omit<ChangeReferenceTarget, 'sheetId' | 'entryId'>;
+    body: Partial<Pick<GradeRow, 'ww_scores' | 'pt_scores' | 'qa_score'>>;
+    seedMeta: SlotMeta;
+  } | null>(null);
+
   const [savingId, setSavingId] = useState<string | null>(null);
   const [filters, setFilters] = useState<GridFilters>(DEFAULT_GRID_FILTERS);
   const { requireChangeReference, dialog: approvalDialog } =
@@ -320,7 +354,12 @@ export function ScoreEntryGrid({
           GradeRow,
           'ww_scores' | 'pt_scores' | 'qa_score' | 'letter_grade' | 'is_na'
         >
-      >
+      >,
+      slotLabel?: {
+        kind: SlotKind;
+        index: number | null;
+        meta: SlotMeta | { label: string | null };
+      }
     ) => {
       let extraPayload: Record<string, unknown> = {};
       let bodyOverride: Partial<
@@ -380,7 +419,12 @@ export function ScoreEntryGrid({
 
       setSavingId(entryId);
       try {
-        const payload = { ...body, ...(bodyOverride ?? {}), ...extraPayload };
+        const payload = {
+          ...body,
+          ...(bodyOverride ?? {}),
+          ...extraPayload,
+          ...(slotLabel ? { slot_label: slotLabel } : {}),
+        };
         const data = await entryMutation.mutateAsync({ entryId, payload });
         setRows((current) =>
           current.map((r) =>
@@ -433,6 +477,97 @@ export function ScoreEntryGrid({
       entryMutation,
     ]
   );
+
+  // First-score label gate wrapper — intercepts a slot's genuine first score
+  // (unlocked/direct-edit path only; requireApproval/locked edits go through
+  // patchEntry's own change-request/correction flow untouched) and routes it
+  // through FirstScoreLabelDialog before it ever reaches the server. Mirrors
+  // the server's own check (lib/grading/first-score-gate.ts) so client and
+  // server independently agree on when a label is required.
+  const commitScore = useCallback(
+    (
+      entryId: string,
+      kind: SlotKind,
+      slotIndex: number | null,
+      target: Omit<ChangeReferenceTarget, 'sheetId' | 'entryId'>,
+      body: Partial<Pick<GradeRow, 'ww_scores' | 'pt_scores' | 'qa_score'>>,
+      value: number | null
+    ) => {
+      const gated =
+        !readOnly &&
+        !requireApproval &&
+        value != null &&
+        !slotAlreadyScored(kind, slotIndex) &&
+        !slotMetaSatisfied(
+          kind,
+          kind === 'qa'
+            ? labelsRef.current.qa
+            : labelsRef.current[kind][slotIndex!]
+        );
+      if (gated) {
+        const seedMeta: SlotMeta =
+          kind === 'qa'
+            ? { label: labelsRef.current.qa ?? '', date: null, page: null }
+            : ((labelsRef.current[kind][slotIndex!] as SlotMeta | null) ?? {
+                label: '',
+                date: '',
+                page: '',
+              });
+        setPendingFirstScore({
+          entryId,
+          kind,
+          slotIndex,
+          target,
+          body,
+          seedMeta,
+        });
+        return;
+      }
+      patchEntry(entryId, target, body);
+    },
+    [readOnly, requireApproval, slotAlreadyScored, patchEntry]
+  );
+
+  // Dialog confirm — persist the label locally (optimistic, mirrors the
+  // Activity Labels panel's own edit path) and fire ONE combined PATCH
+  // carrying both the score and the slot_label (Task 2's server contract).
+  const handleFirstScoreConfirm = useCallback(
+    (meta: SlotMeta) => {
+      if (!pendingFirstScore) return;
+      const { entryId, kind, slotIndex, target, body } = pendingFirstScore;
+      if (kind === 'qa') {
+        onQaChange(meta.label ?? '');
+      } else {
+        onSlotChange(kind, slotIndex as number, meta);
+      }
+      patchEntry(entryId, target, body, {
+        kind,
+        index: slotIndex,
+        meta: kind === 'qa' ? { label: meta.label ?? null } : meta,
+      });
+      setPendingFirstScore(null);
+    },
+    [pendingFirstScore, onQaChange, onSlotChange, patchEntry]
+  );
+
+  // Dialog cancel — nothing was ever sent to the server, so just fold the
+  // optimistic cell back to the last saved value (mirrors patchEntry's own
+  // revert-on-failure path).
+  const handleFirstScoreCancel = useCallback(() => {
+    if (!pendingFirstScore) return;
+    const { entryId, body } = pendingFirstScore;
+    const saved = savedRowsRef.current.get(entryId);
+    if (saved) {
+      setRows((current) =>
+        current.map((r) =>
+          r.entry_id === entryId
+            ? revertPatchedFields(r, saved, body as EntryPatchBody)
+            : r
+        )
+      );
+    }
+    setPendingFirstScore(null);
+  }, [pendingFirstScore]);
 
   const updateLocal = useCallback(
     (entryId: string, patch: (row: GradeRow) => GradeRow) => {
@@ -773,10 +908,13 @@ export function ScoreEntryGrid({
                             v,
                             wwTotals.length
                           );
-                          patchEntry(
+                          commitScore(
                             r.entry_id,
+                            'ww',
+                            i,
                             { field: 'ww_scores', slotIndex: i },
-                            { ww_scores: next }
+                            { ww_scores: next },
+                            v
                           );
                         }}
                       />
@@ -814,10 +952,13 @@ export function ScoreEntryGrid({
                                 v,
                                 ptTotals.length
                               );
-                              patchEntry(
+                              commitScore(
                                 r.entry_id,
+                                'pt',
+                                i,
                                 { field: 'pt_scores', slotIndex: i },
-                                { pt_scores: next }
+                                { pt_scores: next },
+                                v
                               );
                             }}
                           />
@@ -843,10 +984,13 @@ export function ScoreEntryGrid({
                         }))
                       }
                       onCommit={(v) =>
-                        patchEntry(
+                        commitScore(
                           r.entry_id,
+                          'qa',
+                          null,
                           { field: 'qa_score', slotIndex: null },
-                          { qa_score: v }
+                          { qa_score: v },
+                          v
                         )
                       }
                     />
@@ -973,6 +1117,21 @@ export function ScoreEntryGrid({
       </Card>
 
       {approvalDialog}
+
+      {pendingFirstScore && (
+        <FirstScoreLabelDialog
+          open
+          kind={pendingFirstScore.kind}
+          slotCode={
+            pendingFirstScore.kind === 'qa'
+              ? 'QA'
+              : `${pendingFirstScore.kind.toUpperCase()}${(pendingFirstScore.slotIndex as number) + 1}`
+          }
+          seedMeta={pendingFirstScore.seedMeta}
+          onConfirm={handleFirstScoreConfirm}
+          onCancel={handleFirstScoreCancel}
+        />
+      )}
 
       {alertDialogState && (
         <GradeDiffDialog
