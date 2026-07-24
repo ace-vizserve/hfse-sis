@@ -64,6 +64,12 @@ export const EnrolmentMetadataSchema = z
     // normal (active) enrollee. Required-ness is enforced in the route (it
     // depends on the row's current status). optionalText: '' → null.
     lateRevertReason: optionalText(WITHDRAWAL_REASON_MAX).optional(),
+    // Free-text notes for the attendance-sheet Details view (migration 093).
+    // Per-field write gating lives in the PATCH route, not here:
+    // academics_notes -> academic_coordinator | school_admin | superadmin;
+    // admin_notes -> school_admin | superadmin only.
+    academics_notes: optionalText(200).optional(),
+    admin_notes: optionalText(200).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.enrollment_status === 'withdrawn' && !data.withdrawal_reason) {

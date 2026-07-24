@@ -101,6 +101,23 @@ export async function PATCH(
     );
   }
 
+  // Per-field write gate: admin_notes is school_admin/superadmin only. The
+  // broader route-level requireRole union above already covers everything
+  // else, including academics_notes (academic_coordinator + school_admin +
+  // superadmin). Checked before any DB access so a forbidden field never
+  // reaches the update.
+  const isAdminRole =
+    auth.role === 'school_admin' || auth.role === 'superadmin';
+  if ('admin_notes' in parsed.data && !isAdminRole) {
+    return NextResponse.json(
+      {
+        error: 'admin_notes is editable by school_admin only',
+        code: 'field_forbidden',
+      },
+      { status: 403 }
+    );
+  }
+
   const service = createServiceClient();
 
   // Load before state for the audit diff + section sanity-check. Includes
@@ -109,7 +126,7 @@ export async function PATCH(
   const { data: before, error: loadErr } = await service
     .from('section_students')
     .select(
-      'id, section_id, bus_no, classroom_officer_role, enrollment_status, enrollment_date, withdrawal_date, withdrawal_reason, withdrawal_notes, late_enrollee_term_number'
+      'id, section_id, bus_no, classroom_officer_role, academics_notes, admin_notes, enrollment_status, enrollment_date, withdrawal_date, withdrawal_reason, withdrawal_notes, late_enrollee_term_number'
     )
     .eq('id', enrolmentId)
     .maybeSingle();
@@ -153,6 +170,9 @@ export async function PATCH(
   if ('classroom_officer_role' in parsed.data) {
     patch.classroom_officer_role = parsed.data.classroom_officer_role;
   }
+  if ('academics_notes' in parsed.data)
+    patch.academics_notes = parsed.data.academics_notes;
+  if ('admin_notes' in parsed.data) patch.admin_notes = parsed.data.admin_notes;
   // Track whether we just transitioned INTO late_enrollee so the response
   // can carry the resolved term back to the UI for the success toast.
   let lateEnrolleeTransition = false;
@@ -593,6 +613,8 @@ export async function PATCH(
       before: {
         bus_no: before.bus_no ?? null,
         classroom_officer_role: before.classroom_officer_role ?? null,
+        academics_notes: before.academics_notes ?? null,
+        admin_notes: before.admin_notes ?? null,
         enrollment_status: before.enrollment_status,
       },
       after: patch,
