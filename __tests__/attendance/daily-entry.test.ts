@@ -39,6 +39,8 @@ function enr(
     studentName: 'Name ' + idx,
     busNo: null,
     classroomOfficerRole: null,
+    academicsNotes: null,
+    adminNotes: null,
     withdrawn: false,
     compassionateUsed: 0,
     compassionateAllowance: 5,

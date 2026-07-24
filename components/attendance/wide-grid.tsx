@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 // Attendance wide grid. Rows = students (~30), columns = term school-days
 // (~47). Cell count at HFSE scale: ~1,410 per render.
@@ -76,6 +77,7 @@ import type {
 import { resolveColumnTag } from '@/lib/attendance/sheet-columns';
 import { COLUMN_TAG_COLOR } from '@/components/attendance/column-tags';
 import { CellMarkPalette } from '@/components/attendance/cell-mark-popover';
+import { EnrolmentMetaEditor } from '@/components/attendance/enrolment-meta-editor';
 import {
   STATUS_CELL_WASH,
   statusCellWash,
@@ -85,6 +87,7 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from '@/components/ui/popover';
+import { Sheet } from '@/components/ui/sheet';
 import { summarizeByMonth, type Mark } from '@/lib/attendance/sheet-summary';
 import type { DailyEntryRow } from '@/lib/attendance/queries';
 import {
@@ -133,6 +136,8 @@ export type WideGridEnrolment = {
   studentName: string;
   busNo: string | null;
   classroomOfficerRole: string | null;
+  academicsNotes: string | null;
+  adminNotes: string | null;
   withdrawn: boolean;
   compassionateUsed: number;
   compassionateAllowance: number;
@@ -181,6 +186,9 @@ export function AttendanceWideGrid({
   events,
   initialDaily,
   canWriteNc,
+  canEditBusCare,
+  canEditAcademics,
+  canEditAdmin,
 }: {
   sectionId: string;
   termId: string;
@@ -189,7 +197,11 @@ export function AttendanceWideGrid({
   events: CalendarEventRow[];
   initialDaily: DailyEntryRow[];
   canWriteNc: boolean;
+  canEditBusCare: boolean;
+  canEditAcademics: boolean;
+  canEditAdmin: boolean;
 }) {
+  const router = useRouter();
   // Seed cell state map from the latest-per-(date) rows we already fetched.
   const seed = useMemo(() => {
     const m = new Map<GridKey, CellState>();
@@ -218,6 +230,23 @@ export function AttendanceWideGrid({
     enrolmentId: string;
     iso: string;
   } | null>(null);
+
+  // The one open roster-metadata editor sheet (single portal, mirrors the
+  // cell-mark popover's perf invariant above). null = closed.
+  const [activeMetaEnrolmentId, setActiveMetaEnrolmentId] = useState<
+    string | null
+  >(null);
+
+  // Detail-column count varies per viewer: Bus/Student Care is always the
+  // "+1" (visible to everyone with Details on, edit affordance gated
+  // separately); Academics/Admin are entirely present-or-absent based on
+  // their own capability flag — hidden, not shown-disabled. The colgroup
+  // entry count, the "Roster" banner colSpan, the header TableHead count,
+  // and each body row's TableCell count all derive from this single value
+  // so they can never drift out of lockstep.
+  const detailColCount = showDetails
+    ? 1 + (canEditAcademics ? 1 : 0) + (canEditAdmin ? 1 : 0)
+    : 0;
 
   // Stable callback (identity never changes — `setActiveCell` is a useState
   // setter) so the memoized `CellButton` below can take `onOpen` as a prop
@@ -260,6 +289,28 @@ export function AttendanceWideGrid({
       status: AttendanceStatus;
       exReason: ExReason | null;
     }) => apiFetch('/api/attendance/daily', jsonInit('PATCH', payload)),
+  });
+
+  // Low-frequency roster-metadata edit (Bus/Care, Academics, Admin notes) —
+  // unlike the high-frequency cell-mark mutation above, this one calls
+  // router.refresh() on success so the roster pane reflects the saved value.
+  const metaMutation = useMutation({
+    mutationFn: (vars: {
+      enrolmentId: string;
+      patch: Record<string, string | null>;
+    }) =>
+      apiFetch(
+        `/api/sections/${sectionId}/students/${vars.enrolmentId}`,
+        jsonInit('PATCH', vars.patch)
+      ),
+    onSuccess: () => {
+      toast.success('Saved.');
+      router.refresh();
+      setActiveMetaEnrolmentId(null);
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'Could not save.');
+    },
   });
 
   async function writeCell(
@@ -522,8 +573,12 @@ export function AttendanceWideGrid({
                     <col style={{ width: 40 }} />
                     <col style={{ width: 180 }} />
                     {showDetails && <col style={{ width: 120 }} />}
-                    {showDetails && <col style={{ width: 90 }} />}
-                    {showDetails && <col style={{ width: 90 }} />}
+                    {showDetails && canEditAcademics && (
+                      <col style={{ width: 90 }} />
+                    )}
+                    {showDetails && canEditAdmin && (
+                      <col style={{ width: 90 }} />
+                    )}
                   </colgroup>
                   <TableHeader>
                     <TableRow
@@ -531,7 +586,7 @@ export function AttendanceWideGrid({
                       className="hover:bg-transparent"
                     >
                       <TableHead
-                        colSpan={showDetails ? 5 : 2}
+                        colSpan={2 + detailColCount}
                         className="h-auto border-b border-border bg-muted/60 px-2 py-1.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                       >
                         Roster
@@ -548,17 +603,19 @@ export function AttendanceWideGrid({
                         Student
                       </TableHead>
                       {showDetails && (
-                        <>
-                          <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
-                            Bus / Student Care
-                          </TableHead>
-                          <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
-                            Academics
-                          </TableHead>
-                          <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
-                            Admin
-                          </TableHead>
-                        </>
+                        <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
+                          Bus / Student Care
+                        </TableHead>
+                      )}
+                      {showDetails && canEditAcademics && (
+                        <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
+                          Academics
+                        </TableHead>
+                      )}
+                      {showDetails && canEditAdmin && (
+                        <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
+                          Admin
+                        </TableHead>
                       )}
                     </TableRow>
                   </TableHeader>
@@ -617,17 +674,47 @@ export function AttendanceWideGrid({
                           </div>
                         </TableCell>
                         {showDetails && (
-                          <>
-                            <TableCell className="overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground">
-                              {busCareLabel(e)}
-                            </TableCell>
-                            <TableCell className="border-l border-border px-2 py-1 text-center text-[11px] text-muted-foreground">
-                              —
-                            </TableCell>
-                            <TableCell className="border-l border-border px-2 py-1 text-center text-[11px] text-muted-foreground">
-                              —
-                            </TableCell>
-                          </>
+                          <TableCell className="overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground">
+                            {canEditBusCare ? (
+                              <button
+                                type="button"
+                                className="w-full truncate text-left hover:underline"
+                                onClick={() =>
+                                  setActiveMetaEnrolmentId(e.enrolmentId)
+                                }
+                              >
+                                {busCareLabel(e)}
+                              </button>
+                            ) : (
+                              busCareLabel(e)
+                            )}
+                          </TableCell>
+                        )}
+                        {showDetails && canEditAcademics && (
+                          <TableCell className="border-l border-border px-2 py-1 text-[11px] text-foreground">
+                            <button
+                              type="button"
+                              className="w-full truncate text-left hover:underline"
+                              onClick={() =>
+                                setActiveMetaEnrolmentId(e.enrolmentId)
+                              }
+                            >
+                              {e.academicsNotes ?? '—'}
+                            </button>
+                          </TableCell>
+                        )}
+                        {showDetails && canEditAdmin && (
+                          <TableCell className="border-l border-border px-2 py-1 text-[11px] text-foreground">
+                            <button
+                              type="button"
+                              className="w-full truncate text-left hover:underline"
+                              onClick={() =>
+                                setActiveMetaEnrolmentId(e.enrolmentId)
+                              }
+                            >
+                              {e.adminNotes ?? '—'}
+                            </button>
+                          </TableCell>
                         )}
                       </TableRow>
                     ))}
@@ -839,6 +926,34 @@ export function AttendanceWideGrid({
           )}
         </PopoverContent>
       </Popover>
+
+      {/* One shared roster-metadata editor sheet — anchored to whichever
+          row's Bus/Academics/Admin cell was clicked (single portal; mirrors
+          the shared cell-mark popover above). */}
+      <Sheet
+        open={activeMetaEnrolmentId != null}
+        onOpenChange={(o) => {
+          if (!o) setActiveMetaEnrolmentId(null);
+        }}
+      >
+        {activeMetaEnrolmentId && (
+          <EnrolmentMetaEditor
+            enrolment={
+              enrolments.find((e) => e.enrolmentId === activeMetaEnrolmentId)!
+            }
+            canEditBusCare={canEditBusCare}
+            canEditAcademics={canEditAcademics}
+            canEditAdmin={canEditAdmin}
+            saving={metaMutation.isPending}
+            onSave={(patch) =>
+              metaMutation.mutate({
+                enrolmentId: activeMetaEnrolmentId,
+                patch,
+              })
+            }
+          />
+        )}
+      </Sheet>
 
       {/* Summary panel — per-month + term totals per student */}
       {showSummary && (

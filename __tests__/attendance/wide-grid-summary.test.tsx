@@ -64,6 +64,9 @@ describe('AttendanceWideGrid summary panel', () => {
         sectionId="s"
         termId="t"
         canWriteNc={false}
+        canEditBusCare={false}
+        canEditAcademics={false}
+        canEditAdmin={false}
         events={[]}
         calendar={cal}
         enrolments={[
@@ -74,6 +77,8 @@ describe('AttendanceWideGrid summary panel', () => {
             studentName: 'DOE, Jane',
             busNo: null,
             classroomOfficerRole: null,
+            academicsNotes: null,
+            adminNotes: null,
             withdrawn: false,
             compassionateUsed: 0,
             compassionateAllowance: 5,
@@ -120,6 +125,9 @@ describe('AttendanceWideGrid summary panel', () => {
         sectionId="s"
         termId="t"
         canWriteNc={false}
+        canEditBusCare={false}
+        canEditAcademics={false}
+        canEditAdmin={false}
         events={[]}
         calendar={cal}
         enrolments={[
@@ -130,6 +138,8 @@ describe('AttendanceWideGrid summary panel', () => {
             studentName: 'DOE, Jane',
             busNo: null,
             classroomOfficerRole: null,
+            academicsNotes: null,
+            adminNotes: null,
             withdrawn: false,
             compassionateUsed: 0,
             compassionateAllowance: 5,
@@ -144,6 +154,8 @@ describe('AttendanceWideGrid summary panel', () => {
             studentName: 'SMITH, John',
             busNo: null,
             classroomOfficerRole: null,
+            academicsNotes: null,
+            adminNotes: null,
             withdrawn: true,
             compassionateUsed: 0,
             compassionateAllowance: 5,

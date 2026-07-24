@@ -73,6 +73,15 @@ export default async function SectionAttendancePage({
     role === 'academic_coordinator' ||
     role === 'school_admin' ||
     role === 'superadmin';
+  // Roster-metadata edit gates for the Details view (Task 2's per-field PATCH
+  // gating): Bus/Care + Academics share the same gate as canWriteNc; Admin is
+  // narrower (school_admin/superadmin only).
+  const canEditBusCare =
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin';
+  const canEditAcademics = canEditBusCare; // same gate as bus_no/classroom_officer_role
+  const canEditAdmin = role === 'school_admin' || role === 'superadmin';
 
   const supabase = await createClient();
 
@@ -154,7 +163,7 @@ export default async function SectionAttendancePage({
   const { data: enrolmentsRaw } = await supabase
     .from('section_students')
     .select(
-      'id, index_number, enrollment_status, enrollment_date, bus_no, classroom_officer_role, student:students(id, student_number, last_name, first_name, middle_name, urgent_compassionate_allowance, vacation_leave_allowance_per_term)'
+      'id, index_number, enrollment_status, enrollment_date, bus_no, classroom_officer_role, academics_notes, admin_notes, student:students(id, student_number, last_name, first_name, middle_name, urgent_compassionate_allowance, vacation_leave_allowance_per_term)'
     )
     .eq('section_id', sectionId)
     .order('index_number');
@@ -166,6 +175,8 @@ export default async function SectionAttendancePage({
     enrollment_date: string | null;
     bus_no: string | null;
     classroom_officer_role: string | null;
+    academics_notes: string | null;
+    admin_notes: string | null;
     student:
       | {
           id: string;
@@ -236,6 +247,8 @@ export default async function SectionAttendancePage({
       studentName: fullName,
       busNo: e.bus_no,
       classroomOfficerRole: e.classroom_officer_role,
+      academicsNotes: e.academics_notes,
+      adminNotes: e.admin_notes,
       withdrawn: e.enrollment_status === 'withdrawn',
       enrollmentDate: e.enrollment_date ?? null,
       compassionateUsed: quota?.used ?? 0,
@@ -428,6 +441,9 @@ export default async function SectionAttendancePage({
           events={events}
           initialDaily={daily}
           canWriteNc={canWriteNc}
+          canEditBusCare={canEditBusCare}
+          canEditAcademics={canEditAcademics}
+          canEditAdmin={canEditAdmin}
         />
       )}
 
