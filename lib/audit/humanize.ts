@@ -194,6 +194,7 @@ const ACTION_LABELS: Record<string, string> = {
   'user.role.update': 'User role changed',
   'user.disable': 'User disabled',
   'user.enable': 'User enabled',
+  'user.delete': 'User deleted',
   'user.login': 'Signed in',
 
   // Environment / seeding
@@ -574,7 +575,8 @@ function templateSummary(
     }
 
     // Users ------------------------------------------------------------------
-    case 'user.create': {
+    case 'user.create':
+    case 'user.delete': {
       const parts: string[] = [];
       const email = str(ctx.email);
       if (email) parts.push(email);

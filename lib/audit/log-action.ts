@@ -133,6 +133,7 @@ export type AuditAction =
   | 'user.role.update'
   | 'user.disable'
   | 'user.enable'
+  | 'user.delete'
   | 'environment.switch'
   | 'environment.seed'
   | 'environment.topup'
