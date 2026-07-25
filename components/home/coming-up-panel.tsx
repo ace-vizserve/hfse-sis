@@ -1,3 +1,5 @@
+import { CalendarDays } from 'lucide-react';
+
 import { Card } from '@/components/ui/card';
 import type { UpcomingCalendarEvent } from '@/lib/sis/dashboard';
 
@@ -12,8 +14,13 @@ function formatDate(iso: string): { day: string; month: string } {
 export function ComingUpPanel({ events }: { events: UpcomingCalendarEvent[] }) {
   return (
     <Card className="flex-1 overflow-hidden p-0">
-      <div className="border-b border-border px-4 py-3 text-sm font-semibold text-foreground">
-        Coming up
+      <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+        <div className="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+          <CalendarDays className="size-[15px]" aria-hidden />
+        </div>
+        <span className="font-serif text-base font-semibold text-foreground">
+          Coming up
+        </span>
       </div>
       {events.length === 0 ? (
         <div className="px-4 py-3 text-xs text-muted-foreground">

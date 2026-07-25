@@ -17,8 +17,10 @@ function dotClass(tone: RecentAction['tone']): string {
 export function RecentActionsPanel({ actions }: { actions: RecentAction[] }) {
   return (
     <Card className="overflow-hidden p-0">
-      <div className="flex items-center gap-2 border-b border-border px-5 py-3.5">
-        <Activity className="size-4 text-brand-indigo" aria-hidden />
+      <div className="flex items-center gap-2.5 border-b border-border px-5 py-3.5">
+        <div className="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+          <Activity className="size-[15px]" aria-hidden />
+        </div>
         <span className="font-serif text-base font-bold text-foreground">
           Recent actions
         </span>

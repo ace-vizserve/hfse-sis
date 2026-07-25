@@ -1,9 +1,12 @@
 import { redirect } from 'next/navigation';
+import { Sunrise, Sun, Moon } from 'lucide-react';
 
 import { PageShell } from '@/components/ui/page-shell';
 import { getSessionUser } from '@/lib/supabase/server';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
-import { getQuickActions } from '@/lib/home/quick-actions';
+import { sgHour } from '@/lib/dates';
+import { getQuickActions, type QuickAction } from '@/lib/home/quick-actions';
+import { greetingForHour, type GreetingBucket } from '@/lib/home/greeting';
 import { getRecentActions } from '@/lib/home/recent-actions';
 import { getHomeTodos, reportCardGapsTodo } from '@/lib/home/todos';
 import { getUpcomingCalendarEvents } from '@/lib/sis/dashboard';
@@ -39,9 +42,8 @@ export default async function Home() {
   if (!ay) {
     return (
       <PageShell>
-        <Header email={email} />
-        <QuickActionsRow actions={getQuickActions(role)} />
-        <p className="text-sm text-muted-foreground">
+        <Header email={email} quickActions={getQuickActions(role)} />
+        <p className="mt-8 text-sm text-muted-foreground">
           No current academic year is set yet — ask a superadmin to configure
           one in SIS Admin.
         </p>
@@ -73,9 +75,8 @@ export default async function Home() {
 
   return (
     <PageShell>
-      <Header email={email} />
-      <QuickActionsRow actions={quickActions} />
-      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-stretch">
+      <Header email={email} quickActions={quickActions} />
+      <div className="mt-8 mb-6 flex flex-col gap-3 lg:flex-row lg:items-stretch">
         <TodoPanel title={todoTitle} items={todos} />
         <ComingUpPanel events={events} />
       </div>
@@ -84,18 +85,41 @@ export default async function Home() {
   );
 }
 
-function Header({ email }: { email: string }) {
+const GREETING_ICON: Record<GreetingBucket, typeof Sunrise> = {
+  morning: Sunrise,
+  afternoon: Sun,
+  evening: Moon,
+};
+
+function Header({
+  email,
+  quickActions,
+}: {
+  email: string;
+  quickActions: QuickAction[];
+}) {
+  const { label, bucket } = greetingForHour(sgHour());
+  const GreetingIcon = GREETING_ICON[bucket];
+
   return (
-    <header className="mb-5">
-      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        HFSE · Student Information System
-      </p>
-      <h1 className="font-serif text-[28px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[32px]">
-        Good morning, {email}.
-      </h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Here&apos;s where things stand across your modules today.
-      </p>
+    <header className="flex flex-col gap-6 border-b border-border pb-7 md:flex-row md:items-end md:justify-between">
+      <div className="flex items-start gap-4">
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+          <GreetingIcon className="size-[21px]" />
+        </div>
+        <div>
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            HFSE · Student Information System
+          </p>
+          <h1 className="mt-2 font-serif text-[32px] font-semibold leading-[1.08] tracking-tight text-foreground md:text-[38px]">
+            {label}, {email}.
+          </h1>
+          <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+            Here&apos;s where things stand across your modules today.
+          </p>
+        </div>
+      </div>
+      <QuickActionsRow actions={quickActions} />
     </header>
   );
 }

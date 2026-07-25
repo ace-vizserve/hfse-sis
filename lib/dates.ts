@@ -24,3 +24,15 @@ export function sgToday(): string {
 export function sgDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-CA', { timeZone: SGT });
 }
+
+/** The current hour (0–23) in Asia/Singapore — `hourCycle: 'h23'` avoids the
+ * "24" midnight quirk some engines produce with a plain `hour12: false`. */
+export function sgHour(): number {
+  return Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: SGT,
+      hour: 'numeric',
+      hourCycle: 'h23',
+    }).format(new Date())
+  );
+}

@@ -115,8 +115,10 @@ export function TodoPanel({
   return (
     <Card className="flex-[2] overflow-hidden p-0">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3.5">
-        <div className="flex items-center gap-2">
-          <ListChecks className="size-[17px] text-brand-indigo" aria-hidden />
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <ListChecks className="size-[15px]" aria-hidden />
+          </div>
           <span className="font-serif text-base font-semibold text-foreground">
             {title}
           </span>
