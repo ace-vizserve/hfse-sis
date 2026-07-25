@@ -656,7 +656,7 @@ export function computeEnrolledCategoryMix(
   let unspecified = 0;
   for (const r of enrolledRows) {
     const en = r.enroleeNumber?.trim();
-    const cat = en ? categoryByEnroleeNumber.get(en) : undefined;
+    const cat = (en ? categoryByEnroleeNumber.get(en) : undefined)?.trim();
     if (cat && counts.has(cat)) {
       counts.set(cat, (counts.get(cat) ?? 0) + 1);
     } else {

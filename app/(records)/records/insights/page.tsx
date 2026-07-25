@@ -278,7 +278,7 @@ export default async function RecordsInsightsPage({
     getRecordsRetention(selectedAy, compareAy),
     getRecordsRetentionByLevel(selectedAy, compareAy),
     getMovementEvents(selectedAy),
-    getEnrolledCategoryMix(selectedAy),
+    compareAy ? getEnrolledCategoryMix(selectedAy) : Promise.resolve(null),
     compareAy ? getEnrolledCategoryMix(compareAy) : Promise.resolve(null),
   ]);
 
@@ -454,12 +454,12 @@ export default async function RecordsInsightsPage({
   const priorCategoryMixByCategory = new Map(
     (priorCategoryMix ?? []).map((r: CategoryMixRow) => [r.category, r.count])
   );
-  const categoryMixData = categoryMix.map((r: CategoryMixRow) => ({
+  const categoryMixData = (categoryMix ?? []).map((r: CategoryMixRow) => ({
     x: r.category,
     current: r.count,
     compare: priorCategoryMixByCategory.get(r.category) ?? 0,
   }));
-  const haveCategoryMixData = categoryMix.some(
+  const haveCategoryMixData = (categoryMix ?? []).some(
     (r: CategoryMixRow) => r.count > 0
   );
 

@@ -754,6 +754,14 @@ describe('computeEnrolledCategoryMix', () => {
     ]);
   });
 
+  it('trims whitespace around the looked-up category value before bucketing (matches computeCategoryMix)', () => {
+    const enrolledRows = [{ enroleeNumber: 'E1' }];
+    const lookup = new Map([['E1', 'New ']]);
+    const result = computeEnrolledCategoryMix(enrolledRows, lookup);
+    expect(result.find((r) => r.category === 'New')?.count).toBe(1);
+    expect(result.find((r) => r.category === 'Unspecified')).toBeUndefined();
+  });
+
   it('output order always follows ENROLEE_CATEGORIES, Unspecified last', () => {
     const enrolledRows = [
       { enroleeNumber: 'E1' },
