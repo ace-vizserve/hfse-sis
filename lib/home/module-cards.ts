@@ -10,11 +10,7 @@ import { getRecordsKpisRange } from '@/lib/sis/dashboard';
 import { createServiceClient } from '@/lib/supabase/service';
 import { sgToday } from '@/lib/dates';
 
-export type ModuleCardChart =
-  | { kind: 'sparkline'; points: number[] }
-  | { kind: 'ring'; pct: number }
-  | { kind: 'dots'; done: number; total: number }
-  | { kind: 'none' };
+export type ModuleCardChart = { kind: 'bar'; pct: number } | { kind: 'none' };
 
 export type ModuleCard = {
   module: string;
@@ -71,8 +67,8 @@ async function buildAdmissionsCard(
         module: 'Admissions',
         href: '/admissions',
         statValue: `${Math.round(current.conversionPct)}%`,
-        statLabel: 'Conversion',
-        chart: { kind: 'none' },
+        statLabel: `${current.enrolledInRange} of ${current.applicationsInRange} applications enrolled`,
+        chart: { kind: 'bar', pct: current.conversionPct },
       };
 }
 
@@ -113,8 +109,8 @@ async function buildMarkbookCard(
     module: 'Markbook',
     href: '/markbook',
     statValue: `${Math.round(current.lockedPct)}%`,
-    statLabel: 'Sheets locked',
-    chart: { kind: 'ring', pct: current.lockedPct },
+    statLabel: `${current.sheetsLocked} of ${current.sheetsTotal} sheets locked`,
+    chart: { kind: 'bar', pct: current.lockedPct },
   };
   // Only teacher's own pending change-request count belongs on the card —
   // school_admin/academic_coordinator's CR numbers already live in the
@@ -151,14 +147,13 @@ async function buildAttendanceCard(ayCode: string): Promise<ModuleCard> {
     cmpFrom: null,
     cmpTo: null,
   });
+  const attending = current.present + current.late + current.excused;
   return {
     module: 'Attendance',
     href: '/attendance',
     statValue: `${Math.round(current.attendancePct)}%`,
-    statLabel: "Today's rate",
-    // Single aggregate point stands in for the trend until Task 6 wires a
-    // real daily series via getDailyAttendanceRange — see Task 6 note.
-    chart: { kind: 'sparkline', points: [current.attendancePct] },
+    statLabel: `${attending} of ${current.encodedDays} marked as attending`,
+    chart: { kind: 'bar', pct: current.attendancePct },
   };
 }
 
@@ -177,23 +172,21 @@ async function buildEvaluationCard(
     module: 'Evaluation',
     href: '/evaluation',
     statValue: `${Math.round(current.submissionPct)}%`,
-    statLabel: 'Submitted, this term',
-    chart: { kind: 'ring', pct: current.submissionPct },
+    statLabel: `${current.submitted} of ${current.expected} write-ups submitted`,
+    chart: { kind: 'bar', pct: current.submissionPct },
   };
 }
 
 async function buildSisAdminCard(ayCode: string): Promise<ModuleCard> {
   const readiness = await getAyReadiness(ayCode);
+  const pct =
+    readiness.total === 0 ? 0 : (readiness.complete / readiness.total) * 100;
   return {
     module: 'SIS Admin',
     href: '/sis',
     statValue: `${readiness.complete}/${readiness.total}`,
-    statLabel: 'AY readiness',
-    chart: {
-      kind: 'dots',
-      done: readiness.complete,
-      total: readiness.total,
-    },
+    statLabel: 'AY setup steps complete',
+    chart: { kind: 'bar', pct },
   };
 }
 
@@ -233,8 +226,8 @@ export async function getModuleCards(
             module: 'P-Files',
             href: '/p-files',
             statValue: `${Math.round(pctOnFile)}%`,
-            statLabel: 'Docs on file',
-            chart: { kind: 'none' },
+            statLabel: `${mix.valid} of ${total} documents on file`,
+            chart: { kind: 'bar', pct: pctOnFile },
           };
         }
         case 'Markbook':

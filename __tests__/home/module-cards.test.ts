@@ -11,16 +11,26 @@ vi.mock('@/lib/change-requests/sidebar-counts', () => ({
   getSidebarChangeRequestCount: vi.fn(async () => 1),
 }));
 vi.mock('@/lib/markbook/dashboard', () => ({
-  getMarkbookKpisRange: vi.fn(async () => ({ current: { lockedPct: 82 } })),
+  getMarkbookKpisRange: vi.fn(async () => ({
+    current: { lockedPct: 82, sheetsLocked: 41, sheetsTotal: 50 },
+  })),
 }));
 vi.mock('@/lib/attendance/dashboard', () => ({
   getAttendanceKpisRange: vi.fn(async () => ({
-    current: { attendancePct: 96 },
+    current: {
+      attendancePct: 96,
+      encodedDays: 500,
+      present: 460,
+      late: 15,
+      excused: 5,
+      absent: 20,
+      nc: 0,
+    },
   })),
 }));
 vi.mock('@/lib/evaluation/dashboard', () => ({
   getEvaluationKpisRange: vi.fn(async () => ({
-    current: { submissionPct: 68 },
+    current: { submissionPct: 68, submitted: 55, expected: 90 },
   })),
 }));
 vi.mock('@/lib/sis/readiness', () => ({
@@ -33,7 +43,11 @@ vi.mock('@/lib/sis/readiness', () => ({
 }));
 vi.mock('@/lib/admissions/dashboard', () => ({
   getAdmissionsKpisRange: vi.fn(async () => ({
-    current: { applicationsInRange: 8, conversionPct: 34 },
+    current: {
+      applicationsInRange: 35,
+      enrolledInRange: 12,
+      conversionPct: 34,
+    },
   })),
 }));
 vi.mock('@/lib/sis/dashboard', () => ({
@@ -43,9 +57,9 @@ vi.mock('@/lib/sis/dashboard', () => ({
 }));
 vi.mock('@/lib/p-files/dashboard', () => ({
   getSlotStatusMix: vi.fn(async () => ({
-    valid: 92,
-    pending: 5,
-    rejected: 1,
+    valid: 184,
+    pending: 10,
+    rejected: 4,
     missing: 2,
   })),
 }));
@@ -80,9 +94,10 @@ describe('getModuleCards', () => {
     ]);
     const markbook = cards.find((c) => c.module === 'Markbook')!;
     expect(markbook.badge).toBeUndefined();
-    expect(markbook.chart).toEqual({ kind: 'ring', pct: 82 });
+    expect(markbook.chart).toEqual({ kind: 'bar', pct: 82 });
+    expect(markbook.statLabel).toBe('41 of 50 sheets locked');
     const sisAdmin = cards.find((c) => c.module === 'SIS Admin')!;
-    expect(sisAdmin.chart).toEqual({ kind: 'dots', done: 6, total: 7 });
+    expect(sisAdmin.chart).toEqual({ kind: 'bar', pct: (6 / 7) * 100 });
   });
 
   it('gives academic_coordinator the operational Admissions number, not conversion', async () => {
@@ -92,7 +107,7 @@ describe('getModuleCards', () => {
       'user-3'
     );
     const admissions = cards.find((c) => c.module === 'Admissions')!;
-    expect(admissions.statValue).toBe('8');
+    expect(admissions.statValue).toBe('35');
     expect(admissions.statLabel).toBe('New (7d)');
   });
 
@@ -100,6 +115,28 @@ describe('getModuleCards', () => {
     const cards = await getModuleCards('school_admin', 'AY2026', 'user-2');
     const admissions = cards.find((c) => c.module === 'Admissions')!;
     expect(admissions.statValue).toBe('34%');
-    expect(admissions.statLabel).toBe('Conversion');
+    expect(admissions.statLabel).toBe('12 of 35 applications enrolled');
+  });
+
+  it('shows the real sheets-locked fraction on the Markbook card', async () => {
+    const { getMarkbookKpisRange } = await import('@/lib/markbook/dashboard');
+    (getMarkbookKpisRange as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      current: { lockedPct: 82, sheetsLocked: 41, sheetsTotal: 50 },
+    });
+    const cards = await getModuleCards('school_admin', 'AY2026', 'user-2');
+    const markbook = cards.find((c) => c.module === 'Markbook')!;
+    expect(markbook.statLabel).toBe('41 of 50 sheets locked');
+    expect(markbook.chart).toEqual({ kind: 'bar', pct: 82 });
+  });
+
+  it('shows the real AY-setup fraction on the SIS Admin card', async () => {
+    const cards = await getModuleCards('school_admin', 'AY2026', 'user-2');
+    const sisAdmin = cards.find((c) => c.module === 'SIS Admin')!;
+    expect(sisAdmin.statValue).toBe('6/7');
+    expect(sisAdmin.statLabel).toBe('AY setup steps complete');
+    expect(sisAdmin.chart).toEqual({
+      kind: 'bar',
+      pct: (6 / 7) * 100,
+    });
   });
 });
