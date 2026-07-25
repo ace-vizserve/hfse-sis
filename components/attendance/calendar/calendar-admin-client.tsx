@@ -398,6 +398,7 @@ export function CalendarAdminClient({
             cursor={cursor}
             onCursor={setCursor}
             onDayClick={openDay}
+            filtersActive={filtersActive}
           />
         )}
 
@@ -411,6 +412,7 @@ export function CalendarAdminClient({
             cursor={cursor}
             onCursor={setCursor}
             onDayClick={openDay}
+            filtersActive={filtersActive}
           />
         )}
       </div>

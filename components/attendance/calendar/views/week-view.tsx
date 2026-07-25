@@ -12,7 +12,7 @@
 //
 // Data contract: receives the pre-built CalendarIndex as a prop. No fetching.
 
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
 
 import {
@@ -72,6 +72,8 @@ export type WeekViewProps = {
   onCursor: (d: Date) => void;
   /** Fired when a clickable (in-term) day cell is clicked. */
   onDayClick: (iso: string) => void;
+  /** See MonthViewProps.filtersActive — same empty-filtered-state contract. */
+  filtersActive?: boolean;
 };
 
 // ─── WeekView ─────────────────────────────────────────────────────────────────
@@ -82,6 +84,7 @@ export function WeekView({
   cursor,
   onCursor,
   onDayClick,
+  filtersActive = false,
 }: WeekViewProps) {
   // Selected term window for nav clamping.
   const ayStart = term.startDate;
@@ -154,6 +157,12 @@ export function WeekView({
 
   // ── Does any day in the visible week fall inside the selected term? ──────────
   const weekInTerm = weekDays.some((d) => inTerm(d.iso));
+
+  // ── Filtered-to-empty detection (see MonthView for the same contract) ────────
+  const hasAnyChipsInView = weekDays.some(
+    (d) => (index.entriesByIso.get(d.iso)?.length ?? 0) > 0
+  );
+  const showEmptyFilteredState = filtersActive && !hasAnyChipsInView;
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
@@ -239,54 +248,71 @@ export function WeekView({
           })}
         </div>
 
-        {/* Single row of taller cells */}
-        <div className="grid grid-cols-7">
-          {weekDays.map((d, colIdx) => {
-            const isLastCol = colIdx === 6;
-            const chips = index.entriesByIso.get(d.iso) ?? EMPTY_CHIPS;
-            const cellInTerm = inTerm(d.iso);
+        {/* Single row of taller cells — replaced by an empty-filtered state
+            when the sidebar's filters are active and hide every chip in
+            the visible week (same contract as MonthView). */}
+        {showEmptyFilteredState ? (
+          <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <CalendarX className="size-[18px]" />
+            </div>
+            <p className="font-serif text-[15px] font-semibold text-foreground">
+              No days or events match the current filters.
+            </p>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              Try clearing a filter in the sidebar, or check a different week.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-7">
+            {weekDays.map((d, colIdx) => {
+              const isLastCol = colIdx === 6;
+              const chips = index.entriesByIso.get(d.iso) ?? EMPTY_CHIPS;
+              const cellInTerm = inTerm(d.iso);
 
-            // Weekday-only, mirroring MonthView: weekends structurally never
-            // carry a school_calendar row (ensureTermSeeded/weekdaysBetween
-            // only ever auto-seed weekdays), so flagging every Sat/Sun as
-            // "Unmarked" would be permanent noise, not a real gap. weekDays
-            // is built Mon-first, so colIdx 0-4 are the weekdays.
-            const isWeekday = colIdx < 5;
-            const missingRow =
-              cellInTerm && isWeekday && !index.hasRowByIso.has(d.iso);
+              // Weekday-only, mirroring MonthView: weekends structurally never
+              // carry a school_calendar row (ensureTermSeeded/weekdaysBetween
+              // only ever auto-seed weekdays), so flagging every Sat/Sun as
+              // "Unmarked" would be permanent noise, not a real gap. weekDays
+              // is built Mon-first, so colIdx 0-4 are the weekdays.
+              const isWeekday = colIdx < 5;
+              const missingRow =
+                cellInTerm && isWeekday && !index.hasRowByIso.has(d.iso);
 
-            const cellProps: CalendarCellProps = {
-              iso: d.iso,
-              dayNumber: d.dayNumber,
-              chips,
-              isToday: d.iso === todayIso,
-              // Out-of-term days get the faded treatment — consistent with
-              // MonthView's outOfMonth rendering (same §10.2 semantics).
-              outOfMonth: !cellInTerm,
-              clickable: cellInTerm,
-              missingRow,
-              // Taller cells: show up to 6 chips before collapsing.
-              maxVisibleChips: 6,
-              onClick: () => onDayClick(d.iso),
-            };
+              const cellProps: CalendarCellProps = {
+                iso: d.iso,
+                dayNumber: d.dayNumber,
+                chips,
+                isToday: d.iso === todayIso,
+                // Out-of-term days get the faded treatment — consistent with
+                // MonthView's outOfMonth rendering (same §10.2 semantics).
+                outOfMonth: !cellInTerm,
+                clickable: cellInTerm,
+                missingRow,
+                // Taller cells: show up to 6 chips before collapsing.
+                maxVisibleChips: 6,
+                onClick: () => onDayClick(d.iso),
+              };
 
-            return (
-              <div
-                key={d.iso}
-                className={[
-                  // Taller min-height than MonthView (≥200px) to fill the week
-                  // grid comfortably with the same border-ownership pattern.
-                  'min-h-[200px]',
-                  !isLastCol && 'border-r border-hairline',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              >
-                <CalendarCell {...cellProps} />
-              </div>
-            );
-          })}
-        </div>
+              return (
+                <div
+                  key={d.iso}
+                  className={[
+                    // Taller min-height than MonthView (≥200px) to fill the
+                    // week grid comfortably with the same border-ownership
+                    // pattern.
+                    'min-h-[200px]',
+                    !isLastCol && 'border-r border-hairline',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                >
+                  <CalendarCell {...cellProps} />
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

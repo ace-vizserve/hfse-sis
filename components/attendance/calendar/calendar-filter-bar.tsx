@@ -171,16 +171,30 @@ export function CalendarFilterBar({ value, onChange }: CalendarFilterBarProps) {
         return null;
       })}
 
-      {/* Divider + clear-all */}
+      {/* Divider + clear — scoped to exactly the 3 axes rendered in THIS
+          popover (date range, event category, status). Day types and
+          Audience live in their own always-visible sidebar sections now
+          (calendar-sidebar.tsx) with their own reset controls — resetting
+          the whole shared CalendarFilterState here would silently reach
+          outside this popover and re-check/reset controls the registrar
+          can't even see while this is open. */}
       <div className="border-t border-hairline pt-3">
         <Button
           type="button"
           variant="ghost"
           size="sm"
           className="w-full"
-          onClick={() => onChange(defaultFilterState())}
+          onClick={() =>
+            onChange({
+              ...value,
+              from: defaultFilterState().from,
+              to: defaultFilterState().to,
+              categories: defaultFilterState().categories,
+              status: defaultFilterState().status,
+            })
+          }
         >
-          Clear all filters
+          Clear filters
         </Button>
       </div>
     </div>

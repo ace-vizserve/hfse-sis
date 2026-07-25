@@ -73,6 +73,8 @@ export type DayViewProps = {
   onCursor: (d: Date) => void;
   /** Fired when "Edit this day" is clicked — opens the day-action sheet. */
   onDayClick: (iso: string) => void;
+  /** See MonthViewProps.filtersActive — same empty-filtered-state contract. */
+  filtersActive?: boolean;
 };
 
 // ─── DayView ──────────────────────────────────────────────────────────────────
@@ -83,6 +85,7 @@ export function DayView({
   cursor,
   onCursor,
   onDayClick,
+  filtersActive = false,
 }: DayViewProps) {
   // ── Focused date ──────────────────────────────────────────────────────────────
   const iso = formatIso(cursor);
@@ -217,9 +220,11 @@ export function DayView({
               </div>
             ) : (
               <p className="text-[13px] text-muted-foreground">
-                {weekend
-                  ? 'Weekend — no school.'
-                  : 'School day — nothing scheduled.'}
+                {filtersActive
+                  ? 'No days or events match the current filters.'
+                  : weekend
+                    ? 'Weekend — no school.'
+                    : 'School day — nothing scheduled.'}
               </p>
             )}
           </CardContent>
