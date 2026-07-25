@@ -5,20 +5,20 @@ import { getSessionUser } from '@/lib/supabase/server';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getQuickActions } from '@/lib/home/quick-actions';
 import { getHomeKpis } from '@/lib/home/kpis';
-import { getModuleCards } from '@/lib/home/module-cards';
+import { getRecentActions } from '@/lib/home/recent-actions';
 import { getHomeTodos, reportCardGapsTodo } from '@/lib/home/todos';
 import { getUpcomingCalendarEvents } from '@/lib/sis/dashboard';
 import { QuickActionsRow } from '@/components/home/quick-actions-row';
 import { KpiRow } from '@/components/home/kpi-row';
 import { ComingUpPanel } from '@/components/home/coming-up-panel';
 import { TodoPanel } from '@/components/home/todo-panel';
-import { ModuleCardGrid } from '@/components/home/module-card-grid';
+import { RecentActionsPanel } from '@/components/home/recent-actions-panel';
 
 // Root `/` is the SIS entry point. Single-module roles auto-redirect to
 // their module; the 4 multi-module roles (teacher, academic_coordinator,
 // school_admin, superadmin) see a role-aware overview — quick actions,
-// to-dos, upcoming events, KPIs, and a module-card grid scoped to what
-// isRouteAllowed lets them open. See
+// to-dos, upcoming events, KPIs, and the signed-in user's own recent
+// activity across every module. See
 // docs/superpowers/specs/2026-07-24-home-role-overview-design.md.
 export default async function Home() {
   const sessionUser = await getSessionUser();
@@ -35,9 +35,9 @@ export default async function Home() {
 
   const ay = await getCurrentAcademicYear();
 
-  // No current AY configured — render the header + quick actions + an empty
-  // module grid rather than throwing a 500 on the very first page most
-  // roles land on after login.
+  // No current AY configured — render just the header + quick actions
+  // rather than throwing a 500 on the very first page most roles land on
+  // after login.
   if (!ay) {
     return (
       <PageShell>
@@ -58,11 +58,11 @@ export default async function Home() {
         ? 'To-do — approvals assigned to you'
         : 'To-do';
 
-  const [quickActions, kpis, moduleCards, baseTodos, reportCardGaps, events] =
+  const [quickActions, kpis, recentActions, baseTodos, reportCardGaps, events] =
     await Promise.all([
       Promise.resolve(getQuickActions(role)),
       getHomeKpis(role, ay.ay_code),
-      getModuleCards(role, ay.ay_code, userId),
+      getRecentActions(email),
       getHomeTodos(role, ay.ay_code, userId),
       role === 'academic_coordinator' ||
       role === 'school_admin' ||
@@ -83,7 +83,7 @@ export default async function Home() {
         <ComingUpPanel events={events} />
       </div>
       <KpiRow kpis={kpis} />
-      <ModuleCardGrid cards={moduleCards} />
+      <RecentActionsPanel actions={recentActions} />
     </PageShell>
   );
 }
