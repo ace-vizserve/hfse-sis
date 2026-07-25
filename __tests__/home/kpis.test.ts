@@ -14,7 +14,15 @@ vi.mock('@/lib/sis/dashboard', () => ({
 }));
 vi.mock('@/lib/attendance/dashboard', () => ({
   getAttendanceKpisRange: vi.fn(async () => ({
-    current: { attendancePct: 96.2 },
+    current: {
+      attendancePct: 96.2,
+      encodedDays: 500,
+      present: 460,
+      late: 15,
+      excused: 5,
+      absent: 20,
+      nc: 0,
+    },
   })),
 }));
 vi.mock('@/lib/evaluation/dashboard', () => ({
@@ -24,9 +32,9 @@ vi.mock('@/lib/evaluation/dashboard', () => ({
 }));
 vi.mock('@/lib/p-files/dashboard', () => ({
   getSlotStatusMix: vi.fn(async () => ({
-    valid: 92,
-    pending: 5,
-    rejected: 1,
+    valid: 184,
+    pending: 10,
+    rejected: 4,
     missing: 2,
   })),
 }));
@@ -47,7 +55,11 @@ describe('getHomeKpis', () => {
     const kpis = await getHomeKpis('academic_coordinator', 'AY2026');
     expect(kpis).toEqual([
       { value: '1,048', label: 'Active students, AY2026' },
-      { value: '96%', label: 'Attendance rate, today' },
+      {
+        value: '96%',
+        label: 'Attendance rate, today',
+        fraction: '480 of 500 marked as attending',
+      },
       { value: '68%', label: 'Write-ups submitted, this term' },
     ]);
   });
@@ -56,8 +68,16 @@ describe('getHomeKpis', () => {
     const kpis = await getHomeKpis('school_admin', 'AY2026');
     expect(kpis).toEqual([
       { value: '1,048', label: 'Active students, AY2026' },
-      { value: '96%', label: 'Attendance rate, today' },
-      { value: '92%', label: 'Documents on file' },
+      {
+        value: '96%',
+        label: 'Attendance rate, today',
+        fraction: '480 of 500 marked as attending',
+      },
+      {
+        value: '92%',
+        label: 'Documents on file',
+        fraction: '184 of 200 documents',
+      },
     ]);
   });
 
@@ -66,7 +86,11 @@ describe('getHomeKpis', () => {
     expect(kpis).toEqual([
       { value: '1,048', label: 'Active students, AY2026' },
       { value: '1', label: 'System issues flagged' },
-      { value: '96%', label: 'Attendance rate, today' },
+      {
+        value: '96%',
+        label: 'Attendance rate, today',
+        fraction: '480 of 500 marked as attending',
+      },
     ]);
   });
 });
