@@ -78,7 +78,7 @@ export default async function Home() {
     <PageShell className="max-w-[1040px]">
       <Header email={email} />
       <QuickActionsRow actions={quickActions} />
-      <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start">
+      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start">
         <TodoPanel title={todoTitle} items={todos} />
         <div className="flex flex-col gap-3 lg:w-[300px] lg:shrink-0">
           <ComingUpPanel events={events} />

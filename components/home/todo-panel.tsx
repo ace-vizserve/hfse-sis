@@ -1,10 +1,19 @@
 import Link from 'next/link';
+import { Check, AlertTriangle, Circle } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { HomeTodoItem } from '@/lib/home/todos';
 import { TodoCrActions } from './todo-cr-actions.client';
+
+function initials(email: string): string {
+  const local = email.split('@')[0] ?? '';
+  const parts = local.split(/[._-]/).filter(Boolean);
+  const chars =
+    parts.length >= 2 ? [parts[0][0], parts[1][0]] : [local[0], local[1] ?? ''];
+  return chars.join('').toUpperCase();
+}
 
 export function TodoPanel({
   title,
@@ -15,11 +24,11 @@ export function TodoPanel({
 }) {
   return (
     <Card className="flex-[2] overflow-hidden p-0">
-      <div className="flex items-center justify-between border-b border-border px-5 py-3">
+      <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
         <span className="font-serif text-base font-bold text-foreground">
           {title}
         </span>
-        <span className="font-mono text-[10px] font-semibold text-muted-foreground">
+        <span className="rounded-full border border-border bg-muted px-2.5 py-1 font-mono text-[10px] font-semibold text-muted-foreground">
           {items.length} {items.length === 1 ? 'ITEM' : 'ITEMS'}
         </span>
       </div>
@@ -28,24 +37,33 @@ export function TodoPanel({
           Nothing needs your attention right now.
         </div>
       ) : (
-        <ol className="relative px-5 py-4 pl-9">
+        <ol className="relative py-5 pr-5 pl-14">
           <div
-            className="absolute top-2 bottom-2 left-[2.05rem] w-px bg-border"
+            className="absolute top-[30px] bottom-[30px] left-[27px] w-px bg-border"
             aria-hidden
           />
           {items.map((item) => {
             const dotWarn =
               item.aging?.tone === 'warning' ||
               item.aging?.tone === 'destructive';
+            const DotIcon = item.aging
+              ? dotWarn
+                ? AlertTriangle
+                : Check
+              : Circle;
             return (
-              <li key={item.id} className="relative pb-5 last:pb-0">
+              <li key={item.id} className="relative pb-7 last:pb-0">
                 <span
                   className={cn(
-                    'absolute top-1 -left-[1.15rem] size-2.5 rounded-full border-2 bg-card',
-                    dotWarn ? 'border-brand-amber' : 'border-brand-indigo'
+                    'absolute top-0 -left-[42px] z-1 flex size-7 items-center justify-center rounded-full text-white shadow-sm',
+                    dotWarn
+                      ? 'bg-gradient-to-br from-brand-amber to-brand-amber/80'
+                      : 'bg-gradient-to-br from-brand-indigo to-brand-navy'
                   )}
                   aria-hidden
-                />
+                >
+                  <DotIcon className={item.aging ? 'size-3.5' : 'size-2'} />
+                </span>
                 <div className="mb-1 flex items-baseline gap-2">
                   <span className="font-mono text-[10px] font-bold tracking-wide text-brand-indigo uppercase">
                     {item.module}
@@ -60,11 +78,16 @@ export function TodoPanel({
                   {item.text}
                 </div>
                 {item.kind === 'change-request' && item.requestId ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-2.5 rounded-lg border border-border bg-muted px-3 py-2.5">
                     {item.requestedBy ? (
-                      <span className="text-xs text-muted-foreground">
-                        requested by {item.requestedBy}
-                      </span>
+                      <>
+                        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-hairline text-[10px] font-bold text-foreground">
+                          {initials(item.requestedBy)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          requested by {item.requestedBy}
+                        </span>
+                      </>
                     ) : null}
                     {item.aging ? (
                       <Badge
@@ -73,6 +96,7 @@ export function TodoPanel({
                             ? 'blocked'
                             : item.aging.tone
                         }
+                        className="ml-auto"
                       >
                         {item.aging.label}
                       </Badge>
