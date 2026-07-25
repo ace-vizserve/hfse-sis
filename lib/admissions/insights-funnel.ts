@@ -5,6 +5,7 @@ import { unstable_cache } from 'next/cache';
 import { prefixFor } from '@/lib/admissions/_shared';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
+import { ENROLEE_CATEGORIES } from '@/lib/schemas/sis';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Conversion breakdowns for the Admissions Insights page — by level and by
@@ -35,6 +36,7 @@ type AppFunnelRow = {
   enroleeNumber: string | null;
   levelApplied: string | null;
   howDidYouKnowAboutHFSEIS: string | null;
+  category: string | null;
 };
 
 type JoinedFunnelRow = {
@@ -42,6 +44,7 @@ type JoinedFunnelRow = {
   applicationStatus: string | null;
   levelApplied: string | null;
   howDidYouKnowAboutHFSEIS: string | null;
+  category: string | null;
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -75,7 +78,9 @@ async function loadFunnelRowsUncached(
         (from, to) =>
           supabase
             .from(`${prefix}_enrolment_applications`)
-            .select('enroleeNumber, levelApplied, howDidYouKnowAboutHFSEIS')
+            .select(
+              'enroleeNumber, levelApplied, howDidYouKnowAboutHFSEIS, category'
+            )
             .range(from, to) as unknown as P<AppFunnelRow>
       ),
     ]);
@@ -98,6 +103,7 @@ async function loadFunnelRowsUncached(
       applicationStatus: s.applicationStatus ?? null,
       levelApplied: app?.levelApplied ?? null,
       howDidYouKnowAboutHFSEIS: app?.howDidYouKnowAboutHFSEIS ?? null,
+      category: app?.category ?? null,
     });
   }
   return out;
@@ -328,6 +334,55 @@ export function computeReferralConversion(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Category mix (New vs. Current vs. VizSchool variants)
+// ──────────────────────────────────────────────────────────────────────────
+
+export type CategoryMixRow = {
+  category: string;
+  count: number;
+};
+
+type CategoryRow = {
+  category: string | null;
+};
+
+/**
+ * Count ALL applications per enrolee category — deliberately NOT filtered by
+ * applicationStatus (unlike computeConversionByLevel/computeReferralConversion's
+ * "applied" counts, which still include cancelled/withdrawn but ARE paired
+ * with an "enrolled" count for a rate). This is a pure demand-mix headcount:
+ * "of everyone who applied, what's the New:Current split" — every row the
+ * caller passes counts, full stop.
+ *
+ * All 4 real ENROLEE_CATEGORIES values always appear in the output, even at
+ * count 0 — it's a fixed taxonomy the registrar expects to see every AY, not
+ * a variable set like withdrawal reasons. A null, blank, or unrecognized
+ * category value buckets into 'Unspecified', which is appended to the output
+ * ONLY when its count is > 0 — a clean AY with every application correctly
+ * categorized should never show a permanent empty 5th bar.
+ */
+export function computeCategoryMix(rows: CategoryRow[]): CategoryMixRow[] {
+  const counts = new Map<string, number>(ENROLEE_CATEGORIES.map((c) => [c, 0]));
+  let unspecified = 0;
+  for (const r of rows) {
+    const cat = (r.category ?? '').trim();
+    if (cat && counts.has(cat)) {
+      counts.set(cat, (counts.get(cat) ?? 0) + 1);
+    } else {
+      unspecified += 1;
+    }
+  }
+  const out: CategoryMixRow[] = ENROLEE_CATEGORIES.map((category) => ({
+    category,
+    count: counts.get(category) ?? 0,
+  }));
+  if (unspecified > 0) {
+    out.push({ category: 'Unspecified', count: unspecified });
+  }
+  return out;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Cached public API
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -361,4 +416,11 @@ export async function getReferralConversion(
 ): Promise<ReferralConversionRow[]> {
   const rows = await loadFunnelRows(ayCode);
   return computeReferralConversion(rows);
+}
+
+export async function getCategoryMix(
+  ayCode: string
+): Promise<CategoryMixRow[]> {
+  const rows = await loadFunnelRows(ayCode);
+  return computeCategoryMix(rows.map((r) => ({ category: r.category })));
 }

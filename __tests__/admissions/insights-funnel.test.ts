@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  computeCategoryMix,
   computeConversionByLevel,
   computeReferralConversion,
   computeWithdrawnByLevel,
@@ -250,5 +251,90 @@ describe('sortLevelsByConversionAsc', () => {
 
   it('returns empty array for empty input', () => {
     expect(sortLevelsByConversionAsc([])).toEqual([]);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// computeCategoryMix
+// ──────────────────────────────────────────────────────────────────────────
+describe('computeCategoryMix', () => {
+  it('counts applications per category, including all 4 real categories at 0 when absent', () => {
+    const rows = [
+      { category: 'New' },
+      { category: 'New' },
+      { category: 'Current' },
+    ];
+    const result = computeCategoryMix(rows);
+    expect(result).toEqual([
+      { category: 'New', count: 2 },
+      { category: 'Current', count: 1 },
+      { category: 'VizSchool New', count: 0 },
+      { category: 'VizSchool Current', count: 0 },
+    ]);
+  });
+
+  it('includes cancelled/withdrawn applicants (unlike conversion metrics) — this is a demand-mix count, not a conversion rate', () => {
+    // computeCategoryMix takes rows with only `category` — there is no
+    // applicationStatus field to filter on, by design (the caller passes
+    // ALL applications, never pre-filtered).
+    const rows = [
+      { category: 'New' },
+      { category: 'New' },
+      { category: 'New' },
+    ];
+    const result = computeCategoryMix(rows);
+    expect(result.find((r) => r.category === 'New')?.count).toBe(3);
+  });
+
+  it('buckets null category into Unspecified, only when count > 0', () => {
+    const rows = [{ category: 'New' }, { category: null }];
+    const result = computeCategoryMix(rows);
+    expect(result).toEqual([
+      { category: 'New', count: 1 },
+      { category: 'Current', count: 0 },
+      { category: 'VizSchool New', count: 0 },
+      { category: 'VizSchool Current', count: 0 },
+      { category: 'Unspecified', count: 1 },
+    ]);
+  });
+
+  it('omits Unspecified entirely when every row has a recognized category', () => {
+    const rows = [{ category: 'New' }];
+    const result = computeCategoryMix(rows);
+    expect(result.find((r) => r.category === 'Unspecified')).toBeUndefined();
+  });
+
+  it('buckets an unrecognized/garbage category string into Unspecified', () => {
+    const rows = [{ category: 'New' }, { category: 'Not A Real Category' }];
+    const result = computeCategoryMix(rows);
+    expect(result.find((r) => r.category === 'Unspecified')?.count).toBe(1);
+  });
+
+  it('always returns all 4 real categories even for empty input, with no Unspecified row', () => {
+    const result = computeCategoryMix([]);
+    expect(result).toEqual([
+      { category: 'New', count: 0 },
+      { category: 'Current', count: 0 },
+      { category: 'VizSchool New', count: 0 },
+      { category: 'VizSchool Current', count: 0 },
+    ]);
+  });
+
+  it('output order always follows ENROLEE_CATEGORIES, Unspecified last', () => {
+    const rows = [
+      { category: 'VizSchool Current' },
+      { category: null },
+      { category: 'Current' },
+      { category: 'VizSchool New' },
+      { category: 'New' },
+    ];
+    const result = computeCategoryMix(rows);
+    expect(result.map((r) => r.category)).toEqual([
+      'New',
+      'Current',
+      'VizSchool New',
+      'VizSchool Current',
+      'Unspecified',
+    ]);
   });
 });
