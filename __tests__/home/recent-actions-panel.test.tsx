@@ -21,15 +21,16 @@ const actions: RecentAction[] = [
 ];
 
 describe('RecentActionsPanel', () => {
-  it('renders one row per action with its label, summary, and time', () => {
+  it('renders one timeline row per action with its label, summary, and time', () => {
     render(<RecentActionsPanel actions={actions} />);
     expect(screen.getByText('Recent actions')).toBeInTheDocument();
-    expect(screen.getByText('2 ITEMS')).toBeInTheDocument();
     expect(screen.getByText('Sheet locked')).toBeInTheDocument();
     expect(screen.getByText('Math T1')).toBeInTheDocument();
     expect(screen.getByText('5m ago')).toBeInTheDocument();
     expect(screen.getByText('Sheet unlocked')).toBeInTheDocument();
     expect(screen.getByText('2h ago')).toBeInTheDocument();
+    // Two dots + a connecting line, list-item-per-action
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
   });
 
   it('shows an empty state when there is no recent activity', () => {
