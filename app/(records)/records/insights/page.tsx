@@ -30,7 +30,10 @@ import {
   DonutChart,
   type DonutSlice,
 } from '@/components/dashboard/charts/donut-chart';
-import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
+import {
+  GroupedBarChart,
+  type GroupedBarSeries,
+} from '@/components/dashboard/charts/grouped-bar-chart';
 import {
   RetentionStackedBarChart,
   type RetentionStackRow,
@@ -52,6 +55,7 @@ import {
 import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+import type { CategoryMixRow } from '@/lib/admissions/insights-funnel';
 import {
   comparisonCardState,
   resolveCompareAy,
@@ -69,6 +73,7 @@ import {
 import { compareLevelLabels, LEVEL_LABELS } from '@/lib/sis/levels';
 import { getMovementEvents } from '@/lib/sis/movements';
 import {
+  getEnrolledCategoryMix,
   getInsightsHeadcount,
   getRecordsRetention,
   getRecordsRetentionByLevel,
@@ -265,12 +270,16 @@ export default async function RecordsInsightsPage({
     retention,
     retentionByLevel,
     movementEvents,
+    categoryMix,
+    priorCategoryMix,
   ] = await Promise.all([
     getInsightsHeadcount(selectedAy),
     compareAy ? getInsightsHeadcount(compareAy) : Promise.resolve(null),
     getRecordsRetention(selectedAy, compareAy),
     getRecordsRetentionByLevel(selectedAy, compareAy),
     getMovementEvents(selectedAy),
+    getEnrolledCategoryMix(selectedAy),
+    compareAy ? getEnrolledCategoryMix(compareAy) : Promise.resolve(null),
   ]);
 
   const priorTotal = priorHeadcount ? priorHeadcount.total : null;
@@ -430,6 +439,29 @@ export default async function RecordsInsightsPage({
       bar: l.count,
       line: priorByLevel.get(l.level) ?? 0,
     }));
+
+  // §Category mix — New vs. Current vs. VizSchool variants, of ENROLLED
+  // students. Comparison-only (same visibility rule as Distribution above):
+  // a primary-AY-only snapshot doesn't answer the "is the mix shifting"
+  // question this chart exists for, so it renders nothing without a
+  // compareAy — no half-built single-bar version.
+  const categoryMixSeries: GroupedBarSeries[] = compareAy
+    ? [
+        { key: 'current', label: selectedAy },
+        { key: 'compare', label: compareAy, muted: true },
+      ]
+    : [];
+  const priorCategoryMixByCategory = new Map(
+    (priorCategoryMix ?? []).map((r: CategoryMixRow) => [r.category, r.count])
+  );
+  const categoryMixData = categoryMix.map((r: CategoryMixRow) => ({
+    x: r.category,
+    current: r.count,
+    compare: priorCategoryMixByCategory.get(r.category) ?? 0,
+  }));
+  const haveCategoryMixData = categoryMix.some(
+    (r: CategoryMixRow) => r.count > 0
+  );
 
   // §Movement — enrollments (late + re-enrolled) vs withdrawals per month, two
   // genuinely distinct flows over time → grouped (never stacked) bars.
@@ -595,6 +627,26 @@ export default async function RecordsInsightsPage({
                 yFormat="number"
                 height={300}
               />
+            )}
+          </InsightChartCard>
+        )}
+
+        {compareAy && priorCategoryMix && (
+          <InsightChartCard
+            cap={`By category · ${selectedAy} vs ${compareAy}`}
+            title="New vs. returning enrolled students"
+            icon={Users}
+            scopeNote="Enrolled students — excludes withdrawn"
+          >
+            {haveCategoryMixData ? (
+              <GroupedBarChart
+                series={categoryMixSeries}
+                data={categoryMixData}
+                yFormat="number"
+                height={260}
+              />
+            ) : (
+              <EmptyChartState message="No enrolled students recorded for this year yet." />
             )}
           </InsightChartCard>
         )}
