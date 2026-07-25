@@ -140,7 +140,7 @@ describe('hasActiveCalendarFilters', () => {
     expect(hasActiveCalendarFilters(defaultFilterState())).toBe(false);
   });
 
-  it.each([
+  const activeFilterCases: [string, Partial<CalendarFilterState>][] = [
     ['from', { from: '2026-04-01' }],
     ['to', { to: '2026-04-30' }],
     ['dayTypes narrowed', { dayTypes: ['hbl'] }],
@@ -148,7 +148,9 @@ describe('hasActiveCalendarFilters', () => {
     ['categories narrowed', { categories: ['ptc'] }],
     ['level', { level: 'primary' }],
     ['status', { status: 'open' }],
-  ] as const)('is true when %s is set', (_label, patch) => {
+  ];
+
+  it.each(activeFilterCases)('is true when %s is set', (_label, patch) => {
     expect(
       hasActiveCalendarFilters({ ...defaultFilterState(), ...patch })
     ).toBe(true);
