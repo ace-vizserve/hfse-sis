@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  computeEnrolledCategoryMix,
   currentInProgressMonthLabel,
   hasMonthlyResolution,
   isTerminalLevel,
@@ -672,5 +673,108 @@ describe('isTerminalLevel', () => {
 
   it('S4 is the only terminal code in the fixed P1–S4 catalog', () => {
     expect([...TERMINAL_LEVEL_CODES]).toEqual(['S4']);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// computeEnrolledCategoryMix
+// ──────────────────────────────────────────────────────────────────────────
+describe('computeEnrolledCategoryMix', () => {
+  it('counts enrolled students per category via the enroleeNumber lookup, including all 4 real categories at 0 when absent', () => {
+    const enrolledRows = [
+      { enroleeNumber: 'E1' },
+      { enroleeNumber: 'E2' },
+      { enroleeNumber: 'E3' },
+    ];
+    const lookup = new Map([
+      ['E1', 'New'],
+      ['E2', 'New'],
+      ['E3', 'Current'],
+    ]);
+    const result = computeEnrolledCategoryMix(enrolledRows, lookup);
+    expect(result).toEqual([
+      { category: 'New', count: 2 },
+      { category: 'Current', count: 1 },
+      { category: 'VizSchool New', count: 0 },
+      { category: 'VizSchool Current', count: 0 },
+    ]);
+  });
+
+  it('buckets a null enroleeNumber into Unspecified', () => {
+    const enrolledRows = [{ enroleeNumber: 'E1' }, { enroleeNumber: null }];
+    const lookup = new Map([['E1', 'New']]);
+    const result = computeEnrolledCategoryMix(enrolledRows, lookup);
+    expect(result.find((r) => r.category === 'Unspecified')?.count).toBe(1);
+  });
+
+  it('buckets an enroleeNumber with no matching admissions row into Unspecified', () => {
+    // Simulates the real gap this function exists to handle: a
+    // section_students row whose enrolee_number doesn't resolve to any
+    // ay{YYYY}_enrolment_applications row (a historically-unsynced link).
+    const enrolledRows = [
+      { enroleeNumber: 'E1' },
+      { enroleeNumber: 'E-ORPHAN' },
+    ];
+    const lookup = new Map([['E1', 'New']]);
+    const result = computeEnrolledCategoryMix(enrolledRows, lookup);
+    expect(result.find((r) => r.category === 'New')?.count).toBe(1);
+    expect(result.find((r) => r.category === 'Unspecified')?.count).toBe(1);
+  });
+
+  it('omits Unspecified entirely when every enrolled student resolves to a real category', () => {
+    const enrolledRows = [{ enroleeNumber: 'E1' }];
+    const lookup = new Map([['E1', 'New']]);
+    const result = computeEnrolledCategoryMix(enrolledRows, lookup);
+    expect(result.find((r) => r.category === 'Unspecified')).toBeUndefined();
+  });
+
+  it('never drops a student from the total — enrolled count always equals sum of all bucket counts', () => {
+    const enrolledRows = [
+      { enroleeNumber: 'E1' },
+      { enroleeNumber: null },
+      { enroleeNumber: 'E-ORPHAN' },
+      { enroleeNumber: 'E2' },
+    ];
+    const lookup = new Map([
+      ['E1', 'New'],
+      ['E2', 'VizSchool Current'],
+    ]);
+    const result = computeEnrolledCategoryMix(enrolledRows, lookup);
+    const total = result.reduce((sum, r) => sum + r.count, 0);
+    expect(total).toBe(enrolledRows.length);
+  });
+
+  it('returns all 4 real categories with 0 for an empty enrolled roster', () => {
+    const result = computeEnrolledCategoryMix([], new Map());
+    expect(result).toEqual([
+      { category: 'New', count: 0 },
+      { category: 'Current', count: 0 },
+      { category: 'VizSchool New', count: 0 },
+      { category: 'VizSchool Current', count: 0 },
+    ]);
+  });
+
+  it('output order always follows ENROLEE_CATEGORIES, Unspecified last', () => {
+    const enrolledRows = [
+      { enroleeNumber: 'E1' },
+      { enroleeNumber: 'E2' },
+      { enroleeNumber: 'E3' },
+      { enroleeNumber: 'E4' },
+      { enroleeNumber: null },
+    ];
+    const lookup = new Map([
+      ['E1', 'VizSchool Current'],
+      ['E2', 'Current'],
+      ['E3', 'VizSchool New'],
+      ['E4', 'New'],
+    ]);
+    const result = computeEnrolledCategoryMix(enrolledRows, lookup);
+    expect(result.map((r) => r.category)).toEqual([
+      'New',
+      'Current',
+      'VizSchool New',
+      'VizSchool Current',
+      'Unspecified',
+    ]);
   });
 });

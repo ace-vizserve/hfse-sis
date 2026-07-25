@@ -2,6 +2,8 @@ import 'server-only';
 
 import { unstable_cache } from 'next/cache';
 
+import { prefixFor } from '@/lib/admissions/_shared';
+import type { CategoryMixRow } from '@/lib/admissions/insights-funnel';
 import { growthDelta, type Growth } from '@/lib/dashboard/growth';
 import type { AyTrendPoint } from '@/lib/dashboard/insights-trend';
 import {
@@ -9,6 +11,7 @@ import {
   WITHDRAWAL_REASON_VALUES,
   type WithdrawalReason,
 } from '@/lib/schemas/enrolment';
+import { ENROLEE_CATEGORIES } from '@/lib/schemas/sis';
 import { getLevelDistribution, type LevelCount } from '@/lib/sis/dashboard';
 import { LEVEL_LABELS } from '@/lib/sis/levels';
 import { getMovementEvents, type MovementEvent } from '@/lib/sis/movements';
@@ -616,6 +619,112 @@ export async function getInsightsHeadcount(
 
   const total = byLevel.reduce((s, l) => s + l.count, 0);
   return { total, byLevel };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Enrolled category mix — New vs. Current vs. VizSchool variants.
+//
+// Enrolled headcount (section_students) and `category` (the admissions-side
+// ay{YYYY}_enrolment_applications table) are different sources — crossing
+// them means resolving each enrolled student's enrolee_number back to their
+// admissions row, and that link is not guaranteed for every historically-
+// synced row (the same class of gap Records' "Unsynced students" queue
+// already tracks). Any enrolled student whose enrolee_number is null, or
+// whose enrolee_number has no matching admissions row, or whose category is
+// null/unrecognized, buckets into 'Unspecified' — never silently dropped
+// from the total.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type EnrolledStudentCategoryRow = { enroleeNumber: string | null };
+
+/**
+ * Pure: given the enrolled section_students rows for an AY (each carrying
+ * its enrolee_number, possibly null) and an enroleeNumber → category lookup
+ * built from that AY's admissions applications table, buckets every
+ * enrolled student into their category.
+ *
+ * All 4 real ENROLEE_CATEGORIES values always appear in the output, even at
+ * count 0 (same convention as computeCategoryMix in
+ * lib/admissions/insights-funnel.ts). 'Unspecified' is appended ONLY when
+ * its count is > 0.
+ */
+export function computeEnrolledCategoryMix(
+  enrolledRows: EnrolledStudentCategoryRow[],
+  categoryByEnroleeNumber: Map<string, string>
+): CategoryMixRow[] {
+  const counts = new Map<string, number>(ENROLEE_CATEGORIES.map((c) => [c, 0]));
+  let unspecified = 0;
+  for (const r of enrolledRows) {
+    const en = r.enroleeNumber?.trim();
+    const cat = en ? categoryByEnroleeNumber.get(en) : undefined;
+    if (cat && counts.has(cat)) {
+      counts.set(cat, (counts.get(cat) ?? 0) + 1);
+    } else {
+      unspecified += 1;
+    }
+  }
+  const out: CategoryMixRow[] = ENROLEE_CATEGORIES.map((category) => ({
+    category,
+    count: counts.get(category) ?? 0,
+  }));
+  if (unspecified > 0) {
+    out.push({ category: 'Unspecified', count: unspecified });
+  }
+  return out;
+}
+
+async function loadEnrolledCategoryMixUncached(
+  ayCode: string
+): Promise<CategoryMixRow[]> {
+  const service = createServiceClient();
+  const { data: ay } = await service
+    .from('academic_years')
+    .select('id')
+    .eq('ay_code', ayCode)
+    .maybeSingle();
+  const ayId = (ay as { id: string } | null)?.id;
+  if (!ayId) return computeEnrolledCategoryMix([], new Map());
+
+  type SsRow = { enrolee_number: string | null };
+  const enrolledRows = await fetchAllPages<SsRow>((from, to) =>
+    service
+      .from('section_students')
+      .select('enrolee_number, section:sections!inner(academic_year_id)')
+      .eq('section.academic_year_id', ayId)
+      .neq('enrollment_status', 'withdrawn')
+      .range(from, to)
+  );
+
+  const prefix = prefixFor(ayCode);
+  type AppRow = { enroleeNumber: string | null; category: string | null };
+  const appRows = await fetchAllPages<AppRow>((from, to) =>
+    service
+      .from(`${prefix}_enrolment_applications`)
+      .select('enroleeNumber, category')
+      .range(from, to)
+  );
+
+  const categoryByEnroleeNumber = new Map<string, string>();
+  for (const a of appRows) {
+    if (a.enroleeNumber && a.category) {
+      categoryByEnroleeNumber.set(a.enroleeNumber, a.category);
+    }
+  }
+
+  return computeEnrolledCategoryMix(
+    enrolledRows.map((r) => ({ enroleeNumber: r.enrolee_number })),
+    categoryByEnroleeNumber
+  );
+}
+
+export function getEnrolledCategoryMix(
+  ayCode: string
+): Promise<CategoryMixRow[]> {
+  return unstable_cache(
+    () => loadEnrolledCategoryMixUncached(ayCode),
+    ['sis', 'enrolled-category-mix', ayCode],
+    { tags: ['sis', `sis:${ayCode}`], revalidate: CACHE_TTL_SECONDS }
+  )();
 }
 
 // ──────────────────────────────────────────────────────────────────────────
