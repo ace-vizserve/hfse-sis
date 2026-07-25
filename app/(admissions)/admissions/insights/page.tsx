@@ -10,6 +10,7 @@ import {
   Percent,
   Star,
   TrendingUp,
+  Users,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -29,7 +30,10 @@ import {
   ComparisonBarChart,
   type ComparisonBarPoint,
 } from '@/components/dashboard/charts/comparison-bar-chart';
-import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
+import {
+  GroupedBarChart,
+  type GroupedBarSeries,
+} from '@/components/dashboard/charts/grouped-bar-chart';
 import {
   DonutChart,
   type DonutSlice,
@@ -53,8 +57,10 @@ import {
   type AssessmentConversionRow,
 } from '@/lib/admissions/dashboard';
 import {
+  getCategoryMix,
   getReferralConversion,
   getWithdrawnByLevel,
+  type CategoryMixRow,
 } from '@/lib/admissions/insights-funnel';
 import { getAdmissionsFeedback } from '@/lib/admissions/feedback';
 import {
@@ -258,6 +264,8 @@ export default async function AdmissionsInsightsPage({
     assessmentConversion,
     feedback,
     priorFeedback,
+    categoryMix,
+    priorCategoryMix,
   ] = await Promise.all([
     getConversionFunnel(selectedAy),
     compareAy ? getConversionFunnel(compareAy) : Promise.resolve(null),
@@ -277,6 +285,8 @@ export default async function AdmissionsInsightsPage({
     // with the pipeline/funnel. lib/admissions/feedback.ts (KD #102).
     getAdmissionsFeedback(selectedAy),
     compareAy ? getAdmissionsFeedback(compareAy) : Promise.resolve(null),
+    getCategoryMix(selectedAy),
+    compareAy ? getCategoryMix(compareAy) : Promise.resolve(null),
   ]);
 
   // AY-wide funnel figures (whole-year, not the picker-windowed range count).
@@ -661,6 +671,30 @@ export default async function AdmissionsInsightsPage({
     .filter((r) => r.applied > 0)
     .map((r) => ({ name: r.source, value: r.applied }));
 
+  // §7 — category mix: New vs. Current vs. VizSchool variants, this AY vs.
+  // the picked comparison AY. Demand-mix count (includes cancelled/withdrawn
+  // applicants, same scope as the referral/withdrawn-by-level charts) — NOT
+  // a conversion rate, so there is no "enrolled" denominator here.
+  const categoryMixSeries: GroupedBarSeries[] = compareAy
+    ? [
+        { key: 'current', label: selectedAy },
+        { key: 'compare', label: compareAy, muted: true },
+      ]
+    : [{ key: 'current', label: selectedAy }];
+  const priorCategoryMixByCategory = new Map(
+    (priorCategoryMix ?? []).map((r: CategoryMixRow) => [r.category, r.count])
+  );
+  const categoryMixData = categoryMix.map((r: CategoryMixRow) => ({
+    x: r.category,
+    current: r.count,
+    ...(compareAy
+      ? { compare: priorCategoryMixByCategory.get(r.category) ?? 0 }
+      : {}),
+  }));
+  const haveCategoryMixData = categoryMix.some(
+    (r: CategoryMixRow) => r.count > 0
+  );
+
   return (
     <PageShell>
       <Link
@@ -973,36 +1007,56 @@ export default async function AdmissionsInsightsPage({
           Channels &amp; segments
         </p>
 
-        <InsightChartCard
-          cap="By source"
-          title={referralTitle}
-          icon={Megaphone}
-          scopeNote="All applicants — includes cancelled/withdrawn"
-        >
-          {referralDonutData.length === 0 ? (
-            <EmptyChartState message="No referral sources recorded yet." />
-          ) : (
-            <>
-              <DonutChart
-                data={referralDonutData}
-                centerValue={totalReferralApplicants.toLocaleString('en-SG')}
-                centerLabel="Applicants"
+        <div className="grid gap-4 lg:grid-cols-2">
+          <InsightChartCard
+            cap="By source"
+            title={referralTitle}
+            icon={Megaphone}
+            scopeNote="All applicants — includes cancelled/withdrawn"
+          >
+            {referralDonutData.length === 0 ? (
+              <EmptyChartState message="No referral sources recorded yet." />
+            ) : (
+              <>
+                <DonutChart
+                  data={referralDonutData}
+                  centerValue={totalReferralApplicants.toLocaleString('en-SG')}
+                  centerLabel="Applicants"
+                />
+                {showBestRef ? (
+                  <RecommendationCallout tone="positive" className="mt-5">
+                    {bestRef.item!.source} converts best at{' '}
+                    {bestRef.item!.conversionPct}%
+                    {!worstRef.isTie &&
+                    worstRef.item !== null &&
+                    worstRef.item.source !== bestRef.item!.source
+                      ? `, ${worstRef.item.source} the lowest at ${worstRef.item.conversionPct}%`
+                      : ''}{' '}
+                    — lean into what&rsquo;s working.
+                  </RecommendationCallout>
+                ) : null}
+              </>
+            )}
+          </InsightChartCard>
+
+          <InsightChartCard
+            cap={`By category${compareAy ? ` · ${selectedAy} vs ${compareAy}` : ` · ${selectedAy}`}`}
+            title="New vs. returning applicants"
+            icon={Users}
+            scopeNote="All applicants — includes cancelled/withdrawn"
+          >
+            {haveCategoryMixData ? (
+              <GroupedBarChart
+                series={categoryMixSeries}
+                data={categoryMixData}
+                yFormat="number"
+                height={260}
               />
-              {showBestRef ? (
-                <RecommendationCallout tone="positive" className="mt-5">
-                  {bestRef.item!.source} converts best at{' '}
-                  {bestRef.item!.conversionPct}%
-                  {!worstRef.isTie &&
-                  worstRef.item !== null &&
-                  worstRef.item.source !== bestRef.item!.source
-                    ? `, ${worstRef.item.source} the lowest at ${worstRef.item.conversionPct}%`
-                    : ''}{' '}
-                  — lean into what&rsquo;s working.
-                </RecommendationCallout>
-              ) : null}
-            </>
-          )}
-        </InsightChartCard>
+            ) : (
+              <EmptyChartState message="No applications recorded yet for this academic year." />
+            )}
+          </InsightChartCard>
+        </div>
       </div>
       {/* ═══ end Channels & segments ═══ */}
 
