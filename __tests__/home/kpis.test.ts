@@ -93,4 +93,24 @@ describe('getHomeKpis', () => {
       },
     ]);
   });
+
+  it('shows an honest empty state when nothing is marked yet today, not a fake 0%', async () => {
+    const { getAttendanceKpisRange } =
+      await import('@/lib/attendance/dashboard');
+    (getAttendanceKpisRange as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      current: {
+        attendancePct: 0,
+        encodedDays: 0,
+        present: 0,
+        late: 0,
+        excused: 0,
+        absent: 0,
+        nc: 0,
+      },
+    });
+    const kpis = await getHomeKpis('school_admin', 'AY2026');
+    const attendance = kpis.find((k) => k.label === 'Attendance rate, today')!;
+    expect(attendance.value).toBe('—');
+    expect(attendance.fraction).toBe('Not yet marked today');
+  });
 });

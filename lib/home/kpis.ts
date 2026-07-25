@@ -39,6 +39,16 @@ async function attendanceTodayKpi(ayCode: string): Promise<HomeKpi> {
     cmpFrom: null,
     cmpTo: null,
   });
+  // Nothing marked yet today — a bare "0%" would misleadingly contradict
+  // the Attendance module card's real (trailing-7-day) rate right below it
+  // on the same page. Show an honest empty state instead.
+  if (current.encodedDays === 0) {
+    return {
+      value: '—',
+      label: 'Attendance rate, today',
+      fraction: 'Not yet marked today',
+    };
+  }
   const attending = current.present + current.late + current.excused;
   return {
     value: pct(current.attendancePct),
