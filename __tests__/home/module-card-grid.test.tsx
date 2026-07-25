@@ -9,7 +9,7 @@ const cards: ModuleCard[] = [
     href: '/markbook',
     statValue: '82%',
     statLabel: 'Sheets locked',
-    chart: { kind: 'ring', pct: 82 },
+    chart: { kind: 'bar', pct: 82 },
   },
   {
     module: 'Records',
