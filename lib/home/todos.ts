@@ -14,7 +14,6 @@ export type HomeTodoItem = {
   kind: 'review' | 'change-request';
   aging?: { label: string; tone: 'success' | 'warning' | 'destructive' };
   requestId?: string;
-  requestedBy?: string;
 };
 
 /**
@@ -155,7 +154,6 @@ async function schoolAdminChangeRequestTodos(
       kind: 'change-request' as const,
       aging: agingFor(row.requested_at),
       requestId: row.id,
-      requestedBy: row.requested_by_email ?? undefined,
     };
   });
 }

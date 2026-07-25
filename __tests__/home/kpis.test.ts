@@ -14,15 +14,7 @@ vi.mock('@/lib/sis/dashboard', () => ({
 }));
 vi.mock('@/lib/attendance/dashboard', () => ({
   getAttendanceKpisRange: vi.fn(async () => ({
-    current: {
-      attendancePct: 96.2,
-      encodedDays: 500,
-      present: 460,
-      late: 15,
-      excused: 5,
-      absent: 20,
-      nc: 0,
-    },
+    current: { attendancePct: 96.2 },
   })),
 }));
 vi.mock('@/lib/evaluation/dashboard', () => ({
@@ -32,9 +24,9 @@ vi.mock('@/lib/evaluation/dashboard', () => ({
 }));
 vi.mock('@/lib/p-files/dashboard', () => ({
   getSlotStatusMix: vi.fn(async () => ({
-    valid: 184,
-    pending: 10,
-    rejected: 4,
+    valid: 92,
+    pending: 5,
+    rejected: 1,
     missing: 2,
   })),
 }));
@@ -55,11 +47,7 @@ describe('getHomeKpis', () => {
     const kpis = await getHomeKpis('academic_coordinator', 'AY2026');
     expect(kpis).toEqual([
       { value: '1,048', label: 'Active students, AY2026' },
-      {
-        value: '96%',
-        label: 'Attendance rate, today',
-        fraction: '480 of 500 marked as attending',
-      },
+      { value: '96%', label: 'Attendance rate, today' },
       { value: '68%', label: 'Write-ups submitted, this term' },
     ]);
   });
@@ -68,16 +56,8 @@ describe('getHomeKpis', () => {
     const kpis = await getHomeKpis('school_admin', 'AY2026');
     expect(kpis).toEqual([
       { value: '1,048', label: 'Active students, AY2026' },
-      {
-        value: '96%',
-        label: 'Attendance rate, today',
-        fraction: '480 of 500 marked as attending',
-      },
-      {
-        value: '92%',
-        label: 'Documents on file',
-        fraction: '184 of 200 documents',
-      },
+      { value: '96%', label: 'Attendance rate, today' },
+      { value: '92%', label: 'Documents on file' },
     ]);
   });
 
@@ -86,31 +66,7 @@ describe('getHomeKpis', () => {
     expect(kpis).toEqual([
       { value: '1,048', label: 'Active students, AY2026' },
       { value: '1', label: 'System issues flagged' },
-      {
-        value: '96%',
-        label: 'Attendance rate, today',
-        fraction: '480 of 500 marked as attending',
-      },
+      { value: '96%', label: 'Attendance rate, today' },
     ]);
-  });
-
-  it('shows an honest empty state when nothing is marked yet today, not a fake 0%', async () => {
-    const { getAttendanceKpisRange } =
-      await import('@/lib/attendance/dashboard');
-    (getAttendanceKpisRange as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      current: {
-        attendancePct: 0,
-        encodedDays: 0,
-        present: 0,
-        late: 0,
-        excused: 0,
-        absent: 0,
-        nc: 0,
-      },
-    });
-    const kpis = await getHomeKpis('school_admin', 'AY2026');
-    const attendance = kpis.find((k) => k.label === 'Attendance rate, today')!;
-    expect(attendance.value).toBe('—');
-    expect(attendance.fraction).toBe('Not yet marked today');
   });
 });

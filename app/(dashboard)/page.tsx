@@ -9,7 +9,7 @@ import { getModuleCards } from '@/lib/home/module-cards';
 import { getHomeTodos, reportCardGapsTodo } from '@/lib/home/todos';
 import { getUpcomingCalendarEvents } from '@/lib/sis/dashboard';
 import { QuickActionsRow } from '@/components/home/quick-actions-row';
-import { SnapshotCard } from '@/components/home/snapshot-card';
+import { KpiRow } from '@/components/home/kpi-row';
 import { ComingUpPanel } from '@/components/home/coming-up-panel';
 import { TodoPanel } from '@/components/home/todo-panel';
 import { ModuleCardGrid } from '@/components/home/module-card-grid';
@@ -40,7 +40,7 @@ export default async function Home() {
   // roles land on after login.
   if (!ay) {
     return (
-      <PageShell className="max-w-[1040px]">
+      <PageShell>
         <Header email={email} />
         <QuickActionsRow actions={getQuickActions(role)} />
         <p className="text-sm text-muted-foreground">
@@ -75,16 +75,14 @@ export default async function Home() {
   const todos = reportCardGaps ? [...baseTodos, reportCardGaps] : baseTodos;
 
   return (
-    <PageShell className="max-w-[1040px]">
+    <PageShell>
       <Header email={email} />
       <QuickActionsRow actions={quickActions} />
-      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start">
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-stretch">
         <TodoPanel title={todoTitle} items={todos} />
-        <div className="flex flex-col gap-3 lg:w-[300px] lg:shrink-0">
-          <ComingUpPanel events={events} />
-          <SnapshotCard kpis={kpis} />
-        </div>
+        <ComingUpPanel events={events} />
       </div>
+      <KpiRow kpis={kpis} />
       <ModuleCardGrid cards={moduleCards} />
     </PageShell>
   );

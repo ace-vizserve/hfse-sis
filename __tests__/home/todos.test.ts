@@ -91,7 +91,6 @@ describe('getHomeTodos', () => {
     const cr = todos.find((t) => t.kind === 'change-request');
     expect(cr).toBeDefined();
     expect(cr?.requestId).toBe('cr-1');
-    expect(cr?.requestedBy).toBe('teacher@hfse.test');
     expect(cr?.aging).toEqual({ label: '2 days', tone: 'success' });
   });
 

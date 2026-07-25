@@ -7,7 +7,7 @@ import { getSlotStatusMix } from '@/lib/p-files/dashboard';
 import { getSystemHealth } from '@/lib/sis/health';
 import { sgToday } from '@/lib/dates';
 
-export type HomeKpi = { value: string; label: string; fraction?: string };
+export type HomeKpi = { value: string; label: string };
 
 function pct(n: number): string {
   return `${Math.round(n)}%`;
@@ -39,22 +39,7 @@ async function attendanceTodayKpi(ayCode: string): Promise<HomeKpi> {
     cmpFrom: null,
     cmpTo: null,
   });
-  // Nothing marked yet today — a bare "0%" would misleadingly contradict
-  // the Attendance module card's real (trailing-7-day) rate right below it
-  // on the same page. Show an honest empty state instead.
-  if (current.encodedDays === 0) {
-    return {
-      value: '—',
-      label: 'Attendance rate, today',
-      fraction: 'Not yet marked today',
-    };
-  }
-  const attending = current.present + current.late + current.excused;
-  return {
-    value: pct(current.attendancePct),
-    label: 'Attendance rate, today',
-    fraction: `${attending} of ${current.encodedDays} marked as attending`,
-  };
+  return { value: pct(current.attendancePct), label: 'Attendance rate, today' };
 }
 
 /**
@@ -111,11 +96,7 @@ export async function getHomeKpis(
     return [
       activeStudents,
       attendanceToday,
-      {
-        value: pct(onFilePct),
-        label: 'Documents on file',
-        fraction: `${mix.valid} of ${total} documents`,
-      },
+      { value: pct(onFilePct), label: 'Documents on file' },
     ];
   }
 
