@@ -5,7 +5,10 @@ export function ModuleCardChartView({ chart }: { chart: ModuleCardChart }) {
 
   const pct = Math.max(0, Math.min(100, chart.pct));
   return (
-    <div className="h-1.5 overflow-hidden rounded-full bg-hairline" aria-hidden>
+    <div
+      className="h-1.5 w-full overflow-hidden rounded-full bg-hairline"
+      aria-hidden
+    >
       <div
         className="h-full rounded-full bg-gradient-to-r from-brand-indigo to-brand-sky"
         style={{ width: `${pct}%` }}
