@@ -7,7 +7,10 @@
 // KD #44 — native <input type="date"> is banned; DatePicker is the canonical
 // replacement.
 
-import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
+import {
+  ChartLegendChip,
+  ChartLegendDot,
+} from '@/components/dashboard/chart-legend-chip';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -19,8 +22,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  AUDIENCE_LABELS,
-  AUDIENCE_VALUES,
+  DAY_TYPE_LABELS,
+  DAY_TYPE_VALUES,
   EVENT_CATEGORY_LABELS,
 } from '@/lib/schemas/attendance';
 import {
@@ -30,6 +33,7 @@ import {
   type StatusFilter,
 } from '@/lib/attendance/calendar-filters';
 import {
+  DAY_TYPE_LEGEND_COLOR,
   EVENT_CATEGORY_GROUPS,
   EVENT_CATEGORY_LEGEND_COLOR,
 } from '@/components/attendance/calendar/calendar-cell';
@@ -79,6 +83,53 @@ export function CalendarFilterBar({ value, onChange }: CalendarFilterBarProps) {
                   />
                 </div>
               </div>
+            </div>
+          );
+        }
+
+        if (def.control === 'day-type-multi') {
+          return (
+            <div key={def.id} className="flex flex-col gap-2">
+              <p className="text-[13px] font-medium text-foreground">
+                {def.label}
+              </p>
+              <div className="flex flex-col gap-1.5">
+                {DAY_TYPE_VALUES.map((dt) => {
+                  const checked = value.dayTypes.includes(dt);
+                  return (
+                    <label
+                      key={dt}
+                      className="flex cursor-pointer items-center gap-2.5"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(v) => {
+                          if (v) {
+                            emit({ dayTypes: [...value.dayTypes, dt] });
+                          } else {
+                            emit({
+                              dayTypes: value.dayTypes.filter((d) => d !== dt),
+                            });
+                          }
+                        }}
+                      />
+                      <ChartLegendDot color={DAY_TYPE_LEGEND_COLOR[dt]} />
+                      <span className="text-sm text-foreground">
+                        {DAY_TYPE_LABELS[dt]}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {value.dayTypes.length > 0 && (
+                <button
+                  type="button"
+                  className="self-start font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  onClick={() => emit({ dayTypes: [] })}
+                >
+                  Show all
+                </button>
+              )}
             </div>
           );
         }
@@ -140,33 +191,6 @@ export function CalendarFilterBar({ value, onChange }: CalendarFilterBarProps) {
                   Show all
                 </button>
               )}
-            </div>
-          );
-        }
-
-        if (def.control === 'level') {
-          return (
-            <div key={def.id} className="flex flex-col gap-2">
-              <p className="text-[13px] font-medium text-foreground">
-                {def.label}
-              </p>
-              <Select
-                value={value.level}
-                onValueChange={(v) =>
-                  emit({ level: v as CalendarFilterState['level'] })
-                }
-              >
-                <SelectTrigger className="h-9 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {AUDIENCE_VALUES.map((a) => (
-                    <SelectItem key={a} value={a}>
-                      {AUDIENCE_LABELS[a]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           );
         }

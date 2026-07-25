@@ -56,6 +56,31 @@ export function ChartLegendChip({
 }
 
 /**
+ * A small filled dot in the same color as ChartLegendChip — for contexts too
+ * dense for a full pill (a checklist row, a mini-calendar's per-date density
+ * indicator). Reads the same chipGradientByColor map so a dot and a chip for
+ * the same color value can never drift (§10.2 single source of truth).
+ */
+export function ChartLegendDot({
+  color,
+  className,
+}: {
+  color: ChartLegendChipColor;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        'size-2.5 shrink-0 rounded-full bg-gradient-to-br',
+        chipGradientByColor[color],
+        className
+      )}
+      aria-hidden
+    />
+  );
+}
+
+/**
  * Render-prop compatible with recharts `<Legend content={...} />`.
  * Maps recharts payload entries to ChartLegendChips.
  *

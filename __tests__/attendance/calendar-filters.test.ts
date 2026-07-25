@@ -56,6 +56,24 @@ describe('calendar filters', () => {
     expect(filterDays([day({ date: '2026-04-15' })], s)).toHaveLength(1);
   });
 
+  it('day-type filter selects matching days only, and never touches events', () => {
+    const s: CalendarFilterState = {
+      ...defaultFilterState(),
+      dayTypes: ['public_holiday'],
+    };
+    const out = filterDays(
+      [
+        day({ dayType: 'public_holiday' }),
+        day({ dayType: 'school_day' }),
+        day({ dayType: 'hbl' }),
+      ],
+      s
+    );
+    expect(out.map((d) => d.dayType)).toEqual(['public_holiday']);
+    // days-only axis — filterEvents is unaffected by dayTypes.
+    expect(filterEvents([ev({})], s)).toHaveLength(1);
+  });
+
   it('category filter selects matching events only', () => {
     const s: CalendarFilterState = {
       ...defaultFilterState(),

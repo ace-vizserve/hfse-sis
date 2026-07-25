@@ -1,9 +1,10 @@
 'use client';
 
 // CalendarAdminClient (operational orchestrator) — composes the already-built
-// calendar pieces into a working surface: a jump-to-term selector + view
-// switcher + filters + add action (CalendarToolbar), a legend, the active view
-// (Month / Week / Day / List), a day-action sheet, and the event editor dialog.
+// calendar pieces into a working surface: a sidebar (add action + filters +
+// audience + mini-calendar, CalendarSidebar) beside a jump-to-term selector +
+// view switcher (CalendarToolbar), the active view (Month / Week / Day /
+// List), a day-action sheet, and the event editor dialog.
 //
 // Term-scoped views: the term selector scopes every view (Month / Week / Day /
 // List) to the selected term — nav is bounded to the term and only its days are
@@ -11,9 +12,9 @@
 // but each view is windowed to the selected term.
 //
 // Design system §5/§6: this is a composition page. It owns no bespoke grid
-// markup — the views/toolbar/legend/sheet carry their own design-compliant
-// JSX. The only local markup is a centered muted placeholder card for the
-// not-yet-built views and the page stack spacing. Tokens only (Hard Rule #7).
+// markup — the sidebar/toolbar/views/sheet carry their own design-compliant
+// JSX. The only local markup is the sidebar+main flex shell. Tokens only
+// (Hard Rule #7).
 
 import { useMutation } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
@@ -21,13 +22,13 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 import { apiFetch } from '@/lib/query/fetcher';
+import { CalendarSidebar } from '@/components/attendance/calendar/calendar-sidebar';
 import {
   CalendarToolbar,
   type CalendarView,
 } from '@/components/attendance/calendar/calendar-toolbar';
 import { DayActionSheet } from '@/components/attendance/calendar/day-action-sheet';
 import { EventEditorDialog } from '@/components/attendance/calendar/event-editor-dialog';
-import { Legend } from '@/components/attendance/calendar/legend';
 import { MonthView } from '@/components/attendance/calendar/views/month-view';
 import { WeekView } from '@/components/attendance/calendar/views/week-view';
 import { DayView } from '@/components/attendance/calendar/views/day-view';
@@ -328,15 +329,8 @@ export function CalendarAdminClient({
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-5">
-      <CalendarToolbar
-        view={view}
-        onView={setView}
-        terms={terms.map((t) => ({ id: t.id, label: t.label }))}
-        selectedTermId={selectedTermId}
-        onSelectTerm={setSelectedTermId}
-        filterState={filterState}
-        onFilter={setFilterState}
+    <div className="flex items-start gap-5">
+      <CalendarSidebar
         onAddEvent={() => openEventEditor(null)}
         copyFromPriorAy={
           copyFromPriorAyProps ? (
@@ -351,53 +345,66 @@ export function CalendarAdminClient({
             </DropdownMenuItem>
           ) : undefined
         }
+        filterState={filterState}
+        onFilter={setFilterState}
+        cursor={cursor}
+        onCursor={setCursor}
+        index={index}
       />
 
-      <Legend />
-
-      {view === 'month' && selectedTerm && (
-        <MonthView
-          term={{
-            startDate: selectedTerm.startDate,
-            endDate: selectedTerm.endDate,
-          }}
-          index={index}
-          cursor={cursor}
-          onCursor={setCursor}
-          selectedIsos={EMPTY_SET}
-          onDayClick={openDay}
+      <div className="min-w-0 flex-1 space-y-5">
+        <CalendarToolbar
+          view={view}
+          onView={setView}
+          terms={terms.map((t) => ({ id: t.id, label: t.label }))}
+          selectedTermId={selectedTermId}
+          onSelectTerm={setSelectedTermId}
         />
-      )}
 
-      {view === 'list' && (
-        <ListView days={listDays} events={listEvents} onRowClick={openDay} />
-      )}
+        {view === 'month' && selectedTerm && (
+          <MonthView
+            term={{
+              startDate: selectedTerm.startDate,
+              endDate: selectedTerm.endDate,
+            }}
+            index={index}
+            cursor={cursor}
+            onCursor={setCursor}
+            selectedIsos={EMPTY_SET}
+            onDayClick={openDay}
+          />
+        )}
 
-      {view === 'week' && selectedTerm && (
-        <WeekView
-          term={{
-            startDate: selectedTerm.startDate,
-            endDate: selectedTerm.endDate,
-          }}
-          index={index}
-          cursor={cursor}
-          onCursor={setCursor}
-          onDayClick={openDay}
-        />
-      )}
+        {view === 'list' && (
+          <ListView days={listDays} events={listEvents} onRowClick={openDay} />
+        )}
 
-      {view === 'day' && selectedTerm && (
-        <DayView
-          term={{
-            startDate: selectedTerm.startDate,
-            endDate: selectedTerm.endDate,
-          }}
-          index={index}
-          cursor={cursor}
-          onCursor={setCursor}
-          onDayClick={openDay}
-        />
-      )}
+        {view === 'week' && selectedTerm && (
+          <WeekView
+            term={{
+              startDate: selectedTerm.startDate,
+              endDate: selectedTerm.endDate,
+            }}
+            index={index}
+            cursor={cursor}
+            onCursor={setCursor}
+            onDayClick={openDay}
+          />
+        )}
+
+        {view === 'day' && selectedTerm && (
+          <DayView
+            term={{
+              startDate: selectedTerm.startDate,
+              endDate: selectedTerm.endDate,
+            }}
+            index={index}
+            cursor={cursor}
+            onCursor={setCursor}
+            onDayClick={openDay}
+          />
+        )}
+      </div>
 
       <DayActionSheet
         iso={daySheetIso}
