@@ -3,6 +3,9 @@ import {
   defaultFilterState,
   filterEvents,
   filterDays,
+  hasActiveCalendarFilters,
+  isMultiFilterChecked,
+  toggleMultiFilterValue,
   type CalendarFilterState,
 } from '@/lib/attendance/calendar-filters';
 import type {
@@ -100,6 +103,26 @@ describe('calendar filters', () => {
     expect(out.map((d) => d.audience).sort()).toEqual(['all', 'primary']);
   });
 
+  it('explicit empty dayTypes ([]) hides every day — distinct from null (show-all)', () => {
+    const rows = [day({ dayType: 'school_day' }), day({ dayType: 'hbl' })];
+    expect(
+      filterDays(rows, { ...defaultFilterState(), dayTypes: null })
+    ).toHaveLength(2);
+    expect(
+      filterDays(rows, { ...defaultFilterState(), dayTypes: [] })
+    ).toHaveLength(0);
+  });
+
+  it('explicit empty categories ([]) hides every event — distinct from null (show-all)', () => {
+    const events = [ev({ category: 'ptc' }), ev({ category: 'other' })];
+    expect(
+      filterEvents(events, { ...defaultFilterState(), categories: null })
+    ).toHaveLength(2);
+    expect(
+      filterEvents(events, { ...defaultFilterState(), categories: [] })
+    ).toHaveLength(0);
+  });
+
   it('status filter keeps only open or only closed days', () => {
     const open = day({ dayType: 'school_day' });
     const closed = day({ dayType: 'public_holiday' });
@@ -109,5 +132,70 @@ describe('calendar filters', () => {
     expect(
       filterDays([open, closed], { ...defaultFilterState(), status: 'closed' })
     ).toEqual([closed]);
+  });
+});
+
+describe('hasActiveCalendarFilters', () => {
+  it('is false for the untouched default state', () => {
+    expect(hasActiveCalendarFilters(defaultFilterState())).toBe(false);
+  });
+
+  it.each([
+    ['from', { from: '2026-04-01' }],
+    ['to', { to: '2026-04-30' }],
+    ['dayTypes narrowed', { dayTypes: ['hbl'] }],
+    ['dayTypes show-none', { dayTypes: [] }],
+    ['categories narrowed', { categories: ['ptc'] }],
+    ['level', { level: 'primary' }],
+    ['status', { status: 'open' }],
+  ] as const)('is true when %s is set', (_label, patch) => {
+    expect(
+      hasActiveCalendarFilters({ ...defaultFilterState(), ...patch })
+    ).toBe(true);
+  });
+});
+
+describe('isMultiFilterChecked', () => {
+  it('reads as checked for every value when the list is null (show-all)', () => {
+    expect(isMultiFilterChecked(null, 'a')).toBe(true);
+    expect(isMultiFilterChecked(null, 'z')).toBe(true);
+  });
+
+  it('reads as checked only for values present once the list is explicit', () => {
+    expect(isMultiFilterChecked(['a', 'b'], 'a')).toBe(true);
+    expect(isMultiFilterChecked(['a', 'b'], 'c')).toBe(false);
+  });
+
+  it('reads every value as unchecked for an explicit empty list (show-none)', () => {
+    expect(isMultiFilterChecked([], 'a')).toBe(false);
+  });
+});
+
+describe('toggleMultiFilterValue', () => {
+  const ALL = ['a', 'b', 'c'] as const;
+
+  it('unchecking one value from show-all (null) produces an explicit "all but that one" list', () => {
+    expect(toggleMultiFilterValue(ALL, null, 'b')).toEqual(['a', 'c']);
+  });
+
+  it('re-checking the missing value from an explicit list collapses back to null (show-all)', () => {
+    expect(toggleMultiFilterValue(ALL, ['a', 'c'], 'b')).toBeNull();
+  });
+
+  it('unchecking the last remaining explicit value leaves an explicit [] (show-none) — NOT null', () => {
+    // This is the exact bug the null/[] split exists to prevent: if this
+    // returned null instead of [], unchecking the last box would silently
+    // snap every checkbox back to checked (null reads as "show all").
+    const result = toggleMultiFilterValue(ALL, ['a'], 'a');
+    expect(result).toEqual([]);
+    expect(result).not.toBeNull();
+  });
+
+  it('checking an additional value onto a non-empty explicit list just appends it', () => {
+    expect(toggleMultiFilterValue(ALL, ['a'], 'b')).toEqual(['a', 'b']);
+  });
+
+  it('checking a value back onto an explicit empty list (show-none → one checked)', () => {
+    expect(toggleMultiFilterValue(ALL, [], 'a')).toEqual(['a']);
   });
 });

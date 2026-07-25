@@ -13,7 +13,7 @@
 // Data contract: receives the pre-built CalendarIndex as a prop (caller runs
 // useCalendarIndex on the AY-wide filtered slices). No data fetching here.
 
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
 
 import {
@@ -110,6 +110,14 @@ export type MonthViewProps = {
   selectedIsos: Set<string>;
   /** Fired when a clickable (in-term) day cell is clicked */
   onDayClick: (iso: string) => void;
+  /**
+   * True when any sidebar/Filters-popover filter narrows the view away from
+   * the default. When set AND the visible month renders zero chips, the day
+   * grid is replaced with a "no days or events match your filters" empty
+   * state instead of a silently blank grid — a genuinely empty month (no
+   * filters active, e.g. a school break) still renders the normal grid.
+   */
+  filtersActive?: boolean;
 };
 
 // ─── MonthView ────────────────────────────────────────────────────────────────
@@ -121,6 +129,7 @@ export function MonthView({
   onCursor,
   selectedIsos,
   onDayClick,
+  filtersActive = false,
 }: MonthViewProps) {
   // ── Term month span ──────────────────────────────────────────────────────────
   // Nav is clamped to the months containing the selected term's start / end.
@@ -138,6 +147,19 @@ export function MonthView({
 
   // ── Grid rows ────────────────────────────────────────────────────────────────
   const rows = useMemo(() => buildMonthWeekdayRows(cursor), [cursor]);
+
+  // ── Filtered-to-empty detection ────────────────────────────────────────────
+  // Only meaningful when filtersActive — a term genuinely having no events
+  // some month (e.g. a break) is not the same state as "your filters hid
+  // everything," and only the latter should show the empty-filtered message.
+  const hasAnyChipsInView = useMemo(
+    () =>
+      rows.some((week) =>
+        week.some((cell) => (index.entriesByIso.get(cell.iso)?.length ?? 0) > 0)
+      ),
+    [rows, index]
+  );
+  const showEmptyFilteredState = filtersActive && !hasAnyChipsInView;
 
   // ── Per-cell helper ──────────────────────────────────────────────────────────
 
@@ -269,71 +291,86 @@ export function MonthView({
           )}
         </div>
 
-        {/* Day rows */}
-        {rows.map((row, rowIdx) => {
-          const isLastRow = rowIdx === rows.length - 1;
-          return (
-            <div key={rowIdx} className="grid grid-cols-7">
-              {row.map((cell, colIdx) => {
-                const isLastCol = colIdx === 6;
-
-                // Readable chips for this date (overrides + events).
-                const chips = index.entriesByIso.get(cell.iso) ?? EMPTY_CHIPS;
-
-                const cellInTerm = inTerm(cell.iso);
-
-                // Calendar-first: a day is clickable/editable iff it belongs to
-                // a term — regardless of which month is displayed. Adjacent-month
-                // days that are in a term stay interactive (just visually muted
-                // as spillover). Days in no term (gaps) render faded + inert.
-                const clickable = cellInTerm;
-
-                // Weekday-only: `isNonSchoolDay` (app/api/attendance/daily/
-                // route.ts) technically fail-closes ANY unlisted date once a
-                // term has rows, but `ensureTermSeeded`/`weekdaysBetween` only
-                // ever auto-seed weekdays — weekends structurally never carry
-                // a row (see this file's header comment: "Weekends are
-                // shown... but carry no 'School day' badge"). Flagging every
-                // Sat/Sun as "Unmarked" would be permanent noise, not a real
-                // gap, so the flag is scoped to weekdays only.
-                const cellDow = cell.date.getDay();
-                const isWeekday = cellDow >= 1 && cellDow <= 5;
-                const missingRow =
-                  cellInTerm && isWeekday && !index.hasRowByIso.has(cell.iso);
-
-                const cellProps: CalendarCellProps = {
-                  iso: cell.iso,
-                  dayNumber: cell.dayNumber,
-                  chips,
-                  isToday: cell.iso === todayIso,
-                  // Muted when spilling over from an adjacent month OR when the
-                  // date belongs to no term (non-editable gap day).
-                  outOfMonth: cell.outOfMonth || !cellInTerm,
-                  selected: selectedIsos.has(cell.iso),
-                  clickable,
-                  missingRow,
-                  maxVisibleChips: 3,
-                  onClick: () => onDayClick(cell.iso),
-                };
-
-                // Border classes: hairlines BETWEEN cells. The parent grid
-                // owns borders so CalendarCell doesn't add its own.
-                const borderClasses = [
-                  !isLastCol && 'border-r border-hairline',
-                  !isLastRow && 'border-b border-hairline',
-                ]
-                  .filter(Boolean)
-                  .join(' ');
-
-                return (
-                  <div key={cell.iso} className={borderClasses}>
-                    <CalendarCell {...cellProps} />
-                  </div>
-                );
-              })}
+        {/* Day rows — replaced by an empty-filtered state when the sidebar's
+            filters are active and hide every chip in the visible month. */}
+        {showEmptyFilteredState ? (
+          <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <CalendarX className="size-[18px]" />
             </div>
-          );
-        })}
+            <p className="font-serif text-[15px] font-semibold text-foreground">
+              No days or events match the current filters.
+            </p>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              Try clearing a filter in the sidebar, or check a different month.
+            </p>
+          </div>
+        ) : (
+          rows.map((row, rowIdx) => {
+            const isLastRow = rowIdx === rows.length - 1;
+            return (
+              <div key={rowIdx} className="grid grid-cols-7">
+                {row.map((cell, colIdx) => {
+                  const isLastCol = colIdx === 6;
+
+                  // Readable chips for this date (overrides + events).
+                  const chips = index.entriesByIso.get(cell.iso) ?? EMPTY_CHIPS;
+
+                  const cellInTerm = inTerm(cell.iso);
+
+                  // Calendar-first: a day is clickable/editable iff it belongs to
+                  // a term — regardless of which month is displayed. Adjacent-month
+                  // days that are in a term stay interactive (just visually muted
+                  // as spillover). Days in no term (gaps) render faded + inert.
+                  const clickable = cellInTerm;
+
+                  // Weekday-only: `isNonSchoolDay` (app/api/attendance/daily/
+                  // route.ts) technically fail-closes ANY unlisted date once a
+                  // term has rows, but `ensureTermSeeded`/`weekdaysBetween` only
+                  // ever auto-seed weekdays — weekends structurally never carry
+                  // a row (see this file's header comment: "Weekends are
+                  // shown... but carry no 'School day' badge"). Flagging every
+                  // Sat/Sun as "Unmarked" would be permanent noise, not a real
+                  // gap, so the flag is scoped to weekdays only.
+                  const cellDow = cell.date.getDay();
+                  const isWeekday = cellDow >= 1 && cellDow <= 5;
+                  const missingRow =
+                    cellInTerm && isWeekday && !index.hasRowByIso.has(cell.iso);
+
+                  const cellProps: CalendarCellProps = {
+                    iso: cell.iso,
+                    dayNumber: cell.dayNumber,
+                    chips,
+                    isToday: cell.iso === todayIso,
+                    // Muted when spilling over from an adjacent month OR when the
+                    // date belongs to no term (non-editable gap day).
+                    outOfMonth: cell.outOfMonth || !cellInTerm,
+                    selected: selectedIsos.has(cell.iso),
+                    clickable,
+                    missingRow,
+                    maxVisibleChips: 3,
+                    onClick: () => onDayClick(cell.iso),
+                  };
+
+                  // Border classes: hairlines BETWEEN cells. The parent grid
+                  // owns borders so CalendarCell doesn't add its own.
+                  const borderClasses = [
+                    !isLastCol && 'border-r border-hairline',
+                    !isLastRow && 'border-b border-hairline',
+                  ]
+                    .filter(Boolean)
+                    .join(' ');
+
+                  return (
+                    <div key={cell.iso} className={borderClasses}>
+                      <CalendarCell {...cellProps} />
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

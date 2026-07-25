@@ -50,7 +50,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { filterDays, filterEvents } from '@/lib/attendance/calendar-filters';
+import {
+  filterDays,
+  filterEvents,
+  hasActiveCalendarFilters,
+} from '@/lib/attendance/calendar-filters';
 import type {
   CalendarEventRow,
   SchoolCalendarRow,
@@ -182,6 +186,10 @@ export function CalendarAdminClient({
     [events, filterState]
   );
   const index = useCalendarIndex(filteredCalendar, filteredEvents, level);
+  const filtersActive = useMemo(
+    () => hasActiveCalendarFilters(filterState),
+    [filterState]
+  );
 
   // List view is a flat chronological table with no cursor, so the term
   // selector scopes it: show only the selected term's closures + events.
@@ -372,6 +380,7 @@ export function CalendarAdminClient({
             onCursor={setCursor}
             selectedIsos={EMPTY_SET}
             onDayClick={openDay}
+            filtersActive={filtersActive}
           />
         )}
 

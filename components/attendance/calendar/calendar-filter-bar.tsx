@@ -7,10 +7,7 @@
 // KD #44 — native <input type="date"> is banned; DatePicker is the canonical
 // replacement.
 
-import {
-  ChartLegendChip,
-  ChartLegendDot,
-} from '@/components/dashboard/chart-legend-chip';
+import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -22,18 +19,18 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  DAY_TYPE_LABELS,
-  DAY_TYPE_VALUES,
   EVENT_CATEGORY_LABELS,
+  EVENT_CATEGORY_VALUES,
 } from '@/lib/schemas/attendance';
 import {
   CALENDAR_FILTERS,
   defaultFilterState,
+  isMultiFilterChecked,
+  toggleMultiFilterValue,
   type CalendarFilterState,
   type StatusFilter,
 } from '@/lib/attendance/calendar-filters';
 import {
-  DAY_TYPE_LEGEND_COLOR,
   EVENT_CATEGORY_GROUPS,
   EVENT_CATEGORY_LEGEND_COLOR,
 } from '@/components/attendance/calendar/calendar-cell';
@@ -87,53 +84,6 @@ export function CalendarFilterBar({ value, onChange }: CalendarFilterBarProps) {
           );
         }
 
-        if (def.control === 'day-type-multi') {
-          return (
-            <div key={def.id} className="flex flex-col gap-2">
-              <p className="text-[13px] font-medium text-foreground">
-                {def.label}
-              </p>
-              <div className="flex flex-col gap-1.5">
-                {DAY_TYPE_VALUES.map((dt) => {
-                  const checked = value.dayTypes.includes(dt);
-                  return (
-                    <label
-                      key={dt}
-                      className="flex cursor-pointer items-center gap-2.5"
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={(v) => {
-                          if (v) {
-                            emit({ dayTypes: [...value.dayTypes, dt] });
-                          } else {
-                            emit({
-                              dayTypes: value.dayTypes.filter((d) => d !== dt),
-                            });
-                          }
-                        }}
-                      />
-                      <ChartLegendDot color={DAY_TYPE_LEGEND_COLOR[dt]} />
-                      <span className="text-sm text-foreground">
-                        {DAY_TYPE_LABELS[dt]}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-              {value.dayTypes.length > 0 && (
-                <button
-                  type="button"
-                  className="self-start font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                  onClick={() => emit({ dayTypes: [] })}
-                >
-                  Show all
-                </button>
-              )}
-            </div>
-          );
-        }
-
         if (def.control === 'category-multi') {
           return (
             <div key={def.id} className="flex flex-col gap-2">
@@ -149,44 +99,37 @@ export function CalendarFilterBar({ value, onChange }: CalendarFilterBarProps) {
                     <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
                       {group.label}
                     </span>
-                    {group.categories.map((cat) => {
-                      const checked = value.categories.includes(cat);
-                      return (
-                        <label
-                          key={cat}
-                          className="flex cursor-pointer items-center gap-2.5"
-                        >
-                          <Checkbox
-                            checked={checked}
-                            onCheckedChange={(v) => {
-                              if (v) {
-                                emit({
-                                  categories: [...value.categories, cat],
-                                });
-                              } else {
-                                emit({
-                                  categories: value.categories.filter(
-                                    (c) => c !== cat
-                                  ),
-                                });
-                              }
-                            }}
-                          />
-                          <ChartLegendChip
-                            color={EVENT_CATEGORY_LEGEND_COLOR[cat]}
-                            label={EVENT_CATEGORY_LABELS[cat]}
-                          />
-                        </label>
-                      );
-                    })}
+                    {group.categories.map((cat) => (
+                      <label
+                        key={cat}
+                        className="flex cursor-pointer items-center gap-2.5"
+                      >
+                        <Checkbox
+                          checked={isMultiFilterChecked(value.categories, cat)}
+                          onCheckedChange={() =>
+                            emit({
+                              categories: toggleMultiFilterValue(
+                                EVENT_CATEGORY_VALUES,
+                                value.categories,
+                                cat
+                              ),
+                            })
+                          }
+                        />
+                        <ChartLegendChip
+                          color={EVENT_CATEGORY_LEGEND_COLOR[cat]}
+                          label={EVENT_CATEGORY_LABELS[cat]}
+                        />
+                      </label>
+                    ))}
                   </div>
                 ))}
               </div>
-              {value.categories.length > 0 && (
+              {value.categories !== null && (
                 <button
                   type="button"
                   className="self-start font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                  onClick={() => emit({ categories: [] })}
+                  onClick={() => emit({ categories: null })}
                 >
                   Show all
                 </button>
