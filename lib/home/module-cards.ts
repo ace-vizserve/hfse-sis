@@ -21,6 +21,7 @@ export type ModuleCard = {
   href: string;
   statValue: string;
   statLabel: string;
+  fraction?: string;
   chart: ModuleCardChart;
   badge?: { label: string; tone: 'success' | 'warning' };
 };
@@ -72,6 +73,7 @@ async function buildAdmissionsCard(
         href: '/admissions',
         statValue: `${Math.round(current.conversionPct)}%`,
         statLabel: 'Conversion',
+        fraction: `${current.enrolledInRange} of ${current.applicationsInRange} applications enrolled`,
         chart: { kind: 'none' },
       };
 }
@@ -114,6 +116,7 @@ async function buildMarkbookCard(
     href: '/markbook',
     statValue: `${Math.round(current.lockedPct)}%`,
     statLabel: 'Sheets locked',
+    fraction: `${current.sheetsLocked} of ${current.sheetsTotal} sheets locked`,
     chart: { kind: 'ring', pct: current.lockedPct },
   };
   // Only teacher's own pending change-request count belongs on the card —
@@ -151,11 +154,23 @@ async function buildAttendanceCard(ayCode: string): Promise<ModuleCard> {
     cmpFrom: null,
     cmpTo: null,
   });
+  if (current.encodedDays === 0) {
+    return {
+      module: 'Attendance',
+      href: '/attendance',
+      statValue: '—',
+      statLabel: "Last 7 days' rate",
+      fraction: 'Nothing marked in the last 7 days',
+      chart: { kind: 'none' },
+    };
+  }
+  const attending = current.present + current.late + current.excused;
   return {
     module: 'Attendance',
     href: '/attendance',
     statValue: `${Math.round(current.attendancePct)}%`,
-    statLabel: "Today's rate",
+    statLabel: "Last 7 days' rate",
+    fraction: `${attending} of ${current.encodedDays} marked as attending`,
     // Single aggregate point stands in for the trend until Task 6 wires a
     // real daily series via getDailyAttendanceRange — see Task 6 note.
     chart: { kind: 'sparkline', points: [current.attendancePct] },
@@ -178,6 +193,7 @@ async function buildEvaluationCard(
     href: '/evaluation',
     statValue: `${Math.round(current.submissionPct)}%`,
     statLabel: 'Submitted, this term',
+    fraction: `${current.submitted} of ${current.expected} write-ups submitted`,
     chart: { kind: 'ring', pct: current.submissionPct },
   };
 }
@@ -189,6 +205,7 @@ async function buildSisAdminCard(ayCode: string): Promise<ModuleCard> {
     href: '/sis',
     statValue: `${readiness.complete}/${readiness.total}`,
     statLabel: 'AY readiness',
+    fraction: `${readiness.complete} of ${readiness.total} setup steps complete`,
     chart: {
       kind: 'dots',
       done: readiness.complete,
@@ -234,6 +251,7 @@ export async function getModuleCards(
             href: '/p-files',
             statValue: `${Math.round(pctOnFile)}%`,
             statLabel: 'Docs on file',
+            fraction: `${mix.valid} of ${total} documents on file`,
             chart: { kind: 'none' },
           };
         }

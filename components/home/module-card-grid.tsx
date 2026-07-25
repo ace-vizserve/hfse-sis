@@ -29,6 +29,11 @@ export function ModuleCardGrid({ cards }: { cards: ModuleCard[] }) {
             <div className="text-xs text-muted-foreground">
               {card.statLabel}
             </div>
+            {card.fraction ? (
+              <div className="mt-0.5 text-[11px] text-muted-foreground/80">
+                {card.fraction}
+              </div>
+            ) : null}
           </Card>
         </Link>
       ))}

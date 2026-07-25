@@ -11,6 +11,11 @@ export function KpiRow({ kpis }: { kpis: HomeKpi[] }) {
             {kpi.value}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">{kpi.label}</div>
+          {kpi.fraction ? (
+            <div className="mt-0.5 text-[11px] text-muted-foreground/80">
+              {kpi.fraction}
+            </div>
+          ) : null}
         </Card>
       ))}
     </div>

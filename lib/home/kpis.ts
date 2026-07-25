@@ -7,7 +7,7 @@ import { getSlotStatusMix } from '@/lib/p-files/dashboard';
 import { getSystemHealth } from '@/lib/sis/health';
 import { sgToday } from '@/lib/dates';
 
-export type HomeKpi = { value: string; label: string };
+export type HomeKpi = { value: string; label: string; fraction?: string };
 
 function pct(n: number): string {
   return `${Math.round(n)}%`;
@@ -39,7 +39,22 @@ async function attendanceTodayKpi(ayCode: string): Promise<HomeKpi> {
     cmpFrom: null,
     cmpTo: null,
   });
-  return { value: pct(current.attendancePct), label: 'Attendance rate, today' };
+  // Before anyone marks attendance for the current day (most of the
+  // morning), encodedDays is 0 — showing a bare "0%" would misleadingly
+  // read as "everyone absent" instead of "nothing marked yet."
+  if (current.encodedDays === 0) {
+    return {
+      value: '—',
+      label: 'Attendance rate, today',
+      fraction: 'Not yet marked today',
+    };
+  }
+  const attending = current.present + current.late + current.excused;
+  return {
+    value: pct(current.attendancePct),
+    label: 'Attendance rate, today',
+    fraction: `${attending} of ${current.encodedDays} marked as attending`,
+  };
 }
 
 /**
@@ -85,6 +100,7 @@ export async function getHomeKpis(
       {
         value: pct(current.submissionPct),
         label: 'Write-ups submitted, this term',
+        fraction: `${current.submitted} of ${current.expected} write-ups submitted`,
       },
     ];
   }
@@ -96,16 +112,25 @@ export async function getHomeKpis(
     return [
       activeStudents,
       attendanceToday,
-      { value: pct(onFilePct), label: 'Documents on file' },
+      {
+        value: pct(onFilePct),
+        label: 'Documents on file',
+        fraction: `${mix.valid} of ${total} documents on file`,
+      },
     ];
   }
 
   // superadmin
   const health = await getSystemHealth();
+  const totalFlows = health.approverFlows.length;
   const issuesFlagged = health.approverFlows.filter((f) => !f.ok).length;
   return [
     activeStudents,
-    { value: String(issuesFlagged), label: 'System issues flagged' },
+    {
+      value: String(issuesFlagged),
+      label: 'System issues flagged',
+      fraction: `of ${totalFlows} approver flows monitored`,
+    },
     attendanceToday,
   ];
 }
