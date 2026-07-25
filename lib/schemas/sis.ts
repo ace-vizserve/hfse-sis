@@ -71,7 +71,7 @@ const optionalRating1to5 = z
 // sides — the apps row's `category` and the status row's `enroleeType` always
 // agree. Used to match a student against a discount code's eligibility filter
 // (DISCOUNT_ENROLEE_TYPES below adds the `Both` / `VizSchool Both` superset).
-const ENROLEE_CATEGORIES = [
+export const ENROLEE_CATEGORIES = [
   'New',
   'Current',
   'VizSchool New',
