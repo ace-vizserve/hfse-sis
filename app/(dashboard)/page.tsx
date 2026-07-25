@@ -3,6 +3,7 @@ import { Sunrise, Sun, Moon } from 'lucide-react';
 
 import { PageShell } from '@/components/ui/page-shell';
 import { getSessionUser } from '@/lib/supabase/server';
+import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { sgHour } from '@/lib/dates';
 import { getQuickActions, type QuickAction } from '@/lib/home/quick-actions';
@@ -34,6 +35,11 @@ export default async function Home() {
   if (role === 'p_file_officer') redirect('/p-files');
   if (role === 'admissions') redirect('/admissions');
 
+  // Falls back to email when no display name is set (getStaffDisplayNameById
+  // → lib/auth/staff-list.ts::loadAllStaffUncached already does this).
+  const staffNames = await getStaffDisplayNameById();
+  const displayName = new Map(staffNames).get(userId) ?? email;
+
   const ay = await getCurrentAcademicYear();
 
   // No current AY configured — render just the header + quick actions
@@ -42,7 +48,7 @@ export default async function Home() {
   if (!ay) {
     return (
       <PageShell>
-        <Header email={email} quickActions={getQuickActions(role)} />
+        <Header name={displayName} quickActions={getQuickActions(role)} />
         <p className="mt-8 text-sm text-muted-foreground">
           No current academic year is set yet — ask a superadmin to configure
           one in SIS Admin.
@@ -75,7 +81,7 @@ export default async function Home() {
 
   return (
     <PageShell>
-      <Header email={email} quickActions={quickActions} />
+      <Header name={displayName} quickActions={quickActions} />
       <div className="mt-8 mb-6 flex flex-col gap-3 lg:flex-row lg:items-stretch">
         <TodoPanel title={todoTitle} items={todos} />
         <ComingUpPanel events={events} />
@@ -92,10 +98,10 @@ const GREETING_ICON: Record<GreetingBucket, typeof Sunrise> = {
 };
 
 function Header({
-  email,
+  name,
   quickActions,
 }: {
-  email: string;
+  name: string;
   quickActions: QuickAction[];
 }) {
   const { label, bucket } = greetingForHour(sgHour());
@@ -112,7 +118,7 @@ function Header({
             HFSE · Student Information System
           </p>
           <h1 className="mt-2 font-serif text-[32px] font-semibold leading-[1.08] tracking-tight text-foreground md:text-[38px]">
-            {label}, {email}.
+            {label}, {name}.
           </h1>
           <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             Here&apos;s where things stand across your modules today.
