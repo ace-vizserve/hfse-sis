@@ -4,12 +4,10 @@ import { PageShell } from '@/components/ui/page-shell';
 import { getSessionUser } from '@/lib/supabase/server';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getQuickActions } from '@/lib/home/quick-actions';
-import { getHomeKpis } from '@/lib/home/kpis';
 import { getRecentActions } from '@/lib/home/recent-actions';
 import { getHomeTodos, reportCardGapsTodo } from '@/lib/home/todos';
 import { getUpcomingCalendarEvents } from '@/lib/sis/dashboard';
 import { QuickActionsRow } from '@/components/home/quick-actions-row';
-import { KpiRow } from '@/components/home/kpi-row';
 import { ComingUpPanel } from '@/components/home/coming-up-panel';
 import { TodoPanel } from '@/components/home/todo-panel';
 import { RecentActionsPanel } from '@/components/home/recent-actions-panel';
@@ -17,8 +15,8 @@ import { RecentActionsPanel } from '@/components/home/recent-actions-panel';
 // Root `/` is the SIS entry point. Single-module roles auto-redirect to
 // their module; the 4 multi-module roles (teacher, academic_coordinator,
 // school_admin, superadmin) see a role-aware overview — quick actions,
-// to-dos, upcoming events, KPIs, and the signed-in user's own recent
-// activity across every module. See
+// to-dos, upcoming events, and the signed-in user's own recent activity
+// across every module. See
 // docs/superpowers/specs/2026-07-24-home-role-overview-design.md.
 export default async function Home() {
   const sessionUser = await getSessionUser();
@@ -58,10 +56,9 @@ export default async function Home() {
         ? 'To-do — approvals assigned to you'
         : 'To-do';
 
-  const [quickActions, kpis, recentActions, baseTodos, reportCardGaps, events] =
+  const [quickActions, recentActions, baseTodos, reportCardGaps, events] =
     await Promise.all([
       Promise.resolve(getQuickActions(role)),
-      getHomeKpis(role, ay.ay_code),
       getRecentActions(email),
       getHomeTodos(role, ay.ay_code, userId),
       role === 'academic_coordinator' ||
@@ -82,7 +79,6 @@ export default async function Home() {
         <TodoPanel title={todoTitle} items={todos} />
         <ComingUpPanel events={events} />
       </div>
-      <KpiRow kpis={kpis} />
       <RecentActionsPanel actions={recentActions} />
     </PageShell>
   );
