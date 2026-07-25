@@ -62,7 +62,7 @@ alongside the existing "By source" referral donut.
 **Shape:** `InsightChartCard` wrapping a `GroupedBarChart`
 (`components/dashboard/charts/grouped-bar-chart.tsx`, already used on this
 same page for the "Entrance assessment" chart). X-axis = category (`New`,
-`Current`, `VizSchool New`, `VizSchool Current`, in `ENROLE_CATEGORIES`
+`Current`, `VizSchool New`, `VizSchool Current`, in `ENROLEE_CATEGORIES`
 order). Series = `[selectedAy]` alone, or `[selectedAy, compareAy]` when a
 comparison year is picked — mirrors the assessment chart's
 `ASSESSMENT_SERIES` pattern exactly.
