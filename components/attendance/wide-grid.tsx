@@ -36,7 +36,15 @@ import {
   Users,
 } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -235,16 +243,38 @@ export function AttendanceWideGrid({
     string | null
   >(null);
 
-  // Detail-column count varies per viewer: Bus/Student Care is always the
-  // "+1" (visible to everyone with Details on, edit affordance gated
-  // separately); Academics/Admin are entirely present-or-absent based on
-  // their own capability flag — hidden, not shown-disabled. The colgroup
-  // entry count, the "Roster" banner colSpan, the header TableHead count,
-  // and each body row's TableCell count all derive from this single value
-  // so they can never drift out of lockstep.
-  const detailColCount = showDetails
-    ? 1 + (canEditAcademics ? 1 : 0) + (canEditAdmin ? 1 : 0)
-    : 0;
+  // Sticky roster columns, left-to-right, with each one's cumulative
+  // `left` offset — computed (not hardcoded) since which optional columns
+  // render depends on `showDetails`/`canEditAcademics`/`canEditAdmin`.
+  // Bus/Student Care is always the "+1" when Details is on (edit affordance
+  // gated separately); Academics/Admin are entirely present-or-absent based
+  // on their own capability flag — hidden, not shown-disabled. The colgroup
+  // entry count, the "Roster" banner colSpan, the header cell count, and
+  // each body row's cell count all derive from this single array so they
+  // can never drift out of lockstep.
+  const stickyCols = useMemo(() => {
+    const cols: Array<{ key: string; width: number }> = [
+      { key: 'index', width: 40 },
+      { key: 'student', width: 180 },
+    ];
+    if (showDetails) cols.push({ key: 'busCare', width: 120 });
+    if (showDetails && canEditAcademics) {
+      cols.push({ key: 'academics', width: 90 });
+    }
+    if (showDetails && canEditAdmin) cols.push({ key: 'admin', width: 90 });
+    let left = 0;
+    return cols.map((c) => {
+      const withLeft = { ...c, left };
+      left += c.width;
+      return withLeft;
+    });
+  }, [showDetails, canEditAcademics, canEditAdmin]);
+  const stickyOf = (key: string) => {
+    const col = stickyCols.find((c) => c.key === key);
+    return col ?? { key, width: 0, left: 0 };
+  };
+  const isLastSticky = (key: string) =>
+    stickyCols[stickyCols.length - 1]?.key === key;
 
   // Stable callback (identity never changes — `setActiveCell` is a useState
   // setter) so the memoized `CellButton` below can take `onOpen` as a prop
@@ -483,8 +513,22 @@ export function AttendanceWideGrid({
   }
 
   // Row heights locked so the roster pane and calendar pane stay aligned
-  // vertically. Both panes use identical <tr style={{height}}> values.
-  const ROW_HEIGHT = { monthBanner: 28, dateRow: 48, body: 40 };
+  // vertically. Both panes use identical <tr style={{height}}> values — but
+  // that alone only sets a MINIMUM: a <tr>'s height is the max of its
+  // specified height and its tallest cell's natural content height. Since
+  // the two panes are separate <table> elements, any cell whose content
+  // outgrows the intended height (e.g. a date header carrying a
+  // ChartLegendChip tag under the day-number + weekday lines, or a roster
+  // row with several badges) silently stretches ONLY that table's row,
+  // permanently offsetting every row below it from its counterpart in the
+  // other pane. Every header/body cell below therefore ALSO gets this same
+  // height applied inline (not just `h-auto`) plus `overflow-hidden`, so a
+  // too-tall cell clips instead of growing — the ceiling matches the floor.
+  const ROW_HEIGHT = { monthBanner: 28, dateRow: 56, body: 44 };
+  const cellHeight = (px: number): CSSProperties => ({
+    height: px,
+    overflow: 'hidden',
+  });
 
   // Resolve the active cell → its student + current mark, for the shared popover.
   const activeEnrolment = activeCell
@@ -531,72 +575,212 @@ export function AttendanceWideGrid({
               </p>
             </div>
           ) : (
-            // Two-pane flex layout — roster on the left (fixed width, no
-            // horizontal scroll), calendar on the right (scrolls horizontally
-            // independently). Replaces the legacy single-table sticky-column
-            // design which had browser bugs with position: sticky inside
-            // border-collapse tables, causing the first date to be covered
-            // by the last sticky roster column. Two tables, row heights
-            // locked, alignment is deterministic.
-            <div className="flex">
-              {/* ─── Roster pane — fixed width, no horizontal scroll ─── */}
-              <div className="shrink-0 border-r border-border">
-                <Table
-                  noWrapper
-                  className="border-separate border-spacing-0 text-[11px]"
-                >
-                  <colgroup>
-                    <col style={{ width: 40 }} />
-                    <col style={{ width: 180 }} />
-                    {showDetails && <col style={{ width: 120 }} />}
+            // ONE real table — the roster columns (#, Student, and the
+            // optional Details columns) are `position: sticky` cells pinned
+            // to the left inside the SAME <tr> as that student's attendance
+            // marks, so a name and its marks are structurally one row:
+            // shared hover highlight, shared zebra striping, no possibility
+            // of drifting out of sync (the previous two-independent-tables
+            // design could only ever *approximate* alignment via matched
+            // <tr> heights). `border-separate` (never `border-collapse`) is
+            // what makes `position: sticky` cells safe in a table — the
+            // same convention already proven by the single sticky column in
+            // components/attendance/term-sheet-summary-table.tsx. A much
+            // older attempt at this used `border-collapse` and hit the
+            // known browser bug where scrolling content paints over sticky
+            // cells (see git history) — avoided here by construction.
+            <div className="overflow-x-auto">
+              <Table
+                noWrapper
+                className="border-separate border-spacing-0 table-fixed text-[11px]"
+              >
+                <colgroup>
+                  {stickyCols.map((c) => (
+                    <col key={c.key} style={{ width: c.width }} />
+                  ))}
+                  {columns.map((c) => (
+                    <col key={c.iso} style={{ width: 36 }} />
+                  ))}
+                  <col style={{ width: 40 }} />
+                </colgroup>
+                <TableHeader>
+                  <TableRow
+                    style={{ height: ROW_HEIGHT.monthBanner }}
+                    className="hover:bg-transparent"
+                  >
+                    <TableHead
+                      colSpan={stickyCols.length}
+                      style={{ ...cellHeight(ROW_HEIGHT.monthBanner), left: 0 }}
+                      className="sticky z-20 overflow-hidden border-b border-border bg-muted/60 px-2 py-1.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                    >
+                      Roster
+                    </TableHead>
+                    {monthGroups.map((g) => (
+                      <TableHead
+                        key={g.month}
+                        colSpan={g.dates.length}
+                        style={cellHeight(ROW_HEIGHT.monthBanner)}
+                        className="overflow-hidden border-b border-r border-border bg-muted/60 px-2 py-1.5 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                      >
+                        {g.label}
+                      </TableHead>
+                    ))}
+                    <TableHead
+                      style={cellHeight(ROW_HEIGHT.monthBanner)}
+                      className="overflow-hidden border-b border-border bg-muted/60 p-0"
+                    />
+                  </TableRow>
+                  <TableRow
+                    style={{ height: ROW_HEIGHT.dateRow }}
+                    className="hover:bg-transparent"
+                  >
+                    <TableHead
+                      style={{
+                        ...cellHeight(ROW_HEIGHT.dateRow),
+                        left: stickyOf('index').left,
+                      }}
+                      className={
+                        'sticky z-20 overflow-hidden border-b border-r border-border bg-muted/60 px-1 py-1 text-right font-mono text-[10px] font-semibold text-muted-foreground' +
+                        (isLastSticky('index')
+                          ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                          : '')
+                      }
+                    >
+                      #
+                    </TableHead>
+                    <TableHead
+                      style={{
+                        ...cellHeight(ROW_HEIGHT.dateRow),
+                        left: stickyOf('student').left,
+                      }}
+                      className={
+                        'sticky z-20 overflow-hidden border-b border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
+                        (isLastSticky('student')
+                          ? ' border-r-2 border-border shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                          : '')
+                      }
+                    >
+                      Student
+                    </TableHead>
+                    {showDetails && (
+                      <TableHead
+                        style={{
+                          ...cellHeight(ROW_HEIGHT.dateRow),
+                          left: stickyOf('busCare').left,
+                        }}
+                        className={
+                          'sticky z-20 overflow-hidden border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
+                          (isLastSticky('busCare')
+                            ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                            : '')
+                        }
+                      >
+                        Bus / Student Care
+                      </TableHead>
+                    )}
                     {showDetails && canEditAcademics && (
-                      <col style={{ width: 90 }} />
+                      <TableHead
+                        style={{
+                          ...cellHeight(ROW_HEIGHT.dateRow),
+                          left: stickyOf('academics').left,
+                        }}
+                        className={
+                          'sticky z-20 overflow-hidden border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
+                          (isLastSticky('academics')
+                            ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                            : '')
+                        }
+                      >
+                        Academics
+                      </TableHead>
                     )}
                     {showDetails && canEditAdmin && (
-                      <col style={{ width: 90 }} />
-                    )}
-                  </colgroup>
-                  <TableHeader>
-                    <TableRow
-                      style={{ height: ROW_HEIGHT.monthBanner }}
-                      className="hover:bg-transparent"
-                    >
                       <TableHead
-                        colSpan={2 + detailColCount}
-                        className="h-auto border-b border-border bg-muted/60 px-2 py-1.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                        style={{
+                          ...cellHeight(ROW_HEIGHT.dateRow),
+                          left: stickyOf('admin').left,
+                        }}
+                        className={
+                          'sticky z-20 overflow-hidden border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
+                          (isLastSticky('admin')
+                            ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                            : '')
+                        }
                       >
-                        Roster
+                        Admin
                       </TableHead>
-                    </TableRow>
-                    <TableRow
-                      style={{ height: ROW_HEIGHT.dateRow }}
-                      className="hover:bg-transparent"
-                    >
-                      <TableHead className="h-auto border-b border-r border-border bg-muted/60 px-1 py-1 text-right font-mono text-[10px] font-semibold text-muted-foreground">
-                        #
-                      </TableHead>
-                      <TableHead className="h-auto border-b border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
-                        Student
-                      </TableHead>
-                      {showDetails && (
-                        <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
-                          Bus / Student Care
+                    )}
+                    {columns.map((c) => {
+                      const eventLabel = c.events
+                        .map((e) => e.label)
+                        .join(' · ');
+                      const dayTypeTitle = `${DAY_TYPE_LABELS[c.dayType]}${
+                        c.label ? ` · ${c.label}` : ''
+                      }${eventLabel ? ` · ${eventLabel}` : ''}`;
+                      const isToday = c.iso === todayIso;
+                      return (
+                        <TableHead
+                          key={c.iso}
+                          ref={isToday ? todayHeaderRef : undefined}
+                          title={
+                            isToday ? `Today · ${dayTypeTitle}` : dayTypeTitle
+                          }
+                          style={cellHeight(ROW_HEIGHT.dateRow)}
+                          className={
+                            'overflow-hidden border-b border-border bg-muted/40 px-1 py-1 text-center font-mono text-[10px] font-semibold text-foreground ' +
+                            (c.drawMonthBoundary
+                              ? ' border-l-2 border-l-border'
+                              : '') +
+                            (isToday
+                              ? ' relative ring-2 ring-inset ring-brand-indigo'
+                              : '')
+                          }
+                        >
+                          <div className="leading-tight">{c.iso.slice(-2)}</div>
+                          <div className="text-[9px] font-normal opacity-70">
+                            {c.weekday.slice(0, 3)}
+                          </div>
+                          {/* Column tag — resolveColumnTag picks the single
+                            most-informative tag: PH/SH/NC from day_type,
+                            EX for exam events, SE for other events, HBL
+                            for HBL days; plain school days are untagged.
+                            Same ChartLegendChip rendered in the legend below
+                            so the column header and legend chip read as the
+                            same affordance per §10. */}
+                          {c.tag && (
+                            <div className="mt-0.5 flex justify-center">
+                              <ChartLegendChip
+                                color={COLUMN_TAG_COLOR[c.tag]}
+                                label={c.tag}
+                                className="px-1 py-px text-[9px] tracking-[0.1em]"
+                              />
+                            </div>
+                          )}
                         </TableHead>
-                      )}
-                      {showDetails && canEditAcademics && (
-                        <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
-                          Academics
-                        </TableHead>
-                      )}
-                      {showDetails && canEditAdmin && (
-                        <TableHead className="h-auto border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground">
-                          Admin
-                        </TableHead>
-                      )}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {enrolments.map((e) => (
+                      );
+                    })}
+                    <TableHead
+                      style={cellHeight(ROW_HEIGHT.dateRow)}
+                      className="overflow-hidden border-b border-border bg-muted/60 p-0"
+                    />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {enrolments.map((e, idx) => {
+                    // Explicit (not inherited) background on every sticky
+                    // cell — a sticky cell paints in its own layer, so it
+                    // must carry its own opaque-enough background or the
+                    // date columns scrolling underneath it would show
+                    // through. Computed per-row (not the `odd:` variant)
+                    // because `odd:` matches a cell's position among its
+                    // OWN siblings — on a <td> that means column position,
+                    // not row position.
+                    const rowStickyBg = e.withdrawn
+                      ? 'bg-muted/10'
+                      : idx % 2 === 1
+                        ? 'bg-muted/[0.04]'
+                        : 'bg-card';
+                    return (
                       <TableRow
                         key={e.enrolmentId}
                         style={{ height: ROW_HEIGHT.body }}
@@ -606,10 +790,34 @@ export function AttendanceWideGrid({
                             : 'odd:bg-muted/[0.04] hover:bg-muted/20'
                         }
                       >
-                        <TableCell className="overflow-hidden border-r border-border px-1 py-1 text-right font-mono tabular-nums text-muted-foreground">
+                        <TableCell
+                          style={{
+                            ...cellHeight(ROW_HEIGHT.body),
+                            left: stickyOf('index').left,
+                          }}
+                          className={
+                            'sticky z-10 overflow-hidden border-r border-border px-1 py-1 text-right font-mono tabular-nums text-muted-foreground ' +
+                            rowStickyBg +
+                            (isLastSticky('index')
+                              ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                              : '')
+                          }
+                        >
                           {e.indexNumber}
                         </TableCell>
-                        <TableCell className="overflow-hidden px-2 py-1">
+                        <TableCell
+                          style={{
+                            ...cellHeight(ROW_HEIGHT.body),
+                            left: stickyOf('student').left,
+                          }}
+                          className={
+                            'sticky z-10 overflow-hidden px-2 py-1 ' +
+                            rowStickyBg +
+                            (isLastSticky('student')
+                              ? ' border-r-2 border-border shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                              : '')
+                          }
+                        >
                           <div
                             className={
                               'truncate text-[12px] font-medium text-foreground ' +
@@ -620,7 +828,6 @@ export function AttendanceWideGrid({
                             {e.studentName}
                           </div>
                           <div className="flex items-center gap-1.5 truncate font-mono text-[10px] text-muted-foreground">
-                            <span>{e.studentNumber}</span>
                             {e.withdrawn && (
                               <Badge
                                 variant="secondary"
@@ -650,7 +857,19 @@ export function AttendanceWideGrid({
                           </div>
                         </TableCell>
                         {showDetails && (
-                          <TableCell className="overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground">
+                          <TableCell
+                            style={{
+                              ...cellHeight(ROW_HEIGHT.body),
+                              left: stickyOf('busCare').left,
+                            }}
+                            className={
+                              'sticky z-10 overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground ' +
+                              rowStickyBg +
+                              (isLastSticky('busCare')
+                                ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                                : '')
+                            }
+                          >
                             {canEditBusCare ? (
                               <button
                                 type="button"
@@ -667,7 +886,19 @@ export function AttendanceWideGrid({
                           </TableCell>
                         )}
                         {showDetails && canEditAcademics && (
-                          <TableCell className="border-l border-border px-2 py-1 text-[11px] text-foreground">
+                          <TableCell
+                            style={{
+                              ...cellHeight(ROW_HEIGHT.body),
+                              left: stickyOf('academics').left,
+                            }}
+                            className={
+                              'sticky z-10 overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground ' +
+                              rowStickyBg +
+                              (isLastSticky('academics')
+                                ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                                : '')
+                            }
+                          >
                             <button
                               type="button"
                               className="w-full truncate text-left hover:underline"
@@ -680,7 +911,19 @@ export function AttendanceWideGrid({
                           </TableCell>
                         )}
                         {showDetails && canEditAdmin && (
-                          <TableCell className="border-l border-border px-2 py-1 text-[11px] text-foreground">
+                          <TableCell
+                            style={{
+                              ...cellHeight(ROW_HEIGHT.body),
+                              left: stickyOf('admin').left,
+                            }}
+                            className={
+                              'sticky z-10 overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground ' +
+                              rowStickyBg +
+                              (isLastSticky('admin')
+                                ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                                : '')
+                            }
+                          >
                             <button
                               type="button"
                               className="w-full truncate text-left hover:underline"
@@ -692,108 +935,6 @@ export function AttendanceWideGrid({
                             </button>
                           </TableCell>
                         )}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* ─── Calendar pane — scrolls horizontally ─── */}
-              <div className="flex-1 overflow-x-auto">
-                <Table
-                  noWrapper
-                  className="border-separate border-spacing-0 table-fixed text-[11px]"
-                >
-                  <colgroup>
-                    {columns.map((c) => (
-                      <col key={c.iso} style={{ width: 36 }} />
-                    ))}
-                    <col style={{ width: 40 }} />
-                  </colgroup>
-                  <TableHeader>
-                    <TableRow
-                      style={{ height: ROW_HEIGHT.monthBanner }}
-                      className="hover:bg-transparent"
-                    >
-                      {monthGroups.map((g) => (
-                        <TableHead
-                          key={g.month}
-                          colSpan={g.dates.length}
-                          className="h-auto border-b border-r border-border bg-muted/60 px-2 py-1.5 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-                        >
-                          {g.label}
-                        </TableHead>
-                      ))}
-                      <TableHead className="h-auto border-b border-border bg-muted/60 p-0" />
-                    </TableRow>
-                    <TableRow
-                      style={{ height: ROW_HEIGHT.dateRow }}
-                      className="hover:bg-transparent"
-                    >
-                      {columns.map((c) => {
-                        const eventLabel = c.events
-                          .map((e) => e.label)
-                          .join(' · ');
-                        const dayTypeTitle = `${DAY_TYPE_LABELS[c.dayType]}${
-                          c.label ? ` · ${c.label}` : ''
-                        }${eventLabel ? ` · ${eventLabel}` : ''}`;
-                        const isToday = c.iso === todayIso;
-                        return (
-                          <TableHead
-                            key={c.iso}
-                            ref={isToday ? todayHeaderRef : undefined}
-                            title={
-                              isToday ? `Today · ${dayTypeTitle}` : dayTypeTitle
-                            }
-                            className={
-                              'h-auto overflow-hidden border-b border-border bg-muted/40 px-1 py-1 text-center font-mono text-[10px] font-semibold text-foreground ' +
-                              (c.drawMonthBoundary
-                                ? ' border-l-2 border-l-border'
-                                : '') +
-                              (isToday
-                                ? ' relative ring-2 ring-inset ring-brand-indigo'
-                                : '')
-                            }
-                          >
-                            <div className="leading-tight">
-                              {c.iso.slice(-2)}
-                            </div>
-                            <div className="text-[9px] font-normal opacity-70">
-                              {c.weekday.slice(0, 3)}
-                            </div>
-                            {/* Column tag — resolveColumnTag picks the single
-                              most-informative tag: PH/SH/NC from day_type,
-                              EX for exam events, SE for other events, HBL
-                              for HBL days; plain school days are untagged.
-                              Same ChartLegendChip rendered in the legend below
-                              so the column header and legend chip read as the
-                              same affordance per §10. */}
-                            {c.tag && (
-                              <div className="mt-0.5 flex justify-center">
-                                <ChartLegendChip
-                                  color={COLUMN_TAG_COLOR[c.tag]}
-                                  label={c.tag}
-                                  className="px-1 py-px text-[9px] tracking-[0.1em]"
-                                />
-                              </div>
-                            )}
-                          </TableHead>
-                        );
-                      })}
-                      <TableHead className="h-auto border-b border-border bg-muted/60 p-0" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {enrolments.map((e) => (
-                      <TableRow
-                        key={e.enrolmentId}
-                        style={{ height: ROW_HEIGHT.body }}
-                        className={
-                          e.withdrawn
-                            ? 'bg-muted/10 text-muted-foreground hover:bg-muted/10'
-                            : 'odd:bg-muted/[0.04] hover:bg-muted/20'
-                        }
-                      >
                         {columns.map((c) => {
                           const cell = cells.get(keyFor(e.enrolmentId, c.iso));
                           const status = cell?.status ?? null;
@@ -813,6 +954,7 @@ export function AttendanceWideGrid({
                                   ? 'Before enrolment date'
                                   : undefined
                               }
+                              style={cellHeight(ROW_HEIGHT.body)}
                               className={
                                 'overflow-hidden p-0 text-center align-middle ' +
                                 (beforeEnrolment
@@ -868,12 +1010,15 @@ export function AttendanceWideGrid({
                             </TableCell>
                           );
                         })}
-                        <TableCell className="bg-background p-0" />
+                        <TableCell
+                          style={cellHeight(ROW_HEIGHT.body)}
+                          className="overflow-hidden bg-background p-0"
+                        />
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
           )}
         </Card>
