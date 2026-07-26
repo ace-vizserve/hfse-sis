@@ -3,17 +3,15 @@
 import {
   ArrowLeft,
   CalendarX2,
-  ChevronDown,
-  ChevronUp,
   CircleCheck,
   CircleX,
   Clock,
+  ExternalLink,
   FileText,
   Search,
   UserSearch,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -24,8 +22,6 @@ import type {
   TermStat,
 } from '@/app/api/attendance/student-summary/route';
 import type { WideGridEnrolment } from '@/components/attendance/wide-grid';
-import { presentOnlyCount } from '@/lib/attendance/rollup-math';
-import type { RollupRow } from '@/lib/attendance/queries';
 import { rateTone } from '@/lib/attendance/rate-tone';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { Badge } from '@/components/ui/badge';
@@ -43,28 +39,9 @@ import { Input } from '@/components/ui/input';
 
 type Props = {
   enrolments: WideGridEnrolment[];
-  rollups: RollupRow[];
   termLabel: string;
   termId: string;
-};
-
-type SortKey =
-  | 'studentName'
-  | 'schoolDays'
-  | 'present'
-  | 'late'
-  | 'excused'
-  | 'absent'
-  | 'attendancePct';
-
-type RosterRow = {
-  enrolment: WideGridEnrolment;
-  schoolDays: number;
-  present: number;
-  late: number;
-  excused: number;
-  absent: number;
-  attendancePct: number | null;
+  sectionId: string;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -149,62 +126,17 @@ function BreakdownCell({
   );
 }
 
-function SortableTh({
-  label,
-  sortKey,
-  activeKey,
-  dir,
-  onSort,
-  align = 'right',
-}: {
-  label: string;
-  sortKey: SortKey;
-  activeKey: SortKey;
-  dir: 'asc' | 'desc';
-  onSort: (key: SortKey) => void;
-  align?: 'left' | 'right';
-}) {
-  const active = sortKey === activeKey;
-  return (
-    <th
-      className={`px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground ${
-        align === 'right' ? 'text-right' : 'text-left'
-      }`}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(sortKey)}
-        className={`inline-flex items-center gap-1 transition-colors hover:text-foreground ${
-          align === 'right' ? 'flex-row-reverse' : ''
-        } ${active ? 'text-foreground' : ''}`}
-      >
-        {label}
-        {active ? (
-          dir === 'asc' ? (
-            <ChevronUp className="size-3" />
-          ) : (
-            <ChevronDown className="size-3" />
-          )
-        ) : null}
-      </button>
-    </th>
-  );
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function StudentLookupSheet({
   enrolments,
-  rollups,
   termLabel,
   termId,
+  sectionId,
 }: Props) {
-  const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>('studentName');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   // The per-student summary is an action-triggered READ — fetched only once a
   // student is picked (`enabled`), keyed on the selection + the page's
@@ -230,60 +162,11 @@ export function StudentLookupSheet({
 
   const selected = enrolments.find((e) => e.enrolmentId === selectedId);
 
-  // ── Roster table (State 1) — joins enrolments with the current-term
-  // rollup, then filters by search + sorts by the active column.
-  const rollupByEnrolment = useMemo(() => {
-    const m = new Map<string, RollupRow>();
-    for (const r of rollups) m.set(r.sectionStudentId, r);
-    return m;
-  }, [rollups]);
-
-  const rosterRows: RosterRow[] = useMemo(
-    () =>
-      enrolments.map((e) => {
-        const r = rollupByEnrolment.get(e.enrolmentId);
-        return {
-          enrolment: e,
-          schoolDays: r?.schoolDays ?? 0,
-          present: r ? presentOnlyCount(r) : 0,
-          late: r?.daysLate ?? 0,
-          excused: r?.daysExcused ?? 0,
-          absent: r?.daysAbsent ?? 0,
-          attendancePct: r?.attendancePct ?? null,
-        };
-      }),
-    [enrolments, rollupByEnrolment]
-  );
-
-  const filtered: RosterRow[] = useMemo(() => {
+  const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const rows = q
-      ? rosterRows.filter((r) =>
-          r.enrolment.studentName.toLowerCase().includes(q)
-        )
-      : rosterRows;
-    const dir = sortDir === 'asc' ? 1 : -1;
-    return [...rows].sort((a, b) => {
-      if (sortKey === 'studentName') {
-        return (
-          dir * a.enrolment.studentName.localeCompare(b.enrolment.studentName)
-        );
-      }
-      if (sortKey === 'attendancePct') {
-        return dir * ((a.attendancePct ?? -1) - (b.attendancePct ?? -1));
-      }
-      return dir * (a[sortKey] - b[sortKey]);
-    });
-  }, [rosterRows, query, sortKey, sortDir]);
-
-  function toggleSort(key: SortKey) {
-    if (key === sortKey) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(key);
-      setSortDir(key === 'studentName' ? 'asc' : 'desc');
-    }
-  }
+    if (!q) return enrolments;
+    return enrolments.filter((e) => e.studentName.toLowerCase().includes(q));
+  }, [enrolments, query]);
 
   // Current-term stat + previous terms both come from the canonical rollup via
   // the summary API (proration-aware, EX-as-present, school-day based).
@@ -302,14 +185,7 @@ export function StudentLookupSheet({
 
   function handleDialogChange(open: boolean) {
     setDialogOpen(open);
-    if (open) {
-      // Refresh the RSC snapshot the roster table is derived from — a single
-      // round-trip on this explicit user action, not on every keystroke or
-      // background mutation (the wide-grid deliberately skips
-      // router.refresh() on cell writes for perf; this dialog opening is the
-      // catch-up point).
-      router.refresh();
-    } else {
+    if (!open) {
       setQuery('');
       setSelectedId(null);
     }
@@ -325,21 +201,21 @@ export function StudentLookupSheet({
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5">
           <UserSearch className="size-3.5" />
-          Attendance summary
+          Look up student
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
           <DialogTitle className="font-serif text-xl font-semibold">
-            {selected ? 'Attendance record' : 'Attendance summary'}
+            {selected ? 'Attendance record' : 'Attendance lookup'}
           </DialogTitle>
         </DialogHeader>
 
-        {/* ── Roster table (State 1) ────────────────────────────────── */}
+        {/* ── Search / list view ────────────────────────────────────── */}
         {!selectedId && (
           <>
-            <div className="shrink-0 border-b border-border px-4 py-3">
+            <div className="shrink-0 space-y-2 border-b border-border px-4 py-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -350,6 +226,20 @@ export function StudentLookupSheet({
                   autoFocus
                 />
               </div>
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="w-full justify-center gap-1.5 text-muted-foreground"
+              >
+                <Link
+                  href={`/attendance/${sectionId}/summary?term_id=${termId}`}
+                  target="_blank"
+                >
+                  <ExternalLink className="size-3.5" />
+                  View whole term summary
+                </Link>
+              </Button>
             </div>
 
             <div className="flex-1 overflow-y-auto">
@@ -358,133 +248,29 @@ export function StudentLookupSheet({
                   No students match &ldquo;{query}&rdquo;
                 </p>
               ) : (
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-card">
-                    <tr className="border-b border-border">
-                      <SortableTh
-                        label="Student"
-                        sortKey="studentName"
-                        activeKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
-                        align="left"
-                      />
-                      <SortableTh
-                        label="Days"
-                        sortKey="schoolDays"
-                        activeKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
-                      />
-                      <SortableTh
-                        label="P"
-                        sortKey="present"
-                        activeKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
-                      />
-                      <SortableTh
-                        label="L"
-                        sortKey="late"
-                        activeKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
-                      />
-                      <SortableTh
-                        label="EX"
-                        sortKey="excused"
-                        activeKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
-                      />
-                      <SortableTh
-                        label="A"
-                        sortKey="absent"
-                        activeKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
-                      />
-                      <SortableTh
-                        label="Rate"
-                        sortKey="attendancePct"
-                        activeKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
-                      />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {filtered.map((row) => {
-                      const tone =
-                        row.attendancePct == null
-                          ? null
-                          : rateTone(row.attendancePct);
-                      return (
-                        <tr
-                          key={row.enrolment.enrolmentId}
-                          onClick={() =>
-                            setSelectedId(row.enrolment.enrolmentId)
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              setSelectedId(row.enrolment.enrolmentId);
-                            }
-                          }}
-                          tabIndex={0}
-                          role="button"
-                          className="cursor-pointer transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
-                        >
-                          <td className="px-3 py-2.5">
-                            <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
-                              {row.enrolment.indexNumber}
-                            </span>{' '}
-                            <span className="text-sm font-medium text-foreground">
-                              {row.enrolment.studentName}
-                            </span>
-                            {row.enrolment.withdrawn && (
-                              <Badge
-                                variant="secondary"
-                                className="ml-2 text-[10px]"
-                              >
-                                Withdrawn
-                              </Badge>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">
-                            {row.schoolDays}
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">
-                            {row.present}
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">
-                            {row.late}
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">
-                            {row.excused}
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">
-                            {row.absent}
-                          </td>
-                          <td
-                            className={`px-3 py-2.5 text-right font-mono text-sm font-semibold tabular-nums ${
-                              tone?.text ?? 'text-muted-foreground'
-                            }`}
-                          >
-                            {row.attendancePct != null
-                              ? `${row.attendancePct}%`
-                              : '—'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <ul className="divide-y divide-border">
+                  {filtered.map((e) => (
+                    <li key={e.enrolmentId}>
+                      <button
+                        onClick={() => setSelectedId(e.enrolmentId)}
+                        className="flex w-full items-center gap-3 px-6 py-3 text-left transition-colors hover:bg-muted/50"
+                      >
+                        <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
+                          {e.indexNumber}
+                        </span>
+                        <span className="flex-1 text-sm font-medium text-foreground">
+                          {e.studentName}
+                        </span>
+                        {e.withdrawn && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            Withdrawn
+                          </Badge>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </div>
-            <div className="shrink-0 border-t border-border px-6 py-2.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-              {filtered.length} student{filtered.length === 1 ? '' : 's'} ·
-              current term · click a row for full history
             </div>
           </>
         )}
@@ -503,7 +289,7 @@ export function StudentLookupSheet({
 
             {/* ── Hero: identity + rate + breakdown in one card ─────── */}
             <div className="overflow-hidden rounded-2xl border border-border bg-gradient-to-t from-primary/5 to-card shadow-xs">
-              {/* Identity + rate ring */}
+              {/* Identity + rate headline */}
               <div className="flex items-center justify-between gap-4 px-5 py-5">
                 <div className="min-w-0 space-y-1.5">
                   <Eyebrow>Current term · {termLabel}</Eyebrow>
@@ -526,7 +312,7 @@ export function StudentLookupSheet({
                 />
               </div>
 
-              {/* Monthly trend chart — replaces the rate ring. */}
+              {/* Monthly trend chart */}
               <div
                 data-testid="rate-trend-chart"
                 className="border-t border-border px-3 pb-1 pt-2"

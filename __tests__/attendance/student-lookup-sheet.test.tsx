@@ -4,7 +4,6 @@ import userEvent from '@testing-library/user-event';
 
 import { StudentLookupSheet } from '@/components/attendance/student-lookup-sheet';
 import type { WideGridEnrolment } from '@/components/attendance/wide-grid';
-import type { RollupRow } from '@/lib/attendance/queries';
 import { renderWithClient } from '../_utils/render-with-client';
 import { jsonResponse, stubFetchOnce } from '../_utils/mock-fetch';
 
@@ -12,10 +11,15 @@ vi.mock('next/link', () => ({
   default: ({
     children,
     href,
+    ...rest
   }: {
     children: React.ReactNode;
     href: string;
-  }) => <a href={href}>{children}</a>,
+  } & Record<string, unknown>) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -59,66 +63,37 @@ const enrolments: WideGridEnrolment[] = [
   },
 ];
 
-const rollups: RollupRow[] = [
-  {
-    sectionStudentId: 'e1',
-    termId: 't',
-    schoolDays: 26,
-    daysPresent: 26,
-    daysLate: 0,
-    daysExcused: 0,
-    daysAbsent: 0,
-    attendancePct: 100,
-  },
-  {
-    sectionStudentId: 'e2',
-    termId: 't',
-    schoolDays: 14,
-    daysPresent: 6,
-    daysLate: 0,
-    daysExcused: 0,
-    daysAbsent: 8,
-    attendancePct: 42.86,
-  },
-];
-
-describe('StudentLookupSheet roster table', () => {
-  it('opens to a roster table joining enrolments with the current-term rollup', async () => {
+describe('StudentLookupSheet search list', () => {
+  it('opens to a searchable flat list of students', async () => {
     const user = userEvent.setup();
     renderWithClient(
       <StudentLookupSheet
         enrolments={enrolments}
-        rollups={rollups}
         termLabel="Term 3"
         termId="t3"
+        sectionId="sec-1"
       />
     );
-    await user.click(
-      screen.getByRole('button', { name: /attendance summary/i })
-    );
+    await user.click(screen.getByRole('button', { name: /look up student/i }));
     expect(
-      screen.getByRole('heading', { name: 'Attendance summary' })
+      screen.getByRole('heading', { name: 'Attendance lookup' })
     ).toBeInTheDocument();
     expect(screen.getByText('BALDONADO, Luke')).toBeInTheDocument();
     expect(screen.getByText('RIBLORA, Ellie')).toBeInTheDocument();
     expect(screen.getByText('Withdrawn')).toBeInTheDocument();
-    // Days / P / A columns for BALDONADO (26 school days, all present).
-    expect(screen.getAllByText('26').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('search filters the roster table by name', async () => {
+  it('search filters the list by name', async () => {
     const user = userEvent.setup();
     renderWithClient(
       <StudentLookupSheet
         enrolments={enrolments}
-        rollups={rollups}
         termLabel="Term 3"
         termId="t3"
+        sectionId="sec-1"
       />
     );
-    await user.click(
-      screen.getByRole('button', { name: /attendance summary/i })
-    );
+    await user.click(screen.getByRole('button', { name: /look up student/i }));
     await user.type(
       screen.getByPlaceholderText(/type a student name/i),
       'riblora'
@@ -127,7 +102,7 @@ describe('StudentLookupSheet roster table', () => {
     expect(screen.getByText('RIBLORA, Ellie')).toBeInTheDocument();
   });
 
-  it('clicking a row opens the per-student detail view', async () => {
+  it('clicking a student opens the per-student detail view', async () => {
     const user = userEvent.setup();
     stubFetchOnce(
       jsonResponse({
@@ -139,17 +114,36 @@ describe('StudentLookupSheet roster table', () => {
     renderWithClient(
       <StudentLookupSheet
         enrolments={enrolments}
-        rollups={rollups}
         termLabel="Term 3"
         termId="t3"
+        sectionId="sec-1"
       />
     );
-    await user.click(
-      screen.getByRole('button', { name: /attendance summary/i })
-    );
+    await user.click(screen.getByRole('button', { name: /look up student/i }));
     await user.click(screen.getByText('BALDONADO, Luke'));
     expect(screen.getByText('Attendance record')).toBeInTheDocument();
     expect(screen.getByText('All students')).toBeInTheDocument();
+  });
+
+  it('links to the whole term summary page, scoped to the current term, opening in a new tab', async () => {
+    const user = userEvent.setup();
+    renderWithClient(
+      <StudentLookupSheet
+        enrolments={enrolments}
+        termLabel="Term 3"
+        termId="t3"
+        sectionId="sec-1"
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /look up student/i }));
+    const link = screen.getByRole('link', {
+      name: /view whole term summary/i,
+    });
+    expect(link).toHaveAttribute(
+      'href',
+      '/attendance/sec-1/summary?term_id=t3'
+    );
+    expect(link).toHaveAttribute('target', '_blank');
   });
 });
 
@@ -203,14 +197,12 @@ describe('StudentLookupSheet detail view', () => {
     renderWithClient(
       <StudentLookupSheet
         enrolments={enrolments}
-        rollups={rollups}
         termLabel="Term 3"
         termId="t3"
+        sectionId="sec-1"
       />
     );
-    await user.click(
-      screen.getByRole('button', { name: /attendance summary/i })
-    );
+    await user.click(screen.getByRole('button', { name: /look up student/i }));
     await user.click(screen.getByText('BALDONADO, Luke'));
 
     expect(await screen.findByText('This term by month')).toBeInTheDocument();
@@ -231,14 +223,12 @@ describe('StudentLookupSheet detail view', () => {
     renderWithClient(
       <StudentLookupSheet
         enrolments={enrolments}
-        rollups={rollups}
         termLabel="Term 3"
         termId="t3"
+        sectionId="sec-1"
       />
     );
-    await user.click(
-      screen.getByRole('button', { name: /attendance summary/i })
-    );
+    await user.click(screen.getByRole('button', { name: /look up student/i }));
     await user.click(screen.getByText('BALDONADO, Luke'));
 
     expect(
