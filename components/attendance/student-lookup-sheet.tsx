@@ -26,6 +26,7 @@ import type {
 import type { WideGridEnrolment } from '@/components/attendance/wide-grid';
 import { presentOnlyCount } from '@/lib/attendance/rollup-math';
 import type { RollupRow } from '@/lib/attendance/queries';
+import { rateTone } from '@/lib/attendance/rate-tone';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -75,31 +76,6 @@ function formatDate(iso: string): string {
     month: 'short',
     day: 'numeric',
   });
-}
-
-// Rate → semantic health band (drives text color everywhere a rate renders).
-function rateTone(rate: number): {
-  text: string;
-  stroke: string;
-  label: string;
-} {
-  if (rate >= 95)
-    return {
-      text: 'text-brand-mint',
-      stroke: 'stroke-brand-mint',
-      label: 'Excellent',
-    };
-  if (rate >= 85)
-    return {
-      text: 'text-brand-amber',
-      stroke: 'stroke-brand-amber',
-      label: 'Watch',
-    };
-  return {
-    text: 'text-destructive',
-    stroke: 'stroke-destructive',
-    label: 'At risk',
-  };
 }
 
 // Status → Aurora Vault gradient tile recipe (§9.3 status palette).
