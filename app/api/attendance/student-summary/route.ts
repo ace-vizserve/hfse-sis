@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
+import { presentOnlyCount } from '@/lib/attendance/queries';
+import {
+  currentTermMonthsFromRaw,
+  type MonthlySummary,
+} from '@/lib/attendance/sheet-summary';
 import { sgToday } from '@/lib/dates';
+import type { AttendanceStatus } from '@/lib/schemas/attendance';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -20,6 +26,7 @@ export type TermStat = {
 export type StudentSummaryResponse = {
   termStats: TermStat[];
   recentAbsences: string[]; // ISO date strings (YYYY-MM-DD)
+  currentTermMonths: MonthlySummary[];
 };
 
 // Per-student attendance summary for the lookup dialog. Reads the canonical
@@ -93,6 +100,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       termStats: [],
       recentAbsences: [],
+      currentTermMonths: [],
     } satisfies StudentSummaryResponse);
   }
 
@@ -111,7 +119,7 @@ export async function GET(req: NextRequest) {
       .eq('section_student_id', sectionStudentId),
     service
       .from('attendance_daily')
-      .select('date, status, period_id, recorded_at')
+      .select('date, status, term_id, period_id, recorded_at')
       .eq('section_student_id', sectionStudentId)
       .order('recorded_at', { ascending: false }),
   ]);
@@ -125,6 +133,18 @@ export async function GET(req: NextRequest) {
   };
   const terms = (termsResult.data ?? []) as TermRow[];
   const currentTermId = resolveCurrentTermId(terms, sgToday());
+  const currentTermMonths: MonthlySummary[] = currentTermId
+    ? currentTermMonthsFromRaw(
+        ((dailyResult.data ?? []) as RawRow[])
+          .filter((row) => row.term_id === currentTermId)
+          .map((row) => ({
+            date: row.date,
+            status: row.status as AttendanceStatus,
+            periodId: row.period_id,
+            recordedAt: row.recorded_at,
+          }))
+      )
+    : [];
 
   type RollupRow = {
     term_id: string;
@@ -158,8 +178,11 @@ export async function GET(req: NextRequest) {
     const L = r.days_late ?? 0;
     const EX = r.days_excused ?? 0;
     const A = r.days_absent ?? 0;
-    // days_present = P + L + EX → present-only P = days_present − L − EX.
-    const P = Math.max(0, (r.days_present ?? 0) - L - EX);
+    const P = presentOnlyCount({
+      daysPresent: r.days_present ?? 0,
+      daysLate: L,
+      daysExcused: EX,
+    });
     return {
       termId: term.id,
       termNumber: term.term_number,
@@ -179,6 +202,7 @@ export async function GET(req: NextRequest) {
   type RawRow = {
     date: string;
     status: string;
+    term_id: string;
     period_id: string | null;
     recorded_at: string;
   };
@@ -201,5 +225,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     termStats,
     recentAbsences,
+    currentTermMonths,
   } satisfies StudentSummaryResponse);
 }
