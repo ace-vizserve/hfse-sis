@@ -38,6 +38,7 @@ export type AttendanceSheetExportInput = {
     fullName: string;
     busCare: string | null;
     withdrawn: boolean;
+    enrollmentDate: string | null;
     marksByDate: Map<string, AttendanceStatus | null>;
   }>;
 };
@@ -215,11 +216,16 @@ export function buildAttendanceSheetWorkbook(
       const s = st.marksByDate.get(iso) ?? null;
       row.push(s && s !== 'NC' ? s : ''); // NC → blank (matches template)
     }
-    // Per-month + term summary VALUES.
-    const allMarks: Mark[] = dates.map((d) => ({
-      date: d,
-      status: st.marksByDate.get(d) ?? null,
-    }));
+    // Per-month + term summary VALUES. Dates before enrollmentDate are
+    // excluded here (matching buildTermSummaryRows' proration) — the raw
+    // per-day cells above are left untouched, same posture as the live
+    // Term sheet grid, which dims pre-enrollment cells but still shows them.
+    const allMarks: Mark[] = dates
+      .filter((d) => !st.enrollmentDate || d >= st.enrollmentDate)
+      .map((d) => ({
+        date: d,
+        status: st.marksByDate.get(d) ?? null,
+      }));
     for (const mk of [...months, 'TERM']) {
       const scoped =
         mk === 'TERM'

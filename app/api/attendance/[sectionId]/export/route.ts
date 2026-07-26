@@ -126,7 +126,7 @@ export async function GET(
   const { data: enrolmentsRaw } = await service
     .from('section_students')
     .select(
-      'id, index_number, enrollment_status, bus_no, classroom_officer_role, student:students(student_number, last_name, first_name, middle_name)'
+      'id, index_number, enrollment_status, enrollment_date, bus_no, classroom_officer_role, student:students(student_number, last_name, first_name, middle_name)'
     )
     .eq('section_id', sectionId)
     .order('index_number');
@@ -160,6 +160,7 @@ export async function GET(
     id: string;
     index_number: number;
     enrollment_status: string;
+    enrollment_date: string | null;
     bus_no: string | null;
     classroom_officer_role: string | null;
     student:
@@ -192,6 +193,7 @@ export async function GET(
         [e.bus_no, e.classroom_officer_role].filter(Boolean).join(' / ') ||
         null,
       withdrawn: e.enrollment_status === 'withdrawn',
+      enrollmentDate: e.enrollment_date ?? null,
       marksByDate: marksByEnrolment.get(e.id) ?? new Map(),
     };
   });

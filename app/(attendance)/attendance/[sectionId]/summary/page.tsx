@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 
 import { ExportSheetButton } from '@/components/attendance/export-sheet-button';
 import { TermSheetSummaryTable } from '@/components/attendance/term-sheet-summary-table';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardDescription } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -139,6 +140,20 @@ export default async function TermSheetSummaryPage({
             <ArrowLeft className="size-3" />
             {section.name}
           </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="outline"
+              className="h-7 border-border bg-background px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+            >
+              {level?.code ?? ''} · {level?.label ?? ''}
+            </Badge>
+            <Badge
+              variant="outline"
+              className="h-7 border-border bg-background px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+            >
+              {selectedTerm?.label ?? 'No term'}
+            </Badge>
+          </div>
           <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
             Term Sheet Summary
           </h1>
