@@ -13,6 +13,7 @@ import {
   UserSearch,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -43,6 +44,7 @@ type Props = {
   enrolments: WideGridEnrolment[];
   rollups: RollupRow[];
   termLabel: string;
+  termId: string;
 };
 
 type SortKey =
@@ -215,7 +217,13 @@ function SortableTh({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function StudentLookupSheet({ enrolments, rollups, termLabel }: Props) {
+export function StudentLookupSheet({
+  enrolments,
+  rollups,
+  termLabel,
+  termId,
+}: Props) {
+  const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -223,15 +231,16 @@ export function StudentLookupSheet({ enrolments, rollups, termLabel }: Props) {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   // The per-student summary is an action-triggered READ — fetched only once a
-  // student is picked (`enabled`), keyed on the selection so switching students
-  // refetches. Forwards the abort signal so a fast back/forward aborts the
-  // stale request. While loading (or with no selection) `summary` is null,
+  // student is picked (`enabled`), keyed on the selection + the page's
+  // selected term so switching students OR switching terms refetches.
+  // Forwards the abort signal so a fast back/forward aborts the stale
+  // request. While loading (or with no selection) `summary` is null,
   // preserving the prior skeleton-on-`loading` UX.
   const summaryQuery = useQuery({
-    queryKey: queryKeys.attendanceStudentSummary(selectedId ?? ''),
+    queryKey: queryKeys.attendanceStudentSummary(selectedId ?? '', termId),
     queryFn: ({ signal }) =>
       apiFetch<StudentSummaryResponse>(
-        `/api/attendance/student-summary?sectionStudentId=${selectedId}`,
+        `/api/attendance/student-summary?sectionStudentId=${selectedId}&termId=${termId}`,
         { signal }
       ),
     enabled: selectedId !== null,
@@ -317,7 +326,14 @@ export function StudentLookupSheet({ enrolments, rollups, termLabel }: Props) {
 
   function handleDialogChange(open: boolean) {
     setDialogOpen(open);
-    if (!open) {
+    if (open) {
+      // Refresh the RSC snapshot the roster table is derived from — a single
+      // round-trip on this explicit user action, not on every keystroke or
+      // background mutation (the wide-grid deliberately skips
+      // router.refresh() on cell writes for perf; this dialog opening is the
+      // catch-up point).
+      router.refresh();
+    } else {
       setQuery('');
       setSelectedId(null);
     }
@@ -433,7 +449,15 @@ export function StudentLookupSheet({ enrolments, rollups, termLabel }: Props) {
                           onClick={() =>
                             setSelectedId(row.enrolment.enrolmentId)
                           }
-                          className="cursor-pointer transition-colors hover:bg-muted/50"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSelectedId(row.enrolment.enrolmentId);
+                            }
+                          }}
+                          tabIndex={0}
+                          role="button"
+                          className="cursor-pointer transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
                         >
                           <td className="px-3 py-2.5">
                             <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">

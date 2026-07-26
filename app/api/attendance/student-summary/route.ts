@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const sectionStudentId = searchParams.get('sectionStudentId');
+  const requestedTermId = searchParams.get('termId');
   if (!sectionStudentId) {
     return NextResponse.json(
       { error: 'sectionStudentId is required' },
@@ -132,11 +133,18 @@ export async function GET(req: NextRequest) {
     end_date: string | null;
   };
   const terms = (termsResult.data ?? []) as TermRow[];
-  const currentTermId = resolveCurrentTermId(terms, sgToday());
+  const currentTermId =
+    requestedTermId && terms.some((t) => t.id === requestedTermId)
+      ? requestedTermId
+      : resolveCurrentTermId(terms, sgToday());
   const currentTermMonths: MonthlySummary[] = currentTermId
     ? currentTermMonthsFromRaw(
         ((dailyResult.data ?? []) as RawRow[])
-          .filter((row) => row.term_id === currentTermId)
+          .filter(
+            (row) =>
+              row.term_id === currentTermId &&
+              (!enrollmentDate || row.date >= enrollmentDate)
+          )
           .map((row) => ({
             date: row.date,
             status: row.status as AttendanceStatus,

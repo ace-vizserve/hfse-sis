@@ -318,6 +318,7 @@ export default async function SectionAttendancePage({
             enrolments={enrolments}
             rollups={rollups}
             termLabel={selectedTerm?.label ?? ''}
+            termId={selectedTermId}
           />
           {canWriteNc && (
             <Button asChild variant="outline" size="sm" className="gap-1.5">

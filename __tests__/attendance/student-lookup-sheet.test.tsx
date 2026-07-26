@@ -18,6 +18,12 @@ vi.mock('next/link', () => ({
   }) => <a href={href}>{children}</a>,
 }));
 
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: vi.fn(), replace: vi.fn(), push: vi.fn() }),
+  usePathname: () => '/attendance/section-1',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const enrolments: WideGridEnrolment[] = [
   {
     enrolmentId: 'e1',
@@ -84,6 +90,7 @@ describe('StudentLookupSheet roster table', () => {
         enrolments={enrolments}
         rollups={rollups}
         termLabel="Term 3"
+        termId="t3"
       />
     );
     await user.click(
@@ -106,6 +113,7 @@ describe('StudentLookupSheet roster table', () => {
         enrolments={enrolments}
         rollups={rollups}
         termLabel="Term 3"
+        termId="t3"
       />
     );
     await user.click(
@@ -133,6 +141,7 @@ describe('StudentLookupSheet roster table', () => {
         enrolments={enrolments}
         rollups={rollups}
         termLabel="Term 3"
+        termId="t3"
       />
     );
     await user.click(
@@ -196,6 +205,7 @@ describe('StudentLookupSheet detail view', () => {
         enrolments={enrolments}
         rollups={rollups}
         termLabel="Term 3"
+        termId="t3"
       />
     );
     await user.click(
@@ -223,6 +233,7 @@ describe('StudentLookupSheet detail view', () => {
         enrolments={enrolments}
         rollups={rollups}
         termLabel="Term 3"
+        termId="t3"
       />
     );
     await user.click(

@@ -25,8 +25,8 @@ export const queryKeys = {
     target: string,
     range: DrillRange & { termId?: string | null }
   ) => ['attendance-drill', target, range] as const,
-  attendanceStudentSummary: (sectionStudentId: string) =>
-    ['attendance-student-summary', sectionStudentId] as const,
+  attendanceStudentSummary: (sectionStudentId: string, termId: string) =>
+    ['attendance-student-summary', sectionStudentId, termId] as const,
   crossAySearch: (query: string) => ['cross-ay-search', query] as const,
   commandPalette: (query: string) => ['command-palette', query] as const,
   sisLifecycleDrill: (target: string, range: DrillRange) =>
