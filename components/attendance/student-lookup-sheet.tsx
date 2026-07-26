@@ -3,6 +3,8 @@
 import {
   ArrowLeft,
   CalendarX2,
+  ChevronDown,
+  ChevronUp,
   CircleCheck,
   CircleX,
   Clock,
@@ -21,6 +23,7 @@ import type {
   TermStat,
 } from '@/app/api/attendance/student-summary/route';
 import type { WideGridEnrolment } from '@/components/attendance/wide-grid';
+import { presentOnlyCount, type RollupRow } from '@/lib/attendance/queries';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,7 +39,27 @@ import { Input } from '@/components/ui/input';
 
 type Props = {
   enrolments: WideGridEnrolment[];
+  rollups: RollupRow[];
   termLabel: string;
+};
+
+type SortKey =
+  | 'studentName'
+  | 'schoolDays'
+  | 'present'
+  | 'late'
+  | 'excused'
+  | 'absent'
+  | 'attendancePct';
+
+type RosterRow = {
+  enrolment: WideGridEnrolment;
+  schoolDays: number;
+  present: number;
+  late: number;
+  excused: number;
+  absent: number;
+  attendancePct: number | null;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -50,7 +73,7 @@ function formatDate(iso: string): string {
   });
 }
 
-// Rate → semantic health band (drives the ring stroke + percentage colour).
+// Rate → semantic health band (drives text color everywhere a rate renders).
 function rateTone(rate: number): {
   text: string;
   stroke: string;
@@ -184,12 +207,56 @@ function BreakdownCell({
   );
 }
 
+function SortableTh({
+  label,
+  sortKey,
+  activeKey,
+  dir,
+  onSort,
+  align = 'right',
+}: {
+  label: string;
+  sortKey: SortKey;
+  activeKey: SortKey;
+  dir: 'asc' | 'desc';
+  onSort: (key: SortKey) => void;
+  align?: 'left' | 'right';
+}) {
+  const active = sortKey === activeKey;
+  return (
+    <th
+      className={`px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground ${
+        align === 'right' ? 'text-right' : 'text-left'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 transition-colors hover:text-foreground ${
+          align === 'right' ? 'flex-row-reverse' : ''
+        } ${active ? 'text-foreground' : ''}`}
+      >
+        {label}
+        {active ? (
+          dir === 'asc' ? (
+            <ChevronUp className="size-3" />
+          ) : (
+            <ChevronDown className="size-3" />
+          )
+        ) : null}
+      </button>
+    </th>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function StudentLookupSheet({ enrolments, termLabel }: Props) {
+export function StudentLookupSheet({ enrolments, rollups, termLabel }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('studentName');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   // The per-student summary is an action-triggered READ — fetched only once a
   // student is picked (`enabled`), keyed on the selection so switching students
@@ -214,11 +281,60 @@ export function StudentLookupSheet({ enrolments, termLabel }: Props) {
 
   const selected = enrolments.find((e) => e.enrolmentId === selectedId);
 
-  const filtered = useMemo(() => {
+  // ── Roster table (State 1) — joins enrolments with the current-term
+  // rollup, then filters by search + sorts by the active column.
+  const rollupByEnrolment = useMemo(() => {
+    const m = new Map<string, RollupRow>();
+    for (const r of rollups) m.set(r.sectionStudentId, r);
+    return m;
+  }, [rollups]);
+
+  const rosterRows: RosterRow[] = useMemo(
+    () =>
+      enrolments.map((e) => {
+        const r = rollupByEnrolment.get(e.enrolmentId);
+        return {
+          enrolment: e,
+          schoolDays: r?.schoolDays ?? 0,
+          present: r ? presentOnlyCount(r) : 0,
+          late: r?.daysLate ?? 0,
+          excused: r?.daysExcused ?? 0,
+          absent: r?.daysAbsent ?? 0,
+          attendancePct: r?.attendancePct ?? null,
+        };
+      }),
+    [enrolments, rollupByEnrolment]
+  );
+
+  const filtered: RosterRow[] = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return enrolments;
-    return enrolments.filter((e) => e.studentName.toLowerCase().includes(q));
-  }, [enrolments, query]);
+    const rows = q
+      ? rosterRows.filter((r) =>
+          r.enrolment.studentName.toLowerCase().includes(q)
+        )
+      : rosterRows;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      if (sortKey === 'studentName') {
+        return (
+          dir * a.enrolment.studentName.localeCompare(b.enrolment.studentName)
+        );
+      }
+      if (sortKey === 'attendancePct') {
+        return dir * ((a.attendancePct ?? -1) - (b.attendancePct ?? -1));
+      }
+      return dir * (a[sortKey] - b[sortKey]);
+    });
+  }, [rosterRows, query, sortKey, sortDir]);
+
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'studentName' ? 'asc' : 'desc');
+    }
+  }
 
   // Current-term stat + previous terms both come from the canonical rollup via
   // the summary API (proration-aware, EX-as-present, school-day based).
@@ -252,18 +368,18 @@ export function StudentLookupSheet({ enrolments, termLabel }: Props) {
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5">
           <UserSearch className="size-3.5" />
-          Look up student
+          Attendance summary
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
           <DialogTitle className="font-serif text-xl font-semibold">
-            {selected ? 'Attendance record' : 'Attendance lookup'}
+            {selected ? 'Attendance record' : 'Attendance summary'}
           </DialogTitle>
         </DialogHeader>
 
-        {/* ── Search / list view ────────────────────────────────────── */}
+        {/* ── Roster table (State 1) ────────────────────────────────── */}
         {!selectedId && (
           <>
             <div className="shrink-0 border-b border-border px-4 py-3">
@@ -285,29 +401,125 @@ export function StudentLookupSheet({ enrolments, termLabel }: Props) {
                   No students match &ldquo;{query}&rdquo;
                 </p>
               ) : (
-                <ul className="divide-y divide-border">
-                  {filtered.map((e) => (
-                    <li key={e.enrolmentId}>
-                      <button
-                        onClick={() => setSelectedId(e.enrolmentId)}
-                        className="flex w-full items-center gap-3 px-6 py-3 text-left transition-colors hover:bg-muted/50"
-                      >
-                        <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
-                          {e.indexNumber}
-                        </span>
-                        <span className="flex-1 text-sm font-medium text-foreground">
-                          {e.studentName}
-                        </span>
-                        {e.withdrawn && (
-                          <Badge variant="secondary" className="text-[10px]">
-                            Withdrawn
-                          </Badge>
-                        )}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-card">
+                    <tr className="border-b border-border">
+                      <SortableTh
+                        label="Student"
+                        sortKey="studentName"
+                        activeKey={sortKey}
+                        dir={sortDir}
+                        onSort={toggleSort}
+                        align="left"
+                      />
+                      <SortableTh
+                        label="Days"
+                        sortKey="schoolDays"
+                        activeKey={sortKey}
+                        dir={sortDir}
+                        onSort={toggleSort}
+                      />
+                      <SortableTh
+                        label="P"
+                        sortKey="present"
+                        activeKey={sortKey}
+                        dir={sortDir}
+                        onSort={toggleSort}
+                      />
+                      <SortableTh
+                        label="L"
+                        sortKey="late"
+                        activeKey={sortKey}
+                        dir={sortDir}
+                        onSort={toggleSort}
+                      />
+                      <SortableTh
+                        label="EX"
+                        sortKey="excused"
+                        activeKey={sortKey}
+                        dir={sortDir}
+                        onSort={toggleSort}
+                      />
+                      <SortableTh
+                        label="A"
+                        sortKey="absent"
+                        activeKey={sortKey}
+                        dir={sortDir}
+                        onSort={toggleSort}
+                      />
+                      <SortableTh
+                        label="Rate"
+                        sortKey="attendancePct"
+                        activeKey={sortKey}
+                        dir={sortDir}
+                        onSort={toggleSort}
+                      />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filtered.map((row) => {
+                      const tone =
+                        row.attendancePct == null
+                          ? null
+                          : rateTone(row.attendancePct);
+                      return (
+                        <tr
+                          key={row.enrolment.enrolmentId}
+                          onClick={() =>
+                            setSelectedId(row.enrolment.enrolmentId)
+                          }
+                          className="cursor-pointer transition-colors hover:bg-muted/50"
+                        >
+                          <td className="px-3 py-2.5">
+                            <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
+                              {row.enrolment.indexNumber}
+                            </span>{' '}
+                            <span className="text-sm font-medium text-foreground">
+                              {row.enrolment.studentName}
+                            </span>
+                            {row.enrolment.withdrawn && (
+                              <Badge
+                                variant="secondary"
+                                className="ml-2 text-[10px]"
+                              >
+                                Withdrawn
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">
+                            {row.schoolDays}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">
+                            {row.present}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">
+                            {row.late}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">
+                            {row.excused}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">
+                            {row.absent}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 text-right font-mono text-sm font-semibold tabular-nums ${
+                              tone?.text ?? 'text-muted-foreground'
+                            }`}
+                          >
+                            {row.attendancePct != null
+                              ? `${row.attendancePct}%`
+                              : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               )}
+            </div>
+            <div className="shrink-0 border-t border-border px-6 py-2.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+              {filtered.length} student{filtered.length === 1 ? '' : 's'} ·
+              current term · click a row for full history
             </div>
           </>
         )}
