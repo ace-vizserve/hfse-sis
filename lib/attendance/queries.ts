@@ -44,21 +44,12 @@ export type RollupRow = {
   attendancePct: number | null;
 };
 
-/**
- * `RollupRow.daysPresent` is P+L+EX combined (see migration 068's
- * `recompute_attendance_rollup`: `count(*) filter (where status in
- * ('P','L','EX'))`). Present-ONLY count = daysPresent − daysLate −
- * daysExcused. Shared by the student-summary route and the attendance
- * lookup dialog's roster table so the derivation lives in exactly one
- * place.
- */
-export function presentOnlyCount(r: {
-  daysPresent: number;
-  daysLate: number;
-  daysExcused: number;
-}): number {
-  return Math.max(0, r.daysPresent - r.daysLate - r.daysExcused);
-}
+// `presentOnlyCount` lives in `./rollup-math` (a dependency-free module) so
+// client components can import it without pulling this module's server-only
+// transitive imports (e.g. `lib/sis/school-config.ts`) into the browser
+// bundle. Re-exported here so existing server-side importers of this module
+// keep working unchanged.
+export { presentOnlyCount } from './rollup-math';
 
 // Internal row shapes from supabase — camel/snake boundary handled per-query.
 type DailyRaw = {

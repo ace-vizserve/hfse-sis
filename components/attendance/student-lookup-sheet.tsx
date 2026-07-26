@@ -23,7 +23,8 @@ import type {
   TermStat,
 } from '@/app/api/attendance/student-summary/route';
 import type { WideGridEnrolment } from '@/components/attendance/wide-grid';
-import { presentOnlyCount, type RollupRow } from '@/lib/attendance/queries';
+import { presentOnlyCount } from '@/lib/attendance/rollup-math';
+import type { RollupRow } from '@/lib/attendance/queries';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
