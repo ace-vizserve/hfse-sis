@@ -144,7 +144,9 @@ export function monthsInRange(
  * when no daily row exists for that date) EXCEPT dates before the
  * student's `enrollmentDate` — those are dropped entirely, not zeroed,
  * so a late enrollee's term/month totals aren't diluted by days they
- * weren't enrolled for yet.
+ * weren't enrolled for yet. The `months` array omits any month with zero
+ * counted (P/L/EX/A) marks — `term` is unaffected and still reflects the
+ * full eligible calendar range.
  */
 export function buildTermSummaryRows(
   enrolments: TermSummaryEnrolment[],
