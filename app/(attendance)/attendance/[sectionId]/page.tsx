@@ -35,7 +35,6 @@ import {
 import {
   getCompassionateUsageForSection,
   getDailyForSection,
-  getRollupForSection,
   getSectionAttendanceSummary,
   getVacationLeaveUsageForSection,
 } from '@/lib/attendance/queries';
@@ -219,7 +218,6 @@ export default async function SectionAttendancePage({
     vlQuotaByEnrolmentId,
     summary,
     schoolConfig,
-    rollups,
   ] = await Promise.all([
     getDedupedSchoolCalendarForTerm(selectedTermId, sectionLevelType),
     getCalendarEventsForTerm(selectedTermId, audienceForEvents),
@@ -232,7 +230,6 @@ export default async function SectionAttendancePage({
     ),
     getSectionAttendanceSummary(sectionId, selectedTermId),
     getSchoolConfig(),
-    getRollupForSection(sectionId, selectedTermId),
   ]);
 
   const enrolments: WideGridEnrolment[] = enrolmentList.map((e) => {
@@ -316,9 +313,9 @@ export default async function SectionAttendancePage({
           </Tabs>
           <StudentLookupSheet
             enrolments={enrolments}
-            rollups={rollups}
             termLabel={selectedTerm?.label ?? ''}
             termId={selectedTermId}
+            sectionId={sectionId}
           />
           {canWriteNc && (
             <Button asChild variant="outline" size="sm" className="gap-1.5">
