@@ -1,7 +1,7 @@
 # Merge attendance "Show summary" into "Look up student"
 
 **Date:** 2026-07-26
-**Status:** Approved, pending implementation plan
+**Status:** Implemented
 
 ## Summary
 
