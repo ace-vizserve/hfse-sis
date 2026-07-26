@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   summarizeMarks,
   summarizeByMonth,
+  currentTermMonthsFromRaw,
 } from '@/lib/attendance/sheet-summary';
 
 describe('summarizeMarks', () => {
@@ -65,5 +66,41 @@ describe('summarizeByMonth', () => {
       totalDays: 2,
     });
     expect(term).toMatchObject({ present: 2, absent: 1, totalDays: 3 });
+  });
+});
+
+describe('currentTermMonthsFromRaw', () => {
+  it('dedupes to the latest recordedAt per (date, periodId), then buckets by month', () => {
+    const months = currentTermMonthsFromRaw([
+      {
+        date: '2026-07-01',
+        status: 'A',
+        periodId: null,
+        recordedAt: '2026-07-01T08:00:00Z',
+      },
+      {
+        // Correction on the same day — later recordedAt wins.
+        date: '2026-07-01',
+        status: 'P',
+        periodId: null,
+        recordedAt: '2026-07-01T09:00:00Z',
+      },
+      {
+        date: '2026-06-29',
+        status: 'P',
+        periodId: null,
+        recordedAt: '2026-06-29T08:00:00Z',
+      },
+    ]);
+    expect(months.map((m) => m.month)).toEqual(['2026-06', '2026-07']);
+    expect(months[1].stat).toMatchObject({
+      present: 1,
+      absent: 0,
+      totalDays: 1,
+    });
+  });
+
+  it('returns an empty array for no rows', () => {
+    expect(currentTermMonthsFromRaw([])).toEqual([]);
   });
 });

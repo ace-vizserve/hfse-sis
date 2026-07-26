@@ -3,6 +3,13 @@ import type { AttendanceStatus } from '@/lib/schemas/attendance';
 
 export type Mark = { date: string; status: AttendanceStatus | null };
 
+export type RawDailyMark = {
+  date: string;
+  status: AttendanceStatus | null;
+  periodId: string | null;
+  recordedAt: string;
+};
+
 export type SummaryStat = {
   /** Days carrying a counted mark (P/L/EX/A). NC and null are excluded. */
   totalDays: number;
@@ -81,4 +88,28 @@ export function summarizeByMonth(marks: Mark[]): {
       stat: summarizeMarks(byMonth.get(k)!),
     }));
   return { months, term: summarizeMarks(marks) };
+}
+
+/**
+ * Dedupes raw `attendance_daily` rows to the latest `recordedAt` per
+ * (date, periodId) — same dedup rule the daily-grid + rollup RPC use —
+ * then buckets by calendar month via `summarizeByMonth`. Powers the
+ * attendance lookup dialog's "This term by month" table. Caller is
+ * responsible for pre-filtering `rows` to the term of interest.
+ */
+export function currentTermMonthsFromRaw(
+  rows: RawDailyMark[]
+): MonthlySummary[] {
+  const sorted = [...rows].sort((a, b) =>
+    b.recordedAt.localeCompare(a.recordedAt)
+  );
+  const seen = new Set<string>();
+  const marks: Mark[] = [];
+  for (const r of sorted) {
+    const key = `${r.date}|${r.periodId ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    marks.push({ date: r.date, status: r.status });
+  }
+  return summarizeByMonth(marks).months;
 }
