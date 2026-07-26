@@ -143,3 +143,96 @@ describe('StudentLookupSheet roster table', () => {
     expect(screen.getByText('All students')).toBeInTheDocument();
   });
 });
+
+describe('StudentLookupSheet detail view', () => {
+  it('shows the current-term month breakdown and a trend-chart region instead of a ring', async () => {
+    const user = userEvent.setup();
+    stubFetchOnce(
+      jsonResponse({
+        termStats: [
+          {
+            termId: 't3',
+            termNumber: 3,
+            label: 'Term 3',
+            isCurrent: true,
+            P: 26,
+            L: 0,
+            A: 0,
+            EX: 0,
+            rate: 100,
+          },
+        ],
+        recentAbsences: [],
+        currentTermMonths: [
+          {
+            month: '2026-06',
+            label: 'June 2026',
+            stat: {
+              totalDays: 2,
+              present: 2,
+              late: 0,
+              excused: 0,
+              absent: 0,
+              attendancePct: 100,
+            },
+          },
+          {
+            month: '2026-07',
+            label: 'July 2026',
+            stat: {
+              totalDays: 12,
+              present: 12,
+              late: 0,
+              excused: 0,
+              absent: 0,
+              attendancePct: 100,
+            },
+          },
+        ],
+      })
+    );
+    renderWithClient(
+      <StudentLookupSheet
+        enrolments={enrolments}
+        rollups={rollups}
+        termLabel="Term 3"
+      />
+    );
+    await user.click(
+      screen.getByRole('button', { name: /attendance summary/i })
+    );
+    await user.click(screen.getByText('BALDONADO, Luke'));
+
+    expect(await screen.findByText('This term by month')).toBeInTheDocument();
+    expect(screen.getByText('June 2026')).toBeInTheDocument();
+    expect(screen.getByText('July 2026')).toBeInTheDocument();
+    expect(screen.getByTestId('rate-trend-chart')).toBeInTheDocument();
+  });
+
+  it('shows a "no data" message instead of a chart when the current term has no months yet', async () => {
+    const user = userEvent.setup();
+    stubFetchOnce(
+      jsonResponse({
+        termStats: [],
+        recentAbsences: [],
+        currentTermMonths: [],
+      })
+    );
+    renderWithClient(
+      <StudentLookupSheet
+        enrolments={enrolments}
+        rollups={rollups}
+        termLabel="Term 3"
+      />
+    );
+    await user.click(
+      screen.getByRole('button', { name: /attendance summary/i })
+    );
+    await user.click(screen.getByText('BALDONADO, Luke'));
+
+    expect(
+      await screen.findByText('No attendance recorded yet this term.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('This term by month')).not.toBeInTheDocument();
+  });
+});

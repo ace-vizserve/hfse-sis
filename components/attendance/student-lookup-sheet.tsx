@@ -24,6 +24,7 @@ import type {
 } from '@/app/api/attendance/student-summary/route';
 import type { WideGridEnrolment } from '@/components/attendance/wide-grid';
 import { presentOnlyCount, type RollupRow } from '@/lib/attendance/queries';
+import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -119,62 +120,24 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RateRing({ rate }: { rate: number | null }) {
-  const size = 116;
-  const center = size / 2;
-  const r = 50;
-  const circumference = 2 * Math.PI * r;
-  const clamped = rate == null ? 0 : Math.max(0, Math.min(100, rate));
-  const offset = circumference * (1 - clamped / 100);
+function RateHeadline({ rate }: { rate: number | null }) {
   const tone = rate == null ? null : rateTone(rate);
-
   return (
-    <div
-      className="relative flex shrink-0 items-center justify-center"
-      style={{ width: size, height: size }}
-    >
-      <svg
-        width={size}
-        height={size}
-        className="absolute -rotate-90"
-        aria-hidden
+    <div className="shrink-0 text-right">
+      <p
+        className={`font-serif text-[26px] font-semibold leading-none tabular-nums ${
+          tone?.text ?? 'text-muted-foreground'
+        }`}
       >
-        <circle
-          cx={center}
-          cy={center}
-          r={r}
-          fill="none"
-          strokeWidth="9"
-          className="stroke-muted"
-        />
-        {rate != null && (
-          <circle
-            cx={center}
-            cy={center}
-            r={r}
-            fill="none"
-            strokeWidth="9"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            className={`${tone?.stroke} transition-[stroke-dashoffset] duration-500 ease-out`}
-          />
-        )}
-      </svg>
-      <div className="relative flex flex-col items-center leading-none">
+        {rate != null ? `${rate}%` : '—'}
+      </p>
+      {tone && (
         <p
-          className={`font-serif text-xl font-semibold tabular-nums ${tone?.text ?? 'text-muted-foreground'}`}
+          className={`mt-1 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] ${tone.text}`}
         >
-          {rate != null ? `${rate}%` : '—'}
+          {tone.label}
         </p>
-        {tone && (
-          <p
-            className={`mt-1 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] ${tone.text}`}
-          >
-            {tone.label}
-          </p>
-        )}
-      </div>
+      )}
     </div>
   );
 }
@@ -349,6 +312,7 @@ export function StudentLookupSheet({ enrolments, rollups, termLabel }: Props) {
       ),
     [summary]
   );
+  const currentTermMonths = summary?.currentTermMonths ?? [];
 
   function handleDialogChange(open: boolean) {
     setDialogOpen(open);
@@ -556,7 +520,33 @@ export function StudentLookupSheet({ enrolments, rollups, termLabel }: Props) {
                     )}
                   </div>
                 </div>
-                <RateRing rate={loading ? null : (currentStat?.rate ?? null)} />
+                <RateHeadline
+                  rate={loading ? null : (currentStat?.rate ?? null)}
+                />
+              </div>
+
+              {/* Monthly trend chart — replaces the rate ring. */}
+              <div
+                data-testid="rate-trend-chart"
+                className="border-t border-border px-3 pb-1 pt-2"
+              >
+                {loading ? (
+                  <div className="h-[100px] animate-pulse rounded-lg bg-muted" />
+                ) : currentTermMonths.length === 0 ? (
+                  <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+                    No attendance recorded yet this term.
+                  </p>
+                ) : (
+                  <TrendChart
+                    label="Attendance rate"
+                    current={currentTermMonths.map((m) => ({
+                      x: m.label,
+                      y: m.stat.attendancePct ?? 0,
+                    }))}
+                    height={100}
+                    yFormat="percent"
+                  />
+                )}
               </div>
 
               {/* Breakdown strip */}
@@ -602,6 +592,71 @@ export function StudentLookupSheet({ enrolments, rollups, termLabel }: Props) {
                 </div>
               )}
             </div>
+
+            {/* ── This term by month ───────────────────────────────── */}
+            {!loading && currentTermMonths.length > 0 && (
+              <div className="space-y-2.5">
+                <Eyebrow>This term by month</Eyebrow>
+                <div className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/40">
+                        <th className="px-4 py-2.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          Month
+                        </th>
+                        <th className="px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          Days
+                        </th>
+                        <th className="px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          P
+                        </th>
+                        <th className="px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          L
+                        </th>
+                        <th className="px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          EX
+                        </th>
+                        <th className="px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          A
+                        </th>
+                        <th className="px-4 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          Rate
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {currentTermMonths.map((m) => (
+                        <tr key={m.month}>
+                          <td className="px-4 py-2.5 font-medium text-foreground">
+                            {m.label}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono tabular-nums">
+                            {m.stat.totalDays}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono tabular-nums">
+                            {m.stat.present}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono tabular-nums">
+                            {m.stat.late}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono tabular-nums">
+                            {m.stat.excused}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono tabular-nums">
+                            {m.stat.absent}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono tabular-nums">
+                            {m.stat.attendancePct != null
+                              ? `${m.stat.attendancePct}%`
+                              : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* ── Previous Terms ───────────────────────────────────── */}
             {loading ? (
