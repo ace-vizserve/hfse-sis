@@ -113,3 +113,78 @@ export function currentTermMonthsFromRaw(
   }
   return summarizeByMonth(marks).months;
 }
+
+export type TermSummaryEnrolment = {
+  enrolmentId: string;
+  indexNumber: number;
+  studentName: string;
+  withdrawn: boolean;
+  enrollmentDate: string | null;
+};
+
+/** Distinct calendar months, chronological, with display labels. */
+export function monthsInRange(
+  calendar: { date: string }[]
+): { month: string; label: string }[] {
+  const keys = new Set(calendar.map((c) => monthKeyOf(c.date)));
+  return Array.from(keys)
+    .sort()
+    .map((k) => ({ month: k, label: monthLabelOf(k) }));
+}
+
+/**
+ * Per-student month + term breakdown for the whole roster, from the term's
+ * full calendar range and the section's raw daily marks — the server-side
+ * revival of the client-side computation `wide-grid.tsx`'s "Show summary"
+ * panel used to do (removed when that panel was replaced by the lookup
+ * dialog's roster table, which was itself later replaced by this page).
+ * Powers the Term Sheet Summary page.
+ *
+ * Every calendar date becomes a `Mark` for every student (status `null`
+ * when no daily row exists for that date) EXCEPT dates before the
+ * student's `enrollmentDate` — those are dropped entirely, not zeroed,
+ * so a late enrollee's term/month totals aren't diluted by days they
+ * weren't enrolled for yet.
+ */
+export function buildTermSummaryRows(
+  enrolments: TermSummaryEnrolment[],
+  calendar: { date: string }[],
+  daily: {
+    sectionStudentId: string;
+    date: string;
+    status: AttendanceStatus | null;
+  }[]
+): {
+  enrolment: TermSummaryEnrolment;
+  months: MonthlySummary[];
+  term: SummaryStat;
+}[] {
+  const dailyByStudent = new Map<
+    string,
+    Map<string, AttendanceStatus | null>
+  >();
+  for (const d of daily) {
+    let byDate = dailyByStudent.get(d.sectionStudentId);
+    if (!byDate) {
+      byDate = new Map();
+      dailyByStudent.set(d.sectionStudentId, byDate);
+    }
+    byDate.set(d.date, d.status);
+  }
+
+  return enrolments.map((enrolment) => {
+    const byDate = dailyByStudent.get(enrolment.enrolmentId);
+    const marks: Mark[] = calendar
+      .filter(
+        (c) => !enrolment.enrollmentDate || c.date >= enrolment.enrollmentDate
+      )
+      .map((c) => ({
+        date: c.date,
+        status: byDate?.get(c.date) ?? null,
+      }));
+    const { months: allMonths, term } = summarizeByMonth(marks);
+    // Exclude months with no counted marks (totalDays === 0)
+    const months = allMonths.filter((m) => m.stat.totalDays > 0);
+    return { enrolment, months, term };
+  });
+}

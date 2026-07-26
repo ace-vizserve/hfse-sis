@@ -3,6 +3,9 @@ import {
   summarizeMarks,
   summarizeByMonth,
   currentTermMonthsFromRaw,
+  buildTermSummaryRows,
+  monthsInRange,
+  type TermSummaryEnrolment,
 } from '@/lib/attendance/sheet-summary';
 
 describe('summarizeMarks', () => {
@@ -102,5 +105,83 @@ describe('currentTermMonthsFromRaw', () => {
 
   it('returns an empty array for no rows', () => {
     expect(currentTermMonthsFromRaw([])).toEqual([]);
+  });
+});
+
+describe('monthsInRange', () => {
+  it('returns distinct, sorted month keys with labels from a calendar range', () => {
+    const months = monthsInRange([
+      { date: '2026-06-29' },
+      { date: '2026-06-30' },
+      { date: '2026-07-01' },
+      { date: '2026-08-15' },
+    ]);
+    expect(months).toEqual([
+      { month: '2026-06', label: 'June 2026' },
+      { month: '2026-07', label: 'July 2026' },
+      { month: '2026-08', label: 'August 2026' },
+    ]);
+  });
+
+  it('returns an empty array for an empty calendar', () => {
+    expect(monthsInRange([])).toEqual([]);
+  });
+});
+
+describe('buildTermSummaryRows', () => {
+  const calendar = [
+    { date: '2026-06-29' },
+    { date: '2026-06-30' },
+    { date: '2026-07-01' },
+  ];
+
+  const normal: TermSummaryEnrolment = {
+    enrolmentId: 'e1',
+    indexNumber: 1,
+    studentName: 'DOE, Jane',
+    withdrawn: false,
+    enrollmentDate: null,
+  };
+
+  it('builds a per-month + term breakdown per student from the calendar and daily marks', () => {
+    const rows = buildTermSummaryRows([normal], calendar, [
+      { sectionStudentId: 'e1', date: '2026-06-29', status: 'P' },
+      { sectionStudentId: 'e1', date: '2026-06-30', status: 'A' },
+      { sectionStudentId: 'e1', date: '2026-07-01', status: 'P' },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].months.map((m) => m.month)).toEqual(['2026-06', '2026-07']);
+    expect(rows[0].months[0].stat).toMatchObject({
+      present: 1,
+      absent: 1,
+      totalDays: 2,
+    });
+    expect(rows[0].term).toMatchObject({ present: 2, absent: 1, totalDays: 3 });
+  });
+
+  it('excludes calendar dates before enrollmentDate (late-enrollee proration)', () => {
+    const lateEnrollee: TermSummaryEnrolment = {
+      ...normal,
+      enrolmentId: 'e2',
+      enrollmentDate: '2026-07-01',
+    };
+    const rows = buildTermSummaryRows([lateEnrollee], calendar, [
+      // A back-dated row before enrollment — must be excluded.
+      { sectionStudentId: 'e2', date: '2026-06-29', status: 'P' },
+      { sectionStudentId: 'e2', date: '2026-07-01', status: 'P' },
+    ]);
+    expect(rows[0].months.map((m) => m.month)).toEqual(['2026-07']);
+    expect(rows[0].term).toMatchObject({ totalDays: 1, present: 1 });
+  });
+
+  it('produces a zero-stat month for a student with no marks in a calendar-covered month', () => {
+    const rows = buildTermSummaryRows([normal], calendar, []);
+    expect(rows[0].months.map((m) => m.month)).toEqual([]);
+    expect(rows[0].term).toMatchObject({ totalDays: 0, attendancePct: null });
+  });
+
+  it('preserves enrolment identity fields on the row', () => {
+    const rows = buildTermSummaryRows([normal], calendar, []);
+    expect(rows[0].enrolment).toEqual(normal);
   });
 });
