@@ -128,10 +128,13 @@ export function TermSheetSummaryTable({
               ))}
             </tr>
             <tr className="border-b border-border">
-              <th
-                className="sticky left-0 z-10 bg-muted/60 px-3 py-1.5"
-                aria-hidden
-              />
+              {/*
+                No leading cell here for the Student column — row 1's
+                `rowSpan={2}` Student header already reserves this row's
+                first grid slot. Adding one here double-counts a column and
+                shifts every sub-header label one column to the right of
+                the data it labels.
+              */}
               <SubHeaderGroup key="term" />
               {months.map((m) => (
                 <SubHeaderGroup key={m.month} />

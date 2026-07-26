@@ -121,4 +121,71 @@ describe('TermSheetSummaryTable', () => {
     render(<TermSheetSummaryTable rows={[]} months={months} />);
     expect(screen.getByText(/no students enrolled/i)).toBeInTheDocument();
   });
+
+  it('keeps header row 2 cell count consistent with header row 1 (no double-counted column)', () => {
+    // Regression test: header row 1's Student `<th>` uses rowSpan={2}, which
+    // reserves that same grid slot in row 2 per standard HTML table rules —
+    // row 2 must NOT emit its own cell for that slot. jsdom/RTL text queries
+    // don't validate table grid geometry, so this checks it directly by
+    // summing colSpan across row 1 and comparing to row 2's raw cell count.
+    const { container } = render(
+      <TermSheetSummaryTable
+        rows={[
+          {
+            enrolment: normal,
+            months: [
+              {
+                month: '2026-06',
+                label: 'June 2026',
+                stat: {
+                  totalDays: 2,
+                  present: 2,
+                  late: 0,
+                  excused: 0,
+                  absent: 0,
+                  attendancePct: 100,
+                },
+              },
+              {
+                month: '2026-07',
+                label: 'July 2026',
+                stat: {
+                  totalDays: 1,
+                  present: 1,
+                  late: 0,
+                  excused: 0,
+                  absent: 0,
+                  attendancePct: 100,
+                },
+              },
+            ],
+            term: {
+              totalDays: 3,
+              present: 3,
+              late: 0,
+              excused: 0,
+              absent: 0,
+              attendancePct: 100,
+            },
+          },
+        ]}
+        months={months}
+      />
+    );
+
+    const headerRows = container.querySelectorAll('thead tr');
+    expect(headerRows).toHaveLength(2);
+
+    const row1Cells = Array.from(headerRows[0].querySelectorAll('th'));
+    const row1TotalCols = row1Cells.reduce(
+      (sum, th) => sum + Number(th.getAttribute('colspan') ?? '1'),
+      0
+    );
+    const row2CellCount = headerRows[1].querySelectorAll('th').length;
+
+    // Row 1's rowSpan={2} Student header (colSpan 1) reserves its slot in
+    // row 2 too, so row 2 must have exactly one fewer cell than row 1's
+    // total column count — not an equal count.
+    expect(row2CellCount).toBe(row1TotalCols - 1);
+  });
 });
