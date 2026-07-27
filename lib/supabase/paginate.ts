@@ -41,6 +41,41 @@ export async function fetchAllPages<T>(
   return out;
 }
 
+// The GoTrue Admin API (`auth.admin.listUsers`) is a separate REST surface
+// from PostgREST — page-based (`page`/`perPage`, 1-indexed), not
+// `.range()`-based — but hits the same practical ceiling: every call site
+// in this codebase historically hardcoded `perPage: 1000` and read page 1
+// only, so a project whose user count crosses 1000 (this one has, between
+// staff + parent-portal accounts sharing the project per KD #1) silently
+// misses everyone past the first page. `listAllAuthUsers` walks every page
+// until a page returns fewer than `perPage` rows.
+import type { SupabaseClient, User } from '@supabase/supabase-js';
+
+const AUTH_LIST_PAGE_SIZE = 1000;
+
+export async function listAllAuthUsers(
+  service: SupabaseClient,
+): Promise<User[]> {
+  const out: User[] = [];
+  let page = 1;
+  while (true) {
+    const { data, error } = await service.auth.admin.listUsers({
+      page,
+      perPage: AUTH_LIST_PAGE_SIZE,
+    });
+    if (error) {
+      throw new Error(`listAllAuthUsers failed: ${error.message}`);
+    }
+    const batch = data?.users ?? [];
+    out.push(...batch);
+    if (batch.length < AUTH_LIST_PAGE_SIZE) break;
+    page += 1;
+    // Defensive cap, same rationale as fetchAllPages above.
+    if (page > 100) break;
+  }
+  return out;
+}
+
 // PostgREST passes `.in('col', [ids])` filters in the request URL query string.
 // A large id list (e.g. every grading_sheet across multiple AYs) overflows the
 // gateway's URL-length cap and comes back as a bare HTTP 400 "Bad Request" —

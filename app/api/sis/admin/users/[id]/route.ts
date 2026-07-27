@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
+import { listAllAuthUsers } from '@/lib/supabase/paginate';
 import { UpdateUserSchema } from '@/lib/schemas/user-admin';
 import { getUserFootprint, isLastSuperadmin } from '@/lib/sis/user-deletion';
 import type { Role } from '@/lib/auth/roles';
@@ -63,6 +64,29 @@ export async function PATCH(
     return NextResponse.json({ error: 'user not found' }, { status: 404 });
   }
   const before = beforeRes.user;
+
+  // Pre-check for an existing user on the target email to give a clean 409
+  // instead of a 500 from the Auth layer's unique-email constraint (mirrors
+  // the same check in POST /api/sis/admin/users). Paginates through every
+  // user, not just the first 1000 — this project's user count has crossed
+  // that threshold (staff + parent-portal accounts share the project).
+  if (
+    email !== undefined &&
+    email.toLowerCase() !== before.email?.toLowerCase()
+  ) {
+    const allUsers = await listAllAuthUsers(service);
+    const claimedBy = allUsers.find(
+      (u) => u.id !== id && u.email?.toLowerCase() === email.toLowerCase()
+    );
+    if (claimedBy) {
+      return NextResponse.json(
+        {
+          error: `The email ${email} is already in use by another account.`,
+        },
+        { status: 409 }
+      );
+    }
+  }
   const beforeRole =
     (before.app_metadata as { role?: string } | null)?.role ??
     (before.user_metadata as { role?: string } | null)?.role ??
@@ -200,17 +224,16 @@ export async function DELETE(
     null;
 
   if (role === 'superadmin') {
-    const { data: listData, error: listError } =
-      await service.auth.admin.listUsers({
-        perPage: 1000,
-      });
-    if (listError || !listData?.users) {
+    let allUsers: Awaited<ReturnType<typeof listAllAuthUsers>>;
+    try {
+      allUsers = await listAllAuthUsers(service);
+    } catch {
       return NextResponse.json(
         { error: 'Could not verify the superadmin count — try again.' },
         { status: 500 }
       );
     }
-    const usersForCheck = listData.users.map((u) => ({
+    const usersForCheck = allUsers.map((u) => ({
       id: u.id,
       role:
         (u.app_metadata as { role?: string } | null)?.role ??

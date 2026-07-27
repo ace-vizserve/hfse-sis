@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
+import { listAllAuthUsers } from '@/lib/supabase/paginate';
 import { InviteUserSchema } from '@/lib/schemas/user-admin';
 
 // POST /api/sis/admin/users — directly provision a new staff user.
@@ -38,11 +39,11 @@ export async function POST(request: NextRequest) {
   const service = createServiceClient();
 
   // Pre-check for an existing user to give a clean 409 instead of a 500 from
-  // the Auth layer's unique-email constraint.
-  const { data: existing } = await service.auth.admin.listUsers({
-    perPage: 1000,
-  });
-  const alreadyExists = existing?.users.some(
+  // the Auth layer's unique-email constraint. Paginates through every user,
+  // not just the first 1000 (this project's user count has crossed that
+  // threshold — staff + parent-portal accounts share the project).
+  const existing = await listAllAuthUsers(service);
+  const alreadyExists = existing.some(
     (u) => u.email?.toLowerCase() === email.toLowerCase()
   );
   if (alreadyExists) {
