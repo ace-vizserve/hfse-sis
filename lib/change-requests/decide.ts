@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { after } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { logAction, type AuditAction } from '@/lib/audit/log-action';
@@ -355,9 +356,12 @@ export async function decideChangeRequest(
 
   invalidateDrillTags('markbook', await requireCurrentAyCode(service));
 
-  // Fire-and-forget notifications for approve/reject. Cancel is silent.
+  // Notifications for approve/reject. Cancel is silent. Runs via after() so
+  // it survives past the response on Vercel's serverless runtime (an
+  // un-awaited void(async()) has no such guarantee — see the matching note
+  // in app/api/change-requests/route.ts).
   if (action === 'approve' || action === 'reject') {
-    void (async () => {
+    after(async () => {
       try {
         const labels = await fetchLabels(
           service,
@@ -392,7 +396,7 @@ export async function decideChangeRequest(
       } catch (e) {
         console.error('[change-requests] notify decision failed', e);
       }
-    })();
+    });
   }
 
   return {

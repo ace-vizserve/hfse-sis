@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest, after } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { computeQuarterly } from '@/lib/compute/quarterly';
@@ -821,8 +821,11 @@ async function finalizeChangeRequestPathA(args: {
 }): Promise<void> {
   const { appliedChangeRequest, sheetId, entryId, service } = args;
   if (!appliedChangeRequest) return;
-  // Fire the teacher/approver notification fire-and-forget.
-  void (async () => {
+  // Notify the teacher/approver via after() so it survives past the
+  // response on Vercel's serverless runtime (an un-awaited void(async())
+  // has no such guarantee — see the matching note in
+  // app/api/change-requests/route.ts).
+  after(async () => {
     try {
       const [labels, approverEmails] = await Promise.all([
         fetchLabels(service, sheetId, entryId),
@@ -850,5 +853,5 @@ async function finalizeChangeRequestPathA(args: {
     } catch (e) {
       console.error('[change-requests] notify applied failed', e);
     }
-  })();
+  });
 }

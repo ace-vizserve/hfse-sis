@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest, after } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
     if (stampError) {
       console.error('[change-requests GET] reminder stamp failed', stampError);
     } else {
-      void (async () => {
+      after(async () => {
         try {
           const summaries: ApprovedStaleSummary[] = reminderCandidates.map(
             (r) => ({
@@ -144,7 +144,7 @@ export async function GET(request: NextRequest) {
         } catch (e) {
           console.error('[change-requests GET] reminder fan-out failed', e);
         }
-      })();
+      });
     }
   }
 
@@ -453,11 +453,14 @@ export async function POST(request: NextRequest) {
       .eq('id', inserted.id);
   }
 
-  // Fire-and-forget notification to designated approvers only. The email
-  // scope narrows from "all school_admin+" (old broadcast) to just the
-  // two the teacher picked. After sendAll returns, persist the resulting
-  // notification_status (sent / partial / failed) without blocking the POST.
-  void (async () => {
+  // Notify designated approvers only. The email scope narrows from "all
+  // school_admin+" (old broadcast) to just the two the teacher picked.
+  // Runs via after() so it survives past the response on Vercel's
+  // serverless runtime (an un-awaited void(async()) has no such guarantee —
+  // the function can freeze once the response is sent, which silently
+  // dropped these emails in prod). After sendAll returns, persist the
+  // resulting notification_status (sent / partial / failed).
+  after(async () => {
     try {
       const { student_label, sheet_label } = await fetchLabels(
         service,
@@ -524,7 +527,7 @@ export async function POST(request: NextRequest) {
           }
         );
     }
-  })();
+  });
 
   return NextResponse.json(
     { request: inserted, warning: notificationWarning },

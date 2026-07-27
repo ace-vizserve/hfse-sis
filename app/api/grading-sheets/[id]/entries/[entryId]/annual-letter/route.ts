@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest, after } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
@@ -238,8 +238,11 @@ export async function PATCH(
 
   // Notify admins when changing an existing value (not on initial entry —
   // setting "Passed" for the first time is routine, not a correction).
+  // Runs via after() so it survives past the response on Vercel's
+  // serverless runtime (an un-awaited void(async()) has no such guarantee —
+  // see the matching note in app/api/change-requests/route.ts).
   if (existingValue !== null && correctionNote) {
-    void (async () => {
+    after(async () => {
       try {
         const { data: { users } = { users: [] } } =
           await service.auth.admin.listUsers({ perPage: 200 });
@@ -273,7 +276,7 @@ export async function PATCH(
       } catch (e) {
         console.error('[annual-letter] notification failed:', e);
       }
-    })();
+    });
   }
 
   return NextResponse.json({ ok: true });
