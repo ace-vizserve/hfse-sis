@@ -766,20 +766,26 @@ export function AttendanceWideGrid({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {enrolments.map((e, idx) => {
-                    // Explicit (not inherited) background on every sticky
-                    // cell — a sticky cell paints in its own layer, so it
-                    // must carry its own opaque-enough background or the
-                    // date columns scrolling underneath it would show
-                    // through. Computed per-row (not the `odd:` variant)
-                    // because `odd:` matches a cell's position among its
-                    // OWN siblings — on a <td> that means column position,
-                    // not row position.
-                    const rowStickyBg = e.withdrawn
-                      ? 'bg-muted/10'
-                      : idx % 2 === 1
-                        ? 'bg-muted/[0.04]'
-                        : 'bg-card';
+                  {enrolments.map((e) => {
+                    // Explicit (not inherited), fully OPAQUE background on
+                    // every sticky cell — a sticky cell paints in its own
+                    // layer, so any transparency lets the date columns
+                    // scrolling underneath show through (this previously
+                    // used bg-muted/10 and bg-muted/[0.04], which are both
+                    // ~90%+ transparent — nowhere near opaque enough, and
+                    // the actual cause of the roster column visually
+                    // "mixing" with the marks while scrolling). Matches the
+                    // proven sticky-cell convention in
+                    // term-sheet-summary-table.tsx: a flat bg-card, no
+                    // per-row alpha variation. Zebra striping / withdrawn
+                    // dimming stay on the non-sticky mark cells via the
+                    // <TableRow>'s own `odd:`/conditional classes below —
+                    // those aren't `position: sticky` so they don't have
+                    // this problem. Withdrawn signaling inside the sticky
+                    // cell itself is carried by the italic/dimmed text +
+                    // "Withdrawn" badge already rendered below, not by the
+                    // background.
+                    const rowStickyBg = 'bg-card';
                     return (
                       <TableRow
                         key={e.enrolmentId}
