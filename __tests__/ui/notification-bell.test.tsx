@@ -68,5 +68,19 @@ describe('NotificationBell', () => {
     expect(
       await screen.findByText(/Tan, Grace \(STU-001\)/)
     ).toBeInTheDocument();
+
+    const rowLink = screen.getByRole('link', { name: /Tan, Grace/i });
+    expect(rowLink).toHaveAttribute(
+      'href',
+      '/markbook/change-requests?req=cr-1'
+    );
+
+    await user.click(rowLink);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/Tan, Grace \(STU-001\)/)
+      ).not.toBeInTheDocument()
+    );
   });
 });
