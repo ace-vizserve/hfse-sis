@@ -7,18 +7,22 @@ import type { Role, SidebarBadgeKey, SidebarBadges } from '@/lib/auth/roles';
 import { createClient } from '@/lib/supabase/client';
 import { useChangeRequestCount } from '@/lib/sidebar/use-change-request-count';
 
-// Generalized realtime sidebar badge hook. Subscribes to one supabase
-// channel per badge key present in `initial`, returns merged live counts.
+// Generalized realtime sidebar badge hook, returning merged live counts for
+// the badges present in `initial`.
 //
-// Supersedes the older markbook-only `useRealtimeBadgeCount` hook. Only
-// `changeRequests` has a wired channel today; new keys (attendance
-// unmarked, p-files missing docs, admissions to review) plug in by
-// adding a case to `subscribeChannel` and a matching SSR loader.
-//
-// Per-key subscription scoping mirrors the original markbook hook —
-// only "count-up" events trigger a recount; "count-down" events are
-// triggered by the local user's own action and are reflected
-// synchronously in their initial count.
+// Supersedes the older markbook-only `useRealtimeBadgeCount` hook. Two
+// badges are wired today, each following a different pattern:
+//   - `changeRequests` delegates entirely to the extracted
+//     `useChangeRequestCount` hook (lib/sidebar/use-change-request-count.ts)
+//     — pulled out of this file so both this sidebar badge AND the header
+//     notification bell (components/notifications/notification-bell.tsx)
+//     can each subscribe independently without duplicating the per-role
+//     scope SQL in two places.
+//   - `pfileAwaitingVerification` stays inline below as its own effect
+//     (SSR-rendered count + a realtime channel that triggers
+//     `router.refresh()` rather than recomputing client-side) — untouched
+//     by the changeRequests extraction.
+// A future badge key would follow whichever of these two shapes fits.
 
 // Audit-log actions that indicate P-Files awaiting-verification count may
 // have changed. INSERT on audit_log with one of these actions triggers a

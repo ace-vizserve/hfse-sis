@@ -40,11 +40,26 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+// Role-aware row destination. Mirrors the sidebar nav's own split
+// (lib/auth/roles.ts NAV_BY_MODULE.markbook.teacher — badgeKey
+// 'changeRequests' points at /markbook/grading/requests, "My Requests")
+// because /markbook/change-requests (the deep-link every other gate role
+// gets) redirects teachers away — it's gated to
+// school_admin | superadmin | academic_coordinator
+// (app/(markbook)/markbook/change-requests/page.tsx). Teachers land on the
+// list page instead — that page doesn't read a ?req= param, so there's
+// nothing to deep-link into for them.
+function previewRowHref(role: Role, id: string): string {
+  if (role === 'teacher') return '/markbook/grading/requests';
+  return `/markbook/change-requests?req=${id}`;
+}
+
 // Initials from a "Last, First (STU-001)" student_label — same 2-letter
 // gradient-circle convention as the sidebar profile pill
 // (components/module-sidebar/sidebar-profile.tsx::deriveInitials), adapted
-// for a name label instead of an email.
-function deriveInitials(label: string | null): string {
+// for a name label instead of an email. Exported for direct unit testing —
+// pure string logic is clearer to test directly than through rendered DOM.
+export function deriveInitials(label: string | null): string {
   if (!label) return '—';
   const namePart = label.split('(')[0]?.trim() ?? '';
   const initials = namePart
@@ -111,13 +126,24 @@ export function NotificationBell({
             genuinely lazy (KD #56 drill-sheet lazy-fetch pattern), not
             just `enabled: false` (useQuery still requires a QueryClient
             in context even when disabled). */}
-        {open && <NotificationPreviewPanel onNavigate={() => setOpen(false)} />}
+        {open && (
+          <NotificationPreviewPanel
+            role={role}
+            onNavigate={() => setOpen(false)}
+          />
+        )}
       </PopoverContent>
     </Popover>
   );
 }
 
-function NotificationPreviewPanel({ onNavigate }: { onNavigate: () => void }) {
+function NotificationPreviewPanel({
+  role,
+  onNavigate,
+}: {
+  role: Role;
+  onNavigate: () => void;
+}) {
   const previewQuery = useQuery({
     queryKey: queryKeys.changeRequestPreview(),
     queryFn: async ({ signal }) => {
@@ -127,6 +153,15 @@ function NotificationPreviewPanel({ onNavigate }: { onNavigate: () => void }) {
       );
       return json.rows;
     },
+    // The popover only mounts this panel while open (see the comment above
+    // its render site), so this never runs as a wasted background fetch —
+    // it's a small (<=5 row) dataset fetched only while a human is actively
+    // looking at it. Forcing a fresh fetch on every open (rather than
+    // trusting the default 60s staleTime, KD #24) closes the window where
+    // the live badge count — which updates instantly via realtime — could
+    // disagree with a stale cached row list: this feature's core invariant
+    // is that the badge and the panel never show conflicting information.
+    staleTime: 0,
   });
 
   const rows = previewQuery.data ?? [];
@@ -136,6 +171,14 @@ function NotificationPreviewPanel({ onNavigate }: { onNavigate: () => void }) {
       <div className="space-y-2.5 p-4">
         <Skeleton className="h-14 w-full" />
         <Skeleton className="h-14 w-full" />
+      </div>
+    );
+  }
+
+  if (previewQuery.isError) {
+    return (
+      <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+        Couldn&apos;t load notifications right now
       </div>
     );
   }
@@ -153,7 +196,7 @@ function NotificationPreviewPanel({ onNavigate }: { onNavigate: () => void }) {
       {rows.map((row) => (
         <li key={row.id} className="border-b border-border last:border-0">
           <Link
-            href={`/markbook/change-requests?req=${row.id}`}
+            href={previewRowHref(role, row.id)}
             onClick={onNavigate}
             className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-accent"
           >

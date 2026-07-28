@@ -9,9 +9,13 @@ import { fetchLabels } from '@/lib/change-requests/labels';
 // Per-role scope MUST mirror what /markbook/change-requests actually shows
 // — otherwise the sidebar badge over-counts and the user clicks through to
 // an empty inbox (the bug we hit during demo prep). Specifically:
-//   - school_admin / superadmin: pending CRs WHERE the user is the primary
-//     or secondary designated approver (KD #41), OR legacy rows with both
-//     approver columns NULL (broadcast-visible during the migration).
+//   - school_admin: pending CRs WHERE the user is the primary or secondary
+//     designated approver (KD #41), OR legacy rows with both approver
+//     columns NULL (broadcast-visible during the migration).
+//   - superadmin: unrestricted oversight — ALL pending CRs regardless of
+//     designated approver. They manage approver assignments at
+//     /sis/admin/approvers but don't act on requests themselves (KD #39 +
+//     KD #41), so they're never scoped to a designated-approver filter.
 //   - registrar: approved CRs (the ones they apply via Path A — they have
 //     full visibility regardless of approver assignment).
 //   - teacher: their OWN pending requests.

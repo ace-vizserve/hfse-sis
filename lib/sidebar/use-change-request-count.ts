@@ -19,6 +19,50 @@ import { createClient } from '@/lib/supabase/client';
 // see that function's doc comment for the per-role rules. `initial` is the
 // SSR-computed starting value; passing `null` (or a falsy `role`) means
 // "there is nothing to subscribe to" and this hook no-ops.
+
+// Query-builder shape common to a Supabase PostgrestFilterBuilder's
+// filter methods, loose enough to accept the real client without fighting
+// its generic/overloaded `.eq()`/`.or()` signatures at the call site below
+// (which casts through `unknown`, the established pattern for this kind of
+// mismatch elsewhere in the codebase — see e.g.
+// lib/change-requests/sidebar-counts.ts's own `as unknown as` usage).
+type ChangeRequestScopeQuery = {
+  eq: (column: string, value: unknown) => ChangeRequestScopeQuery;
+  or: (filters: string) => ChangeRequestScopeQuery;
+};
+
+// The pure per-role branch of the live-recount query — pulled out of the
+// `recount` closure inside the effect below so it can be unit-tested in
+// isolation (it was previously only reachable by mounting the hook inside
+// React). MUST mirror lib/change-requests/sidebar-counts.ts's two
+// functions' identical branches; __tests__/change-requests/scope-parity.
+// test.ts asserts all three agree on which roles apply `.or()`. Returns
+// `null` for a role outside the change-request flow (mirrors the other two
+// implementations' `return 0` / `return []` "not in scope" case).
+export function applyChangeRequestCountScope(
+  query: ChangeRequestScopeQuery,
+  role: Role,
+  userId: string
+): ChangeRequestScopeQuery | null {
+  if (role === 'teacher') {
+    return query.eq('requested_by', userId).eq('status', 'pending');
+  }
+  if (role === 'academic_coordinator') {
+    return query.eq('status', 'approved');
+  }
+  if (role === 'school_admin') {
+    return query
+      .eq('status', 'pending')
+      .or(
+        `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null)`
+      );
+  }
+  if (role === 'superadmin') {
+    return query.eq('status', 'pending');
+  }
+  return null;
+}
+
 export function useChangeRequestCount(
   role: Role | null,
   userId: string,
@@ -55,29 +99,22 @@ export function useChangeRequestCount(
       const currentAyId = (ayData as { id: string } | null)?.id ?? null;
       if (!currentAyId) return 0;
 
-      let query = supabase
+      const baseQuery = supabase
         .from('grade_change_requests')
         .select(
           'id, grading_sheet:grading_sheets!inner(section:sections!inner(academic_year_id))',
           { count: 'exact', head: true }
         )
         .eq('grading_sheet.section.academic_year_id', currentAyId);
-      if (role === 'teacher') {
-        query = query.eq('requested_by', userId).eq('status', 'pending');
-      } else if (role === 'academic_coordinator') {
-        query = query.eq('status', 'approved');
-      } else if (role === 'school_admin') {
-        query = query
-          .eq('status', 'pending')
-          .or(
-            `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null)`
-          );
-      } else if (role === 'superadmin') {
-        query = query.eq('status', 'pending');
-      } else {
-        return null;
-      }
-      const { count: fresh } = await query;
+
+      const scoped = applyChangeRequestCountScope(
+        baseQuery as unknown as ChangeRequestScopeQuery,
+        role,
+        userId
+      );
+      if (!scoped) return null;
+
+      const { count: fresh } = await (scoped as unknown as typeof baseQuery);
       return fresh ?? null;
     };
 
