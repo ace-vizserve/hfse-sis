@@ -24,7 +24,8 @@ export type Module =
   | 'sis'
   | 'attendance'
   | 'evaluation'
-  | 'admissions';
+  | 'admissions'
+  | 'classroom';
 
 export type NavItem = {
   href: string;
@@ -434,6 +435,16 @@ const EVALUATION_NAV: NavSection[] = [
   },
 ];
 
+// Classroom module — a section × term workspace for teaching staff (design
+// doc 2026-07-28-classroom-workspace-design.md). Route group:
+// (classroom)/classroom/*. Phase 2 ships only the class list; the module is
+// deliberately a single flat nav item — there is nothing else to link to
+// yet (no quick action either, same reasoning as Attendance/Evaluation:
+// the one nav item already is the destination).
+const CLASSROOM_NAV: NavSection[] = [
+  { items: [{ href: '/classroom', label: 'All classes' }] },
+];
+
 // SIS admin hub — the system-level admin surface where structural ops live.
 // Distinct from Records. Route group: (sis)/sis/*. Access: school_admin +
 // superadmin own the full hub (Sprint 33 consolidation — the old `admin`
@@ -565,6 +576,7 @@ export const NAV_BY_MODULE: {
   attendance: NavSection[];
   evaluation: NavSection[];
   admissions: NavSection[];
+  classroom: NavSection[];
 } = {
   markbook: {
     teacher: [
@@ -705,6 +717,7 @@ export const NAV_BY_MODULE: {
   attendance: ATTENDANCE_NAV,
   evaluation: EVALUATION_NAV,
   admissions: ADMISSIONS_NAV,
+  classroom: CLASSROOM_NAV,
 };
 
 // Which roles may access a given route prefix. Longer prefixes are
@@ -760,6 +773,16 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   {
     prefix: '/admin/admissions',
     allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
+  },
+  // Classroom — a section × term workspace for teaching staff. Mandatory
+  // row: isRouteAllowed defaults to ALLOW for any prefix with no matching
+  // rule, so without this, admissions and p_file_officer (who have no
+  // teaching role) could open it. No competing `/classroom*` rule exists,
+  // so placement relative to the other rules doesn't matter for
+  // longest-prefix-wins.
+  {
+    prefix: '/classroom',
+    allowed: ['teacher', 'academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     prefix: '/attendance/import',

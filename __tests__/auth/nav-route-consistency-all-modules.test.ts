@@ -53,6 +53,7 @@ const MODULE_ROOT: Record<string, string> = {
   attendance: '/attendance',
   evaluation: '/evaluation',
   admissions: '/admissions',
+  classroom: '/classroom',
 };
 
 // Routes that intentionally have no nav entry: each is a redirect stub whose

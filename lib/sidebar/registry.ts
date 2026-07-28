@@ -24,6 +24,7 @@ import {
   LayoutGrid,
   MessageSquare,
   Scale,
+  School,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -56,11 +57,13 @@ export type ModuleSidebarConfig = {
 };
 
 // Order shown in the module-switcher popover. Lifecycle: intake →
-// identity → docs → grading → attendance → evaluation → admin config.
+// identity → docs → classroom (teaching entry point) → grading →
+// attendance → evaluation → admin config.
 export const MODULE_ORDER: Module[] = [
   'admissions',
   'records',
   'p-files',
+  'classroom',
   'markbook',
   'attendance',
   'evaluation',
@@ -105,6 +108,19 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       school_admin: MARKBOOK_QUICK_REGISTRAR,
       superadmin: MARKBOOK_QUICK_REGISTRAR,
     },
+  },
+
+  classroom: {
+    label: 'Classroom',
+    icon: School,
+    primaryHref: '/classroom',
+    fallbackIcon: School,
+    iconByHref: {
+      '/classroom': School,
+    },
+    // No quick action — the single nav item (All classes) is already the
+    // destination, same reasoning as Attendance/Evaluation above.
+    quickActionByRole: {},
   },
 
   attendance: {
