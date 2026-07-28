@@ -16,6 +16,12 @@ import {
   type PriorTermGrade,
 } from '@/lib/markbook/grade-diff';
 import type { Role } from '@/lib/auth/roles';
+import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
+import {
+  buildSubjectTeacherNameMap,
+  subjectTeacherKey,
+  type SubjectTeacherAssignmentRow,
+} from '@/lib/markbook/subject-teacher';
 import {
   loadAssignmentsForUser,
   isSubjectTeacher,
@@ -171,11 +177,36 @@ export default async function GradingSheetPage({
         )
       : Promise.resolve({});
 
+  // Who teaches this (section × subject) — the live answer, from
+  // teacher_assignments. The page's own loadAssignmentsForUser call above is
+  // keyed on the CURRENT user and only gates their edit rights; it cannot
+  // answer "who teaches this". Declared here so it runs inside the Promise.all
+  // below rather than adding a serial round-trip.
+  //
+  // RLS on teacher_assignments allows authenticated reads, so the ordinary
+  // cookie-scoped client is enough — no service-role escalation.
+  // (async IIFE, not a bare .then() — the PostgREST builder is a PromiseLike,
+  // which does not satisfy the Promise<...> annotation Promise.all infers from.)
+  const subjectTeacherPromise: Promise<SubjectTeacherAssignmentRow[]> =
+    sectionForSeed?.id && subjectEarly?.id
+      ? (async () => {
+          const { data } = await supabase
+            .from('teacher_assignments')
+            .select('section_id, subject_id, teacher_user_id')
+            .eq('role', 'subject_teacher')
+            .eq('section_id', sectionForSeed.id)
+            .eq('subject_id', subjectEarly.id);
+          return (data ?? []) as SubjectTeacherAssignmentRow[];
+        })()
+      : Promise.resolve([]);
+
   const [
     { data: openRequestsRaw },
     { data: entriesRaw },
     rawAssignments,
     priorGrades,
+    subjectTeacherAssignments,
+    staffNameEntries,
   ] = await Promise.all([
     supabase
       .from('grade_change_requests')
@@ -196,6 +227,8 @@ export default async function GradingSheetPage({
       .eq('grading_sheet_id', id),
     assignmentsPromise,
     priorGradesPromise,
+    subjectTeacherPromise,
+    getStaffDisplayNameById(),
   ]);
   type OpenRequestRow = {
     id: string;
@@ -213,6 +246,23 @@ export default async function GradingSheetPage({
     requested_by_email: string;
     reason_category: string;
   };
+  // Assignment first; the legacy `grading_sheets.teacher_name` column only as a
+  // last resort. That column is written at sheet creation and never updated, so
+  // it drifts — but on historical sheets it may be the only record we have, and
+  // it is what /markbook/grading already falls back to. Blanking it here would
+  // make the two surfaces disagree about who teaches a class.
+  const subjectTeacherNames =
+    sectionForSeed?.id && subjectEarly?.id
+      ? (buildSubjectTeacherNameMap(
+          subjectTeacherAssignments,
+          staffNameEntries
+        ).get(subjectTeacherKey(sectionForSeed.id, subjectEarly.id)) ?? [])
+      : [];
+  const subjectTeacherLabel =
+    subjectTeacherNames.length > 0
+      ? subjectTeacherNames.join(', ')
+      : (sheet.teacher_name ?? null);
+
   const openRequests = (openRequestsRaw ?? []) as OpenRequestRow[];
   const pendingCount = openRequests.filter(
     (r) => r.status === 'pending'
@@ -363,7 +413,14 @@ export default async function GradingSheetPage({
           </div>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             {level?.label} {section?.name}
-            {sheet.teacher_name && <> · {sheet.teacher_name}</>}
+            {subjectTeacherLabel ? (
+              <> · {subjectTeacherLabel}</>
+            ) : (
+              <>
+                {' '}
+                · <span className="italic">No subject teacher assigned</span>
+              </>
+            )}
             {!isExaminable && <> · Letter-grade subject</>}
           </p>
         </div>
