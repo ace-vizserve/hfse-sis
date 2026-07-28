@@ -127,9 +127,9 @@ export function ProfileTab({ app, ayCode, enroleeNumber }: Props) {
     { label: 'Primary language', value: app.primaryLanguage },
   ];
   const travelFields: Field[] = [
-    { label: 'Passport number', value: app.passportNumber },
+    { label: 'Passport number', value: app.passportNumber, sensitive: true },
     { label: 'Passport expiry', value: app.passportExpiry, asDate: true },
-    { label: 'Pass type', value: app.pass },
+    { label: 'Pass type', value: app.pass, sensitive: true },
     { label: 'Pass expiry', value: app.passExpiry, asDate: true },
   ];
   const contactFields: Field[] = [

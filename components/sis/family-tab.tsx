@@ -99,13 +99,13 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
         { label: 'Marital status', value: app.fatherMarital },
         { label: 'Company', value: app.fatherCompanyName },
         { label: 'Position', value: app.fatherPosition },
-        { label: 'Passport', value: app.fatherPassport },
+        { label: 'Passport', value: app.fatherPassport, sensitive: true },
         {
           label: 'Passport expiry',
           value: app.fatherPassportExpiry,
           asDate: true,
         },
-        { label: 'Pass type', value: app.fatherPass },
+        { label: 'Pass type', value: app.fatherPass, sensitive: true },
         { label: 'Pass expiry', value: app.fatherPassExpiry, asDate: true },
         {
           label: 'WhatsApp / Teams consent',
@@ -161,13 +161,13 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
         { label: 'Marital status', value: app.motherMarital },
         { label: 'Company', value: app.motherCompanyName },
         { label: 'Position', value: app.motherPosition },
-        { label: 'Passport', value: app.motherPassport },
+        { label: 'Passport', value: app.motherPassport, sensitive: true },
         {
           label: 'Passport expiry',
           value: app.motherPassportExpiry,
           asDate: true,
         },
-        { label: 'Pass type', value: app.motherPass },
+        { label: 'Pass type', value: app.motherPass, sensitive: true },
         { label: 'Pass expiry', value: app.motherPassExpiry, asDate: true },
         {
           label: 'WhatsApp / Teams consent',
@@ -225,13 +225,13 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
         },
         { label: 'Company', value: app.guardianCompanyName },
         { label: 'Position', value: app.guardianPosition },
-        { label: 'Passport', value: app.guardianPassport },
+        { label: 'Passport', value: app.guardianPassport, sensitive: true },
         {
           label: 'Passport expiry',
           value: app.guardianPassportExpiry,
           asDate: true,
         },
-        { label: 'Pass type', value: app.guardianPass },
+        { label: 'Pass type', value: app.guardianPass, sensitive: true },
         { label: 'Pass expiry', value: app.guardianPassExpiry, asDate: true },
         {
           label: 'WhatsApp / Teams consent',
