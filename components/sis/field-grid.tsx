@@ -1,4 +1,7 @@
+'use client';
+
 import * as React from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -14,6 +17,8 @@ export type Field = {
   multiline?: boolean;
   // Span 2 columns on the grid (useful for long text).
   wide?: boolean;
+  // Mask the rendered value behind a reveal toggle (passport/pass numbers).
+  sensitive?: boolean;
 };
 
 export type FieldSection = {
@@ -24,6 +29,7 @@ export type FieldSection = {
 };
 
 const EMPTY_PLACEHOLDER = '—';
+const MASK_PLACEHOLDER = '••••••••';
 
 function isEmpty(v: FieldValue): boolean {
   return (
@@ -73,19 +79,33 @@ export function FieldGrid({
    */
   dimEmpty?: boolean;
 }) {
+  const [revealed, setRevealed] = React.useState<Set<string>>(new Set());
   const visible = fields;
   if (visible.length === 0) {
     return <p className="text-sm text-muted-foreground">{EMPTY_PLACEHOLDER}</p>;
   }
+
+  function toggleRevealed(key: string) {
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
   return (
     <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
       {visible.map((f, i) => {
+        const key = `${f.label}-${i}`;
         const empty =
           !f.asDate && typeof f.value !== 'boolean' && isEmpty(f.value);
         const dim = dimEmpty && empty;
+        const isMasked = Boolean(f.sensitive) && !empty;
+        const isRevealed = revealed.has(key);
         return (
           <div
-            key={`${f.label}-${i}`}
+            key={key}
             className={cn('min-w-0 space-y-0.5', f.wide && 'sm:col-span-2')}
           >
             <dt
@@ -104,10 +124,31 @@ export function FieldGrid({
                   : empty
                     ? 'text-muted-foreground'
                     : 'text-foreground',
-                f.multiline && 'whitespace-pre-line'
+                f.multiline && 'whitespace-pre-line',
+                isMasked && 'flex items-center gap-1.5'
               )}
             >
-              {renderValue(f)}
+              {isMasked ? (
+                <>
+                  <span>{isRevealed ? renderValue(f) : MASK_PLACEHOLDER}</span>
+                  <button
+                    type="button"
+                    onClick={() => toggleRevealed(key)}
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                    aria-label={
+                      isRevealed ? `Hide ${f.label}` : `Show ${f.label}`
+                    }
+                  >
+                    {isRevealed ? (
+                      <EyeOff className="size-3.5" />
+                    ) : (
+                      <Eye className="size-3.5" />
+                    )}
+                  </button>
+                </>
+              ) : (
+                renderValue(f)
+              )}
             </dd>
           </div>
         );
