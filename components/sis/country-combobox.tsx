@@ -1,0 +1,91 @@
+'use client';
+
+import * as React from 'react';
+import { Check, ChevronsUpDown } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { COUNTRY_NAMES } from '@/lib/data/countries';
+import { cn } from '@/lib/utils';
+
+// Single-select searchable country picker. Stores the country NAME (not a
+// demonym, not an ISO code) — matches the admissions portal's own
+// LocationSelector, which does `field.onChange(value?.name)`.
+//
+// A stored value outside COUNTRY_NAMES (a legacy free-text entry, a typo)
+// renders as an extra "(current)" item instead of leaving the trigger
+// blank — same idiom as edit-profile-sheet.tsx's `kind: 'select'` fallback
+// for preferredPaymentScheme/Method. Selecting it is a no-op (it's already
+// the value); it exists so the field doesn't look broken/empty.
+export function CountryCombobox({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (next: string | null) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const isKnown = value == null || COUNTRY_NAMES.includes(value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="h-9 w-full justify-between font-normal"
+        >
+          <span className="truncate">{value ?? 'Select country...'}</span>
+          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search country..." />
+          <CommandList>
+            <CommandEmpty>No country found.</CommandEmpty>
+            <CommandGroup>
+              {!isKnown && value && (
+                <CommandItem value={value} onSelect={() => setOpen(false)}>
+                  {value} (current)
+                  <Check className="ml-auto size-4 opacity-100" />
+                </CommandItem>
+              )}
+              {COUNTRY_NAMES.map((name) => (
+                <CommandItem
+                  key={name}
+                  value={name}
+                  onSelect={() => {
+                    onChange(name);
+                    setOpen(false);
+                  }}
+                >
+                  {name}
+                  <Check
+                    className={cn(
+                      'ml-auto size-4',
+                      value === name ? 'opacity-100' : 'opacity-0'
+                    )}
+                  />
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
