@@ -9,6 +9,7 @@ import {
   type NavSection,
   type Role,
 } from '@/lib/auth/roles';
+import { SIDEBAR_REGISTRY } from '@/lib/sidebar/registry';
 
 // Whole-app nav <-> ROUTE_ACCESS consistency, both directions.
 //
@@ -43,18 +44,20 @@ import {
 // hand, on 2026-07-28; see the audit notes in the commit for its findings.
 
 // Module root -> the prefix that gates whether the role sees that sidebar at
-// all. The module switcher derives its list from ROUTE_ACCESS (KD #51), so a
-// role that can't open the root never sees any of that module's items.
-const MODULE_ROOT: Record<string, string> = {
-  markbook: '/markbook',
-  'p-files': '/p-files',
-  records: '/records',
-  sis: '/sis',
-  attendance: '/attendance',
-  evaluation: '/evaluation',
-  admissions: '/admissions',
-  classroom: '/classroom',
-};
+// all. A role that can't open the root never sees any of that module's items.
+//
+// Derived from SIDEBAR_REGISTRY rather than hand-maintained, because this is
+// EXACTLY what the real module switcher does
+// (components/module-sidebar/sidebar-header.tsx):
+//     MODULE_ORDER.filter((m) => isRouteAllowed(SIDEBAR_REGISTRY[m].primaryHref, role))
+// A hardcoded copy of this map drifts the moment a module is added — when
+// Classroom landed, its missing entry disabled the module-root gate for the
+// new module and the test only caught it as a spurious dead link. Deriving
+// removes that failure mode entirely.
+function moduleRoot(moduleName: string): string | undefined {
+  return SIDEBAR_REGISTRY[moduleName as keyof typeof SIDEBAR_REGISTRY]
+    ?.primaryHref;
+}
 
 // Routes that intentionally have no nav entry: each is a redirect stub whose
 // ROUTE_ACCESS row exists only so the role gate fires BEFORE the redirect.
@@ -69,7 +72,7 @@ const REDIRECT_STUBS = new Set([
 function itemsForRole(role: Role): Array<{ module: string; item: NavItem }> {
   const out: Array<{ module: string; item: NavItem }> = [];
   for (const [moduleName, nav] of Object.entries(NAV_BY_MODULE)) {
-    const root = MODULE_ROOT[moduleName];
+    const root = moduleRoot(moduleName);
     if (root && !isRouteAllowed(root, role)) continue;
 
     const sections: NavSection[] | undefined =
@@ -101,6 +104,38 @@ describe('nav <-> ROUTE_ACCESS consistency (all modules)', () => {
         dead,
         `role "${role}" can see nav items pointing at routes the proxy blocks`
       ).toEqual([]);
+    });
+  });
+
+  // Directions A and B are both satisfied VACUOUSLY by a module with no
+  // ROUTE_ACCESS rule at all: `isRouteAllowed` returns true for any unmatched
+  // prefix, so nothing looks like a dead link and there is no prefix to
+  // demand a nav entry for. Verified by experiment — deleting Classroom's
+  // ROUTE_ACCESS row left A and B green while every role, including
+  // admissions and p_file_officer, could open /classroom.
+  //
+  // So the highest-risk mistake when adding a module — forgetting the rule —
+  // needs its own assertion. No module may rely on default-allow.
+  describe('C. every module root has an explicit ROUTE_ACCESS rule', () => {
+    it.each(
+      (
+        Object.keys(SIDEBAR_REGISTRY) as Array<keyof typeof SIDEBAR_REGISTRY>
+      ).map((m) => [m, SIDEBAR_REGISTRY[m].primaryHref] as const)
+    )('%s (%s)', (_module, primaryHref) => {
+      const rule = ROUTE_ACCESS.find(
+        (r) =>
+          primaryHref === r.prefix || primaryHref.startsWith(r.prefix + '/')
+      );
+      expect(
+        rule,
+        `module root "${primaryHref}" has no ROUTE_ACCESS rule, so isRouteAllowed ` +
+          `defaults to ALLOW and every authenticated role can open it — including ` +
+          `roles with no business there. Add an explicit rule.`
+      ).toBeDefined();
+      expect(
+        rule!.allowed.length,
+        `ROUTE_ACCESS rule for "${primaryHref}" allows no roles`
+      ).toBeGreaterThan(0);
     });
   });
 
