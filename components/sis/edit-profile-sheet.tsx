@@ -10,6 +10,8 @@ import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
+import { CountryCombobox } from '@/components/sis/country-combobox';
+import { SensitiveInput } from '@/components/sis/sensitive-input';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
   Form,
@@ -46,7 +48,14 @@ import {
   type ProfileUpdateInput,
 } from '@/lib/schemas/sis';
 
-type FieldKind = 'text' | 'textarea' | 'date' | 'tribool' | 'select';
+type FieldKind =
+  | 'text'
+  | 'textarea'
+  | 'date'
+  | 'tribool'
+  | 'select'
+  | 'combobox'
+  | 'password';
 
 type FieldConfig = {
   name: keyof ProfileUpdateInput;
@@ -74,7 +83,7 @@ const SECTIONS: SectionConfig[] = [
       { name: 'nric', label: 'NRIC / FIN' },
       { name: 'birthDay', label: 'Date of birth', kind: 'date' },
       { name: 'gender', label: 'Gender' },
-      { name: 'nationality', label: 'Nationality' },
+      { name: 'nationality', label: 'Nationality', kind: 'combobox' },
       { name: 'primaryLanguage', label: 'Primary language' },
       { name: 'religion', label: 'Religion' },
       { name: 'religionOther', label: 'Religion (other)' },
@@ -83,9 +92,9 @@ const SECTIONS: SectionConfig[] = [
   {
     title: 'Travel documents',
     fields: [
-      { name: 'passportNumber', label: 'Passport number' },
+      { name: 'passportNumber', label: 'Passport number', kind: 'password' },
       { name: 'passportExpiry', label: 'Passport expiry', kind: 'date' },
-      { name: 'pass', label: 'Pass type' },
+      { name: 'pass', label: 'Pass type', kind: 'password' },
       { name: 'passExpiry', label: 'Pass expiry', kind: 'date' },
     ],
   },
@@ -406,6 +415,36 @@ function SchemaField({
                   ))}
                 </SelectContent>
               </Select>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+        if (kind === 'combobox') {
+          const v = field.value as string | null | undefined;
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <FormControl>
+                <CountryCombobox
+                  value={v ?? null}
+                  onChange={(next) => field.onChange(next)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+        if (kind === 'password') {
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <FormControl>
+                <SensitiveInput
+                  value={(field.value as string | null) ?? ''}
+                  onChange={(next) => field.onChange(next === '' ? null : next)}
+                  placeholder={cfg.placeholder ?? ''}
+                />
+              </FormControl>
               <FormMessage />
             </FormItem>
           );
