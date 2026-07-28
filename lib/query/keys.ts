@@ -39,4 +39,5 @@ export const queryKeys = {
     ['pfile-revisions', enroleeNumber] as const,
   pfilesDrill: (target: string, range: DrillRange) =>
     ['pfiles-drill', target, range] as const,
+  changeRequestPreview: () => ['change-request-preview'] as const,
 } as const;
