@@ -6,6 +6,7 @@ import { logAction } from '@/lib/audit/log-action';
 import {
   buildProfileUpdateSchema,
   PROFILE_GATED_FIELDS,
+  ProfileUpdateSchema,
   type ProfileUpdateInput,
 } from '@/lib/schemas/sis';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -58,7 +59,15 @@ export async function PATCH(
   // fields (KD pending — student-profile validation-parity) actually
   // changed vs. are pre-existing legacy values the registrar didn't touch.
   // The strict schema must only reject a NEW write of a bad value.
-  const rawKeys = Object.keys(body as Record<string, unknown>);
+  //
+  // Keys are filtered to the schema's own shape first: this select() runs
+  // BEFORE zod parsing (which is what normally strips unknown keys), so an
+  // unexpected key in the body would otherwise reach Postgrest as a column
+  // name and 500 the whole save.
+  const allowedCols = new Set(Object.keys(ProfileUpdateSchema.shape));
+  const rawKeys = Object.keys(body as Record<string, unknown>).filter((k) =>
+    allowedCols.has(k)
+  );
   if (rawKeys.length === 0) {
     return NextResponse.json({ ok: true, changed: 0 });
   }

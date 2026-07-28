@@ -8,8 +8,11 @@ import {
   buildGuardianUpdateSchema,
   buildMotherUpdateSchema,
   FATHER_GATED_FIELDS,
+  FatherUpdateSchema,
   GUARDIAN_GATED_FIELDS,
+  GuardianUpdateSchema,
   MOTHER_GATED_FIELDS,
+  MotherUpdateSchema,
   PARENT_SLOTS,
   type ParentSlot,
 } from '@/lib/schemas/sis';
@@ -66,7 +69,19 @@ export async function PATCH(
   const appsTable = `${prefix}_enrolment_applications`;
   const supabase = createServiceClient();
 
-  const rawKeys = Object.keys(body as Record<string, unknown>);
+  // Keys are filtered to the chosen parent slot's schema shape first: this
+  // select() runs BEFORE zod parsing (which is what normally strips unknown
+  // keys), so an unexpected key in the body would otherwise reach Postgrest
+  // as a column name and 500 the whole save.
+  const strictSchemaByParent = {
+    father: FatherUpdateSchema,
+    mother: MotherUpdateSchema,
+    guardian: GuardianUpdateSchema,
+  } as const;
+  const allowedCols = new Set(Object.keys(strictSchemaByParent[parent].shape));
+  const rawKeys = Object.keys(body as Record<string, unknown>).filter((k) =>
+    allowedCols.has(k)
+  );
   if (rawKeys.length === 0) {
     return NextResponse.json({ ok: true, changed: 0 });
   }
