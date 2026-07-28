@@ -45,12 +45,16 @@ export async function getSidebarChangeRequestCount(
     query = query.eq('requested_by', userId).eq('status', 'pending');
   } else if (role === 'academic_coordinator') {
     query = query.eq('status', 'approved');
-  } else if (role === 'school_admin' || role === 'superadmin') {
+  } else if (role === 'school_admin') {
     query = query
       .eq('status', 'pending')
       .or(
         `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null)`
       );
+  } else if (role === 'superadmin') {
+    // Oversight scope: full visibility across all pending requests,
+    // regardless of designated approver.
+    query = query.eq('status', 'pending');
   } else {
     return 0;
   }
@@ -105,12 +109,16 @@ export async function getSidebarChangeRequestPreview(
     query = query.eq('requested_by', userId).eq('status', 'pending');
   } else if (role === 'academic_coordinator') {
     query = query.eq('status', 'approved');
-  } else if (role === 'school_admin' || role === 'superadmin') {
+  } else if (role === 'school_admin') {
     query = query
       .eq('status', 'pending')
       .or(
         `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null)`
       );
+  } else if (role === 'superadmin') {
+    // Oversight scope: full visibility across all pending requests,
+    // regardless of designated approver.
+    query = query.eq('status', 'pending');
   } else {
     return [];
   }

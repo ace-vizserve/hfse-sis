@@ -10,13 +10,31 @@ vi.mock('@/lib/change-requests/labels', () => ({
 
 const CURRENT_AY_ID = 'ay-current';
 
-function makeService(rows: Array<Record<string, unknown>>) {
+function makeService(
+  rows: Array<Record<string, unknown>>,
+  trackCalls?: string[]
+) {
   const chain: Record<string, unknown> = {
-    select: () => chain,
-    eq: () => chain,
-    or: () => chain,
-    order: () => chain,
-    limit: () => chain,
+    select: () => {
+      if (trackCalls) trackCalls.push('select');
+      return chain;
+    },
+    eq: () => {
+      if (trackCalls) trackCalls.push('eq');
+      return chain;
+    },
+    or: () => {
+      if (trackCalls) trackCalls.push('or');
+      return chain;
+    },
+    order: () => {
+      if (trackCalls) trackCalls.push('order');
+      return chain;
+    },
+    limit: () => {
+      if (trackCalls) trackCalls.push('limit');
+      return chain;
+    },
     data: rows,
     error: null,
   };
@@ -109,5 +127,33 @@ describe('getSidebarChangeRequestPreview', () => {
       5
     );
     expect(result).toEqual([]);
+  });
+
+  it('school_admin: applies designated-approver restriction via .or()', async () => {
+    const calls: string[] = [];
+    const service = makeService([ROW], calls);
+    await getSidebarChangeRequestPreview(service, 'school_admin', 'user-1', 5);
+    // school_admin should call .or() to restrict to designated approvers
+    expect(calls).toContain('or');
+  });
+
+  it('superadmin: does NOT apply designated-approver restriction (oversight scope)', async () => {
+    const calls: string[] = [];
+    const service = makeService([ROW], calls);
+    await getSidebarChangeRequestPreview(service, 'superadmin', 'user-1', 5);
+    // superadmin should NOT call .or() — it has unrestricted oversight
+    expect(calls).not.toContain('or');
+  });
+
+  it('superadmin: returns all pending rows', async () => {
+    const service = makeService([ROW]);
+    const result = await getSidebarChangeRequestPreview(
+      service,
+      'superadmin',
+      'user-1',
+      5
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cr-1');
   });
 });
