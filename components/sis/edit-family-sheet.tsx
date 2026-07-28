@@ -16,7 +16,9 @@ import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
+import { CountryCombobox } from '@/components/sis/country-combobox';
 import { DatePicker } from '@/components/ui/date-picker';
+import { SensitiveInput } from '@/components/sis/sensitive-input';
 import {
   Form,
   FormControl,
@@ -54,7 +56,13 @@ import {
   type ParentSlot,
 } from '@/lib/schemas/sis';
 
-type FieldKind = 'text' | 'email' | 'date' | 'tribool';
+type FieldKind =
+  | 'text'
+  | 'email'
+  | 'date'
+  | 'tribool'
+  | 'combobox'
+  | 'password';
 type FieldConfig = {
   name: string;
   label: string;
@@ -72,15 +80,15 @@ const FATHER_FIELDS: FieldConfig[] = [
   { name: 'fatherBirthDay', label: 'Date of birth', kind: 'date' },
   { name: 'fatherMobile', label: 'Mobile' },
   { name: 'fatherEmail', label: 'Email', kind: 'email', wide: true },
-  { name: 'fatherNationality', label: 'Nationality' },
+  { name: 'fatherNationality', label: 'Nationality', kind: 'combobox' },
   { name: 'fatherReligion', label: 'Religion' },
   { name: 'fatherReligionOther', label: 'Religion (other)' },
   { name: 'fatherMarital', label: 'Marital status' },
   { name: 'fatherCompanyName', label: 'Company' },
   { name: 'fatherPosition', label: 'Position' },
-  { name: 'fatherPassport', label: 'Passport' },
+  { name: 'fatherPassport', label: 'Passport', kind: 'password' },
   { name: 'fatherPassportExpiry', label: 'Passport expiry', kind: 'date' },
-  { name: 'fatherPass', label: 'Pass type' },
+  { name: 'fatherPass', label: 'Pass type', kind: 'password' },
   { name: 'fatherPassExpiry', label: 'Pass expiry', kind: 'date' },
   {
     name: 'fatherWhatsappTeamsConsent',
@@ -304,6 +312,35 @@ function SchemaField<T extends FieldValues>({
               <FormLabel className="text-xs">{cfg.label}</FormLabel>
               <FormControl>
                 <DatePicker
+                  value={(field.value as string | null) ?? ''}
+                  onChange={(next) => field.onChange(next === '' ? null : next)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+        if (kind === 'combobox') {
+          const v = field.value as string | null | undefined;
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <FormControl>
+                <CountryCombobox
+                  value={v ?? null}
+                  onChange={(next) => field.onChange(next)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+        if (kind === 'password') {
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <FormControl>
+                <SensitiveInput
                   value={(field.value as string | null) ?? ''}
                   onChange={(next) => field.onChange(next === '' ? null : next)}
                 />
