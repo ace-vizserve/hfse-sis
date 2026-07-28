@@ -11,7 +11,9 @@
       "Bash(grep -noE \"#[0-9a-fA-F]{3,8}\\\\b|oklch\\\\\\(|slate-|zinc-|gray-|bg-white|bg-black\" components/dashboard/metric-card.tsx)",
       "Bash(grep -niE \"#[0-9a-f]{3,6}\\\\b|oklch\\\\\\(|\\\\bslate-|\\\\bzinc-|\\\\bgray-|bg-white|bg-black\" \"app/\\(admissions\\)/admissions/insights/page.tsx\")",
       "Bash(grep -niE \"#[0-9a-f]{3,6}\\\\b|oklch\\\\\\(|\\\\bslate-|\\\\bzinc-|\\\\bgray-|bg-white|bg-black\" \"c:\\\\Users\\\\Ace\\\\OneDrive - HFSE International School\\\\Desktop\\\\hfse-vizserve projects\\\\hfse-markbook\\\\app\\\\\\(admissions\\)\\\\admissions\\\\insights\\\\page.tsx\")",
-      "Bash(tee /tmp/vitest-out.log)"
+      "Bash(tee /tmp/vitest-out.log)",
+      "Bash(echo \"=== TSC EXIT: $? ===\")",
+      "Bash(echo \"TSC exit: $?\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ace\\AppData\\Local\\Temp\\claude\\c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook\\aebe5fa0-94e1-410b-968e-c4a4daa13e23\\scratchpad"
