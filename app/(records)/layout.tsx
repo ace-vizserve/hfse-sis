@@ -67,13 +67,15 @@ export default async function RecordsLayout({
       <SidebarInset>
         <AyBanner />
         <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md">
-          <SidebarTrigger className="-ml-1" />
-          <div className="ml-auto">
-            <NotificationBell
-              role={role}
-              userId={id}
-              initialCount={changeRequestCount}
-            />
+          <div className="flex items-center w-full mx-auto max-w-[1440px]">
+            <SidebarTrigger className="-ml-1" />
+            <div className="ml-auto">
+              <NotificationBell
+                role={role}
+                userId={id}
+                initialCount={changeRequestCount}
+              />
+            </div>
           </div>
         </header>
         <div className="flex-1 bg-muted px-6 py-8 md:px-10 md:py-10">
