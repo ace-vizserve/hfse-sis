@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { COUNTRY_NAME_SET } from '@/lib/data/countries';
+
 // Sprint 10 Phase 2 — schemas for SIS write surfaces.
 //
 // Two stable IDs are deliberately NOT in any schema and are 400'd by the
@@ -49,6 +51,58 @@ const optionalYesNo = z.enum(['Yes', 'No']).nullable();
 // reads coerce numeric DB values to string at the row-mapping layer. Empty
 // string → null per optionalText.
 const optionalNumberOrText = optionalText(60);
+
+// NRIC / FIN — adopted verbatim from the admissions portal's own schema.
+const optionalNric = z
+  .string()
+  .trim()
+  .max(40)
+  .transform((s) => (s.length === 0 ? null : s))
+  .refine((s) => s === null || /^[STFGM]\d{7}[A-Z]$/.test(s), {
+    message: 'Enter a valid NRIC/FIN (e.g. S1234567A)',
+  })
+  .nullable();
+
+// Phone numbers — adopted verbatim from the admissions portal's own
+// schema. Digits only, optional leading +.
+const optionalPhone = z
+  .string()
+  .trim()
+  .max(60)
+  .transform((s) => (s.length === 0 ? null : s))
+  .refine((s) => s === null || /^\+?\d+$/.test(s), {
+    message: 'Enter digits only, with an optional leading +',
+  })
+  .nullable();
+
+// Postal code — digits only. No extra length bound beyond the existing
+// 60-char ceiling (a Singapore 6-digit code isn't hard-coded — legacy or
+// overseas addresses may be on file).
+const optionalPostalCode = z
+  .string()
+  .trim()
+  .max(60)
+  .transform((s) => (s.length === 0 ? null : s))
+  .refine((s) => s === null || /^\d+$/.test(s), {
+    message: 'Enter digits only',
+  })
+  .nullable();
+
+// Nationality — constrained to the canonical country-name list (see
+// lib/data/countries.ts). Stores the country NAME, matching the admissions
+// portal's LocationSelector. A pre-existing off-list DB value is untouched
+// by this refine — it only rejects a NEW write of an off-list string; the
+// combobox UI (CountryCombobox) is the only write path once this ships, and
+// it either emits a canonical name or leaves an off-list value unchanged.
+const optionalNationality = z
+  .string()
+  .trim()
+  .max(80)
+  .transform((s) => (s.length === 0 ? null : s))
+  .refine((s) => s === null || COUNTRY_NAME_SET.has(s), {
+    message: 'Select a country from the list',
+  })
+  .nullable();
 
 // Optional integer rating, 1..5. Accepts string-form numbers from the parent
 // portal too (e.g. "5"). null when blank/invalid.
@@ -129,10 +183,10 @@ export const ProfileUpdateSchema = z.object({
   enroleeFullName: optionalText(240),
   // Identity
   category: z.enum(ENROLEE_CATEGORIES).nullable().optional(),
-  nric: optionalText(40),
+  nric: optionalNric,
   birthDay: optionalDate,
   gender: optionalText(40),
-  nationality: optionalText(80),
+  nationality: optionalNationality,
   primaryLanguage: optionalText(80),
   religion: optionalText(80),
   religionOther: optionalText(120),
@@ -143,12 +197,12 @@ export const ProfileUpdateSchema = z.object({
   pass: optionalText(60),
   passExpiry: optionalDate,
   // Contact
-  homePhone: optionalNumberOrText,
+  homePhone: optionalPhone,
   homeAddress: optionalText(500),
-  postalCode: optionalNumberOrText,
+  postalCode: optionalPostalCode,
   livingWithWhom: optionalText(120),
   contactPerson: optionalText(120),
-  contactPersonNumber: optionalNumberOrText,
+  contactPersonNumber: optionalPhone,
   parentMaritalStatus: optionalText(60),
   // Application preferences
   levelApplied: optionalText(80),
@@ -165,7 +219,7 @@ export const ProfileUpdateSchema = z.object({
   howDidYouKnowAboutHFSEIS: optionalText(120),
   otherSource: optionalText(240),
   referrerName: optionalText(120),
-  referrerMobile: optionalNumberOrText,
+  referrerMobile: optionalPhone,
   // The person's name when howDidYouKnowAboutHFSEIS === 'Referral' — a
   // separate column from referrerName (referral-source-specific).
   marketingReferrerName: optionalText(120),
@@ -260,7 +314,7 @@ const optionalEmail = z
   .string()
   .trim()
   .transform((s) => (s.length === 0 ? null : s))
-  .refine((s) => s === null || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s), {
+  .refine((s) => s === null || z.string().email().safeParse(s).success, {
     message: 'Enter a valid email',
   })
   .nullable();
@@ -272,11 +326,11 @@ export const FatherUpdateSchema = z.object({
   fatherMiddleName: optionalText(120),
   fatherLastName: optionalText(120),
   fatherPreferredName: optionalText(120),
-  fatherNric: optionalText(40),
+  fatherNric: optionalNric,
   fatherBirthDay: optionalDate,
-  fatherMobile: optionalNumberOrText,
+  fatherMobile: optionalPhone,
   fatherEmail: optionalEmail,
-  fatherNationality: optionalText(80),
+  fatherNationality: optionalNationality,
   fatherReligion: optionalText(80),
   fatherReligionOther: optionalText(120),
   fatherMarital: optionalText(60),
@@ -295,11 +349,11 @@ export const MotherUpdateSchema = z.object({
   motherMiddleName: optionalText(120),
   motherLastName: optionalText(120),
   motherPreferredName: optionalText(120),
-  motherNric: optionalText(40),
+  motherNric: optionalNric,
   motherBirthDay: optionalDate,
-  motherMobile: optionalNumberOrText,
+  motherMobile: optionalPhone,
   motherEmail: optionalEmail,
-  motherNationality: optionalText(80),
+  motherNationality: optionalNationality,
   motherReligion: optionalText(80),
   motherReligionOther: optionalText(120),
   motherMarital: optionalText(60),
@@ -318,11 +372,11 @@ export const GuardianUpdateSchema = z.object({
   guardianMiddleName: optionalText(120),
   guardianLastName: optionalText(120),
   guardianPreferredName: optionalText(120),
-  guardianNric: optionalText(40),
+  guardianNric: optionalNric,
   guardianBirthDay: optionalDate,
-  guardianMobile: optionalNumberOrText,
+  guardianMobile: optionalPhone,
   guardianEmail: optionalEmail,
-  guardianNationality: optionalText(80),
+  guardianNationality: optionalNationality,
   guardianReligion: optionalText(80),
   guardianReligionOther: optionalText(120),
   // No guardianMarital — unlike fatherMarital/motherMarital, guardian never
