@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import { ModuleSidebar } from '@/components/module-sidebar';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 import { AyBanner } from '@/components/sis/ay-banner';
 import {
   SidebarInset,
@@ -46,6 +47,13 @@ export default async function MarkbookLayout({
         <AyBanner />
         <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md print:hidden">
           <SidebarTrigger className="-ml-1" />
+          <div className="ml-auto">
+            <NotificationBell
+              role={role}
+              userId={id}
+              initialCount={sidebarBadges.changeRequests ?? null}
+            />
+          </div>
         </header>
         <div className="flex-1 bg-muted px-6 py-8 md:px-10 md:py-10 print:bg-background print:p-0">
           {children}

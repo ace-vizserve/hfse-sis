@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { getSessionUser } from '@/lib/supabase/server';
 import { ModuleSidebar } from '@/components/module-sidebar';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 import { AyBanner } from '@/components/sis/ay-banner';
 import {
   SidebarInset,
@@ -11,8 +12,10 @@ import {
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getStaffCount } from '@/lib/auth/staff-list';
 import type { SidebarCounts } from '@/lib/auth/roles';
+import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import { getAyReadiness } from '@/lib/sis/readiness';
 import { getSectionsCount } from '@/lib/sis/sidebar-counts';
+import { createServiceClient } from '@/lib/supabase/service';
 
 export default async function SisLayout({
   children,
@@ -66,6 +69,14 @@ export default async function SisLayout({
         ])
       : [null, null];
 
+  const service = createServiceClient();
+  const changeRequestCount =
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin'
+      ? await getSidebarChangeRequestCount(service, role, id)
+      : null;
+
   const sidebarCounts: SidebarCounts = {};
   if (readiness) {
     sidebarCounts.aySetupReadiness = `${readiness.complete}/${readiness.total}`;
@@ -90,6 +101,13 @@ export default async function SisLayout({
         <AyBanner />
         <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md">
           <SidebarTrigger className="-ml-1" />
+          <div className="ml-auto">
+            <NotificationBell
+              role={role}
+              userId={id}
+              initialCount={changeRequestCount}
+            />
+          </div>
         </header>
         <div className="flex-1 bg-muted px-6 py-8 md:px-10 md:py-10">
           {children}
