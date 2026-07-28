@@ -12,17 +12,12 @@ equivalent, so a coordinator opening a sheet cannot see who owns it.
 
 The page does print something. Its hero paragraph reads:
 
-```tsx
+```text
 // app/(markbook)/markbook/grading/[id]/page.tsx:364-368
-{
-  level?.label;
-}
-{
-  section?.name;
-}
-{
-  sheet.teacher_name && <> · {sheet.teacher_name}</>;
-}
+// (fenced as text, not tsx — a bare JSX fragment is not a parseable module,
+//  and the repo's prettier hook rewrites it into nonsense if told otherwise)
+{level?.label} {section?.name}
+{sheet.teacher_name && <> · {sheet.teacher_name}</>}
 ```
 
 `grading_sheets.teacher_name` is a **denormalized legacy text column** — written at
