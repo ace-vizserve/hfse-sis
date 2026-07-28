@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Role } from '@/lib/auth/roles';
+import { fetchLabels } from '@/lib/change-requests/labels';
 
 // Returns the badge count to show on the "Change requests" sidebar item
 // for the given role. Single indexed query per layout render. No caching
@@ -57,4 +58,82 @@ export async function getSidebarChangeRequestCount(
   const { count, error } = await query;
   if (error) return 0;
   return count ?? 0;
+}
+
+export type ChangeRequestPreviewRow = {
+  id: string;
+  field_changed: string;
+  reason_category: string;
+  requested_at: string;
+  grading_sheet_id: string;
+  grade_entry_id: string;
+  student_label: string | null;
+  sheet_label: string | null;
+};
+
+// Row-level sibling of getSidebarChangeRequestCount above — same per-role,
+// per-current-AY scope, copied rather than re-derived so the notification
+// bell's dropdown list can never disagree with the badge count it's paired
+// with (KD #124: a card's count and its drill must share one scope). Backs
+// GET /api/change-requests/preview.
+export async function getSidebarChangeRequestPreview(
+  service: SupabaseClient,
+  role: Role,
+  userId: string,
+  limit: number
+): Promise<ChangeRequestPreviewRow[]> {
+  const { data: ayData } = await service
+    .from('academic_years')
+    .select('id')
+    .eq('is_current', true)
+    .maybeSingle();
+  const currentAyId = (ayData as { id: string } | null)?.id ?? null;
+  if (!currentAyId) return [];
+
+  let query = service
+    .from('grade_change_requests')
+    .select(
+      `id, field_changed, reason_category, requested_at,
+       grading_sheet_id, grade_entry_id,
+       grading_sheet:grading_sheets!inner(section:sections!inner(academic_year_id))`
+    )
+    .eq('grading_sheet.section.academic_year_id', currentAyId)
+    .order('requested_at', { ascending: false })
+    .limit(limit);
+
+  if (role === 'teacher') {
+    query = query.eq('requested_by', userId).eq('status', 'pending');
+  } else if (role === 'academic_coordinator') {
+    query = query.eq('status', 'approved');
+  } else if (role === 'school_admin' || role === 'superadmin') {
+    query = query
+      .eq('status', 'pending')
+      .or(
+        `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null)`
+      );
+  } else {
+    return [];
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return [];
+
+  const rows = data as unknown as Array<{
+    id: string;
+    field_changed: string;
+    reason_category: string;
+    requested_at: string;
+    grading_sheet_id: string;
+    grade_entry_id: string;
+  }>;
+
+  const labels = await Promise.all(
+    rows.map((r) => fetchLabels(service, r.grading_sheet_id, r.grade_entry_id))
+  );
+
+  return rows.map((r, i) => ({
+    ...r,
+    student_label: labels[i].student_label,
+    sheet_label: labels[i].sheet_label,
+  }));
 }
