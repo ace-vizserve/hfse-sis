@@ -165,7 +165,8 @@ Makes the in-system Term sheet visually recognisable to staff coming from HFSE's
 A collapsible header (`components/attendance/sheet-context.tsx`) above the grid:
 
 - **Gradient-tile header** with serif virtue name (term's `virtue_theme`) + course·term eyebrow + school-name + meta strip.
-- **Collapsible term-calendar key** showing the colour legend for date-column tags (PH / SH / HBL / NC / SE / EX).
+- **Always-visible sheet legend** (`components/attendance/sheet-legend.tsx`, `<SheetLegend canWriteNc>`) — two hairline-split groups: **Cell marks** (P / L / EX / A, plus NC when the viewer can set it) and **Date columns** (school day / PH / SH / HBL / NC / SE / EX). It lived under the grid until 2026-07-28; a teacher reading an unfamiliar colour had to scroll past two months of columns to decode it. The mark swatches read `STATUS_CELL_WASH` and the tag pills read `DAY_TYPE_CHIP_COLOR` / `COLUMN_TAG_COLOR`, so legend and sheet cannot drift (§10.2). Tested in `__tests__/attendance/sheet-legend.test.tsx`.
+- **Collapsible term-calendar key** listing the term's dated events under the same SE / SH / PH / EX chips.
 
 ### Date-column tags (`components/attendance/column-tags.ts`)
 
@@ -205,7 +206,7 @@ The per-cell native `<select>` / `<optgroup>` was replaced by:
 
 Shared single-source maps:
 
-- `components/attendance/column-tags.ts` — `COLUMN_TAG_COLOR` (used by grid headers + the context-card key)
+- `components/attendance/column-tags.ts` — `COLUMN_TAG_COLOR` (used by grid headers + the context-card key + the legend)
 - `components/attendance/status-wash.ts` — `STATUS_CELL_WASH` (used by cells + the palette + the legend)
 
 ### xlsx export (`GET /api/attendance/[sectionId]/export?term_id=`)

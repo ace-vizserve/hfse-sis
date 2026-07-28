@@ -414,6 +414,7 @@ export default async function SectionAttendancePage({
           }
           calendar={calendar}
           events={events}
+          canWriteNc={canWriteNc}
         />
       )}
 

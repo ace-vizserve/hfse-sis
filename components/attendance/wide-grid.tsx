@@ -57,10 +57,7 @@ function todayLocalIso(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-import {
-  ChartLegendChip,
-  type ChartLegendChipColor,
-} from '@/components/dashboard/chart-legend-chip';
+import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -86,10 +83,8 @@ import { resolveColumnTag } from '@/lib/attendance/sheet-columns';
 import { COLUMN_TAG_COLOR } from '@/components/attendance/column-tags';
 import { CellMarkPalette } from '@/components/attendance/cell-mark-popover';
 import { EnrolmentMetaEditor } from '@/components/attendance/enrolment-meta-editor';
-import {
-  STATUS_CELL_WASH,
-  statusCellWash,
-} from '@/components/attendance/status-wash';
+import { useDebouncedRefresh } from '@/components/attendance/use-debounced-refresh';
+import { statusCellWash } from '@/components/attendance/status-wash';
 import {
   Popover,
   PopoverAnchor,
@@ -107,24 +102,17 @@ import {
   type ExReason,
 } from '@/lib/schemas/attendance';
 
-// Day-type → ChartLegendChip color. Mirrors the calendar admin's
-// DAY_TYPE_LEGEND_COLOR exactly so the wide-grid header chip and the
-// calendar's day-type chip read as the same affordance across surfaces.
-// 'school_day' uses 'fresh' to match the calendar.
-const DAY_TYPE_CHIP_COLOR: Record<DayType, ChartLegendChipColor> = {
-  school_day: 'fresh',
-  public_holiday: 'very-stale',
-  school_holiday: 'stale',
-  hbl: 'primary',
-  no_class: 'neutral',
-};
-
 // COLUMN_TAG_COLOR (date-column tag → ChartLegendChip color) is shared with the
 // sheet-context card's term-calendar key — see components/attendance/column-tags.ts (§10.2).
 
 // STATUS_CELL_WASH (status → HFSE paper-palette wash) + statusCellWash now live
 // in components/attendance/status-wash.ts — shared single source (§10.2) for the
 // grid cells, the legend, AND the cell-mark popover chips.
+
+// The sheet's legend (status swatches + day-type chips) lives in
+// components/attendance/sheet-legend.tsx, mounted in the register card above
+// this grid — it used to sit below the grid, out of reach of the person
+// actually reading a cell.
 
 // Faint per-day-type cell tint, kept under the gradient pill so non-
 // school-day columns read as a vertical band even when no status is set.
@@ -319,6 +307,12 @@ export function AttendanceWideGrid({
     }) => apiFetch('/api/attendance/daily', jsonInit('PATCH', payload)),
   });
 
+  // The stat cards above this grid (average attendance, perfect attendance)
+  // are rendered by the page's server component from the rollup that each
+  // write recomputes. Marking is bursty, so we ask for a fresh render once
+  // marking goes quiet rather than once per cell — see the hook's own note.
+  const refreshStats = useDebouncedRefresh(() => router.refresh());
+
   // Low-frequency roster-metadata edit (Bus/Care, Academics, Admin notes) —
   // unlike the high-frequency cell-mark mutation above, this one calls
   // router.refresh() on success so the roster pane reflects the saved value.
@@ -392,6 +386,9 @@ export function AttendanceWideGrid({
         exReason,
       });
       updateCell(k, { saving: false, savedAt: Date.now() });
+      // Saved — the server's rollup has moved, so the stat cards are now
+      // stale. Only on success: a failed write reverts and changes nothing.
+      refreshStats();
       setTimeout(() => {
         setCells((current) => {
           const c = current.get(k);
@@ -744,9 +741,9 @@ export function AttendanceWideGrid({
                             most-informative tag: PH/SH/NC from day_type,
                             EX for exam events, SE for other events, HBL
                             for HBL days; plain school days are untagged.
-                            Same ChartLegendChip rendered in the legend below
-                            so the column header and legend chip read as the
-                            same affordance per §10. */}
+                            Same ChartLegendChip rendered in the register
+                            card's legend above so the column header and legend
+                            chip read as the same affordance per §10. */}
                           {c.tag && (
                             <div className="mt-0.5 flex justify-center">
                               <ChartLegendChip
@@ -1079,76 +1076,6 @@ export function AttendanceWideGrid({
           />
         )}
       </Sheet>
-
-      {/* Legend */}
-      <Card className="p-4 text-xs text-muted-foreground">
-        <p className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
-          Status · cell colour
-        </p>
-        {/* Each swatch reads the SAME STATUS_CELL_WASH map used inside the
-            cell when populated, so legend ↔ cell pixel-match per
-            docs/context/09a-design-patterns.md §10.2 (bespoke swatch for grid
-            cell tints). EX is a single chip — the cell collapses every EX
-            subtype (MC / vacation / compassionate) to "EX";
-            the subtype is still selectable in the dropdown + stored (KD #94),
-            and shown in the cell tooltip. */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-foreground">
-          <StatusLegendChip status="P" letter="P" description="Present" />
-          <StatusLegendChip status="L" letter="L" description="Late" />
-          <StatusLegendChip status="EX" letter="EX" description="Excused" />
-          <StatusLegendChip status="A" letter="A" description="Absent" />
-          {canWriteNc && (
-            <StatusLegendChip status="NC" letter="NC" description="No class" />
-          )}
-        </div>
-        <p className="mt-3 mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
-          Calendar · column header
-        </p>
-        {/* Day-type chips are the SAME ChartLegendChip rendered in column
-            headers, so the column-header chip and the legend chip read as
-            the same affordance per §10. School day is the default — no chip
-            on its column headers, so the legend chip just signals "this is
-            what a teaching day looks like elsewhere in the SIS". */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-foreground">
-          <DayTypeLegendChip
-            dayType="school_day"
-            letter="·"
-            description="School day (default)"
-          />
-          <DayTypeLegendChip
-            dayType="public_holiday"
-            letter="PH"
-            description="Public holiday"
-          />
-          <DayTypeLegendChip
-            dayType="school_holiday"
-            letter="SH"
-            description="School holiday"
-          />
-          <DayTypeLegendChip
-            dayType="hbl"
-            letter="HBL"
-            description="HBL · Attendance recorded"
-          />
-          <DayTypeLegendChip
-            dayType="no_class"
-            letter="NC"
-            description="No class"
-          />
-          <span className="inline-flex items-center gap-2">
-            <ChartLegendChip color={COLUMN_TAG_COLOR.SE} label="SE" />
-            <span className="text-[12px] font-medium text-foreground">
-              School event
-            </span>
-          </span>
-          <span className="inline-flex items-center gap-2">
-            <ChartLegendChip color={COLUMN_TAG_COLOR.EX} label="EX" />
-            <span className="text-[12px] font-medium text-foreground">
-              Examination
-            </span>
-          </span>
-        </div>
-      </Card>
     </div>
   );
 }
@@ -1226,57 +1153,3 @@ const CellButton = memo(function CellButton({
 
   return active ? <PopoverAnchor asChild>{inner}</PopoverAnchor> : inner;
 });
-
-// Legend row pairing a marking-cell swatch with a description label. The
-// swatch reads the SAME STATUS_CELL_WASH map applied to the cells when status
-// is set, so legend + cell are pixel-identical paint per the "true visual
-// key" rule in docs/context/09a-design-patterns.md §10.2 (bespoke swatch for
-// grid cell tints). The letter sits ON the swatch so the key shows both the
-// colour AND the letter exactly as the grid does.
-function StatusLegendChip({
-  status,
-  letter,
-  description,
-}: {
-  status: AttendanceStatus;
-  letter: string;
-  description: string;
-}) {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span
-        className={
-          'inline-flex min-w-7 items-center justify-center rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] shadow-input ' +
-          STATUS_CELL_WASH[status]
-        }
-      >
-        {letter}
-      </span>
-      <span className="text-[12px] font-medium text-foreground">
-        {description}
-      </span>
-    </span>
-  );
-}
-
-// Sibling to StatusLegendChip — pulls its color from the same
-// DAY_TYPE_CHIP_COLOR map the column header chips use, so legend + header
-// stay pixel-identical. Single source of truth, per §10.
-function DayTypeLegendChip({
-  dayType,
-  letter,
-  description,
-}: {
-  dayType: DayType;
-  letter: string;
-  description: string;
-}) {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <ChartLegendChip color={DAY_TYPE_CHIP_COLOR[dayType]} label={letter} />
-      <span className="text-[12px] font-medium text-foreground">
-        {description}
-      </span>
-    </span>
-  );
-}

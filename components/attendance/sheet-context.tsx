@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { CalendarDays, ChevronDown, ClipboardCheck } from 'lucide-react';
 
 import { COLUMN_TAG_COLOR } from '@/components/attendance/column-tags';
+import { SheetLegend } from '@/components/attendance/sheet-legend';
 import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -26,11 +27,15 @@ import type { ColumnTagCode } from '@/lib/attendance/sheet-columns';
 
 // The masthead of a section's attendance register: a letterhead lockup
 // (gradient tile + serif virtue name under a course·term eyebrow), a muted meta
-// strip (form adviser / schedule), and a tucked-away "Term calendar" key whose
-// four list headers carry the SAME SH/SE/PH/EX chips as the grid's date columns
-// (a true legend tie — §10). Dated lists: Public/School holidays from
-// school_calendar.day_type; School events (SE) + examinations (EX) from
-// calendar_events.category.
+// strip (form adviser / schedule), the always-visible sheet legend, and a
+// tucked-away "Term calendar" key whose four list headers carry the SAME
+// SH/SE/PH/EX chips as the grid's date columns (a true legend tie — §10).
+// Dated lists: Public/School holidays from school_calendar.day_type; School
+// events (SE) + examinations (EX) from calendar_events.category.
+//
+// The legend lives here rather than under the grid so the colours are readable
+// while marking — the reader of a cell shouldn't have to scroll past two months
+// of columns to find out what its colour means.
 
 type DatedItem = { start: string; end: string; label: string };
 
@@ -66,6 +71,7 @@ export default function SheetContextCard({
   scheduleLabel,
   calendar,
   events,
+  canWriteNc,
 }: {
   term: { label: string };
   courseLabel: string;
@@ -74,6 +80,7 @@ export default function SheetContextCard({
   scheduleLabel: string | null;
   calendar: SchoolCalendarRow[];
   events: CalendarEventRow[];
+  canWriteNc: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -137,6 +144,9 @@ export default function SheetContextCard({
         />
         {scheduleLabel && <MetaBlock label="Schedule" value={scheduleLabel} />}
       </div>
+
+      {/* How to read the sheet — always visible, no click */}
+      <SheetLegend canWriteNc={canWriteNc} />
 
       {/* Term calendar — a quiet, expandable key (hidden when the term has none) */}
       {totalDated > 0 && (
