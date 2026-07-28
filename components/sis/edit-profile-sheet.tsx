@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { useForm, type UseFormReturn } from 'react-hook-form';
+import { useForm, type Resolver, type UseFormReturn } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -42,11 +42,33 @@ import {
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  buildProfileUpdateSchema,
   PREFERRED_PAYMENT_METHOD_OPTIONS,
   PREFERRED_PAYMENT_SCHEME_OPTIONS,
-  ProfileUpdateSchema,
+  PROFILE_GATED_FIELDS,
   type ProfileUpdateInput,
 } from '@/lib/schemas/sis';
+
+// Skips the strict format refine on a gated field (nric/nationality/
+// phone/postal) when its submitted value hasn't changed from what was
+// loaded — both edit sheets submit the WHOLE form on every save, so
+// without this, an untouched legacy value would block saves on unrelated
+// fields, contradicting this feature's "only bites on new writes" design.
+function relaxedProfileResolver(
+  defaults: ProfileUpdateInput
+): Resolver<ProfileUpdateInput> {
+  return async (values, context, options) => {
+    const changed = new Set(
+      PROFILE_GATED_FIELDS.filter(
+        (f) =>
+          (values as Record<string, unknown>)[f] !==
+          (defaults as Record<string, unknown>)[f]
+      )
+    );
+    const schema = buildProfileUpdateSchema(changed);
+    return zodResolver(schema)(values, context, options);
+  };
+}
 
 type FieldKind =
   | 'text'
@@ -218,7 +240,7 @@ export function EditProfileSheet({
 
   const defaults = buildDefaults(initial);
   const form = useForm<ProfileUpdateInput>({
-    resolver: zodResolver(ProfileUpdateSchema),
+    resolver: relaxedProfileResolver(defaults),
     defaultValues: defaults,
   });
 

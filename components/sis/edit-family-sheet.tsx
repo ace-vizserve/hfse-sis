@@ -47,9 +47,12 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import {
-  FatherUpdateSchema,
-  GuardianUpdateSchema,
-  MotherUpdateSchema,
+  buildFatherUpdateSchema,
+  buildGuardianUpdateSchema,
+  buildMotherUpdateSchema,
+  FATHER_GATED_FIELDS,
+  GUARDIAN_GATED_FIELDS,
+  MOTHER_GATED_FIELDS,
   type FatherUpdateInput,
   type GuardianUpdateInput,
   type MotherUpdateInput,
@@ -126,11 +129,17 @@ type ParentInput = FatherUpdateInput | MotherUpdateInput | GuardianUpdateInput;
 // Mapped at runtime to dispatch validation per slot. Typed as `unknown` then
 // re-cast inside the form because the three schemas form a discriminated union
 // that zodResolver's overloads don't accept directly.
-const SCHEMA_BY_PARENT = {
-  father: FatherUpdateSchema,
-  mother: MotherUpdateSchema,
-  guardian: GuardianUpdateSchema,
+const BUILD_SCHEMA_BY_PARENT = {
+  father: buildFatherUpdateSchema,
+  mother: buildMotherUpdateSchema,
+  guardian: buildGuardianUpdateSchema,
 } as const;
+
+const GATED_FIELDS_BY_PARENT: Record<ParentSlot, readonly string[]> = {
+  father: FATHER_GATED_FIELDS,
+  mother: MOTHER_GATED_FIELDS,
+  guardian: GUARDIAN_GATED_FIELDS,
+};
 
 const FIELDS_BY_PARENT: Record<ParentSlot, FieldConfig[]> = {
   father: FATHER_FIELDS,
@@ -153,15 +162,14 @@ export function EditFamilySheet({
   const [open, setOpen] = useState(false);
 
   const fields = FIELDS_BY_PARENT[parent];
-  const schema = SCHEMA_BY_PARENT[parent];
   const defaults = buildDefaults(fields, initial);
 
   const form = useForm<ParentInput>({
-    // Cast: ParentInput is a discriminated union across father/mother/guardian
-    // schemas, but RHF wants a single concrete type. The runtime resolver
-    // dispatches off the chosen `parent` slot anyway.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(schema as any) as unknown as Resolver<ParentInput>,
+    // ParentInput is a discriminated union across father/mother/guardian
+    // schemas, but RHF wants a single concrete type. relaxedFamilyResolver
+    // dispatches off the chosen `parent` slot (and, within that, off which
+    // fields actually changed) at validation time.
+    resolver: relaxedFamilyResolver(parent, defaults as ParentInput),
     defaultValues: defaults as ParentInput,
   });
 
@@ -262,6 +270,33 @@ function buildDefaults(
     out[f.name] = initial[f.name] ?? null;
   }
   return out;
+}
+
+// Same reasoning as edit-profile-sheet.tsx's relaxedProfileResolver — skip
+// the strict format refine on a gated field when it's unchanged from what
+// was loaded, so a pre-existing legacy value on ANY parent slot doesn't
+// block a save on an unrelated field.
+function relaxedFamilyResolver(parent: ParentSlot, defaults: ParentInput) {
+  return async (
+    values: ParentInput,
+    context: unknown,
+    options: Parameters<Resolver<ParentInput>>[2]
+  ) => {
+    const gatedFields = GATED_FIELDS_BY_PARENT[parent];
+    const changed = new Set(
+      gatedFields.filter(
+        (f) =>
+          (values as Record<string, unknown>)[f] !==
+          (defaults as Record<string, unknown>)[f]
+      )
+    );
+    const buildSchema = BUILD_SCHEMA_BY_PARENT[parent];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resolver = zodResolver(
+      buildSchema(changed) as any
+    ) as unknown as Resolver<ParentInput>;
+    return resolver(values, context, options);
+  };
 }
 
 function SchemaField<T extends FieldValues>({

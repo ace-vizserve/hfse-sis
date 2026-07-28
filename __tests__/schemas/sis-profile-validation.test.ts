@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { FatherUpdateSchema, ProfileUpdateSchema } from '@/lib/schemas/sis';
+import {
+  buildFatherUpdateSchema,
+  buildProfileUpdateSchema,
+  FatherUpdateSchema,
+  ProfileUpdateSchema,
+} from '@/lib/schemas/sis';
 
 // Every field on these 4 schemas is nullable (only `category` is also
 // optional), and the real edit-sheet UI always submits a full form object
@@ -144,5 +149,42 @@ describe('FatherUpdateSchema — nationality', () => {
       FatherUpdateSchema.safeParse({ ...baseFather, fatherNationality: 'xyz' })
         .success
     ).toBe(false);
+  });
+});
+
+describe('buildProfileUpdateSchema — changed-field gating', () => {
+  it('accepts a malformed legacy value on a field NOT marked changed', () => {
+    const schema = buildProfileUpdateSchema(new Set());
+    const r = schema.safeParse({ ...baseProfile, nationality: 'Filipino' });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects the same malformed value when the field IS marked changed', () => {
+    const schema = buildProfileUpdateSchema(new Set(['nationality']));
+    const r = schema.safeParse({ ...baseProfile, nationality: 'Filipino' });
+    expect(r.success).toBe(false);
+  });
+
+  it('still accepts a valid value on a changed field', () => {
+    const schema = buildProfileUpdateSchema(new Set(['nationality']));
+    const r = schema.safeParse({
+      ...baseProfile,
+      nationality: 'Philippines',
+    });
+    expect(r.success).toBe(true);
+  });
+});
+
+describe('buildFatherUpdateSchema — changed-field gating', () => {
+  it('accepts a malformed legacy NRIC on a field NOT marked changed', () => {
+    const schema = buildFatherUpdateSchema(new Set());
+    const r = schema.safeParse({ ...baseFather, fatherNric: 'not-an-nric' });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects the same malformed NRIC when the field IS marked changed', () => {
+    const schema = buildFatherUpdateSchema(new Set(['fatherNric']));
+    const r = schema.safeParse({ ...baseFather, fatherNric: 'not-an-nric' });
+    expect(r.success).toBe(false);
   });
 });

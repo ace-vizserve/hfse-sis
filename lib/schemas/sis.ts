@@ -396,6 +396,113 @@ export type MotherUpdateInput = z.infer<typeof MotherUpdateSchema>;
 export type GuardianUpdateInput = z.infer<typeof GuardianUpdateSchema>;
 
 // ──────────────────────────────────────────────────────────────────────────
+// Changed-field-only schema builders
+// ──────────────────────────────────────────────────────────────────────────
+//
+// The format rules on nric/phone/postal/nationality above must only bite on
+// a NEW write of a bad value — an existing off-list/malformed value the
+// registrar didn't touch must keep saving untouched, since both edit sheets
+// submit the WHOLE form on every save, not a partial patch. These builders
+// return a schema identical to the exported strict schema EXCEPT that any
+// gated field NOT present in `changedFields` falls back to its pre-Task-6
+// loose validator, so an untouched legacy value always round-trips
+// regardless of format.
+
+export const PROFILE_GATED_FIELDS = [
+  'nric',
+  'nationality',
+  'homePhone',
+  'contactPersonNumber',
+  'referrerMobile',
+  'postalCode',
+] as const;
+
+export function buildProfileUpdateSchema(changedFields: ReadonlySet<string>) {
+  return z.object({
+    ...ProfileUpdateSchema.shape,
+    nric: changedFields.has('nric') ? optionalNric : optionalText(40),
+    nationality: changedFields.has('nationality')
+      ? optionalNationality
+      : optionalText(80),
+    homePhone: changedFields.has('homePhone')
+      ? optionalPhone
+      : optionalNumberOrText,
+    contactPersonNumber: changedFields.has('contactPersonNumber')
+      ? optionalPhone
+      : optionalNumberOrText,
+    referrerMobile: changedFields.has('referrerMobile')
+      ? optionalPhone
+      : optionalNumberOrText,
+    postalCode: changedFields.has('postalCode')
+      ? optionalPostalCode
+      : optionalNumberOrText,
+  });
+}
+
+export const FATHER_GATED_FIELDS = [
+  'fatherNric',
+  'fatherMobile',
+  'fatherNationality',
+] as const;
+
+export function buildFatherUpdateSchema(changedFields: ReadonlySet<string>) {
+  return z.object({
+    ...FatherUpdateSchema.shape,
+    fatherNric: changedFields.has('fatherNric')
+      ? optionalNric
+      : optionalText(40),
+    fatherMobile: changedFields.has('fatherMobile')
+      ? optionalPhone
+      : optionalNumberOrText,
+    fatherNationality: changedFields.has('fatherNationality')
+      ? optionalNationality
+      : optionalText(80),
+  });
+}
+
+export const MOTHER_GATED_FIELDS = [
+  'motherNric',
+  'motherMobile',
+  'motherNationality',
+] as const;
+
+export function buildMotherUpdateSchema(changedFields: ReadonlySet<string>) {
+  return z.object({
+    ...MotherUpdateSchema.shape,
+    motherNric: changedFields.has('motherNric')
+      ? optionalNric
+      : optionalText(40),
+    motherMobile: changedFields.has('motherMobile')
+      ? optionalPhone
+      : optionalNumberOrText,
+    motherNationality: changedFields.has('motherNationality')
+      ? optionalNationality
+      : optionalText(80),
+  });
+}
+
+export const GUARDIAN_GATED_FIELDS = [
+  'guardianNric',
+  'guardianMobile',
+  'guardianNationality',
+] as const;
+
+export function buildGuardianUpdateSchema(changedFields: ReadonlySet<string>) {
+  return z.object({
+    ...GuardianUpdateSchema.shape,
+    guardianNric: changedFields.has('guardianNric')
+      ? optionalNric
+      : optionalText(40),
+    guardianMobile: changedFields.has('guardianMobile')
+      ? optionalPhone
+      : optionalNumberOrText,
+    guardianNationality: changedFields.has('guardianNationality')
+      ? optionalNationality
+      : optionalText(80),
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Status pipeline — one stage at a time. Each stage owns a status, remarks,
 // and stage-specific extras (invoice, schedule, etc).
 // ──────────────────────────────────────────────────────────────────────────

@@ -4,7 +4,8 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import {
-  ProfileUpdateSchema,
+  buildProfileUpdateSchema,
+  PROFILE_GATED_FIELDS,
   type ProfileUpdateInput,
 } from '@/lib/schemas/sis';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -45,27 +46,25 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => null);
-  const parsed = ProfileUpdateSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: 'Invalid payload', details: parsed.error.flatten() },
-      { status: 400 }
-    );
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
   }
-  const update = parsed.data as ProfileUpdateInput;
 
   const prefix = `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
   const appsTable = `${prefix}_enrolment_applications`;
   const supabase = createServiceClient();
 
-  // Pre-fetch only the columns we're about to write so we can diff for audit.
-  const cols = Object.keys(update);
-  if (cols.length === 0) {
+  // Pre-fetch BEFORE validating, so we can tell which of the format-gated
+  // fields (KD pending — student-profile validation-parity) actually
+  // changed vs. are pre-existing legacy values the registrar didn't touch.
+  // The strict schema must only reject a NEW write of a bad value.
+  const rawKeys = Object.keys(body as Record<string, unknown>);
+  if (rawKeys.length === 0) {
     return NextResponse.json({ ok: true, changed: 0 });
   }
   const { data: before, error: beforeErr } = await supabase
     .from(appsTable)
-    .select(cols.join(', '))
+    .select(rawKeys.join(', '))
     .eq('enroleeNumber', enroleeNumber)
     .maybeSingle();
   if (beforeErr) {
@@ -81,6 +80,23 @@ export async function PATCH(
       { status: 404 }
     );
   }
+  const beforeRow = before as unknown as Record<string, unknown>;
+  const bodyRecord = body as Record<string, unknown>;
+
+  const changedFields = new Set(
+    PROFILE_GATED_FIELDS.filter(
+      (f) => (bodyRecord[f] ?? null) !== (beforeRow[f] ?? null)
+    )
+  );
+  const schema = buildProfileUpdateSchema(changedFields);
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid payload', details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+  const update = parsed.data as ProfileUpdateInput;
 
   const { error: upErr } = await supabase
     .from(appsTable)
@@ -135,7 +151,6 @@ export async function PATCH(
     }
   }
 
-  const beforeRow = before as unknown as Record<string, unknown>;
   const changes: Array<{ field: string; from: unknown; to: unknown }> = [];
   for (const [col, next] of Object.entries(update)) {
     const prev = beforeRow[col] ?? null;

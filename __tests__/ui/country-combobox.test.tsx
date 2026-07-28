@@ -48,4 +48,24 @@ describe('CountryCombobox', () => {
 
     expect(screen.queryByText(/\(current\)/)).not.toBeInTheDocument();
   });
+
+  it('shows a Clear option when a value is set, and calling it clears to null', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<CountryCombobox value="Philippines" onChange={onChange} />);
+
+    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByText('Clear selection'));
+
+    expect(onChange).toHaveBeenCalledWith(null);
+  });
+
+  it('does not show a Clear option when value is null', async () => {
+    const user = userEvent.setup();
+    render(<CountryCombobox value={null} onChange={() => {}} />);
+
+    await user.click(screen.getByRole('combobox'));
+
+    expect(screen.queryByText('Clear selection')).not.toBeInTheDocument();
+  });
 });

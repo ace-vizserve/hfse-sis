@@ -4,20 +4,17 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import {
-  FatherUpdateSchema,
-  GuardianUpdateSchema,
-  MotherUpdateSchema,
+  buildFatherUpdateSchema,
+  buildGuardianUpdateSchema,
+  buildMotherUpdateSchema,
+  FATHER_GATED_FIELDS,
+  GUARDIAN_GATED_FIELDS,
+  MOTHER_GATED_FIELDS,
   PARENT_SLOTS,
   type ParentSlot,
 } from '@/lib/schemas/sis';
 import { createServiceClient } from '@/lib/supabase/service';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
-
-const SCHEMAS = {
-  father: FatherUpdateSchema,
-  mother: MotherUpdateSchema,
-  guardian: GuardianUpdateSchema,
-} as const;
 
 // PATCH /api/sis/students/[enroleeNumber]/family/[parent]?ay=AY2026
 //
@@ -61,26 +58,21 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => null);
-  const parsed = SCHEMAS[parent].safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: 'Invalid payload', details: parsed.error.flatten() },
-      { status: 400 }
-    );
-  }
-  const update = parsed.data as Record<string, unknown>;
-  const cols = Object.keys(update);
-  if (cols.length === 0) {
-    return NextResponse.json({ ok: true, changed: 0 });
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
   }
 
   const prefix = `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
   const appsTable = `${prefix}_enrolment_applications`;
   const supabase = createServiceClient();
 
+  const rawKeys = Object.keys(body as Record<string, unknown>);
+  if (rawKeys.length === 0) {
+    return NextResponse.json({ ok: true, changed: 0 });
+  }
   const { data: before, error: beforeErr } = await supabase
     .from(appsTable)
-    .select(cols.join(', '))
+    .select(rawKeys.join(', '))
     .eq('enroleeNumber', enroleeNumber)
     .maybeSingle();
   if (beforeErr) {
@@ -96,6 +88,33 @@ export async function PATCH(
       { status: 404 }
     );
   }
+  const beforeRow = before as unknown as Record<string, unknown>;
+  const bodyRecord = body as Record<string, unknown>;
+
+  const gatedFieldsByParent: Record<ParentSlot, readonly string[]> = {
+    father: FATHER_GATED_FIELDS,
+    mother: MOTHER_GATED_FIELDS,
+    guardian: GUARDIAN_GATED_FIELDS,
+  };
+  const buildSchemaByParent = {
+    father: buildFatherUpdateSchema,
+    mother: buildMotherUpdateSchema,
+    guardian: buildGuardianUpdateSchema,
+  } as const;
+
+  const changedFields = new Set(
+    gatedFieldsByParent[parent].filter(
+      (f) => (bodyRecord[f] ?? null) !== (beforeRow[f] ?? null)
+    )
+  );
+  const parsed = buildSchemaByParent[parent](changedFields).safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid payload', details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+  const update = parsed.data as Record<string, unknown>;
 
   const { error: upErr } = await supabase
     .from(appsTable)
@@ -106,7 +125,6 @@ export async function PATCH(
     return NextResponse.json({ error: upErr.message }, { status: 500 });
   }
 
-  const beforeRow = before as unknown as Record<string, unknown>;
   const changes: Array<{ field: string; from: unknown; to: unknown }> = [];
   for (const [col, next] of Object.entries(update)) {
     const prev = beforeRow[col] ?? null;
