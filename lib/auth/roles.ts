@@ -174,6 +174,17 @@ const RECORDS_NAV: NavSection[] = [
         label: 'Section setup',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
+      // Same reasoning as Section setup above: KD #154 deliberately gave the
+      // academic_coordinator its own `/sis/admin/staff` ROUTE_ACCESS row (and
+      // the SIS_NAV item lists her in `requiresRoles`), but she never sees the
+      // SIS sidebar, so without this cross-link the page was reachable only by
+      // typing the URL. The SIS_NAV comment already described this cross-link
+      // as existing — it didn't until now.
+      {
+        href: '/sis/admin/staff',
+        label: 'Staff directory',
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+      },
     ],
   },
   // Cohort views — pre-baked filtered lists for cross-cutting student
@@ -614,6 +625,19 @@ export const NAV_BY_MODULE: {
         items: [
           { href: '/markbook', label: 'Dashboard' },
           { href: '/markbook/insights', label: 'Insights' },
+        ],
+      },
+      {
+        // school_admin was the only Markbook-allowed role with no Grading
+        // group — reachable by URL (ROUTE_ACCESS `/markbook` + the RLS
+        // `is_registrar_or_above()` gate both allow it, and the page even
+        // grants them `canCreate`), but with no way to click there. They
+        // are also the grade-change approver pool (KD #41), so inspecting
+        // a sheet is core to their job.
+        label: 'Grading',
+        items: [
+          { href: '/markbook/grading', label: 'All Sheets' },
+          { href: '/markbook/grading/new', label: 'New Sheet' },
         ],
       },
       {
