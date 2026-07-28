@@ -13,7 +13,7 @@ vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: vi.fn(() => ({})),
 }));
 
-const previewMock = vi.fn(async () => [
+const previewMock = vi.fn(async (..._args: unknown[]) => [
   {
     id: 'cr-1',
     field_changed: 'ww_scores',
@@ -33,9 +33,9 @@ import { GET } from '@/app/api/change-requests/preview/route';
 
 describe('GET /api/change-requests/preview', () => {
   it('returns rows scoped to the caller role/id, capped at 5', async () => {
-    const res = await GET(
+    const res = (await GET(
       new Request('http://localhost/api/change-requests/preview') as never
-    );
+    )) as Response;
     const body = await res.json();
 
     expect(previewMock).toHaveBeenCalledWith(
