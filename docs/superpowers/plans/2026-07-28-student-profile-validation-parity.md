@@ -174,9 +174,15 @@ describe('SensitiveInput', () => {
   it('calls onChange with the typed value', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<SensitiveInput value="" onChange={onChange} />);
+    const { container } = render(
+      <SensitiveInput value="" onChange={onChange} />
+    );
 
-    await user.type(screen.getByRole('textbox', { hidden: true }), 'X');
+    // `<input type="password">` has no accessible textbox role, so grab it
+    // by tag directly — there's exactly one <input> in this component.
+    const input = container.querySelector('input');
+    expect(input).not.toBeNull();
+    await user.type(input as HTMLInputElement, 'X');
 
     expect(onChange).toHaveBeenCalledWith('X');
   });
