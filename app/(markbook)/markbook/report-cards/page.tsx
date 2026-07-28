@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { notFound, redirect } from 'next/navigation';
 import {
   AlertCircle,
   CalendarClock,
@@ -7,7 +8,7 @@ import {
   Printer,
   Users,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -40,11 +41,37 @@ type LevelLite = {
 const first = <T,>(v: T | T[] | null): T | null =>
   Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
 
+// ROUTE_ACCESS gates the broad `/markbook` prefix to teachers too (they need
+// it for their own grading sheets), so this page defends at the page level
+// like every one of its siblings (insights / sections / audit-log /
+// change-requests / grading-new). Before this guard a teacher reaching the
+// URL directly rendered the publishing shell — section picker, publish
+// panel, bulk-publish dialog.
+//
+// This was NOT a data leak: `report_card_publications` is RLS-gated to
+// `is_registrar_or_above()` (migration 007), so the windows came back empty,
+// and every mutation is requireRole-gated to this same role set
+// (POST /api/report-card-publications). It was a broken, confusing surface
+// for a role that can't use it, and a defense-in-depth gap if that RLS
+// policy ever loosened. Role set matches /markbook/insights, the three
+// Report Cards nav links, and the publish route.
+const ALLOWED_ROLES = new Set([
+  'academic_coordinator',
+  'school_admin',
+  'superadmin',
+]);
+
 export default async function ReportCardsListPage({
   searchParams,
 }: {
   searchParams: Promise<{ section_id?: string }>;
 }) {
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) redirect('/login');
+  if (!sessionUser.role || !ALLOWED_ROLES.has(sessionUser.role)) {
+    notFound();
+  }
+
   const q = await searchParams;
   const supabase = await createClient();
 
