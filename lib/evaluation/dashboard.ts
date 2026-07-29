@@ -494,18 +494,24 @@ async function loadSectionWriteupPending(
   if (sections.length === 0) return [];
   const sectionIds = sections.map((s) => s.id);
 
-  const { data: rosterRows } = await service
-    .from('section_students')
-    .select('section_id, student_id')
-    .in('section_id', sectionIds)
-    .neq('enrollment_status', WITHDRAWN_ENROLLMENT_STATUS);
+  // Paginated + throwing: this is one row per active student across every
+  // section, so a silent truncation at the 1000-row cap would under-count the
+  // outstanding-write-up denominator.
+  const rosterRows = await fetchAllPages<{
+    section_id: string;
+    student_id: string;
+  }>((from, to) =>
+    service
+      .from('section_students')
+      .select('section_id, student_id')
+      .in('section_id', sectionIds)
+      .neq('enrollment_status', WITHDRAWN_ENROLLMENT_STATUS)
+      .range(from, to)
+  );
 
   const studentIdsBySection = new Map<string, string[]>();
   const allStudentIds: string[] = [];
-  for (const row of (rosterRows ?? []) as Array<{
-    section_id: string;
-    student_id: string;
-  }>) {
+  for (const row of rosterRows) {
     const list = studentIdsBySection.get(row.section_id) ?? [];
     list.push(row.student_id);
     studentIdsBySection.set(row.section_id, list);
@@ -518,17 +524,28 @@ async function loadSectionWriteupPending(
   // submitted=true; the JS filter enforces non-empty.
   const submittedStudentIds = new Set<string>();
   if (allStudentIds.length > 0) {
-    const { data: subRows } = await service
-      .from('evaluation_writeups')
-      .select('student_id, writeup, submitted')
-      .eq('term_id', termId)
-      .eq('submitted', true)
-      .in('student_id', allStudentIds);
-    for (const w of (subRows ?? []) as Array<{
+    // Deliberately NOT `.in('student_id', allStudentIds)` — see
+    // lib/evaluation/queries.ts::getWriteupProgressByTerm for the full write-up.
+    // PostgREST puts `.in()` values in the URL, and a whole-AY roster of uuids
+    // crosses the gateway's ~14KB limit at 397 ids; HFSE is at 405, so this
+    // request fails outright and the discarded error read as "nobody submitted."
+    // Fetch the term and intersect in JS; the roster filter is free here.
+    const subRows = await fetchAllPages<{
       student_id: string;
       writeup: string | null;
       submitted: boolean;
-    }>) {
+    }>((from, to) =>
+      service
+        .from('evaluation_writeups')
+        .select('student_id, writeup, submitted')
+        .eq('term_id', termId)
+        .eq('submitted', true)
+        .range(from, to)
+    );
+    const rosterIds = new Set(allStudentIds);
+    for (const w of subRows) {
+      // Unfiltered fetch returns other sections' students too — drop them.
+      if (!rosterIds.has(w.student_id)) continue;
       if (
         isSubmittedWriteup({
           submitted: w.submitted,
