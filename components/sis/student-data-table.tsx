@@ -137,7 +137,6 @@ export function StudentDataTable({
   defaultSorting,
   showSubmittedColumn = false,
   showReasonColumn = false,
-  showIndex = false,
   showStaleness = false,
   showPipeline = false,
   admissionsTab,
@@ -151,11 +150,6 @@ export function StudentDataTable({
   defaultSorting?: SortingState;
   showSubmittedColumn?: boolean;
   showReasonColumn?: boolean;
-  /** When true, prepends a compact # column showing the student's active
-   *  section index number (section_students.index_number). Only pass this
-   *  from the Records student directory — Admissions callers omit it so
-   *  applicants without section assignments don't see an empty column. */
-  showIndex?: boolean;
   /** When true, adds a "Staleness" badge column + facet derived from
    *  applicationUpdatedDate (Fresh / Warning / Critical / Never updated). Only
    *  pass from the active Admissions applications list — staleness is a
@@ -184,25 +178,14 @@ export function StudentDataTable({
 
   const columns: ColumnDef<StudentListRow>[] = React.useMemo(
     () => [
-      ...(showIndex
-        ? [
-            {
-              accessorFn: (row: StudentListRow) => row.indexNumber ?? null,
-              id: 'indexNumber',
-              header: '#',
-              cell: ({ row }: { row: { original: StudentListRow } }) =>
-                row.original.indexNumber != null ? (
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                    {row.original.indexNumber}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                ),
-              enableHiding: false,
-              size: 48,
-            } satisfies ColumnDef<StudentListRow>,
-          ]
-        : []),
+      // No index-number column. An index is a student's roll number WITHIN a
+      // section; this table is the school-wide student directory, so "#5"
+      // here answers "fifth in some section" — two students in different
+      // sections are both #5, sorting by it groups every section's #1
+      // together, and it is blank for anyone without an active section row.
+      // The index belongs on section-scoped surfaces (section rosters,
+      // grading, attendance and evaluation sheets), each of which has its
+      // own. Still exported as the masterfile's S/N column.
       {
         accessorFn: (row) => studentDisplayName(row),
         id: 'name',
@@ -541,7 +524,6 @@ export function StudentDataTable({
       admissionsTab,
       showSubmittedColumn,
       showReasonColumn,
-      showIndex,
       showStaleness,
       showPipeline,
     ]

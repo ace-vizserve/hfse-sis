@@ -312,7 +312,6 @@ export default async function RecordsStudentsPage({
             linkBase="/records/students"
             linkAttribute="studentNumber"
             statusBuckets={RECORDS_STATUS_BUCKETS}
-            showIndex
           />
         </CardContent>
       </Card>

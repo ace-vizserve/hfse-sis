@@ -159,19 +159,12 @@ export function AttendanceSummaryView({
 
   const columns = useMemo<ColumnDef<AttendanceTableRow>[]>(
     () => [
-      {
-        id: 'index',
-        accessorFn: (r) => r.indexNumber ?? '',
-        header: ({ column }) => (
-          <SortableHeader column={column}>#</SortableHeader>
-        ),
-        meta: { label: 'Index number' },
-        cell: ({ row }) => (
-          <span className="font-mono text-sm tabular-nums text-muted-foreground">
-            {row.original.indexNumber ?? '—'}
-          </span>
-        ),
-      },
+      // No index-number column: an index is a student's roll number WITHIN a
+      // section, and this view spans sections (it carries a Class column). A
+      // bare "#5" here answers "fifth in some section", which is not a
+      // question anyone asks. The index still belongs on section-scoped
+      // surfaces — section rosters, grading, attendance and evaluation
+      // sheets — and it is still exported as the masterfile's S/N column.
       {
         accessorKey: 'studentName',
         header: ({ column }) => (
