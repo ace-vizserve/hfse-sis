@@ -18,17 +18,30 @@ import {
 type SidebarHeaderProps = {
   module: SidebarModule;
   role: Role | null;
+  /** Modules this viewer's ASSIGNMENTS make dead ends — see
+   *  lib/sidebar/module-visibility.ts. Resolved server-side by each module
+   *  layout, since ROUTE_ACCESS knows the role but not the assignments. */
+  hiddenModules?: readonly SidebarModule[];
 };
 
-export function ModuleSidebarHeader({ module, role }: SidebarHeaderProps) {
+export function ModuleSidebarHeader({
+  module,
+  role,
+  hiddenModules = [],
+}: SidebarHeaderProps) {
   const config = SIDEBAR_REGISTRY[module];
   const Icon = config.icon;
 
   // Allowed staff modules in lifecycle order. Parents (null role) +
   // p_file_officer users reach only one module — render a non-interactive
   // brand tile instead of a popover trigger.
-  const allowedModules = MODULE_ORDER.filter((m) =>
-    isRouteAllowed(SIDEBAR_REGISTRY[m].primaryHref, role)
+  const allowedModules = MODULE_ORDER.filter(
+    (m) =>
+      isRouteAllowed(SIDEBAR_REGISTRY[m].primaryHref, role) &&
+      // The module you're currently in is never hidden. Hiding it would leave
+      // the switcher describing somewhere other than where you are — and a
+      // typed URL or a stale link can legitimately land someone here.
+      (m === module || !hiddenModules.includes(m))
   );
   const canSwitch = allowedModules.length > 1;
 

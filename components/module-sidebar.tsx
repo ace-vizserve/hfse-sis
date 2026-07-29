@@ -41,6 +41,11 @@ type ModuleSidebarProps = {
   // Optional and additive — only SIS Admin passes this today (Task V2); every
   // other module's call site omits it and renders byte-identically to before.
   counts?: SidebarCounts;
+  // Modules this viewer's ASSIGNMENTS make dead ends (a subject-teacher-only
+  // user can never use Attendance or Evaluation). Optional + additive: every
+  // non-teacher call site resolves to [] and renders identically to before.
+  // See lib/sidebar/module-visibility.ts.
+  hiddenModules?: readonly SidebarModule[];
 };
 
 // Stable empty default. Inlining `badges ?? {}` would create a fresh
@@ -140,6 +145,7 @@ export function ModuleSidebar({
   userId,
   badges,
   counts,
+  hiddenModules,
 }: ModuleSidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -162,7 +168,11 @@ export function ModuleSidebar({
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
-        <ModuleSidebarHeader module={module} role={role} />
+        <ModuleSidebarHeader
+          module={module}
+          role={role}
+          hiddenModules={hiddenModules}
+        />
         {/* Search trigger — clickable affordance for the global ⌘K command
             palette. Both paths (button click + keyboard shortcut) open the
             same dialog via CommandPaletteContext. */}

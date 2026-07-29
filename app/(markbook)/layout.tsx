@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import { ModuleSidebar } from '@/components/module-sidebar';
+import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import { AyBanner } from '@/components/sis/ay-banner';
 import {
@@ -34,6 +35,10 @@ export default async function MarkbookLayout({
     changeRequests: await getSidebarChangeRequestCount(service, role, id),
   };
 
+  // Hide switcher tiles this teacher can never use (subject-teacher-only
+  // users have no Attendance or Evaluation work). No-op for every other role.
+  const hiddenModules = await resolveHiddenModules(role, id);
+
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
       <ModuleSidebar
@@ -41,6 +46,7 @@ export default async function MarkbookLayout({
         role={role}
         email={email}
         userId={id}
+        hiddenModules={hiddenModules}
         badges={sidebarBadges}
       />
       <SidebarInset>
