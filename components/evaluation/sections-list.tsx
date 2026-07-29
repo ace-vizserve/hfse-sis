@@ -11,25 +11,41 @@ import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { type FacetConfig } from '@/components/ui/data-table/types';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 
+export type SectionWriteupProgress = {
+  submitted: number;
+  active: number;
+};
+
 export type SectionCardData = {
   id: string;
   name: string;
   levelId: string | null;
   levelLabel: string | null;
   fcaName: string | null;
+  /** Keyed by term id — one entry per AY term the page loaded (T1–T3,
+   *  KD #49). Missing entry reads as 0/0, same as a term with no roster. */
+  writeupProgress: Record<string, SectionWriteupProgress>;
+};
+
+export type SectionTermColumn = {
+  id: string;
+  /** Compact header, e.g. "T2" — see lib/evaluation/term-short-labels.ts. */
+  shortLabel: string;
+  label: string;
 };
 
 export type LevelOption = { id: string; code: string; label: string };
 
 // Flat, filterable row — replaces the old per-level card grid. The grouping
-// is a Level facet. Write-up progress lives on the class's own page (Phase
-// 9: this list is plain and term-agnostic, matching Attendance/Markbook's
-// section lists — the term picker belongs after you've picked a class).
+// is a Level facet. Phase 10 restores write-up progress here as one column
+// per AY term (Phase 9 had removed it entirely when de-term-scoping this
+// list — the data was never wrong, see phase-10-brief.md).
 type EvalSectionRow = {
   id: string;
   name: string;
   levelLabel: string;
   fcaName: string | null;
+  writeupProgress: Record<string, SectionWriteupProgress>;
 };
 
 function deriveRow(s: SectionCardData): EvalSectionRow {
@@ -38,6 +54,7 @@ function deriveRow(s: SectionCardData): EvalSectionRow {
     name: s.name,
     levelLabel: s.levelLabel ?? 'Unknown level',
     fcaName: s.fcaName,
+    writeupProgress: s.writeupProgress,
   };
 }
 
@@ -54,7 +71,8 @@ function facetFilterFn(
 
 function buildColumns(
   isTeacher: boolean,
-  isOversight: boolean
+  isOversight: boolean,
+  terms: SectionTermColumn[]
 ): ColumnDef<EvalSectionRow>[] {
   return [
     {
@@ -86,6 +104,29 @@ function buildColumns(
       ),
       filterFn: facetFilterFn,
     },
+    // One column per AY term (T1–T3, KD #49) — "submitted/active" from
+    // getWriteupProgressByTerm. A term with zero submissions renders "0/N",
+    // never blank and never styled as an error: for the in-progress term
+    // that's the honest reading, not a defect (phase-10-brief.md).
+    ...terms.map(
+      (t): ColumnDef<EvalSectionRow> => ({
+        id: `writeups_${t.id}`,
+        accessorFn: (r) => r.writeupProgress[t.id]?.submitted ?? 0,
+        header: ({ column }) => (
+          <SortableHeader column={column}>{t.shortLabel}</SortableHeader>
+        ),
+        cell: ({ row }) => {
+          const p = row.original.writeupProgress[t.id];
+          return (
+            <span className="font-mono text-xs tabular-nums text-foreground">
+              {p?.submitted ?? 0}/{p?.active ?? 0}
+            </span>
+          );
+        },
+        enableSorting: true,
+        sortingFn: 'basic',
+      })
+    ),
     ...(!isTeacher
       ? ([
           {
@@ -136,11 +177,14 @@ function buildColumns(
 export function EvaluationSectionsList({
   sections,
   levels,
+  terms,
   isTeacher = false,
   isOversight,
 }: {
   sections: SectionCardData[];
   levels: LevelOption[];
+  /** The AY's T1–T3 terms (KD #49) — one write-up progress column each. */
+  terms: SectionTermColumn[];
   isTeacher?: boolean;
   /** From lib/classroom/scope.ts's resolver (Phase 8, design doc
    *  2026-07-28-classroom-workspace-design.md) — decides the row link
@@ -150,7 +194,7 @@ export function EvaluationSectionsList({
   isOversight: boolean;
 }) {
   const rows = sections.map(deriveRow);
-  const columns = buildColumns(isTeacher, isOversight);
+  const columns = buildColumns(isTeacher, isOversight, terms);
 
   const facets: FacetConfig[] =
     levels.length > 1

@@ -22,7 +22,11 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import { listFormAdviserSectionIds } from '@/lib/evaluation/queries';
+import {
+  getWriteupProgressByTerm,
+  listFormAdviserSectionIds,
+} from '@/lib/evaluation/queries';
+import { deriveTermShortLabels } from '@/lib/evaluation/term-short-labels';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 
@@ -90,6 +94,7 @@ export default async function EvaluationSectionsPickerPage() {
   // displayed term silently blocks that term's report cards, so the warning
   // now checks every T1–T3 term rather than only the previously-selected one.
   const missingVirtueTerms = terms.filter((t) => !t.virtue_theme);
+  const shortTermLabels = deriveTermShortLabels(terms);
 
   const { data: allSections } = await supabase
     .from('sections')
@@ -139,6 +144,35 @@ export default async function EvaluationSectionsPickerPage() {
       }
     }
   }
+
+  // Per-term write-up progress — one column per AY term (Phase 10). Reuses
+  // the existing, tested getWriteupProgressByTerm (KD #120/#126: submitted +
+  // non-empty, credited via the live roster by student_id so a mid-year
+  // transfer isn't mis-attributed, KD #67) — one call per term inside a
+  // single Promise.all, no new batched query.
+  const progressPerTerm = await Promise.all(
+    terms.map((t) => getWriteupProgressByTerm(t.id, sectionIds))
+  );
+  const writeupProgressBySection: Record<
+    string,
+    Record<string, { submitted: number; active: number }>
+  > = {};
+  for (const sectionId of sectionIds) writeupProgressBySection[sectionId] = {};
+  terms.forEach((t, i) => {
+    const bySection = progressPerTerm[i];
+    for (const sectionId of sectionIds) {
+      const p = bySection[sectionId];
+      writeupProgressBySection[sectionId][t.id] = {
+        submitted: p?.submitted_count ?? 0,
+        active: p?.active_count ?? 0,
+      };
+    }
+  });
+  const termColumns = terms.map((t) => ({
+    id: t.id,
+    label: t.label,
+    shortLabel: shortTermLabels[t.id],
+  }));
 
   const sorted = sections.slice().sort((a, b) => {
     const ca = a.level?.code ?? '';
@@ -283,6 +317,7 @@ export default async function EvaluationSectionsPickerPage() {
 
           <EvaluationSectionsList
             levels={levels}
+            terms={termColumns}
             isTeacher={isTeacher}
             isOversight={isOversight}
             sections={sorted.map((s) => ({
@@ -291,6 +326,7 @@ export default async function EvaluationSectionsPickerPage() {
               levelId: s.level?.id ?? null,
               levelLabel: s.level?.label ?? null,
               fcaName: adviserMap[s.id]?.name ?? null,
+              writeupProgress: writeupProgressBySection[s.id] ?? {},
             }))}
           />
         </>
