@@ -69,7 +69,13 @@ describe('adviser "fix it" link — capability must match ROUTE_ACCESS', () => {
     // capability 'adviser', which is not 'oversight'. Assigning yourself as
     // adviser must not become a route to section setup.
     const scope = resolveClassroomScope('teacher', [
-      { section_id: 'sec-1', role: 'form_adviser', subject_id: null },
+      {
+        id: 'ta-1',
+        teacher_user_id: 'user-1',
+        section_id: 'sec-1',
+        role: 'form_adviser',
+        subject_id: null,
+      },
     ]);
     expect(scope.isOversight).toBe(false);
     expect(scope.capabilityBySection['sec-1']).toBe('adviser');

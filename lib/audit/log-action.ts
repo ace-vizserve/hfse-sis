@@ -40,6 +40,7 @@ export const ALL_AUDIT_ACTIONS = [
   'section.subjects.load_defaults',
   'section.subjects.attach_many',
   'section.track.assign',
+  'section.schedule.update',
   'attendance.update',
   'attendance.daily.update',
   'attendance.daily.correct',

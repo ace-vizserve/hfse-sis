@@ -78,6 +78,19 @@ export const SectionTrackAssignSchema = z.object({
 });
 export type SectionTrackAssignInput = z.infer<typeof SectionTrackAssignSchema>;
 
+// PATCH /api/sections/[id]/schedule — set (or clear) a section's schedule.
+// Deliberately its own route rather than a field on SectionUpdateSchema: see
+// the note on SectionCreateSchema above for why `schedule` is kept off the
+// create/rename path. `null` is a real, reachable value — a section created
+// by hand starts null (the create route doesn't write the field), and the
+// registrar must be able to undo a wrong pick, not just overwrite it.
+export const SectionScheduleAssignSchema = z.object({
+  schedule: z.enum(SCHEDULE_VALUES).nullable(),
+});
+export type SectionScheduleAssignInput = z.infer<
+  typeof SectionScheduleAssignSchema
+>;
+
 // PATCH /api/sections/[id] — rename only (see the schedule note above).
 // `level_id` and `academic_year_id` are load-bearing joins and can't be
 // edited without cascade concerns; class_type is set at creation for now.

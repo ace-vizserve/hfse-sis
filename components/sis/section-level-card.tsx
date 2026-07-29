@@ -176,6 +176,7 @@ export function SectionLevelCard({
                   ayId={ayId}
                   levelType={level.level_type}
                   classType={s.classType}
+                  schedule={s.schedule}
                 />
               </div>
             ))}

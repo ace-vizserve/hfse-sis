@@ -25,6 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GenerateSheetsDialog } from '@/components/sis/generate-sheets-dialog';
 import { HubStat } from '@/components/sis/hub-stat';
 import { SectionRenameDialog } from '@/components/sis/section-rename-dialog';
+import { SectionScheduleDialog } from '@/components/sis/section-schedule-dialog';
 import { SectionTrackDialog } from '@/components/sis/section-track-dialog';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { TeacherAssignmentsPanel } from '@/components/sis/section-teachers-tab';
@@ -474,6 +475,16 @@ export default async function SisSectionDetailPage({
                 currentTrack={classType}
               />
             )}
+            {/* Sits beside Track because it's the same kind of thing: one
+                shared section attribute, registrar+, set rarely. Until this
+                shipped `schedule` had no editor at all — AY rollover stamped
+                it and nothing could correct it, so a hand-created section
+                showed no schedule permanently. */}
+            <SectionScheduleDialog
+              sectionId={section.id}
+              sectionName={section.name}
+              currentSchedule={schedule}
+            />
             <SectionRenameDialog
               sectionId={section.id}
               currentName={section.name}

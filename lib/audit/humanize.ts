@@ -82,6 +82,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'section.realphabetize': 'Roster re-alphabetized',
   'section.index.generate': 'Class index generated',
   'section.track.assign': 'Section track set',
+  'section.schedule.update': 'Section schedule set',
   'section.subject.assign': 'Subject attached to section',
   'section.subject.remove': 'Subject removed from section',
   'section.subjects.load_defaults': 'Default subjects loaded',

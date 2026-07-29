@@ -21,6 +21,7 @@ import {
   ArrowRight,
   CalendarDays,
   ClipboardList,
+  Clock,
   FilePlus2,
   Pencil,
   Trash2,
@@ -32,6 +33,7 @@ import { GenerateIndexDialog } from '@/components/sis/generate-index-button';
 import { GenerateSheetsDialog } from '@/components/sis/generate-sheets-dialog';
 import { SectionDeleteDialog } from '@/components/sis/section-delete-dialog';
 import { SectionRenameDialog } from '@/components/sis/section-rename-dialog';
+import { SectionScheduleDialog } from '@/components/sis/section-schedule-dialog';
 import { SectionTrackDialog } from '@/components/sis/section-track-dialog';
 import {
   DropdownMenuItem,
@@ -39,7 +41,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { RowActionsMenu } from '@/components/ui/data-table';
 import type { Role } from '@/lib/auth/roles';
-import type { SectionClassType } from '@/lib/schemas/section';
+import type { Schedule, SectionClassType } from '@/lib/schemas/section';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -72,6 +74,10 @@ export type SectionRowActionsProps = {
    *  Set/Change label. */
   levelType?: 'primary' | 'secondary';
   classType?: SectionClassType | null;
+  /** SIS only: the section's current daily schedule, for the Set/Change
+   *  Schedule item. Unlike Track this applies to every level, not just
+   *  Secondary. */
+  schedule?: Schedule | null;
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -88,6 +94,7 @@ export function SectionRowActions({
   ayId,
   levelType,
   classType,
+  schedule,
 }: SectionRowActionsProps) {
   const isRegistrarPlus =
     role === 'academic_coordinator' ||
@@ -101,6 +108,7 @@ export function SectionRowActions({
   const [sheetsOpen, setSheetsOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [trackOpen, setTrackOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Rename/track/delete are structural section management — SIS-only,
@@ -223,6 +231,19 @@ export function SectionRowActions({
           </DropdownMenuItem>
         )}
 
+        {/* ── Schedule (sis, registrar+) — every level, unlike Track ── */}
+        {showStructuralItems && (
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              setScheduleOpen(true);
+            }}
+          >
+            <Clock className="size-4 shrink-0" />
+            {schedule ? 'Change schedule' : 'Set schedule'}
+          </DropdownMenuItem>
+        )}
+
         {/* ── Rename (sis, registrar+) ── */}
         {showStructuralItems && (
           <DropdownMenuItem
@@ -307,6 +328,15 @@ export function SectionRowActions({
           currentTrack={classType ?? null}
           open={trackOpen}
           onOpenChange={setTrackOpen}
+        />
+      )}
+      {showStructuralItems && (
+        <SectionScheduleDialog
+          sectionId={sectionId}
+          sectionName={sectionName}
+          currentSchedule={schedule ?? null}
+          open={scheduleOpen}
+          onOpenChange={setScheduleOpen}
         />
       )}
     </>

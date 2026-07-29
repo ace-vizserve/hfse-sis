@@ -108,6 +108,7 @@ const SIS_AUDIT_ALLOWLIST = [
   'section.realphabetize',
   'section.index.generate',
   'section.track.assign',
+  'section.schedule.update',
   'section.subject.assign',
   'section.subject.remove',
   'section.subjects.load_defaults',
