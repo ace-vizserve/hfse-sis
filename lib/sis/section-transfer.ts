@@ -42,12 +42,19 @@ type TransferParams = {
 // The admissions-side classLevel/classSection fields are also updated so
 // the cross-AY records lookup reflects the new section.
 //
-// The Supabase JS client doesn't expose multi-statement transactions; the
-// operations run in tight order. If any step fails after a prior step has
-// committed, the helper returns an error and downstream callers (the route)
-// surface it to the user. The atomicity guarantee is best-effort, not
-// transactional — but each step is idempotent enough that re-running the
-// transfer is safe.
+// The withdraw + insert pair IS transactional as of migration 097: it runs
+// inside the `transfer_student_section` RPC, which also locks the source row
+// `for update` and assigns the target index_number. Before that it was two
+// separate statements with a manual rollback, and under a concurrent
+// double-submit that rollback could restore the source row after a competing
+// transfer had committed — leaving the student active in two sections.
+//
+// The surrounding steps (admissions-side classSection/classLevel update, audit,
+// cache invalidation) are still sequential and best-effort: they run after the
+// enrolment move has committed, and a failure there leaves the move in place
+// with the mirror stale rather than corrupting the roster. That is the
+// deliberate trade — the roster is the source of truth, the admissions columns
+// are its mirror (KD #147).
 export async function transferStudentSection(
   service: SupabaseClient,
   params: TransferParams
@@ -282,68 +289,49 @@ export async function transferStudentSection(
   // implementation.
   const term = await getTermForDate(today, ayCode, service);
 
-  // ── 9. Compute next index_number for target section ────────────────────
-  const { data: targetIdxRows } = await service
-    .from('section_students')
-    .select('index_number')
-    .eq('section_id', targetSec.id)
-    .order('index_number', { ascending: false })
-    .limit(1);
-  const maxIdx =
-    (targetIdxRows?.[0] as { index_number: number } | undefined)
-      ?.index_number ?? 0;
-  const nextIndex = maxIdx + 1;
-
-  // ── 10. Mutation block (best-effort atomic) ────────────────────────────
-  // Step A: withdraw old row
-  const { error: withdrawErr } = await service
-    .from('section_students')
-    .update({ enrollment_status: 'withdrawn', withdrawal_date: today })
-    .eq('id', sourceEnr.id);
-  if (withdrawErr) {
-    return {
-      ok: false,
-      error: `Failed to withdraw from source section: ${withdrawErr.message}`,
-      status: 500,
-    };
-  }
-
-  // Step B: insert the destination row, PRESERVING the source's enrolment
-  // semantics. An active student transfers as active starting today (their
-  // attendance in the new section begins now). A late enrollee stays a late
-  // enrollee, keeping their original joining date + term override — so
-  // attendance proration (KD #113/#130) and the joining-term badge (KD #68/#117)
-  // carry over to the new section instead of being reset to today's break date.
-  const isLateSource = sourceEnr.enrollment_status === 'late_enrollee';
-  const { error: insertErr } = await service.from('section_students').insert({
-    section_id: targetSec.id,
-    student_id: studentId,
-    // Denormalized AY-scoped key — every other writer (sync, seeder) populates
-    // it; omitting it left transferred rows with NULL enrolee_number, so
-    // enrolee_number-keyed lookups (e.g. the Records directory's index/status
-    // maps) silently missed transferred students. KD #83.
-    enrolee_number: enroleeNumber,
-    index_number: nextIndex,
-    enrollment_status: isLateSource ? 'late_enrollee' : 'active',
-    enrollment_date: isLateSource ? sourceEnr.enrollment_date : today,
-    late_enrollee_term_number: isLateSource
-      ? sourceEnr.late_enrollee_term_number
-      : null,
+  // ── 9. Mutation block (atomic, migration 097) ──────────────────────────
+  //
+  // The target's next index_number used to be computed here, before the
+  // mutation. It now happens inside the RPC's transaction instead: read here,
+  // two concurrent transfers into the same section could compute the same
+  // index; read there, they cannot.
+  //
+  // Withdraw-source + insert-target now happen in ONE transaction inside
+  // `transfer_student_section`. This was two independent statements with a
+  // best-effort rollback of the first if the second failed — and under a
+  // concurrent double-submit that rollback was the bug: the loser's insert
+  // collided on the (section_id, student_id) unique constraint, so it restored
+  // the SOURCE row to active AFTER the winner had committed both halves,
+  // leaving the student active in two sections. Exactly the dual-section
+  // failure this module was written to prevent (KD #67).
+  //
+  // In a transaction there is nothing to roll back by hand: the loser's insert
+  // raises and Postgres unwinds its own withdraw with it.
+  //
+  // The RPC also re-reads the source row under `for update` and recomputes the
+  // target's next index_number inside the transaction, so it no longer trusts
+  // the caller's earlier read (which a concurrent transfer could have staled)
+  // and two transfers into the same section can't pick the same index.
+  //
+  // Enrolment semantics are preserved in the RPC exactly as they were here: an
+  // active student transfers as active starting today; a late enrollee stays a
+  // late enrollee with its original joining date + term override, so attendance
+  // proration (KD #113/#130) and the joining-term badge (KD #68/#117) carry
+  // over rather than resetting to today.
+  const { error: transferErr } = await service.rpc('transfer_student_section', {
+    p_source_enrolment_id: sourceEnr.id,
+    p_target_section_id: targetSec.id,
+    // Denormalized AY-scoped key — every other writer (sync, seeder)
+    // populates it; omitting it left transferred rows with NULL
+    // enrolee_number, so enrolee_number-keyed lookups silently missed
+    // transferred students (KD #83).
+    p_enrolee_number: enroleeNumber,
+    p_today: today,
   });
-  if (insertErr) {
-    // Best-effort rollback of step A so the student isn't left orphaned —
-    // restore the source row's ORIGINAL status (active or late_enrollee), not a
-    // hardcoded 'active' which would silently promote a late enrollee.
-    await service
-      .from('section_students')
-      .update({
-        enrollment_status: sourceEnr.enrollment_status,
-        withdrawal_date: null,
-      })
-      .eq('id', sourceEnr.id);
+  if (transferErr) {
     return {
       ok: false,
-      error: `Failed to insert into target section: ${insertErr.message}`,
+      error: `Failed to transfer section: ${transferErr.message}`,
       status: 500,
     };
   }
