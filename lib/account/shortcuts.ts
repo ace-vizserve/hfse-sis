@@ -16,11 +16,18 @@ export type AccountShortcut = QuickAction & { module: SidebarModule };
  * has none for Markbook because "My Sheets" already sits at the top of that
  * module's own nav) are skipped, not shown empty.
  */
-export function shortcutsForRole(role: Role): AccountShortcut[] {
+export function shortcutsForRole(
+  role: Role,
+  // Modules this viewer's assignments make dead ends. Same narrowing the two
+  // switchers and the home quick-actions apply — see
+  // lib/sidebar/module-visibility.ts.
+  hiddenModules: readonly SidebarModule[] = []
+): AccountShortcut[] {
   const out: AccountShortcut[] = [];
   for (const module of MODULE_ORDER) {
     const config = SIDEBAR_REGISTRY[module];
     if (!isRouteAllowed(config.primaryHref, role)) continue;
+    if (hiddenModules.includes(module)) continue;
     const action = config.quickActionByRole[role];
     if (!action) continue;
     out.push({ ...action, module });

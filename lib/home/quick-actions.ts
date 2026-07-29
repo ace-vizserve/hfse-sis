@@ -1,4 +1,6 @@
 import type { Role } from '@/lib/auth/roles';
+import { isHiddenModuleHref } from '@/lib/sidebar/module-visibility';
+import type { SidebarModule } from '@/lib/sidebar/registry';
 
 export type QuickAction = { label: string; href: string };
 
@@ -30,6 +32,14 @@ const QUICK_ACTIONS: Record<Role, QuickAction[]> = {
   admissions: [],
 };
 
-export function getQuickActions(role: Role): QuickAction[] {
-  return QUICK_ACTIONS[role];
+//  drops actions that lead into a module this viewer can't use
+// — a subject-teacher-only user must not be offered "Mark attendance" on the
+// home page while the same module is hidden from the switcher.
+export function getQuickActions(
+  role: Role,
+  hiddenModules: readonly SidebarModule[] = []
+): QuickAction[] {
+  return QUICK_ACTIONS[role].filter(
+    (a) => !isHiddenModuleHref(a.href, hiddenModules)
+  );
 }

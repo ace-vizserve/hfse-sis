@@ -9,7 +9,11 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { isRouteAllowed, type Role } from '@/lib/auth/roles';
-import { MODULE_ORDER, SIDEBAR_REGISTRY } from '@/lib/sidebar/registry';
+import {
+  MODULE_ORDER,
+  SIDEBAR_REGISTRY,
+  type SidebarModule,
+} from '@/lib/sidebar/registry';
 
 // Used only by the neutral (dashboard) group (the `/` picker + `/account`)
 // where there is no module sidebar to host the popover. Mirrors the
@@ -17,11 +21,20 @@ import { MODULE_ORDER, SIDEBAR_REGISTRY } from '@/lib/sidebar/registry';
 
 type TopbarModuleSwitcherProps = {
   role: Role | null;
+  /** Modules this viewer's assignments make dead ends — see
+   *  lib/sidebar/module-visibility.ts. Same narrowing the sidebar switcher
+   *  applies; both surfaces must agree or the tile just moves. */
+  hiddenModules?: readonly SidebarModule[];
 };
 
-export function TopbarModuleSwitcher({ role }: TopbarModuleSwitcherProps) {
-  const allowedModules = MODULE_ORDER.filter((m) =>
-    isRouteAllowed(SIDEBAR_REGISTRY[m].primaryHref, role)
+export function TopbarModuleSwitcher({
+  role,
+  hiddenModules = [],
+}: TopbarModuleSwitcherProps) {
+  const allowedModules = MODULE_ORDER.filter(
+    (m) =>
+      isRouteAllowed(SIDEBAR_REGISTRY[m].primaryHref, role) &&
+      !hiddenModules.includes(m)
   );
   const canSwitch = allowedModules.length > 1;
 

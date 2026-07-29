@@ -15,6 +15,7 @@ import { describe, it, expect } from 'vitest';
 import {
   ADVISER_ONLY_MODULES,
   hiddenModulesForTeacher,
+  isHiddenModuleHref,
 } from '@/lib/sidebar/module-visibility';
 import type { AssignmentRow } from '@/lib/auth/teacher-assignments';
 import type { Role } from '@/lib/auth/roles';
@@ -108,5 +109,43 @@ describe('hiddenModulesForTeacher — only the teacher role is narrowed', () => 
     // rule applied to them would hide the modules from exactly the people who
     // work across every class.
     expect(hiddenModulesForTeacher(role, [])).toEqual([]);
+  });
+});
+
+describe('isHiddenModuleHref — the five surfaces must agree', () => {
+  const hidden = [...ADVISER_ONLY_MODULES];
+
+  it('catches deep links, not just the module root', () => {
+    // The home page offers "Mark attendance" -> /attendance/sections, not
+    // /attendance. Matching only the root would leave that action on the page
+    // while the switcher tile was hidden — the dead end still reachable, just
+    // harder to explain.
+    expect(isHiddenModuleHref('/attendance', hidden)).toBe(true);
+    expect(isHiddenModuleHref('/attendance/sections', hidden)).toBe(true);
+    expect(isHiddenModuleHref('/evaluation', hidden)).toBe(true);
+    expect(isHiddenModuleHref('/evaluation/sections/abc', hidden)).toBe(true);
+  });
+
+  it('ignores query strings and fragments', () => {
+    expect(isHiddenModuleHref('/attendance/x?date=2026-07-29', hidden)).toBe(
+      true
+    );
+    expect(isHiddenModuleHref('/evaluation?term_id=t1#top', hidden)).toBe(true);
+  });
+
+  it('leaves other modules alone', () => {
+    expect(isHiddenModuleHref('/markbook/grading', hidden)).toBe(false);
+    expect(isHiddenModuleHref('/classroom/abc/grades', hidden)).toBe(false);
+    expect(isHiddenModuleHref('/records/students', hidden)).toBe(false);
+  });
+
+  it('does not match a module whose path merely starts with the same text', () => {
+    // Guards the classic prefix bug: '/attendance-report' is not '/attendance'.
+    expect(isHiddenModuleHref('/attendance-report', hidden)).toBe(false);
+    expect(isHiddenModuleHref('/evaluations', hidden)).toBe(false);
+  });
+
+  it('hides nothing when the hidden list is empty', () => {
+    expect(isHiddenModuleHref('/attendance/sections', [])).toBe(false);
   });
 });

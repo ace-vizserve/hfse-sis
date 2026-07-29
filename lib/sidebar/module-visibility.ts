@@ -1,6 +1,6 @@
 import type { AssignmentRow } from '@/lib/auth/teacher-assignments';
 import type { Role } from '@/lib/auth/roles';
-import type { SidebarModule } from '@/lib/sidebar/registry';
+import { SIDEBAR_REGISTRY, type SidebarModule } from '@/lib/sidebar/registry';
 
 // Which modules the switcher should hide from a teacher whose ASSIGNMENTS make
 // them dead ends.
@@ -49,4 +49,29 @@ export function hiddenModulesForTeacher(
   if (role !== 'teacher') return [];
   const advisesSomewhere = assignments.some((a) => a.role === 'form_adviser');
   return advisesSomewhere ? [] : [...ADVISER_ONLY_MODULES];
+}
+
+/**
+ * Does this link lead into a module we're hiding from this viewer?
+ *
+ * Modules are offered in FIVE places, not one — the sidebar switcher, the
+ * topbar switcher on `/` and `/account`, the quick-action row on `/`, the
+ * account shortcuts, and the Cmd+K palette. Hiding a tile in the switcher
+ * while "Mark attendance" still sits on the home page is worse than not
+ * hiding it at all: the dead end is still reachable, just harder to explain.
+ * Every one of those surfaces routes its filtering through this.
+ *
+ * Matches on the module's own `primaryHref` prefix, so `/attendance/sections`
+ * and `/attendance/[id]?date=…` are caught alongside `/attendance` itself.
+ */
+export function isHiddenModuleHref(
+  href: string,
+  hidden: readonly SidebarModule[]
+): boolean {
+  if (hidden.length === 0) return false;
+  const path = href.split(/[?#]/)[0];
+  return hidden.some((m) => {
+    const base = SIDEBAR_REGISTRY[m].primaryHref;
+    return path === base || path.startsWith(`${base}/`);
+  });
 }

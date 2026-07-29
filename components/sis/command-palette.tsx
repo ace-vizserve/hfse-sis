@@ -35,6 +35,8 @@ import {
 } from '@/components/ui/command';
 import type { Role } from '@/lib/auth/roles';
 import { isRouteAllowed } from '@/lib/auth/roles';
+import { isHiddenModuleHref } from '@/lib/sidebar/module-visibility';
+import type { SidebarModule } from '@/lib/sidebar/registry';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '../ui/scroll-area';
 
@@ -409,7 +411,17 @@ type StudentMatch = {
 
 // ──────────────────────────────────────────────────────────────────────────
 
-export function CommandPalette({ role }: { role: Role | null }) {
+export function CommandPalette({
+  role,
+  hiddenModules = [],
+}: {
+  role: Role | null;
+  /** Modules this viewer's assignments make dead ends. The palette is a
+   *  navigation surface like the switchers, so it applies the same narrowing —
+   *  otherwise Cmd+K still offers the module the tiles just stopped showing.
+   *  See lib/sidebar/module-visibility.ts. */
+  hiddenModules?: readonly SidebarModule[];
+}) {
   const router = useRouter();
   const { open, setOpen } = useCommandPaletteContext();
   const [query, setQuery] = React.useState('');
@@ -485,12 +497,14 @@ export function CommandPalette({ role }: { role: Role | null }) {
   // href lookup entirely.
   const visibleNav = React.useMemo(
     () =>
-      NAV_ENTRIES.filter((entry) =>
-        entry.requiresRoles
-          ? !!role && entry.requiresRoles.includes(role)
-          : isRouteAllowed(pathnameOnly(entry.href), role)
+      NAV_ENTRIES.filter(
+        (entry) =>
+          (entry.requiresRoles
+            ? !!role && entry.requiresRoles.includes(role)
+            : isRouteAllowed(pathnameOnly(entry.href), role)) &&
+          !isHiddenModuleHref(entry.href, hiddenModules)
       ),
-    [role]
+    [role, hiddenModules]
   );
 
   const navByGroup = React.useMemo(() => {

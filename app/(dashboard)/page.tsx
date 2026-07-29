@@ -3,6 +3,7 @@ import { Sunrise, Sun, Moon } from 'lucide-react';
 
 import { PageShell } from '@/components/ui/page-shell';
 import { getSessionUser } from '@/lib/supabase/server';
+import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { sgHour } from '@/lib/dates';
@@ -28,6 +29,10 @@ export default async function Home() {
 
   const { role, email, id: userId } = sessionUser;
 
+  // Drop quick actions that lead into a module this teacher's assignments make
+  // a dead end — the home page must agree with the switchers.
+  const hiddenModules = await resolveHiddenModules(sessionUser.role, userId);
+
   // Same forced-redirect rules as before — unchanged from the plain-picker
   // version. Only the 4 multi-module roles ever render the rest of this
   // page.
@@ -48,7 +53,10 @@ export default async function Home() {
   if (!ay) {
     return (
       <PageShell>
-        <Header name={displayName} quickActions={getQuickActions(role)} />
+        <Header
+          name={displayName}
+          quickActions={getQuickActions(role, hiddenModules)}
+        />
         <p className="mt-8 text-sm text-muted-foreground">
           No current academic year is set yet — ask a superadmin to configure
           one in SIS Admin.

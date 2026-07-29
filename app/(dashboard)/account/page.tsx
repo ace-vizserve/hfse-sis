@@ -15,6 +15,7 @@ import { getRecentActivity } from '@/lib/account/activity';
 import { getTeacherSections } from '@/lib/account/sections';
 import { getThisTermStats } from '@/lib/account/this-term-stats';
 import { shortcutsForRole } from '@/lib/account/shortcuts';
+import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 import { viewAllActivityHref } from '@/lib/account/view-all-target';
 import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
 import { ChangePasswordForm } from './change-password-form';
@@ -69,7 +70,10 @@ export default async function AccountPage() {
     email.split('@')[0] ||
     'Account';
 
-  const shortcuts = role ? shortcutsForRole(role) : [];
+  const hiddenModules = sessionUser
+    ? await resolveHiddenModules(role, sessionUser.id)
+    : [];
+  const shortcuts = role ? shortcutsForRole(role, hiddenModules) : [];
 
   return (
     <PageShell>

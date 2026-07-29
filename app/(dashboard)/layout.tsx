@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { CommandPaletteTrigger } from '@/components/sis/command-palette';
 import { TopbarModuleSwitcher } from '@/components/topbar-module-switcher';
+import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 import { getSessionUser } from '@/lib/supabase/server';
 
 // Neutral shared layout for pages that don't belong to any single module:
@@ -24,10 +25,12 @@ export default async function DashboardLayout({
   if (role === 'p_file_officer') redirect('/p-files');
   if (role === 'admissions') redirect('/admissions');
 
+  const hiddenModules = await resolveHiddenModules(role, sessionUser.id);
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md">
-        <TopbarModuleSwitcher role={role} />
+        <TopbarModuleSwitcher role={role} hiddenModules={hiddenModules} />
         <div className="ml-auto w-full max-w-sm">
           <CommandPaletteTrigger placeholder="Search students or navigate…" />
         </div>

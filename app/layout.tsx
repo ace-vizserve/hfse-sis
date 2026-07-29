@@ -11,6 +11,7 @@ import {
 import { QueryProvider } from '@/components/providers/query-provider';
 import { ScreenGuard } from '@/components/ui/screen-guard';
 import { getSessionUser } from '@/lib/supabase/server';
+import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 
 const inter = Inter({
   variable: '--font-sans',
@@ -48,6 +49,11 @@ export default async function RootLayout({
   // page, parent-portal SSO landing) — palette short-circuits in that case.
   const sessionUser = await getSessionUser();
   const role = sessionUser?.role ?? null;
+  // Same assignment-based narrowing the switchers apply, so Cmd+K can't offer
+  // a module the tiles have stopped showing.
+  const hiddenModules = sessionUser
+    ? await resolveHiddenModules(role, sessionUser.id)
+    : [];
 
   return (
     <html
@@ -64,7 +70,9 @@ export default async function RootLayout({
         <QueryProvider>
           <CommandPaletteProvider>
             {children}
-            {role && <CommandPalette role={role} />}
+            {role && (
+              <CommandPalette role={role} hiddenModules={hiddenModules} />
+            )}
           </CommandPaletteProvider>
           <ScreenGuard />
           <Toaster
