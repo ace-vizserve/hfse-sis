@@ -77,12 +77,35 @@ export async function listAllAuthUsers(
 }
 
 // PostgREST passes `.in('col', [ids])` filters in the request URL query string.
-// A large id list (e.g. every grading_sheet across multiple AYs) overflows the
-// gateway's URL-length cap and comes back as a bare HTTP 400 "Bad Request" —
-// before PostgREST can format a JSON error. `fetchInChunks` splits the id list
-// into bounded batches, runs `fetchChunk` per batch, and concatenates the rows
-// (order preserved). Mirrors the inline chunking already used in
-// lib/markbook/drill.ts (ROLLUP_CHUNK) and lib/sis/environment.ts (IN_CHUNK).
+// A large id list overflows the gateway's URL-length cap; depending on where it
+// is cut off this surfaces either as a bare HTTP 400 "Bad Request" (before
+// PostgREST can format a JSON error) or as a transport-level
+// `TypeError: fetch failed`. `fetchInChunks` splits the id list into bounded
+// batches, runs `fetchChunk` per batch, and concatenates the rows (order
+// preserved). Mirrors the inline chunking already used in lib/markbook/drill.ts
+// (ROLLUP_CHUNK) and lib/sis/environment.ts (IN_CHUNK).
+//
+// THE LIMIT IS URL BYTES, NOT ID COUNT. Measured against the live gateway on
+// 2026-07-29: it fails past roughly 14.3KB of serialized filter — exactly 396
+// UUIDs succeed and 397 fail. So the safe count depends entirely on id width:
+//
+//   uuid (36 chars + comma = 37B) ....... ~396 max   <- the dangerous case
+//   enroleeNumber / student_number (~8B)  ~1,800 max <- ample headroom
+//
+// This matters because HFSE's active roster is ~405 students: any AY-wide array
+// of student_id / section_student_id UUIDs is ALREADY over the line, while the
+// same number of enroleeNumbers is nowhere near it. Two production bugs came
+// from exactly this (see lib/evaluation/queries.ts::getWriteupProgressByTerm),
+// and both were invisible because the caller discarded the PostgREST `error`
+// and read the failure as "no rows" — a plausible zero instead of a crash.
+//
+// So: never put an unbounded UUID array in `.in()`. Either chunk it here, or —
+// usually better when the filter isn't actually narrowing much — drop the
+// filter, fetch via `fetchAllPages`, and intersect in JS. And never discard the
+// error on a query that feeds a count.
+//
+// 200 uuids ~= 7.4KB, roughly half the ceiling: deliberately conservative so a
+// caller whose ids are wider than a uuid still fits.
 const DEFAULT_IN_CHUNK = 200;
 
 export async function fetchInChunks<T>(

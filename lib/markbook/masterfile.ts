@@ -581,6 +581,14 @@ async function loadMasterfileUncached(
   // feeds both the Academic Summary dashboard and the official
   // .xlsx/.csv report-book export, so truncation here means wrong grades
   // + wrong derived award tiers in the school's official record).
+  //
+  // The per-LEVEL scoping is load-bearing, not just a UI convenience. Both
+  // `.in()` filters below ride in the same request URL, and PostgREST's URL
+  // ceiling is ~14.3KB (see lib/supabase/paginate.ts for the measurement).
+  // Measured on AY2026: the widest level (P5) is 3.1KB, ~21% of the ceiling —
+  // comfortable. Dropping the level filter to load an AY at once would be
+  // 23.7KB, or 166% of it, and would fail outright. If a caller ever needs an
+  // AY-wide masterfile, it must loop per level or chunk via fetchInChunks.
   const entries: EntryRow[] =
     sheets.length > 0
       ? await fetchAllPages<EntryRow>((from, to) =>
