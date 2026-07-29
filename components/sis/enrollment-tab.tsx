@@ -524,7 +524,12 @@ export function EnrollmentTab({
         applicationStatus={applicationStatus}
       />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* items-start so each card sizes to its own content. The default
+          stretch made the shorter card grow to match the taller one, which on
+          a typical student (little medical data, no discounts) left a large
+          empty area below the content and read as missing information rather
+          than as a short card. */}
+      <div className="grid items-start gap-4 md:grid-cols-2">
         <MedicalCard app={app} />
         <BillingCard app={app} />
       </div>
@@ -1310,33 +1315,31 @@ function BillingCard({ app }: { app: ApplicationRow }) {
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             Discount slots
           </p>
-          <ul className="space-y-1.5">
-            {discountSlots.map((d) => {
-              const filled = !!d.value && String(d.value).trim() !== '';
-              return (
+          {/* Only the slots that hold a code. Three bordered "Empty" rows
+              said nothing three times — and most applications have none at
+              all (203 of 497 on AY2026; nobody uses more than two). The slot
+              NUMBER is dropped here too: on a read-only card the code is the
+              information, and which of the three columns stores it isn't
+              something the reader acts on. The edit sheet keeps the numbering,
+              where it identifies the field being written. */}
+          {activeDiscounts.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No discount codes on this application.
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {activeDiscounts.map((d) => (
                 <li
                   key={d.label}
-                  className={cn(
-                    'flex items-center gap-2.5 rounded-md border px-3 py-2 text-xs',
-                    filled
-                      ? 'border-brand-indigo/30 bg-brand-indigo/5'
-                      : 'border-hairline bg-muted/20'
-                  )}
+                  className="flex items-center gap-2.5 rounded-md border border-brand-indigo/30 bg-brand-indigo/5 px-3 py-2 text-xs"
                 >
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                    {d.label}
+                  <span className="font-mono font-medium tabular-nums text-brand-indigo-deep">
+                    {String(d.value)}
                   </span>
-                  {filled ? (
-                    <span className="font-mono font-medium tabular-nums text-brand-indigo-deep">
-                      {String(d.value)}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">Empty</span>
-                  )}
                 </li>
-              );
-            })}
-          </ul>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div className="space-y-2">
