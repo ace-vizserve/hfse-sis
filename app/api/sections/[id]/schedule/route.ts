@@ -23,7 +23,10 @@ import { createServiceClient } from '@/lib/supabase/service';
 // missing field, so the schema accepts it explicitly rather than treating an
 // absent key as a clear.
 //
-// Registrar+ only — same gate as every other section-mutation route.
+// academic_coordinator / school_admin / superadmin only — same gate as every
+// other section-mutation route. (Older comments in this codebase call that set
+// "registrar+"; the role was renamed in KD #155 and historical prose was left
+// alone, but new text should use the real name.)
 //
 // Scope note: `schedule` is display-only today. The KD #144 follow-up that
 // would make it functional — pointing `lib/sis/class-assignment.ts`'s
