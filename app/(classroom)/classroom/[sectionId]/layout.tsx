@@ -6,6 +6,7 @@ import { ClassroomSubnav } from '@/components/classroom/classroom-subnav';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
 import { loadClassroomAccess, getTermsForAy } from '@/lib/classroom/queries';
+import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type LevelLite = {
@@ -20,6 +21,10 @@ type SectionRow = {
   id: string;
   name: string;
   academic_year_id: string;
+  /** Read-only here. The only place this is editable is SIS Admin's section
+   *  surface — it's shared school config, not a per-teacher preference, so a
+   *  teacher sees when their class meets without being able to change it. */
+  schedule: Schedule | null;
   level: LevelLite | LevelLite[] | null;
   academic_year: AyLite | AyLite[] | null;
 };
@@ -58,7 +63,7 @@ export default async function ClassroomSectionLayout({
   const { data: section } = await supabase
     .from('sections')
     .select(
-      'id, name, academic_year_id, level:levels(id, code, label, level_type), academic_year:academic_years(ay_code, label)'
+      'id, name, schedule, academic_year_id, level:levels(id, code, label, level_type), academic_year:academic_years(ay_code, label)'
     )
     .eq('id', sectionId)
     .maybeSingle();
@@ -97,6 +102,18 @@ export default async function ClassroomSectionLayout({
                 className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
               >
                 {level.label}
+              </Badge>
+            )}
+            {/* Read-only, and only when set — an unset schedule shows nothing
+                rather than a "Not set" chip, since a teacher can't act on it
+                and the gap belongs to the registrar. Same badge markup and
+                order as /sis/sections/[id], so the two pages read alike. */}
+            {row.schedule && (
+              <Badge
+                variant="outline"
+                className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+              >
+                {SCHEDULE_LABELS[row.schedule]}
               </Badge>
             )}
             {ay && (
