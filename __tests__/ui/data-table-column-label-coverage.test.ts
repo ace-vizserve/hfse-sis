@@ -27,7 +27,7 @@ const REPO_ROOT = join(__dirname, '..', '..');
 const SEARCH_ROOTS = ['components', 'app'];
 const SKIP_DIRS = new Set(['.claude', 'node_modules', '.next', '.git']);
 
-/** Mirrors NON_DATA_COLUMN_IDS in components/ui/data-table/export-sheet.tsx. */
+/** Mirrors NON_DATA_COLUMN_IDS in components/ui/data-table/export-payload.ts. */
 const NON_DATA_COLUMN_IDS = new Set(['select', 'actions', 'action', 'open']);
 
 /**
@@ -173,7 +173,7 @@ function scan(file: string): { columns: Finding[]; blankActions: Finding[] } {
         // A render-function header needs a declared label if the column is
         // reachable by either surface: the Columns menu (hidable) OR the CSV
         // export picker. Export membership is NOT gated on enableHiding — see
-        // isExportableColumn in export-sheet.tsx, which excludes only the
+        // isExportableColumn in export-payload.ts, which excludes only the
         // non-data ids and meta.excludeFromExport. A non-hidable identifier
         // column still ships its label as a CSV header.
         const exportable =

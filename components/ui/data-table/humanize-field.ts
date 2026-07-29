@@ -1,5 +1,5 @@
 // Turns a raw DB column name into a readable label for the export sheet's
-// "load all database columns" picker — e.g. `preferredPaymentScheme` →
+// raw-column preset path — e.g. `preferredPaymentScheme` →
 // "Preferred Payment Scheme". Deliberately separate from
 // lib/audit/humanize.ts's private humanizeKey, which carries audit-specific
 // label overrides (e.g. renaming identifier columns) that would be
