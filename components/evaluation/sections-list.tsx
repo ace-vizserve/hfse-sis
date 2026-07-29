@@ -84,7 +84,8 @@ function facetFilterFn(
 
 function buildColumns(
   selectedTermId: string,
-  isTeacher: boolean
+  isTeacher: boolean,
+  isOversight: boolean
 ): ColumnDef<EvalSectionRow>[] {
   return [
     {
@@ -94,7 +95,11 @@ function buildColumns(
       ),
       cell: ({ row }) => (
         <IdentifierLink
-          href={`/evaluation/sections/${row.original.id}?term_id=${selectedTermId}`}
+          href={
+            isOversight
+              ? `/evaluation/sections/${row.original.id}?term_id=${selectedTermId}`
+              : `/classroom/${row.original.id}/write-ups`
+          }
         >
           {row.original.name}
         </IdentifierLink>
@@ -218,14 +223,21 @@ export function EvaluationSectionsList({
   levels,
   selectedTermId,
   isTeacher = false,
+  isOversight,
 }: {
   sections: SectionCardData[];
   levels: LevelOption[];
   selectedTermId: string;
   isTeacher?: boolean;
+  /** From lib/classroom/scope.ts's resolver (Phase 8, design doc
+   *  2026-07-28-classroom-workspace-design.md) — decides the row link
+   *  target: a teacher lands in Classroom's Write-ups tab for that class;
+   *  oversight lands on this module's own section detail (unchanged).
+   *  Never re-derive this from role inline. */
+  isOversight: boolean;
 }) {
   const rows = sections.map(deriveRow);
-  const columns = buildColumns(selectedTermId, isTeacher);
+  const columns = buildColumns(selectedTermId, isTeacher, isOversight);
 
   const facets: FacetConfig[] =
     levels.length > 1

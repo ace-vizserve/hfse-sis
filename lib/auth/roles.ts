@@ -226,15 +226,12 @@ const ATTENDANCE_NAV: NavSection[] = [
   {
     items: [
       { href: '/attendance', label: 'Dashboard' },
-      // Repointed to the Classroom module (design doc
-      // 2026-07-28-classroom-workspace-design.md, Phase 7) — the section
-      // picker that used to live here is now the section×term workspace.
-      // `/attendance/sections` itself is untouched and stays reachable by
-      // URL as a fallback (Phase 7 brief — retire only after the classroom
-      // list proves itself). Every role that could see this item
-      // (teacher/academic_coordinator/school_admin/superadmin, via
-      // ATTENDANCE_NAV's implicit scope) is also allowed on `/classroom`.
-      { href: '/classroom', label: 'Classes' },
+      // Phase 7 repointed this to /classroom; Phase 8 reverts it (design doc
+      // 2026-07-28-classroom-workspace-design.md, Phase 8) — the handoff
+      // into Classroom now happens at the row level, per role, not at the
+      // nav level. A teacher clicking through from Attendance stays in
+      // Attendance's own working surface; only the row destination changes.
+      { href: '/attendance/sections', label: 'Sections' },
       {
         href: '/attendance/insights',
         label: 'Insights',
@@ -403,14 +400,11 @@ const EVALUATION_NAV: NavSection[] = [
   {
     label: 'Write-ups',
     items: [
-      // Repointed to the Classroom module (design doc
-      // 2026-07-28-classroom-workspace-design.md, Phase 7) — picking a class
-      // to write up now goes through the shared section×term workspace's
-      // Write-ups sub-route. `/evaluation/sections` itself is untouched and
-      // stays reachable by URL as a fallback. Every role that could see this
-      // item (teacher/academic_coordinator/school_admin/superadmin) is also
-      // allowed on `/classroom`.
-      { href: '/classroom', label: 'Classes' },
+      // Phase 7 repointed this to /classroom; Phase 8 reverts it (design doc
+      // 2026-07-28-classroom-workspace-design.md, Phase 8) — the handoff
+      // into Classroom now happens at the row level, per role, not at the
+      // nav level.
+      { href: '/evaluation/sections', label: 'All terms' },
       {
         href: '/evaluation/comments',
         label: 'Comments',
@@ -623,14 +617,12 @@ export const NAV_BY_MODULE: {
         ],
       },
       {
-        // Repointed to the Classroom module (design doc
-        // 2026-07-28-classroom-workspace-design.md, Phase 7) —
-        // `/markbook/sections` itself is untouched and stays reachable by
-        // URL as a fallback. Every role with this item
-        // (academic_coordinator/school_admin/superadmin) is also allowed on
-        // `/classroom`.
+        // Phase 7 repointed this to /classroom; Phase 8 reverts it (design
+        // doc 2026-07-28-classroom-workspace-design.md, Phase 8) — the
+        // handoff into Classroom now happens at the row level, per role,
+        // not at the nav level.
         label: 'Students',
-        items: [{ href: '/classroom', label: 'Classes' }],
+        items: [{ href: '/markbook/sections', label: 'Sections' }],
       },
       {
         items: [
@@ -674,14 +666,12 @@ export const NAV_BY_MODULE: {
         ],
       },
       {
-        // Repointed to the Classroom module (design doc
-        // 2026-07-28-classroom-workspace-design.md, Phase 7) —
-        // `/markbook/sections` itself is untouched and stays reachable by
-        // URL as a fallback. Every role with this item
-        // (academic_coordinator/school_admin/superadmin) is also allowed on
-        // `/classroom`.
+        // Phase 7 repointed this to /classroom; Phase 8 reverts it (design
+        // doc 2026-07-28-classroom-workspace-design.md, Phase 8) — the
+        // handoff into Classroom now happens at the row level, per role,
+        // not at the nav level.
         label: 'Students',
-        items: [{ href: '/classroom', label: 'Classes' }],
+        items: [{ href: '/markbook/sections', label: 'Sections' }],
       },
       {
         items: [
@@ -716,14 +706,12 @@ export const NAV_BY_MODULE: {
         ],
       },
       {
-        // Repointed to the Classroom module (design doc
-        // 2026-07-28-classroom-workspace-design.md, Phase 7) —
-        // `/markbook/sections` itself is untouched and stays reachable by
-        // URL as a fallback. Every role with this item
-        // (academic_coordinator/school_admin/superadmin) is also allowed on
-        // `/classroom`.
+        // Phase 7 repointed this to /classroom; Phase 8 reverts it (design
+        // doc 2026-07-28-classroom-workspace-design.md, Phase 8) — the
+        // handoff into Classroom now happens at the row level, per role,
+        // not at the nav level.
         label: 'Students',
-        items: [{ href: '/classroom', label: 'Classes' }],
+        items: [{ href: '/markbook/sections', label: 'Sections' }],
       },
       {
         items: [

@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { EvaluationSectionsList } from '@/components/evaluation/sections-list';
+import { resolveClassroomScope } from '@/lib/classroom/scope';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -146,6 +147,12 @@ export default async function EvaluationSectionsPickerPage({
   });
 
   const isTeacher = sessionUser.role === 'teacher';
+  // Row destination is decided from the shared classroom scope resolver
+  // (Phase 8, design doc 2026-07-28-classroom-workspace-design.md) rather
+  // than a fresh inline role check, so it can't drift from how Classroom
+  // itself decides teacher-vs-oversight. The adviser-only section scoping
+  // above is unrelated and PRESERVED as-is.
+  const isOversight = resolveClassroomScope(sessionUser.role, []).isOversight;
 
   const levels = Array.from(
     new Map(
@@ -336,6 +343,7 @@ export default async function EvaluationSectionsPickerPage({
             levels={levels}
             selectedTermId={selectedTerm?.id ?? ''}
             isTeacher={isTeacher}
+            isOversight={isOversight}
             sections={sorted.map((s) => {
               const p = progress[s.id];
               return {

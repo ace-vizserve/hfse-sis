@@ -3,7 +3,15 @@
 // Markbook sections list as a unified <DataTable> with per-row ⋯ actions menu.
 // Mirrors SisSectionsDataTable exactly, with three markbook-specific deltas:
 //   1. Row type omits `withdrawn` (Markbook only shows active enrolment counts).
-//   2. Section link → /markbook/sections/${id} (not /sis/sections/${id}).
+//   2. Section link is role-aware (Phase 8, design doc
+//      2026-07-28-classroom-workspace-design.md): a teacher lands in
+//      Classroom's Grades tab for that class (staying in class context);
+//      oversight (academic_coordinator/school_admin/superadmin) lands on
+//      the module-native grading-sheets list, filtered to that section — the
+//      same href the classroom class page and several drills already use.
+//      `/markbook/sections/[id]` itself is unchanged (still a redirect stub
+//      into Classroom, kept alive for bookmarks) — it's simply no longer
+//      this table's own row target.
 //   3. No `toolbarTrailing` bulk button — Markbook has no toolbar bulk action.
 //      (Generate-index is available per-row via SectionRowActions.)
 // The `Students` header label replaces `Active` — cleaner for teacher view.
@@ -47,7 +55,8 @@ function facetFilterFn(
 function buildColumns(
   role: Role | null,
   termStarted: boolean,
-  ayId: string
+  ayId: string,
+  isOversight: boolean
 ): ColumnDef<MarkbookSectionRow>[] {
   return [
     {
@@ -56,7 +65,13 @@ function buildColumns(
         <SortableHeader column={column}>Section</SortableHeader>
       ),
       cell: ({ row }) => (
-        <IdentifierLink href={`/markbook/sections/${row.original.id}`}>
+        <IdentifierLink
+          href={
+            isOversight
+              ? `/markbook/grading?grading.section=${encodeURIComponent(row.original.name)}`
+              : `/classroom/${row.original.id}/grades`
+          }
+        >
           {row.original.name}
         </IdentifierLink>
       ),
@@ -118,14 +133,19 @@ export function MarkbookSectionsDataTable({
   role,
   termStarted,
   ayId,
+  isOversight,
 }: {
   rows: MarkbookSectionRow[];
   levels: { id: string; code: string; label: string }[];
   role: Role | null;
   termStarted: boolean;
   ayId: string;
+  /** From lib/classroom/scope.ts's resolver (Phase 8) — decides both the
+   *  row link target above and the empty-state copy below. Never re-derive
+   *  this from role inline; it must match how Classroom itself decides. */
+  isOversight: boolean;
 }) {
-  const columns = buildColumns(role, termStarted, ayId);
+  const columns = buildColumns(role, termStarted, ayId, isOversight);
 
   const facets: FacetConfig[] =
     levels.length > 1
@@ -155,8 +175,10 @@ export function MarkbookSectionsDataTable({
       url={{ enabled: true, namespace: 'sections' }}
       emptyState={{
         icon: Layers,
-        title: 'No sections yet.',
-        body: 'Sections appear here once they are created and a roster is synced. Ask the registrar to set up sections in SIS Admin.',
+        title: isOversight ? 'No sections yet.' : 'No classes assigned yet.',
+        body: isOversight
+          ? 'Sections appear here once they are created and a roster is synced. Ask the registrar to set up sections in SIS Admin.'
+          : "You don't have any classes assigned this year. Ask your coordinator to add you as a form adviser or subject teacher.",
       }}
       emptyFilteredState={{
         title: 'No sections match the current filters.',

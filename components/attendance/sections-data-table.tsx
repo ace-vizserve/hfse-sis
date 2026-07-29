@@ -2,7 +2,12 @@
 
 // Attendance sections list as a unified <DataTable> with per-row ⋯ actions menu.
 // Mirrors MarkbookSectionsDataTable with attendance-specific deltas:
-//   1. Section link → /attendance/${id}?date=${today} (uses the `today` prop).
+//   1. Section link is role-aware (Phase 8, design doc
+//      2026-07-28-classroom-workspace-design.md): a teacher lands in
+//      Classroom's Attendance tab for that class; oversight
+//      (academic_coordinator/school_admin/superadmin) lands on the same
+//      `/attendance/[id]?date=…` daily writer this table has always used —
+//      unchanged for them.
 //   2. Props omit `role` and `termStarted` — attendance row-action is "Open daily"
 //      only (no Generate-index / Generate-sheets, so no role gating needed).
 //   3. Column header "Active" (vs "Students" in Markbook — both are fine labels;
@@ -47,7 +52,8 @@ function facetFilterFn(
 
 function buildColumns(
   today: string,
-  showAdviser: boolean
+  showAdviser: boolean,
+  isOversight: boolean
 ): ColumnDef<AttendanceSectionRow>[] {
   return [
     {
@@ -56,7 +62,13 @@ function buildColumns(
         <SortableHeader column={column}>Section</SortableHeader>
       ),
       cell: ({ row }) => (
-        <IdentifierLink href={`/attendance/${row.original.id}?date=${today}`}>
+        <IdentifierLink
+          href={
+            isOversight
+              ? `/attendance/${row.original.id}?date=${today}`
+              : `/classroom/${row.original.id}/attendance`
+          }
+        >
           {row.original.name}
         </IdentifierLink>
       ),
@@ -121,13 +133,17 @@ export function AttendanceSectionsDataTable({
   levels,
   today,
   showAdviser = false,
+  isOversight,
 }: {
   rows: AttendanceSectionRow[];
   levels: { id: string; code: string; label: string }[];
   today: string;
   showAdviser?: boolean;
+  /** From lib/classroom/scope.ts's resolver (Phase 8) — decides the row
+   *  link target above. Never re-derive this from role inline. */
+  isOversight: boolean;
 }) {
-  const columns = buildColumns(today, showAdviser);
+  const columns = buildColumns(today, showAdviser, isOversight);
 
   const facets: FacetConfig[] =
     levels.length > 1

@@ -2,6 +2,7 @@ import { School, Users } from 'lucide-react';
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { resolveClassroomScope } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +30,12 @@ export default async function AttendanceSectionsListPage() {
   const session = await getSessionUser();
   const role = session?.role ?? null;
   const isTeacherOnly = role === 'teacher';
+  // Row destination is decided from the shared classroom scope resolver
+  // (Phase 8, design doc 2026-07-28-classroom-workspace-design.md) rather
+  // than a fresh inline role check, so it can't drift from how Classroom
+  // itself decides teacher-vs-oversight. The adviser-only section scoping
+  // just below is unrelated and PRESERVED as-is.
+  const isOversight = resolveClassroomScope(role, []).isOversight;
 
   const supabase = await createClient();
 
@@ -243,6 +250,7 @@ export default async function AttendanceSectionsListPage() {
           levels={levels}
           today={today}
           showAdviser={!isTeacherOnly}
+          isOversight={isOversight}
         />
       )}
     </PageShell>

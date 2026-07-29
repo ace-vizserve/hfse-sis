@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowUpRight, LayoutGrid, Settings, Users, UserX } from 'lucide-react';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import { MarkbookSectionsDataTable } from '@/components/markbook/sections-data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { loadAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { resolveClassroomScope } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
@@ -27,10 +30,28 @@ type LevelLite = {
 export default async function SectionsListPage() {
   const supabase = await createClient();
   const sessionUser = await getSessionUser();
+  const role = sessionUser?.role ?? null;
   const canManage =
-    sessionUser?.role === 'academic_coordinator' ||
-    sessionUser?.role === 'school_admin' ||
-    sessionUser?.role === 'superadmin';
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin';
+
+  // Scoping (Phase 8) — Markbook was the one teaching-module list with no
+  // teacher scoping at all; Attendance/Evaluation already narrow to a
+  // teacher's own sections. Uses the shared classroom scope resolver so this
+  // can't drift from how Classroom itself decides scope. Markbook scopes on
+  // ANY assignment (adviser or subject teacher) — wider than
+  // Attendance/Evaluation, which are adviser-only because their underlying
+  // data is adviser-only at the RLS level (see lib/classroom/scope.ts).
+  const assignments =
+    role === 'teacher' && sessionUser
+      ? await loadAssignmentsForUser(createServiceClient(), sessionUser.id)
+      : [];
+  const scope = resolveClassroomScope(role, assignments);
+  // `[]` (scoped, no assigned classes) is distinct from `null` (unscoped) —
+  // must yield zero rows, never fall through to unfiltered.
+  const noScopedClasses =
+    scope.sectionIds !== null && scope.sectionIds.length === 0;
 
   const { data: ay } = await supabase
     .from('academic_years')
@@ -38,12 +59,19 @@ export default async function SectionsListPage() {
     .eq('is_current', true)
     .single();
 
+  let sectionsQuery = ay
+    ? supabase
+        .from('sections')
+        .select('id, name, level:levels(id, code, label, level_type)')
+        .eq('academic_year_id', ay.id)
+    : null;
+  if (sectionsQuery && scope.sectionIds !== null) {
+    sectionsQuery = sectionsQuery.in('id', scope.sectionIds);
+  }
+
   const [sectionsResult, termsResult] = await Promise.all([
-    ay
-      ? supabase
-          .from('sections')
-          .select('id, name, level:levels(id, code, label, level_type)')
-          .eq('academic_year_id', ay.id)
+    ay && !noScopedClasses && sectionsQuery
+      ? sectionsQuery
       : Promise.resolve({
           data: [] as Array<{
             id: string;
@@ -147,12 +175,12 @@ export default async function SectionsListPage() {
             Markbook · Rosters
           </p>
           <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Sections & advisers.
+            {scope.isOversight ? 'Sections & advisers.' : 'Your sections.'}
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Every section for the current academic year. Click a card to view
-            the roster, grading sheets, and attendance. Section setup (create,
-            teacher assignments) lives in SIS Admin.
+            {scope.isOversight
+              ? 'Every section for the current academic year. Click a section to view the grading sheets. Section setup (create, teacher assignments) lives in SIS Admin.'
+              : 'The classes where you are a form adviser or subject teacher. Click a section to open its Classroom grades tab.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -214,6 +242,7 @@ export default async function SectionsListPage() {
         role={sessionUser?.role ?? null}
         termStarted={termStarted}
         ayId={ay?.id ?? ''}
+        isOversight={scope.isOversight}
       />
     </PageShell>
   );
