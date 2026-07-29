@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectConfigUnchanged } from '@/lib/sis/subject-config-unchanged';
 import { SubjectConfigUpdateSchema } from '@/lib/schemas/subject-config';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
@@ -74,14 +75,14 @@ export async function PATCH(
   // only the six numeric fields would make that flag-clearing save look like a
   // no-op and silently drop it — so a false -> true transition still counts as
   // a real change and proceeds.
-  const unchanged =
-    Number(before.ww_weight) === ww_weight / 100 &&
-    Number(before.pt_weight) === pt_weight / 100 &&
-    Number(before.qa_weight) === qa_weight / 100 &&
-    before.ww_max_slots === ww_max_slots &&
-    before.pt_max_slots === pt_max_slots &&
-    before.qa_max === qa_max &&
-    before.weights_confirmed === true;
+  const unchanged = subjectConfigUnchanged(before, {
+    ww_weight,
+    pt_weight,
+    qa_weight,
+    ww_max_slots,
+    pt_max_slots,
+    qa_max,
+  });
   if (unchanged) {
     return NextResponse.json({ ok: true, changed: false, sheets_synced: 0 });
   }
