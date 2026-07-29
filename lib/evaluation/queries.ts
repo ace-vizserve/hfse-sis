@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Server-only reads for the Student Evaluation module. All via
@@ -152,21 +153,29 @@ export async function getWriteupProgressByTerm(
 
   const service = createServiceClient();
 
-  const { data: enrolments } = await service
-    .from('section_students')
-    .select('section_id, student_id, enrollment_status')
-    .in('section_id', sectionIds)
-    .neq('enrollment_status', 'withdrawn');
+  // Paginated + throwing, not `const { data } = await ...`: a whole-AY call
+  // passes every section, so this is one row per active student. Silently
+  // truncating at the 1000-row cap would under-count `active_count` — a
+  // wrong-but-plausible denominator, the same failure shape as the write-up
+  // query below.
+  const enrolments = await fetchAllPages<{
+    section_id: string;
+    student_id: string;
+  }>((from, to) =>
+    service
+      .from('section_students')
+      .select('section_id, student_id, enrollment_status')
+      .in('section_id', sectionIds)
+      .neq('enrollment_status', 'withdrawn')
+      .range(from, to)
+  );
 
   // Map each active student to their CURRENT section so submitted write-ups are
   // credited by the live roster, not by evaluation_writeups.section_id — that
   // denormalized tag doesn't follow a mid-year transfer (KD #67), so counting by
   // it mis-attributes a transferred student's write-up to their old section.
   const sectionByStudent = new Map<string, string>();
-  for (const row of (enrolments ?? []) as Array<{
-    section_id: string;
-    student_id: string;
-  }>) {
+  for (const row of enrolments) {
     const b = (out[row.section_id] ??= {
       section_id: row.section_id,
       active_count: 0,
@@ -176,19 +185,32 @@ export async function getWriteupProgressByTerm(
     sectionByStudent.set(row.student_id, row.section_id);
   }
 
-  const rosterStudentIds = [...sectionByStudent.keys()];
-  if (rosterStudentIds.length > 0) {
-    const { data: writeups } = await service
-      .from('evaluation_writeups')
-      .select('student_id, writeup')
-      .eq('term_id', termId)
-      .eq('submitted', true)
-      .in('student_id', rosterStudentIds);
-
-    for (const row of (writeups ?? []) as Array<{
+  if (sectionByStudent.size > 0) {
+    // Deliberately NOT filtered by `.in('student_id', roster)`. PostgREST puts
+    // `.in()` values in the URL query string, so a whole-AY roster (~400 uuids
+    // ≈ 15KB) made the request fail outright with `TypeError: fetch failed` —
+    // and because the error was discarded, the caller read it as "no rows" and
+    // rendered 0/N for every section for months. Fetch the term's write-ups
+    // and intersect against the roster in JS instead: one term is a few
+    // hundred rows, and the roster filter costs nothing here.
+    //
+    // `fetchAllPages` also throws on a PostgREST error instead of returning it.
+    // That matters as much as the URL fix: a swallowed error here produces a
+    // plausible-looking zero rather than an obvious break, which is exactly how
+    // this stayed invisible.
+    const writeups = await fetchAllPages<{
       student_id: string;
       writeup: string | null;
-    }>) {
+    }>((from, to) =>
+      service
+        .from('evaluation_writeups')
+        .select('student_id, writeup')
+        .eq('term_id', termId)
+        .eq('submitted', true)
+        .range(from, to)
+    );
+
+    for (const row of writeups) {
       // A `submitted` flag with empty content is not a real write-up — match the
       // publish-readiness "missing" definition so these counts agree.
       if (!row.writeup || row.writeup.trim().length === 0) continue;
