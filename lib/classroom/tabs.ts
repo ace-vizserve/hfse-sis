@@ -24,13 +24,21 @@ export type ClassroomTabKey =
   | 'students'
   | 'attendance'
   | 'write-ups'
-  | 'timeline';
+  | 'timeline'
+  | 'settings';
 
 export type ClassroomTab = {
   key: ClassroomTabKey;
   label: string;
   /** Path segment under /classroom/[sectionId]; '' for the index route. */
-  path: '' | 'grades' | 'students' | 'attendance' | 'write-ups' | 'timeline';
+  path:
+    | ''
+    | 'grades'
+    | 'students'
+    | 'attendance'
+    | 'write-ups'
+    | 'timeline'
+    | 'settings';
 };
 
 const ALL_TABS: ClassroomTab[] = [
@@ -45,6 +53,11 @@ const ALL_TABS: ClassroomTab[] = [
   // RLS the way attendance_records / evaluation_writeups reads are. Phase 5
   // brief: "all capabilities may see it."
   { key: 'timeline', label: 'Timeline', path: 'timeline' },
+  // Settings (Phase 6) is likewise "any capability may see it" — the
+  // student-order preference is a display toggle and the note is scoped to
+  // the CALLER's own row by RLS (migration 094), so there is nothing here a
+  // subject-teacher viewer could see that they shouldn't.
+  { key: 'settings', label: 'Settings', path: 'settings' },
 ];
 
 export function tabsForCapability(
@@ -53,7 +66,7 @@ export function tabsForCapability(
   return ALL_TABS.filter((tab) => {
     if (tab.key === 'attendance') return canReadAttendance(capability);
     if (tab.key === 'write-ups') return canReadWriteups(capability);
-    // Overview, Grades, Students, Timeline all just require the
+    // Overview, Grades, Students, Timeline, Settings all just require the
     // roster-read floor — any capability at all (adviser / subject /
     // oversight).
     return canReadRoster(capability);

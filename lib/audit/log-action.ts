@@ -140,6 +140,7 @@ export const ALL_AUDIT_ACTIONS = [
   'environment.topup',
   'environment.demo_accounts_removed',
   'grade_entry.annual_letter.update',
+  'classroom.note.save',
   'user.login',
   'parent.session.issued',
   'parent.session.cleared',
@@ -184,7 +185,8 @@ export type AuditEntityType =
   | 'evaluation_checklist_item'
   | 'evaluation_checklist_response'
   | 'evaluation_subject_comment'
-  | 'evaluation_ptc_feedback';
+  | 'evaluation_ptc_feedback'
+  | 'classroom_note';
 
 type LogActionParams = {
   service: SupabaseClient;

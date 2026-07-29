@@ -56,6 +56,11 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   grade_correction: 'Grade corrected',
   'grade_entry.annual_letter.update': 'Final grade updated',
 
+  // Classroom (Phase 6) — never logs note CONTENT (private, migration 094's
+  // RLS is the boundary that matters; this row is metadata-only, same
+  // "length not content" convention as evaluation.writeup.save).
+  'classroom.note.save': 'Class note saved',
+
   // Students / enrolment
   'student.sync': 'Student synced',
   'student.add': 'Student added',

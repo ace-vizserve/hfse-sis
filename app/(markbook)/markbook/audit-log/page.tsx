@@ -46,6 +46,15 @@ export const MARKBOOK_AUDIT_ALLOWLIST = [
   'grade_change_undo_rejection',
   'grade_correction',
   'grade_entry.annual_letter.update',
+  // Classroom (Phase 6, KD-pending) has no /audit-log page of its own — the
+  // module's own audit surface is the per-class Timeline sub-route
+  // (lib/classroom/timeline.ts), which reads audit_log directly by
+  // entity_id rather than through an allowlist. This entry exists solely so
+  // `classroom.note.save` is visible on at least one module page, per
+  // __tests__/audit/allowlist-coverage.test.ts. Markbook is the closest
+  // fit — the Classroom class page is explicitly modelled as an evolution
+  // of the Markbook section-detail page (design spec §Reuse).
+  'classroom.note.save',
 ] as const;
 
 export default async function AuditLogPage({

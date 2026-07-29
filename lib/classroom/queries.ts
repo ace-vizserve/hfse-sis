@@ -10,6 +10,8 @@
 
 import 'server-only';
 
+import type { SupabaseClient } from '@supabase/supabase-js';
+
 import type { Role } from '@/lib/auth/roles';
 import {
   loadAssignmentsForUser,
@@ -160,4 +162,30 @@ export async function getClassroomTimeline(
   }
   merged.sort((a, b) => b.created_at.localeCompare(a.created_at));
   return merged.slice(0, TIMELINE_ROW_LIMIT);
+}
+
+/**
+ * The caller's own private class note (Classroom Settings, Phase 6), or
+ * `null` if they haven't written one yet. Deliberately reads via the
+ * COOKIE-SCOPED client (the `supabase` param — see migration 094's RLS
+ * policy `classroom_notes_own_read`, `teacher_user_id = auth.uid()`), not
+ * the service client every other read in this file uses: RLS itself is the
+ * privacy boundary here, so the ordinary per-request client already returns
+ * exactly and only the caller's own row — no manual `.eq('teacher_user_id',
+ * userId)` filter is even necessary, and adding one wouldn't change
+ * anything (a mismatched id would just return zero rows, since RLS applies
+ * regardless of the query's own filters).
+ */
+export async function getClassroomNote(
+  supabase: SupabaseClient,
+  sectionId: string
+): Promise<{ content: string; updatedAt: string } | null> {
+  const { data } = await supabase
+    .from('classroom_notes')
+    .select('content, updated_at')
+    .eq('section_id', sectionId)
+    .maybeSingle();
+  if (!data) return null;
+  const row = data as { content: string; updated_at: string };
+  return { content: row.content, updatedAt: row.updated_at };
 }

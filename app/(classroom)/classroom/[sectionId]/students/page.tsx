@@ -65,7 +65,7 @@ export default async function ClassroomStudentsPage({
           {rosterRows.length}
         </span>
       </h2>
-      <ClassroomRosterTable data={rosterRows} />
+      <ClassroomRosterTable sectionId={sectionId} data={rosterRows} />
     </div>
   );
 }

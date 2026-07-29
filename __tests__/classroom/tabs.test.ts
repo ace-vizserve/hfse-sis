@@ -19,10 +19,18 @@ describe('tabsForCapability', () => {
     const tabKeys = keys('subject');
     expect(tabKeys).not.toContain('attendance');
     expect(tabKeys).not.toContain('write-ups');
-    // Timeline IS included for 'subject' — it is explicitly "all
-    // capabilities may see it" per the Phase 5 brief, unlike attendance and
-    // write-ups which stay adviser/oversight-only.
-    expect(tabKeys).toEqual(['overview', 'grades', 'students', 'timeline']);
+    // Timeline and Settings ARE included for 'subject' — both are
+    // explicitly "all capabilities may see it" (Phase 5 brief for Timeline;
+    // Phase 6 for Settings, since the note is scoped to the caller's own
+    // row by RLS and the order preference is a personal display toggle),
+    // unlike attendance and write-ups which stay adviser/oversight-only.
+    expect(tabKeys).toEqual([
+      'overview',
+      'grades',
+      'students',
+      'timeline',
+      'settings',
+    ]);
   });
 
   it('an adviser capability sees every tab', () => {
@@ -33,6 +41,7 @@ describe('tabsForCapability', () => {
       'attendance',
       'write-ups',
       'timeline',
+      'settings',
     ]);
   });
 
@@ -44,6 +53,7 @@ describe('tabsForCapability', () => {
       'attendance',
       'write-ups',
       'timeline',
+      'settings',
     ]);
   });
 
