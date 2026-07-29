@@ -138,60 +138,34 @@ export async function PATCH(request: Request) {
     .maybeSingle();
   const prevAy = (prev as { ay_code: string } | null)?.ay_code ?? null;
 
-  // Two-step atomic-ish flip: set all to false, then target to true.
-  // Not a single transaction, but idempotent â€” re-running converges.
-  const { error: clearErr } = await supabase
-    .from('academic_years')
-    .update({ is_current: false })
-    .neq('id', '00000000-0000-0000-0000-000000000000');
-  if (clearErr) {
-    console.error(
-      '[ay-setup PATCH] clearing is_current failed:',
-      clearErr.message
-    );
-    return NextResponse.json({ error: clearErr.message }, { status: 500 });
+  // One atomic switch (migration 095). This was previously two separate
+  // updates — clear is_current everywhere, then set the target — plus two more
+  // for the application windows, none of them transactional. A failure between
+  // the first two left EVERY row is_current=false, which breaks sections,
+  // grading, attendance and every dashboard school-wide, because they all do
+  // `.eq('is_current', true).single()`.
+  //
+  // The RPC does the clear, the set, and both accepting_applications
+  // follow-ups in one transaction, so that window no longer exists. The
+  // window rules themselves are unchanged (KD #118): the new current AY opens,
+  // the outgoing one closes — the close is a correctness requirement, since a
+  // retired year left accepting would impersonate the early-bird upcoming AY.
+  //
+  // The old code treated the two window updates as best-effort and only
+  // console.error'd them, so the route could return ok:true half-applied.
+  // Inside the transaction they either all land or none do.
+  const { data: switchResult, error: switchErr } = await supabase.rpc(
+    'set_current_academic_year',
+    { p_ay_code: targetAy }
+  );
+  if (switchErr) {
+    console.error('[ay-setup PATCH] switch failed:', switchErr.message);
+    return NextResponse.json({ error: switchErr.message }, { status: 500 });
   }
-
-  const { error: setErr } = await supabase
-    .from('academic_years')
-    .update({ is_current: true })
-    .eq('ay_code', targetAy);
-  if (setErr) {
-    console.error(
-      '[ay-setup PATCH] setting is_current failed:',
-      setErr.message
-    );
-    return NextResponse.json({ error: setErr.message }, { status: 500 });
-  }
-
-  // The application window follows the active flag: the new current AY accepts
-  // applications by default, and the outgoing AY's window closes. Closing the
-  // old one is a correctness requirement — otherwise it still satisfies
-  // accepting=true AND is_current=false and would be mistaken for the early-bird
-  // upcoming AY by getUpcomingAcademicYear(). Best-effort, non-transactional;
-  // re-running the switch converges.
-  const { error: openErr } = await supabase
-    .from('academic_years')
-    .update({ accepting_applications: true })
-    .eq('ay_code', targetAy);
-  if (openErr) {
-    console.error(
-      '[ay-setup PATCH] opening new-current window failed:',
-      openErr.message
-    );
-  }
-  if (prevAy && prevAy !== targetAy) {
-    const { error: closeErr } = await supabase
-      .from('academic_years')
-      .update({ accepting_applications: false })
-      .eq('ay_code', prevAy);
-    if (closeErr) {
-      console.error(
-        '[ay-setup PATCH] closing old window failed:',
-        closeErr.message
-      );
-    }
-  }
+  const switched = (switchResult ?? {}) as {
+    previous_ay?: string | null;
+    accepting_closed?: string | null;
+  };
 
   await logAction({
     service: supabase,
@@ -200,10 +174,13 @@ export async function PATCH(request: Request) {
     entityType: 'academic_year',
     entityId: (target as { id: string }).id,
     context: {
-      from_ay: prevAy,
+      // Prefer the values the RPC actually acted on over the pre-read — under
+      // a concurrent switch the pre-read can already be stale, and the audit
+      // should record what happened, not what we expected to happen.
+      from_ay: switched.previous_ay ?? prevAy,
       to_ay: targetAy,
       accepting_opened: targetAy,
-      accepting_closed: prevAy && prevAy !== targetAy ? prevAy : null,
+      accepting_closed: switched.accepting_closed ?? null,
     },
   });
 

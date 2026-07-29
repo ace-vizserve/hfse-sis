@@ -146,32 +146,31 @@ export async function ensurePriorTestAy(
   return fresh as AyRow;
 }
 
-// Two-step flip mirroring the existing AY Setup PATCH handler: clear all
-// is_current=false, then set target=true. Idempotent; converges on re-run.
+// Atomic switch via `set_current_academic_year` (migration 095).
+//
+// This used to be its own copy of the AY-Setup route's two-step flip — clear
+// is_current everywhere, then set the target — with the same failure mode: a
+// failure between the statements left ZERO current AYs, which breaks nearly
+// every operational query in the app. Environment switching is the more
+// dangerous of the two call sites, because it runs as one step of a long
+// seeding pipeline where a later failure is entirely plausible.
+//
+// The RPC also opens/closes the accepting_applications windows (KD #118),
+// which this copy never did — so switching environments previously left the
+// windows untouched, and the outgoing AY could still look like the early-bird
+// upcoming year to getUpcomingAcademicYear(). That is now consistent with the
+// AY-Setup path rather than quietly different.
 async function flipIsCurrent(
   service: SupabaseClient,
   targetAyCode: string
 ): Promise<{ fromAyCode: string | null; toAyCode: string }> {
-  const { data: prev } = await service
-    .from('academic_years')
-    .select('ay_code')
-    .eq('is_current', true)
-    .maybeSingle();
-  const fromAyCode = (prev as { ay_code: string } | null)?.ay_code ?? null;
+  const { data, error } = await service.rpc('set_current_academic_year', {
+    p_ay_code: targetAyCode,
+  });
+  if (error) throw new Error(`flipIsCurrent — ${error.message}`);
 
-  const { error: clearErr } = await service
-    .from('academic_years')
-    .update({ is_current: false })
-    .neq('id', '00000000-0000-0000-0000-000000000000');
-  if (clearErr) throw new Error(`flipIsCurrent: clear — ${clearErr.message}`);
-
-  const { error: setErr } = await service
-    .from('academic_years')
-    .update({ is_current: true })
-    .eq('ay_code', targetAyCode);
-  if (setErr) throw new Error(`flipIsCurrent: set — ${setErr.message}`);
-
-  return { fromAyCode, toAyCode: targetAyCode };
+  const result = (data ?? {}) as { previous_ay?: string | null };
+  return { fromAyCode: result.previous_ay ?? null, toAyCode: targetAyCode };
 }
 
 export type SwitchResult = {
