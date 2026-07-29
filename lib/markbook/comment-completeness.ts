@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 
 // Shared FCA-comment completeness logic — the single source of truth for both
 // the publish-readiness checklist (per-term advisory display) and the publish
@@ -79,7 +80,7 @@ export async function loadActiveRoster(
       'id, index_number, enrollment_status, enrollment_date, student:students(id, last_name, first_name)'
     )
     .eq('section_id', sectionId)
-    .in('enrollment_status', ['active', 'late_enrollee'])
+    .in('enrollment_status', ENROLLED_STATUSES)
     .order('index_number');
 
   return (enrolments ?? []).map((e) => {

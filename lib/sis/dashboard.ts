@@ -1,4 +1,5 @@
 import { unstable_cache } from 'next/cache';
+import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
 import {
@@ -1559,7 +1560,7 @@ async function loadHubKpisUncached(ayCode: string): Promise<HubKpis> {
             .from('section_students')
             .select('id', { count: 'exact', head: true })
             .in('section_id', sectionIds)
-            .in('enrollment_status', ['active', 'late_enrollee'])
+            .in('enrollment_status', ENROLLED_STATUSES)
         : Promise.resolve({ count: 0, data: null, error: null }),
       service
         .from('sections')

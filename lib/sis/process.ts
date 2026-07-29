@@ -8,7 +8,10 @@ import {
   STAGE_TERMINAL_STATUS,
   type StageKey,
 } from '@/lib/schemas/sis';
-import { WITHDRAWAL_REASON_LABELS } from '@/lib/schemas/enrolment';
+import {
+  isEnrolledStatus,
+  WITHDRAWAL_REASON_LABELS,
+} from '@/lib/schemas/enrolment';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -277,7 +280,7 @@ export function resolveIsWithdrawn(
   // a section change, not a school withdrawal).
   const currentlyWithdrawn =
     ssEnrollmentStatuses.includes('withdrawn') &&
-    !ssEnrollmentStatuses.some((s) => s === 'active' || s === 'late_enrollee');
+    !ssEnrollmentStatuses.some((s) => isEnrolledStatus(s));
   return currentlyWithdrawn;
 }
 

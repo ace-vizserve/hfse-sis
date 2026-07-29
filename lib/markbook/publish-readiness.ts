@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import {
@@ -135,7 +136,7 @@ export async function computePublishReadiness(
           'id, index_number, enrollment_status, enrollment_date, student:students(id, last_name, first_name)'
         )
         .eq('section_id', sectionId)
-        .in('enrollment_status', ['active', 'late_enrollee'])
+        .in('enrollment_status', ENROLLED_STATUSES)
         .order('index_number'),
       service
         .from('grading_sheets')

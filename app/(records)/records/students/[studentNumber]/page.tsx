@@ -70,6 +70,7 @@ import {
 } from '@/lib/compute/awards';
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
 import {
+  ENROLLED_STATUSES,
   WITHDRAWAL_REASON_LABELS,
   type WithdrawalReason,
 } from '@/lib/schemas/enrolment';
@@ -403,10 +404,13 @@ export default async function RecordsStudentCrossYearPage({
       const sibList = (sibRows ?? []) as Array<{ id: string; name: string }>;
       if (sibList.length === 0) return [];
       const sibIds = sibList.map((s) => s.id);
+      // Includes late enrollees — same reasoning as the SIS section page and
+      // the capacity check in lib/sis/class-assignment.ts: a late enrollee
+      // occupies a seat, so a roster headcount must count them.
       const { data: countRows } = await sibService
         .from('section_students')
         .select('section_id')
-        .eq('enrollment_status', 'active')
+        .in('enrollment_status', ENROLLED_STATUSES)
         .in('section_id', sibIds);
       const sibCounts = new Map<string, number>();
       for (const cr of (countRows ?? []) as Array<{ section_id: string }>) {

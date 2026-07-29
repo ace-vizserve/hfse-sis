@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { resolveLevelId } from '@/lib/sis/levels';
+import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 
 // Section-assignment support — level/section lookups shared by every place
 // a section gets assigned to a student. Per
@@ -76,10 +77,13 @@ export async function listAssignableSections(
   if (sections.length === 0) return { level, sections: [] };
 
   const sectionIds = sections.map((s) => s.id);
+  // Includes late enrollees — see the capacity check below for why. The number
+  // shown in the picker must be the same number the cap enforces, or the
+  // registrar sees "27 students" on a section the write path considers full.
   const { data: activeRows } = await service
     .from('section_students')
     .select('section_id')
-    .eq('enrollment_status', 'active')
+    .in('enrollment_status', ENROLLED_STATUSES)
     .in('section_id', sectionIds);
   const activeCountById = new Map<string, number>();
   for (const r of (activeRows ?? []) as Array<{ section_id: string }>) {
@@ -163,11 +167,21 @@ export async function validateSectionChoice(
     }
   }
 
+  // Counts late enrollees too. This used `.eq('enrollment_status', 'active')`,
+  // which silently excluded them — so a section with 48 active + 5 late
+  // enrollees reported 48, accepted two more, and landed at 55 against a
+  // 50-student cap (Hard Rule #5). Measured when found: 13 of 21 AY2026
+  // sections were mis-counted, with 20 late enrollees in the AY.
+  //
+  // A late enrollee occupies a seat exactly like anyone else — "late" describes
+  // when they joined, not whether they are on the roster. The sibling transfer
+  // route already counted both (section-transfer.ts), so the two paths into the
+  // same roster disagreed about what "full" meant.
   const { count, error: countErr } = await service
     .from('section_students')
     .select('*', { count: 'exact', head: true })
     .eq('section_id', sectionId)
-    .eq('enrollment_status', 'active');
+    .in('enrollment_status', ENROLLED_STATUSES);
   if (countErr) return { error: `Capacity check failed: ${countErr.message}` };
   if ((count ?? 0) >= MAX_ACTIVE_PER_SECTION) {
     return { error: 'This section is at capacity (50 students)' };

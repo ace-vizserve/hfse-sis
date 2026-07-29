@@ -1,4 +1,5 @@
 import { revalidateTag } from 'next/cache';
+import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import { NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
@@ -883,7 +884,7 @@ export async function PATCH(
               'id, section_id, enrollment_status, section:sections!inner(id, name, academic_year_id)'
             )
             .eq('student_id', studentId)
-            .in('enrollment_status', ['active', 'late_enrollee'])
+            .in('enrollment_status', ENROLLED_STATUSES)
             .eq('sections.academic_year_id', ayId);
 
           const rows = (

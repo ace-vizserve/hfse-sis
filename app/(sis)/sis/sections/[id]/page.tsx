@@ -6,6 +6,7 @@ import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { getTeacherList } from '@/lib/auth/staff-list';
 import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
+import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { GenerateIndexButton } from '@/components/sis/generate-index-button';
@@ -294,10 +295,13 @@ export default async function SisSectionDetailPage({
   let siblings: SiblingSection[] = [];
   if (sibList.length > 0) {
     const sibIds = sibList.map((s) => s.id);
+    // Sibling-section headcounts include late enrollees — they are on that
+    // roster, and this number sits next to the capacity the write path
+    // enforces (lib/sis/class-assignment.ts), which now counts both.
     const { data: countRows } = await supabase
       .from('section_students')
       .select('section_id')
-      .eq('enrollment_status', 'active')
+      .in('enrollment_status', ENROLLED_STATUSES)
       .in('section_id', sibIds);
     const counts = new Map<string, number>();
     for (const r of (countRows ?? []) as Array<{ section_id: string }>) {

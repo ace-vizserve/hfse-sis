@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { ENROLLED_STATUSES, isEnrolledStatus } from '@/lib/schemas/enrolment';
 
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { sgToday } from '@/lib/dates';
@@ -198,10 +199,8 @@ export async function transferStudentSection(
   // transfer source — the registrar can move them to the section they'll start
   // in. Match both active + late_enrollee (the class-headcount statuses); the
   // late-enrollee semantics are carried onto the destination row below.
-  const activeRows = (enrRows ?? []).filter(
-    (r) =>
-      r.enrollment_status === 'active' ||
-      r.enrollment_status === 'late_enrollee'
+  const activeRows = (enrRows ?? []).filter((r) =>
+    isEnrolledStatus(r.enrollment_status)
   );
   if (activeRows.length === 0) {
     return {
@@ -253,9 +252,7 @@ export async function transferStudentSection(
   // ── 7. Capacity check on target ────────────────────────────────────────
   const targetActive = (enrRows ?? []).filter(
     (r) =>
-      r.section_id === targetSec.id &&
-      (r.enrollment_status === 'active' ||
-        r.enrollment_status === 'late_enrollee')
+      r.section_id === targetSec.id && isEnrolledStatus(r.enrollment_status)
   ).length;
   // The student being transferred isn't in target yet (filtered above as
   // single active row in source), so the count above is the standalone
@@ -266,7 +263,7 @@ export async function transferStudentSection(
     .from('section_students')
     .select('id', { count: 'exact', head: true })
     .eq('section_id', targetSec.id)
-    .in('enrollment_status', ['active', 'late_enrollee']);
+    .in('enrollment_status', ENROLLED_STATUSES);
   if (capErr) {
     return {
       ok: false,

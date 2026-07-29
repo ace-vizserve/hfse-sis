@@ -1,4 +1,5 @@
 import { unstable_cache } from 'next/cache';
+import { ENROLLED_STATUSES, isEnrolledStatus } from '@/lib/schemas/enrolment';
 
 import {
   STAGE_COLUMN_MAP,
@@ -103,7 +104,7 @@ const CORE_DOC_STATUS_COLUMNS = [
 // only legal values today are 'active', 'late_enrollee', 'withdrawn',
 // 'graduated'. Using 'conditional' here silently dropped every late
 // enrollee from drill results, producing card-vs-drill mismatches.
-const ENROLLED_STATUSES = new Set(['active', 'late_enrollee']);
+const ENROLLED_STATUS_SET = new Set<string>(ENROLLED_STATUSES);
 const SOFT_CLOSED_APPLICATION_STATUSES = new Set(['Cancelled', 'Withdrawn']);
 
 // A row whose ADMISSIONS applicationStatus is soft-closed (Cancelled/Withdrawn)
@@ -192,8 +193,7 @@ function deriveStage(
   applicationStatus: string | null,
   enrollmentStatus: string
 ): string {
-  if (enrollmentStatus === 'active' || enrollmentStatus === 'late_enrollee')
-    return 'Enrolled';
+  if (isEnrolledStatus(enrollmentStatus)) return 'Enrolled';
   if (enrollmentStatus === 'withdrawn') return 'Withdrawn';
   if (enrollmentStatus === 'graduated') return 'Graduated';
   return (applicationStatus ?? '').trim() || 'Not started';
@@ -778,10 +778,10 @@ export function applyTargetFilter(
       // drill (KD #82/#124).
       if (!range)
         return rows.filter(
-          (r) => ENROLLED_STATUSES.has(r.enrollmentStatus) && !isSoftClosed(r)
+          (r) => ENROLLED_STATUS_SET.has(r.enrollmentStatus) && !isSoftClosed(r)
         );
       return rows.filter((r) => {
-        if (!ENROLLED_STATUSES.has(r.enrollmentStatus)) return false;
+        if (!ENROLLED_STATUS_SET.has(r.enrollmentStatus)) return false;
         if (isSoftClosed(r)) return false;
         if (!r.applicationDate) return false;
         const d = r.applicationDate.slice(0, 10);
@@ -800,7 +800,7 @@ export function applyTargetFilter(
       // applicationStatus plays NO part here.
       const stillEnrolled = new Set(
         rows
-          .filter((r) => ENROLLED_STATUSES.has(r.enrollmentStatus))
+          .filter((r) => ENROLLED_STATUS_SET.has(r.enrollmentStatus))
           .map((r) => r.studentNumber)
           .filter((sn): sn is string => !!sn)
       );
@@ -828,7 +828,7 @@ export function applyTargetFilter(
     }
     case 'active-enrolled':
       return rows.filter(
-        (r) => ENROLLED_STATUSES.has(r.enrollmentStatus) && !isSoftClosed(r)
+        (r) => ENROLLED_STATUS_SET.has(r.enrollmentStatus) && !isSoftClosed(r)
       );
     case 'expiring-docs':
       return rows.filter((r) => r.expiringDocsCount > 0 && !isSoftClosed(r));
@@ -861,7 +861,7 @@ export function applyTargetFilter(
     case 'class-assignment-readiness':
       return rows.filter(
         (r) =>
-          ENROLLED_STATUSES.has(r.enrollmentStatus) &&
+          ENROLLED_STATUS_SET.has(r.enrollmentStatus) &&
           r.sectionId === null &&
           !isSoftClosed(r)
       );

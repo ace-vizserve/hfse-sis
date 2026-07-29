@@ -15,6 +15,48 @@ export const ENROLLMENT_STATUS_VALUES = [
 ] as const;
 export type EnrollmentStatus = (typeof ENROLLMENT_STATUS_VALUES)[number];
 
+/**
+ * The statuses that mean "this student is currently on the roster".
+ *
+ * THIS EXISTS BECAUSE THE ENUM CONFLATES TWO THINGS. `enrollment_status`
+ * answers both "is this student enrolled?" (active vs withdrawn) and "did they
+ * join after the year started?" (late_enrollee) in one column — but a late
+ * enrollee IS an active student. "Late" is a property of their tenure, and
+ * `enrollment_date` is what actually carries it (which is why KD #146 can flip
+ * the label back to `active` with byte-identical attendance rollups).
+ *
+ * So every "is this student active?" query has to remember that "active" has
+ * two spellings, and forgetting is silent — the query just returns fewer
+ * students. It has already been forgotten repeatedly: KD #126 found a
+ * submission KPI using `.eq('active')` while its own drill used
+ * `.neq('withdrawn')`, and the section capacity check counted only `active`, so
+ * late enrollees didn't count toward the 50-student cap (Hard Rule #5) — 13 of
+ * 21 AY2026 sections were mis-counted when that was found.
+ *
+ * Use these instead of an inline `['active', 'late_enrollee']`, of which the
+ * codebase had five copies plus a module-private Set.
+ *
+ * Prefer `ENROLLED_STATUSES` for a PostgREST `.in(...)` filter, and
+ * `isEnrolledStatus` for in-memory checks. `.neq('withdrawn')` is equivalent
+ * today and appears throughout; it stays correct only while `withdrawn` is the
+ * single non-enrolled status, so new code should state what it wants.
+ *
+ * Deliberately does NOT redefine the withdrawn constant: `lib/evaluation/
+ * roster-rules.ts` already exports `WITHDRAWN_ENROLLMENT_STATUS` plus
+ * `isActiveRosterStatus` (a `!== withdrawn` formulation), it is tested, and
+ * several modules import it. Adding a second definition of the same string
+ * while fixing a "too many spellings" problem would be self-defeating. These
+ * two are the ALLOWLIST form, which `.in()` filters need and which states the
+ * intent positively.
+ */
+export const ENROLLED_STATUSES = ['active', 'late_enrollee'] as const;
+
+export function isEnrolledStatus(
+  status: string | null | undefined
+): status is 'active' | 'late_enrollee' {
+  return status === 'active' || status === 'late_enrollee';
+}
+
 export const WITHDRAWAL_REASON_VALUES = [
   'transferred_other_school',
   'family_relocation',

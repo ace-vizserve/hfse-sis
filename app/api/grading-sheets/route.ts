@@ -1,5 +1,6 @@
 ﻿import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
+import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -194,7 +195,7 @@ export async function POST(request: NextRequest) {
     .from('section_students')
     .select('id, enrollment_status')
     .eq('section_id', section_id)
-    .in('enrollment_status', ['active', 'late_enrollee']);
+    .in('enrollment_status', ENROLLED_STATUSES);
   if (enrErr)
     return NextResponse.json({ error: enrErr.message }, { status: 500 });
 
