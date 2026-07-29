@@ -284,6 +284,7 @@ export function ExpiringQueue({ rows }: Props) {
       {
         id: 'actions',
         header: '',
+        enableHiding: false,
         cell: ({ row }) => (
           <div className="flex items-center gap-1.5">
             <NotifyButton

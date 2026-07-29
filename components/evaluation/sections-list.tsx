@@ -115,6 +115,10 @@ function buildColumns(
         header: ({ column }) => (
           <SortableHeader column={column}>{t.shortLabel}</SortableHeader>
         ),
+        // The id carries a term UUID, so the Columns menu and CSV header need
+        // an explicit name. Use the FULL label ("Term 2"), not the grid's
+        // compact "T2" — a menu has room and no column to compare against.
+        meta: { label: t.label },
         cell: ({ row }) => {
           const p = row.original.writeupProgress[t.id];
           return (

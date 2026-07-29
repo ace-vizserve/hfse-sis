@@ -229,6 +229,7 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
             {
               id: 'actions',
               header: '',
+              enableHiding: false,
               cell: ({ row }: { row: { original: PFileValidationRow } }) => {
                 const key = rowKey(row.original);
                 const busy = actingKey === key;

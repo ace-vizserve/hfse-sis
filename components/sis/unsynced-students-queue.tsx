@@ -164,6 +164,7 @@ export function UnsyncedStudentsQueue({
       {
         id: 'actions',
         header: '',
+        enableHiding: false,
         cell: ({ row }) => {
           const canAssign =
             row.original.gapReason === 'no_class_section' ||

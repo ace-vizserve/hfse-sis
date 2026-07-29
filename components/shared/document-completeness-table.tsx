@@ -377,6 +377,9 @@ function buildColumns(
           {abbreviateSlotLabel(h.label)}
         </span>
       ),
+      // The grid header is abbreviated to fit a narrow column; the Columns
+      // menu and CSV header take the full slot name.
+      meta: { label: h.label },
       cell: ({ row }) => {
         const status = row.original.slots.find(
           (sl) => sl.key === h.key

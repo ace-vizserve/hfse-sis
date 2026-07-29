@@ -400,6 +400,7 @@ function buildPromisedColumns(
     {
       id: 'actions',
       header: '',
+      enableHiding: false,
       cell: ({ row }) => (
         <RowActionsMenu>
           <DropdownMenuItem onSelect={() => openBulkNotify([row.original])}>
@@ -1118,6 +1119,7 @@ function buildCrossModuleActionsColumn(
   return {
     id: 'actions',
     header: '',
+    enableHiding: false,
     cell: ({ row }) => {
       const r = row.original;
       const showRecords = scope === 'enrolled' && !!r.studentNumber;

@@ -243,6 +243,7 @@ export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
       {
         id: 'actions',
         header: '',
+        enableHiding: false,
         cell: ({ row }) => {
           const key = rowKey(row.original);
           const busy = actingKey === key;
