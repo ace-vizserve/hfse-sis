@@ -15,7 +15,7 @@ import {
 import type { VelocityPoint } from '@/lib/dashboard/velocity';
 import { GRADE_BANDS, type GradeBand } from '@/lib/markbook/drill-filter';
 import { termIdsForRange } from '@/lib/markbook/term-range';
-import { fetchAllPages } from '@/lib/supabase/paginate';
+import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Markbook dashboard aggregators — grading-specific lens.
@@ -153,16 +153,24 @@ async function loadGradeDistributionUncached(
     is_na: boolean | null;
   }> = [];
   try {
-    entryRows = await fetchAllPages<{
-      quarterly_grade: number | null;
-      is_na: boolean | null;
-    }>((from, to) =>
-      service
-        .from('grade_entries')
-        .select('quarterly_grade, is_na')
-        .in('grading_sheet_id', sheetIds)
-        .not('quarterly_grade', 'is', null)
-        .range(from, to)
+    // Chunked AND paginated: `sheetIds` is every examinable sheet for one term
+    // AY-wide (~105-130 today), which shares a URL ceiling of ~396 uuids with
+    // nothing else — but the sibling loadMarkbookKpisForRange below already
+    // chunks this identical shape at 200, and the two should not disagree about
+    // whether it is safe. fetchAllPages inside each chunk still handles the
+    // separate 1000-row response cap.
+    entryRows = await fetchInChunks(sheetIds, (slice) =>
+      fetchAllPages<{
+        quarterly_grade: number | null;
+        is_na: boolean | null;
+      }>((from, to) =>
+        service
+          .from('grade_entries')
+          .select('quarterly_grade, is_na')
+          .in('grading_sheet_id', slice)
+          .not('quarterly_grade', 'is', null)
+          .range(from, to)
+      )
     );
   } catch (entryErr) {
     console.error(

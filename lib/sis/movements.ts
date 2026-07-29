@@ -3,7 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { createServiceClient } from '@/lib/supabase/service';
-import { fetchAllPages } from '@/lib/supabase/paginate';
+import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { sgDate } from '@/lib/dates';
 import { preloadTermsForAYs, termForDateInPreloaded } from '@/lib/sis/terms';
 import {
@@ -535,19 +535,34 @@ async function enrichWithStudents(
     }
   >();
   if (metaIds.length > 0) {
-    const { data, error } = await service
-      .from('section_students')
-      .select(
-        'id, student_id, enrolee_number, sections!inner(name, levels!inner(code, label), academic_year:academic_years!inner(ay_code))'
-      )
-      .in('id', metaIds);
-    if (error) {
-      console.warn(
-        '[movements] section_students enrichment failed:',
-        error.message
-      );
-    }
-    for (const row of (data ?? []) as SectionStudentRow[]) {
+    // Chunked: `metaIds` is one uuid per movement event, and the page's
+    // `?scope=all` toggle (KD #83) spans every AY ever created, so this grows
+    // without bound as movement history accumulates. PostgREST puts `.in()` in
+    // the URL and fails past ~14.3KB / 396 uuids (see lib/supabase/paginate.ts).
+    // The existing `if (error)` below could never have caught that: a URL
+    // overflow rejects the fetch outright rather than resolving to
+    // `{ data, error }`, so it threw straight out of getMovementEvents and took
+    // the whole page down instead of degrading to unenriched rows.
+    const data = await fetchInChunks(metaIds, async (slice) => {
+      const { data, error } = await service
+        .from('section_students')
+        .select(
+          'id, student_id, enrolee_number, sections!inner(name, levels!inner(code, label), academic_year:academic_years!inner(ay_code))'
+        )
+        .in('id', slice);
+      // Enrichment is cosmetic (names/levels on an audit-derived feed), so keep
+      // the original non-fatal posture: warn and carry on with what resolved,
+      // rather than failing the page.
+      if (error) {
+        console.warn(
+          '[movements] section_students enrichment failed:',
+          error.message
+        );
+        return [];
+      }
+      return data ?? [];
+    });
+    for (const row of data as SectionStudentRow[]) {
       const sec = Array.isArray(row.sections) ? row.sections[0] : row.sections;
       if (!sec) continue;
       const lvl = Array.isArray(sec.levels) ? sec.levels[0] : sec.levels;

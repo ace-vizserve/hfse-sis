@@ -58,18 +58,31 @@ export async function POST(request: NextRequest) {
   const sheetIds = sheets.map((s) => s.id);
   const now = new Date().toISOString();
 
-  const { error: lockErr } = await service
-    .from('grading_sheets')
-    .update({
-      is_locked: true,
-      locked_at: now,
-      locked_by: 'system:grading-deadline',
-      updated_at: now,
-    })
-    .in('id', sheetIds);
-  if (lockErr) {
-    console.error('[lock-overdue] bulk lock failed:', lockErr.message);
-    return NextResponse.json({ error: lockErr.message }, { status: 500 });
+  // Chunked: the overdue-sheet scan spans every academic year, so this is not
+  // bounded by one AY's sheet count. PostgREST serializes `.in()` into the URL
+  // and fails past ~14.3KB / 396 uuids (see lib/supabase/paginate.ts). The
+  // realistic way to exceed that here is a historical-AY backfill — sheets bulk
+  // created for an already-past year, so every term's grading_lock_date is
+  // already behind us and the whole year lands in one batch (an AY is ~400-750
+  // sheets). That is not hypothetical for this project.
+  const LOCK_CHUNK = 200;
+  for (let i = 0; i < sheetIds.length; i += LOCK_CHUNK) {
+    const slice = sheetIds.slice(i, i + LOCK_CHUNK);
+    const { error: lockErr } = await service
+      .from('grading_sheets')
+      .update({
+        is_locked: true,
+        locked_at: now,
+        locked_by: 'system:grading-deadline',
+        updated_at: now,
+      })
+      .in('id', slice);
+    if (lockErr) {
+      // Earlier chunks stay locked — locking is idempotent (the scan only
+      // selects still-unlocked sheets), so the next cron run picks up the rest.
+      console.error('[lock-overdue] bulk lock failed:', lockErr.message);
+      return NextResponse.json({ error: lockErr.message }, { status: 500 });
+    }
   }
 
   await logAction({

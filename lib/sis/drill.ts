@@ -1180,6 +1180,12 @@ export async function loadAcademicYearsList(): Promise<AcademicYearDrillRow[]> {
         // Paginated — PostgREST caps a single response at 1000 rows, and
         // this sums section_students across every AY at once (comfortably
         // past 1000 once a few AYs are populated).
+        //
+        // The `.in()` filter here is deliberately NOT chunked: it holds section
+        // ids across every AY, which grows ~21 per year, against a URL ceiling
+        // of ~396 uuids (see lib/supabase/paginate.ts). That is roughly 19
+        // academic years of headroom — not a real bound. Chunking it would be
+        // machinery for a problem this query cannot have.
         const ssRows = await fetchAllPages<{ section_id: string }>((from, to) =>
           service
             .from('section_students')

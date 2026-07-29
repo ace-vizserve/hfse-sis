@@ -3,7 +3,7 @@ import { cache } from 'react';
 
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
 import { DAY_TYPE_LABELS } from '@/lib/schemas/attendance';
-import { fetchAllPages } from '@/lib/supabase/paginate';
+import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   computeDelta,
@@ -384,12 +384,26 @@ async function loadTopAbsentRangeUncached(
   if (ids.length === 0) return [];
 
   const service = createServiceClient();
-  const { data } = await service
-    .from('section_students')
-    .select(
-      'id, section:sections(name), student:students(first_name, last_name, student_number)'
-    )
-    .in('id', ids);
+  // Chunked: `ids` is every student with at least one A/L mark in the picker's
+  // range, so over a full-AY window it approaches the whole roster. PostgREST
+  // serializes `.in()` into the URL and fails past ~14.3KB / 396 uuids (see
+  // lib/supabase/paginate.ts). Measured on AY2026 this is already 276 ids =
+  // 10.0KB, 70% of the ceiling with terms still left to record — so it crosses
+  // within the year, not eventually.
+  const data = await fetchInChunks(ids, async (slice) => {
+    const { data, error } = await service
+      .from('section_students')
+      .select(
+        'id, section:sections(name), student:students(first_name, last_name, student_number)'
+      )
+      .in('id', slice);
+    if (error) {
+      throw new Error(
+        `loadTopAbsentRange: section_students lookup failed: ${error.message}`
+      );
+    }
+    return data ?? [];
+  });
 
   type Joined = {
     id: string;
