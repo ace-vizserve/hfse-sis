@@ -226,7 +226,15 @@ const ATTENDANCE_NAV: NavSection[] = [
   {
     items: [
       { href: '/attendance', label: 'Dashboard' },
-      { href: '/attendance/sections', label: 'Sections' },
+      // Repointed to the Classroom module (design doc
+      // 2026-07-28-classroom-workspace-design.md, Phase 7) — the section
+      // picker that used to live here is now the section×term workspace.
+      // `/attendance/sections` itself is untouched and stays reachable by
+      // URL as a fallback (Phase 7 brief — retire only after the classroom
+      // list proves itself). Every role that could see this item
+      // (teacher/academic_coordinator/school_admin/superadmin, via
+      // ATTENDANCE_NAV's implicit scope) is also allowed on `/classroom`.
+      { href: '/classroom', label: 'Classes' },
       {
         href: '/attendance/insights',
         label: 'Insights',
@@ -395,7 +403,14 @@ const EVALUATION_NAV: NavSection[] = [
   {
     label: 'Write-ups',
     items: [
-      { href: '/evaluation/sections', label: 'All terms' },
+      // Repointed to the Classroom module (design doc
+      // 2026-07-28-classroom-workspace-design.md, Phase 7) — picking a class
+      // to write up now goes through the shared section×term workspace's
+      // Write-ups sub-route. `/evaluation/sections` itself is untouched and
+      // stays reachable by URL as a fallback. Every role that could see this
+      // item (teacher/academic_coordinator/school_admin/superadmin) is also
+      // allowed on `/classroom`.
+      { href: '/classroom', label: 'Classes' },
       {
         href: '/evaluation/comments',
         label: 'Comments',
@@ -608,8 +623,14 @@ export const NAV_BY_MODULE: {
         ],
       },
       {
+        // Repointed to the Classroom module (design doc
+        // 2026-07-28-classroom-workspace-design.md, Phase 7) —
+        // `/markbook/sections` itself is untouched and stays reachable by
+        // URL as a fallback. Every role with this item
+        // (academic_coordinator/school_admin/superadmin) is also allowed on
+        // `/classroom`.
         label: 'Students',
-        items: [{ href: '/markbook/sections', label: 'Sections' }],
+        items: [{ href: '/classroom', label: 'Classes' }],
       },
       {
         items: [
@@ -653,8 +674,14 @@ export const NAV_BY_MODULE: {
         ],
       },
       {
+        // Repointed to the Classroom module (design doc
+        // 2026-07-28-classroom-workspace-design.md, Phase 7) —
+        // `/markbook/sections` itself is untouched and stays reachable by
+        // URL as a fallback. Every role with this item
+        // (academic_coordinator/school_admin/superadmin) is also allowed on
+        // `/classroom`.
         label: 'Students',
-        items: [{ href: '/markbook/sections', label: 'Sections' }],
+        items: [{ href: '/classroom', label: 'Classes' }],
       },
       {
         items: [
@@ -689,8 +716,14 @@ export const NAV_BY_MODULE: {
         ],
       },
       {
+        // Repointed to the Classroom module (design doc
+        // 2026-07-28-classroom-workspace-design.md, Phase 7) —
+        // `/markbook/sections` itself is untouched and stays reachable by
+        // URL as a fallback. Every role with this item
+        // (academic_coordinator/school_admin/superadmin) is also allowed on
+        // `/classroom`.
         label: 'Students',
-        items: [{ href: '/markbook/sections', label: 'Sections' }],
+        items: [{ href: '/classroom', label: 'Classes' }],
       },
       {
         items: [
