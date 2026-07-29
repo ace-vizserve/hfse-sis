@@ -403,8 +403,12 @@ const EVALUATION_NAV: NavSection[] = [
       // Phase 7 repointed this to /classroom; Phase 8 reverts it (design doc
       // 2026-07-28-classroom-workspace-design.md, Phase 8) — the handoff
       // into Classroom now happens at the row level, per role, not at the
-      // nav level.
-      { href: '/evaluation/sections', label: 'All terms' },
+      // nav level. Phase 9 renamed "All terms" → "Sections" and dropped the
+      // Quick filters group (below) — the list page no longer scopes by
+      // term, so `?term=N` quicklinks and the old term-in-eyebrow label were
+      // both stale (design doc 2026-07-28-classroom-workspace-design.md
+      // Phase 9 / phase-9-brief.md).
+      { href: '/evaluation/sections', label: 'Sections' },
       {
         href: '/evaluation/comments',
         label: 'Comments',
@@ -420,16 +424,6 @@ const EVALUATION_NAV: NavSection[] = [
         label: 'Virtue themes',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
-    ],
-  },
-  {
-    // Per-term quicklinks land on the sections picker with `?term=<number>`
-    // preselected. T4 has no FCA comment section (KD #49) so it's omitted.
-    label: 'Quick filters',
-    items: [
-      { href: '/evaluation/sections?term=1', label: 'Term 1 write-ups' },
-      { href: '/evaluation/sections?term=2', label: 'Term 2 write-ups' },
-      { href: '/evaluation/sections?term=3', label: 'Term 3 write-ups' },
     ],
   },
   {

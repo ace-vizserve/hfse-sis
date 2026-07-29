@@ -106,7 +106,7 @@ export default async function EvaluationSectionRosterPage({
   return (
     <PageShell>
       <Link
-        href={`/evaluation/sections?term_id=${selectedTerm.id}`}
+        href="/evaluation/sections"
         className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="h-3.5 w-3.5" />

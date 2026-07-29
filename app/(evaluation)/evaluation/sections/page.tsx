@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   ArrowLeft,
-  ClipboardCheck,
   GraduationCap,
   Layers,
   LayoutGrid,
@@ -23,11 +22,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  getWriteupProgressByTerm,
-  listFormAdviserSectionIds,
-} from '@/lib/evaluation/queries';
+import { listFormAdviserSectionIds } from '@/lib/evaluation/queries';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 
@@ -38,11 +33,13 @@ type LevelLite = {
   level_type: 'primary' | 'secondary';
 };
 
-export default async function EvaluationSectionsPickerPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ term_id?: string; term?: string }>;
-}) {
+// Phase 9 (design doc 2026-07-28-classroom-workspace-design.md, phase-9-brief.md):
+// this page is a plain, term-agnostic section list — consistent with
+// Attendance's /attendance/sections and Markbook's /markbook/sections. The
+// term picker belongs on the class's own page (Classroom's Write-ups tab /
+// /evaluation/sections/[sectionId], which keeps its own term switcher), not
+// before you've picked a class.
+export default async function EvaluationSectionsPickerPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
@@ -54,7 +51,6 @@ export default async function EvaluationSectionsPickerPage({
     redirect('/');
   }
 
-  const sp = await searchParams;
   const supabase = await createClient();
 
   const { data: ay } = await supabase
@@ -73,10 +69,14 @@ export default async function EvaluationSectionsPickerPage({
     );
   }
 
+  // T1–T3 only; T4 excluded (no FCA comment on the final card, KD #49). Kept
+  // solely to power the virtue-theme warning below — the term picker itself
+  // moved to the section detail page.
   const { data: termsRaw } = await supabase
     .from('terms')
-    .select('id, label, term_number, virtue_theme, is_current')
+    .select('id, label, term_number, virtue_theme')
     .eq('academic_year_id', ay.id)
+    .neq('term_number', 4)
     .order('term_number', { ascending: true });
 
   type TermRow = {
@@ -84,24 +84,12 @@ export default async function EvaluationSectionsPickerPage({
     label: string;
     term_number: number;
     virtue_theme: string | null;
-    is_current: boolean;
   };
-  const terms = ((termsRaw ?? []) as TermRow[]).filter(
-    (t) => t.term_number !== 4
-  );
-
-  const termNumberParam = sp.term ? Number.parseInt(sp.term, 10) : NaN;
-  const termIdFromNumber = Number.isFinite(termNumberParam)
-    ? terms.find((t) => t.term_number === termNumberParam)?.id
-    : undefined;
-
-  const defaultTermId =
-    sp.term_id ??
-    termIdFromNumber ??
-    terms.find((t) => t.is_current)?.id ??
-    terms[0]?.id ??
-    '';
-  const selectedTerm = terms.find((t) => t.id === defaultTermId) ?? null;
+  const terms = (termsRaw ?? []) as TermRow[];
+  // Virtue theme is a hard publish gate (KD #138) — a missing one on any
+  // displayed term silently blocks that term's report cards, so the warning
+  // now checks every T1–T3 term rather than only the previously-selected one.
+  const missingVirtueTerms = terms.filter((t) => !t.virtue_theme);
 
   const { data: allSections } = await supabase
     .from('sections')
@@ -136,9 +124,21 @@ export default async function EvaluationSectionsPickerPage({
       ? await loadFormAdvisersBySection(sectionIds, ay.ay_code)
       : ({} as Record<string, { userId: string; name: string }>);
 
-  const progress = selectedTerm
-    ? await getWriteupProgressByTerm(selectedTerm.id, sectionIds)
-    : ({} as Record<string, { active_count: number; submitted_count: number }>);
+  // Active-roster count per section — the same non-term-scoped read
+  // Attendance's and Markbook's section lists already use for their "Active
+  // students" card, kept for consistency now that this list is term-agnostic.
+  const activeCounts: Record<string, number> = {};
+  if (sectionIds.length > 0) {
+    const { data: enrolments } = await supabase
+      .from('section_students')
+      .select('section_id, enrollment_status')
+      .in('section_id', sectionIds);
+    for (const row of enrolments ?? []) {
+      if (row.enrollment_status !== 'withdrawn') {
+        activeCounts[row.section_id] = (activeCounts[row.section_id] ?? 0) + 1;
+      }
+    }
+  }
 
   const sorted = sections.slice().sort((a, b) => {
     const ca = a.level?.code ?? '';
@@ -165,16 +165,7 @@ export default async function EvaluationSectionsPickerPage({
     ).values()
   );
 
-  const totalActive = Object.values(progress).reduce(
-    (n, p) => n + (p?.active_count ?? 0),
-    0
-  );
-  const totalSubmitted = Object.values(progress).reduce(
-    (n, p) => n + (p?.submitted_count ?? 0),
-    0
-  );
-  const completePct =
-    totalActive === 0 ? 0 : Math.round((totalSubmitted / totalActive) * 100);
+  const totalActive = Object.values(activeCounts).reduce((n, c) => n + c, 0);
   const levelCount = new Set(sorted.map((s) => s.level?.label).filter(Boolean))
     .size;
 
@@ -191,7 +182,7 @@ export default async function EvaluationSectionsPickerPage({
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div className="space-y-4">
           <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Evaluation · {selectedTerm?.label ?? ay.ay_code}
+            {ay.ay_code}
           </p>
           <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
             {isTeacher ? 'Your sections.' : 'Sections.'}
@@ -209,48 +200,21 @@ export default async function EvaluationSectionsPickerPage({
           >
             {ay.ay_code}
           </Badge>
-          {totalActive > 0 && (
-            <Badge
-              variant="outline"
-              className={`h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                completePct === 100
-                  ? 'border-brand-mint/50 text-emerald-700'
-                  : 'text-muted-foreground'
-              }`}
-            >
-              {completePct}% submitted
-            </Badge>
-          )}
         </div>
       </header>
 
-      {terms.length > 0 && (
-        <Tabs value={defaultTermId}>
-          <TabsList>
-            {terms.map((t) => (
-              <TabsTrigger key={t.id} value={t.id} asChild>
-                <Link href={`/evaluation/sections?term_id=${t.id}`}>
-                  {t.label}
-                  {t.is_current && (
-                    <span className="ml-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
-                      current
-                    </span>
-                  )}
-                </Link>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      )}
-
-      {selectedTerm && !selectedTerm.virtue_theme && (
+      {missingVirtueTerms.length > 0 && (
         <div className="flex items-start gap-3 rounded-xl border border-brand-amber/40 bg-brand-amber-light/40 p-4">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand-amber/15 text-brand-amber">
             <AlertTriangle className="size-4" />
           </div>
           <div className="min-w-0 space-y-1">
             <p className="font-serif text-sm font-semibold text-foreground">
-              Virtue theme not set for {selectedTerm.label}.
+              {missingVirtueTerms.length === 1
+                ? `Virtue theme not set for ${missingVirtueTerms[0].label}.`
+                : `Virtue themes not set for ${missingVirtueTerms
+                    .map((t) => t.label)
+                    .join(', ')}.`}
             </p>
             <p className="text-sm leading-relaxed text-muted-foreground">
               The academic coordinator sets the virtue theme in{' '}
@@ -260,10 +224,10 @@ export default async function EvaluationSectionsPickerPage({
               >
                 Evaluation → Virtue themes
               </Link>
-              . Until it&apos;s set,{' '}
+              . Until it&apos;s set for a term,{' '}
               {isTeacher
-                ? 'the write-up fields are locked.'
-                : "advisers can't start writing (academic coordinators can still edit if needed)."}
+                ? "that term's write-up fields are locked."
+                : "advisers can't start writing for that term (academic coordinators can still edit if needed)."}
             </p>
           </div>
         </div>
@@ -271,37 +235,20 @@ export default async function EvaluationSectionsPickerPage({
 
       {sorted.length > 0 && (
         <div className="@container/main">
-          <div className="grid grid-cols-1 gap-4 @xl/main:grid-cols-3 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs">
+          <div className="grid grid-cols-1 gap-4 @xl/main:grid-cols-2 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs">
             <SummaryCard
               description={isTeacher ? 'Your sections' : 'Total sections'}
               value={sorted.length.toLocaleString('en-SG')}
               icon={Layers}
               footerTitle={`${levelCount} ${levelCount === 1 ? 'level' : 'levels'}`}
-              footerDetail={selectedTerm?.label ?? ay.label}
+              footerDetail={ay.label}
             />
             <SummaryCard
               description="Active students"
-              value={Object.values(progress)
-                .reduce((n, p) => n + (p?.active_count ?? 0), 0)
-                .toLocaleString('en-SG')}
+              value={totalActive.toLocaleString('en-SG')}
               icon={Users}
               footerTitle="Currently enrolled"
               footerDetail="Across every section listed"
-            />
-            <SummaryCard
-              description="Write-ups submitted"
-              value={`${completePct}%`}
-              icon={ClipboardCheck}
-              footerTitle={
-                totalActive === 0
-                  ? '—'
-                  : `${totalSubmitted.toLocaleString('en-SG')} of ${totalActive.toLocaleString('en-SG')}`
-              }
-              footerDetail={
-                selectedTerm
-                  ? `${selectedTerm.label} progress`
-                  : 'No term selected'
-              }
             />
           </div>
         </div>
@@ -331,31 +278,20 @@ export default async function EvaluationSectionsPickerPage({
             </div>
             <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               {sorted.length} {sorted.length === 1 ? 'section' : 'sections'}
-              {selectedTerm && (
-                <span className="ml-2 text-muted-foreground/50">
-                  · {selectedTerm.label}
-                </span>
-              )}
             </p>
           </div>
 
           <EvaluationSectionsList
             levels={levels}
-            selectedTermId={selectedTerm?.id ?? ''}
             isTeacher={isTeacher}
             isOversight={isOversight}
-            sections={sorted.map((s) => {
-              const p = progress[s.id];
-              return {
-                id: s.id,
-                name: s.name,
-                levelId: s.level?.id ?? null,
-                levelLabel: s.level?.label ?? null,
-                active: p?.active_count ?? 0,
-                submitted: p?.submitted_count ?? 0,
-                fcaName: adviserMap[s.id]?.name ?? null,
-              };
-            })}
+            sections={sorted.map((s) => ({
+              id: s.id,
+              name: s.name,
+              levelId: s.level?.id ?? null,
+              levelLabel: s.level?.label ?? null,
+              fcaName: adviserMap[s.id]?.name ?? null,
+            }))}
           />
         </>
       )}
