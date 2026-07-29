@@ -30,7 +30,8 @@ describe('buildScreenFields', () => {
     const fields = buildScreenFields(
       columns,
       ['level', 'name', 'secret', 'actions'],
-      undefined
+      undefined,
+      rows
     );
     expect(fields.map((f) => f.id)).toEqual(['level', 'name']);
     expect(fields.map((f) => f.header)).toEqual(['Level', 'Student']);
@@ -48,7 +49,8 @@ describe('buildScreenFields', () => {
           defaultChecked: true,
         },
         { id: 'y', header: 'Omitted', accessor: () => 'y' },
-      ]
+      ],
+      rows
     );
     expect(fields.map((f) => f.id)).toEqual(['name', 'x']);
   });
@@ -57,8 +59,40 @@ describe('buildScreenFields', () => {
     const boolCols: ColumnDef<Row>[] = [
       { id: 'flag', accessorFn: () => true, header: 'Flag' },
     ];
-    const [field] = buildScreenFields(boolCols, ['flag'], undefined);
+    const [field] = buildScreenFields(boolCols, ['flag'], undefined, rows);
     expect(field.accessor(rows[0], 0)).toBe('Yes');
+  });
+
+  it('drops a visible column whose accessor returns an object', () => {
+    const objCols: ColumnDef<Row>[] = [
+      { id: 'name', accessorKey: 'name', header: 'Name' },
+      {
+        id: 'metadata',
+        accessorFn: () => ({ a: 1 }),
+        header: 'Metadata',
+      },
+    ];
+    const fields = buildScreenFields(
+      objCols,
+      ['name', 'metadata'],
+      undefined,
+      rows
+    );
+    expect(fields.map((f) => f.id)).toEqual(['name']);
+  });
+
+  it('keeps a visible column whose values are all null', () => {
+    const nullCols: ColumnDef<Row>[] = [
+      { id: 'name', accessorKey: 'name', header: 'Name' },
+      { id: 'empty', accessorFn: () => null, header: 'Empty' },
+    ];
+    const fields = buildScreenFields(
+      nullCols,
+      ['name', 'empty'],
+      undefined,
+      rows
+    );
+    expect(fields.map((f) => f.id)).toEqual(['name', 'empty']);
   });
 });
 
@@ -67,7 +101,8 @@ describe('fieldsToCsvColumns', () => {
     const fields = buildScreenFields(
       [{ id: 'pos', accessorFn: (_r, i) => i + 1, header: 'Position' }],
       ['pos'],
-      undefined
+      undefined,
+      rows
     );
     const cols = fieldsToCsvColumns(rows, fields);
     expect(cols[0].header).toBe('Position');

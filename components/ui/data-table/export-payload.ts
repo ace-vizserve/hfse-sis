@@ -32,27 +32,45 @@ function toCell(v: unknown): string | number | null {
   // Match the on-screen Yes/No convention (field-grid.tsx) rather than
   // exporting the literal strings "true"/"false".
   if (typeof v === 'boolean') return v ? 'Yes' : 'No';
-  if (typeof v === 'object') return JSON.stringify(v);
   return v as string | number;
 }
 
 /**
  * The default export column set: the export-eligible columns the user can
  * currently SEE, in the order they see them, plus any extras the table
- * flagged `defaultChecked`. This is exactly what the old export sheet
- * seeded, so a plain export produces the same file it always did.
+ * flagged `defaultChecked`. Object-valued columns (those whose raw values are
+ * objects) are dropped entirely — they cannot be meaningfully exported. Columns
+ * with all-null values are kept (an empty column is legitimate).
  */
 export function buildScreenFields<TRow>(
   columns: ColumnDef<TRow>[],
   visibleColumnIds: string[],
-  extraColumns: Array<CsvExtraColumn<TRow>> | undefined
+  extraColumns: Array<CsvExtraColumn<TRow>> | undefined,
+  rows: TRow[]
 ): ExportField<TRow>[] {
   const byId = new Map<string, ColumnDef<TRow>>();
   for (const c of columns) byId.set(resolveColumnId(c), c);
 
+  // Identify object-valued columns by probing the first non-null value.
+  const isObjectColumn = new Set<string>();
+  for (const columnId of visibleColumnIds) {
+    const col = byId.get(columnId);
+    if (!col) continue;
+    for (const row of rows) {
+      const rawValue = resolveColumnValue(columns, columnId, row, 0);
+      if (rawValue != null) {
+        if (typeof rawValue === 'object') {
+          isObjectColumn.add(columnId);
+        }
+        break; // Stop at first non-null value for this column.
+      }
+    }
+  }
+
   const columnFields = visibleColumnIds
     .map((id) => byId.get(id))
     .filter((c): c is ColumnDef<TRow> => Boolean(c) && isExportableColumn(c!))
+    .filter((c) => !isObjectColumn.has(resolveColumnId(c)))
     .map((c) => {
       const id = resolveColumnId(c);
       return {
