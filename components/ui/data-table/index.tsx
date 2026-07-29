@@ -51,8 +51,10 @@ import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
 import { BulkActionFooter } from './bulk-action-footer';
 import { resolveColumnLabel } from './column-label';
+import { exportCsv } from './csv';
 import { DataTableEmptyState } from './empty-state';
 import type { DataTableExportSheetProps } from './export-sheet';
+import { buildScreenFields, fieldsToCsvColumns } from './export-payload';
 import { FacetDropdown } from './facet-dropdown';
 import { filterRows } from './filter-rows';
 import { FilterChip } from './filter-chip';
@@ -359,6 +361,29 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     [rowSelection, table, tabFilteredData]
   );
 
+  // Instant export — for tables with no raw-DB-column capability there is
+  // nothing to configure, so the button downloads what is on screen rather
+  // than opening a sheet. Rows come from the table's own sorted row model,
+  // which IS the current filter + sort, so the file can't disagree with the
+  // screen. A live row selection narrows it; nothing ticked means everything.
+  function handleInstantExport() {
+    if (!csv) return;
+    const scoped =
+      selectedRows.length > 0
+        ? selectedRows
+        : table.getSortedRowModel().rows.map((r) => r.original);
+    const fields = buildScreenFields(
+      columns,
+      table
+        .getVisibleLeafColumns()
+        .filter((c) => c.id !== 'select')
+        .map((c) => c.id),
+      csv.extraColumns,
+      scoped
+    );
+    exportCsv(scoped, fieldsToCsvColumns(scoped, fields), csv.filename);
+  }
+
   // Facets that live behind a `facetGroups` trigger still need to resolve to
   // a label for their chip — flatten both sources into one lookup list.
   const allFacets = useMemo(
@@ -532,7 +557,9 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
               variant="outline"
               size="sm"
               className="h-8"
-              onClick={() => setExportOpen(true)}
+              onClick={() =>
+                csv.rawColumns ? setExportOpen(true) : handleInstantExport()
+              }
             >
               <Download className="mr-1 h-3.5 w-3.5" />
               Export CSV
