@@ -186,6 +186,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Skip the audit when the RPC created nothing. Sheet generation is
+  // ON CONFLICT DO NOTHING throughout, so re-running "Create all sheets" after
+  // everything already exists is a legitimate, common no-op — and logging it
+  // made the audit trail imply a second bulk creation.
+  if (inserted === 0) {
+    return NextResponse.json({ ok: true, changed: false, inserted: 0 });
+  }
+
   await logAction({
     service,
     actor: { id: auth.user.id, email: auth.user.email ?? null },

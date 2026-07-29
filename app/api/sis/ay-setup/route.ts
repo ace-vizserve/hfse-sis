@@ -77,18 +77,28 @@ export async function POST(request: Request) {
     sectionsSeeded === 0 &&
     configsSeeded === 0;
 
-  await logAction({
-    service: supabase,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
-    action: 'ay.create',
-    entityType: 'academic_year',
-    entityId: ayId,
-    context: {
-      ay_code: ayCode,
-      label,
-      summary,
-    },
-  });
+  // Skip the audit when the RPC did nothing at all. `alreadyExisted` is
+  // exactly that condition and was already computed here for the response —
+  // it just wasn't used to gate the log, so re-submitting the create form for
+  // an existing AY wrote another `ay.create` row.
+  //
+  // Note this is deliberately NOT gated on `ayExisted` alone: a partial-state
+  // run (the AY row existed but terms/sections/configs were filled in) IS a
+  // real change and must still be audited.
+  if (!alreadyExisted) {
+    await logAction({
+      service: supabase,
+      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      action: 'ay.create',
+      entityType: 'academic_year',
+      entityId: ayId,
+      context: {
+        ay_code: ayCode,
+        label,
+        summary,
+      },
+    });
+  }
 
   revalidateTag(`sis:${ayCode}`, 'max');
 

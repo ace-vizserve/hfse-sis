@@ -73,8 +73,15 @@ export async function PUT(request: NextRequest) {
     );
   const ay = ayRow as { id: string; ay_code: string };
 
+  // Track whether the toggle actually moved anything. Both branches were
+  // already correctly idempotent on DATA (ignoreDuplicates upsert / a delete
+  // that matches nothing), but the audit row below fired regardless — so
+  // re-toggling an already-offered subject logged a state change that never
+  // occurred. The route's own header claimed full idempotency while doing this.
+  let changed = false;
+
   if (offered) {
-    const { error: upsertErr } = await service
+    const { data: upserted, error: upsertErr } = await service
       .from('subject_level_offerings')
       .upsert(
         { subject_id, level_id, academic_year_id },
@@ -82,38 +89,44 @@ export async function PUT(request: NextRequest) {
           onConflict: 'subject_id,level_id,academic_year_id',
           ignoreDuplicates: true,
         }
-      );
+      )
+      .select('subject_id');
     if (upsertErr) {
       return NextResponse.json({ error: upsertErr.message }, { status: 500 });
     }
+    // ignoreDuplicates means an existing row yields no returned rows.
+    changed = Array.isArray(upserted) && upserted.length > 0;
   } else {
-    const { error: deleteErr } = await service
+    const { data: deleted, error: deleteErr } = await service
       .from('subject_level_offerings')
       .delete()
       .eq('subject_id', subject_id)
       .eq('level_id', level_id)
-      .eq('academic_year_id', academic_year_id);
+      .eq('academic_year_id', academic_year_id)
+      .select('subject_id');
     if (deleteErr) {
       return NextResponse.json({ error: deleteErr.message }, { status: 500 });
     }
+    changed = Array.isArray(deleted) && deleted.length > 0;
   }
 
-  await logAction({
-    service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
-    action: 'subject_level_offering.toggle',
-    entityType: 'subject_level_offering',
-    entityId: subject_id,
-    context: {
-      subject_id,
-      subject_code: subject.code,
-      level_id,
-      level_code: level.code,
-      academic_year_id,
-      ay_code: ay.ay_code,
-      offered,
-    },
-  });
+  if (changed)
+    await logAction({
+      service,
+      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      action: 'subject_level_offering.toggle',
+      entityType: 'subject_level_offering',
+      entityId: subject_id,
+      context: {
+        subject_id,
+        subject_code: subject.code,
+        level_id,
+        level_code: level.code,
+        academic_year_id,
+        ay_code: ay.ay_code,
+        offered,
+      },
+    });
 
   return NextResponse.json({
     ok: true,

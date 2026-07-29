@@ -52,6 +52,19 @@ export async function DELETE(
     .eq('id', id)
     .maybeSingle();
 
+  // Nothing to delete — the row is already gone. Deleting a nonexistent row is
+  // NOT an error in PostgREST (0 rows, no error), so this used to fall through
+  // and write an `assignment.delete` audit row with an empty context, claiming
+  // a deletion that never happened.
+  //
+  // That is reachable two ways, both ordinary: a double-clicked "remove", and
+  // the FCA-change flow in components/sis/staff-assignment-sheet.tsx, which
+  // does DELETE-then-POST and leaves stale local state if the POST fails — so
+  // the natural retry re-deletes an id that is already gone.
+  if (!existing) {
+    return NextResponse.json({ ok: true, changed: false });
+  }
+
   const { error } = await service
     .from('teacher_assignments')
     .delete()
@@ -65,14 +78,12 @@ export async function DELETE(
     action: 'assignment.delete',
     entityType: 'teacher_assignment',
     entityId: id,
-    context: existing
-      ? {
-          teacher_user_id: existing.teacher_user_id,
-          section_id: existing.section_id,
-          subject_id: existing.subject_id,
-          role: existing.role,
-        }
-      : {},
+    context: {
+      teacher_user_id: existing.teacher_user_id,
+      section_id: existing.section_id,
+      subject_id: existing.subject_id,
+      role: existing.role,
+    },
   });
 
   if (existing?.section_id) {

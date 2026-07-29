@@ -83,6 +83,15 @@ export async function POST(
     after: Record<string, unknown>;
   };
 
+  // Skip the audit when the RPC renumbered nothing — an empty section, or a
+  // re-run where every row already holds its target index. The RPC is
+  // deterministic, so a second click is genuinely a no-op; logging it anyway
+  // implied the roster had been renumbered twice, which is precisely the
+  // question this action's audit rows exist to answer.
+  if (result.rows_renumbered === 0) {
+    return NextResponse.json({ ok: true, changed: false, rows_renumbered: 0 });
+  }
+
   await logAction({
     service,
     actor: { id: auth.user.id, email: auth.user.email ?? null },

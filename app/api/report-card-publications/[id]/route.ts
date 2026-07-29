@@ -28,6 +28,15 @@ export async function DELETE(
     .eq('id', id)
     .maybeSingle();
 
+  // Already revoked. Deleting a nonexistent row is not an error in PostgREST,
+  // so this used to fall through and log a `publication.delete` with an empty
+  // context — a permanent record of a revocation that never happened, on the
+  // audit trail registrars use to reconstruct who un-published a report card
+  // and when.
+  if (!existing) {
+    return NextResponse.json({ ok: true, changed: false });
+  }
+
   const { error } = await service
     .from('report_card_publications')
     .delete()
@@ -41,14 +50,12 @@ export async function DELETE(
     action: 'publication.delete',
     entityType: 'report_card_publication',
     entityId: id,
-    context: existing
-      ? {
-          section_id: existing.section_id,
-          term_id: existing.term_id,
-          publish_from: existing.publish_from,
-          publish_until: existing.publish_until,
-        }
-      : {},
+    context: {
+      section_id: existing.section_id,
+      term_id: existing.term_id,
+      publish_from: existing.publish_from,
+      publish_until: existing.publish_until,
+    },
   });
 
   invalidateDrillTags('markbook', await requireCurrentAyCode(service));

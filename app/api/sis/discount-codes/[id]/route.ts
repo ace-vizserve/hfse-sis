@@ -104,6 +104,22 @@ export async function PATCH(
     );
   }
 
+  // Diff BEFORE writing. This was computed after the update purely to shape
+  // the audit context, so a re-save of identical values still ran the UPDATE
+  // and still logged `sis.discount_code.update` with an empty `changes: []` —
+  // an audit row that says, in its own payload, that nothing changed.
+  const changes: Array<{ field: string; from: unknown; to: unknown }> = [];
+  for (const [col, next] of Object.entries(update)) {
+    const prev = beforeRow[col] ?? null;
+    if ((prev ?? null) !== (next ?? null)) {
+      changes.push({ field: col, from: prev, to: next });
+    }
+  }
+
+  if (changes.length === 0) {
+    return NextResponse.json({ ok: true, changed: 0 });
+  }
+
   const { error: upErr } = await supabase
     .from(table)
     .update(update)
@@ -111,14 +127,6 @@ export async function PATCH(
   if (upErr) {
     console.error('[sis discount-codes PATCH] update failed:', upErr.message);
     return NextResponse.json({ error: upErr.message }, { status: 500 });
-  }
-
-  const changes: Array<{ field: string; from: unknown; to: unknown }> = [];
-  for (const [col, next] of Object.entries(update)) {
-    const prev = beforeRow[col] ?? null;
-    if ((prev ?? null) !== (next ?? null)) {
-      changes.push({ field: col, from: prev, to: next });
-    }
   }
 
   await logAction({

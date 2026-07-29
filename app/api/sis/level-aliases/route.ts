@@ -47,6 +47,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Level not found' }, { status: 404 });
   }
 
+  // Read the existing mapping first so a re-submission of the SAME mapping
+  // doesn't log `level.alias.create` again. The upsert is idempotent on data,
+  // but the audit row previously fired every time — and these rows are how you
+  // reconstruct when a mis-typed level label was first reconciled.
+  const { data: priorAlias } = await service
+    .from('level_aliases')
+    .select('level_id')
+    .eq('raw_label', fromLabel)
+    .maybeSingle();
+  const unchanged =
+    (priorAlias as { level_id?: string } | null)?.level_id === toLevelId;
+
   const { error: upsertErr } = await service.from('level_aliases').upsert(
     {
       raw_label: fromLabel,
@@ -60,17 +72,23 @@ export async function POST(request: Request) {
   }
 
   const current = await getCurrentAcademicYear();
-  await logAction({
-    service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
-    action: 'level.alias.create',
-    entityType: 'level',
-    entityId: toLevelId,
-    context: {
-      raw_label: fromLabel,
-      mapped_to_label: (levelRow as { label: string }).label,
-    },
-  });
+  if (!unchanged) {
+    await logAction({
+      service,
+      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      action: 'level.alias.create',
+      entityType: 'level',
+      entityId: toLevelId,
+      context: {
+        raw_label: fromLabel,
+        mapped_to_label: (levelRow as { label: string }).label,
+        // A re-point of an existing alias is a different event from a first
+        // mapping; record which one this was.
+        remapped_from_level_id:
+          (priorAlias as { level_id?: string } | null)?.level_id ?? null,
+      },
+    });
+  }
 
   if (current) {
     await invalidateAllOperationalDrills(current.ay_code);

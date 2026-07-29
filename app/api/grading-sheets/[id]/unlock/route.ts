@@ -39,9 +39,21 @@ export async function POST(
   // is deliberate and audit-logged.
   const { data: sheetTermRow } = await service
     .from('grading_sheets')
-    .select('term:terms(grading_lock_date, label)')
+    .select('is_locked, term:terms(grading_lock_date, label)')
     .eq('id', id)
     .maybeSingle();
+
+  // No-op guard, mirroring the sibling lock route (lock/route.ts:26-43), which
+  // has had one all along. Without it, every repeat unlock re-stamped
+  // updated_at/locked_at and wrote another sheet.unlock (or force-unlock) audit
+  // row — and a force-unlock row is exactly the kind of deliberate override a
+  // reviewer would later want an accurate count of.
+  if (
+    sheetTermRow &&
+    (sheetTermRow as { is_locked?: boolean }).is_locked === false
+  ) {
+    return NextResponse.json({ ok: true, already_unlocked: true });
+  }
   type TermMeta = { grading_lock_date: string | null; label: string } | null;
   const termMeta = sheetTermRow
     ? ((Array.isArray(sheetTermRow.term)
