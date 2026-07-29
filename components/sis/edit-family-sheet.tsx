@@ -53,6 +53,7 @@ import {
   FATHER_GATED_FIELDS,
   GUARDIAN_GATED_FIELDS,
   MOTHER_GATED_FIELDS,
+  PARENT_GUARDIAN_PASS_TYPE_OPTIONS,
   type FatherUpdateInput,
   type GuardianUpdateInput,
   type MotherUpdateInput,
@@ -64,6 +65,7 @@ type FieldKind =
   | 'email'
   | 'date'
   | 'tribool'
+  | 'select'
   | 'combobox'
   | 'password';
 type FieldConfig = {
@@ -71,6 +73,8 @@ type FieldConfig = {
   label: string;
   kind?: FieldKind;
   wide?: boolean;
+  /** Only used when kind === 'select' — bounded option list. */
+  options?: readonly { label: string; value: string }[];
 };
 
 const FATHER_FIELDS: FieldConfig[] = [
@@ -91,7 +95,12 @@ const FATHER_FIELDS: FieldConfig[] = [
   { name: 'fatherPosition', label: 'Position' },
   { name: 'fatherPassport', label: 'Passport', kind: 'password' },
   { name: 'fatherPassportExpiry', label: 'Passport expiry', kind: 'date' },
-  { name: 'fatherPass', label: 'Pass type', kind: 'password' },
+  {
+    name: 'fatherPass',
+    label: 'Pass type',
+    kind: 'select',
+    options: PARENT_GUARDIAN_PASS_TYPE_OPTIONS,
+  },
   { name: 'fatherPassExpiry', label: 'Pass expiry', kind: 'date' },
   {
     name: 'fatherWhatsappTeamsConsent',
@@ -316,7 +325,8 @@ function SchemaField<T extends FieldValues>({
         const wrapperClass = cfg.wide ? 'sm:col-span-2' : '';
         if (kind === 'tribool') {
           const v = field.value as boolean | null | undefined;
-          const value = v === true ? 'yes' : v === false ? 'no' : TRIBOOL_UNSET;
+          const value =
+            v === true ? 'yes' : v === false ? 'no' : UNSET_SENTINEL;
           return (
             <FormItem className={wrapperClass}>
               <FormLabel className="text-xs">{cfg.label}</FormLabel>
@@ -332,7 +342,7 @@ function SchemaField<T extends FieldValues>({
                   <SelectValue placeholder="Not set" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={TRIBOOL_UNSET}>Not set</SelectItem>
+                  <SelectItem value={UNSET_SENTINEL}>Not set</SelectItem>
                   <SelectItem value="yes">Yes</SelectItem>
                   <SelectItem value="no">No</SelectItem>
                 </SelectContent>
@@ -351,6 +361,43 @@ function SchemaField<T extends FieldValues>({
                   onChange={(next) => field.onChange(next === '' ? null : next)}
                 />
               </FormControl>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+        if (kind === 'select') {
+          const v = field.value as string | null | undefined;
+          const options = cfg.options ?? [];
+          // Same handling as edit-profile-sheet.tsx's select branch, kept
+          // identical on purpose: these are parent-portal-constrained lists
+          // with no DB CHECK, so a legacy row can hold an off-list value.
+          // Surface it as a "(current)" item rather than letting the trigger
+          // render blank while real data sits underneath.
+          const isKnown = v == null || options.some((o) => o.value === v);
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <Select
+                value={v ?? UNSET_SENTINEL}
+                onValueChange={(next) =>
+                  field.onChange(next === UNSET_SENTINEL ? null : next)
+                }
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Not set" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNSET_SENTINEL}>Not set</SelectItem>
+                  {!isKnown && v && (
+                    <SelectItem value={v}>{v} (current)</SelectItem>
+                  )}
+                  {options.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <FormMessage />
             </FormItem>
           );
@@ -407,4 +454,7 @@ function SchemaField<T extends FieldValues>({
 
 // Radix Select rejects empty-string item values. Sentinel stays client-side
 // only; onValueChange maps it back to null before RHF sees it.
-const TRIBOOL_UNSET = '__unset';
+// Radix Select forbids an empty-string item value, so "Not set" needs a
+// sentinel mapped back to null on change. Shared by the tribool and select
+// branches, matching edit-profile-sheet.tsx's single UNSET_SENTINEL.
+const UNSET_SENTINEL = '__unset';

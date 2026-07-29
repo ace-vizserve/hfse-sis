@@ -154,6 +154,31 @@ export const PREFERRED_PAYMENT_METHOD_OPTIONS = [
   },
 ] as const;
 
+// Immigration pass TYPE — a category, not a credential. Same
+// parent-portal-constrained, plain-text-in-the-DB shape as the payment lists
+// above: these bound what the portal writes, there is no DB CHECK, and a
+// legacy row can hold something off-list (the pickers surface such a value as
+// a "(current)" item rather than silently dropping it).
+//
+// The student and parent/guardian lists are genuinely different vocabularies —
+// a student holds a Student Pass or LTVP, a working parent an E-PASS/S-PASS —
+// so they are NOT collapsed into one shared list.
+export const STUDENT_PASS_TYPE_OPTIONS = [
+  { label: 'Singaporean', value: 'Singaporean' },
+  { label: 'Singapore PR', value: 'Singapore PR' },
+  { label: 'Dependent Pass', value: 'Dependent Pass' },
+  { label: 'Student Pass', value: 'Student Pass' },
+  { label: 'Long Term Visit Pass', value: 'Long Term Visit Pass' },
+] as const;
+
+export const PARENT_GUARDIAN_PASS_TYPE_OPTIONS = [
+  { label: 'E-PASS', value: 'E-PASS' },
+  { label: 'S-PASS', value: 'S-PASS' },
+  { label: 'Dependent Pass', value: 'Dependent Pass' },
+  { label: 'Permanent Resident', value: 'Permanent Resident' },
+  { label: 'Other', value: 'Other' },
+] as const;
+
 export function paymentSchemeLabel(
   value: string | null | undefined
 ): string | null {

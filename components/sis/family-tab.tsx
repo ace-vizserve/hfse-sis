@@ -105,7 +105,7 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
           value: app.fatherPassportExpiry,
           asDate: true,
         },
-        { label: 'Pass type', value: app.fatherPass, sensitive: true },
+        { label: 'Pass type', value: app.fatherPass },
         { label: 'Pass expiry', value: app.fatherPassExpiry, asDate: true },
         {
           label: 'WhatsApp / Teams consent',
@@ -167,7 +167,7 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
           value: app.motherPassportExpiry,
           asDate: true,
         },
-        { label: 'Pass type', value: app.motherPass, sensitive: true },
+        { label: 'Pass type', value: app.motherPass },
         { label: 'Pass expiry', value: app.motherPassExpiry, asDate: true },
         {
           label: 'WhatsApp / Teams consent',
@@ -231,7 +231,7 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
           value: app.guardianPassportExpiry,
           asDate: true,
         },
-        { label: 'Pass type', value: app.guardianPass, sensitive: true },
+        { label: 'Pass type', value: app.guardianPass },
         { label: 'Pass expiry', value: app.guardianPassExpiry, asDate: true },
         {
           label: 'WhatsApp / Teams consent',

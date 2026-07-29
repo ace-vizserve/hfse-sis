@@ -48,7 +48,15 @@ export const CountryCombobox = React.forwardRef<
   const isKnown = value == null || COUNTRY_NAMES.includes(value);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // `modal` is load-bearing, not decorative. This combobox is rendered
+    // inside the profile/family edit Sheets, and a Radix Sheet locks scrolling
+    // via react-remove-scroll, which only exempts its own content subtree. The
+    // popover portals to document.body — outside that subtree — so without
+    // `modal` the wheel is swallowed and the ~250-item country list appears
+    // frozen. Setting it makes the popover manage its own scroll lock and
+    // exempt itself. The list's own max-height/overflow was already correct;
+    // the CSS was never the problem.
+    <Popover modal open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           ref={ref}

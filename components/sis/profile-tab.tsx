@@ -129,7 +129,7 @@ export function ProfileTab({ app, ayCode, enroleeNumber }: Props) {
   const travelFields: Field[] = [
     { label: 'Passport number', value: app.passportNumber, sensitive: true },
     { label: 'Passport expiry', value: app.passportExpiry, asDate: true },
-    { label: 'Pass type', value: app.pass, sensitive: true },
+    { label: 'Pass type', value: app.pass },
     { label: 'Pass expiry', value: app.passExpiry, asDate: true },
   ];
   const contactFields: Field[] = [

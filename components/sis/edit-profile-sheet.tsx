@@ -45,6 +45,7 @@ import {
   buildProfileUpdateSchema,
   PREFERRED_PAYMENT_METHOD_OPTIONS,
   PREFERRED_PAYMENT_SCHEME_OPTIONS,
+  STUDENT_PASS_TYPE_OPTIONS,
   PROFILE_GATED_FIELDS,
   type ProfileUpdateInput,
 } from '@/lib/schemas/sis';
@@ -114,9 +115,18 @@ const SECTIONS: SectionConfig[] = [
   {
     title: 'Travel documents',
     fields: [
+      // Only the passport NUMBER is masked. `pass` is the immigration pass
+      // TYPE (Student Pass, Dependent Pass, …) — a category, not a credential,
+      // so masking it hid useful information behind a reveal click and let the
+      // value drift as free text. It's a constrained picker now.
       { name: 'passportNumber', label: 'Passport number', kind: 'password' },
       { name: 'passportExpiry', label: 'Passport expiry', kind: 'date' },
-      { name: 'pass', label: 'Pass type', kind: 'password' },
+      {
+        name: 'pass',
+        label: 'Pass type',
+        kind: 'select',
+        options: STUDENT_PASS_TYPE_OPTIONS,
+      },
       { name: 'passExpiry', label: 'Pass expiry', kind: 'date' },
     ],
   },
