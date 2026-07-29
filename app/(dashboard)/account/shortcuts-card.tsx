@@ -19,6 +19,16 @@ export function ShortcutsCard({ shortcuts }: { shortcuts: AccountShortcut[] }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="border-t border-border p-0">
+        {/* Backstop empty state. An empty array previously rendered the header
+            above a zero-height list — a blank box with no explanation, which is
+            what a teacher saw before shortcutsForRole gained its fallback. Kept
+            even though that fallback makes this hard to reach: a role with no
+            openable module at all should still say so rather than render a void. */}
+        {shortcuts.length === 0 && (
+          <p className="px-6 py-4 text-sm text-muted-foreground">
+            No shortcuts for your role yet.
+          </p>
+        )}
         <ul className="divide-y divide-border">
           {shortcuts.map((s) => {
             const Icon = s.icon;

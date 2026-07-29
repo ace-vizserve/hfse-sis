@@ -32,5 +32,36 @@ export function shortcutsForRole(
     if (!action) continue;
     out.push({ ...action, module });
   }
+
+  // Fallback: never return an empty list for a role that can open something.
+  //
+  // `quickActionByRole` serves two surfaces with different needs. In the
+  // sidebar, a CTA that duplicates the module's single nav item is noise —
+  // which is exactly why classroom/attendance/evaluation define no quick
+  // action (see their comments in lib/sidebar/registry.ts). But this card is a
+  // CROSS-MODULE jump list shown to someone who isn't in a module yet, and
+  // there "Open Classroom" is not a duplicate, it's the only path.
+  //
+  // The result was that `teacher` — the only role whose every module omits a
+  // quick action — got a card with a header and nothing under it. Every other
+  // role has 1-3 real actions, so it went unnoticed.
+  //
+  // Applied ONLY when the role would otherwise have zero, so roles with real
+  // quick actions keep their short, curated list instead of ballooning to one
+  // row per module.
+  if (out.length === 0) {
+    for (const module of MODULE_ORDER) {
+      const config = SIDEBAR_REGISTRY[module];
+      if (!isRouteAllowed(config.primaryHref, role)) continue;
+      if (hiddenModules.includes(module)) continue;
+      out.push({
+        label: `Open ${config.label}`,
+        href: config.primaryHref,
+        icon: config.icon,
+        module,
+      });
+    }
+  }
+
   return out;
 }
