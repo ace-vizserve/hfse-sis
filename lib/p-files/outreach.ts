@@ -62,9 +62,18 @@ export async function getLatestPromisesForRoster(
   return byStudent;
 }
 
-// Server-side cooldown check used by the notify routes. Returns the most
-// recent reminder timestamp if one is within the cooldown window, else
-// null. Caller 429s when this returns non-null.
+// Read-only cooldown lookup. Returns the most recent reminder timestamp if one
+// is within the cooldown window, else null.
+//
+// NOT part of the send path any more. `runNotify` used this as a
+// check-then-act gate, which raced: two requests both passed it before either
+// recorded a send, and a parent got two emails. The cooldown decision now lives
+// inside the `claim_pfile_reminder` RPC (migration 096), where the check and
+// the insert happen together under an advisory lock.
+//
+// Kept for display/inspection only. Do NOT reintroduce it as a gate before
+// sending — a second cooldown implementation in JS would drift from the RPC's,
+// and the JS one cannot be atomic.
 export async function getActiveCooldown(
   ayCode: string,
   enroleeNumber: string,

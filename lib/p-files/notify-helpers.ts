@@ -10,7 +10,6 @@ import {
   resolveRecipients,
   sendReminder,
 } from '@/lib/notifications/email-pfile-reminder';
-import { getActiveCooldown } from '@/lib/p-files/outreach';
 import {
   prefixFor,
   ENROLLED_STATUSES,
@@ -158,17 +157,43 @@ export async function runNotify(
   });
   if (envelope.kind === 'none') return { ok: false, reason: 'no_recipients' };
 
-  const cooldown = await getActiveCooldown(
-    ctx.ayCode,
-    ctx.enroleeNumber,
-    ctx.slotKey,
-    service
+  // Claim the send BEFORE sending (migration 096).
+  //
+  // This used to be: read the last reminder → send → insert the row that
+  // establishes the next cooldown. Two requests could both pass the read
+  // before either inserted, and the gap between them spans an actual email
+  // send — so a double-submit, or a single notify racing the bulk sweep over
+  // the same slot, emailed the parent twice inside one 24h window.
+  //
+  // `claim_pfile_reminder` does the cooldown check and the insert under an
+  // advisory lock on the slot key, so exactly one caller can win. A plain
+  // `INSERT ... WHERE NOT EXISTS` would not be enough: under READ COMMITTED
+  // neither concurrent statement sees the other's uncommitted row.
+  const { data: claimRaw, error: claimErr } = await service.rpc(
+    'claim_pfile_reminder',
+    {
+      p_ay_code: ctx.ayCode,
+      p_enrolee_number: ctx.enroleeNumber,
+      p_slot_key: ctx.slotKey,
+      p_recipient_email: envelope.to,
+      p_created_by_user_id: actor.id,
+      p_created_by_email: actor.email,
+    }
   );
-  if (cooldown) {
+  if (claimErr) {
+    console.error('[p-files notify] claim failed:', claimErr.message);
+    return { ok: false, reason: 'send_failed', recipients: 1 };
+  }
+  const claim = (claimRaw ?? {}) as {
+    claimed?: boolean;
+    claim_id?: string;
+    last_sent_at?: string;
+  };
+  if (!claim.claimed) {
     return {
       ok: false,
       reason: 'cooldown',
-      cooldownLastSentAt: cooldown.lastSentAt,
+      cooldownLastSentAt: claim.last_sent_at,
       recipients: 1,
     };
   }
@@ -190,27 +215,33 @@ export async function runNotify(
   );
 
   if (result.sent === 0) {
+    // Retract our own claim so the registrar can retry. Without this, claiming
+    // first would trade a duplicate-send bug for a worse one: a transient
+    // Resend failure would leave a row asserting the parent was emailed, block
+    // the retry for 24h, and show "cooldown" instead of "send failed".
+    //
+    // This is the single sanctioned DELETE on the append-only p_file_outreach
+    // table (see migration 096) — it removes a row this request created seconds
+    // ago describing an email that never left, which protects the record rather
+    // than damaging it. The RPC is scoped to reminders created in the last 10
+    // minutes, so it can never retract historical outreach.
+    if (claim.claim_id) {
+      const { error: releaseErr } = await service.rpc(
+        'release_pfile_reminder_claim',
+        { p_claim_id: claim.claim_id }
+      );
+      if (releaseErr) {
+        console.error(
+          '[p-files notify] claim release failed (slot stays on cooldown until it ages out):',
+          releaseErr.message
+        );
+      }
+    }
     return { ok: false, reason: 'send_failed', recipients: 1 };
   }
 
-  // Insert one p_file_outreach row per send (one envelope = one send).
-  if (result.sent > 0) {
-    const { error } = await service.from('p_file_outreach').insert({
-      ay_code: ctx.ayCode,
-      enrolee_number: ctx.enroleeNumber,
-      slot_key: ctx.slotKey,
-      kind: 'reminder' as const,
-      channel: 'email',
-      recipient_email: envelope.to,
-      created_by_user_id: actor.id,
-      created_by_email: actor.email,
-    });
-    if (error) {
-      // Email already went out — log and proceed. The audit row at the
-      // route layer captures the send so we don't lose visibility.
-      console.error('[p-files notify] outreach insert failed:', error.message);
-    }
-  }
+  // The outreach row already exists — it WAS the claim, inserted above by
+  // `claim_pfile_reminder`. No insert here.
 
   return { ok: true, recipients: 1, sent: result.sent, failed: result.failed };
 }
