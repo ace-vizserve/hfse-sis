@@ -49,6 +49,23 @@ export async function POST(request: Request) {
     .single();
 
   if (insErr) {
+    // A duplicate code is a user error, not a server fault. Migration 098 added
+    // the unique index this relies on; before it, a double-click on "Add
+    // discount code" simply created two identical rows (no constraint, no
+    // upsert, no pre-check) and logged two `sis.discount_code.create` rows.
+    //
+    // Deliberately handled here rather than with a pre-check `select`: a
+    // pre-check races, the constraint doesn't. No audit row is written on this
+    // path, because nothing was created.
+    if (insErr.code === '23505') {
+      return NextResponse.json(
+        {
+          error: `A discount code "${parsed.data.discountCode ?? ''}" already exists for ${ayCode}.`,
+          code: 'duplicate_discount_code',
+        },
+        { status: 409 }
+      );
+    }
     console.error('[sis discount-codes POST] insert failed:', insErr.message);
     return NextResponse.json({ error: insErr.message }, { status: 500 });
   }
