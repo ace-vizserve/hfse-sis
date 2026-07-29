@@ -43,8 +43,14 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import {
   buildProfileUpdateSchema,
+  CONTRACT_SIGNATORY_OPTIONS,
+  GENDER_OPTIONS,
+  MARITAL_STATUS_OPTIONS,
   PREFERRED_PAYMENT_METHOD_OPTIONS,
   PREFERRED_PAYMENT_SCHEME_OPTIONS,
+  PREFERRED_SCHEDULE_OPTIONS,
+  RELIGION_OPTIONS,
+  STUDENT_CARE_PROGRAM_OPTIONS,
   STUDENT_PASS_TYPE_OPTIONS,
   PROFILE_GATED_FIELDS,
   type ProfileUpdateInput,
@@ -105,10 +111,20 @@ const SECTIONS: SectionConfig[] = [
       { name: 'category', label: 'Category' },
       { name: 'nric', label: 'NRIC / FIN' },
       { name: 'birthDay', label: 'Date of birth', kind: 'date' },
-      { name: 'gender', label: 'Gender' },
+      {
+        name: 'gender',
+        label: 'Gender',
+        kind: 'select',
+        options: GENDER_OPTIONS,
+      },
       { name: 'nationality', label: 'Nationality', kind: 'combobox' },
       { name: 'primaryLanguage', label: 'Primary language' },
-      { name: 'religion', label: 'Religion' },
+      {
+        name: 'religion',
+        label: 'Religion',
+        kind: 'select',
+        options: RELIGION_OPTIONS,
+      },
       { name: 'religionOther', label: 'Religion (other)' },
     ],
   },
@@ -144,14 +160,24 @@ const SECTIONS: SectionConfig[] = [
       { name: 'livingWithWhom', label: 'Living with' },
       { name: 'contactPerson', label: 'Contact person' },
       { name: 'contactPersonNumber', label: 'Contact number' },
-      { name: 'parentMaritalStatus', label: 'Parent marital status' },
+      {
+        name: 'parentMaritalStatus',
+        label: 'Parent marital status',
+        kind: 'select',
+        options: MARITAL_STATUS_OPTIONS,
+      },
     ],
   },
   {
     title: 'Application preferences',
     fields: [
       { name: 'levelApplied', label: 'Level applied' },
-      { name: 'preferredSchedule', label: 'Preferred schedule' },
+      {
+        name: 'preferredSchedule',
+        label: 'Preferred schedule',
+        kind: 'select',
+        options: PREFERRED_SCHEDULE_OPTIONS,
+      },
       { name: 'classType', label: 'Class type' },
       { name: 'paymentOption', label: 'Payment option' },
       {
@@ -168,7 +194,12 @@ const SECTIONS: SectionConfig[] = [
       },
       { name: 'availSchoolBus', label: 'School bus', kind: 'tribool' },
       { name: 'availStudentCare', label: 'Student care', kind: 'tribool' },
-      { name: 'studentCareProgram', label: 'Student care program' },
+      {
+        name: 'studentCareProgram',
+        label: 'Student care program',
+        kind: 'select',
+        options: STUDENT_CARE_PROGRAM_OPTIONS,
+      },
       { name: 'availUniform', label: 'Uniform', kind: 'tribool' },
       {
         name: 'additionalLearningNeeds',
@@ -191,7 +222,12 @@ const SECTIONS: SectionConfig[] = [
       { name: 'marketingReferrerName', label: 'Referral name' },
       { name: 'referrerName', label: 'Referrer name (discount code)' },
       { name: 'referrerMobile', label: 'Referrer mobile (discount code)' },
-      { name: 'contractSignatory', label: 'Contract signatory' },
+      {
+        name: 'contractSignatory',
+        label: 'Contract signatory',
+        kind: 'select',
+        options: CONTRACT_SIGNATORY_OPTIONS,
+      },
     ],
   },
   {

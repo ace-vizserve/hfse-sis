@@ -154,6 +154,67 @@ export const PREFERRED_PAYMENT_METHOD_OPTIONS = [
   },
 ] as const;
 
+// Parent-portal vocabularies for fields the SIS previously edited as free
+// text. Same plain-text-no-CHECK shape as the payment lists: these bound what
+// the portal offers, the pickers surface an off-list legacy value as a
+// "(current)" item, and nothing is force-migrated.
+//
+// Measured on AY2026 (497 rows) before adding these — the drift is why they
+// exist, not a hypothetical:
+//   parentMaritalStatus  21 distinct for 5 real values ("MARRIED", "married",
+//                        "Married " with a trailing space, "Married in Church")
+//   religion             12 distinct for 7 ("Others" vs "Other", "Catholic"
+//                        vs "Roman Catholic")
+// Constraining the SIS write path stops NEW drift; it doesn't clean the past.
+export const GENDER_OPTIONS = [
+  { label: 'Male', value: 'Male' },
+  { label: 'Female', value: 'Female' },
+] as const;
+
+export const RELIGION_OPTIONS = [
+  { label: 'Christianity', value: 'Christianity' },
+  { label: 'Roman Catholic', value: 'Roman Catholic' },
+  { label: 'Islam', value: 'Islam' },
+  { label: 'Hinduism', value: 'Hinduism' },
+  { label: 'Buddhism', value: 'Buddhism' },
+  { label: 'Judaism', value: 'Judaism' },
+  // Free-text detail goes in the companion `religionOther` field.
+  { label: 'Other', value: 'Other' },
+] as const;
+
+export const MARITAL_STATUS_OPTIONS = [
+  { label: 'Single', value: 'Single' },
+  { label: 'Married', value: 'Married' },
+  { label: 'Separated', value: 'Separated' },
+  { label: 'Divorced', value: 'Divorced' },
+  { label: 'Widowed', value: 'Widowed' },
+] as const;
+
+// Which of these a given level may choose is a parent-portal rule (Morning
+// only for VizSchool, Whole Day for Cambridge Y8-Y10). The SIS edits an
+// existing record rather than taking an application, so it offers all three
+// and doesn't re-derive that rule from the level — encoding it here would
+// duplicate portal logic and risk blocking a correction to a real row.
+export const PREFERRED_SCHEDULE_OPTIONS = [
+  { label: 'Morning', value: 'Morning' },
+  { label: 'Afternoon', value: 'Afternoon' },
+  { label: 'Whole Day', value: 'Whole Day' },
+] as const;
+
+export const STUDENT_CARE_PROGRAM_OPTIONS = [
+  { label: 'Full day (Full-Day Program)', value: 'Full day' },
+  { label: 'Daily (Daily Program)', value: 'Daily' },
+] as const;
+
+// The portal only offers Father when father details were supplied. The SIS
+// shows both: it edits records where that's already settled, and the value is
+// a plain string, so hiding an option would make an existing "Father" row
+// uneditable.
+export const CONTRACT_SIGNATORY_OPTIONS = [
+  { label: 'Mother', value: 'Mother' },
+  { label: 'Father', value: 'Father' },
+] as const;
+
 // Immigration pass TYPE — a category, not a credential. Same
 // parent-portal-constrained, plain-text-in-the-DB shape as the payment lists
 // above: these bound what the portal writes, there is no DB CHECK, and a
