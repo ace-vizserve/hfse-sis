@@ -64,6 +64,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Section</SortableHeader>
       ),
+      meta: { label: 'Section' },
       cell: ({ row }) => (
         <IdentifierLink
           href={
@@ -81,6 +82,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Level</SortableHeader>
       ),
+      meta: { label: 'Level' },
       cell: ({ row }) => (
         <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
           {row.original.levelLabel}
@@ -93,6 +95,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Adviser</SortableHeader>
       ),
+      meta: { label: 'Adviser' },
       cell: ({ row }) => <AdviserCell name={row.original.fcaName} />,
     },
     {
@@ -100,6 +103,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Students</SortableHeader>
       ),
+      meta: { label: 'Students' },
       cell: ({ row }) => (
         <span className="font-mono text-[13px] tabular-nums">
           {row.original.active}

@@ -194,6 +194,7 @@ export function AwardsSummaryView({ payload }: { payload: MasterfilePayload }) {
         header: ({ column }) => (
           <SortableHeader column={column}>#</SortableHeader>
         ),
+        meta: { label: 'Index number' },
         cell: ({ row }) => (
           <span className="font-mono text-sm tabular-nums text-muted-foreground">
             {row.original.indexNumber ?? '—'}
@@ -205,6 +206,7 @@ export function AwardsSummaryView({ payload }: { payload: MasterfilePayload }) {
         header: ({ column }) => (
           <SortableHeader column={column}>Student</SortableHeader>
         ),
+        meta: { label: 'Student' },
         cell: ({ row }) => (
           <div className="flex flex-col gap-0.5">
             {row.original.studentNumber ? (
@@ -231,6 +233,7 @@ export function AwardsSummaryView({ payload }: { payload: MasterfilePayload }) {
         header: ({ column }) => (
           <SortableHeader column={column}>Class</SortableHeader>
         ),
+        meta: { label: 'Class' },
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {row.original.sectionName}
@@ -242,6 +245,7 @@ export function AwardsSummaryView({ payload }: { payload: MasterfilePayload }) {
         header: ({ column }) => (
           <SortableHeader column={column}>Status</SortableHeader>
         ),
+        meta: { label: 'Status' },
         cell: ({ row }) => (
           <EnrollmentStatusBadge
             status={STATUS_TO_ENROLLMENT[row.original.status]}
@@ -257,6 +261,7 @@ export function AwardsSummaryView({ payload }: { payload: MasterfilePayload }) {
             Score
           </SortableHeader>
         ),
+        meta: { label: 'Score' },
         cell: ({ row }) => (
           <span className="block text-right font-mono text-sm font-semibold tabular-nums text-foreground">
             {row.original.score == null
@@ -275,6 +280,7 @@ export function AwardsSummaryView({ payload }: { payload: MasterfilePayload }) {
             Award
           </SortableHeader>
         ),
+        meta: { label: 'Award' },
         cell: ({ row }) => (
           <span className="block text-right">
             {row.original.tier == null ? (

@@ -165,6 +165,7 @@ export function AttendanceSummaryView({
         header: ({ column }) => (
           <SortableHeader column={column}>#</SortableHeader>
         ),
+        meta: { label: 'Index number' },
         cell: ({ row }) => (
           <span className="font-mono text-sm tabular-nums text-muted-foreground">
             {row.original.indexNumber ?? '—'}
@@ -176,6 +177,7 @@ export function AttendanceSummaryView({
         header: ({ column }) => (
           <SortableHeader column={column}>Student</SortableHeader>
         ),
+        meta: { label: 'Student' },
         cell: ({ row }) => (
           <div className="flex flex-col gap-0.5">
             {row.original.studentNumber ? (
@@ -202,6 +204,7 @@ export function AttendanceSummaryView({
         header: ({ column }) => (
           <SortableHeader column={column}>Class</SortableHeader>
         ),
+        meta: { label: 'Class' },
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {row.original.sectionName}
@@ -213,6 +216,7 @@ export function AttendanceSummaryView({
         header: ({ column }) => (
           <SortableHeader column={column}>Status</SortableHeader>
         ),
+        meta: { label: 'Status' },
         cell: ({ row }) => (
           <EnrollmentStatusBadge
             status={STATUS_TO_ENROLLMENT[row.original.status]}
@@ -228,6 +232,7 @@ export function AttendanceSummaryView({
             Present
           </SortableHeader>
         ),
+        meta: { label: 'Present' },
         cell: ({ row }) => (
           <span className="block text-right font-mono text-sm tabular-nums text-foreground">
             {row.original.present}
@@ -241,6 +246,7 @@ export function AttendanceSummaryView({
             Late
           </SortableHeader>
         ),
+        meta: { label: 'Late' },
         cell: ({ row }) => (
           <span className="block text-right font-mono text-sm tabular-nums text-foreground">
             {row.original.late}
@@ -254,6 +260,7 @@ export function AttendanceSummaryView({
             Absent
           </SortableHeader>
         ),
+        meta: { label: 'Absent' },
         cell: ({ row }) => (
           <span className="block text-right font-mono text-sm tabular-nums text-foreground">
             {row.original.absent}
@@ -267,6 +274,7 @@ export function AttendanceSummaryView({
             Rate
           </SortableHeader>
         ),
+        meta: { label: 'Rate' },
         cell: ({ row }) => (
           <span
             className={cn(
@@ -287,6 +295,7 @@ export function AttendanceSummaryView({
             School days
           </SortableHeader>
         ),
+        meta: { label: 'School days' },
         cell: ({ row }) => (
           <span className="block text-right font-mono text-sm tabular-nums text-muted-foreground">
             {row.original.schoolDays}

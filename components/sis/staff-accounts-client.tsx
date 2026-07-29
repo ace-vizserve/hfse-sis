@@ -100,6 +100,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>User</SortableHeader>
       ),
+      meta: { label: 'User' },
       // No identifier link — no canonical user-detail page
       cell: ({ row }) => (
         <div className="flex items-center gap-3">
@@ -189,6 +190,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Member since</SortableHeader>
       ),
+      meta: { label: 'Member since' },
       cell: ({ row }) => (
         <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
           {new Date(row.original.created_at).toLocaleDateString('en-SG', {
@@ -206,6 +208,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Last sign-in</SortableHeader>
       ),
+      meta: { label: 'Last sign-in' },
       // Nulls sort last regardless of direction (never-signed-in rows sink).
       sortingFn: (a, b) => {
         const aVal = a.original.last_sign_in_at;

@@ -83,7 +83,7 @@ const COLUMNS: ColumnDef<MyRequestRow>[] = [
     ),
     // Raw ISO timestamp isn't presentable as-is in a CSV — CSV_CONFIG's
     // "Filed" extra column supplies the same formatting as the on-screen cell.
-    meta: { excludeFromExport: true },
+    meta: { excludeFromExport: true, label: 'Filed' },
   },
   {
     accessorKey: 'field_changed',
@@ -108,6 +108,7 @@ const COLUMNS: ColumnDef<MyRequestRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Section</SortableHeader>
     ),
+    meta: { label: 'Section' },
     cell: ({ row }) => (
       <span className="text-sm text-muted-foreground">
         {row.original.sectionName ?? '—'}
@@ -125,6 +126,7 @@ const COLUMNS: ColumnDef<MyRequestRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Subject</SortableHeader>
     ),
+    meta: { label: 'Subject' },
     cell: ({ row }) => (
       <div>
         <span className="font-mono text-xs text-foreground">
@@ -149,6 +151,7 @@ const COLUMNS: ColumnDef<MyRequestRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Term</SortableHeader>
     ),
+    meta: { label: 'Term' },
     cell: ({ row }) => (
       <span className="font-mono text-xs text-muted-foreground">
         {row.original.termLabel ?? '—'}

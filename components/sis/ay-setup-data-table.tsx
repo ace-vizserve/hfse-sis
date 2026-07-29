@@ -55,6 +55,7 @@ const columns: ColumnDef<AyTableRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>AY code</SortableHeader>
     ),
+    meta: { label: 'AY code' },
     cell: ({ row }) => <CodeChip>{row.original.ay_code}</CodeChip>,
     enableHiding: false,
   },
@@ -96,6 +97,7 @@ const columns: ColumnDef<AyTableRow>[] = [
         Terms
       </SortableHeader>
     ),
+    meta: { label: 'Terms' },
     cell: ({ row }) => (
       <span className="font-mono text-xs tabular-nums text-right block">
         {row.original.counts.terms}
@@ -110,6 +112,7 @@ const columns: ColumnDef<AyTableRow>[] = [
         Sections
       </SortableHeader>
     ),
+    meta: { label: 'Sections' },
     cell: ({ row }) => (
       <span className="font-mono text-xs tabular-nums text-right block">
         {row.original.counts.sections}
@@ -124,6 +127,7 @@ const columns: ColumnDef<AyTableRow>[] = [
         Subject configs
       </SortableHeader>
     ),
+    meta: { label: 'Subject configs' },
     cell: ({ row }) => (
       <span className="font-mono text-xs tabular-nums text-right block">
         {row.original.counts.subject_configs}
@@ -138,6 +142,7 @@ const columns: ColumnDef<AyTableRow>[] = [
         Students rostered
       </SortableHeader>
     ),
+    meta: { label: 'Students rostered' },
     cell: ({ row }) => (
       <span className="font-mono text-xs tabular-nums text-right block">
         {row.original.counts.section_students}
@@ -150,6 +155,7 @@ const columns: ColumnDef<AyTableRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Created</SortableHeader>
     ),
+    meta: { label: 'Created' },
     cell: ({ row }) => (
       <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
         {new Date(row.original.created_at).toLocaleDateString('en-SG', {

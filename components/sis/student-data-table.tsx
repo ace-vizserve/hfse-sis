@@ -209,6 +209,7 @@ export function StudentDataTable({
         header: ({ column }) => (
           <SortableHeader column={column}>Name</SortableHeader>
         ),
+        meta: { label: 'Name' },
         cell: ({ row }) => {
           const linkId =
             linkAttribute === 'studentNumber'
@@ -361,6 +362,7 @@ export function StudentDataTable({
               header: ({ column }) => (
                 <SortableHeader column={column}>Staleness</SortableHeader>
               ),
+              meta: { label: 'Staleness' },
               cell: ({ row }: { row: { original: StudentListRow } }) => (
                 <StalenessBadge
                   days={daysSinceUpdate(row.original.applicationUpdatedDate)}
@@ -395,6 +397,7 @@ export function StudentDataTable({
               header: ({ column }) => (
                 <SortableHeader column={column}>Submitted</SortableHeader>
               ),
+              meta: { label: 'Submitted' },
               cell: ({ row }) => {
                 const formatted = formatDate(row.original.created_at);
                 return formatted ? (
@@ -451,6 +454,7 @@ export function StudentDataTable({
         header: ({ column }) => (
           <SortableHeader column={column}>Last updated</SortableHeader>
         ),
+        meta: { label: 'Last updated' },
         sortingFn: (a, b) => {
           const av = a.original.applicationUpdatedDate ?? null;
           const bv = b.original.applicationUpdatedDate ?? null;

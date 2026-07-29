@@ -70,6 +70,7 @@ const COLUMNS: ColumnDef<PublicationOverviewRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Level</SortableHeader>
     ),
+    meta: { label: 'Level' },
     cell: ({ row }) => (
       <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
         {row.original.level_code}
@@ -87,6 +88,7 @@ const COLUMNS: ColumnDef<PublicationOverviewRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Section</SortableHeader>
     ),
+    meta: { label: 'Section' },
     cell: ({ row }) => (
       <IdentifierLink
         href={`/markbook/report-cards?section_id=${row.original.section_id}`}
@@ -129,6 +131,7 @@ const COLUMNS: ColumnDef<PublicationOverviewRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Status</SortableHeader>
     ),
+    meta: { label: 'Status' },
     cell: ({ row }) => (
       <div className="flex flex-col gap-1">
         <PublicationStatusBadge status={row.original.status} />
@@ -151,6 +154,7 @@ const COLUMNS: ColumnDef<PublicationOverviewRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Students</SortableHeader>
     ),
+    meta: { label: 'Students' },
     cell: ({ row }) => (
       <span className="text-right font-mono tabular-nums">
         {row.original.student_count}

@@ -102,6 +102,7 @@ function buildStpColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Student</SortableHeader>
       ),
+      meta: { label: 'Student' },
       cell: ({ row }) => (
         <div className="space-y-0.5">
           <IdentifierLink href={stpDetailHref(row.original, scope, ayCode)}>
@@ -292,6 +293,7 @@ function buildPromisedColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Student</SortableHeader>
       ),
+      meta: { label: 'Student' },
       cell: ({ row }) => (
         <div className="space-y-0.5">
           <IdentifierLink
@@ -337,6 +339,7 @@ function buildPromisedColumns(
           To follow
         </SortableHeader>
       ),
+      meta: { label: 'To follow' },
       cell: ({ row }) => (
         <Badge variant="muted" className="font-mono tabular-nums">
           {row.original.toFollowCount ?? 0}
@@ -362,6 +365,7 @@ function buildPromisedColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Earliest promised</SortableHeader>
       ),
+      meta: { label: 'Earliest promised' },
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-foreground">
           {formatDate(row.original.earliestPromisedUntil)}
@@ -390,6 +394,7 @@ function buildPromisedColumns(
           Days until
         </SortableHeader>
       ),
+      meta: { label: 'Days until' },
       cell: ({ row }) => (
         <PromisedDaysPill days={row.original.daysUntilEarliestPromise} />
       ),
@@ -542,6 +547,7 @@ function buildPassExpiryColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Student</SortableHeader>
       ),
+      meta: { label: 'Student' },
       cell: ({ row }) => (
         <div className="space-y-0.5">
           <IdentifierLink
@@ -576,6 +582,7 @@ function buildPassExpiryColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Earliest kind</SortableHeader>
       ),
+      meta: { label: 'Earliest kind' },
       cell: ({ row }) => (
         <StudentKindChip kind={row.original.studentPassExpiryKind} />
       ),
@@ -587,6 +594,7 @@ function buildPassExpiryColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Earliest expiry</SortableHeader>
       ),
+      meta: { label: 'Earliest expiry' },
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-foreground">
           {formatDate(row.original.earliestExpiry)}
@@ -611,6 +619,7 @@ function buildPassExpiryColumns(
           Days until
         </SortableHeader>
       ),
+      meta: { label: 'Days until' },
       cell: ({ row }) => (
         <PassExpiryDaysPill days={row.original.daysUntilEarliestExpiry} />
       ),
@@ -770,6 +779,7 @@ function buildMedicalColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Student</SortableHeader>
       ),
+      meta: { label: 'Student' },
       cell: ({ row }) => (
         <div className="space-y-0.5">
           <IdentifierLink href={medicalDetailHref(row.original, scope, ayCode)}>
@@ -804,6 +814,7 @@ function buildMedicalColumns(
           Flags
         </SortableHeader>
       ),
+      meta: { label: 'Flags' },
       cell: ({ row }) => <FlagChips flags={row.original.medicalFlags} />,
       enableSorting: true,
       sortingFn: (a, b) =>
@@ -968,6 +979,7 @@ function buildPreCourseColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Student</SortableHeader>
       ),
+      meta: { label: 'Student' },
       cell: ({ row }) => (
         <div className="space-y-0.5">
           <IdentifierLink
@@ -1020,6 +1032,7 @@ function buildPreCourseColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Session date</SortableHeader>
       ),
+      meta: { label: 'Session date' },
       cell: ({ row }) => (
         <PreCourseDateCell
           enroleeNumber={row.original.enroleeNumber}
@@ -1053,6 +1066,7 @@ function buildPreCourseColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Acknowledged</SortableHeader>
       ),
+      meta: { label: 'Acknowledged' },
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-foreground">
           {formatDate(row.original.preCourseAcknowledgedAt)}

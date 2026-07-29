@@ -169,6 +169,7 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
         header: ({ column }) => (
           <SortableHeader column={column}>Document</SortableHeader>
         ),
+        meta: { label: 'Document' },
         cell: ({ row }) => (
           <Badge variant="secondary">{row.original.slotLabel}</Badge>
         ),
@@ -191,6 +192,7 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
         header: ({ column }) => (
           <SortableHeader column={column}>Level</SortableHeader>
         ),
+        meta: { label: 'Level' },
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {row.original.levelApplied ?? '—'}
@@ -203,6 +205,7 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
         header: ({ column }) => (
           <SortableHeader column={column}>Section</SortableHeader>
         ),
+        meta: { label: 'Section' },
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {row.original.classSection ?? '—'}

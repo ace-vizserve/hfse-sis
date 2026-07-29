@@ -63,6 +63,7 @@ function buildColumns(sectionId: string): ColumnDef<RosterRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column}>#</SortableHeader>
       ),
+      meta: { label: 'Index number' },
       cell: ({ row }) => (
         <span className="font-mono tabular-nums text-muted-foreground">
           {row.original.index_number}
@@ -83,6 +84,7 @@ function buildColumns(sectionId: string): ColumnDef<RosterRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column}>Name</SortableHeader>
       ),
+      meta: { label: 'Name' },
       cell: ({ row }) => {
         const withdrawn = row.original.enrollment_status === 'withdrawn';
         if (withdrawn) {

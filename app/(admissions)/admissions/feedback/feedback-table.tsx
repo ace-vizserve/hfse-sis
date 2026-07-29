@@ -79,6 +79,7 @@ function buildColumns(ayCode: string): ColumnDef<FeedbackRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column}>Applicant</SortableHeader>
       ),
+      meta: { label: 'Applicant' },
       cell: ({ row }) => {
         const params = new URLSearchParams({ ay: ayCode, tab: 'profile' });
         const href = `/admissions/applications/${encodeURIComponent(row.original.enroleeNumber)}?${params.toString()}`;
@@ -103,6 +104,7 @@ function buildColumns(ayCode: string): ColumnDef<FeedbackRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column}>Level</SortableHeader>
       ),
+      meta: { label: 'Level' },
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
           {row.original.levelApplied ?? '—'}
@@ -126,6 +128,7 @@ function buildColumns(ayCode: string): ColumnDef<FeedbackRow>[] {
           Rating
         </SortableHeader>
       ),
+      meta: { label: 'Rating' },
       cell: ({ row }) => <RatingBadge rating={row.original.feedbackRating} />,
     },
     {
@@ -157,6 +160,7 @@ function buildColumns(ayCode: string): ColumnDef<FeedbackRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column}>Submitted</SortableHeader>
       ),
+      meta: { label: 'Submitted' },
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-foreground">
           {formatDate(row.original.feedbackSubmittedAt)}

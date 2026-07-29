@@ -189,6 +189,7 @@ export function CommentsSummaryView({
         header: ({ column }) => (
           <SortableHeader column={column}>#</SortableHeader>
         ),
+        meta: { label: 'Index number' },
         cell: ({ row }) => (
           <span className="font-mono text-sm tabular-nums text-muted-foreground">
             {row.original.indexNumber ?? '—'}
@@ -200,6 +201,7 @@ export function CommentsSummaryView({
         header: ({ column }) => (
           <SortableHeader column={column}>Student</SortableHeader>
         ),
+        meta: { label: 'Student' },
         cell: ({ row }) => (
           <div className="flex flex-col gap-0.5">
             {row.original.studentNumber ? (
@@ -232,6 +234,7 @@ export function CommentsSummaryView({
         header: ({ column }) => (
           <SortableHeader column={column}>Class</SortableHeader>
         ),
+        meta: { label: 'Class' },
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {row.original.sectionName}
@@ -243,6 +246,7 @@ export function CommentsSummaryView({
         header: ({ column }) => (
           <SortableHeader column={column}>Term</SortableHeader>
         ),
+        meta: { label: 'Term' },
         cell: ({ row }) => (
           <span className="font-mono text-sm tabular-nums text-foreground">
             T{row.original.termNumber}
@@ -254,6 +258,7 @@ export function CommentsSummaryView({
         header: ({ column }) => (
           <SortableHeader column={column}>Status</SortableHeader>
         ),
+        meta: { label: 'Status' },
         cell: ({ row }) => (
           <StatusBadge tone={COMMENT_TONE[row.original.commentStatus]}>
             {row.original.commentStatus}
@@ -267,6 +272,7 @@ export function CommentsSummaryView({
         header: ({ column }) => (
           <SortableHeader column={column}>Adviser</SortableHeader>
         ),
+        meta: { label: 'Adviser' },
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {row.original.adviser ?? '—'}

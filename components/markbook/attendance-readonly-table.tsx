@@ -60,6 +60,7 @@ const COLUMNS: ColumnDef<AugmentedRow>[] = [
         #
       </SortableHeader>
     ),
+    meta: { label: 'Index number' },
     cell: ({ row }) => (
       <span className="block text-right font-mono tabular-nums text-muted-foreground">
         {row.original.indexNumber}
@@ -71,6 +72,7 @@ const COLUMNS: ColumnDef<AugmentedRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Student</SortableHeader>
     ),
+    meta: { label: 'Student' },
     cell: ({ row }) => {
       const { studentName, studentNumber, withdrawn, lateEnrollee } =
         row.original;
@@ -110,6 +112,7 @@ const COLUMNS: ColumnDef<AugmentedRow>[] = [
         School days
       </SortableHeader>
     ),
+    meta: { label: 'School days' },
     cell: ({ row }) => {
       const unmarked = row.original.schoolDays == null;
       if (unmarked) {
@@ -135,6 +138,7 @@ const COLUMNS: ColumnDef<AugmentedRow>[] = [
         Present
       </SortableHeader>
     ),
+    meta: { label: 'Present' },
     cell: ({ row }) =>
       row.original.schoolDays == null ? null : (
         <span className="block text-right font-mono tabular-nums">
@@ -149,6 +153,7 @@ const COLUMNS: ColumnDef<AugmentedRow>[] = [
         Late
       </SortableHeader>
     ),
+    meta: { label: 'Late' },
     cell: ({ row }) =>
       row.original.schoolDays == null ? null : (
         <span className="block text-right font-mono tabular-nums">
@@ -163,6 +168,7 @@ const COLUMNS: ColumnDef<AugmentedRow>[] = [
         Excused
       </SortableHeader>
     ),
+    meta: { label: 'Excused' },
     cell: ({ row }) =>
       row.original.schoolDays == null ? null : (
         <span className="block text-right font-mono tabular-nums">
@@ -177,6 +183,7 @@ const COLUMNS: ColumnDef<AugmentedRow>[] = [
         Absent
       </SortableHeader>
     ),
+    meta: { label: 'Absent' },
     cell: ({ row }) =>
       row.original.schoolDays == null ? null : (
         <span className="block text-right font-mono tabular-nums">
@@ -191,6 +198,7 @@ const COLUMNS: ColumnDef<AugmentedRow>[] = [
         %
       </SortableHeader>
     ),
+    meta: { label: 'Attendance %' },
     cell: ({ row }) =>
       row.original.schoolDays == null ? null : (
         <span className="block text-right font-mono tabular-nums font-semibold">

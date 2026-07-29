@@ -194,6 +194,7 @@ export function ExpiringQueue({ rows }: Props) {
         header: ({ column }) => (
           <SortableHeader column={column}>Document</SortableHeader>
         ),
+        meta: { label: 'Document' },
         cell: ({ row }) => (
           <Badge variant="secondary">{row.original.slotLabel}</Badge>
         ),
@@ -216,6 +217,7 @@ export function ExpiringQueue({ rows }: Props) {
         header: ({ column }) => (
           <SortableHeader column={column}>Level</SortableHeader>
         ),
+        meta: { label: 'Level' },
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {row.original.levelApplied ?? '—'}
@@ -228,6 +230,7 @@ export function ExpiringQueue({ rows }: Props) {
         header: ({ column }) => (
           <SortableHeader column={column}>Section</SortableHeader>
         ),
+        meta: { label: 'Section' },
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {row.original.classSection ?? '—'}
@@ -240,6 +243,7 @@ export function ExpiringQueue({ rows }: Props) {
         header: ({ column }) => (
           <SortableHeader column={column}>Expires in</SortableHeader>
         ),
+        meta: { label: 'Expires in' },
         cell: ({ row }) => {
           const days = row.original.daysUntilExpiry;
           const iso = row.original.expiryDateIso;

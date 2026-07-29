@@ -184,6 +184,7 @@ export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
         header: ({ column }) => (
           <SortableHeader column={column}>Document</SortableHeader>
         ),
+        meta: { label: 'Document' },
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
             <Badge variant="secondary">{row.original.slotLabel}</Badge>
@@ -211,6 +212,7 @@ export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
         header: ({ column }) => (
           <SortableHeader column={column}>Level</SortableHeader>
         ),
+        meta: { label: 'Level' },
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {row.original.levelApplied ?? '—'}

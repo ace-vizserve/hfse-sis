@@ -42,6 +42,7 @@ function buildColumns(levels: LevelOption[]): ColumnDef<UnmatchedLevelLabel>[] {
       header: ({ column }) => (
         <SortableHeader column={column}>Label</SortableHeader>
       ),
+      meta: { label: 'Label' },
       cell: ({ row }) => (
         <div className="space-y-0.5">
           <div className="font-mono text-sm font-medium text-foreground">
@@ -59,6 +60,7 @@ function buildColumns(levels: LevelOption[]): ColumnDef<UnmatchedLevelLabel>[] {
       header: ({ column }) => (
         <SortableHeader column={column}>Rows</SortableHeader>
       ),
+      meta: { label: 'Rows' },
       cell: ({ row }) => {
         const total = row.original.appsCount + row.original.statusCount;
         return (

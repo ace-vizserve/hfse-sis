@@ -313,6 +313,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>{identifierLabel}</SortableHeader>
       ),
+      meta: { label: identifierLabel },
       cell: ({ row }) => (
         <div>
           <IdentifierLink
@@ -334,6 +335,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Level</SortableHeader>
       ),
+      meta: { label: 'Level' },
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-xs text-muted-foreground">
           {row.original.level ?? '—'}
@@ -352,6 +354,7 @@ function buildColumns(
           {module === 'admissions' ? 'Status' : 'Section'}
         </SortableHeader>
       ),
+      meta: { label: module === 'admissions' ? 'Status' : 'Section' },
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-xs text-muted-foreground">
           {module === 'admissions'
@@ -402,6 +405,7 @@ function buildColumns(
     id: 'pct',
     accessorFn: (row) => pct(row.total, row.complete),
     header: ({ column }) => <SortableHeader column={column}>%</SortableHeader>,
+    meta: { label: 'Documents complete %' },
     cell: ({ row }) => (
       <div className="text-center">
         <CompletePct pct={pct(row.original.total, row.original.complete)} />

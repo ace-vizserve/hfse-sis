@@ -43,6 +43,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Student</SortableHeader>
       ),
+      meta: { label: 'Student' },
       cell: ({ row }) => (
         <div className="space-y-0.5">
           <IdentifierLink href={studentHref(row.original)}>
@@ -74,6 +75,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Term</SortableHeader>
       ),
+      meta: { label: 'Term' },
       cell: ({ row }) =>
         row.original.termLabel ? (
           <Badge variant="outline">{row.original.termLabel}</Badge>
@@ -139,6 +141,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Level</SortableHeader>
       ),
+      meta: { label: 'Level' },
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
           {row.original.level || '—'}
@@ -175,6 +178,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Date</SortableHeader>
       ),
+      meta: { label: 'Date' },
       cell: ({ row }) => (
         <span className="text-sm text-foreground">
           {/* Force local-time parse — bare ISO 'yyyy-mm-dd' strings are
@@ -193,6 +197,7 @@ function buildColumns(
       header: ({ column }) => (
         <SortableHeader column={column}>Recorded by</SortableHeader>
       ),
+      meta: { label: 'Recorded by' },
       // actor_email rendered as-is — see TODO above for displayName resolution
       cell: ({ row }) => {
         const email = row.original.actorEmail;

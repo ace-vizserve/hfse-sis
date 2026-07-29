@@ -48,6 +48,7 @@ const columns: ColumnDef<ClassroomListRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Class</SortableHeader>
     ),
+    meta: { label: 'Class' },
     cell: ({ row }) => (
       <IdentifierLink href={`/classroom/${row.original.id}`}>
         {row.original.name}
@@ -59,6 +60,7 @@ const columns: ColumnDef<ClassroomListRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Level</SortableHeader>
     ),
+    meta: { label: 'Level' },
     cell: ({ row }) => (
       <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
         {row.original.levelLabel}
@@ -71,6 +73,7 @@ const columns: ColumnDef<ClassroomListRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Adviser</SortableHeader>
     ),
+    meta: { label: 'Adviser' },
     cell: ({ row }) => <AdviserCell name={row.original.adviserName} />,
   },
   {
@@ -78,6 +81,7 @@ const columns: ColumnDef<ClassroomListRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Students</SortableHeader>
     ),
+    meta: { label: 'Students' },
     cell: ({ row }) => (
       <span className="font-mono text-[13px] tabular-nums">
         {row.original.active}

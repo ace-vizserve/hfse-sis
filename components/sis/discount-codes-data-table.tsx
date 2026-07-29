@@ -44,6 +44,7 @@ const columns: ColumnDef<DiscountCodeRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Code</SortableHeader>
     ),
+    meta: { label: 'Code' },
     cell: ({ row }) => <CodeChip>{row.original.discountCode}</CodeChip>,
     enableHiding: false,
   },

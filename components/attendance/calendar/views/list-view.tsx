@@ -152,6 +152,7 @@ const DATA_COLUMNS: ColumnDef<ListRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Date</SortableHeader>
     ),
+    meta: { label: 'Date' },
     // Date-box anatomy (serif day / mono month) — same component as the SIS
     // Admin hub's "Coming up" card, so a date reads identically everywhere
     // in the calendar module (§10.2-style single source for the box itself).
@@ -217,6 +218,7 @@ export function ListView({ days, events, onRowClick }: ListViewProps) {
     {
       id: 'actions',
       header: () => null,
+      meta: { label: 'Open day' },
       cell: ({ row }) => (
         <div className="flex justify-end">
           <Button

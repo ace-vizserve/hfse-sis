@@ -185,6 +185,7 @@ const COLUMNS: ColumnDef<GradingSheetRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Level</SortableHeader>
     ),
+    meta: { label: 'Level' },
     cell: ({ row }) => (
       <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
         {row.original.level}
@@ -202,6 +203,7 @@ const COLUMNS: ColumnDef<GradingSheetRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Section</SortableHeader>
     ),
+    meta: { label: 'Section' },
     cell: ({ row }) => (
       <IdentifierLink href={`/markbook/grading/${row.original.id}`}>
         {row.original.section}
@@ -219,6 +221,7 @@ const COLUMNS: ColumnDef<GradingSheetRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Subject</SortableHeader>
     ),
+    meta: { label: 'Subject' },
     cell: ({ row }) => (
       <span className="text-foreground">{row.original.subject}</span>
     ),
@@ -234,6 +237,7 @@ const COLUMNS: ColumnDef<GradingSheetRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Term</SortableHeader>
     ),
+    meta: { label: 'Term' },
     cell: ({ row }) => (
       <span className="text-muted-foreground">{row.original.term}</span>
     ),
@@ -310,6 +314,7 @@ const COLUMNS: ColumnDef<GradingSheetRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Graded</SortableHeader>
     ),
+    meta: { label: 'Graded' },
     cell: ({ row }) => {
       const { graded_count, total_students, graded_pct } = row.original;
       if (total_students === 0) {

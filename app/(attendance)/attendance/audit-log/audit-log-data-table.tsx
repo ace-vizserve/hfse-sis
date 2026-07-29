@@ -117,6 +117,7 @@ const COLUMNS: ColumnDef<AttendanceAuditRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>When</SortableHeader>
     ),
+    meta: { label: 'When' },
     cell: ({ row }) => (
       <span className="whitespace-nowrap font-mono text-[11px] tabular-nums text-muted-foreground">
         {new Date(row.original.at).toLocaleString('en-SG', {
@@ -134,6 +135,7 @@ const COLUMNS: ColumnDef<AttendanceAuditRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Who</SortableHeader>
     ),
+    meta: { label: 'Who' },
     cell: ({ row }) => (
       <div>
         <span className="text-sm text-foreground">
@@ -152,6 +154,7 @@ const COLUMNS: ColumnDef<AttendanceAuditRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Action</SortableHeader>
     ),
+    meta: { label: 'Action' },
     cell: ({ row }) => (
       <Badge variant={actionBadgeVariant(row.original.action)}>
         {auditActionLabel(row.original.action)}

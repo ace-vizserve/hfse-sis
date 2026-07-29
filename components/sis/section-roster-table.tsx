@@ -74,6 +74,7 @@ export function SectionRosterTable({
             #
           </SortableHeader>
         ),
+        meta: { label: 'Index number' },
         cell: ({ row }) => (
           <span className="font-mono text-xs tabular-nums text-muted-foreground">
             {row.original.indexNumber}
@@ -87,6 +88,7 @@ export function SectionRosterTable({
         header: ({ column }) => (
           <SortableHeader column={column}>Student</SortableHeader>
         ),
+        meta: { label: 'Student' },
         cell: ({ row }) => {
           const r = row.original;
           // Link to records detail page via studentNumber (KD #81).
@@ -156,6 +158,7 @@ export function SectionRosterTable({
         header: ({ column }) => (
           <SortableHeader column={column}>Starts class on</SortableHeader>
         ),
+        meta: { label: 'Starts class on' },
         cell: ({ row }) => {
           const d = formatDate(row.original.enrollment_date);
           return d ? (
@@ -183,6 +186,7 @@ export function SectionRosterTable({
         header: ({ column }) => (
           <SortableHeader column={column}>Withdrawn on</SortableHeader>
         ),
+        meta: { label: 'Withdrawn on' },
         cell: ({ row }) => {
           const d = formatDate(row.original.withdrawal_date);
           return d ? (
@@ -211,6 +215,7 @@ export function SectionRosterTable({
         header: ({ column }) => (
           <SortableHeader column={column}>Term joined</SortableHeader>
         ),
+        meta: { label: 'Term joined' },
         cell: ({ row }) =>
           row.original.termJoined ? (
             <span className="text-sm text-foreground">

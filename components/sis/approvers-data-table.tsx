@@ -197,6 +197,7 @@ const columns: ColumnDef<ApproverRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Approver</SortableHeader>
     ),
+    meta: { label: 'Approver' },
     cell: ({ row }) => {
       const name = row.original.display_name ?? row.original.email;
       return (
@@ -221,6 +222,7 @@ const columns: ColumnDef<ApproverRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Flow</SortableHeader>
     ),
+    meta: { label: 'Flow' },
     cell: ({ row }) => (
       <span className="text-sm text-foreground">{row.original.flowLabel}</span>
     ),
@@ -251,6 +253,7 @@ const columns: ColumnDef<ApproverRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Assigned</SortableHeader>
     ),
+    meta: { label: 'Assigned' },
     cell: ({ row }) => (
       <span className="font-mono text-xs tabular-nums text-muted-foreground">
         {new Date(row.original.assigned_at).toLocaleDateString('en-SG', {

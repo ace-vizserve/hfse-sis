@@ -71,9 +71,10 @@ import type {
 } from './types';
 
 // Non-data columns every DataTable consumer uses the same ids for — never
-// offered as export fields. `action` (singular) is the odd one out, used by
-// components/sis/section-roster-table.tsx.
-const NON_DATA_COLUMN_IDS = new Set(['select', 'actions', 'action']);
+// offered as export fields. `action` (singular) is used by
+// components/sis/section-roster-table.tsx; `open` is the audit logs'
+// row-action link menu, whose cell is a link and exports as nothing useful.
+const NON_DATA_COLUMN_IDS = new Set(['select', 'actions', 'action', 'open']);
 
 // Radix Select/RadioGroup reject empty-string values. Sentinel stays
 // client-side only.

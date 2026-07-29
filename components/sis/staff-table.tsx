@@ -52,6 +52,7 @@ export function StaffTable({
       header: ({ column }) => (
         <SortableHeader column={column}>Teacher</SortableHeader>
       ),
+      meta: { label: 'Teacher' },
       cell: ({ row }) => (
         <div className="flex items-center gap-3">
           <StaffAvatar name={row.original.name} className="opacity-90" />
@@ -101,6 +102,7 @@ export function StaffTable({
       header: ({ column }) => (
         <SortableHeader column={column}>Load</SortableHeader>
       ),
+      meta: { label: 'Load' },
       cell: ({ row }) => {
         const fca = row.original.fcaSection ? '1 FCA' : null;
         const n = row.original.subjectAssignments.length;

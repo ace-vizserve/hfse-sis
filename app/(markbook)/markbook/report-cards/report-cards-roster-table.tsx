@@ -66,6 +66,7 @@ const COLUMNS: ColumnDef<ReportCardsRosterRow>[] = [
   {
     accessorKey: 'index_number',
     header: ({ column }) => <SortableHeader column={column}>#</SortableHeader>,
+    meta: { label: 'Index number' },
     cell: ({ row }) => (
       <span className="font-mono tabular-nums text-muted-foreground">
         {row.original.index_number}
@@ -86,6 +87,7 @@ const COLUMNS: ColumnDef<ReportCardsRosterRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Name</SortableHeader>
     ),
+    meta: { label: 'Name' },
     cell: ({ row }) => {
       if (row.original.withdrawn) {
         return (

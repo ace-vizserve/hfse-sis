@@ -115,6 +115,7 @@ const COLUMNS: ColumnDef<MergedRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>When</SortableHeader>
     ),
+    meta: { label: 'When' },
     cell: ({ row }) => (
       <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
         {new Date(row.original.at).toLocaleString()}
@@ -126,6 +127,7 @@ const COLUMNS: ColumnDef<MergedRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Who</SortableHeader>
     ),
+    meta: { label: 'Who' },
     cell: ({ row }) => <span className="text-xs">{row.original.actor}</span>,
     filterFn: (row, id, value) => {
       if (!value || (Array.isArray(value) && value.length === 0)) return true;
@@ -139,6 +141,7 @@ const COLUMNS: ColumnDef<MergedRow>[] = [
     header: ({ column }) => (
       <SortableHeader column={column}>Action</SortableHeader>
     ),
+    meta: { label: 'Action' },
     cell: ({ row }) => (
       <Badge variant={actionBadgeVariant(row.original.action)}>
         {auditActionLabel(row.original.action)}

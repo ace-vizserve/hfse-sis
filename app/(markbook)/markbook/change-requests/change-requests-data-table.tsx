@@ -465,6 +465,7 @@ export function ChangeRequestsDataTable({
         header: ({ column }) => (
           <SortableHeader column={column}>Filed</SortableHeader>
         ),
+        meta: { label: 'Filed' },
         cell: ({ row }) => (
           <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
             {new Date(row.original.requested_at).toLocaleString('en-SG', {
@@ -486,6 +487,7 @@ export function ChangeRequestsDataTable({
         header: ({ column }) => (
           <SortableHeader column={column}>Section</SortableHeader>
         ),
+        meta: { label: 'Section' },
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {row.original.sectionName ?? '—'}
@@ -504,6 +506,7 @@ export function ChangeRequestsDataTable({
         header: ({ column }) => (
           <SortableHeader column={column}>Subject</SortableHeader>
         ),
+        meta: { label: 'Subject' },
         cell: ({ row }) => (
           <div>
             <span className="font-mono text-xs text-foreground">
@@ -529,6 +532,7 @@ export function ChangeRequestsDataTable({
         header: ({ column }) => (
           <SortableHeader column={column}>Term</SortableHeader>
         ),
+        meta: { label: 'Term' },
         cell: ({ row }) => (
           <span className="font-mono text-xs text-muted-foreground">
             {row.original.termLabel ?? '—'}

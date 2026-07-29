@@ -106,6 +106,7 @@ function buildColumns(ayCode?: string): ColumnDef<OutdatedRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column}>Applicant</SortableHeader>
       ),
+      meta: { label: 'Applicant' },
       cell: ({ row }) => {
         const href = ayCode
           ? `/admissions/applications/${row.original.enroleeNumber}?ay=${ayCode}`
@@ -155,6 +156,7 @@ function buildColumns(ayCode?: string): ColumnDef<OutdatedRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column}>Status</SortableHeader>
       ),
+      meta: { label: 'Status' },
       cell: ({ row }) => (
         <ApplicationStatusBadge status={row.original.status} />
       ),
@@ -170,6 +172,7 @@ function buildColumns(ayCode?: string): ColumnDef<OutdatedRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column}>Staleness</SortableHeader>
       ),
+      meta: { label: 'Staleness' },
       cell: ({ row }) => <StalenessBadge days={row.original.daysSinceUpdate} />,
       sortingFn: (a, b) => {
         const av = a.original.daysSinceUpdate;
@@ -185,6 +188,7 @@ function buildColumns(ayCode?: string): ColumnDef<OutdatedRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column}>Last updated</SortableHeader>
       ),
+      meta: { label: 'Last updated' },
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground tabular-nums">
           {formatDate(row.original.lastUpdated)}
@@ -204,6 +208,7 @@ function buildColumns(ayCode?: string): ColumnDef<OutdatedRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column}>In pipeline</SortableHeader>
       ),
+      meta: { label: 'In pipeline' },
       cell: ({ row }) => <PipelineAgeCell days={row.original.daysInPipeline} />,
     },
     {
