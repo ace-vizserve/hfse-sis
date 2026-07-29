@@ -64,10 +64,10 @@ import { useUrlState } from './use-url-state';
 
 export { RowActionsMenu } from './row-actions-menu';
 
-// Lazy — `export-sheet.tsx` pulls in @dnd-kit (drag-reorder columns) plus its
-// own filter/facet logic, none of which is needed until a user actually opens
-// "Export CSV". Statically importing it put that weight in every one of the
-// ~31 DataTable consumer pages' bundles. Follows the same next/dynamic
+// Lazy — the export sheet is only ever mounted for tables that declare
+// `csv.rawColumns` (tables without it export instantly, no sheet at all —
+// see `handleInstantExport` below), so most of the ~31 DataTable consumer
+// pages never need this bundle at all. Follows the same next/dynamic
 // pattern as `components/dashboard/charts/*` (KD #80), adapted for a generic
 // component: `dynamic()` can't preserve `DataTableExportSheetProps<TRow>`'s
 // type parameter, so the loaded component is cast once at the module
@@ -776,33 +776,17 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
         <DataTableExportSheet
           open={exportOpen}
           onOpenChange={setExportOpen}
-          data={data}
+          rows={
+            selectedRows.length > 0
+              ? selectedRows
+              : table.getSortedRowModel().rows.map((r) => r.original)
+          }
           columns={columns}
-          // Flattened union — grouped facets (facetGroups) must be
-          // first-class in the export sheet too, or a grouped selection
-          // silently narrows the export with no visible/clearable control.
-          facets={allFacets}
-          searchKeys={searchKeys}
+          visibleColumnIds={table
+            .getVisibleLeafColumns()
+            .filter((c) => c.id !== 'select')
+            .map((c) => c.id)}
           csv={csv}
-          statusTabs={statusTabs}
-          meScope={meScopeEnabled ? meScope : undefined}
-          selectionEnabled={Boolean(selection?.enabled)}
-          selectedRows={selectedRows}
-          seed={{
-            search,
-            mine: mineActive,
-            facets: columnFilters.map((f) => ({
-              id: f.id,
-              values: (Array.isArray(f.value) ? f.value : []).map(String),
-            })),
-            statusTab,
-            visibleColumnIds: table
-              .getVisibleLeafColumns()
-              .filter((c) => c.id !== 'select')
-              .map((c) => c.id),
-            initialSortId: sorting[0]?.id,
-            initialSortDesc: sorting[0]?.desc,
-          }}
         />
       )}
     </div>

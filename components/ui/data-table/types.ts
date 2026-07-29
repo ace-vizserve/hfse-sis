@@ -78,9 +78,23 @@ export type CsvRawColumnSource = {
   fetch: (keys: string[]) => Promise<Record<string, Record<string, unknown>>>;
 };
 
+/**
+ * A named "export everything from these sources" choice, offered alongside
+ * the built-in "what's on screen" option. Declared per table because only
+ * the table knows which of its raw sources belong together — e.g. the
+ * applications record alone vs. the record plus its pipeline status.
+ */
+export type CsvExportPreset = {
+  id: string;
+  label: string;
+  /** Ids of `CsvRawColumnsConfig.sources` this preset loads, in order. */
+  sourceIds: string[];
+};
+
 export type CsvRawColumnsConfig<TRow> = {
   keyOf: (row: TRow) => string;
   sources: CsvRawColumnSource[];
+  exportPresets?: CsvExportPreset[];
 };
 
 export type CsvConfig<TRow> = {
