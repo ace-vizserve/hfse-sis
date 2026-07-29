@@ -24,15 +24,24 @@
 // phase wants attendance on the timeline, the right move is a
 // per-submission summary row written at save time, not a jsonb scan here.
 //
-// Known gap (not fixed here, not this phase's scope): a few historical audit
-// actions were logged with an entity_id that does not match any of the four
-// categories above — e.g. `student.section.transfer` and the admissions-side
-// withdrawal/re-enrolment cascade rows are logged against an `enroleeNumber`
-// or an `entity_type: 'enrolment_status'` id, not a `section_students` row
-// id. Those rows will not surface here even though they are section-shaped
-// events; catching them would mean either a schema change to the audit
-// writer (out of scope, "no schema change" per the brief) or a second,
-// separately-scoped query, which the brief did not ask for.
+// Fifth source — the roster's enrolee numbers, added to close a real gap.
+// `student.section.transfer` (lib/sis/section-transfer.ts) is logged against
+// an `enroleeNumber`, NOT a section_students row id, so the four categories
+// above miss it — and "who joined or left this class" is among the most
+// timeline-worthy events a teacher has. `audit_log.entity_id` is `text`
+// (widened from uuid by migration 043), so an enrolee number is a legitimate,
+// still-indexed value there.
+//
+// This source is deliberately paired with an ACTION ALLOWLIST
+// (ENROLEE_TIMELINE_ACTIONS) rather than matched on id alone: the same
+// enrolee number keys every `sis.*` admissions action (profile edits, document
+// approvals, stage changes), none of which belong on a classroom timeline.
+// Matching id-only would turn this page into an admissions feed.
+//
+// Still not covered: the admissions-side withdrawal/re-enrolment cascade rows
+// logged against an `entity_type: 'enrolment_status'` id, which is neither a
+// section_students id nor an enrolee number. Catching those needs the audit
+// writer to carry a section reference — a schema/writer change, out of scope.
 
 export type TimelineEntitySources = {
   sectionId: string;
@@ -40,6 +49,13 @@ export type TimelineEntitySources = {
   sectionStudentIds: string[];
   writeupIds: string[];
 };
+
+/**
+ * Audit actions that are genuinely classroom events but are keyed by
+ * `enroleeNumber`. Keep this list tight — every addition risks pulling
+ * admissions noise onto a teacher's timeline.
+ */
+export const ENROLEE_TIMELINE_ACTIONS = ['student.section.transfer'] as const;
 
 /**
  * Union + de-dupe the four id sources into one flat list for a single

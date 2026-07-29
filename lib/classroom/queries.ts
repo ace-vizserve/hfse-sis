@@ -22,6 +22,7 @@ import {
 } from '@/lib/classroom/scope';
 import type { ClassroomTerm } from '@/lib/classroom/terms';
 import {
+  ENROLEE_TIMELINE_ACTIONS,
   gatherTimelineEntityIds,
   TIMELINE_ROW_LIMIT,
 } from '@/lib/classroom/timeline';
@@ -82,12 +83,21 @@ export async function getClassroomTimeline(
     service.from('grading_sheets').select('id').eq('section_id', sectionId),
     service
       .from('section_students')
-      .select('id, student_id')
+      .select('id, student_id, enrolee_number')
       .eq('section_id', sectionId),
   ]);
 
   const sheetIds = (sheets ?? []).map((s) => s.id as string);
   const sectionStudentIds = (enrolments ?? []).map((e) => e.id as string);
+  // Transfers are keyed by enroleeNumber, not a section_students id — see the
+  // fifth-source note in lib/classroom/timeline.ts. Nullable on older rows.
+  const enroleeNumbers = Array.from(
+    new Set(
+      (enrolments ?? [])
+        .map((e) => e.enrolee_number as string | null)
+        .filter((n): n is string => !!n)
+    )
+  );
   const studentIds = Array.from(
     new Set(
       (enrolments ?? [])
@@ -112,12 +122,42 @@ export async function getClassroomTimeline(
     writeupIds,
   });
 
-  const { data: rows } = await service
-    .from('audit_log')
-    .select('id, action, actor_email, context, created_at')
-    .in('entity_id', entityIds)
-    .order('created_at', { ascending: false })
-    .limit(TIMELINE_ROW_LIMIT);
+  // Two indexed reads rather than one `.or()`: the enrolee-number source must
+  // additionally be action-filtered (an enrolee number keys every `sis.*`
+  // admissions action, which would turn this into an admissions feed), and
+  // expressing "id IN A, or (id IN B AND action IN C)" in PostgREST's `.or()`
+  // grammar is far harder to read than merging two small result sets.
+  const [{ data: byEntity }, { data: byEnrolee }] = await Promise.all([
+    service
+      .from('audit_log')
+      .select('id, action, actor_email, context, created_at')
+      .in('entity_id', entityIds)
+      .order('created_at', { ascending: false })
+      .limit(TIMELINE_ROW_LIMIT),
+    enroleeNumbers.length > 0
+      ? service
+          .from('audit_log')
+          .select('id, action, actor_email, context, created_at')
+          .in('entity_id', enroleeNumbers)
+          .in('action', ENROLEE_TIMELINE_ACTIONS as unknown as string[])
+          .order('created_at', { ascending: false })
+          .limit(TIMELINE_ROW_LIMIT)
+      : Promise.resolve({ data: [] as ClassroomTimelineRow[] }),
+  ]);
 
-  return (rows ?? []) as ClassroomTimelineRow[];
+  // Merge, de-dupe by id (a row can't match both sources today, but an
+  // overlap must never double-render), re-sort, then re-apply the cap — each
+  // query capped independently, so the union can exceed it.
+  const seen = new Set<string>();
+  const merged: ClassroomTimelineRow[] = [];
+  for (const r of [
+    ...((byEntity ?? []) as ClassroomTimelineRow[]),
+    ...((byEnrolee ?? []) as ClassroomTimelineRow[]),
+  ]) {
+    if (seen.has(r.id)) continue;
+    seen.add(r.id);
+    merged.push(r);
+  }
+  merged.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return merged.slice(0, TIMELINE_ROW_LIMIT);
 }
