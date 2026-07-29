@@ -58,6 +58,11 @@ export type SectionRowActionsProps = {
   /** Attendance only: the href for "Open daily" (e.g. /attendance/[id]?date=…).
    *  Falls back to '#' when omitted. */
   todayHref?: string;
+  /** From lib/classroom/scope.ts's resolver (Phase 8, KD #160) — decides the
+   *  markbook "Open grading" destination the same way the row's own name link
+   *  does, so a row and its overflow menu can't disagree. Optional: falls back
+   *  to the role check below, which covers the identical three roles. */
+  isOversight?: boolean;
   /** SIS only: whether this section already has a form adviser assigned.
    *  Controls the label of the adviser action item. */
   hasAdviser?: boolean;
@@ -78,6 +83,7 @@ export function SectionRowActions({
   role,
   termStarted,
   todayHref,
+  isOversight,
   hasAdviser,
   ayId,
   levelType,
@@ -103,11 +109,21 @@ export function SectionRowActions({
   const showTrackItem = showStructuralItems && levelType === 'secondary';
 
   // ── Resolve the "Open" destination per module ──────────────────────────────
+  // Markbook mirrors the Phase 8 row-level handoff (KD #160) that the name
+  // column in markbook/sections-data-table.tsx already implements: oversight
+  // stays on Markbook's own filtered sheets list, a teacher goes to the class's
+  // Grades tab. This menu previously sent everyone to /markbook/sections/[id],
+  // a redirect stub to the class page's OVERVIEW — so the item said "Open
+  // grading" and landed you somewhere with no grades on it, while the very same
+  // row's name link went to the right place.
+  const oversight = isOversight ?? isRegistrarPlus;
   const openHref =
     module === 'sis'
       ? `/sis/sections/${sectionId}`
       : module === 'markbook'
-        ? `/markbook/sections/${sectionId}`
+        ? oversight
+          ? `/markbook/grading?grading.section=${encodeURIComponent(sectionName)}`
+          : `/classroom/${sectionId}/grades`
         : (todayHref ?? '#');
 
   const openLabel =

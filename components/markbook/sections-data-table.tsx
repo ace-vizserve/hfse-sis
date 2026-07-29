@@ -123,6 +123,9 @@ function buildColumns(
           role={role}
           termStarted={termStarted}
           ayId={ayId}
+          // Same resolver value the name link above uses, so "Open grading"
+          // and the row's own name can't send you to different places.
+          isOversight={isOversight}
         />
       ),
     },

@@ -214,17 +214,28 @@ export default async function ClassroomOverviewPage({
     }
 
     // No form adviser — visible to every capability (it's a section-setup
-    // fact, not RLS-restricted data). No in-classroom fix surface: adviser
-    // assignment happens in SIS Admin, which most classroom viewers can't
-    // reach, so this row is informational only (no href).
+    // fact, not RLS-restricted data). The FIX surface lives in SIS Admin, and
+    // who can open it splits exactly on capability: `oversight` is
+    // academic_coordinator | school_admin | superadmin, which is precisely the
+    // role set /sis/sections/[id] gates on — so the link can never dead-end.
+    // Teachers can't go there, so they get the action they actually have
+    // (ask the coordinator) rather than a pointer to a page they'd be bounced
+    // from. Previously neither group got a link and both were told to "set one
+    // from SIS Admin," which was wrong advice for a teacher and a needless
+    // dead end for the one person who could act on it.
     if (!readiness.form_adviser.assigned) {
+      const canAssignAdviser = capability === 'oversight';
       healthRows.push({
         key: 'adviser',
         icon: UserX,
         title: 'No form adviser assigned',
-        detail:
-          'Report cards and FCA write-ups need an adviser — set one from SIS Admin.',
+        detail: canAssignAdviser
+          ? 'Report cards and FCA write-ups need one. Assign an adviser in section setup.'
+          : 'Report cards and FCA write-ups need one. Ask the academic coordinator to assign one.',
         tone: 'warn',
+        href: canAssignAdviser
+          ? `/sis/sections/${sectionId}?tab=teachers`
+          : undefined,
       });
     }
   }

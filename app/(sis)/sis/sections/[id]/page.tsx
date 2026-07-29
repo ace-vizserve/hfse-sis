@@ -436,15 +436,21 @@ export default async function SisSectionDetailPage({
         }
         actions={
           // Order + weight are frequency-driven, not arbitrary (layout
-          // redesign pass, Serial Position/Pareto) — "Roster & grading" is
-          // the daily-work cross-link into Markbook and is now the one
-          // default-variant (primary) button, first; Rename is the rarest
+          // redesign pass, Serial Position/Pareto) — the cross-link to the
+          // class's operational view is the daily-work destination and is the
+          // one default-variant (primary) button, first; Rename is the rarest
           // of the four and moves last. Generate sheets/index keep their
           // own components' outline styling unchanged.
+          //
+          // Points straight at Classroom. It used to read "Roster & grading"
+          // and link to /markbook/sections/[id], which KD #160 turned into a
+          // redirect stub to this same place — so the button already landed
+          // here, via a wasted hop, under a label naming a page that no longer
+          // exists. The label now names where you actually arrive.
           <>
             <Button asChild size="sm" className="gap-1.5">
-              <Link href={`/markbook/sections/${section.id}`}>
-                Roster &amp; grading
+              <Link href={`/classroom/${section.id}`}>
+                Open in Classroom
                 <ArrowUpRight className="size-3.5" />
               </Link>
             </Button>
