@@ -1,20 +1,19 @@
 import type { ColumnDef } from '@tanstack/react-table';
-import type { FacetConfig } from './types';
 
-// Shared row-filtering primitives. Single source of truth for two call
-// sites that must never disagree: the shell's per-tab counts (`index.tsx`'s
-// `tabCountData`) and the export sheet's independent filter builder +
-// live row-count preview. Extracted from what used to be inline logic in
-// `tabCountData` — see KD #82/#84: a count/filter that reads a raw
-// `row[id]` silently breaks for `accessorFn`-backed columns (computed
-// columns like `name` or `staleness`), so both a count and the rows it
-// claims to describe must share one implementation.
+// Shared row-filtering primitives. Single source of truth for the shell's
+// per-tab counts (`index.tsx`'s `tabCountData`) — extracted from what used
+// to be inline logic there — see KD #82/#84: a count/filter that reads a
+// raw `row[id]` silently breaks for `accessorFn`-backed columns (computed
+// columns like `name` or `staleness`), so a count and the rows it claims to
+// describe must share one implementation. `resolveColumnValue` is reused
+// by `export-payload.ts::buildScreenFields` for the same reason — an
+// on-screen CSV export must resolve the same accessor the table does.
 
 /**
  * Resolve a column definition's accessor once for a given `columnId` — the
  * shared lookup behind `resolveColumnValue`, hoisted so hot paths that
- * resolve the same column across many rows (the `filterRows` facet loop,
- * `getFacetOptions`) do a single `columns.find(...)` instead of one per row.
+ * resolve the same column across many rows (the `filterRows` facet loop) do
+ * a single `columns.find(...)` instead of one per row.
  */
 function getColumnAccessor<TRow>(
   columns: ColumnDef<TRow>[],
@@ -45,8 +44,8 @@ function getColumnAccessor<TRow>(
  * accessorFn-backed columns (or columns whose `id` differs from their
  * `accessorKey`). Convenience one-shot wrapper around
  * `getColumnAccessor` — prefer resolving the accessor once and reusing it
- * when calling across many rows for the same column (see `filterRows` /
- * `getFacetOptions` below).
+ * when calling across many rows for the same column (see `filterRows`
+ * below).
  */
 export function resolveColumnValue<TRow>(
   columns: ColumnDef<TRow>[],
@@ -105,32 +104,4 @@ export function filterRows<TRow>(
   }
 
   return out;
-}
-
-/**
- * Derive the distinct-value option list for a facet over a plain row array
- * — the equivalent of what the on-screen table gets "for free" from
- * TanStack's `col.getFacetedUniqueValues()`, but usable outside a live
- * `useReactTable` instance (the export sheet operates on the raw `data`
- * array, not a table row model). Prefers an explicit `valueOptions` list
- * when the facet config provides one (matches the on-screen FacetDropdown's
- * own precedence).
- */
-export function getFacetOptions<TRow>(
-  data: TRow[],
-  columns: ColumnDef<TRow>[],
-  facet: FacetConfig
-): Array<{ value: string; label: string }> {
-  if (facet.valueOptions) {
-    return facet.valueOptions.map((v) => ({ value: v, label: v }));
-  }
-  const accessor = getColumnAccessor(columns, facet.columnId);
-  const values = new Set<string>();
-  data.forEach((row, i) => {
-    const raw = accessor(row, i);
-    if (typeof raw === 'string' && raw.trim() !== '') values.add(raw);
-  });
-  return Array.from(values)
-    .sort()
-    .map((v) => ({ value: v, label: v }));
 }

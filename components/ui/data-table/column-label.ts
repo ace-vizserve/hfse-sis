@@ -3,8 +3,8 @@ import type { Column, ColumnDef } from '@tanstack/react-table';
 import { humanizeFieldName } from './humanize-field';
 
 // The single source of truth for a column's DISPLAY NAME — the text shown in
-// the "Columns" visibility menu, the export sheet's column picker, and the
-// header row of a downloaded CSV.
+// the "Columns" visibility menu and the header row of a downloaded CSV
+// export.
 //
 // Why this exists: a column's `header` is presentation, not a name. Almost
 // every table in this app writes

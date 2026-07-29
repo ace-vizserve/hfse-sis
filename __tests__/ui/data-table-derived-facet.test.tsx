@@ -3,8 +3,7 @@
  * option list from the column's faceted unique values. A row whose accessor
  * yields `''` (e.g. `row.classLevel ?? row.levelApplied ?? ''` in
  * student-data-table) must NOT become a blank selectable option; blank
- * values are dropped from the derived vocabulary, matching the export
- * sheet's `getFacetOptions` (filter-rows.ts). Blank-valued rows stay
+ * values are dropped from the derived vocabulary. Blank-valued rows stay
  * reachable by clearing the facet.
  */
 import { render, screen, waitFor, within } from '@testing-library/react';

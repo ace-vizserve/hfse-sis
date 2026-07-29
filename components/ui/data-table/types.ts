@@ -56,8 +56,10 @@ export type CsvExtraColumn<TRow> = {
   id: string;
   header: string;
   accessor: (row: TRow) => string | number | null;
-  /** Default false — export-only fields are opt-in per export so they don't
-   *  bloat the file by default. Set true for a field most exports want. */
+  /** Default false, which means NEVER exported — there is no export picker
+   *  left to opt a field in per-export. Set true to have this field always
+   *  appended to the "what's on screen" export; only omit it for a field
+   *  that genuinely isn't reachable yet (kept for a future consumer). */
   defaultChecked?: boolean;
 };
 
@@ -87,6 +89,14 @@ export type CsvRawColumnSource = {
 export type CsvExportPreset = {
   id: string;
   label: string;
+  /**
+   * Plain-English sentence explaining what this preset adds, shown under
+   * its label in the export sheet. Give each preset its own — a shared
+   * sentence can't say what's actually different between presets (e.g. that
+   * a second preset adds pipeline/status fields the first doesn't have).
+   * Optional only for back-compat; every real consumer should supply one.
+   */
+  description?: string;
   /** Ids of `CsvRawColumnsConfig.sources` this preset loads, in order. */
   sourceIds: string[];
 };
@@ -103,9 +113,11 @@ export type CsvConfig<TRow> = {
    * Fields already fetched by the page's loader (often from a related
    * table, e.g. more `enrolment_status` columns alongside
    * `enrolment_applications`) that aren't rendered as an on-screen column.
-   * These appear ONLY in the export sheet's column picker, never on the
-   * live table — lets a page offer richer exports without cluttering the
-   * screen. See the export sheet (`export-sheet.tsx`).
+   * Only entries with `defaultChecked: true` are ever exported — they are
+   * appended automatically to the "what's on screen" export. An entry
+   * without `defaultChecked` is never exported (there is no picker left
+   * that would let a user opt it in per-export) — don't add one unless it
+   * belongs in every export. See `export-payload.ts::buildScreenFields`.
    */
   extraColumns?: Array<CsvExtraColumn<TRow>>;
   /**
@@ -213,19 +225,21 @@ declare module '@tanstack/react-table' {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData extends RowData, TValue> {
     /**
-     * Plain-English column name for the "Columns" menu, the export picker,
-     * and the CSV header row. REQUIRED whenever `header` is a render
-     * function (e.g. `<SortableHeader>`), because the label text is then not
-     * statically reachable from the column definition. Normally identical to
-     * the visible header; expand it where the header is a glyph (`#`, `%`)
-     * or an abbreviation. See ./column-label.ts.
+     * Plain-English column name for the "Columns" visibility menu and the
+     * CSV header row when this column is exported. REQUIRED whenever
+     * `header` is a render function (e.g. `<SortableHeader>`), because the
+     * label text is then not statically reachable from the column
+     * definition. Normally identical to the visible header; expand it where
+     * the header is a glyph (`#`, `%`) or an abbreviation. See
+     * ./column-label.ts.
      */
     label?: string;
     /**
-     * Hides an on-screen column from the export picker — for columns whose
-     * raw accessor value isn't presentable (composite cells, raw enums,
-     * unformatted dates). Pair with a `csv.extraColumns` entry supplying the
-     * humanized equivalent.
+     * Excludes an on-screen column from every CSV export — for columns
+     * whose raw accessor value isn't presentable (composite cells, raw
+     * enums, unformatted dates). Pair with a `csv.extraColumns` entry
+     * (`defaultChecked: true`) supplying the humanized equivalent if the
+     * field should still be exportable.
      */
     excludeFromExport?: boolean;
   }

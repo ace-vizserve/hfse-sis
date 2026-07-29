@@ -318,7 +318,7 @@ export function StudentDataTable({
               // Display-only strip with no accessor — exporting it would
               // produce a blank "Pipeline" CSV column. The per-stage values
               // are available on demand via the export sheet's raw-columns
-              // "Status" source (and 4 of them via extraColumns).
+              // "Status" source (the "Full record + pipeline" preset).
               meta: { excludeFromExport: true },
               cell: ({ row }: { row: { original: StudentListRow } }) => (
                 <PipelineStrip row={row.original} />
@@ -335,10 +335,11 @@ export function StudentDataTable({
                   accessorFn: (row: StudentListRow) =>
                     (row[STAGE_STATUS_FIELD[stageKey]] as string | null) ?? '',
                   header: STAGE_LABELS[stageKey],
-                  // Facet-backing implementation columns — keep them out of
-                  // the export column picker (several would duplicate the
-                  // extraColumns entries below; all 9 are reachable via the
-                  // raw-columns "Status" source when needed).
+                  // Facet-backing implementation columns — kept out of
+                  // every CSV export (`excludeFromExport`); all 9 stage
+                  // statuses are reachable via the export sheet's
+                  // raw-columns "Status" source (the "Full record +
+                  // pipeline" preset) when needed.
                   meta: { excludeFromExport: true },
                   filterFn: (row, id, value) => {
                     if (!value || (Array.isArray(value) && value.length === 0))
@@ -672,11 +673,15 @@ export function StudentDataTable({
                   {
                     id: 'record',
                     label: 'Full application record',
+                    description:
+                      "Every field on this student's application — identity, contacts, and family details.",
                     sourceIds: ['applications'],
                   },
                   {
                     id: 'full',
                     label: 'Full record + pipeline',
+                    description:
+                      "Everything in the application record, plus the application's pipeline and status fields, like stage and enrolment type.",
                     sourceIds: ['applications', 'status'],
                   },
                 ],

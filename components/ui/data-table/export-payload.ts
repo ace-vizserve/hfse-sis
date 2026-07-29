@@ -51,18 +51,21 @@ export function buildScreenFields<TRow>(
   const byId = new Map<string, ColumnDef<TRow>>();
   for (const c of columns) byId.set(resolveColumnId(c), c);
 
-  // Identify object-valued columns by probing the first non-null value.
+  // Identify object-valued columns by checking EVERY row, not just the
+  // first non-null one. A column is object-valued (and therefore dropped)
+  // if ANY row's value for it is an object — probing only the first
+  // non-null value made the drop depend on row/sort order (e.g. a column
+  // that's a JSON string on some rows and a real array on others would
+  // survive or vanish depending on which row happened to sort first).
   const isObjectColumn = new Set<string>();
   for (const columnId of visibleColumnIds) {
     const col = byId.get(columnId);
     if (!col) continue;
     for (const row of rows) {
       const rawValue = resolveColumnValue(columns, columnId, row, 0);
-      if (rawValue != null) {
-        if (typeof rawValue === 'object') {
-          isObjectColumn.add(columnId);
-        }
-        break; // Stop at first non-null value for this column.
+      if (rawValue != null && typeof rawValue === 'object') {
+        isObjectColumn.add(columnId);
+        break; // Found one object value — no need to check further rows.
       }
     }
   }

@@ -61,6 +61,48 @@ const csv: CsvConfig<Row> = {
   },
 };
 
+// Dedicated to the object-column-probe order-independence tests below — one
+// source per direction so the mixed test doesn't disturb `fetchApps`/
+// `fetchStatus` above (used by every other test in this file).
+const fetchMixedObjectSecond = vi.fn(async (keys: string[]) =>
+  Object.fromEntries(
+    keys.map((k) => [
+      k,
+      { name: `Name-${k}`, blob: k === '1' ? 'a string' : { nested: true } },
+    ])
+  )
+);
+const fetchMixedObjectFirst = vi.fn(async (keys: string[]) =>
+  Object.fromEntries(
+    keys.map((k) => [
+      k,
+      { name: `Name-${k}`, blob: k === '1' ? { nested: true } : 'a string' },
+    ])
+  )
+);
+
+const mixedObjectSecondCsv: CsvConfig<Row> = {
+  filename: 'mixed-second.csv',
+  rawColumns: {
+    keyOf: (r) => r.id,
+    sources: [{ id: 'mixed', label: 'Mixed', fetch: fetchMixedObjectSecond }],
+    exportPresets: [
+      { id: 'mixed', label: 'Mixed preset', sourceIds: ['mixed'] },
+    ],
+  },
+};
+
+const mixedObjectFirstCsv: CsvConfig<Row> = {
+  filename: 'mixed-first.csv',
+  rawColumns: {
+    keyOf: (r) => r.id,
+    sources: [{ id: 'mixed', label: 'Mixed', fetch: fetchMixedObjectFirst }],
+    exportPresets: [
+      { id: 'mixed', label: 'Mixed preset', sourceIds: ['mixed'] },
+    ],
+  },
+};
+
 // Dedicated to the rejecting-fetch test only — keeps `fetchApps`/`fetchStatus`
 // above always resolving for every other test.
 const fetchBroken = vi.fn(async () => {
@@ -203,6 +245,80 @@ describe('DataTableExportSheet — preset choice', () => {
     expect(applicationsIndices.length).toBeGreaterThan(0);
     expect(statusIndex).toBeGreaterThan(-1);
     applicationsIndices.forEach((i) => expect(statusIndex).toBeGreaterThan(i));
+  });
+
+  it('omits an object-valued raw column when a LATER row is the object', async () => {
+    const getCsv = captureCsv();
+    const user = userEvent.setup();
+    render(
+      <DataTable<Row>
+        data={rows}
+        columns={columns}
+        getRowId={(r) => r.id}
+        csv={mixedObjectSecondCsv}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /Export CSV/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(
+      within(dialog).getByRole('radio', { name: /Mixed preset/ })
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(getCsv()).not.toBe(''));
+    const header = getCsv().replace(/^﻿/, '').split('\n')[0];
+    // Only "Name" survives — "Blob" is dropped because ROW 2's value for it
+    // is an object, even though ROW 1's value is a plain string.
+    expect(header).toBe('Name');
+  });
+
+  it('omits an object-valued raw column when the FIRST row is the object (order-independence mirror)', async () => {
+    const getCsv = captureCsv();
+    const user = userEvent.setup();
+    render(
+      <DataTable<Row>
+        data={rows}
+        columns={columns}
+        getRowId={(r) => r.id}
+        csv={mixedObjectFirstCsv}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /Export CSV/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(
+      within(dialog).getByRole('radio', { name: /Mixed preset/ })
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(getCsv()).not.toBe(''));
+    const header = getCsv().replace(/^﻿/, '').split('\n')[0];
+    // Same result regardless of which row carried the object value — proves
+    // the drop no longer depends on row/sort order.
+    expect(header).toBe('Name');
+  });
+
+  it('pluralizes the row count correctly for a single row', async () => {
+    const user = userEvent.setup();
+    render(
+      <DataTable<Row>
+        data={[rows[0]]}
+        columns={columns}
+        getRowId={(r) => r.id}
+        csv={csv}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /Export CSV/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByText(/1 row will be exported/)
+    ).toBeInTheDocument();
+  });
+
+  it('gives the preset RadioGroup an accessible name', async () => {
+    const { dialog } = await openSheet();
+    expect(
+      within(dialog).getByRole('radiogroup', {
+        name: /Choose what to export/i,
+      })
+    ).toBeInTheDocument();
   });
 
   it("shows an error and re-enables Download when a source's fetch rejects", async () => {

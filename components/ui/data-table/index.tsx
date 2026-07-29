@@ -361,23 +361,35 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     [rowSelection, table, tabFilteredData]
   );
 
-  // Instant export — for tables with no raw-DB-column capability there is
-  // nothing to configure, so the button downloads what is on screen rather
-  // than opening a sheet. Rows come from the table's own sorted row model,
-  // which IS the current filter + sort, so the file can't disagree with the
-  // screen. A live row selection narrows it; nothing ticked means everything.
-  function handleInstantExport() {
-    if (!csv) return;
-    const scoped =
-      selectedRows.length > 0
-        ? selectedRows
-        : table.getSortedRowModel().rows.map((r) => r.original);
-    const fields = buildScreenFields(
-      columns,
-      table
+  // Shared export scope — the instant-download button and the configurable
+  // export sheet must never disagree about which rows / which visible
+  // columns are "in scope," so both derive it from this one function rather
+  // than each re-deriving it independently. Rows come from the table's own
+  // sorted row model, which IS the current filter + sort, so the file can't
+  // disagree with the screen; a live row selection narrows it, nothing
+  // ticked means everything.
+  function computeExportScope(): { rows: TRow[]; columnIds: string[] } {
+    return {
+      rows:
+        selectedRows.length > 0
+          ? selectedRows
+          : table.getSortedRowModel().rows.map((r) => r.original),
+      columnIds: table
         .getVisibleLeafColumns()
         .filter((c) => c.id !== 'select')
         .map((c) => c.id),
+    };
+  }
+
+  // Instant export — for tables with no raw-DB-column capability there is
+  // nothing to configure, so the button downloads what is on screen rather
+  // than opening a sheet.
+  function handleInstantExport() {
+    if (!csv) return;
+    const { rows: scoped, columnIds } = computeExportScope();
+    const fields = buildScreenFields(
+      columns,
+      columnIds,
       csv.extraColumns,
       scoped
     );
@@ -457,9 +469,8 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
       f.valueOptions?.map((v) => ({ value: v, label: v })) ??
       Array.from(col.getFacetedUniqueValues().keys())
         // Blank/whitespace values would render as an empty selectable row —
-        // drop them from the derived vocabulary, matching filter-rows.ts::
-        // getFacetOptions (the export sheet's equivalent derivation). Rows
-        // with a blank value stay reachable by clearing the facet.
+        // drop them from the derived vocabulary. Rows with a blank value
+        // stay reachable by clearing the facet.
         .filter((v): v is string => typeof v === 'string' && v.trim() !== '')
         .sort()
         .map((v) => ({ value: v, label: v }));
@@ -483,6 +494,11 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
       />
     );
   };
+
+  // Recomputed each render (cheap — TanStack caches the row models it's
+  // derived from) so the export sheet always sees the current scope; see
+  // `computeExportScope` above for why the button and the sheet share this.
+  const exportScope = computeExportScope();
 
   return (
     <div className="flex flex-col gap-3">
@@ -776,16 +792,10 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
         <DataTableExportSheet
           open={exportOpen}
           onOpenChange={setExportOpen}
-          rows={
-            selectedRows.length > 0
-              ? selectedRows
-              : table.getSortedRowModel().rows.map((r) => r.original)
-          }
+          rows={exportScope.rows}
+          selectionActive={selectedRows.length > 0}
           columns={columns}
-          visibleColumnIds={table
-            .getVisibleLeafColumns()
-            .filter((c) => c.id !== 'select')
-            .map((c) => c.id)}
+          visibleColumnIds={exportScope.columnIds}
           csv={csv}
         />
       )}

@@ -3,10 +3,8 @@ import type { ColumnDef } from '@tanstack/react-table';
 
 import {
   filterRows,
-  getFacetOptions,
   resolveColumnValue,
 } from '@/components/ui/data-table/filter-rows';
-import type { FacetConfig } from '@/components/ui/data-table/types';
 
 // Extracted from index.tsx's `tabCountData` — the export sheet's live
 // preview must never disagree with the shell's own tab counts, so both
@@ -116,43 +114,5 @@ describe('filterRows', () => {
       facets: [{ id: 'level', values: [] }],
     });
     expect(out).toEqual(rows);
-  });
-});
-
-describe('getFacetOptions', () => {
-  it('prefers an explicit valueOptions list', () => {
-    const facet: FacetConfig = {
-      columnId: 'level',
-      label: 'Level',
-      valueOptions: ['P1', 'P2', 'P3'],
-    };
-    expect(getFacetOptions(rows, columns, facet)).toEqual([
-      { value: 'P1', label: 'P1' },
-      { value: 'P2', label: 'P2' },
-      { value: 'P3', label: 'P3' },
-    ]);
-  });
-
-  it('derives sorted distinct values from data when no valueOptions given', () => {
-    const facet: FacetConfig = { columnId: 'level', label: 'Level' };
-    expect(getFacetOptions(rows, columns, facet)).toEqual([
-      { value: 'P1', label: 'P1' },
-      { value: 'P2', label: 'P2' },
-    ]);
-  });
-
-  it('derives options via an accessorFn-backed column', () => {
-    const facet: FacetConfig = { columnId: 'grade', label: 'Grade' };
-    expect(getFacetOptions(rows, columns, facet)).toEqual([
-      { value: 'High', label: 'High' },
-      { value: 'Low', label: 'Low' },
-    ]);
-  });
-
-  it('excludes null values from derived options', () => {
-    const facet: FacetConfig = { columnId: 'level', label: 'Level' };
-    const options = getFacetOptions(rows, columns, facet);
-    expect(options.some((o) => o.value === '')).toBe(false);
-    expect(options.length).toBe(2);
   });
 });

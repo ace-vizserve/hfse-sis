@@ -81,6 +81,45 @@ describe('buildScreenFields', () => {
     expect(fields.map((f) => f.id)).toEqual(['name']);
   });
 
+  it('drops a column whose FIRST row is a string but a LATER row is an object', () => {
+    // rows[0].id === '1', rows[1].id === '2' — the object only shows up on
+    // the second row. A probe that stops at the first non-null value would
+    // wrongly keep this column.
+    const mixedCols: ColumnDef<Row>[] = [
+      { id: 'name', accessorKey: 'name', header: 'Name' },
+      {
+        id: 'mixed',
+        accessorFn: (r) => (r.id === '1' ? 'a string' : { a: 1 }),
+        header: 'Mixed',
+      },
+    ];
+    const fields = buildScreenFields(
+      mixedCols,
+      ['name', 'mixed'],
+      undefined,
+      rows
+    );
+    expect(fields.map((f) => f.id)).toEqual(['name']);
+  });
+
+  it('drops a column whose FIRST row is an object but a LATER row is a string (order-independence mirror)', () => {
+    const mixedCols: ColumnDef<Row>[] = [
+      { id: 'name', accessorKey: 'name', header: 'Name' },
+      {
+        id: 'mixed',
+        accessorFn: (r) => (r.id === '1' ? { a: 1 } : 'a string'),
+        header: 'Mixed',
+      },
+    ];
+    const fields = buildScreenFields(
+      mixedCols,
+      ['name', 'mixed'],
+      undefined,
+      rows
+    );
+    expect(fields.map((f) => f.id)).toEqual(['name']);
+  });
+
   it('keeps a visible column whose values are all null', () => {
     const nullCols: ColumnDef<Row>[] = [
       { id: 'name', accessorKey: 'name', header: 'Name' },

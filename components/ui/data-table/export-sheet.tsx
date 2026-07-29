@@ -27,12 +27,24 @@ import type { CsvConfig } from './types';
 
 const SCREEN_OPTION = 'screen';
 
+// Fallback only — every real preset should supply its own `description`
+// (see CsvExportPreset). This is deliberately NOT "every stored field, not
+// just what fits on screen": a preset only loads the raw DB source(s) it
+// names, which can leave out fields the screen shows from elsewhere (e.g.
+// the roster's "#" index column, which comes from a different table
+// entirely) — so it must never claim to be a superset of the screen.
+const DEFAULT_PRESET_DESCRIPTION =
+  'Every field stored for this record in the database.';
+
 export type DataTableExportSheetProps<TRow> = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Rows in the CURRENT scope — already filtered, sorted and
    *  selection-narrowed by the shell. The sheet never re-filters. */
   rows: TRow[];
+  /** True when `rows` was narrowed by a live row selection rather than by
+   *  the on-screen filters — drives the scope sentence under the title. */
+  selectionActive: boolean;
   columns: ColumnDef<TRow>[];
   visibleColumnIds: string[];
   csv: CsvConfig<TRow>;
@@ -42,6 +54,7 @@ export function DataTableExportSheet<TRow>({
   open,
   onOpenChange,
   rows,
+  selectionActive,
   columns,
   visibleColumnIds,
   csv,
@@ -92,15 +105,19 @@ export function DataTableExportSheet<TRow>({
             if (!source) return [];
             const data = await source.fetch(keys);
             // Drop object-valued columns (e.g. residenceHistory) — a JSON
-            // blob in a spreadsheet cell helps nobody. Probe the first
-            // non-null value per column name.
+            // blob in a spreadsheet cell helps nobody. A column is dropped
+            // if ANY row's value for it is an object, checked across every
+            // row rather than just the first non-null one — residenceHistory
+            // is stored as a JSON string by some write paths and a real
+            // array by others, so sampling only one row made the drop
+            // depend on which row happened to sort first.
             const colNames = Array.from(
               new Set(Object.values(data).flatMap((r) => Object.keys(r)))
             ).filter((col) => {
-              const sample = Object.values(data)
-                .map((r) => r[col])
-                .find((v) => v != null);
-              return typeof sample !== 'object';
+              const hasObjectValue = Object.values(data).some(
+                (r) => r[col] != null && typeof r[col] === 'object'
+              );
+              return !hasObjectValue;
             });
             return colNames.map((col) => ({
               id: `raw:${sourceId}:${col}`,
@@ -138,7 +155,12 @@ export function DataTableExportSheet<TRow>({
         <SheetHeader>
           <SheetTitle>Export CSV</SheetTitle>
           <SheetDescription>
-            {rows.length} rows will be exported, matching the filters on screen.
+            {rows.length} {rows.length === 1 ? 'row' : 'rows'} will be exported,
+            matching{' '}
+            {selectionActive
+              ? 'the rows you selected'
+              : 'the filters on screen'}
+            .
           </SheetDescription>
         </SheetHeader>
 
@@ -147,6 +169,7 @@ export function DataTableExportSheet<TRow>({
             value={choice}
             onValueChange={setChoice}
             className="gap-3"
+            aria-label="Choose what to export"
           >
             <div className="flex items-start gap-3">
               <RadioGroupItem
@@ -182,7 +205,7 @@ export function DataTableExportSheet<TRow>({
                     {p.label}
                   </span>
                   <span className="block text-xs text-muted-foreground">
-                    Every stored field, not just what fits on screen.
+                    {p.description ?? DEFAULT_PRESET_DESCRIPTION}
                   </span>
                 </Label>
               </div>

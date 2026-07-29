@@ -58,10 +58,12 @@ export type StudentListRow = {
   applicationTerminalReason?: string | null;
   applicationTerminalNotes?: string | null;
   // Additional _enrolment_status fields — not rendered as on-screen columns
-  // anywhere today, but fetched so pages can offer them as CSV export-only
-  // extras (see components/sis/student-data-table.tsx's `csv.extraColumns`).
-  // The apps×status join already existed; this just widens the status
-  // SELECT + merge to surface more of what's already in that table.
+  // anywhere today. Reachable via the CSV export sheet's "Full record +
+  // pipeline" preset (components/sis/student-data-table.tsx's
+  // `csv.rawColumns` "status" source), not via `csv.extraColumns` (no
+  // longer used on that table). The apps×status join already existed; this
+  // just widens the status SELECT + merge to surface more of what's
+  // already in that table.
   enroleeType: string | null;
   enrolmentDate: string | null;
   assessmentStatus: string | null;
