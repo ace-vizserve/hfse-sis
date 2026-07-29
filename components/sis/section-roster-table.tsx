@@ -297,11 +297,28 @@ export function SectionRosterTable({
     [ayCode, sectionId, sectionName, siblings]
   );
 
+  // Defaults to All, not Active.
+  //
+  // The Active tab is an exact status match — correctly so, since Late and
+  // Withdrawn have their own tabs — but defaulting to it meant the roster
+  // opened hiding students who ARE on it. A late enrollee is enrolled; "late"
+  // describes when they joined, not whether they're in the class. On AY2026
+  // that hid 20 students across 13 of the 21 sections, and the page's own
+  // Active/Late/Withdrawn stat cards sat directly above a table that silently
+  // showed only the first bucket.
+  //
+  // The per-status tabs are unchanged and still exact — this only moves which
+  // one opens first.
   const statusTabs = [
+    {
+      value: 'all',
+      label: 'All',
+      isDefault: true,
+      predicate: () => true,
+    },
     {
       value: 'active',
       label: 'Active',
-      isDefault: true,
       predicate: (r: SectionRosterRow) => r.enrollmentStatus === 'active',
     },
     {
@@ -314,11 +331,6 @@ export function SectionRosterTable({
       value: 'withdrawn',
       label: 'Withdrawn',
       predicate: (r: SectionRosterRow) => r.enrollmentStatus === 'withdrawn',
-    },
-    {
-      value: 'all',
-      label: 'All',
-      predicate: () => true,
     },
   ];
 
