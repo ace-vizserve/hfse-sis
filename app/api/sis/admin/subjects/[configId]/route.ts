@@ -57,6 +57,35 @@ export async function PATCH(
   if (!before)
     return NextResponse.json({ error: 'config not found' }, { status: 404 });
 
+  // No-op guard, same shape as the canonical one in
+  // app/api/sections/[id]/students/[enrolmentId]/route.ts:292-307.
+  //
+  // Re-saving identical weights previously ran the UPDATE, re-ran
+  // sync_grading_sheets_from_config (which re-stamps updated_at on EVERY
+  // unlocked grading sheet tied to this config), and wrote a
+  // `subject_config.update` audit row whose before/after blocks were
+  // identical. audit_log is append-only and is the evidence trail for how a
+  // sheet's weights came to be what they are — a row asserting a change that
+  // did not happen defeats the only job that table has.
+  //
+  // `weights_confirmed` is part of the comparison ON PURPOSE. It is set true
+  // unconditionally below (see the comment there) to clear migration 082's
+  // "needs attention" flag on the GP/COMP/ARTD/PESTD stand-in rows. Diffing
+  // only the six numeric fields would make that flag-clearing save look like a
+  // no-op and silently drop it — so a false -> true transition still counts as
+  // a real change and proceeds.
+  const unchanged =
+    Number(before.ww_weight) === ww_weight / 100 &&
+    Number(before.pt_weight) === pt_weight / 100 &&
+    Number(before.qa_weight) === qa_weight / 100 &&
+    before.ww_max_slots === ww_max_slots &&
+    before.pt_max_slots === pt_max_slots &&
+    before.qa_max === qa_max &&
+    before.weights_confirmed === true;
+  if (unchanged) {
+    return NextResponse.json({ ok: true, changed: false, sheets_synced: 0 });
+  }
+
   const ww_dec = (ww_weight / 100).toFixed(2);
   const pt_dec = (pt_weight / 100).toFixed(2);
   const qa_dec = (qa_weight / 100).toFixed(2);

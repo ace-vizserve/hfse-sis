@@ -55,7 +55,9 @@ export async function POST(
   const { data: section } = await service
     .from('sections')
     .select(
-      'id, name, level_id, academic_year_id, level:levels(level_type), academic_years!inner(ay_code)'
+      // class_type is selected so the audit gate below can tell a real change
+      // from a re-apply of the same track.
+      'id, name, class_type, level_id, academic_year_id, level:levels(level_type), academic_years!inner(ay_code)'
     )
     .eq('id', sectionId)
     .maybeSingle();
@@ -124,21 +126,37 @@ export async function POST(
     }
   }
 
-  await logAction({
-    service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
-    action: 'section.track.assign',
-    entityType: 'section',
-    entityId: sectionId,
-    context: {
-      sectionName: section.name,
-      classType,
-      bundleCodes: resolvedCodes,
-      missingCodes,
-      inserted,
-      sheetsInserted,
-    },
-  });
+  // Only audit when something actually changed — either the section's track
+  // flipped, or the bundle attached at least one subject.
+  //
+  // This previously fired unconditionally, which was the odd one out in its own
+  // file: the grading-sheet block just above is correctly gated on
+  // `inserted > 0`, so re-applying the same track already skipped the RPC while
+  // still writing an audit row claiming a track assignment. audit_log is
+  // append-only (Hard Rule #6), so those rows are permanent noise in the
+  // evidence trail for how a section's subjects came to be.
+  const trackChanged =
+    (section as { class_type?: string | null }).class_type !== classType;
+  const changed = trackChanged || inserted > 0;
+
+  if (changed) {
+    await logAction({
+      service,
+      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      action: 'section.track.assign',
+      entityType: 'section',
+      entityId: sectionId,
+      context: {
+        sectionName: section.name,
+        classType,
+        trackChanged,
+        bundleCodes: resolvedCodes,
+        missingCodes,
+        inserted,
+        sheetsInserted,
+      },
+    });
+  }
 
   if (ayCode) invalidateDrillTags('markbook', ayCode);
 

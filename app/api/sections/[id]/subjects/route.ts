@@ -91,11 +91,11 @@ export async function POST(
   const { error: insertErr } = await service
     .from('section_subjects')
     .insert({ section_id: sectionId, subject_config_id: subjectConfigId });
-  if (insertErr) {
-    // 23505 = unique_violation — already assigned, treat as a no-op success.
-    if ((insertErr as { code?: string }).code !== '23505') {
-      return NextResponse.json({ error: insertErr.message }, { status: 500 });
-    }
+  // 23505 = unique_violation — already assigned, treat as a no-op success.
+  const alreadyAttached =
+    (insertErr as { code?: string } | null)?.code === '23505';
+  if (insertErr && !alreadyAttached) {
+    return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }
 
   const subj = Array.isArray(config.subject)
@@ -132,25 +132,35 @@ export async function POST(
     );
   }
 
-  await logAction({
-    service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
-    action: 'section.subject.assign',
-    entityType: 'section',
-    entityId: sectionId,
-    context: {
-      sectionName: section.name,
-      subjectCode: subj?.code ?? null,
-      subjectName: subj?.name ?? null,
-      subjectConfigId,
-      grading_sheets_created: sheetsInserted,
-    },
-  });
+  // Only audit a real attach. Re-attaching an already-attached subject is the
+  // single most likely repeat here (a double-click, or a retry after a slow
+  // response), and it previously wrote a `section.subject.assign` row on the
+  // 23505-caught no-op branch — an append-only record of something that did
+  // not happen. Sheet generation is still allowed to run above, since a prior
+  // attach could have left sheets missing; only the claim of a NEW attachment
+  // is gated.
+  if (!alreadyAttached) {
+    await logAction({
+      service,
+      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      action: 'section.subject.assign',
+      entityType: 'section',
+      entityId: sectionId,
+      context: {
+        sectionName: section.name,
+        subjectCode: subj?.code ?? null,
+        subjectName: subj?.name ?? null,
+        subjectConfigId,
+        grading_sheets_created: sheetsInserted,
+      },
+    });
+  }
 
   if (ayCode) invalidateDrillTags('markbook', ayCode);
 
   return NextResponse.json({
     ok: true,
+    changed: !alreadyAttached,
     grading_sheets_created: sheetsInserted,
   });
 }

@@ -127,7 +127,15 @@ export async function POST(
       }))
     );
     if (insertErr) {
-      return NextResponse.json({ error: insertErr.message }, { status: 500 });
+      // 23505 = unique_violation — a concurrent identical request beat us to
+      // one of these rows. The JS pre-check above cannot prevent that (both
+      // requests read the same "already attached" snapshot before either
+      // wrote), so tolerate it as a partial success rather than surfacing a
+      // raw 500 for what is really a no-op. Mirrors applyTrackBundle in
+      // lib/sis/section-track.ts, which has handled this correctly all along.
+      if ((insertErr as { code?: string }).code !== '23505') {
+        return NextResponse.json({ error: insertErr.message }, { status: 500 });
+      }
     }
     inserted = missing.length;
   }
