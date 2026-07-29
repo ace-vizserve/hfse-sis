@@ -625,52 +625,6 @@ export function StudentDataTable({
       pageSize={25}
       csv={{
         filename: `students-${ayCode ?? 'export'}.csv`,
-        // More _enrolment_status fields the apps×status join in
-        // listStudents already fetches but this table doesn't render
-        // on-screen — offered only in the export sheet's column picker,
-        // unchecked by default so a plain export stays lean.
-        extraColumns: [
-          {
-            id: 'enroleeType',
-            header: 'Enrolee Type',
-            accessor: (r) => r.enroleeType,
-          },
-          {
-            id: 'enrolmentDate',
-            header: 'Enrolment Date',
-            accessor: (r) => r.enrolmentDate,
-          },
-          {
-            id: 'assessmentStatus',
-            header: 'Assessment',
-            accessor: (r) => r.assessmentStatus,
-          },
-          {
-            id: 'assessmentGradeMath',
-            header: 'Math Grade',
-            accessor: (r) => r.assessmentGradeMath,
-          },
-          {
-            id: 'assessmentGradeEnglish',
-            header: 'English Grade',
-            accessor: (r) => r.assessmentGradeEnglish,
-          },
-          {
-            id: 'contractStatus',
-            header: 'Contract',
-            accessor: (r) => r.contractStatus,
-          },
-          {
-            id: 'feeStatus',
-            header: 'Fee Status',
-            accessor: (r) => r.feeStatus,
-          },
-          {
-            id: 'registrationStatus',
-            header: 'Registration',
-            accessor: (r) => r.registrationStatus,
-          },
-        ],
         // Only meaningful when the caller passes ayCode (the prefix the
         // fetch needs to resolve) — /admissions/applications and
         // /records/students both do; other StudentDataTable callers simply
@@ -706,6 +660,24 @@ export function StudentDataTable({
                         '/api/sis/students/raw-columns',
                         jsonInit('POST', { ay: ayCode, source: 'status', keys })
                       ).then((r) => r.rows),
+                  },
+                ],
+                // Offered as the "export everything" choices in the export
+                // sheet. Applications alone is the clean identity/contacts
+                // record; + Status adds the funnel columns (applicationStatus,
+                // the 9 stage statuses and their dates, enrolee type,
+                // enrolment date, assessment grades — KD #59/#62), which is
+                // what makes the file useful for chasing.
+                exportPresets: [
+                  {
+                    id: 'record',
+                    label: 'Full application record',
+                    sourceIds: ['applications'],
+                  },
+                  {
+                    id: 'full',
+                    label: 'Full record + pipeline',
+                    sourceIds: ['applications', 'status'],
                   },
                 ],
               },
