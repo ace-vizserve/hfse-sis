@@ -5,6 +5,7 @@ import {
   BookOpen,
   CalendarCheck,
   MessageSquare,
+  UserX,
   Users,
 } from 'lucide-react';
 
@@ -16,18 +17,36 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { getSectionAttendanceSummary } from '@/lib/attendance/queries';
+import {
+  ClassroomAtRiskPanel,
+  ClassroomHealthChecklist,
+  type ClassroomHealthRow,
+} from '@/components/classroom/classroom-health';
+import {
+  getRollupForSection,
+  getSectionAttendanceSummary,
+} from '@/lib/attendance/queries';
+import {
+  getClassroomHealth,
+  selectAtRiskStudents,
+  type AtRiskStudent,
+} from '@/lib/classroom/health';
 import { canReadAttendance, canReadWriteups } from '@/lib/classroom/scope';
 import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
-import { getWriteupProgressByTerm } from '@/lib/evaluation/queries';
+import {
+  getSectionRoster,
+  getWriteupProgressByTerm,
+} from '@/lib/evaluation/queries';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 // Overview — the class at a glance for the selected term. A compact
-// per-term summary + links out to the four other tabs; the full roster now
-// lives on the Students tab (this used to be the whole Phase 2 page), and
-// the Health strip (attendance %, missing scores, at-risk students) is
-// explicitly Phase 5 — not built here (see the Phase 4 brief).
+// per-term summary + links out to the other tabs; the full roster lives on
+// the Students tab. The Health strip below the stat grid (Phase 5) answers
+// "what needs doing" for this (section, term) — sourced entirely from
+// computePublishReadiness, the same evaluator the report-card publish
+// dialog uses, plus a students-at-risk list derived from the attendance
+// rollup. See lib/classroom/health.ts for both.
 
 export default async function ClassroomOverviewPage({
   params,
@@ -52,10 +71,14 @@ export default async function ClassroomOverviewPage({
   const supabase = await createClient();
   const { data: section } = await supabase
     .from('sections')
-    .select('id, name, academic_year_id')
+    .select('id, name, academic_year_id, academic_year:academic_years(ay_code)')
     .eq('id', sectionId)
     .maybeSingle();
   if (!section) notFound();
+  const ayNode = Array.isArray(section.academic_year)
+    ? section.academic_year[0]
+    : section.academic_year;
+  const ayCode = (ayNode as { ay_code: string } | null)?.ay_code ?? null;
 
   const terms = await getTermsForAy(section.academic_year_id);
   const selectedTermId = resolveSelectedTermId(terms, sp.term_id);
@@ -96,6 +119,141 @@ export default async function ClassroomOverviewPage({
       : null;
 
   const termQuery = selectedTermId ? `?term_id=${selectedTermId}` : '';
+
+  // ── Health (Phase 5) ──────────────────────────────────────────────────
+  // computePublishReadiness — cached, see lib/classroom/health.ts. No term
+  // resolvable, or no ay_code (shouldn't happen but guards the cache-tag
+  // shape) → skip the strip entirely rather than render a hollow one.
+  const readiness =
+    selectedTermId && ayCode
+      ? await getClassroomHealth(sectionId, selectedTermId, ayCode)
+      : null;
+
+  const healthRows: ClassroomHealthRow[] = [];
+  if (readiness) {
+    // Grading — a class-wide, subject-agnostic signal (not gated by
+    // capability: a subject-teacher viewer already sees this same
+    // class-wide sheet count on the "Grading sheets" stat card above; RLS
+    // restricts per-subject SCORE visibility, not this aggregate). The
+    // `no_grading_sheets` hard blocker is the readiness engine's own
+    // vacuous-pass-hole signal (KD #139) — reused here so "not started" is
+    // never confused with a real "0 missing."
+    const noSheetsAtAll = readiness.hardBlockers.some(
+      (b) => b.code === 'no_grading_sheets'
+    );
+    if (noSheetsAtAll) {
+      healthRows.push({
+        key: 'grading',
+        icon: BookOpen,
+        title: 'Grading',
+        detail: isT4
+          ? 'No grading sheets recorded for this class yet.'
+          : 'No grading sheets for this term yet.',
+        tone: 'info',
+        href: `/classroom/${sectionId}/grades${termQuery}`,
+      });
+    } else {
+      const missing = isT4
+        ? (readiness.t4_readiness?.missing_annual_count ?? 0) +
+          (readiness.t4_readiness?.non_examinable_readiness.missing_count ?? 0)
+        : readiness.grading_sheets.total - readiness.grading_sheets.locked;
+      healthRows.push({
+        key: 'grading',
+        icon: BookOpen,
+        title: 'Grading',
+        detail: isT4
+          ? missing === 0
+            ? 'All annual grades recorded.'
+            : `${missing} annual grade${missing === 1 ? '' : 's'} still missing.`
+          : missing === 0
+            ? `All ${readiness.grading_sheets.total} sheet${readiness.grading_sheets.total === 1 ? '' : 's'} locked.`
+            : `${missing} of ${readiness.grading_sheets.total} sheet${readiness.grading_sheets.total === 1 ? '' : 's'} still open.`,
+        tone: missing === 0 ? 'ok' : 'warn',
+        href: `/classroom/${sectionId}/grades${termQuery}`,
+      });
+    }
+
+    // Write-ups — adviser/oversight only (capability gate, non-negotiable
+    // per the brief), T1–T3 only. T4 is omitted entirely rather than
+    // showing 0-of-N — readiness.evaluations is structurally zeroed on T4
+    // (KD #49: no FCA write-up for the final term), so a 0-of-N there would
+    // read as "all done" when it actually means "not applicable."
+    if (showWriteups && !isT4 && readiness.evaluations.total_active > 0) {
+      const missing = readiness.evaluations.missing.length;
+      const total = readiness.evaluations.total_active;
+      healthRows.push({
+        key: 'writeups',
+        icon: MessageSquare,
+        title: 'Write-ups',
+        detail:
+          missing === 0
+            ? `All ${total} write-up${total === 1 ? '' : 's'} submitted.`
+            : `${missing} of ${total} still outstanding.`,
+        tone: missing === 0 ? 'ok' : 'warn',
+        href: `/classroom/${sectionId}/write-ups${termQuery}`,
+      });
+    }
+
+    // Attendance gaps — adviser/oversight only. "Missing" here means no
+    // rollup recorded yet for that student, not a low attendance rate
+    // (that's the separate at-risk list below).
+    if (showAttendance && readiness.attendance.total_active > 0) {
+      const missing = readiness.attendance.missing.length;
+      const total = readiness.attendance.total_active;
+      healthRows.push({
+        key: 'attendance',
+        icon: CalendarCheck,
+        title: 'Attendance',
+        detail:
+          missing === 0
+            ? 'Attendance fully recorded for the term so far.'
+            : `${missing} of ${total} student${total === 1 ? '' : 's'} missing a recorded rollup.`,
+        tone: missing === 0 ? 'ok' : 'warn',
+        href: `/classroom/${sectionId}/attendance${termQuery}`,
+      });
+    }
+
+    // No form adviser — visible to every capability (it's a section-setup
+    // fact, not RLS-restricted data). No in-classroom fix surface: adviser
+    // assignment happens in SIS Admin, which most classroom viewers can't
+    // reach, so this row is informational only (no href).
+    if (!readiness.form_adviser.assigned) {
+      healthRows.push({
+        key: 'adviser',
+        icon: UserX,
+        title: 'No form adviser assigned',
+        detail:
+          'Report cards and FCA write-ups need an adviser — set one from SIS Admin.',
+        tone: 'warn',
+      });
+    }
+  }
+
+  // Students at risk — attendance-percentage view, distinct from the
+  // "Attendance" completeness row above. null = no rollup data recorded
+  // yet this term (hidden entirely by <ClassroomAtRiskPanel>, never shown
+  // as a fabricated "0 at risk").
+  let atRiskStudents: AtRiskStudent[] | null = null;
+  if (showAttendance && selectedTermId) {
+    const [rollups, roster] = await Promise.all([
+      getRollupForSection(sectionId, selectedTermId),
+      getSectionRoster(sectionId, selectedTermId),
+    ]);
+    if (rollups.length > 0) {
+      atRiskStudents = selectAtRiskStudents(
+        rollups.map((r) => ({
+          sectionStudentId: r.sectionStudentId,
+          attendancePct: r.attendancePct,
+        })),
+        roster.map((r) => ({
+          sectionStudentId: r.section_student_id,
+          indexNumber: r.index_number,
+          studentNumber: r.student_number,
+          name: r.student_name,
+        }))
+      );
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -162,6 +320,9 @@ export default async function ClassroomOverviewPage({
           )}
         </div>
       </div>
+
+      <ClassroomHealthChecklist rows={healthRows} />
+      <ClassroomAtRiskPanel students={atRiskStudents} />
     </div>
   );
 }

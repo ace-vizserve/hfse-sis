@@ -19,7 +19,10 @@ describe('tabsForCapability', () => {
     const tabKeys = keys('subject');
     expect(tabKeys).not.toContain('attendance');
     expect(tabKeys).not.toContain('write-ups');
-    expect(tabKeys).toEqual(['overview', 'grades', 'students']);
+    // Timeline IS included for 'subject' — it is explicitly "all
+    // capabilities may see it" per the Phase 5 brief, unlike attendance and
+    // write-ups which stay adviser/oversight-only.
+    expect(tabKeys).toEqual(['overview', 'grades', 'students', 'timeline']);
   });
 
   it('an adviser capability sees every tab', () => {
@@ -29,6 +32,7 @@ describe('tabsForCapability', () => {
       'students',
       'attendance',
       'write-ups',
+      'timeline',
     ]);
   });
 
@@ -39,6 +43,7 @@ describe('tabsForCapability', () => {
       'students',
       'attendance',
       'write-ups',
+      'timeline',
     ]);
   });
 

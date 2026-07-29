@@ -23,13 +23,14 @@ export type ClassroomTabKey =
   | 'grades'
   | 'students'
   | 'attendance'
-  | 'write-ups';
+  | 'write-ups'
+  | 'timeline';
 
 export type ClassroomTab = {
   key: ClassroomTabKey;
   label: string;
   /** Path segment under /classroom/[sectionId]; '' for the index route. */
-  path: '' | 'grades' | 'students' | 'attendance' | 'write-ups';
+  path: '' | 'grades' | 'students' | 'attendance' | 'write-ups' | 'timeline';
 };
 
 const ALL_TABS: ClassroomTab[] = [
@@ -38,6 +39,12 @@ const ALL_TABS: ClassroomTab[] = [
   { key: 'students', label: 'Students', path: 'students' },
   { key: 'attendance', label: 'Attendance', path: 'attendance' },
   { key: 'write-ups', label: 'Write-ups', path: 'write-ups' },
+  // Timeline is deliberately in the "any capability" bucket below, not
+  // attendance/write-ups gated — it is a filtered view of audit_log, whose
+  // rows are already scoped by which entity ids the query gathers, not by
+  // RLS the way attendance_records / evaluation_writeups reads are. Phase 5
+  // brief: "all capabilities may see it."
+  { key: 'timeline', label: 'Timeline', path: 'timeline' },
 ];
 
 export function tabsForCapability(
@@ -46,8 +53,9 @@ export function tabsForCapability(
   return ALL_TABS.filter((tab) => {
     if (tab.key === 'attendance') return canReadAttendance(capability);
     if (tab.key === 'write-ups') return canReadWriteups(capability);
-    // Overview, Grades, Students all just require the roster-read floor —
-    // any capability at all (adviser / subject / oversight).
+    // Overview, Grades, Students, Timeline all just require the
+    // roster-read floor — any capability at all (adviser / subject /
+    // oversight).
     return canReadRoster(capability);
   });
 }

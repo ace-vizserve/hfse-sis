@@ -47,7 +47,8 @@ function activeTabFromPathname(
     segment === 'grades' ||
     segment === 'students' ||
     segment === 'attendance' ||
-    segment === 'write-ups'
+    segment === 'write-ups' ||
+    segment === 'timeline'
   ) {
     return segment;
   }
