@@ -50,6 +50,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
 import { BulkActionFooter } from './bulk-action-footer';
+import { resolveColumnLabel } from './column-label';
 import { DataTableEmptyState } from './empty-state';
 import type { DataTableExportSheetProps } from './export-sheet';
 import { FacetDropdown } from './facet-dropdown';
@@ -554,9 +555,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
                     checked={c.getIsVisible()}
                     onCheckedChange={(v) => c.toggleVisibility(Boolean(v))}
                   >
-                    {typeof c.columnDef.header === 'string'
-                      ? c.columnDef.header
-                      : c.id}
+                    {resolveColumnLabel(c)}
                   </DropdownMenuCheckboxItem>
                 ))}
             </DropdownMenuContent>

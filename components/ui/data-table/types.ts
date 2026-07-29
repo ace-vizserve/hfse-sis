@@ -1,5 +1,6 @@
 import type {
   ColumnDef,
+  RowData,
   SortingState,
   VisibilityState,
 } from '@tanstack/react-table';
@@ -186,3 +187,32 @@ export type DataTableProps<TRow> = {
   emptyState?: EmptyStateConfig;
   emptyFilteredState?: { title: string; body?: string };
 };
+
+// Typed extension of TanStack's per-column `meta` bag. Previously both keys
+// below were read through inline casts; declaring them here means a typo is a
+// compile error instead of a silent undefined.
+//
+// NOTE this augmentation is GLOBAL once this module is in the program — any
+// future `meta: { somethingElse }` anywhere in the app becomes a type error
+// until the key is added here. That is deliberate.
+declare module '@tanstack/react-table' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData extends RowData, TValue> {
+    /**
+     * Plain-English column name for the "Columns" menu, the export picker,
+     * and the CSV header row. REQUIRED whenever `header` is a render
+     * function (e.g. `<SortableHeader>`), because the label text is then not
+     * statically reachable from the column definition. Normally identical to
+     * the visible header; expand it where the header is a glyph (`#`, `%`)
+     * or an abbreviation. See ./column-label.ts.
+     */
+    label?: string;
+    /**
+     * Hides an on-screen column from the export picker — for columns whose
+     * raw accessor value isn't presentable (composite cells, raw enums,
+     * unformatted dates). Pair with a `csv.extraColumns` entry supplying the
+     * humanized equivalent.
+     */
+    excludeFromExport?: boolean;
+  }
+}

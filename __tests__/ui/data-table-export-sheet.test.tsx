@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { ColumnDef } from '@tanstack/react-table';
 import { DataTable } from '@/components/ui/data-table';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import type {
   CsvConfig,
   FacetGroupConfig,
@@ -220,5 +221,74 @@ describe('DataTableExportSheet — scope fidelity', () => {
     });
     await waitFor(() => expect(fetchCalls.length).toBe(2));
     expect(fetchCalls[1]).toEqual(['1']);
+  });
+});
+
+// A column whose `header` is a render function has no statically-reachable
+// label, so before the meta.label mechanism its raw id leaked all the way
+// into the downloaded file's header row.
+const labelledColumns: ColumnDef<Row>[] = [
+  {
+    id: 'name',
+    accessorKey: 'name',
+    header: ({ column }) => (
+      <SortableHeader column={column}>Name</SortableHeader>
+    ),
+    meta: { label: 'Name' },
+  },
+  {
+    id: 'stageA',
+    accessorKey: 'stageA',
+    header: ({ column }) => (
+      <SortableHeader column={column}>Stage</SortableHeader>
+    ),
+  },
+];
+
+describe('DataTableExportSheet — column labels', () => {
+  it('uses meta.label / a humanized id, never the raw id, in the picker and the CSV header row', async () => {
+    const user = userEvent.setup();
+
+    // Capture the real generated file rather than asserting on the picker
+    // alone — csv.ts writes ExportField.header straight into row 1.
+    let csvText = '';
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation((obj: Blob | MediaSource) => {
+        void (obj as Blob).text().then((t) => {
+          csvText = t;
+        });
+        return 'blob:mock';
+      });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    render(
+      <DataTable<Row>
+        data={rows}
+        columns={labelledColumns}
+        getRowId={(r) => r.id}
+        csv={csv}
+      />
+    );
+
+    const dialog = await openExportSheet(user);
+
+    // Picker: labelled column reads its label; unlabelled falls back to a
+    // humanized id — in neither case the bare identifier. (Each label appears
+    // more than once: the column checklist and the sort picker both list it.)
+    expect(within(dialog).getAllByText('Name').length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText('Stage A').length).toBeGreaterThan(0);
+    expect(within(dialog).queryByText('stageA')).not.toBeInTheDocument();
+
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Export CSV' })
+    );
+
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalled());
+    await waitFor(() => expect(csvText).not.toBe(''));
+
+    const headerRow = csvText.replace(/^﻿/, '').split('\n')[0];
+    expect(headerRow).toBe('Name,Stage A');
+    expect(headerRow).not.toContain('stageA');
   });
 });

@@ -60,6 +60,7 @@ import {
   resolveColumnValue,
   type FacetSelection,
 } from './filter-rows';
+import { resolveColumnDefLabel } from './column-label';
 import { humanizeFieldName } from './humanize-field';
 import type {
   CsvConfig,
@@ -70,17 +71,13 @@ import type {
 } from './types';
 
 // Non-data columns every DataTable consumer uses the same ids for — never
-// offered as export fields.
-const NON_DATA_COLUMN_IDS = new Set(['select', 'actions']);
+// offered as export fields. `action` (singular) is the odd one out, used by
+// components/sis/section-roster-table.tsx.
+const NON_DATA_COLUMN_IDS = new Set(['select', 'actions', 'action']);
 
 // Radix Select/RadioGroup reject empty-string values. Sentinel stays
 // client-side only.
 const SORT_UNSET = '__none';
-
-function resolveHeaderLabel<TRow>(col: ColumnDef<TRow>): string {
-  const id = col.id ?? (col as { accessorKey?: string }).accessorKey ?? '';
-  return typeof col.header === 'string' ? col.header : id;
-}
 
 function resolveColumnId<TRow>(col: ColumnDef<TRow>): string {
   return col.id ?? (col as { accessorKey?: string }).accessorKey ?? '';
@@ -94,8 +91,8 @@ function resolveColumnId<TRow>(col: ColumnDef<TRow>): string {
 function isExportableColumn<TRow>(col: ColumnDef<TRow>): boolean {
   const id = resolveColumnId(col);
   if (NON_DATA_COLUMN_IDS.has(id)) return false;
-  const meta = col.meta as { excludeFromExport?: boolean } | undefined;
-  return !meta?.excludeFromExport;
+  // `meta` is typed via the ColumnMeta augmentation in ./types.ts — no cast.
+  return !col.meta?.excludeFromExport;
 }
 
 // One exportable field, regardless of whether it came from an on-screen
@@ -179,7 +176,7 @@ export function DataTableExportSheet<TRow>({
           const id = resolveColumnId(c);
           return {
             id,
-            header: resolveHeaderLabel(c),
+            header: resolveColumnDefLabel(c),
             source: 'column' as const,
             accessor: (row: TRow, index: number) => {
               const v = resolveColumnValue(columns, id, row, index);
