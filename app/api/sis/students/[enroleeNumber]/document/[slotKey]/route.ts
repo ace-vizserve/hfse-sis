@@ -185,13 +185,33 @@ export async function PATCH(
     }
   }
 
-  const { error: upErr } = await supabase
+  // The status change IS the claim. Matching on the prior status means exactly
+  // one of two concurrent requests can transition the slot; the loser matches
+  // zero rows and returns without emailing.
+  //
+  // The no-op short-circuit above already covers a SEQUENTIAL double-click
+  // (the second request reads the new status and bails). What it cannot cover
+  // is two requests that both read `priorStatus` before either writes — and
+  // the side effect here is a rejection email to a parent, so "rare" isn't
+  // good enough. `.is(col, null)` handles the null case, which `.eq()` cannot.
+  const claim = supabase
     .from(table)
     .update({ [statusCol]: parsed.data.status })
     .eq('enroleeNumber', enroleeNumber);
+  const { data: claimed, error: upErr } = await (
+    priorStatus === null
+      ? claim.is(statusCol, null)
+      : claim.eq(statusCol, priorStatus)
+  ).select('enroleeNumber');
   if (upErr) {
     console.error('[sis document PATCH] update failed:', upErr.message);
     return NextResponse.json({ error: upErr.message }, { status: 500 });
+  }
+  if (!Array.isArray(claimed) || claimed.length === 0) {
+    // Another request transitioned this slot between our read and our write.
+    // Same response as the sequential no-op: the end state is what the caller
+    // asked for, we just weren't the one who applied it.
+    return NextResponse.json({ ok: true, changed: false });
   }
 
   const rejectedData = parsed.data.status === 'Rejected' ? parsed.data : null;

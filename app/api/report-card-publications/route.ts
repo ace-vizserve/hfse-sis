@@ -171,18 +171,55 @@ export async function POST(request: NextRequest) {
     failed: number;
     recipients: number;
   } | null = null;
-  if (data.notified_at == null) {
+  // Claim the notification BEFORE sending, atomically.
+  //
+  // This used to read `if (data.notified_at == null)`, send, and only then
+  // stamp — with no `.is('notified_at', null)` on the stamping write. Two
+  // concurrent publishes (a double-click on a slow response) both saw null and
+  // both emailed EVERY parent in the section. The atomic-claim pattern already
+  // existed two files away in lib/sis/enrolled-at.ts::stampEnrolledAtIfNull;
+  // it simply wasn't used here.
+  //
+  // `.is('notified_at', null)` makes the update itself the claim: exactly one
+  // concurrent request gets a row back, and only that one sends.
+  const { data: claimed, error: claimErr } = await service
+    .from('report_card_publications')
+    .update({ notified_at: new Date().toISOString() })
+    .eq('id', data.id)
+    .is('notified_at', null)
+    .select('id');
+  if (claimErr) {
+    console.error(
+      '[report-card-publications] notify claim failed:',
+      claimErr.message
+    );
+  }
+
+  if (!claimErr && Array.isArray(claimed) && claimed.length > 0) {
     notification = await emailParentsPublication({
       sectionId: data.section_id,
       termId: data.term_id,
       publishFrom: data.publish_from,
       publishUntil: data.publish_until,
     });
-    if (notification.sent > 0) {
-      await service
+
+    // Release the claim if nothing actually went out, so a retry can still
+    // notify. Without this, claiming first would swap a duplicate-send bug for
+    // a never-send one: a transient Resend failure would leave notified_at
+    // stamped and parents permanently un-notified for this window. Only the
+    // request that won the claim can release it, so this cannot resurrect a
+    // send another request already completed.
+    if (notification.sent === 0) {
+      const { error: releaseErr } = await service
         .from('report_card_publications')
-        .update({ notified_at: new Date().toISOString() })
+        .update({ notified_at: null })
         .eq('id', data.id);
+      if (releaseErr) {
+        console.error(
+          '[report-card-publications] notify claim release failed:',
+          releaseErr.message
+        );
+      }
     }
   }
 
