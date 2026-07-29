@@ -12,7 +12,7 @@
 
 - Spec: `docs/superpowers/specs/2026-07-29-simplified-csv-export-design.md`. Read it before Task 1.
 - **Never edit `.claude/worktrees/`** — it holds stale copies of every file below. Only touch `components/`, `app/`, `__tests__/`.
-- Output for the 15 instant-download tables must stay **byte-identical to today's untouched export**: export-eligible visible columns in screen order + `defaultChecked` extras.
+- Output for the 15 instant-download tables must stay **byte-identical to today's untouched export**: export-eligible visible columns in screen order + `defaultChecked` extras. **One deliberate exception (user ruling, 2026-07-29):** a column whose value is an object is **dropped from the export entirely** — neither `[object Object]` (the old on-screen behaviour) nor a JSON blob (the old raw-column behaviour) is useful in a spreadsheet. This applies to on-screen columns and raw DB columns alike; the clearest real case is `residenceHistory` on `ay####_enrolment_applications`.
 - Column headers come from `resolveColumnDefLabel` (KD #161); raw DB columns from `humanizeFieldName`. Do not hand-roll either.
 - `meta.excludeFromExport` must keep excluding columns. `NON_DATA_COLUMN_IDS` = `select`, `actions`, `action`, `open`.
 - No changes to `POST /api/sis/students/raw-columns` or its role gate.
@@ -698,9 +698,17 @@ export function DataTableExportSheet<TRow>({
             const source = cfg.sources.find((s) => s.id === sourceId);
             if (!source) return [];
             const data = await source.fetch(keys);
+            // Drop object-valued columns (e.g. residenceHistory) — a JSON
+            // blob in a spreadsheet cell helps nobody. Probe the first
+            // non-null value per column name.
             const colNames = Array.from(
               new Set(Object.values(data).flatMap((r) => Object.keys(r)))
-            );
+            ).filter((col) => {
+              const sample = Object.values(data)
+                .map((r) => r[col])
+                .find((v) => v != null);
+              return typeof sample !== 'object';
+            });
             return colNames.map((col) => ({
               id: `raw:${sourceId}:${col}`,
               header: disambiguate
