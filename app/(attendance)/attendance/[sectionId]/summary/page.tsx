@@ -1,6 +1,6 @@
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 
 import { ExportSheetButton } from '@/components/attendance/export-sheet-button';
 import { TermSheetSummaryTable } from '@/components/attendance/term-sheet-summary-table';
@@ -15,10 +15,12 @@ import {
   monthsInRange,
   type TermSummaryEnrolment,
 } from '@/lib/attendance/sheet-summary';
+import { loadClassroomAccess } from '@/lib/classroom/queries';
+import { canReadAttendance } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type LevelLite = { code: string; label: string };
 type SectionRow = {
@@ -37,6 +39,19 @@ export default async function TermSheetSummaryPage({
 }) {
   const { sectionId } = await params;
   const sp = await searchParams;
+
+  // Same per-section form-adviser gate as the register at ../page.tsx — this
+  // page derives its whole table from the same per-student marks, read through
+  // the service client (RLS-bypassing), so it needs its own check rather than
+  // inheriting one from the route group's layout.
+  const session = await getSessionUser();
+  if (!session) redirect('/login');
+  const { capability } = await loadClassroomAccess(
+    session.role,
+    session.id,
+    sectionId
+  );
+  if (!canReadAttendance(capability)) notFound();
 
   const supabase = await createClient();
 

@@ -6,7 +6,7 @@ import {
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 
 import { DailyEntry } from '@/components/attendance/daily-entry';
 import { ExportSheetButton } from '@/components/attendance/export-sheet-button';
@@ -40,6 +40,8 @@ import {
 } from '@/lib/attendance/queries';
 import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
+import { loadClassroomAccess } from '@/lib/classroom/queries';
+import { canReadAttendance } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
@@ -68,7 +70,23 @@ export default async function SectionAttendancePage({
   const view: 'sheet' | 'daily' = sp.view === 'daily' ? 'daily' : 'sheet';
 
   const session = await getSessionUser();
-  const role = session?.role ?? null;
+  if (!session) redirect('/login');
+  const role = session.role;
+
+  // Per-SECTION form-adviser gate, not per-person. Attendance is adviser work
+  // at the DB (`is_adviser_for_section`, 005_rls_teacher_scoping.sql) and in the
+  // write route (`assertAdviserForSections`) — but the reads below go through
+  // the service client (see lib/attendance/queries.ts), which bypasses RLS, so
+  // this check is the real boundary for a subject teacher typing the URL.
+  //
+  // A form adviser normally ALSO teaches subjects (both unique indexes on
+  // teacher_assignments are partial, so the two row kinds coexist), so the
+  // question is never "is this user an adviser somewhere" — it's "in THIS
+  // section." `resolveClassroomScope` answers that, and resolves adviser over
+  // subject when they hold both here.
+  const { capability } = await loadClassroomAccess(role, session.id, sectionId);
+  if (!canReadAttendance(capability)) notFound();
+
   const canWriteNc =
     role === 'academic_coordinator' ||
     role === 'school_admin' ||

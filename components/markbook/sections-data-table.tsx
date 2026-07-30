@@ -26,6 +26,7 @@ import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { type FacetConfig } from '@/components/ui/data-table/types';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import type { Role } from '@/lib/auth/roles';
+import type { ClassroomCapability } from '@/lib/classroom/scope';
 
 // ─── Row type ────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,14 @@ export type MarkbookSectionRow = {
   levelLabel: string;
   active: number;
   fcaName: string | null;
+  /**
+   * This viewer's capability in THIS section (lib/classroom/scope.ts). Markbook
+   * scopes on any assignment, so a row here can be one the viewer only teaches
+   * a subject in — and the row menu's Attendance / Write-ups cross-links land
+   * on adviser-only surfaces. Per-section, not per-person: an adviser of one
+   * class who teaches a subject in another needs a different answer per row.
+   */
+  capability: ClassroomCapability | null;
 };
 
 // ─── facetFilterFn (verbatim copy from SisSectionsDataTable / EvaluationSectionsList) ─
@@ -126,6 +135,7 @@ function buildColumns(
           // Same resolver value the name link above uses, so "Open grading"
           // and the row's own name can't send you to different places.
           isOversight={isOversight}
+          capability={row.original.capability}
         />
       ),
     },

@@ -41,6 +41,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { RowActionsMenu } from '@/components/ui/data-table';
 import type { Role } from '@/lib/auth/roles';
+import {
+  canReadAttendance,
+  canReadWriteups,
+  type ClassroomCapability,
+} from '@/lib/classroom/scope';
 import type { Schedule, SectionClassType } from '@/lib/schemas/section';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -65,6 +70,12 @@ export type SectionRowActionsProps = {
    *  does, so a row and its overflow menu can't disagree. Optional: falls back
    *  to the role check below, which covers the identical three roles. */
   isOversight?: boolean;
+  /** This viewer's capability in THIS section (lib/classroom/scope.ts). Gates
+   *  the markbook Attendance / Write-ups cross-links, whose destinations are
+   *  adviser-only. Omitted by the sis + attendance callers, which don't render
+   *  those items; when absent it falls back to oversight-or-nothing, so a
+   *  caller that forgets it hides the items rather than dead-ending a teacher. */
+  capability?: ClassroomCapability | null;
   /** SIS only: whether this section already has a form adviser assigned.
    *  Controls the label of the adviser action item. */
   hasAdviser?: boolean;
@@ -90,6 +101,7 @@ export function SectionRowActions({
   termStarted,
   todayHref,
   isOversight,
+  capability,
   hasAdviser,
   ayId,
   levelType,
@@ -125,6 +137,9 @@ export function SectionRowActions({
   // grading" and landed you somewhere with no grades on it, while the very same
   // row's name link went to the right place.
   const oversight = isOversight ?? isRegistrarPlus;
+  // Fail closed: an omitted capability grants oversight only, never a teacher.
+  const effectiveCapability: ClassroomCapability | null =
+    capability ?? (oversight ? 'oversight' : null);
   const openHref =
     module === 'sis'
       ? `/sis/sections/${sectionId}`
@@ -168,27 +183,36 @@ export function SectionRowActions({
           </DropdownMenuItem>
         )}
 
-        {/* ── Markbook cross-links ── */}
+        {/* ── Markbook cross-links ──
+            Both destinations are adviser-only: attendance is
+            `is_adviser_for_section` at the DB, and Evaluation excluded subject
+            teachers in KD #114. This list is scoped on ANY assignment, so a
+            subject-teacher-only row would offer two items that 404. Gated on
+            the same per-section predicates the destinations enforce. */}
         {module === 'markbook' && (
           <>
-            <DropdownMenuItem asChild>
-              <Link
-                href={`/attendance/${sectionId}`}
-                className="flex items-center gap-2"
-              >
-                <CalendarDays className="size-4 shrink-0" />
-                Open attendance
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link
-                href={`/evaluation/sections/${sectionId}`}
-                className="flex items-center gap-2"
-              >
-                <ClipboardList className="size-4 shrink-0" />
-                Open write-ups
-              </Link>
-            </DropdownMenuItem>
+            {canReadAttendance(effectiveCapability) && (
+              <DropdownMenuItem asChild>
+                <Link
+                  href={`/attendance/${sectionId}`}
+                  className="flex items-center gap-2"
+                >
+                  <CalendarDays className="size-4 shrink-0" />
+                  Open attendance
+                </Link>
+              </DropdownMenuItem>
+            )}
+            {canReadWriteups(effectiveCapability) && (
+              <DropdownMenuItem asChild>
+                <Link
+                  href={`/evaluation/sections/${sectionId}`}
+                  className="flex items-center gap-2"
+                >
+                  <ClipboardList className="size-4 shrink-0" />
+                  Open write-ups
+                </Link>
+              </DropdownMenuItem>
+            )}
           </>
         )}
 

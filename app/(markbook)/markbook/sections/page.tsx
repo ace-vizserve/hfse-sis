@@ -15,7 +15,10 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { loadAssignmentsForUser } from '@/lib/auth/teacher-assignments';
-import { resolveClassroomScope } from '@/lib/classroom/scope';
+import {
+  capabilityForSection,
+  resolveClassroomScope,
+} from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
@@ -142,6 +145,10 @@ export default async function SectionsListPage() {
     levelLabel: c.level_label,
     active: c.active,
     fcaName: adviserMap[c.id]?.name ?? null,
+    // Per-section, because this list is scoped on ANY assignment: a row may be
+    // one the viewer only teaches a subject in, and the row menu's
+    // Attendance / Write-ups cross-links go to adviser-only surfaces.
+    capability: capabilityForSection(scope, c.id),
   }));
 
   // Unique levels for the Level facet, sorted canonically

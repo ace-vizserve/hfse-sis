@@ -24,8 +24,12 @@ import type { AttendanceStatus, DayType } from '@/lib/schemas/attendance';
 //
 // Access:
 // - registrar | school_admin | superadmin: any section
-// - teacher: only sections they are assigned to (any role in teacher_assignments)
-// - non-assigned teachers → 403
+// - teacher: only sections they FORM-ADVISE (teacher_assignments role =
+//   'form_adviser') — matching the `is_adviser_for_section` RLS predicate on
+//   attendance_daily and the same filter in `assertAdviserForSections`
+//   (/api/attendance/daily) and /api/attendance/student-summary. A subject
+//   teacher in the section is not enough: this streams the whole register.
+// - every other teacher → 403
 
 export async function GET(
   req: NextRequest,
@@ -38,7 +42,7 @@ export async function GET(
       status: 400,
     });
 
-  // Gate: registrar+ OR a teacher assigned to this section.
+  // Gate: registrar+ OR the section's form adviser.
   // requireRole returns { user: { id, email }, role } on success,
   // or { error: NextResponse } on failure — so role lives at auth.role.
   const auth = await requireRole([
@@ -58,9 +62,12 @@ export async function GET(
       .select('id')
       .eq('section_id', sectionId)
       .eq('teacher_user_id', session?.id ?? '')
+      .eq('role', 'form_adviser')
       .limit(1);
     if (!assigned || assigned.length === 0) {
-      return new Response('Not assigned to this section.', { status: 403 });
+      return new Response('You are not the form adviser for this class.', {
+        status: 403,
+      });
     }
   }
 
