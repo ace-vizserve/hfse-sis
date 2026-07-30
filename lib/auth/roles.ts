@@ -166,32 +166,33 @@ const RECORDS_NAV: NavSection[] = [
         label: 'Level naming to review',
         badgeKey: 'levelMismatches',
       },
-      // Section setup lives in SIS Admin, but the registrar can't reach the SIS
-      // module (its /sis hub is school_admin+). Cross-link kept here so she can
-      // get to the section rosters — incl. the Generate-class-index action,
-      // which is registrar work — without a SIS tile. Mirrors the sync link.
+      // The three cross-links below are SHORTCUTS, not the only way in.
+      //
+      // They were added when the academic coordinator had no SIS tile — the
+      // switcher shows a module iff `isRouteAllowed(primaryHref)` and SIS's is
+      // `/sis`, which she couldn't open, so these routes were reachable only by
+      // typing the URL. That changed on 2026-07-31: `/sis` now admits her, she
+      // gets the tile and the SIS sidebar, and each of these appears there too.
+      //
+      // Kept anyway, deliberately. Section setup and the staff directory are
+      // things she reaches WHILE working in Records (rosters, class index
+      // numbers, who advises what), so making her switch modules for them would
+      // be a step backwards. Anyone editing these: the old "she can't reach SIS
+      // at all" justification is spent — the reason now is task adjacency.
       {
         href: '/sis/sections',
         label: 'Section setup',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
-      // Same reasoning as Section setup above: KD #154 deliberately gave the
-      // academic_coordinator its own `/sis/admin/staff` ROUTE_ACCESS row (and
-      // the SIS_NAV item lists her in `requiresRoles`), but she never sees the
-      // SIS sidebar, so without this cross-link the page was reachable only by
-      // typing the URL. The SIS_NAV comment already described this cross-link
-      // as existing — it didn't until now.
       {
         href: '/sis/admin/staff',
         label: 'Staff directory',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
       {
-        // Same reason as the two cross-links above: the academic coordinator is
-        // admitted to this page (ROUTE_ACCESS + the capability) but reaches no
-        // /sis surface through a SIS sidebar of her own, so without a link here
-        // the page is URL-only. She owns the WW/PT/QA weighting behind every
-        // grade, so this is squarely her work.
+        // She owns the WW/PT/QA weighting behind every grade, so this is
+        // squarely her work — and it sits next to the grade data she reads in
+        // Records.
         href: '/sis/admin/subjects',
         label: 'Subject weights',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
