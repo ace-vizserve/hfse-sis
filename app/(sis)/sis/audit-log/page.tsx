@@ -147,7 +147,8 @@ const SIS_AUDIT_ALLOWLIST = [
   'user.disable',
   'user.enable',
   'user.delete',
-  // Environment + seeder (KD #52)
+  // Environment + seeder (KD #52) — feature removed once the test AYs were
+  // gone from the database; kept so historical rows still show up here.
   'environment.switch',
   'environment.seed',
   'environment.topup',

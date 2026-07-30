@@ -13,6 +13,7 @@ import { HubStat } from '@/components/sis/hub-stat';
 import { HubUpcomingEventsCard } from '@/components/sis/hub-upcoming-events-card';
 import { HubYearBand } from '@/components/sis/hub-year-band';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
+import { SisUrlMissingBanner } from '@/components/sis/sis-url-missing-banner';
 import { StructuralChangesFeedCard } from '@/components/sis/structural-changes-feed-card';
 import { SystemHealthStrip } from '@/components/sis/system-health-strip';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +26,6 @@ import { sgToday } from '@/lib/dates';
 import { buildAttentionRows } from '@/lib/sis/hub-attention';
 import { getHubModuleOverview } from '@/lib/sis/hub-module-overview';
 import { getHubSnapshot } from '@/lib/sis/hub-snapshot';
-import { isTestAyCode } from '@/lib/sis/environment';
 import {
   getAuditActivityByModule,
   getAuditDailyTrend,
@@ -224,27 +224,17 @@ export default async function SisAdminHub() {
         description="Setup progress, today's numbers, and what needs attention — everything else is one click in the sidebar."
         chips={
           ayCode && (
-            <>
-              <Badge
-                variant="outline"
-                className={
-                  isTestAyCode(ayCode)
-                    ? 'h-7 border-brand-amber bg-brand-amber-light px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink'
-                    : 'h-7 border-brand-mint bg-brand-mint/30 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink'
-                }
-              >
-                {isTestAyCode(ayCode) ? 'Test' : 'Production'}
-              </Badge>
-              <Badge
-                variant="outline"
-                className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-              >
-                {ayCode}
-              </Badge>
-            </>
+            <Badge
+              variant="outline"
+              className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+            >
+              {ayCode}
+            </Badge>
           )
         }
       />
+
+      <SisUrlMissingBanner />
 
       {health && <SystemHealthStrip health={health} />}
 

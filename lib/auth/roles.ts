@@ -553,11 +553,6 @@ const SIS_NAV: NavSection[] = [
         requiresRoles: ['school_admin', 'superadmin'],
       },
       {
-        href: '/sis/admin/settings',
-        label: 'Settings',
-        requiresRoles: ['superadmin'],
-      },
-      {
         href: '/sis/audit-log',
         label: 'Audit Log',
         requiresRoles: ['school_admin', 'superadmin'],
@@ -751,7 +746,6 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   // directory). Kept superadmin-only so the gate still fires before the
   // redirect for any role that isn't allowed to see the page at all.
   { prefix: '/sis/admin/users', allowed: ['superadmin'] },
-  { prefix: '/sis/admin/settings', allowed: ['superadmin'] },
   {
     // Was missing a ROUTE_ACCESS row entirely — the registrar's Staff nav
     // link (SIS_NAV "Year Setup" group) was visible but proxy-blocked

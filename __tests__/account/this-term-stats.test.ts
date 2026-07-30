@@ -107,25 +107,11 @@ describe('getThisTermStats', () => {
     ]);
   });
 
-  it('superadmin: active staff count + environment (production AY) + current AY', async () => {
+  it('superadmin: active staff count + current AY', async () => {
     const rows = await getThisTermStats({ ...base, role: 'superadmin' });
     expect(rows).toEqual([
       { label: 'Active staff accounts', value: 28 },
-      { label: 'Environment', value: 'Production', tone: 'default' },
       { label: 'Current AY', value: 'AY2026', tone: 'default' },
-    ]);
-  });
-
-  it('superadmin: environment reads "Test" for a test AY code (^AY9)', async () => {
-    const rows = await getThisTermStats({
-      ...base,
-      role: 'superadmin',
-      ayCode: 'AY9999',
-    });
-    expect(rows).toEqual([
-      { label: 'Active staff accounts', value: 28 },
-      { label: 'Environment', value: 'Test', tone: 'default' },
-      { label: 'Current AY', value: 'AY9999', tone: 'default' },
     ]);
   });
 
@@ -158,11 +144,9 @@ describe('getThisTermStats', () => {
   it('omits a role branch row entirely when its underlying call throws (no fake zero) — sync rows still ship', async () => {
     vi.mocked(getStaffCount).mockRejectedValueOnce(new Error('boom'));
     const rows = await getThisTermStats({ ...base, role: 'superadmin' });
-    // "Active staff accounts" is omitted (its push() threw); Environment +
-    // Current AY are plain synchronous facts with nothing that can throw,
-    // so they still ship.
+    // "Active staff accounts" is omitted (its push() threw); Current AY is a
+    // plain synchronous fact with nothing that can throw, so it still ships.
     expect(rows).toEqual([
-      { label: 'Environment', value: 'Production', tone: 'default' },
       { label: 'Current AY', value: 'AY2026', tone: 'default' },
     ]);
   });

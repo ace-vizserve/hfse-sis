@@ -25,7 +25,6 @@ import {
   MessageSquare,
   Scale,
   School,
-  Settings2,
   ShieldCheck,
   Sparkles,
   SquarePen,
@@ -295,7 +294,6 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/sis/admin/approvers': ShieldCheck,
       '/sis/admin/staff': Users,
       '/sis/admin/school-config': Building2,
-      '/sis/admin/settings': Settings2,
       '/sis/audit-log': History,
     },
     // No quick action here — unlike other modules (where the quick action

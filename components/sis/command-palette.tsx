@@ -363,12 +363,6 @@ const NAV_ENTRIES: NavEntry[] = [
     icon: UsersIcon,
   },
   {
-    href: '/sis/admin/settings',
-    label: 'System Settings (Test environment)',
-    group: 'Admin',
-    icon: Settings2Icon,
-  },
-  {
     href: '/sis/audit-log',
     label: 'Audit Log',
     group: 'Admin',

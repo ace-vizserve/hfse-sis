@@ -122,14 +122,6 @@ export async function getThisTermStats(params: Params): Promise<StatRow[]> {
       const count = await getStaffCount();
       return { label: 'Active staff accounts', value: count };
     });
-    // Test-environment convention (KD #52): a test AY's code matches
-    // ^AY9 (e.g. AY9999); production AYs don't. Synchronous facts, no
-    // dashboard call, so no push() wrapper is needed.
-    rows.push({
-      label: 'Environment',
-      value: /^AY9/.test(ayCode) ? 'Test' : 'Production',
-      tone: 'default',
-    });
     rows.push({ label: 'Current AY', value: ayCode, tone: 'default' });
     return rows;
   }

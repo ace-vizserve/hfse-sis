@@ -136,6 +136,12 @@ export const ALL_AUDIT_ACTIONS = [
   'user.disable',
   'user.enable',
   'user.delete',
+  // 'environment.switch'/'environment.seed'/'environment.topup'/
+  // 'environment.demo_accounts_removed' backed the test-AY Environment
+  // switcher (KD #52) — removed once the test AYs themselves were gone from
+  // the database and testing moved to real AY2026 with throwaway accounts.
+  // Retained here for back-compat with historical audit_log rows (Hard Rule
+  // #6, append-only); no code emits them anymore.
   'environment.switch',
   'environment.seed',
   'environment.topup',

@@ -83,7 +83,7 @@ export async function listAllAuthUsers(
 // `TypeError: fetch failed`. `fetchInChunks` splits the id list into bounded
 // batches, runs `fetchChunk` per batch, and concatenates the rows (order
 // preserved). Mirrors the inline chunking already used in lib/markbook/drill.ts
-// (ROLLUP_CHUNK) and lib/sis/environment.ts (IN_CHUNK).
+// (ROLLUP_CHUNK).
 //
 // THE LIMIT IS URL BYTES, NOT ID COUNT. Measured against the live gateway on
 // 2026-07-29: it fails past roughly 14.3KB of serialized filter — exactly 396

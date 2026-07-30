@@ -111,7 +111,7 @@ function StepStatusBadge({ step }: { step: ReadinessStep }) {
 }
 
 // Gradient status tile — mint/amber use the app's semantic gradient recipe
-// (matches `components/sis/environment-card.tsx` etc.); muted `not-started`
+// (matches `components/sis/system-health-strip.tsx` etc.); muted `not-started`
 // stays flat as the neutral absence state, not a semantic color.
 function StatusTile({ step }: { step: ReadinessStep }) {
   const Icon = ITEM_ICONS[step.id];

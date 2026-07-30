@@ -205,7 +205,11 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'user.delete': 'User deleted',
   'user.login': 'Signed in',
 
-  // Environment / seeding
+  // Environment / seeding (KD #52) — the test-AY Environment switcher +
+  // seeder were removed once the test AYs themselves were gone from the
+  // database and testing moved to real AY2026 with throwaway accounts.
+  // Labels kept so historical audit_log rows still render in plain English
+  // (Hard Rule #6); no code emits these anymore.
   'environment.switch': 'Environment switched',
   'environment.seed': 'Demo data seeded',
   'environment.topup': 'Demo data topped up',
