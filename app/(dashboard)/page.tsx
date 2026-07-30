@@ -74,7 +74,7 @@ export default async function Home() {
 
   const [quickActions, recentActions, baseTodos, reportCardGaps, events] =
     await Promise.all([
-      Promise.resolve(getQuickActions(role)),
+      Promise.resolve(getQuickActions(role, hiddenModules)),
       getRecentActions(email),
       getHomeTodos(role, ay.ay_code, userId),
       role === 'academic_coordinator' ||
