@@ -12,6 +12,17 @@ import { getSessionUser } from '@/lib/supabase/server';
 //
 // All module-specific chrome (sidebars, badges, module-scoped nav) lives in
 // the respective (markbook) / (records) / (p-files) / (sis) layouts.
+//
+// The single-module redirects (p_file_officer → /p-files, admissions →
+// /admissions) belong to `/` ALONE and live in its page, not here. Running
+// them at the layout applied them to every child, which made `/account`
+// unreachable for exactly those two roles — they bounced back to their module
+// from the profile menu and so had no way to change their password in the app.
+// Nothing is lost by not repeating them here:
+//   `/`                 — app/(dashboard)/page.tsx runs the identical three.
+//   `/admin/admissions` — ROUTE_ACCESS admits academic_coordinator+ only, and
+//                         proxy.ts bounces everyone else to `/`, where the
+//                         page redirect then applies.
 export default async function DashboardLayout({
   children,
 }: {
@@ -22,8 +33,6 @@ export default async function DashboardLayout({
 
   const { role } = sessionUser;
   if (!role) redirect('/login');
-  if (role === 'p_file_officer') redirect('/p-files');
-  if (role === 'admissions') redirect('/admissions');
 
   const hiddenModules = await resolveHiddenModules(role, sessionUser.id);
 
