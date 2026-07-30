@@ -118,3 +118,23 @@ export function canReadWriteups(
 export function canReadRoster(capability: ClassroomCapability | null): boolean {
   return capability != null;
 }
+
+/**
+ * A report card is adviser work. It carries the term attendance table AND the
+ * form-adviser comment — both `is_adviser_for_section` at the DB — so it takes
+ * the same predicate as those two, not `is_teacher_for_sheet`.
+ *
+ * A subject teacher's card would be structurally hollow rather than merely
+ * partial: every other subject's cells blank (`is_teacher_for_sheet`), every
+ * attendance cell N.A., and the adviser name a dash, since
+ * `teacher_assignments` returns only their own rows. Showing that is worse
+ * than not showing it.
+ *
+ * Named separately from `canReadWriteups` despite the identical body so the
+ * call site reads honestly and either can change without dragging the other.
+ */
+export function canReadReportCard(
+  capability: ClassroomCapability | null
+): boolean {
+  return capability === 'adviser' || capability === 'oversight';
+}

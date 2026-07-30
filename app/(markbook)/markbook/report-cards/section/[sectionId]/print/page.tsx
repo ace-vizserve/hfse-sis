@@ -8,6 +8,8 @@ import {
   type PreloadedCalendarDates,
 } from '@/lib/report-card/build-report-card';
 import { getEncodableDatesForTerm } from '@/lib/attendance/calendar';
+import { sgToday } from '@/lib/dates';
+import { resolveCurrentTerm } from '@/lib/sis/current-term';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { ReportCardDocument } from '@/components/report-card/report-card-document';
 import { PrintButton } from '../../../[studentId]/print-button';
@@ -27,7 +29,7 @@ import { AutoPrintTrigger } from './auto-print-trigger';
 //
 // URL: /markbook/report-cards/section/[sectionId]/print?term=2
 // - sectionId: sections.id UUID
-// - term: 1 | 2 | 3 | 4 (defaults to current term, falls back to 1)
+// - term: 1 | 2 | 3 | 4 (defaults to the current term via resolveCurrentTerm)
 //
 // Auth: registrar / school_admin / superadmin only — same gate as the
 // section detail roster surface.
@@ -72,34 +74,37 @@ export default async function SectionPrintPage({
     : section.academic_year;
   const level = Array.isArray(section.level) ? section.level[0] : section.level;
 
-  // Parallelize: current-term lookup + roster + this AY's term ids are all
-  // independent once ay.id is known. The term-id list feeds the shared
-  // calendar-dates preload below (Finding L-B/6).
-  const [{ data: currentTermRow }, { data: enrolments }, { data: ayTerms }] =
-    await Promise.all([
-      supabase
-        .from('terms')
-        .select('term_number')
-        .eq('academic_year_id', ay.id)
-        .eq('is_current', true)
-        .maybeSingle(),
-      supabase
-        .from('section_students')
-        .select(
-          `id, index_number, enrollment_status,
+  // Parallelize: roster + this AY's terms are independent once ay.id is known.
+  // The term list feeds BOTH the default-term resolution below and the shared
+  // calendar-dates preload further down (Finding L-B/6) — it used to be two
+  // queries, one of which asked only for `is_current`.
+  const [{ data: enrolments }, { data: ayTerms }] = await Promise.all([
+    supabase
+      .from('section_students')
+      .select(
+        `id, index_number, enrollment_status,
          student:students!inner(id, last_name, first_name, middle_name, student_number)`
-        )
-        .eq('section_id', sectionId)
-        .in('enrollment_status', ['active', 'late_enrollee'])
-        .order('index_number'),
-      supabase.from('terms').select('id').eq('academic_year_id', ay.id),
-    ]);
+      )
+      .eq('section_id', sectionId)
+      .in('enrollment_status', ['active', 'late_enrollee'])
+      .order('index_number'),
+    supabase
+      .from('terms')
+      .select('id, term_number, start_date, end_date, is_current')
+      .eq('academic_year_id', ay.id),
+  ]);
 
+  // Default term via the canonical resolver (KD #116), NOT `is_current` alone.
+  // `terms.is_current` is a manually-set flag that is routinely left unset, and
+  // the previous `?? 1` fallback then pinned EVERY card in the batch to Term 1
+  // — which silently dropped every T2/T3 form-adviser comment, since the
+  // document renders comment boxes for terms 1..viewingTermNumber.
   const parsedTerm = termParam ? parseInt(termParam, 10) : NaN;
+  const resolvedTerm = resolveCurrentTerm(ayTerms ?? [], sgToday());
   const viewingTermNumber = (
     [1, 2, 3, 4].includes(parsedTerm)
       ? parsedTerm
-      : (currentTermRow?.term_number ?? 1)
+      : (resolvedTerm?.term_number ?? 1)
   ) as 1 | 2 | 3 | 4;
 
   const studentIds: string[] = (enrolments ?? [])

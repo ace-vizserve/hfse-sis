@@ -16,10 +16,21 @@ export function ReportCardDocument({
   payload,
   viewingTermNumber,
   canManage = false,
+  showDrafts = false,
 }: {
   payload: ReportCardPayload;
   viewingTermNumber: 1 | 2 | 3 | 4;
   canManage?: boolean;
+  /**
+   * Show an unsubmitted form-adviser comment, flagged as a draft.
+   *
+   * On for the staff preview only. Without it a draft is simply absent, and an
+   * empty comment section can't tell a coordinator whether the adviser hasn't
+   * written anything or has written it and not pressed Submit. Off (the
+   * default) for anything that produces a deliverable — the parent API and the
+   * section batch print — where a draft must never appear.
+   */
+  showDrafts?: boolean;
 }) {
   const {
     ay,
@@ -57,8 +68,11 @@ export function ReportCardDocument({
 
       <div className="space-y-8 px-4 py-6 sm:px-8 sm:py-8 lg:px-10 print:px-8 print:py-6">
         <header className="flex flex-col items-center gap-1 border-b border-hairline pb-5 text-center">
+          {/* Just the label — it already reads "Academic Year 2026" (KD #13),
+              so prefixing the words produced "Academic year Academic Year
+              2026" on every card and printout. */}
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-4">
-            Academic year {ay.label}
+            {ay.label}
           </p>
           <h1 className="font-serif text-[26px] font-semibold leading-tight tracking-tight text-ink">
             Student Progress Report
@@ -282,17 +296,24 @@ export function ReportCardDocument({
         {(() => {
           if (isFinal) return null;
           const cap = Math.min(viewingTermNumber, 3);
-          // Each box shows that term's submitted comment + its own virtue theme.
+          // Each box shows that term's comment + its own virtue theme. An
+          // unsubmitted draft counts as absent unless `showDrafts` is on, in
+          // which case it renders with a flag — see the prop's own note.
           const commentTerms = terms
             .filter((t) => t.term_number >= 1 && t.term_number <= cap)
-            .map((t) => ({
-              term: t,
-              comment:
-                comments
-                  .find((c: CommentRecord) => c.term_id === t.id)
-                  ?.comment?.trim() || null,
-            }))
-            .filter((entry) => entry.comment != null);
+            .map((t) => {
+              const record = comments.find(
+                (c: CommentRecord) => c.term_id === t.id
+              );
+              return {
+                term: t,
+                comment: record?.comment?.trim() || null,
+                isDraft: record != null && !record.submitted,
+              };
+            })
+            .filter(
+              (entry) => entry.comment != null && (showDrafts || !entry.isDraft)
+            );
 
           if (commentTerms.length === 0) return null;
 
@@ -302,7 +323,7 @@ export function ReportCardDocument({
                 Form Class Adviser&apos;s Comments
               </SectionHeading>
               <div className="space-y-2.5">
-                {commentTerms.map(({ term: t, comment }) => {
+                {commentTerms.map(({ term: t, comment, isDraft }) => {
                   const virtue = t.virtue_theme?.trim() || null;
                   return (
                     <div
@@ -315,6 +336,15 @@ export function ReportCardDocument({
                           <span className="font-sans normal-case tracking-normal text-ink-4">
                             {' '}
                             (HFSE Virtues: {virtue})
+                          </span>
+                        ) : null}
+                        {/* Reaches here only under `showDrafts` (staff
+                            preview). Deliberately NOT print-hidden: if someone
+                            prints a preview holding a draft, the paper should
+                            say so rather than pass as final. */}
+                        {isDraft ? (
+                          <span className="ml-2 rounded border border-brand-amber/40 bg-brand-amber/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-widest text-brand-amber">
+                            Draft — not submitted
                           </span>
                         ) : null}
                       </p>

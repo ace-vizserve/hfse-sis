@@ -480,14 +480,21 @@ describe('buildReportCard', () => {
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
         'attendance_records:presence': [],
         'attendance_records:school_days': [],
+        // `submitted: true` is explicit. The builder now carries the flag
+        // through, and the parent API + batch print drop an unsubmitted
+        // write-up — so without it these two would be drafts and the
+        // assertions below would no longer certify what they read as
+        // certifying (`submitted` defaults to false in the DB too).
         evaluation_writeups: [
           {
             term_id: 't1',
             writeup: 'Juan consistently demonstrates intellectual curiosity.',
+            submitted: true,
           },
           {
             term_id: 't2',
             writeup: 'Juan shows strong character and diligence.',
+            submitted: true,
           },
         ],
       });

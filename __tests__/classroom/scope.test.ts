@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   canReadAttendance,
+  canReadReportCard,
   canReadRoster,
   canReadWriteups,
   capabilityForSection,
@@ -138,24 +139,30 @@ describe('capability gates mirror RLS', () => {
     expect(canReadRoster('subject')).toBe(true);
     expect(canReadAttendance('subject')).toBe(false);
     expect(canReadWriteups('subject')).toBe(false);
+    // The report card embeds both the attendance table and the adviser
+    // comment, so it inherits the stricter of the two.
+    expect(canReadReportCard('subject')).toBe(false);
   });
 
   it('adviser capability grants everything', () => {
     expect(canReadRoster('adviser')).toBe(true);
     expect(canReadAttendance('adviser')).toBe(true);
     expect(canReadWriteups('adviser')).toBe(true);
+    expect(canReadReportCard('adviser')).toBe(true);
   });
 
   it('oversight capability grants everything', () => {
     expect(canReadRoster('oversight')).toBe(true);
     expect(canReadAttendance('oversight')).toBe(true);
     expect(canReadWriteups('oversight')).toBe(true);
+    expect(canReadReportCard('oversight')).toBe(true);
   });
 
   it('no capability grants nothing', () => {
     expect(canReadRoster(null)).toBe(false);
     expect(canReadAttendance(null)).toBe(false);
     expect(canReadWriteups(null)).toBe(false);
+    expect(canReadReportCard(null)).toBe(false);
   });
 
   // Belt-and-braces: if a future capability is added, it must be
@@ -168,6 +175,16 @@ describe('capability gates mirror RLS', () => {
       null,
     ];
     expect(all.filter(canReadAttendance)).toEqual(['adviser', 'oversight']);
+  });
+
+  it('only adviser and oversight can read a report card', () => {
+    const all: Array<ClassroomCapability | null> = [
+      'adviser',
+      'subject',
+      'oversight',
+      null,
+    ];
+    expect(all.filter(canReadReportCard)).toEqual(['adviser', 'oversight']);
   });
 });
 

@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import { ClassroomRosterTable } from '@/components/classroom/classroom-roster-table';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
+import { canReadReportCard } from '@/lib/classroom/scope';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type EnrolmentRow = {
@@ -9,6 +10,7 @@ type EnrolmentRow = {
   index_number: number;
   enrollment_status: 'active' | 'late_enrollee' | 'withdrawn';
   student: {
+    id: string;
     student_number: string;
     last_name: string;
     first_name: string;
@@ -37,7 +39,7 @@ export default async function ClassroomStudentsPage({
   const { data: rows } = await supabase
     .from('section_students')
     .select(
-      'id, index_number, enrollment_status, student:students(student_number, last_name, first_name, middle_name)'
+      'id, index_number, enrollment_status, student:students(id, student_number, last_name, first_name, middle_name)'
     )
     .eq('section_id', sectionId)
     .neq('enrollment_status', 'withdrawn')
@@ -48,6 +50,7 @@ export default async function ClassroomStudentsPage({
     const s = e.student;
     return {
       id: e.id,
+      student_id: s?.id ?? null,
       index_number: e.index_number,
       student_number: s?.student_number ?? '',
       student_name: s
@@ -65,7 +68,14 @@ export default async function ClassroomStudentsPage({
           {rosterRows.length}
         </span>
       </h2>
-      <ClassroomRosterTable sectionId={sectionId} data={rosterRows} />
+      {/* The report-card link is adviser/oversight only — a subject teacher's
+          card would be structurally hollow, so the page 404s for them and the
+          row must not offer it. Same predicate the page itself enforces. */}
+      <ClassroomRosterTable
+        sectionId={sectionId}
+        data={rosterRows}
+        showReportCard={canReadReportCard(capability)}
+      />
     </div>
   );
 }

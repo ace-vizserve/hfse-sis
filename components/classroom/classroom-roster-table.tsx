@@ -15,6 +15,9 @@
 
 'use client';
 
+import Link from 'next/link';
+
+import { Button } from '@/components/ui/button';
 import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import {
@@ -30,6 +33,8 @@ import { useStudentOrder } from '@/lib/classroom/use-student-order';
 
 export type ClassroomRosterRow = {
   id: string;
+  /** students.id — the report card is keyed by it, not by student_number. */
+  student_id: string | null;
   index_number: number;
   student_number: string;
   student_name: string;
@@ -39,9 +44,17 @@ export type ClassroomRosterRow = {
 export function ClassroomRosterTable({
   sectionId,
   data,
+  showReportCard = false,
 }: {
   sectionId: string;
   data: ClassroomRosterRow[];
+  /**
+   * Adviser + oversight only — the caller decides via
+   * `canReadReportCard(capability)`. This is the only route into a report card
+   * for a form adviser: they have no Report Cards nav item, and the
+   * report-cards index is coordinator-and-above.
+   */
+  showReportCard?: boolean;
 }) {
   const [order] = useStudentOrder(sectionId);
   const rows = sortRosterByOrder(data, order);
@@ -63,6 +76,11 @@ export function ClassroomRosterTable({
             <TableHead>Student number</TableHead>
             <TableHead>Name</TableHead>
             <TableHead>Status</TableHead>
+            {showReportCard && (
+              <TableHead className="w-32 text-right">
+                <span className="sr-only">Report card</span>
+              </TableHead>
+            )}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -84,6 +102,17 @@ export function ClassroomRosterTable({
               <TableCell>
                 <EnrollmentStatusBadge status={row.enrollment_status} />
               </TableCell>
+              {showReportCard && (
+                <TableCell className="text-right">
+                  {row.student_id ? (
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link href={`/markbook/report-cards/${row.student_id}`}>
+                        Report card
+                      </Link>
+                    </Button>
+                  ) : null}
+                </TableCell>
+              )}
             </TableRow>
           ))}
         </TableBody>

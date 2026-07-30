@@ -77,7 +77,17 @@ export type AttendanceRecord = {
   days_late: number | null;
 };
 
-export type CommentRecord = { term_id: string; comment: string | null };
+export type CommentRecord = {
+  term_id: string;
+  comment: string | null;
+  /**
+   * `evaluation_writeups.submitted` — false for a write-up the adviser saved as
+   * a draft but has not finalised. Deliberately carried rather than filtered
+   * out, so a staff preview can show it flagged while the parent API and the
+   * batch print omit it. See `ReportCardDocument`'s `showDrafts`.
+   */
+  submitted: boolean;
+};
 
 export type ReportCardPayload = {
   ay: { id: string; label: string };
@@ -670,9 +680,15 @@ export async function buildReportCard(
   // dropping the `section_id` filter is safe — at most one row per (student,
   // term) regardless of which section authored it. This lets a T1 writeup
   // authored under the OLD section show up after a mid-year transfer.
+  //
+  // `submitted` is carried through rather than filtered here: the builder feeds
+  // both the staff preview (which SHOWS a draft, flagged, so an empty box
+  // explains itself) and the parent API + batch print (which must never emit
+  // one). Filtering at the source would collapse that distinction. The consumer
+  // decides via `ReportCardDocument`'s `showDrafts`.
   const { data: writeups } = await supabase
     .from('evaluation_writeups')
-    .select('term_id, writeup')
+    .select('term_id, writeup, submitted')
     .eq('student_id', student.id)
     .in(
       'term_id',
@@ -682,8 +698,13 @@ export async function buildReportCard(
     (writeups ?? []) as Array<{
       term_id: string;
       writeup: string | null;
+      submitted: boolean | null;
     }>
-  ).map((w) => ({ term_id: w.term_id, comment: w.writeup }));
+  ).map((w) => ({
+    term_id: w.term_id,
+    comment: w.writeup,
+    submitted: w.submitted === true,
+  }));
 
   const fullName = [student.last_name, student.first_name, student.middle_name]
     .filter(Boolean)
