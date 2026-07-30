@@ -61,3 +61,18 @@ export const ROLE_LABELS = {
   p_file_officer: TABLE_COPY.pFileOfficer,
   admissions: TABLE_COPY.admissions,
 } as const satisfies Record<string, string>;
+
+/**
+ * Why one role's permissions can't be edited. Shared by the permissions page
+ * (a Server Component) and the editor beside it (a Client Component).
+ *
+ * It lives HERE, and not in the editor, for a load-bearing reason: every export
+ * of a `'use client'` module is a client reference, so a Server Component that
+ * imports one can render it as a component or pass it as a prop but CANNOT
+ * call it. Doing so throws at request time — and `next build` does not catch
+ * it, because nothing about it is a type error. This module has no 'use client'
+ * directive, so both sides can call it.
+ */
+export function lockedRoleNote(role: keyof typeof ROLE_LABELS): string {
+  return `${ROLE_LABELS[role]} permissions can't be changed — it's the way back in if something is set wrongly.`;
+}

@@ -352,8 +352,3 @@ function EditRoleSheet({
     </Sheet>
   );
 }
-
-/** Exported so the page can render the same locked-row explanation. */
-export function lockedRoleNote(role: Role): string {
-  return `${ROLE_LABELS[role]} permissions can't be changed — it's the way back in if something is set wrongly.`;
-}

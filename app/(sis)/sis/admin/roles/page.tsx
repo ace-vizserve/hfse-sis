@@ -1,14 +1,12 @@
 import { Info } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
-import {
-  RolePermissionsEditor,
-  lockedRoleNote,
-} from '@/components/sis/role-permissions-editor';
+import { RolePermissionsEditor } from '@/components/sis/role-permissions-editor';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { getRoleCapabilities } from '@/lib/auth/permission-map';
 import { ROLES, type Role } from '@/lib/auth/roles';
+import { lockedRoleNote } from '@/lib/copy/data-table';
 import { getSessionUser } from '@/lib/supabase/server';
 
 // /sis/admin/roles — what each role is allowed to do.
