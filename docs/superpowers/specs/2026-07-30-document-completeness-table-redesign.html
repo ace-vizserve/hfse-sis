@@ -30,9 +30,9 @@
     --destructive-soft: oklch(0.6368 0.2078 25.3313 / 0.1);
     --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.06);
     --shadow-md: 0 4px 16px rgb(15 23 42 / 0.08);
-    --font-serif: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+    --font-serif: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
     --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -59,22 +59,42 @@
       --shadow-md: 0 4px 16px rgb(0 0 0 / 0.5);
     }
   }
-  :root[data-theme="dark"] {
-    --canvas: #080c17; --card: #0f1626; --ink: #eef2f9; --ink-2: #cbd5e1;
-    --ink-3: #a8b4c6; --ink-4: #8a97ac; --ink-5: #6b7889;
-    --hairline: #1e293b; --hairline-strong: #334155;
-    --indigo: #6979e0; --indigo-deep: #8f9cea; --accent: #1a2148;
-    --accent-ink: #b9c2f2; --mint-deep: #34d399; --amber: #f59042;
+  :root[data-theme='dark'] {
+    --canvas: #080c17;
+    --card: #0f1626;
+    --ink: #eef2f9;
+    --ink-2: #cbd5e1;
+    --ink-3: #a8b4c6;
+    --ink-4: #8a97ac;
+    --ink-5: #6b7889;
+    --hairline: #1e293b;
+    --hairline-strong: #334155;
+    --indigo: #6979e0;
+    --indigo-deep: #8f9cea;
+    --accent: #1a2148;
+    --accent-ink: #b9c2f2;
+    --mint-deep: #34d399;
+    --amber: #f59042;
     --amber-light: #3a2110;
     --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.4);
     --shadow-md: 0 4px 16px rgb(0 0 0 / 0.5);
   }
-  :root[data-theme="light"] {
-    --canvas: #f8fafc; --card: #ffffff; --ink: #0f172a; --ink-2: #334155;
-    --ink-3: #475569; --ink-4: #64748b; --ink-5: #94a3b8;
-    --hairline: #e2e8f0; --hairline-strong: #cbd5e1;
-    --indigo: #213098; --indigo-deep: #18215c; --accent: #e9ecf8;
-    --accent-ink: #1a2570; --mint-deep: #0f9d6b; --amber: #ed7622;
+  :root[data-theme='light'] {
+    --canvas: #f8fafc;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --ink-2: #334155;
+    --ink-3: #475569;
+    --ink-4: #64748b;
+    --ink-5: #94a3b8;
+    --hairline: #e2e8f0;
+    --hairline-strong: #cbd5e1;
+    --indigo: #213098;
+    --indigo-deep: #18215c;
+    --accent: #e9ecf8;
+    --accent-ink: #1a2570;
+    --mint-deep: #0f9d6b;
+    --amber: #ed7622;
     --amber-light: #fde8d5;
     --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.06);
     --shadow-md: 0 4px 16px rgb(15 23 42 / 0.08);
@@ -133,10 +153,22 @@
     color: var(--ink-4);
     margin: 14px 0 0;
   }
-  .note { font-size: 13.5px; color: var(--ink-4); margin: 0; }
+  .note {
+    font-size: 13.5px;
+    color: var(--ink-4);
+    margin: 0;
+  }
 
-  section { display: flex; flex-direction: column; gap: 16px; }
-  .sec-head { display: flex; flex-direction: column; gap: 6px; }
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .sec-head {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
 
   /* ── card ───────────────────────────────────────────────────────── */
   .card {
@@ -153,11 +185,19 @@
     gap: 5px;
     border-bottom: 1px solid var(--hairline);
   }
-  .card-head .desc { font-size: 13.5px; color: var(--ink-4); }
-  .scroll { overflow-x: auto; }
+  .card-head .desc {
+    font-size: 13.5px;
+    color: var(--ink-4);
+  }
+  .scroll {
+    overflow-x: auto;
+  }
 
   /* ── table ──────────────────────────────────────────────────────── */
-  table { border-collapse: collapse; width: 100%; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
   thead th {
     font-size: 11px;
     font-weight: 600;
@@ -174,8 +214,12 @@
     vertical-align: middle;
     font-size: 13.5px;
   }
-  tbody tr:last-child td { border-bottom: 0; }
-  tbody tr:hover { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  tbody tr:hover {
+    background: color-mix(in srgb, var(--accent) 45%, transparent);
+  }
   .num {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
@@ -188,8 +232,16 @@
     text-decoration: none;
     white-space: nowrap;
   }
-  .sname:hover { color: var(--indigo); text-decoration: underline; text-underline-offset: 4px; }
-  .meta { color: var(--ink-4); font-size: 12.5px; white-space: nowrap; }
+  .sname:hover {
+    color: var(--indigo);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  .meta {
+    color: var(--ink-4);
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
 
   /* ── BEFORE: the dot matrix as it ships today ───────────────────── */
   .before th.slot {
@@ -200,13 +252,25 @@
     text-overflow: ellipsis;
     padding: 9px 4px;
   }
-  .before td.slot { text-align: center; padding: 10px 4px; }
-  .before td.name { max-width: 88px; }
-  .before td.name .sname { white-space: normal; display: block; line-height: 1.25; }
-  .before .meta { white-space: normal; }
+  .before td.slot {
+    text-align: center;
+    padding: 10px 4px;
+  }
+  .before td.name {
+    max-width: 88px;
+  }
+  .before td.name .sname {
+    white-space: normal;
+    display: block;
+    line-height: 1.25;
+  }
+  .before .meta {
+    white-space: normal;
+  }
   .dot {
     display: inline-block;
-    width: 10px; height: 10px;
+    width: 10px;
+    height: 10px;
     border-radius: 999px;
   }
   .pill {
@@ -232,11 +296,18 @@
     padding: 0;
     background: none;
     cursor: pointer;
-    transition: transform .12s ease;
+    transition: transform 0.12s ease;
   }
-  .strip:hover { transform: scaleY(1.35); }
-  .strip:focus-visible { outline: 2px solid var(--indigo); outline-offset: 3px; }
-  .strip span { flex: 1; }
+  .strip:hover {
+    transform: scaleY(1.35);
+  }
+  .strip:focus-visible {
+    outline: 2px solid var(--indigo);
+    outline-offset: 3px;
+  }
+  .strip span {
+    flex: 1;
+  }
   .ratio {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
@@ -245,10 +316,21 @@
     color: var(--ink-2);
     letter-spacing: -0.02em;
   }
-  .ratio.low { color: var(--destructive); }
-  .doccell { display: flex; flex-direction: column; gap: 5px; }
+  .ratio.low {
+    color: var(--destructive);
+  }
+  .doccell {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
 
-  .chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+  }
   .chip {
     display: inline-flex;
     align-items: center;
@@ -261,7 +343,11 @@
     font-weight: 500;
     white-space: nowrap;
   }
-  .chip svg { width: 11px; height: 11px; flex: none; }
+  .chip svg {
+    width: 11px;
+    height: 11px;
+    flex: none;
+  }
   .chip.more {
     border-color: var(--hairline-strong);
     color: var(--ink-4);
@@ -277,32 +363,71 @@
   }
 
   /* action buttons */
-  .acts { display: flex; gap: 4px; justify-content: flex-end; }
+  .acts {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+  }
   .btn {
-    display: inline-flex; align-items: center; gap: 5px;
-    height: 27px; padding: 0 9px;
-    border-radius: 7px; border: 1px solid transparent;
-    background: none; cursor: pointer;
-    font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 27px;
+    padding: 0 9px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: none;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
     color: var(--ink-4);
   }
-  .btn:hover { color: var(--ink); background: color-mix(in srgb, var(--accent) 70%, transparent); }
-  .btn:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
-  .btn svg { width: 12px; height: 12px; }
-  .btn.remind { color: var(--indigo); border-color: color-mix(in srgb, var(--indigo) 24%, transparent); }
+  .btn:hover {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+  .btn:focus-visible {
+    outline: 2px solid var(--indigo);
+    outline-offset: 2px;
+  }
+  .btn svg {
+    width: 12px;
+    height: 12px;
+  }
+  .btn.remind {
+    color: var(--indigo);
+    border-color: color-mix(in srgb, var(--indigo) 24%, transparent);
+  }
 
   /* ── legend strip (§10.4 standalone strip above the table) ──────── */
   .legend {
-    display: flex; flex-wrap: wrap;
+    display: flex;
+    flex-wrap: wrap;
     gap: 6px 22px;
     padding: 11px 22px;
     border-bottom: 1px solid var(--hairline);
     background: color-mix(in srgb, var(--canvas) 55%, transparent);
   }
-  .legend-item { display: inline-flex; align-items: center; gap: 7px; }
-  .legend-swatch { width: 22px; height: 8px; border-radius: 999px; flex: none; }
-  .legend-label { font-size: 12px; color: var(--ink-3); }
-  .legend-label b { font-weight: 600; color: var(--ink-2); }
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .legend-swatch {
+    width: 22px;
+    height: 8px;
+    border-radius: 999px;
+    flex: none;
+  }
+  .legend-label {
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .legend-label b {
+    font-weight: 600;
+    color: var(--ink-2);
+  }
 
   /* ── popover mock ───────────────────────────────────────────────── */
   .pop {
@@ -312,28 +437,78 @@
     border-radius: 10px;
     box-shadow: var(--shadow-md);
     padding: 14px;
-    display: flex; flex-direction: column; gap: 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
   }
-  .pop ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
-  .pop li { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .pop .slot-name { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; }
-  .pop .slot-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
-  .pop .slot-state { font-size: 12px; color: var(--ink-4); }
-  .pop .slot-exp { font-family: var(--font-mono); font-size: 10px; color: var(--ink-5); font-variant-numeric: tabular-nums; }
+  .pop ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .pop li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .pop .slot-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .pop .slot-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex: none;
+  }
+  .pop .slot-state {
+    font-size: 12px;
+    color: var(--ink-4);
+  }
+  .pop .slot-exp {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink-5);
+    font-variant-numeric: tabular-nums;
+  }
 
   /* ── annotation callouts ────────────────────────────────────────── */
-  .flags { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .flags {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  }
   .flag {
     border: 1px solid color-mix(in srgb, var(--destructive) 26%, transparent);
     background: var(--destructive-soft);
     border-radius: 10px;
     padding: 12px 14px;
-    display: flex; flex-direction: column; gap: 3px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
   }
-  .flag b { font-size: 12.5px; color: var(--ink); }
-  .flag span { font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+  .flag b {
+    font-size: 12.5px;
+    color: var(--ink);
+  }
+  .flag span {
+    font-size: 12.5px;
+    color: var(--ink-3);
+    line-height: 1.45;
+  }
 
-  .decisions { display: flex; flex-direction: column; gap: 0; }
+  .decisions {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
   .decision {
     display: grid;
     grid-template-columns: 178px 1fr;
@@ -341,22 +516,43 @@
     padding: 15px 22px;
     border-bottom: 1px solid var(--hairline);
   }
-  .decision:last-child { border-bottom: 0; }
-  .decision dt { font-family: var(--font-serif); font-size: 15px; font-weight: 600; }
-  .decision dd { margin: 0; font-size: 13.5px; color: var(--ink-3); line-height: 1.5; }
+  .decision:last-child {
+    border-bottom: 0;
+  }
+  .decision dt {
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .decision dd {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--ink-3);
+    line-height: 1.5;
+  }
   .decision dd code {
-    font-family: var(--font-mono); font-size: 11.5px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
     background: color-mix(in srgb, var(--accent) 70%, transparent);
     color: var(--accent-ink);
-    padding: 1px 5px; border-radius: 4px;
+    padding: 1px 5px;
+    border-radius: 4px;
   }
   @media (max-width: 620px) {
-    .decision { grid-template-columns: 1fr; gap: 5px; }
-    h1 { font-size: 30px; }
+    .decision {
+      grid-template-columns: 1fr;
+      gap: 5px;
+    }
+    h1 {
+      font-size: 30px;
+    }
   }
 
   .trust {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 9px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 9px;
     border-top: 1px solid var(--hairline);
     padding-top: 18px;
     font-family: var(--font-mono);
@@ -365,19 +561,23 @@
     letter-spacing: 0.14em;
     color: var(--ink-4);
   }
-  .trust .sep { color: var(--hairline-strong); }
+  .trust .sep {
+    color: var(--hairline-strong);
+  }
 </style>
 
 <div class="wrap">
-
   <header>
     <p class="eyebrow">P-Files · Proposed redesign</p>
     <h1>Document Completeness</h1>
     <p class="lede">
-      The table's job is chase work: <em>who owes us a document, which one, and can I
-      nudge them from here.</em> Thirteen columns of coloured dots answer none of that
-      without hovering. This replaces them with one strip and a short list of what's
-      actually outstanding.
+      The table's job is chase work:
+      <em
+        >who owes us a document, which one, and can I nudge them from here.</em
+      >
+      Thirteen columns of coloured dots answer none of that without hovering.
+      This replaces them with one strip and a short list of what's actually
+      outstanding.
     </p>
   </header>
 
@@ -386,7 +586,10 @@
     <div class="sec-head">
       <p class="eyebrow">Today</p>
       <h2>What ships now</h2>
-      <p class="note">Reproduced from <code>document-completeness-table.tsx</code>. Names are made up — real students aren't in this file.</p>
+      <p class="note">
+        Reproduced from <code>document-completeness-table.tsx</code>. Names are
+        made up — real students aren't in this file.
+      </p>
     </div>
 
     <div class="card">
@@ -398,19 +601,33 @@
     <div class="flags">
       <div class="flag">
         <b>No legend exists</b>
-        <span>The only explanation of a colour is a native <code>title=</code> tooltip. Colour is the sole signal — that fails §9 and anyone not using a mouse.</span>
+        <span
+          >The only explanation of a colour is a native
+          <code>title=</code> tooltip. Colour is the sole signal — that fails §9
+          and anyone not using a mouse.</span
+        >
       </div>
       <div class="flag">
         <b>Seven states, five colours</b>
-        <span>Lapsed and Sent&nbsp;back both paint <code>bg-destructive</code>; Not&nbsp;collected and N/A both paint <code>bg-muted</code>. Two pairs are undecodable even with a legend.</span>
+        <span
+          >Lapsed and Sent&nbsp;back both paint <code>bg-destructive</code>;
+          Not&nbsp;collected and N/A both paint <code>bg-muted</code>. Two pairs
+          are undecodable even with a legend.</span
+        >
       </div>
       <div class="flag">
         <b>Names get the leftovers</b>
-        <span>Thirteen slot columns take the width first, so names wrap to three lines and every row is a different height.</span>
+        <span
+          >Thirteen slot columns take the width first, so names wrap to three
+          lines and every row is a different height.</span
+        >
       </div>
       <div class="flag">
         <b>The useful column is off-screen</b>
-        <span>Completeness sits past a horizontal scroll, behind the dots it summarises.</span>
+        <span
+          >Completeness sits past a horizontal scroll, behind the dots it
+          summarises.</span
+        >
       </div>
     </div>
   </section>
@@ -420,13 +637,18 @@
     <div class="sec-head">
       <p class="eyebrow">Proposed</p>
       <h2>Six columns, nothing hidden</h2>
-      <p class="note">Same data, same rows, same shell — only the columns change.</p>
+      <p class="note">
+        Same data, same rows, same shell — only the columns change.
+      </p>
     </div>
 
     <div class="card">
       <div class="card-head">
         <h3>Document completeness</h3>
-        <p class="desc">Per-student breakdown for renewals. Open a student to upload or record a document.</p>
+        <p class="desc">
+          Per-student breakdown for renewals. Open a student to upload or record
+          a document.
+        </p>
       </div>
       <div class="legend" id="legend"></div>
       <div class="scroll">
@@ -441,9 +663,9 @@
       <p class="eyebrow">Detail on demand</p>
       <h2>The full thirteen, when you want them</h2>
       <p class="note">
-        Clicking a strip opens all thirteen slots named in full, with expiry dates —
-        the same disclosure pattern the admissions pipeline strip already uses
-        (<code>pipeline-strip.tsx</code>, KD&nbsp;#152).
+        Clicking a strip opens all thirteen slots named in full, with expiry
+        dates — the same disclosure pattern the admissions pipeline strip
+        already uses (<code>pipeline-strip.tsx</code>, KD&nbsp;#152).
       </p>
     </div>
     <div id="popMount"></div>
@@ -459,31 +681,60 @@
       <dl class="decisions">
         <div class="decision">
           <dt>One strip, not 13 columns</dt>
-          <dd>Segment order is fixed, so you can still compare down the column the way the matrix let you — in 112px instead of ~520px. Reuses the shape of <code>PipelineStrip</code>, which solved this same problem for nine admissions stages.</dd>
+          <dd>
+            Segment order is fixed, so you can still compare down the column the
+            way the matrix let you — in 112px instead of ~520px. Reuses the
+            shape of <code>PipelineStrip</code>, which solved this same problem
+            for nine admissions stages.
+          </dd>
         </div>
         <div class="decision">
           <dt>Colour means action, words mean cause</dt>
-          <dd>Five fills, each one distinct thing to do: nothing, check it, wait on the parent, chase a re-upload, collect it. Lapsed vs sent&nbsp;back share a fill because the officer's next move is identical — the chip's icon and word carry the difference. Six swatches, six meanings, no duplicates (§10.5).</dd>
+          <dd>
+            Five fills, each one distinct thing to do: nothing, check it, wait
+            on the parent, chase a re-upload, collect it. Lapsed vs
+            sent&nbsp;back share a fill because the officer's next move is
+            identical — the chip's icon and word carry the difference. Six
+            swatches, six meanings, no duplicates (§10.5).
+          </dd>
         </div>
         <div class="decision">
           <dt>Outstanding is a list, not a puzzle</dt>
-          <dd>The exceptions are named in words: <em>Mother Passport</em>, <em>Birth Certificate</em>. Three fit; the rest collapse to a count. On a chase surface the exceptions are the whole point, so they get the widest column.</dd>
+          <dd>
+            The exceptions are named in words: <em>Mother Passport</em>,
+            <em>Birth Certificate</em>. Three fit; the rest collapse to a count.
+            On a chase surface the exceptions are the whole point, so they get
+            the widest column.
+          </dd>
         </div>
         <div class="decision">
           <dt>Completeness reads as a ratio</dt>
-          <dd><code>9/13</code> in tabular mono beats a <code>69%</code> pill — the officer collects documents, not percentages, and it sorts identically. It sits directly above the strip it describes.</dd>
+          <dd>
+            <code>9/13</code> in tabular mono beats a <code>69%</code> pill —
+            the officer collects documents, not percentages, and it sorts
+            identically. It sits directly above the strip it describes.
+          </dd>
         </div>
         <div class="decision">
           <dt>A legend that is a real key</dt>
-          <dd>Swatch and segment read one exported map, so they cannot drift (§10.2). It's always visible above the table, not hover-only.</dd>
+          <dd>
+            Swatch and segment read one exported map, so they cannot drift
+            (§10.2). It's always visible above the table, not hover-only.
+          </dd>
         </div>
         <div class="decision">
           <dt>Fixed row height</dt>
-          <dd>Nothing wraps. Name and number stay on one line, so the eye tracks straight down the column.</dd>
+          <dd>
+            Nothing wraps. Name and number stay on one line, so the eye tracks
+            straight down the column.
+          </dd>
         </div>
         <div class="decision">
           <dt>Remind stays on the row</dt>
-          <dd>Unchanged behaviour — it still opens the existing notify dialog. It just stops competing with 13 dots for attention.</dd>
+          <dd>
+            Unchanged behaviour — it still opens the existing notify dialog. It
+            just stops competing with 13 dots for attention.
+          </dd>
         </div>
       </dl>
     </div>
@@ -498,152 +749,251 @@
 </div>
 
 <script>
-/* ══════════════════════════════════════════════════════════════════════
+  /* ══════════════════════════════════════════════════════════════════════
    ONE map drives the strip, the chips, the legend and the popover —
    demonstrating the §10.2 rule the real component will follow by
    exporting this from a single module.
    ══════════════════════════════════════════════════════════════════════ */
 
-const ICONS = {
-  check:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
-  clock:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
-  hand:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
-  calx:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="17" y1="17" x2="22" y2="22"/><line x1="22" y1="17" x2="17" y2="22"/></svg>',
-  undo:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
-  dash:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/></svg>',
-  slash:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="6" y1="18" x2="18" y2="6"/></svg>',
-  mail:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg>',
-  arrow:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>',
-};
+  const ICONS = {
+    check:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    clock:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
+    hand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+    calx: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="17" y1="17" x2="22" y2="22"/><line x1="22" y1="17" x2="17" y2="22"/></svg>',
+    undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+    dash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/></svg>',
+    slash:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="6" y1="18" x2="18" y2="6"/></svg>',
+    mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg>',
+    arrow:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>',
+  };
 
-/* fill = what the officer must DO. chip = what HAPPENED. */
-const FILL = {
-  clear:   'linear-gradient(to bottom, var(--mint), var(--mint-deep))',
-  check:   'linear-gradient(to bottom, var(--amber), color-mix(in srgb, var(--amber) 72%, black))',
-  waiting: 'linear-gradient(to bottom, var(--indigo-soft), var(--indigo))',
-  reup:    'linear-gradient(to bottom, var(--destructive), color-mix(in srgb, var(--destructive) 78%, black))',
-  collect: 'var(--ink-5)',
-  na:      'repeating-linear-gradient(45deg, var(--hairline) 0 3px, var(--card) 3px 6px)',
-};
+  /* fill = what the officer must DO. chip = what HAPPENED. */
+  const FILL = {
+    clear: 'linear-gradient(to bottom, var(--mint), var(--mint-deep))',
+    check:
+      'linear-gradient(to bottom, var(--amber), color-mix(in srgb, var(--amber) 72%, black))',
+    waiting: 'linear-gradient(to bottom, var(--indigo-soft), var(--indigo))',
+    reup: 'linear-gradient(to bottom, var(--destructive), color-mix(in srgb, var(--destructive) 78%, black))',
+    collect: 'var(--ink-5)',
+    na: 'repeating-linear-gradient(45deg, var(--hairline) 0 3px, var(--card) 3px 6px)',
+  };
 
-const STATUS = {
-  valid:       { fill: 'clear',   chip: 'On file',        icon: 'check', tone: 'mint'  },
-  uploaded:    { fill: 'check',   chip: 'Uploaded',       icon: 'clock', tone: 'amber' },
-  'to-follow': { fill: 'waiting', chip: 'Promised',       icon: 'hand',  tone: 'indigo'},
-  expired:     { fill: 'reup',    chip: 'Lapsed',         icon: 'calx',  tone: 'red'   },
-  rejected:    { fill: 'reup',    chip: 'Sent back',      icon: 'undo',  tone: 'red'   },
-  missing:     { fill: 'collect', chip: 'Not collected',  icon: 'dash',  tone: 'grey'  },
-  na:          { fill: 'na',      chip: 'Not applicable', icon: 'slash', tone: 'grey'  },
-};
+  const STATUS = {
+    valid: { fill: 'clear', chip: 'On file', icon: 'check', tone: 'mint' },
+    uploaded: { fill: 'check', chip: 'Uploaded', icon: 'clock', tone: 'amber' },
+    'to-follow': {
+      fill: 'waiting',
+      chip: 'Promised',
+      icon: 'hand',
+      tone: 'indigo',
+    },
+    expired: { fill: 'reup', chip: 'Lapsed', icon: 'calx', tone: 'red' },
+    rejected: { fill: 'reup', chip: 'Sent back', icon: 'undo', tone: 'red' },
+    missing: {
+      fill: 'collect',
+      chip: 'Not collected',
+      icon: 'dash',
+      tone: 'grey',
+    },
+    na: { fill: 'na', chip: 'Not applicable', icon: 'slash', tone: 'grey' },
+  };
 
-const TONE = {
-  mint:   'border-color:color-mix(in srgb,var(--mint) 55%,transparent);background:color-mix(in srgb,var(--mint) 16%,transparent);color:var(--mint-deep)',
-  amber:  'border-color:color-mix(in srgb,var(--amber) 45%,transparent);background:color-mix(in srgb,var(--amber) 13%,transparent);color:var(--amber)',
-  indigo: 'border-color:color-mix(in srgb,var(--indigo) 34%,transparent);background:var(--accent);color:var(--accent-ink)',
-  red:    'border-color:color-mix(in srgb,var(--destructive) 40%,transparent);background:var(--destructive-soft);color:var(--destructive)',
-  grey:   'border-color:var(--hairline-strong);background:color-mix(in srgb,var(--canvas) 70%,transparent);color:var(--ink-4)',
-};
+  const TONE = {
+    mint: 'border-color:color-mix(in srgb,var(--mint) 55%,transparent);background:color-mix(in srgb,var(--mint) 16%,transparent);color:var(--mint-deep)',
+    amber:
+      'border-color:color-mix(in srgb,var(--amber) 45%,transparent);background:color-mix(in srgb,var(--amber) 13%,transparent);color:var(--amber)',
+    indigo:
+      'border-color:color-mix(in srgb,var(--indigo) 34%,transparent);background:var(--accent);color:var(--accent-ink)',
+    red: 'border-color:color-mix(in srgb,var(--destructive) 40%,transparent);background:var(--destructive-soft);color:var(--destructive)',
+    grey: 'border-color:var(--hairline-strong);background:color-mix(in srgb,var(--canvas) 70%,transparent);color:var(--ink-4)',
+  };
 
-/* The legend documents the five actions + N/A — one swatch, one meaning. */
-const LEGEND = [
-  { fill: 'clear',   label: 'On file',        sub: 'nothing to do' },
-  { fill: 'check',   label: 'Uploaded',       sub: 'waiting on us' },
-  { fill: 'waiting', label: 'Promised',       sub: 'waiting on the parent' },
-  { fill: 'reup',    label: 'Needs re-upload', sub: 'lapsed or sent back' },
-  { fill: 'collect', label: 'Not collected',  sub: 'never received' },
-  { fill: 'na',      label: 'Not applicable', sub: 'no parent on file' },
-];
+  /* The legend documents the five actions + N/A — one swatch, one meaning. */
+  const LEGEND = [
+    { fill: 'clear', label: 'On file', sub: 'nothing to do' },
+    { fill: 'check', label: 'Uploaded', sub: 'waiting on us' },
+    { fill: 'waiting', label: 'Promised', sub: 'waiting on the parent' },
+    { fill: 'reup', label: 'Needs re-upload', sub: 'lapsed or sent back' },
+    { fill: 'collect', label: 'Not collected', sub: 'never received' },
+    { fill: 'na', label: 'Not applicable', sub: 'no parent on file' },
+  ];
 
-/* DOCUMENT_SLOTS order, verbatim from lib/p-files/document-config.ts */
-const SLOTS = [
-  ['idPicture',        'ID Picture',            'ID Pic'],
-  ['birthCert',        'Birth Certificate',     'Birth'],
-  ['educCert',         'Education Certificate', 'Educ'],
-  ['medical',          'Medical Exam',          'Med'],
-  ['form12',           'Form 12',               'Frm12'],
-  ['passport',         'Student Passport',      'S/PP'],
-  ['pass',             'Student Pass',          'S/Pass'],
-  ['motherPassport',   'Mother Passport',       'M/PP'],
-  ['motherPass',       'Mother Pass',           'M/Pass'],
-  ['fatherPassport',   'Father Passport',       'F/PP'],
-  ['fatherPass',       'Father Pass',           'F/Pass'],
-  ['guardianPassport', 'Guardian Passport',     'G/PP'],
-  ['guardianPass',     'Guardian Pass',         'G/Pass'],
-];
+  /* DOCUMENT_SLOTS order, verbatim from lib/p-files/document-config.ts */
+  const SLOTS = [
+    ['idPicture', 'ID Picture', 'ID Pic'],
+    ['birthCert', 'Birth Certificate', 'Birth'],
+    ['educCert', 'Education Certificate', 'Educ'],
+    ['medical', 'Medical Exam', 'Med'],
+    ['form12', 'Form 12', 'Frm12'],
+    ['passport', 'Student Passport', 'S/PP'],
+    ['pass', 'Student Pass', 'S/Pass'],
+    ['motherPassport', 'Mother Passport', 'M/PP'],
+    ['motherPass', 'Mother Pass', 'M/Pass'],
+    ['fatherPassport', 'Father Passport', 'F/PP'],
+    ['fatherPass', 'Father Pass', 'F/Pass'],
+    ['guardianPassport', 'Guardian Passport', 'G/PP'],
+    ['guardianPass', 'Guardian Pass', 'G/Pass'],
+  ];
 
-/* Fabricated rows. v = valid, u = uploaded, t = to-follow,
+  /* Fabricated rows. v = valid, u = uploaded, t = to-follow,
    e = expired, r = rejected, m = missing, n = na            */
-const CODE = { v:'valid', u:'uploaded', t:'to-follow', e:'expired', r:'rejected', m:'missing', n:'na' };
+  const CODE = {
+    v: 'valid',
+    u: 'uploaded',
+    t: 'to-follow',
+    e: 'expired',
+    r: 'rejected',
+    m: 'missing',
+    n: 'na',
+  };
 
-const ROWS = [
-  { name:'Abello, Marianne Faye',   id:'2026-0114', lvl:'Primary 3',  sec:'Courtesy',    s:'vvvvvvvvvnnnn'.slice(0,13), exp:{} },
-  { name:'Bantay, Joaquin Emilio',  id:'2026-0087', lvl:'Primary 1',  sec:'Obedience',   s:'vvvmvvevvennn'.slice(0,13), exp:{7:'2026-06-30', 9:'2026-05-12'} },
-  { name:'Carreon, Sofia Isabelle', id:'2026-0203', lvl:'Secondary 2',sec:'Integrity',   s:'vvvvvutvvvvnn'.slice(0,13), exp:{} },
-  { name:'De Vera, Mateo Rafael',   id:'2026-0056', lvl:'Kinder 2',   sec:'Love',        s:'vmvmmvvvvnnnn'.slice(0,13), exp:{} },
-  { name:'Escaño, Beatriz Antonia', id:'2026-0171', lvl:'Primary 5',  sec:'Tenacity',    s:'vvvvvvvrvvvnn'.slice(0,13), exp:{} },
-  { name:'Fajardo, Lucas Emmanuel', id:'2026-0132', lvl:'Primary 2',  sec:'Humility',    s:'vvvvvvvvvvvnn'.slice(0,13), exp:{} },
-  { name:'Gatchalian, Andrea Nicole',id:'2026-0098',lvl:'Secondary 1',sec:'Discipline',  s:'vvmvvetvennnn'.slice(0,13), exp:{5:'2026-04-02', 8:'2026-07-19'} },
-  { name:'Hilario, Sebastian Paolo',id:'2026-0245', lvl:'Primary 6',  sec:'Grit',        s:'vvvvvvuvvvvnn'.slice(0,13), exp:{} },
-];
+  const ROWS = [
+    {
+      name: 'Abello, Marianne Faye',
+      id: '2026-0114',
+      lvl: 'Primary 3',
+      sec: 'Courtesy',
+      s: 'vvvvvvvvvnnnn'.slice(0, 13),
+      exp: {},
+    },
+    {
+      name: 'Bantay, Joaquin Emilio',
+      id: '2026-0087',
+      lvl: 'Primary 1',
+      sec: 'Obedience',
+      s: 'vvvmvvevvennn'.slice(0, 13),
+      exp: { 7: '2026-06-30', 9: '2026-05-12' },
+    },
+    {
+      name: 'Carreon, Sofia Isabelle',
+      id: '2026-0203',
+      lvl: 'Secondary 2',
+      sec: 'Integrity',
+      s: 'vvvvvutvvvvnn'.slice(0, 13),
+      exp: {},
+    },
+    {
+      name: 'De Vera, Mateo Rafael',
+      id: '2026-0056',
+      lvl: 'Kinder 2',
+      sec: 'Love',
+      s: 'vmvmmvvvvnnnn'.slice(0, 13),
+      exp: {},
+    },
+    {
+      name: 'Escaño, Beatriz Antonia',
+      id: '2026-0171',
+      lvl: 'Primary 5',
+      sec: 'Tenacity',
+      s: 'vvvvvvvrvvvnn'.slice(0, 13),
+      exp: {},
+    },
+    {
+      name: 'Fajardo, Lucas Emmanuel',
+      id: '2026-0132',
+      lvl: 'Primary 2',
+      sec: 'Humility',
+      s: 'vvvvvvvvvvvnn'.slice(0, 13),
+      exp: {},
+    },
+    {
+      name: 'Gatchalian, Andrea Nicole',
+      id: '2026-0098',
+      lvl: 'Secondary 1',
+      sec: 'Discipline',
+      s: 'vvmvvetvennnn'.slice(0, 13),
+      exp: { 5: '2026-04-02', 8: '2026-07-19' },
+    },
+    {
+      name: 'Hilario, Sebastian Paolo',
+      id: '2026-0245',
+      lvl: 'Primary 6',
+      sec: 'Grit',
+      s: 'vvvvvvuvvvvnn'.slice(0, 13),
+      exp: {},
+    },
+  ];
 
-/* Only the slots that apply to a student count toward the ratio —
+  /* Only the slots that apply to a student count toward the ratio —
    `na` slots are excluded, matching StudentCompleteness.total. */
-function statuses(row) {
-  return SLOTS.map((slot, i) => ({
-    key: slot[0], label: slot[1], abbr: slot[2],
-    status: CODE[row.s[i]] ?? 'missing',
-    expiry: row.exp[i] ?? null,
-  }));
-}
-function ratio(list) {
-  const applicable = list.filter(s => s.status !== 'na');
-  return { done: applicable.filter(s => s.status === 'valid').length, total: applicable.length };
-}
-const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function statuses(row) {
+    return SLOTS.map((slot, i) => ({
+      key: slot[0],
+      label: slot[1],
+      abbr: slot[2],
+      status: CODE[row.s[i]] ?? 'missing',
+      expiry: row.exp[i] ?? null,
+    }));
+  }
+  function ratio(list) {
+    const applicable = list.filter((s) => s.status !== 'na');
+    return {
+      done: applicable.filter((s) => s.status === 'valid').length,
+      total: applicable.length,
+    };
+  }
+  const esc = (s) =>
+    String(s).replace(
+      /[&<>"]/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]
+    );
 
-/* ── BEFORE table ─────────────────────────────────────────────────── */
-const OLD_DOT = {
-  valid:'background:var(--mint)', uploaded:'background:var(--amber)',
-  'to-follow':'background:var(--indigo)', rejected:'background:var(--destructive)',
-  expired:'background:var(--destructive)', missing:'background:var(--canvas);border:1px solid var(--hairline-strong)',
-  na:'background:var(--hairline)',
-};
-document.getElementById('beforeTable').innerHTML = `
+  /* ── BEFORE table ─────────────────────────────────────────────────── */
+  const OLD_DOT = {
+    valid: 'background:var(--mint)',
+    uploaded: 'background:var(--amber)',
+    'to-follow': 'background:var(--indigo)',
+    rejected: 'background:var(--destructive)',
+    expired: 'background:var(--destructive)',
+    missing: 'background:var(--canvas);border:1px solid var(--hairline-strong)',
+    na: 'background:var(--hairline)',
+  };
+  document.getElementById('beforeTable').innerHTML = `
   <thead><tr>
     <th style="min-width:88px">Student</th><th>Level</th><th>Section</th>
-    ${SLOTS.map(s => `<th class="slot" title="${esc(s[1])}">${esc(s[2])}</th>`).join('')}
+    ${SLOTS.map((s) => `<th class="slot" title="${esc(s[1])}">${esc(s[2])}</th>`).join('')}
     <th style="text-align:center">%</th><th></th>
   </tr></thead>
-  <tbody>${ROWS.map(r => {
-    const list = statuses(r), { done, total } = ratio(list);
-    const p = total ? Math.round(done / total * 100) : 0;
-    const style = p === 100
-      ? 'border-color:var(--mint);background:color-mix(in srgb,var(--mint) 18%,transparent);color:var(--ink)'
-      : p >= 70 ? 'border-color:color-mix(in srgb,var(--indigo) 30%,transparent);color:var(--indigo)'
-      : p >= 40 ? 'border-color:color-mix(in srgb,var(--amber) 40%,transparent);color:var(--amber)'
-      : 'border-color:color-mix(in srgb,var(--destructive) 30%,transparent);color:var(--destructive)';
+  <tbody>${ROWS.map((r) => {
+    const list = statuses(r),
+      { done, total } = ratio(list);
+    const p = total ? Math.round((done / total) * 100) : 0;
+    const style =
+      p === 100
+        ? 'border-color:var(--mint);background:color-mix(in srgb,var(--mint) 18%,transparent);color:var(--ink)'
+        : p >= 70
+          ? 'border-color:color-mix(in srgb,var(--indigo) 30%,transparent);color:var(--indigo)'
+          : p >= 40
+            ? 'border-color:color-mix(in srgb,var(--amber) 40%,transparent);color:var(--amber)'
+            : 'border-color:color-mix(in srgb,var(--destructive) 30%,transparent);color:var(--destructive)';
     return `<tr>
       <td class="name"><a class="sname" href="#">${esc(r.name)}</a><div class="num">${esc(r.id)}</div></td>
       <td class="meta">${esc(r.lvl)}</td><td class="meta">${esc(r.sec)}</td>
-      ${list.map(s => `<td class="slot"><span class="dot" style="${OLD_DOT[s.status]}" title="${esc(s.status)}"></span></td>`).join('')}
+      ${list.map((s) => `<td class="slot"><span class="dot" style="${OLD_DOT[s.status]}" title="${esc(s.status)}"></span></td>`).join('')}
       <td style="text-align:center"><span class="pill" style="${style}">${p}%</span></td>
       <td class="meta" style="white-space:nowrap">View ↗</td>
     </tr>`;
   }).join('')}</tbody>`;
 
-/* ── legend ───────────────────────────────────────────────────────── */
-document.getElementById('legend').innerHTML = LEGEND.map(l => `
+  /* ── legend ───────────────────────────────────────────────────────── */
+  document.getElementById('legend').innerHTML = LEGEND.map(
+    (l) => `
   <span class="legend-item">
     <span class="legend-swatch" style="background:${FILL[l.fill]}" aria-hidden="true"></span>
     <span class="legend-label"><b>${esc(l.label)}</b> — ${esc(l.sub)}</span>
-  </span>`).join('');
+  </span>`
+  ).join('');
 
-/* ── AFTER table ──────────────────────────────────────────────────── */
-function chip(s) {
-  const meta = STATUS[s.status];
-  return `<span class="chip" style="${TONE[meta.tone]}">${ICONS[meta.icon]}${esc(s.label)}</span>`;
-}
-document.getElementById('afterTable').innerHTML = `
+  /* ── AFTER table ──────────────────────────────────────────────────── */
+  function chip(s) {
+    const meta = STATUS[s.status];
+    return `<span class="chip" style="${TONE[meta.tone]}">${ICONS[meta.icon]}${esc(s.label)}</span>`;
+  }
+  document.getElementById('afterTable').innerHTML = `
   <thead><tr>
     <th style="min-width:210px">Student</th>
     <th>Level</th><th>Section</th>
@@ -651,12 +1001,14 @@ document.getElementById('afterTable').innerHTML = `
     <th style="width:100%">Outstanding</th>
     <th></th>
   </tr></thead>
-  <tbody>${ROWS.map(r => {
-    const list = statuses(r), { done, total } = ratio(list);
-    const open = list.filter(s => s.status !== 'valid' && s.status !== 'na');
-    const shown = open.slice(0, 3), rest = open.length - shown.length;
+  <tbody>${ROWS.map((r) => {
+    const list = statuses(r),
+      { done, total } = ratio(list);
+    const open = list.filter((s) => s.status !== 'valid' && s.status !== 'na');
+    const shown = open.slice(0, 3),
+      rest = open.length - shown.length;
     const summary = open.length
-      ? `${done} of ${total} on file · ${open.map(s => `${s.label} ${STATUS[s.status].chip.toLowerCase()}`).join(', ')}`
+      ? `${done} of ${total} on file · ${open.map((s) => `${s.label} ${STATUS[s.status].chip.toLowerCase()}`).join(', ')}`
       : `All ${total} documents on file`;
     return `<tr>
       <td><a class="sname" href="#">${esc(r.name)}</a><div class="num">${esc(r.id)}</div></td>
@@ -666,15 +1018,18 @@ document.getElementById('afterTable').innerHTML = `
         <div class="doccell">
           <span class="ratio${done < total ? ' low' : ''}">${done}/${total}</span>
           <button class="strip" type="button" aria-label="${esc(summary)}" title="${esc(summary)}">
-            ${list.map(s => `<span aria-hidden="true" style="background:${FILL[STATUS[s.status].fill]}"></span>`).join('')}
+            ${list.map((s) => `<span aria-hidden="true" style="background:${FILL[STATUS[s.status].fill]}"></span>`).join('')}
           </button>
         </div>
       </td>
       <td>
         <div class="chips">
-          ${open.length === 0
-            ? `<span class="chip clear">${ICONS.check}All on file</span>`
-            : shown.map(chip).join('') + (rest > 0 ? `<span class="chip more">+${rest}</span>` : '')}
+          ${
+            open.length === 0
+              ? `<span class="chip clear">${ICONS.check}All on file</span>`
+              : shown.map(chip).join('') +
+                (rest > 0 ? `<span class="chip more">+${rest}</span>` : '')
+          }
         </div>
       </td>
       <td>
@@ -686,18 +1041,22 @@ document.getElementById('afterTable').innerHTML = `
     </tr>`;
   }).join('')}</tbody>`;
 
-/* ── popover ──────────────────────────────────────────────────────── */
-const demo = ROWS[6], demoList = statuses(demo), demoRatio = ratio(demoList);
-document.getElementById('popMount').innerHTML = `
+  /* ── popover ──────────────────────────────────────────────────────── */
+  const demo = ROWS[6],
+    demoList = statuses(demo),
+    demoRatio = ratio(demoList);
+  document.getElementById('popMount').innerHTML = `
   <div class="pop">
     <div>
       <p class="eyebrow">${esc(demo.name)}</p>
       <p style="margin:4px 0 0;font-size:12.5px;color:var(--ink-4)">
         ${demoRatio.done} of ${demoRatio.total} on file
-        · ${demoList.filter(s => s.status === 'na').length} not applicable
+        · ${demoList.filter((s) => s.status === 'na').length} not applicable
       </p>
     </div>
-    <ul>${demoList.map(s => `
+    <ul>${demoList
+      .map(
+        (s) => `
       <li>
         <span class="slot-name">
           <span class="slot-dot" style="background:${FILL[STATUS[s.status].fill]}" aria-hidden="true"></span>
@@ -707,7 +1066,9 @@ document.getElementById('popMount').innerHTML = `
           <span class="slot-state">${esc(STATUS[s.status].chip)}</span>
           ${s.expiry ? `<span class="slot-exp">${esc(s.expiry)}</span>` : ''}
         </span>
-      </li>`).join('')}
+      </li>`
+      )
+      .join('')}
     </ul>
   </div>`;
 </script>
