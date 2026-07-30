@@ -37,39 +37,6 @@ export function computeActivePublishedTermNumbers(
   return result;
 }
 
-// Every term this student's sections have ALREADY been published for — the
-// window has opened, whether or not it is still open. Same shape as
-// computeActivePublishedTermNumbers but with the upper bound dropped, NOT the
-// whole date test.
-//
-// The distinction is load-bearing. "Ever published" is only a safe basis for
-// re-showing a form-adviser comment because an EXPIRED window was already
-// delivered to that parent once. A SCHEDULED window (`publish_from` in the
-// future) has been delivered to nobody, and it is a real state in this app —
-// publish-window-panel.tsx and publication-status.tsx both label it
-// "scheduled", and the publish POST upserts on `(section_id, term_id)`, so
-// re-publishing a lapsed term REPLACES its dates with future ones. Ignoring
-// `publish_from` would therefore leak a comment the coordinator deliberately
-// scheduled for later.
-export function computePublishedTermNumbers(
-  pubs: PublicationRow[],
-  terms: TermNumberRow[],
-  sectionIds: string[],
-  now: number
-): Set<number> {
-  const termNumberById = new Map(terms.map((t) => [t.id, t.term_number]));
-  const sectionIdSet = new Set(sectionIds);
-  const result = new Set<number>();
-  for (const pub of pubs) {
-    if (!sectionIdSet.has(pub.section_id)) continue;
-    // Opened already? Expired is fine; not-yet-open is not.
-    if (now < new Date(pub.publish_from).getTime()) continue;
-    const termNumber = termNumberById.get(pub.term_id);
-    if (termNumber != null) result.add(termNumber);
-  }
-  return result;
-}
-
 export type PayloadLike<T extends { term_number: number; id: string }> = {
   terms: T[];
   attendance: Array<{ term_id: string }>;
@@ -118,14 +85,21 @@ export function filterPayloadToActiveTerms<
  * section at all (KD #49/#129), so handing the portal earlier comments there
  * would invite it to render a block the card is not supposed to have.
  *
+ * AUTHORISATION IS THE VIEWED TERM'S WINDOW, and nothing more. The caller has
+ * already 403'd unless the viewed term has an active publication window, and the
+ * card that window releases is BY DESIGN the one carrying terms 1..N's comments
+ * — it is exactly what staff see on their own preview of the same card.
+ *
+ * A first cut also required each earlier term to have been published in its own
+ * right. That was wrong in practice: a school that publishes only the current
+ * term's window (the normal case) has no publication row for the earlier ones,
+ * so every earlier comment was filtered out and the field arrived empty. The
+ * window gates the CARD, not each paragraph on it.
+ *
  * Bounds, all of which must hold:
  *   - strictly BEFORE the viewed term (the viewed term stays in `comments`, so
  *     the two lists never overlap)
  *   - term 1..3 only
- *   - that term's publication window has already OPENED (pass
- *     `openedTermNumbers` from `computePublishedTermNumbers`), so this only
- *     re-shows what the parent was already shown once; never a term the school
- *     hasn't released, and never one merely scheduled
  *   - submitted, and non-empty after trimming — a draft never reaches a parent
  */
 export type EarlierComment = {
@@ -148,7 +122,6 @@ export function selectEarlierComments(
     comment: string | null;
     submitted: boolean;
   }>,
-  openedTermNumbers: Set<number>,
   viewedTermNumber: number
 ): EarlierComment[] {
   // The final (T4) card carries no comment section.
@@ -160,8 +133,7 @@ export function selectEarlierComments(
       (t) =>
         t.term_number < viewedTermNumber &&
         t.term_number >= 1 &&
-        t.term_number <= 3 &&
-        openedTermNumbers.has(t.term_number)
+        t.term_number <= 3
     )
     .sort((a, b) => a.term_number - b.term_number)
     .flatMap((t) => {

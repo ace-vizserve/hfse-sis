@@ -34,8 +34,8 @@ Guarantees, so you don't need to defend against these:
 
 - Never empty strings — a blank or whitespace-only write-up is omitted entirely.
 - Never a draft — unsubmitted write-ups are filtered out server-side.
-- Never a term the school hasn't released to this parent, and never one merely _scheduled_ for a future date.
 - Never the term being viewed (that one is still in `comments`), so the two lists never overlap and nothing renders twice.
+- An earlier term does **not** need its own publication window. The viewed term's window authorises the card, and the card is designed to carry the earlier comments. (An earlier revision required one, which made this field arrive empty whenever the school had published only the current term — i.e. always.)
 - **Empty array when `termNumber` is 4.** The final card has no adviser-comment section at all, by design. Do not render a comments block on the Term 4 card.
 
 ## Three traps — read before editing

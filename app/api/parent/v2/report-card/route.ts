@@ -6,7 +6,6 @@ import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
 import { corsHeaders } from '@/lib/cors';
 import {
   computeActivePublishedTermNumbers,
-  computePublishedTermNumbers,
   filterPayloadToActiveTerms,
   selectEarlierComments,
   type PublicationRow,
@@ -215,17 +214,16 @@ export async function GET(request: Request) {
   //
   //    Each entry carries its own label + virtue theme, so the portal never has
   //    to look a term up in `terms` (which still holds only the viewed term).
-  //    See selectEarlierComments for the full set of bounds.
+  //
+  //    Authorisation is the viewed term's window, checked above — the card that
+  //    window releases is by design the one carrying terms 1..N's comments. An
+  //    earlier term does NOT need its own window: a school that publishes only
+  //    the current term (the normal case) has no publication row for the earlier
+  //    ones, and requiring one made this field arrive empty every time.
   const viewedTermNumber = termNumber ?? Math.max(...targetTermNumbers);
   const earlierComments = selectEarlierComments(
     result.payload.terms,
     result.payload.comments,
-    computePublishedTermNumbers(
-      (pubRows ?? []) as PublicationRow[],
-      (termRows ?? []) as TermNumberRow[],
-      sectionIds,
-      now
-    ),
     viewedTermNumber
   );
 
