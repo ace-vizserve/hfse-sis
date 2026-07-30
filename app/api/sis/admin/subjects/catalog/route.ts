@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { SubjectCreateSchema } from '@/lib/schemas/subject';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -17,7 +17,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 // Zod schema. Duplicate code → 409 with the existing id so the UI can
 // jump to it instead of silently failing.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['school_admin', 'superadmin']);
+  const auth = await requireCapability('subjects.create');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

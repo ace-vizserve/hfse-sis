@@ -1,5 +1,11 @@
 ﻿import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
+// The GET below stays on requireRole deliberately: it admits `teacher` so a
+// teacher can read their own assignments, and staff.read is the registrar-and-up
+// set. Mapping it to staff.read would have narrowed it; adding teacher to
+// staff.read would have widened every other staff surface. The writes below are
+// capability-gated.
+import { requireCapability } from '@/lib/auth/require-capability';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
@@ -71,11 +77,7 @@ export async function GET(request: NextRequest) {
 // role='form_adviser' â€” subject_id must be null; unique per section.
 // role='subject_teacher' â€” subject_id required; unique per (teacher, section, subject).
 export async function POST(request: NextRequest) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  const auth = await requireCapability('staff.edit_assignments');
   if ('error' in auth) return auth.error;
 
   const body = (await request.json().catch(() => null)) as {

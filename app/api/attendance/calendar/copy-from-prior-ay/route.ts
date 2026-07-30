@@ -1,6 +1,6 @@
 ﻿import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { CopyFromPriorAyPayloadSchema } from '@/lib/schemas/attendance';
@@ -22,11 +22,7 @@ import { requireCurrentAyCode } from '@/lib/academic-year';
 // (KD #50). New scope per migration 037: school_calendar overrides AND
 // calendar_events with category + audience + tentative.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  const auth = await requireCapability('school_calendar.edit');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

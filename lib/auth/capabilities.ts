@@ -91,6 +91,19 @@ export const RESOURCES = [
     actions: ['read', 'create', 'edit', 'delete'],
   },
   {
+    // Its own group, not folded into `academic_year`, even though the routes
+    // happen to admit the same two roles today. Folding them would mean
+    // unticking "Change" under Academic Year silently also revoked subject
+    // weights — a hidden coupling between two things a superadmin would expect
+    // to control separately. No `delete`: a subject is referenced by historical
+    // grade entries through subject_configs, so removal is SQL-only (KD #72).
+    key: 'subjects',
+    label: 'Subjects & Weights',
+    description:
+      'The subject list, which levels each is taught at, and the WW/PT/QA weighting behind every grade.',
+    actions: ['read', 'create', 'edit'],
+  },
+  {
     key: 'staff',
     label: 'Staff & Accounts',
     description:
@@ -212,6 +225,11 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     'sections.create',
     'sections.edit',
     'sections.delete',
+    // /sis/admin/subjects and every /api/sis/admin/subjects/** route are
+    // school_admin + superadmin (the academic coordinator is excluded).
+    'subjects.read',
+    'subjects.create',
+    'subjects.edit',
     'staff.read',
     // canSeeAccounts is `role !== 'academic_coordinator'`
     // (app/(sis)/sis/admin/staff/page.tsx:59) — she sees the Accounts tab
@@ -243,6 +261,9 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     'sections.create',
     'sections.edit',
     'sections.delete',
+    'subjects.read',
+    'subjects.create',
+    'subjects.edit',
     'staff.read',
     'staff.view_accounts',
     'staff.manage_accounts',

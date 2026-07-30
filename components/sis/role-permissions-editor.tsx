@@ -82,7 +82,7 @@ export const AREAS: Array<{ label: string; resources: ResourceKey[] }> = [
   },
   {
     label: 'Year & classes',
-    resources: ['academic_year', 'school_calendar', 'sections'],
+    resources: ['academic_year', 'school_calendar', 'sections', 'subjects'],
   },
   { label: 'Staff', resources: ['staff', 'approvers'] },
   { label: 'Grades', resources: ['grade_changes'] },

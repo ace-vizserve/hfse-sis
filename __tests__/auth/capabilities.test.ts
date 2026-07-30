@@ -91,7 +91,71 @@ const PRE_MIGRATION_GATES: Partial<Record<Capability, Role[]>> = {
     'school_admin',
     'superadmin',
   ],
+
+  // ─── Phase 3: AY & structure, staff & access ───────────────────────────────
+  // POST/PATCH/DELETE /api/sis/ay-setup were ['school_admin','superadmin'],
+  // ['school_admin','superadmin'] and ['superadmin'] respectively.
+  'academic_year.create': ['school_admin', 'superadmin'],
+  'academic_year.edit': ['school_admin', 'superadmin'],
+  'academic_year.delete': ['superadmin'],
+  // PATCH /api/sis/ay-setup/terms/[termId] — the one AY route that admits her.
+  'academic_year.edit_terms': [
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ],
+  // /api/attendance/calendar/** (6 write sites).
+  'school_calendar.edit': [
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ],
+  // GET /api/sections admitted `teacher` too — reference data (migration 005
+  // calls sections "read-only UI scaffolding").
+  'sections.read': [
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+    'teacher',
+  ],
+  'sections.create': ['academic_coordinator', 'school_admin', 'superadmin'],
+  'sections.edit': ['academic_coordinator', 'school_admin', 'superadmin'],
+  'sections.delete': ['academic_coordinator', 'school_admin', 'superadmin'],
+  // /api/sis/admin/subjects/** — its own group rather than folded into
+  // academic_year.edit, so unticking one never silently revokes the other.
+  'subjects.create': ['school_admin', 'superadmin'],
+  'subjects.edit': ['school_admin', 'superadmin'],
+  // GET /api/teacher-assignments/by-teacher.
+  'staff.read': ['academic_coordinator', 'school_admin', 'superadmin'],
+  // POST /api/teacher-assignments + DELETE /api/teacher-assignments/[id].
+  'staff.edit_assignments': [
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ],
+  'approvers.manage': ['superadmin'],
 };
+
+/**
+ * Routes deliberately LEFT on requireRole, each because its role set genuinely
+ * differs from the nearest capability's — mapping them would silently widen or
+ * narrow access. Asserted so a future sweep doesn't "finish the job" by
+ * flattening a real distinction.
+ */
+const DELIBERATELY_NOT_MIGRATED: Array<{ file: string; why: string }> = [
+  {
+    file: 'app/api/sections/[id]/publish-readiness/route.ts',
+    why: 'registrar+ only; sections.read also admits teacher, so it would widen',
+  },
+  {
+    file: 'app/api/sections/[id]/students/[enrolmentId]/route.ts',
+    why: 'edits a student enrolment, not a section, and carries its own per-field admin_notes gate',
+  },
+  {
+    file: 'app/api/teacher-assignments/route.ts',
+    why: 'its GET admits teacher so they can read their own assignments; staff.read is registrar+',
+  },
+];
 
 /** Files migrated in Phase 2 → the capabilities each must reference. */
 const MIGRATED_SITES: Array<{ file: string; capabilities: Capability[] }> = [
@@ -142,6 +206,131 @@ const MIGRATED_SITES: Array<{ file: string; capabilities: Capability[] }> = [
       'documents_pre_enrolment.validate',
       'documents_post_enrolment.validate',
     ],
+  },
+  // Phase 3
+  {
+    file: 'app/api/sis/ay-setup/route.ts',
+    capabilities: [
+      'academic_year.create',
+      'academic_year.edit',
+      'academic_year.delete',
+    ],
+  },
+  {
+    file: 'app/api/sis/ay-setup/terms/[termId]/route.ts',
+    capabilities: ['academic_year.edit_terms'],
+  },
+  {
+    file: 'app/api/sis/ay-setup/accepting-applications/route.ts',
+    capabilities: ['academic_year.edit'],
+  },
+  {
+    file: 'app/api/sis/ay-setup/seed-calendar/route.ts',
+    capabilities: ['academic_year.edit'],
+  },
+  {
+    file: 'app/api/sis/ay-setup/copy-teacher-assignments/route.ts',
+    capabilities: ['academic_year.edit'],
+  },
+  {
+    file: 'app/api/sis/admin/school-config/route.ts',
+    capabilities: ['academic_year.edit'],
+  },
+  {
+    file: 'app/api/attendance/calendar/route.ts',
+    capabilities: ['school_calendar.edit'],
+  },
+  {
+    file: 'app/api/attendance/calendar/events/route.ts',
+    capabilities: ['school_calendar.edit'],
+  },
+  {
+    file: 'app/api/attendance/calendar/copy-from-prior-ay/route.ts',
+    capabilities: ['school_calendar.edit'],
+  },
+  {
+    file: 'app/api/sections/route.ts',
+    capabilities: ['sections.read', 'sections.create'],
+  },
+  {
+    file: 'app/api/sections/[id]/route.ts',
+    capabilities: ['sections.edit', 'sections.delete'],
+  },
+  {
+    file: 'app/api/sections/[id]/generate-index/route.ts',
+    capabilities: ['sections.edit'],
+  },
+  {
+    file: 'app/api/sections/[id]/schedule/route.ts',
+    capabilities: ['sections.edit'],
+  },
+  {
+    file: 'app/api/sections/[id]/track/route.ts',
+    capabilities: ['sections.edit'],
+  },
+  {
+    file: 'app/api/sections/[id]/subjects/route.ts',
+    capabilities: ['sections.edit'],
+  },
+  {
+    file: 'app/api/sections/[id]/subjects/[subjectConfigId]/route.ts',
+    capabilities: ['sections.edit'],
+  },
+  {
+    file: 'app/api/sections/[id]/subjects/attach-many/route.ts',
+    capabilities: ['sections.edit'],
+  },
+  {
+    file: 'app/api/sections/[id]/subjects/load-defaults/route.ts',
+    capabilities: ['sections.edit'],
+  },
+  {
+    file: 'app/api/sis/admin/subjects/route.ts',
+    capabilities: ['subjects.create'],
+  },
+  {
+    file: 'app/api/sis/admin/subjects/[configId]/route.ts',
+    capabilities: ['subjects.edit'],
+  },
+  {
+    file: 'app/api/sis/admin/subjects/[configId]/report-map/route.ts',
+    capabilities: ['subjects.edit'],
+  },
+  {
+    file: 'app/api/sis/admin/subjects/catalog/route.ts',
+    capabilities: ['subjects.create'],
+  },
+  {
+    file: 'app/api/sis/admin/subjects/catalog/[id]/route.ts',
+    capabilities: ['subjects.edit'],
+  },
+  {
+    file: 'app/api/sis/admin/subjects/level-offerings/route.ts',
+    capabilities: ['subjects.edit'],
+  },
+  {
+    file: 'app/api/sis/admin/users/route.ts',
+    capabilities: ['staff.manage_accounts'],
+  },
+  {
+    file: 'app/api/sis/admin/users/[id]/route.ts',
+    capabilities: ['staff.manage_accounts'],
+  },
+  {
+    file: 'app/api/sis/admin/approvers/route.ts',
+    capabilities: ['approvers.manage'],
+  },
+  {
+    file: 'app/api/sis/admin/approvers/[id]/route.ts',
+    capabilities: ['approvers.manage'],
+  },
+  {
+    file: 'app/api/teacher-assignments/[id]/route.ts',
+    capabilities: ['staff.edit_assignments'],
+  },
+  {
+    file: 'app/api/teacher-assignments/by-teacher/route.ts',
+    capabilities: ['staff.read'],
   },
 ];
 
@@ -291,6 +480,18 @@ describe('parity with the gates these capabilities replace', () => {
     }
   });
 
+  it('the routes left on requireRole still are, and for a stated reason', () => {
+    // Each of these has a role set that no capability matches. Pinning them
+    // stops a future sweep from "finishing the job" by flattening a real
+    // distinction — every one would either widen or narrow access.
+    for (const { file, why } of DELIBERATELY_NOT_MIGRATED) {
+      expect(
+        source(file),
+        `${file} no longer calls requireRole — ${why}`
+      ).toMatch(/requireRole\(/);
+    }
+  });
+
   it('the read-only queue component defaults to no actions', () => {
     // A caller that forgets the prop must render a read-only table, not
     // buttons — the same fail-safe direction KD #163 chose for row actions.
@@ -327,15 +528,28 @@ describe('parity with the gates these capabilities replace', () => {
   });
 });
 
-describe('migration 101 seed', () => {
-  it('matches DEFAULT_ROLE_CAPABILITIES exactly', () => {
-    const sql = source('supabase/migrations/101_role_permissions.sql');
-    const insertBlock = sql.slice(
-      sql.indexOf('insert into public.role_permissions')
-    );
-    const seeded = [
-      ...insertBlock.matchAll(/\(\s*'([a-z_]+)'\s*,\s*'([a-z_.]+)'\s*\)/g),
-    ].map(([, role, capability]) => `${role}|${capability}`);
+/**
+ * Every migration that seeds role_permissions. A new group added later needs its
+ * own migration (101 is already applied to production and must not be edited),
+ * so this list grows — and the parity assertion below is over the UNION, which
+ * is what the table actually ends up holding.
+ */
+const SEED_MIGRATIONS = [
+  'supabase/migrations/101_role_permissions.sql',
+  'supabase/migrations/102_role_permissions_subjects.sql',
+];
+
+describe('the seed migrations', () => {
+  it('together match DEFAULT_ROLE_CAPABILITIES exactly', () => {
+    const seeded = SEED_MIGRATIONS.flatMap((file) => {
+      const sql = source(file);
+      const insertBlock = sql.slice(
+        sql.indexOf('insert into public.role_permissions')
+      );
+      return [
+        ...insertBlock.matchAll(/\(\s*'([a-z_]+)'\s*,\s*'([a-z_.]+)'\s*\)/g),
+      ].map(([, role, capability]) => `${role}|${capability}`);
+    });
 
     expect(
       seeded.length,

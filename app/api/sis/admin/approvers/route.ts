@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { AssignApproverSchema } from '@/lib/schemas/approvers';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -11,7 +11,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 // Per-flow deletion is handled by /api/sis/admin/approvers/[id] DELETE.
 
 export async function GET() {
-  const auth = await requireRole(['superadmin']);
+  const auth = await requireCapability('approvers.manage');
   if ('error' in auth) return auth.error;
 
   const service = createServiceClient();
@@ -29,7 +29,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireRole(['superadmin']);
+  const auth = await requireCapability('approvers.manage');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

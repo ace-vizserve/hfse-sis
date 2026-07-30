@@ -1,5 +1,5 @@
 ﻿import { NextResponse, type NextRequest } from 'next/server';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
@@ -9,12 +9,10 @@ import { applyTrackBundle } from '@/lib/sis/section-track';
 
 // List sections for the current academic year, annotated with enrolment counts.
 export async function GET() {
-  const auth = await requireRole([
-    'teacher',
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  // sections.read includes `teacher` — `sections` is reference data migration
+  // 005 calls "read-only UI scaffolding", and teachers need the list to pick a
+  // class. Same four roles the array named.
+  const auth = await requireCapability('sections.read');
   if ('error' in auth) return auth.error;
 
   const supabase = await createClient();
@@ -69,11 +67,7 @@ export async function GET() {
 
 // POST /api/sections â€” mid-year section create under the current AY.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  const auth = await requireCapability('sections.create');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
