@@ -71,6 +71,7 @@ import {
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
 import {
   ENROLLED_STATUSES,
+  isEnrolledStatus,
   WITHDRAWAL_REASON_LABELS,
   type WithdrawalReason,
 } from '@/lib/schemas/enrolment';
@@ -337,8 +338,20 @@ export default async function RecordsStudentCrossYearPage({
     history.map((h) => [h.ayCode, h.enroleeNumber] as const)
   );
   const ayCount = new Set(placements.map((p) => p.ayCode)).size;
-  const activePlacement = placements.find(
-    (p) => p.enrollmentStatus === 'active'
+  // "Where is this student now" — a late enrollee counts. This matched
+  // `=== 'active'` exactly, so for a student whose only non-withdrawn placement
+  // is `late_enrollee` it came back undefined, and three things degraded at
+  // once: the hero's "Currently in P1 Respect" line vanished, the sibling-
+  // section lookup that feeds the transfer dialog returned [] (no destinations
+  // to move them to), and the status badge received null.
+  //
+  // Measured on AY2026 when found: 20 students were in exactly that state.
+  //
+  // Nothing becomes less precise by including them — the badge below renders
+  // `activePlacement.enrollmentStatus`, so a late enrollee still reads "Late".
+  // This only stops the page pretending they have no current class.
+  const activePlacement = placements.find((p) =>
+    isEnrolledStatus(p.enrollmentStatus)
   );
   const lifecycleEntry = (() => {
     if (history.length === 0) return null;
@@ -827,9 +840,17 @@ function PlacementSection({
                     (r.enrollmentStatus === 'active' ||
                       r.enrollmentStatus === 'late_enrollee' ||
                       r.enrollmentStatus === 'withdrawn');
+                  // Late enrollees are transferable. This required exactly
+                  // 'active', which contradicted the server:
+                  // lib/sis/section-transfer.ts states outright that "a
+                  // `late_enrollee` … is a legitimate transfer source — the
+                  // registrar can move them to the section they'll start in",
+                  // and its own source lookup matches both statuses. So the
+                  // route accepted the operation while the UI hid the button
+                  // for it.
                   const isTransferable =
                     isCurrentAy &&
-                    r.enrollmentStatus === 'active' &&
+                    isEnrolledStatus(r.enrollmentStatus) &&
                     currentEnroleeNumber !== null;
 
                   return (
