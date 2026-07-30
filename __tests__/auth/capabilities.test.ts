@@ -53,6 +53,36 @@ function holdersOf(capability: Capability): Role[] {
  * WIRING check — each migrated file must still ask for the capability we think
  * it asks for.
  */
+/**
+ * Grants that have deliberately MOVED since the capability layer landed.
+ *
+ * PRE_MIGRATION_GATES below is a historical record — what each gate enforced
+ * before the layer existed — and editing it in place would destroy exactly the
+ * evidence that makes it useful. So a real permission change is recorded here
+ * instead, with the date, the instruction behind it, and the resulting holder
+ * set. The parity test reads this first and falls back to the baseline.
+ *
+ * Adding an entry here is a permission change on a live system. It should be
+ * traceable to an explicit decision, never a convenience during a refactor.
+ */
+const DELIBERATE_WIDENINGS: Partial<Record<Capability, Role[]>> = {
+  // 2026-07-31, Mr Ace: the academic coordinator sets up the academic year,
+  // the classes and the subject weights, so she gets those SIS Admin surfaces
+  // rather than reaching them through Records cross-links with two of the
+  // three shut. Her AY power is capped at school_admin's — no `delete`.
+  // Migration 105.
+  'academic_year.read': ['academic_coordinator', 'school_admin', 'superadmin'],
+  'academic_year.create': [
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ],
+  'academic_year.edit': ['academic_coordinator', 'school_admin', 'superadmin'],
+  'subjects.read': ['academic_coordinator', 'school_admin', 'superadmin'],
+  'subjects.create': ['academic_coordinator', 'school_admin', 'superadmin'],
+  'subjects.edit': ['academic_coordinator', 'school_admin', 'superadmin'],
+};
+
 const PRE_MIGRATION_GATES: Partial<Record<Capability, Role[]>> = {
   // requireRole(['academic_coordinator','superadmin','admissions','p_file_officer'])
   // then 403 p_file_officer when the student isn't enrolled.
@@ -419,10 +449,13 @@ describe('parity with the gates these capabilities replace', () => {
 
   it('every migrated capability still has its original holder set', () => {
     for (const [capability, roles] of Object.entries(PRE_MIGRATION_GATES)) {
+      const expected = DELIBERATE_WIDENINGS[capability as Capability];
       expect(
         holdersOf(capability as Capability),
-        `holders of ${capability} changed`
-      ).toEqual([...roles].sort());
+        expected
+          ? `holders of ${capability} no longer match its recorded widening`
+          : `holders of ${capability} changed — if this was intentional, add it to DELIBERATE_WIDENINGS with a reason rather than editing PRE_MIGRATION_GATES`
+      ).toEqual([...(expected ?? roles)].sort());
     }
   });
 
@@ -555,6 +588,11 @@ describe('parity with the gates these capabilities replace', () => {
 const SEED_MIGRATIONS = [
   'supabase/migrations/101_role_permissions.sql',
   'supabase/migrations/102_role_permissions_subjects.sql',
+  // Unlike 101 and 102, this one is a real widening rather than a
+  // transcription — the academic coordinator gaining Subject Weights and AY
+  // Setup (2026-07-31). The parity assertion below is over the union, so it
+  // holds regardless.
+  'supabase/migrations/105_role_permissions_coordinator_sis.sql',
 ];
 
 describe('the seed migrations', () => {

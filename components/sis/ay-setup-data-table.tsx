@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
+import type { Role } from '@/lib/auth/roles';
 import { AyAcceptingApplicationsToggle } from '@/components/sis/ay-accepting-applications-toggle';
 import { AyDeleteDialog } from '@/components/sis/ay-delete-dialog';
 import { AySwitchActiveDialog } from '@/components/sis/ay-switch-active-dialog';
@@ -35,7 +36,15 @@ export type AyTableRow = AcademicYearListItem & {
   blockers: string[];
   activeAyCode: string | null;
   otherAys: Array<{ ayCode: string; label: string }>;
-  role: 'school_admin' | 'superadmin';
+  // The full role type, not a hand-narrowed union. Which roles can reach this
+  // page is decided by ROUTE_ACCESS plus the `academic_year.read` capability,
+  // and it changed on 2026-07-31 when the academic coordinator gained
+  // /sis/ay-setup (migration 105) — a narrowed union here just meant the page
+  // stopped type-checking the moment that set moved, without protecting
+  // anything. The only thing this prop drives is `canDelete` below, which is
+  // superadmin-only, and superadmin remains the sole holder of
+  // `academic_year.delete`, so the check and the capability agree.
+  role: Role | null;
 };
 
 // ─── Derive "status" string for facet filtering ───────────────────────────────

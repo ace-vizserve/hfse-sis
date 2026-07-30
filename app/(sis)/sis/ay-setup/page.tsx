@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation';
 import { CalendarRange, CheckCircle2 } from 'lucide-react';
 
+import { can } from '@/lib/auth/capabilities';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { NewAyButton } from '@/components/sis/ay-setup-wizard';
 import {
   AySetupDataTable,
@@ -30,8 +32,12 @@ export default async function AySetupPage({
   if (!sessionUser) redirect('/login');
 
   const role = sessionUser.role;
-  if (role !== 'school_admin' && role !== 'superadmin') {
-    redirect('/sis');
+  // Gated on the capability rather than a role list, so a grant made in
+  // /sis/admin/roles is enough to open this page — same shape as
+  // /sis/admin/subjects. The capability alone is NOT sufficient: ROUTE_ACCESS
+  // still has to admit the role, because the proxy runs first.
+  if (!can(await getCapabilitiesForRole(role), 'academic_year.read')) {
+    redirect('/');
   }
 
   const ays = await listAcademicYears();

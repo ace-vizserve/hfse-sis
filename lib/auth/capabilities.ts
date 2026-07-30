@@ -184,10 +184,16 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     // so she has `validate` without `read` on this side. Left as-is; Phase 2
     // decides what the unified queue does about it.
     'documents_post_enrolment.validate',
-    // ASYMMETRY, reproduced: PATCH /api/sis/ay-setup/terms/[termId] admits her
-    // (route.ts:26-30) while /sis/ay-setup redirects her away — so `edit_terms`
-    // without `read`. Her real entry point for virtue themes is
-    // /evaluation/virtue-themes, which uses a different route (KD #137).
+    // The asymmetry that used to sit here — `edit_terms` without `read`,
+    // because PATCH /api/sis/ay-setup/terms/[termId] admitted her while
+    // /sis/ay-setup redirected her away — was RESOLVED on 2026-07-31 on Mr
+    // Ace's instruction: she now gets the AY Setup page itself. Her AY power is
+    // deliberately identical to school_admin's (read/create/edit/edit_terms and
+    // NOT delete, which stays superadmin-only per KD #40), so the page has no
+    // button that renders for her and then 403s.
+    'academic_year.read',
+    'academic_year.create',
+    'academic_year.edit',
     'academic_year.edit_terms',
     'school_calendar.read',
     'school_calendar.edit',
@@ -195,6 +201,17 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     'sections.create',
     'sections.edit',
     'sections.delete',
+    // Granted 2026-07-31 on Mr Ace's instruction. /sis/admin/subjects and its
+    // routes were school_admin + superadmin; the ROUTE_ACCESS row had already
+    // been widened to admit her in anticipation of exactly this grant, so the
+    // page was reachable but redirected on the missing `subjects.read`. All
+    // three actions, not just read — the weights matrix's "add subject" and
+    // per-cell editors are on the same surface, and granting read alone leaves
+    // buttons that render and then 403 (the failure mode this file's
+    // school_admin block flags on the admissions validation queue).
+    'subjects.read',
+    'subjects.create',
+    'subjects.edit',
     'staff.read',
     'staff.edit_assignments',
     // /markbook/change-requests admits her (page.tsx:30-37) but decide.ts:124

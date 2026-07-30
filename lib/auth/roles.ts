@@ -388,7 +388,7 @@ const ADMISSIONS_NAV: NavSection[] = [
       {
         href: '/sis/ay-setup',
         label: 'AY Setup',
-        requiresRoles: ['school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -510,7 +510,7 @@ const SIS_NAV: NavSection[] = [
         href: '/sis/ay-setup',
         label: 'AY Setup',
         countKey: 'aySetupReadiness',
-        requiresRoles: ['school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
       {
         href: '/sis/calendar',
@@ -803,7 +803,14 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
       'superadmin',
     ],
   },
-  { prefix: '/sis/ay-setup', allowed: ['school_admin', 'superadmin'] },
+  // academic_coordinator added 2026-07-31 (Mr Ace) — she sets up the academic
+  // year alongside classes and subject weights. The proxy runs before any page
+  // guard, so this row is what lets her through; what she may DO once inside is
+  // the `academic_year.*` capability set, editable at /sis/admin/roles.
+  {
+    prefix: '/sis/ay-setup',
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
+  },
   {
     prefix: '/sis/calendar',
     allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
