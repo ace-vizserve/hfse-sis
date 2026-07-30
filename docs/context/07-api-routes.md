@@ -196,7 +196,6 @@ Related reads: `GET /api/sis/today-term` (current-term resolver, KD #116), `GET 
 | `/api/sis/admin/subjects/:configId`          | PATCH             | school_admin+                     | Per-AY subject weights/slots; syncs unlocked sheets via RPC (KD #99)    |
 | `/api/sis/admin/subjects/catalog` (+ nested) | POST / DELETE     | school_admin+                     | Subject catalog + (subject × level) configs (KD #72)                    |
 | `/api/sis/admin/template/**`                 | POST/PATCH/DELETE | school_admin+                     | Master class template sections + subject configs + apply-to-AY (KD #66) |
-| `/api/sis/admin/environment` (+ `/topup`)    | POST/DELETE       | superadmin                        | Test-AY environment switcher + demo-data top-up (KD #52)                |
 | `/api/sis/discount-codes` (+ `/:id`)         | POST / PATCH      | admissions, school_admin+         | Discount-code catalog (KD #133)                                         |
 
 ## Dashboard Drill Routes
