@@ -548,6 +548,11 @@ const SIS_NAV: NavSection[] = [
         requiresRoles: ['superadmin'],
       },
       {
+        href: '/sis/admin/roles',
+        label: 'Role permissions',
+        requiresRoles: ['superadmin'],
+      },
+      {
         href: '/sis/admin/school-config',
         label: 'School Config',
         requiresRoles: ['school_admin', 'superadmin'],
@@ -736,6 +741,11 @@ export const NAV_BY_MODULE: {
 // fallow-ignore-next-line unused-export
 export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   { prefix: '/sis/admin/approvers', allowed: ['superadmin'] },
+  // Who may edit what each role is allowed to do. Superadmin only, and
+  // deliberately gated on the ROLE rather than on a capability: a capability
+  // controlling access to the capability editor could be revoked, locking the
+  // holder out of the only surface that could put it back.
+  { prefix: '/sis/admin/roles', allowed: ['superadmin'] },
   { prefix: '/sis/admin/subjects', allowed: ['school_admin', 'superadmin'] },
   {
     prefix: '/sis/admin/school-config',

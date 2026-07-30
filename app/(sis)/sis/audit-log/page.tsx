@@ -144,6 +144,7 @@ const SIS_AUDIT_ALLOWLIST = [
   'user.create',
   'user.info.update',
   'user.role.update',
+  'role.permissions.update',
   'user.disable',
   'user.enable',
   'user.delete',

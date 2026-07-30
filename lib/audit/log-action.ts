@@ -133,6 +133,9 @@ export const ALL_AUDIT_ACTIONS = [
   'user.create',
   'user.info.update',
   'user.role.update',
+  // Which capabilities a ROLE holds (public.role_permissions, migration 101) —
+  // distinct from user.role.update, which is which role a PERSON holds.
+  'role.permissions.update',
   'user.disable',
   'user.enable',
   'user.delete',
@@ -193,7 +196,10 @@ export type AuditEntityType =
   | 'evaluation_checklist_response'
   | 'evaluation_subject_comment'
   | 'evaluation_ptc_feedback'
-  | 'classroom_note';
+  | 'classroom_note'
+  // The entity is the ROLE whose permissions changed, so entity_id is the role
+  // name — not a uuid. entity_id is `text` since migration 043.
+  | 'role_permissions';
 
 type LogActionParams = {
   service: SupabaseClient;
