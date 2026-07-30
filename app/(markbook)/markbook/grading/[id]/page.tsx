@@ -12,6 +12,7 @@ import {
   Users,
 } from 'lucide-react';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import {
   loadPriorTermGrades,
   type PriorTermGrade,
@@ -185,14 +186,27 @@ export default async function GradingSheetPage({
   // answer "who teaches this". Declared here so it runs inside the Promise.all
   // below rather than adding a serial round-trip.
   //
-  // RLS on teacher_assignments allows authenticated reads, so the ordinary
-  // cookie-scoped client is enough — no service-role escalation.
+  // Read with the SERVICE client, not the cookie-scoped one. The RLS policy on
+  // teacher_assignments is
+  //   using (is_registrar_or_above() or teacher_user_id = auth.uid())
+  // — a teacher sees ONLY THEIR OWN assignment rows (migration 005). So a
+  // cookie-scoped read of "who teaches this subject" returns nothing for a form
+  // class adviser (their row is form_adviser, filtered out by role here), and
+  // for a subject teacher returns only themselves — which silently defeats the
+  // whole point of resolving ALL teachers for a co-taught pair (KD #158). It
+  // looked correct only because managers pass is_registrar_or_above().
+  //
+  // This is display-only (a staff name on a sheet the viewer is already
+  // authorized to read), and it matches the sibling surfaces: /markbook/grading
+  // resolves the same question on a service client, and getStaffDisplayNameById
+  // below is itself service-backed. The cookie client here was the outlier.
+  //
   // (async IIFE, not a bare .then() — the PostgREST builder is a PromiseLike,
   // which does not satisfy the Promise<...> annotation Promise.all infers from.)
   const subjectTeacherPromise: Promise<SubjectTeacherAssignmentRow[]> =
     sectionForSeed?.id && subjectEarly?.id
       ? (async () => {
-          const { data } = await supabase
+          const { data } = await createServiceClient()
             .from('teacher_assignments')
             .select('section_id, subject_id, teacher_user_id')
             .eq('role', 'subject_teacher')
