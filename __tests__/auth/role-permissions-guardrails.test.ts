@@ -153,6 +153,23 @@ describe('findOrphanedCapabilities', () => {
   });
 });
 
+describe('the role cards', () => {
+  it('every resource has a home in exactly one area', async () => {
+    // The cards show four area counts plus a total. A resource missing from
+    // AREAS would still be editable in the drawer but its permissions would
+    // vanish from every card's breakdown while still counting toward the
+    // total — the numbers would stop adding up, quietly.
+    const { AREAS } = await import('@/components/sis/role-permissions-editor');
+    const { RESOURCES } = await import('@/lib/auth/capabilities');
+
+    const placed = AREAS.flatMap((area) => area.resources);
+    expect(new Set(placed).size, 'a resource is in two areas').toBe(
+      placed.length
+    );
+    expect([...placed].sort()).toEqual(RESOURCES.map((r) => r.key).sort());
+  });
+});
+
 describe('the editor surface', () => {
   it('is gated on the superadmin ROLE, never on a capability', () => {
     // A capability controlling access to the capability editor could be

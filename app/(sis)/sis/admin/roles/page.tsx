@@ -6,6 +6,7 @@ import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { getRoleCapabilities } from '@/lib/auth/permission-map';
 import { ROLES, type Role } from '@/lib/auth/roles';
+import { getStaffCountsByRole } from '@/lib/auth/staff-list';
 import { lockedRoleNote } from '@/lib/copy/data-table';
 import { getSessionUser } from '@/lib/supabase/server';
 
@@ -26,7 +27,10 @@ export default async function RolePermissionsPage() {
   if (!sessionUser) redirect('/login');
   if (sessionUser.role !== 'superadmin') redirect('/sis');
 
-  const map = await getRoleCapabilities();
+  const [map, peopleByRole] = await Promise.all([
+    getRoleCapabilities(),
+    getStaffCountsByRole(),
+  ]);
   const grants = ROLES.flatMap((role) =>
     (map[role] ?? []).map((capability) => ({ role, capability }))
   );
@@ -84,6 +88,15 @@ export default async function RolePermissionsPage() {
             — the audit log shows who changed which role, and how many
             permissions were added or removed.
           </li>
+          <li>
+            <strong className="font-medium text-foreground">
+              These six roles are fixed
+            </strong>{' '}
+            — a new role can&apos;t be added here. A role name is stored inside
+            every person&apos;s sign-in, and parts of the database check for
+            these names directly, so adding one is a development change. Ask,
+            and say what the new role should and shouldn&apos;t be able to do.
+          </li>
         </ul>
       </section>
 
@@ -91,6 +104,7 @@ export default async function RolePermissionsPage() {
         grants={grants}
         editableRoles={editableRoles}
         lockedRole={LOCKED_ROLE}
+        peopleByRole={peopleByRole}
       />
     </PageShell>
   );
