@@ -11,11 +11,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // been assigned yet at that point.
 
 let mockAuthUser = { id: 'caller-1', email: 'caller@hfse.test' };
-const mockRequireRole = vi.fn(() =>
-  Promise.resolve({ user: mockAuthUser, role: 'superadmin' as const })
+// The route gates on `staff.manage_accounts` rather than the superadmin role
+// directly (the capability layer). Same holders — superadmin only — so these
+// tests are unchanged in intent; only the mocked module moved.
+const mockRequireCapability = vi.fn(() =>
+  Promise.resolve({
+    user: mockAuthUser,
+    role: 'superadmin' as const,
+    capabilities: ['staff.manage_accounts'] as const,
+  })
 );
-vi.mock('@/lib/auth/require-role', () => ({
-  requireRole: () => mockRequireRole(),
+vi.mock('@/lib/auth/require-capability', () => ({
+  requireCapability: () => mockRequireCapability(),
+  requireAnyCapability: () => mockRequireCapability(),
 }));
 
 type LogActionParams = {
@@ -104,9 +112,13 @@ function callDelete(id = 'target-1') {
 describe('DELETE /api/sis/admin/users/[id]', () => {
   beforeEach(() => {
     mockAuthUser = { id: 'caller-1', email: 'caller@hfse.test' };
-    mockRequireRole.mockClear();
-    mockRequireRole.mockImplementation(() =>
-      Promise.resolve({ user: mockAuthUser, role: 'superadmin' as const })
+    mockRequireCapability.mockClear();
+    mockRequireCapability.mockImplementation(() =>
+      Promise.resolve({
+        user: mockAuthUser,
+        role: 'superadmin' as const,
+        capabilities: ['staff.manage_accounts'] as const,
+      })
     );
     mockLogAction.mockClear();
     mockGetUserFootprint.mockClear();

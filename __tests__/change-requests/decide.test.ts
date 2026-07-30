@@ -35,6 +35,26 @@ vi.mock('@/lib/change-requests/labels', () => ({
   fetchRegistrarEmails: vi.fn(async () => []),
 }));
 
+// Approval is gated on the grade_changes.approve capability rather than a role
+// name. The real lookup reads role_permissions through the service client inside
+// unstable_cache, which has neither a database nor a request scope here — so
+// resolve it from the built-in defaults, which is the same answer production
+// gets from the seeded table.
+vi.mock('@/lib/auth/permission-map', async () => {
+  const { DEFAULT_ROLE_CAPABILITIES } = await import('@/lib/auth/capabilities');
+  return {
+    getCapabilitiesForRole: async (role: string | null) =>
+      role
+        ? (DEFAULT_ROLE_CAPABILITIES[
+            role as keyof typeof DEFAULT_ROLE_CAPABILITIES
+          ] ?? [])
+        : [],
+    getRoleCapabilities: async () => DEFAULT_ROLE_CAPABILITIES,
+    roleCan: async () => false,
+    PERMISSIONS_CACHE_TAG: 'permissions',
+  };
+});
+
 import { decideChangeRequest } from '@/lib/change-requests/decide';
 
 // ── Minimal chainable Supabase service-client stub ────────────────────────
@@ -307,7 +327,11 @@ describe('decideChangeRequest', () => {
     expect(result.error).toBe('request not found');
   });
 
-  it('non-school_admin role cannot review → 403', async () => {
+  // The academic coordinator FILES and APPLIES change requests; approving them
+  // is a different role's job, which is the separation of duties the
+  // dual-reviewer trail exists to create. She holds grade_changes.read but not
+  // .approve.
+  it('a role without grade_changes.approve cannot review → 403', async () => {
     const service = makeService({
       existing: { data: baseRow(), error: null },
       updated: { data: baseRow({ status: 'approved' }), error: null },
@@ -327,6 +351,6 @@ describe('decideChangeRequest', () => {
 
     expect(result.ok).toBe(false);
     expect(result.httpStatus).toBe(403);
-    expect(result.error).toMatch(/Only school admins/i);
+    expect(result.error).toMatch(/not allowed to approve or reject/i);
   });
 });

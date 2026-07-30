@@ -1,7 +1,7 @@
 import { revalidateTag } from 'next/cache';
 import { NextResponse, type NextRequest } from 'next/server';
 import PDFMerger from 'pdf-merger-js';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -66,7 +66,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ enroleeNumber: string }> }
 ) {
-  const auth = await requireRole(['p_file_officer', 'superadmin']);
+  // Exactly the holders of the role array this replaces (p_file_officer +
+  // superadmin), pinned by a test. Staff upload exists only on the
+  // post-enrolment side: an applicant's files arrive from the parent portal.
+  const auth = await requireCapability('documents_post_enrolment.upload');
   if ('error' in auth) return auth.error;
 
   const { enroleeNumber } = await params;

@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import {
   CreateAySchema,
   DeleteAySchema,
@@ -18,9 +18,9 @@ import { createServiceClient } from '@/lib/supabase/service';
 //   - copies sections + subject_configs from the most-recent prior AY
 //   - creates the 4 AY-prefixed admissions tables
 //
-// Role: admin + superadmin (KD #32).
+// Permission: academic_year.create (school_admin + superadmin today).
 export async function POST(request: Request) {
-  const auth = await requireRole(['school_admin', 'superadmin']);
+  const auth = await requireCapability('academic_year.create');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -110,9 +110,9 @@ export async function POST(request: Request) {
 // Switch the `is_current` flag to the given target AY. Idempotent; always
 // leaves exactly one row at `is_current=true` (or zero if target not found).
 //
-// Role: admin + superadmin.
+// Permission: academic_year.edit (school_admin + superadmin today).
 export async function PATCH(request: Request) {
-  const auth = await requireRole(['school_admin', 'superadmin']);
+  const auth = await requireCapability('academic_year.edit');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -207,9 +207,12 @@ export async function PATCH(request: Request) {
 // server-side and raises on any blocker. Drops the 4 AY-prefixed admissions
 // tables and removes the SIS-side rows in one tx.
 //
-// Role: superadmin ONLY (KD #2, destructive-ops carve-out).
+// Permission: academic_year.delete — superadmin only today (KD #2,
+// destructive-ops carve-out), and its own action precisely so that granting
+// someone the right to CREATE or CONFIGURE a year never also grants deleting
+// one.
 export async function DELETE(request: Request) {
-  const auth = await requireRole(['superadmin']);
+  const auth = await requireCapability('academic_year.delete');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

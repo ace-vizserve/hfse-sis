@@ -143,9 +143,17 @@ export default async function GradingSheetPage({
   // late-enrollees added after sheet generation are picked up
   // automatically (self-healing). Bulk generate (migration 036) seeds
   // up-front, so this is typically a no-op insert.
+  //
+  // Runs on the SERVICE client, not the viewer's. This was the one caller of a
+  // `security definer` RPC through the cookie client, which is why the function
+  // had to be executable by `authenticated` — and a grant to `authenticated` is
+  // a grant to every signed-in session, including a parent's role-less one,
+  // callable straight over PostgREST. The page has already established who the
+  // viewer is by this point, so running the seed as the service role loses
+  // nothing and lets migration 103 close the grant.
   const sectionForSeed = first(sheet.section as Section | Section[] | null);
   if (sectionForSeed?.id) {
-    await supabase.rpc('seed_grade_entries_for_sheet', {
+    await createServiceClient().rpc('seed_grade_entries_for_sheet', {
       p_sheet_id: id,
       p_section_id: sectionForSeed.id,
     });

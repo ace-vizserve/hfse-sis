@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
 
 import { logAction } from '@/lib/audit/log-action';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { createServiceClient } from '@/lib/supabase/service';
 import { ensureTermSeeded } from '@/lib/attendance/calendar';
 
@@ -17,7 +17,11 @@ import { ensureTermSeeded } from '@/lib/attendance/calendar';
 // `inserted` is the total new rows written across all terms; `terms` is
 // the count of dated terms processed.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['school_admin', 'superadmin']);
+  // academic_year.edit, NOT school_calendar.edit: this is the AY-setup step that
+  // lays down a year's school days, and it admits school_admin + superadmin
+  // only, whereas editing the calendar day-to-day also admits the academic
+  // coordinator. Mapping it to school_calendar.edit would have widened it.
+  const auth = await requireCapability('academic_year.edit');
   if ('error' in auth) return auth.error;
 
   let body: unknown;

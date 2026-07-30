@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
 
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { SchoolConfigUpdateSchema } from '@/lib/schemas/school-config';
@@ -15,7 +15,9 @@ import { getCurrentAcademicYear } from '@/lib/academic-year';
 // payload; only fields present in the body are touched. Audit action:
 // `school_config.update`; fires once per request with the full diff.
 export async function PATCH(request: NextRequest) {
-  const auth = await requireRole(['school_admin', 'superadmin']);
+  // School-wide settings sit under academic_year: the resource covers the year,
+  // its terms, and school-wide configuration, and this route's role set matches.
+  const auth = await requireCapability('academic_year.edit');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

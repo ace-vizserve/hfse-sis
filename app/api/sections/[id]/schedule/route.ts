@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { SectionScheduleAssignSchema } from '@/lib/schemas/section';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -39,11 +39,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  const auth = await requireCapability('sections.edit');
   if ('error' in auth) return auth.error;
 
   const { id: sectionId } = await params;

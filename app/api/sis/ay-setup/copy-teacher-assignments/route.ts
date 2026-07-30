@@ -1,6 +1,6 @@
 ﻿import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
@@ -12,7 +12,12 @@ import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 // Returns the per-bucket counts verbatim so the UI can show a "N copied,
 // M skipped (no section), K already existed" summary.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['school_admin', 'superadmin']);
+  // academic_year.edit, NOT staff.edit_assignments: this is the AY-rollover step
+  // that carries last year's assignments forward, and it admits school_admin +
+  // superadmin only, whereas assigning a teacher to a class day-to-day also
+  // admits the academic coordinator. Mapping it to the staff capability would
+  // have widened it.
+  const auth = await requireCapability('academic_year.edit');
   if ('error' in auth) return auth.error;
 
   const body = (await request.json().catch(() => null)) as {

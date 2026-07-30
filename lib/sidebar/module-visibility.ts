@@ -16,8 +16,18 @@ import { SIDEBAR_REGISTRY, type SidebarModule } from '@/lib/sidebar/registry';
 //     teachers from the module.
 //
 // So a subject-teacher-only user clicks either tile and lands on an empty list
-// with nothing they can ever do. That is not a data leak — RLS and the page
-// guards hold — but it is a promise the app can't keep.
+// with nothing they can ever do — a promise the app can't keep.
+//
+// This comment used to add "that is not a data leak — RLS and the page guards
+// hold." That was FALSE for two attendance pages, and the correction is worth
+// keeping visible here rather than quietly deleting: `/attendance/[sectionId]`
+// and its `/summary` sibling read marks through the SERVICE client (see the
+// header of lib/attendance/queries.ts), so `attendance_daily`'s
+// `is_adviser_for_section` RLS never applied, and neither page checked the
+// assignment itself — a subject-teacher-only user who typed the URL saw the
+// full register. Both now gate on `canReadAttendance` (KD #163). The claim
+// holds again, but only because those guards were added; RLS alone never
+// carried it on a service-client read path.
 //
 // The FCA/subject distinction lives in `teacher_assignments`, not in `Role`
 // (KD #160), which is why this can't be expressed in ROUTE_ACCESS and needs the
@@ -41,6 +51,17 @@ export const ADVISER_ONLY_MODULES: readonly SidebarModule[] = [
  * job; this is a coarse "is this module ever useful to you" question, and a
  * teacher who advises one class and teaches subjects in five still needs
  * Attendance.
+ *
+ * "Anywhere" also means "in any ACADEMIC YEAR", because the caller's read
+ * (lib/auth/teacher-assignments.ts::loadAssignmentsForUser) has no AY filter.
+ * So a teacher holding only a PRIOR year's adviser row would be offered
+ * modules that are empty for the current one — the dead end this function
+ * exists to remove. Checked against production on 2026-07-30: every
+ * `teacher_assignments` row sits in the current AY, so nothing is affected
+ * today. If assignments are ever carried across a rollover, scope the read in
+ * `resolveHiddenModules` alone — never in `loadAssignmentsForUser`, whose
+ * other callers are authorization gates that resolve one specific section
+ * (the grade-entry gate, lib/classroom/scope.ts) and must not change.
  */
 export function hiddenModulesForTeacher(
   role: Role | null,

@@ -241,3 +241,28 @@ export async function getStaffCount(): Promise<number> {
       (ROLES as readonly string[]).includes(u.role)
   ).length;
 }
+
+/**
+ * How many active accounts hold each role — the "N people" figure on the role
+ * permission cards, which is what makes an edit's reach concrete before you
+ * make it.
+ *
+ * Same already-cached listUsers() call as every other helper here, and the same
+ * two filters as `getStaffCount`: disabled accounts don't count, and a role must
+ * be a real staff role (auth.users is shared with role-less parent accounts,
+ * KD #11). Every role is present in the result, including ones nobody holds —
+ * a card reading "0 people" is information, not a gap.
+ */
+export async function getStaffCountsByRole(): Promise<Record<string, number>> {
+  const all = await _loadAllStaff();
+  const counts: Record<string, number> = Object.fromEntries(
+    ROLES.map((role) => [role, 0])
+  );
+  for (const user of all) {
+    if (user.disabled) continue;
+    if (user.role == null) continue;
+    if (!(user.role in counts)) continue;
+    counts[user.role] += 1;
+  }
+  return counts;
+}

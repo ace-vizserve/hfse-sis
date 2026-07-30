@@ -1,7 +1,7 @@
 import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
-import { requireRole } from '@/lib/auth/require-role';
+import { requireAnyCapability } from '@/lib/auth/require-capability';
 import { logAction } from '@/lib/audit/log-action';
 import {
   resolveRecipients,
@@ -27,17 +27,16 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ enroleeNumber: string; slotKey: string }> }
 ) {
-  // 'admissions' added Sprint 37 (KD #70). 'p_file_officer' added alongside the
-  // P-Files document-validation page so officers can approve / reject
-  // enrolled-student slots.
-  // 'academic_coordinator' added per KD #37: Records is the sole writer of
-  // 'Rejected' for enrolled students; 'school_admin' intentionally excluded
-  // (read-only oversight, KD #74 + KD #31).
-  const auth = await requireRole([
-    'academic_coordinator',
-    'superadmin',
-    'admissions',
-    'p_file_officer',
+  // Gate on holding EITHER side's validate capability; which one is actually
+  // required is decided below by whether the student has enrolled.
+  //
+  // `school_admin` holds neither and is stopped here — read-only oversight,
+  // KD #74 + KD #31. That has always been true of this route; what changed is
+  // that the queue UI now knows it too, instead of rendering them
+  // Approve/Reject buttons that landed on this 403.
+  const auth = await requireAnyCapability([
+    'documents_pre_enrolment.validate',
+    'documents_post_enrolment.validate',
   ]);
   if ('error' in auth) return auth.error;
 
@@ -62,37 +61,47 @@ export async function PATCH(
   }
 
   // Document-axis ownership handoff at enrolment (module-ownership rule). The
-  // document lifecycle is Admissions' before enrolment and P-Files' after.
-  // `registrar`/`superadmin` may validate either side (KD #37 — Records is the
-  // sole writer of 'Rejected' for enrolled students; superadmin = break-glass).
-  // But the role-specific writers must stay on their side of the handoff:
-  //   • enrolled student  → `admissions` is rejected (post-enrolment docs are
-  //     P-Files territory; the UI already routes them to /p-files).
-  //   • un-enrolled student → `p-file` is rejected (pre-enrolment validation is
-  //     the admissions funnel's job).
-  // Closes the gap where the shared UI queues were split but the write route
-  // wasn't (an admissions user could approve/reject an enrolled student's doc).
-  if (auth.role === 'admissions' || auth.role === 'p_file_officer') {
+  // document lifecycle is Admissions' before enrolment and P-Files' after, and
+  // that rule is UNCHANGED — what changed is that it is now expressed as a
+  // capability the enrolment state selects, rather than as two named roles.
+  //
+  // Why that matters: at HFSE one person does both jobs, and a person holds
+  // exactly one role. Under the old shape they could not be given both sides
+  // without a code change. Now a superadmin ticks both boxes and this block
+  // lets them through, while anyone holding only one side is still stopped on
+  // the wrong side of the line.
+  //
+  // Note the enrolment lookup now runs for EVERY caller, where before it was
+  // skipped for the two roles that could validate either side. One extra read
+  // on a route that already does several, in exchange for a rule that has no
+  // role-shaped exceptions in it.
+  {
     const enrolled = await isStudentEnrolled(ayCode, enroleeNumber);
-    if (enrolled && auth.role === 'admissions') {
-      return NextResponse.json(
-        {
-          error:
-            "This student is enrolled — their documents are managed in P-Files. The admissions document queue only covers applicants who haven't enrolled yet.",
-          code: 'enrolled_documents_pfiles_only',
-        },
-        { status: 403 }
-      );
-    }
-    if (!enrolled && auth.role === 'p_file_officer') {
-      return NextResponse.json(
-        {
-          error:
-            'This applicant has not enrolled yet — pre-enrolment document validation is handled in the Admissions module.',
-          code: 'unenrolled_documents_admissions_only',
-        },
-        { status: 403 }
-      );
+    const required = enrolled
+      ? 'documents_post_enrolment.validate'
+      : 'documents_pre_enrolment.validate';
+
+    if (!auth.capabilities.includes(required)) {
+      // Codes unchanged — clients switch on these. The messages now describe
+      // the permission rather than naming a module, matching the queue tabs
+      // ("Applicants" / "Enrolled students").
+      return enrolled
+        ? NextResponse.json(
+            {
+              error:
+                "This student has enrolled, so their documents belong with the enrolled students' queue — which you don't have permission to review.",
+              code: 'enrolled_documents_pfiles_only',
+            },
+            { status: 403 }
+          )
+        : NextResponse.json(
+            {
+              error:
+                "This applicant hasn't enrolled yet, so their documents belong with the applicants' queue — which you don't have permission to review.",
+              code: 'unenrolled_documents_admissions_only',
+            },
+            { status: 403 }
+          );
     }
   }
 

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import { logAction, type AuditAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -42,15 +42,22 @@ export async function POST(
   const { slotKey } = parsed.data;
   const moduleKey = resolveModule(parsed.data.module);
 
-  // Per-module role gate: admissions chase is wider (admissions team + academic
-  // coordinator + school_admin); P-Files renewal chase is scoped to p_file_officer
-  // users + superadmin.
-  const allowedRoles =
+  // Per-module gate, now by capability. Chasing an applicant and chasing an
+  // enrolled student are different permissions, held by different people, and
+  // one person can hold both — which is the whole point.
+  //
+  // Same holders as the role arrays this replaces: pre-enrolment chase is the
+  // admissions team plus the coordinator and school_admin; post-enrolment chase
+  // is the documents officer plus superadmin. A test pins that equivalence.
+  //
+  // Pre-existing ordering note, deliberately unchanged: the gate runs after the
+  // body is parsed, because `moduleKey` comes from the body — so an
+  // unauthenticated caller sees 400 before 401. Reordering would change status
+  // codes, which belongs in its own change, not this migration.
+  const auth = await requireCapability(
     moduleKey === 'admissions'
-      ? ['admissions', 'academic_coordinator', 'school_admin', 'superadmin']
-      : ['p_file_officer', 'superadmin'];
-  const auth = await requireRole(
-    allowedRoles as import('@/lib/auth/roles').Role[]
+      ? 'documents_pre_enrolment.chase'
+      : 'documents_post_enrolment.chase'
   );
   if ('error' in auth) return auth.error;
 

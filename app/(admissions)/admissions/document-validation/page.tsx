@@ -5,6 +5,8 @@ import { ValidationQueue } from '@/components/admissions/document-validation/val
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { loadPendingDocValidation } from '@/lib/admissions/document-validation';
+import { can } from '@/lib/auth/capabilities';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getSessionUser } from '@/lib/supabase/server';
 
 // /admissions/document-validation — triage queue for un-enrolled applicants'
@@ -12,20 +14,21 @@ import { getSessionUser } from '@/lib/supabase/server';
 // the document workflow (we owe a review). KD #71 keeps the page admissions-
 // side only — enrolled applicants flow through P-Files renewal.
 //
-// Visible to admissions / registrar / school_admin / superadmin per KD #74.
-// Mutation route gates already permit the same set after the Chunk A patch.
+// Who sees this, and who may act on it, are two different questions — the
+// previous comment here claimed the mutation route "already permits the same
+// set" and it never did. `school_admin` is admitted as read-only oversight
+// (KD #74 + KD #31) while PATCH .../document/[slotKey] deliberately excludes
+// them, so the queue used to render them Approve/Reject buttons that 403 on
+// click. Both questions now resolve from capabilities, which is what keeps the
+// two in step.
 
 export default async function DocumentValidationPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
-  if (
-    sessionUser.role !== 'admissions' &&
-    sessionUser.role !== 'academic_coordinator' &&
-    sessionUser.role !== 'school_admin' &&
-    sessionUser.role !== 'superadmin'
-  ) {
-    redirect('/');
-  }
+
+  const capabilities = await getCapabilitiesForRole(sessionUser.role);
+  if (!can(capabilities, 'documents_pre_enrolment.read')) redirect('/');
+  const canValidate = can(capabilities, 'documents_pre_enrolment.validate');
 
   const currentAy = await getCurrentAcademicYear();
   if (!currentAy) {
@@ -54,11 +57,15 @@ export default async function DocumentValidationPage() {
         <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
           {rows.length === 0
             ? 'No documents are waiting for review right now. New parent uploads will land here for approval.'
-            : `${rows.length.toLocaleString('en-SG')} document${rows.length === 1 ? '' : 's'} from ${applicantCount.toLocaleString('en-SG')} applicant${applicantCount === 1 ? '' : 's'} waiting for review. Approve the file or reject it with a reason — the parent will be notified to re-upload.`}
+            : `${rows.length.toLocaleString('en-SG')} document${rows.length === 1 ? '' : 's'} from ${applicantCount.toLocaleString('en-SG')} applicant${applicantCount === 1 ? '' : 's'} waiting for review.${canValidate ? ' Approve the file or reject it with a reason — the parent will be notified to re-upload.' : ' You have read-only access to this queue.'}`}
         </p>
       </header>
 
-      <ValidationQueue rows={rows} ayCode={currentAy.ay_code} />
+      <ValidationQueue
+        rows={rows}
+        ayCode={currentAy.ay_code}
+        canValidate={canValidate}
+      />
 
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         <FileCheck className="size-3" strokeWidth={2.25} />

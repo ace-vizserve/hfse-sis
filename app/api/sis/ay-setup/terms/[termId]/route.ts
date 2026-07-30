@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
 
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { TermDatesSchema } from '@/lib/schemas/ay-setup';
@@ -23,11 +23,13 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ termId: string }> }
 ) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  // academic_year.edit_terms, its own action rather than academic_year.edit,
+  // because this route admits the academic coordinator and the rest of AY setup
+  // does not — she edits term dates and virtue themes without being able to
+  // create or delete a year. Note /sis/ay-setup itself still redirects her
+  // away; her real entry point is /evaluation/virtue-themes (KD #137), which
+  // uses a different route.
+  const auth = await requireCapability('academic_year.edit_terms');
   if ('error' in auth) return auth.error;
 
   const { termId } = await params;

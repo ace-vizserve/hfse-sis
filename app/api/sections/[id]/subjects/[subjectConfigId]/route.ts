@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -17,11 +17,7 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string; subjectConfigId: string }> }
 ) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  const auth = await requireCapability('sections.edit');
   if ('error' in auth) return auth.error;
 
   const { id: sectionId, subjectConfigId } = await params;

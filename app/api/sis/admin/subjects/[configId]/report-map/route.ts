@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { SubjectReportMapUpdateSchema } from '@/lib/schemas/subject-config';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -34,7 +34,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ configId: string }> }
 ) {
-  const auth = await requireRole(['school_admin', 'superadmin']);
+  const auth = await requireCapability('subjects.edit');
   if ('error' in auth) return auth.error;
 
   const { configId: subjectId } = await params;

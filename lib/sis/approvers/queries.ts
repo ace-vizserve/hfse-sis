@@ -2,6 +2,7 @@ import 'server-only';
 import { cache } from 'react';
 
 import { createServiceClient } from '@/lib/supabase/service';
+import { getRoleCapabilities } from '@/lib/auth/permission-map';
 import { APPROVER_FLOWS, type ApproverFlow } from '@/lib/schemas/approvers';
 
 export type ApproverUser = {
@@ -114,17 +115,27 @@ export async function listAllApproverAssignments(): Promise<AllApproversByFlow> 
 }
 
 /**
- * Eligible candidates for a given flow = users with role `school_admin`
- * (the consolidated cross-cutting role; the old `admin` twin was retired
- * in Sprint 33). Superadmins are excluded because they manage the
- * approver list but don't act on change requests themselves. Returns the
- * pool minus whoever is already assigned. Used to populate the "add
- * approver" dropdown on /sis/admin/approvers.
+ * Eligible candidates for a given flow = users whose ROLE HOLDS
+ * `grade_changes.approve`, minus whoever is already assigned. Populates the
+ * "add approver" dropdown on /sis/admin/approvers.
+ *
+ * Was hardcoded to `role === 'school_admin'`. Same people today — that is the
+ * only role seeded with the capability — but the pool is now movable from
+ * /sis/admin/roles instead of requiring a code change in three separate files.
+ * Superadmins remain excluded because they deliberately do not hold it: they
+ * decide who may approve rather than approving themselves.
  */
 export async function listEligibleApproverCandidates(
   flow: ApproverFlow
 ): Promise<Array<{ user_id: string; email: string; role: string }>> {
   const service = createServiceClient();
+
+  const map = await getRoleCapabilities();
+  const eligibleRoles = new Set(
+    Object.entries(map)
+      .filter(([, caps]) => caps.includes('grade_changes.approve'))
+      .map(([role]) => role)
+  );
 
   const users = await getAllUsers();
   const candidates = users
@@ -135,7 +146,7 @@ export async function listEligibleApproverCandidates(
         null;
       return { user_id: u.id, email: u.email ?? '', role };
     })
-    .filter((u) => u.role === 'school_admin')
+    .filter((u) => u.role != null && eligibleRoles.has(u.role))
     .filter((u) => u.email !== '');
 
   const { data: existing } = await service

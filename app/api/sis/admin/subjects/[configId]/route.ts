@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { subjectConfigUnchanged } from '@/lib/sis/subject-config-unchanged';
@@ -23,7 +23,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ configId: string }> }
 ) {
-  const auth = await requireRole(['school_admin', 'superadmin']);
+  const auth = await requireCapability('subjects.edit');
   if ('error' in auth) return auth.error;
 
   const { configId } = await params;

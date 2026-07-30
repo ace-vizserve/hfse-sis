@@ -1,6 +1,6 @@
 ﻿import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -16,11 +16,7 @@ import { requireCurrentAyCode } from '@/lib/academic-year';
 // `category`, `audience`, `tentative` default to 'other' / 'all' / false
 // (migration 037).
 export async function POST(request: NextRequest) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  const auth = await requireCapability('school_calendar.edit');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -98,11 +94,7 @@ export async function POST(request: NextRequest) {
 // Updates an existing calendar_events row. Used by the "Confirm dates"
 // affordance (flips tentative=false) and for editing other fields.
 export async function PATCH(request: NextRequest) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  const auth = await requireCapability('school_calendar.edit');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -170,11 +162,7 @@ export async function PATCH(request: NextRequest) {
 
 // DELETE /api/attendance/calendar/events?id=...
 export async function DELETE(request: NextRequest) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  const auth = await requireCapability('school_calendar.edit');
   if ('error' in auth) return auth.error;
 
   const id = request.nextUrl.searchParams.get('id');

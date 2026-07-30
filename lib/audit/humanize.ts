@@ -200,6 +200,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'user.create': 'User created',
   'user.info.update': 'User details updated',
   'user.role.update': 'User role changed',
+  'role.permissions.update': 'Role permissions changed',
   'user.disable': 'User disabled',
   'user.enable': 'User enabled',
   'user.delete': 'User deleted',
@@ -594,6 +595,19 @@ function templateSummary(
       if (email) parts.push(email);
       const role = str(ctx.role);
       if (role) parts.push(humanizeKey(role));
+      return joinParts(parts);
+    }
+    case 'role.permissions.update': {
+      // "Academic coordinator · +2 allowed · −1 removed". Names the role and the
+      // size of the change; the capability strings themselves are developer
+      // vocabulary and would read as noise in a log a school admin scans.
+      const role = str(ctx.role);
+      const added = Array.isArray(ctx.added) ? ctx.added.length : 0;
+      const removed = Array.isArray(ctx.removed) ? ctx.removed.length : 0;
+      const parts: string[] = [];
+      if (role) parts.push(humanizeKey(role));
+      if (added > 0) parts.push(`+${added} allowed`);
+      if (removed > 0) parts.push(`−${removed} removed`);
       return joinParts(parts);
     }
     case 'user.role.update': {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // DELETE /api/sis/admin/approvers/[id] — revoke an assignment (superadmin only).
@@ -15,7 +15,7 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireRole(['superadmin']);
+  const auth = await requireCapability('approvers.manage');
   if ('error' in auth) return auth.error;
 
   const { id } = await params;

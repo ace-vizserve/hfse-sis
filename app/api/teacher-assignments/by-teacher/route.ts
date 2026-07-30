@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { createServiceClient } from '@/lib/supabase/service';
 
 type RawSection = {
@@ -25,11 +25,7 @@ type RawAssignment = {
 // Returns the teacher's current assignments + all sections + all subjects
 // for the current AY. Used by the StaffAssignmentSheet to populate pickers.
 export async function GET(request: NextRequest) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  const auth = await requireCapability('staff.read');
   if ('error' in auth) return auth.error;
 
   const teacherId = request.nextUrl.searchParams.get('teacherId');

@@ -2,7 +2,7 @@ import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { ToggleAcceptingApplicationsSchema } from '@/lib/schemas/ay-setup';
 import { computeEarlyBirdClosures } from '@/lib/sis/early-bird';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -18,7 +18,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 //
 // Role: school_admin + superadmin.
 export async function PATCH(request: Request) {
-  const auth = await requireRole(['school_admin', 'superadmin']);
+  const auth = await requireCapability('academic_year.edit');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

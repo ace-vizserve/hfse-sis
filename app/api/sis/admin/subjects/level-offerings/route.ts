@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { SubjectLevelOfferingToggleSchema } from '@/lib/schemas/subject-config';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -16,7 +16,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 // Idempotent both directions: attaching twice, or detaching when already
 // detached, succeeds without error.
 export async function PUT(request: NextRequest) {
-  const auth = await requireRole(['school_admin', 'superadmin']);
+  const auth = await requireCapability('subjects.edit');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

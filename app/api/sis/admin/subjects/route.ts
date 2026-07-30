@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { SubjectConfigCreateSchema } from '@/lib/schemas/subject-config';
 import { createServiceClient } from '@/lib/supabase/service';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
@@ -17,7 +17,7 @@ import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 // — creating a weight config here does not itself attach the subject to
 // any level.
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(['school_admin', 'superadmin']);
+  const auth = await requireCapability('subjects.create');
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
