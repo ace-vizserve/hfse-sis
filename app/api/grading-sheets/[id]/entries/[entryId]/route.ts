@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest, after } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
+import { createClient } from '@/lib/supabase/server';
+import {
+  loadAssignmentsForUser,
+  isSubjectTeacher,
+} from '@/lib/auth/teacher-assignments';
 import { computeQuarterly } from '@/lib/compute/quarterly';
 import { OVERRIDE_LETTERS, isOverrideLetter } from '@/lib/compute/letter-grade';
 import { buildAuditRows, writeAuditRows } from '@/lib/audit/log-grade-change';
@@ -24,7 +29,10 @@ import type { SlotLabels, SlotMeta } from '@/lib/schemas/grading-sheet';
 
 // PATCH /api/grading-sheets/[id]/entries/[entryId]
 // Rules (Sprint 9):
-//   * Teachers: allowed only while the sheet is UNLOCKED. Post-lock → 403.
+//   * Teachers: must be the assigned SUBJECT TEACHER for the sheet's
+//     (section × subject) — a form class adviser reads the sheet but cannot
+//     encode scores (see the subject-teacher gate below). Allowed only while
+//     the sheet is UNLOCKED. Post-lock → 403.
 //   * Registrar/admin/superadmin: allowed always. Post-lock edits must include
 //     EITHER a `change_request_id` (Path A — points at an approved request) OR
 //     `correction_reason` + `correction_justification` (Path B — registrar-only
@@ -94,7 +102,7 @@ export async function PATCH(
     service
       .from('grading_sheets')
       .select(
-        `id, ww_totals, pt_totals, qa_total, is_locked, slot_labels,
+        `id, section_id, subject_id, ww_totals, pt_totals, qa_total, is_locked, slot_labels,
          subject:subjects(is_examinable),
          subject_config:subject_configs(ww_weight, pt_weight, qa_weight)`
       )
@@ -117,6 +125,8 @@ export async function PATCH(
   }
   const sheet = sheetRes.data as unknown as {
     id: string;
+    section_id: string;
+    subject_id: string;
     ww_totals: number[];
     pt_totals: number[];
     qa_total: number | null;
@@ -134,6 +144,45 @@ export async function PATCH(
       { error: 'entry does not belong to sheet' },
       { status: 400 }
     );
+  }
+
+  // ----- Subject-teacher gate -----
+  // Only the assigned subject teacher may encode scores. A form class adviser
+  // READS every subject in their section (that is what `is_teacher_for_sheet`
+  // in migration 005 grants, and it is deliberate — the adviser monitors the
+  // class) but advising is not teaching, so it carries no write right here.
+  //
+  // This check was missing, and its absence was not a policy choice: the two
+  // sibling teacher-writable paths on the same sheet already require exactly
+  // this — `PATCH .../labels` (403 'not assigned to this sheet') and
+  // `POST /api/change-requests` (same). So an adviser could not rename an
+  // activity on a sheet, yet could overwrite every score on it. Scores were
+  // the one outlier.
+  //
+  // Note this is the only layer that can enforce it. Migration 005's RLS is
+  // SELECT-only — its own header records that writes are denied to
+  // `authenticated` outright and "the app uses the service-role client for
+  // every write path" — and this route holds a service client, so RLS is not
+  // in the loop. Role alone (`teacher`) was the entire authorization, which
+  // also let any teacher write to any sheet in the school, not just advisers
+  // on their own section.
+  //
+  // Managers (academic_coordinator / school_admin / superadmin) are exempt —
+  // they do registrar data-entry fixes and the post-lock correction paths
+  // below. Being adviser AND subject teacher for the same subject is
+  // unaffected: that person holds a `subject_teacher` row and passes.
+  if (role === 'teacher') {
+    const cookieClient = await createClient();
+    const assignments = await loadAssignmentsForUser(
+      cookieClient,
+      auth.user.id
+    );
+    if (!isSubjectTeacher(assignments, sheet.section_id, sheet.subject_id)) {
+      return NextResponse.json(
+        { error: 'not assigned to this sheet' },
+        { status: 403 }
+      );
+    }
   }
 
   // ----- Lock-gate (Sprint 9 two-path workflow) -----

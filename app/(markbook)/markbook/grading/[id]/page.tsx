@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowUpRight,
   CheckCircle2,
+  Eye,
   Lock,
   LockOpen,
   MessageSquareWarning,
@@ -149,7 +150,8 @@ export default async function GradingSheetPage({
     });
   }
 
-  const readOnly = sheet.is_locked && !canManage;
+  // `readOnly` is computed further down, once `isAssignedTeacher` is known —
+  // it depends on the teacher's assignment, not just the lock state.
   const requireApproval = sheet.is_locked && canManage;
 
   // Fetch teacher's assignments concurrently with entries/requests — only
@@ -293,6 +295,23 @@ export default async function GradingSheetPage({
     role === 'teacher' && sessionUser && section?.id && subject?.id
       ? isSubjectTeacher(rawAssignments, section.id, subject.id)
       : false;
+
+  // Score entry is read-only when the sheet is locked, OR when the viewer is a
+  // teacher who is not this sheet's assigned subject teacher — a form class
+  // adviser sees every subject in their section for monitoring, but only the
+  // subject teacher encodes. Mirrors the server gate in
+  // PATCH /api/grading-sheets/[id]/entries/[entryId]; the grid used to key off
+  // the lock alone, so an adviser was shown editable inputs.
+  const readOnly =
+    (sheet.is_locked && !canManage) ||
+    (role === 'teacher' && !isAssignedTeacher);
+
+  // A teacher viewing a sheet they don't teach — in practice the form class
+  // adviser, who reads every subject in their own section. The locked-sheet
+  // banner below only renders when the sheet IS locked, so without this an
+  // adviser on an unlocked sheet would get silently dead inputs and no reason
+  // why.
+  const isMonitoringOnly = role === 'teacher' && !isAssignedTeacher;
 
   // Designated approvers for the locked-sheet change-request flow. Teachers
   // pick primary + secondary from this list when filing a request; the
@@ -499,6 +518,24 @@ export default async function GradingSheetPage({
           />
         </div>
       </div>
+
+      {isMonitoringOnly && !sheet.is_locked && (
+        <div className="flex items-start gap-4 rounded-xl border border-border bg-muted/50 p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-ink-3 text-white">
+            <Eye className="size-4" />
+          </div>
+          <div className="flex-1 space-y-1.5">
+            <p className="font-serif text-base font-semibold leading-tight text-foreground">
+              You have view-only access to this subject
+            </p>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              As the form class adviser you can follow every subject in your
+              class, but only the assigned subject teacher enters the scores.
+              Ask them to make a correction, or contact your school admin.
+            </p>
+          </div>
+        </div>
+      )}
 
       {sheet.is_locked && (
         <div
