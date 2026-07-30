@@ -653,11 +653,16 @@ export const NAV_BY_MODULE: {
         // grants them `canCreate`), but with no way to click there. They
         // are also the grade-change approver pool (KD #41), so inspecting
         // a sheet is core to their job.
+        //
+        // "New Sheet" is deliberately absent here, unlike the coordinator's and
+        // superadmin's copies of this group: /markbook/grading/new gates on
+        // ALLOWED_ROLES = { academic_coordinator, superadmin } and 404s a
+        // school_admin, so the item was a dead link. The KD #159 nav test
+        // cannot catch it — its documented direction-B limitation is that it
+        // checks ROUTE_ACCESS prefixes, and that page sits under the broad
+        // `/markbook` rule this role already links elsewhere.
         label: 'Grading',
-        items: [
-          { href: '/markbook/grading', label: 'All Sheets' },
-          { href: '/markbook/grading/new', label: 'New Sheet' },
-        ],
+        items: [{ href: '/markbook/grading', label: 'All Sheets' }],
       },
       {
         // Phase 7 repointed this to /classroom; Phase 8 reverts it (design

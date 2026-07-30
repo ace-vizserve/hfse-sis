@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
+import { getRoleCapabilities } from '@/lib/auth/permission-map';
 import { requireCapability } from '@/lib/auth/require-capability';
+import type { Role } from '@/lib/auth/roles';
 import { AssignApproverSchema } from '@/lib/schemas/approvers';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -57,11 +59,18 @@ export async function POST(request: Request) {
     (userRes.user.app_metadata as { role?: string } | null)?.role ??
     (userRes.user.user_metadata as { role?: string } | null)?.role ??
     null;
-  if (role !== 'school_admin') {
+  // The target must hold grade_changes.approve — assigning someone who can't
+  // approve would produce a designated approver whose every decision 403s.
+  // Reads the same permission map decide.ts checks, so the two can't disagree.
+  const capabilityMap = await getRoleCapabilities();
+  const eligible =
+    role != null &&
+    (capabilityMap[role as Role] ?? []).includes('grade_changes.approve');
+  if (!eligible) {
     return NextResponse.json(
       {
         error:
-          'Only users with the school_admin role can be assigned as approvers. Superadmins manage the approver list but do not approve change requests themselves.',
+          'This person’s role is not allowed to approve change requests. Give that role the "Approve" permission for grade change requests first, in Role permissions.',
       },
       { status: 400 }
     );

@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation';
 
+import { can } from '@/lib/auth/capabilities';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -35,7 +37,15 @@ export default async function AdminChangeRequestsPage({
   ) {
     redirect('/');
   }
-  const canDecide = role === 'school_admin' || role === 'superadmin';
+  // Was `role === 'school_admin' || role === 'superadmin'`, which showed a
+  // superadmin Approve/Reject buttons that ALWAYS 403'd — decide.ts rejects
+  // superadmin by design (they decide who may approve, not what is approved).
+  // Deriving from the same capability decide.ts checks means the buttons appear
+  // exactly when the decision would succeed.
+  const canDecide = can(
+    await getCapabilitiesForRole(role),
+    'grade_changes.approve'
+  );
 
   const { sheet_id, req: reqParam, action: actionParam } = await searchParams;
 

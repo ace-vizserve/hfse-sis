@@ -4,6 +4,9 @@ import { after } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { logAction, type AuditAction } from '@/lib/audit/log-action';
+import { can } from '@/lib/auth/capabilities';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
+import type { Role } from '@/lib/auth/roles';
 import {
   notifyRequestApproved,
   notifyRequestRejected,
@@ -118,14 +121,31 @@ export async function decideChangeRequest(
   let isPrimaryReview = false;
   let reviewerOrdinal: 'primary' | 'secondary' = 'primary';
   if (isReview) {
-    // Approvers are school_admin role only. Superadmins manage who's
-    // designated as an approver (via /sis/admin/approvers) but don't
-    // approve change requests themselves.
-    if (actingUser.role !== 'school_admin') {
+    // Approving is a capability now, not a role name — grade_changes.approve.
+    //
+    // Seeded to school_admin ALONE, which is exactly who this admitted before,
+    // so nothing changes today. What changes is that the pool can be moved
+    // without editing this file: previously the only role able to approve was
+    // welded in here, in the eligible-candidates query, and in the approver
+    // assignment route, so re-scoping school_admin would have left every
+    // locked-sheet request permanently un-decidable.
+    //
+    // Superadmin is still excluded, and now visibly so: it simply doesn't hold
+    // the capability (see lib/auth/capabilities.ts, where that absence is
+    // deliberate and pinned by a test). A superadmin decides WHO may approve
+    // via /sis/admin/approvers and does not approve themselves.
+    // `actingUser.role` is a plain string here — it arrives from the JWT, and
+    // the email-token path (app/api/change-requests/act) reads it straight off
+    // app_metadata. An unrecognised value resolves to no capabilities, which
+    // fails closed.
+    const capabilities = await getCapabilitiesForRole(
+      actingUser.role as Role | null
+    );
+    if (!can(capabilities, 'grade_changes.approve')) {
       return {
         ok: false,
         httpStatus: 403,
-        error: 'Only school admins can approve or reject change requests.',
+        error: 'Your role is not allowed to approve or reject change requests.',
       };
     }
     // Designated-approver scope: the acting school_admin must be the

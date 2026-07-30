@@ -502,20 +502,38 @@ describe('parity with the gates these capabilities replace', () => {
     expect(text).toMatch(/\.\.\.\(canValidate/);
   });
 
-  it('grade-change approval matches decide.ts — one role, and not superadmin', () => {
+  it('decide.ts gates approval on the capability, and the pool is unchanged', () => {
+    // Phase 5 replaced `actingUser.role !== 'school_admin'` here with a check on
+    // grade_changes.approve. The holder set is deliberately identical, so no
+    // behaviour moved — what moved is that the pool can now be changed from
+    // /sis/admin/roles instead of by editing this file, the eligible-candidates
+    // query and the approver-assignment route together.
     const text = source('lib/change-requests/decide.ts');
-    const match = /actingUser\.role !== '([a-z_]+)'/.exec(text);
-    expect(
-      match,
-      'decide.ts no longer gates approval on a single role'
-    ).toBeTruthy();
+    expect(text).toContain("can(capabilities, 'grade_changes.approve')");
+    expect(text, 'decide.ts still hardcodes a role for approval').not.toMatch(
+      /actingUser\.role !== '[a-z_]+'/
+    );
 
-    expect(holdersOf('grade_changes.approve')).toEqual([match![1] as Role]);
+    expect(holdersOf('grade_changes.approve')).toEqual(['school_admin']);
 
-    // Pinned deliberately. decide.ts rejects superadmin too: a superadmin
-    // decides WHO may approve (/sis/admin/approvers) and does not approve. If a
-    // future change grants this, it must be a decision, not a tidy-up.
+    // Pinned deliberately: a superadmin decides WHO may approve
+    // (/sis/admin/approvers) and does not approve. If a future change grants
+    // this, it must be a decision, not a tidy-up.
     expect(holdersOf('grade_changes.approve')).not.toContain('superadmin');
+  });
+
+  it('the eligible-approver pool and the decision read the same capability', () => {
+    // Three files used to hardcode 'school_admin' independently. If they ever
+    // disagree, a superadmin can assign an approver whose every decision 403s.
+    for (const file of [
+      'lib/sis/approvers/queries.ts',
+      'app/api/sis/admin/approvers/route.ts',
+      'app/(markbook)/markbook/change-requests/page.tsx',
+    ]) {
+      expect(source(file), `${file} lost its capability check`).toContain(
+        'grade_changes.approve'
+      );
+    }
   });
 
   it('the seed does NOT yet grant the officer pre-enrolment validation', () => {
