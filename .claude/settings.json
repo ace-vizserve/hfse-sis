@@ -15,7 +15,13 @@
       "Bash(echo \"=== TSC EXIT: $? ===\")",
       "Bash(echo \"TSC exit: $?\")",
       "Bash(cp .claude/rules/key-decisions/classroom.md /tmp/cr.md)",
-      "Bash(cp .claude/rules/key-decisions.md /tmp/kd.md)"
+      "Bash(cp .claude/rules/key-decisions.md /tmp/kd.md)",
+      "PowerShell(npx vitest run __tests__/home __tests__/auth/module-visibility.test.ts __tests__/auth/nav-route-consistency-all-modules.test.ts --reporter=dot 2>&1)",
+      "PowerShell(npx vitest run __tests__/auth/account-reachable-all-roles.test.ts --reporter=verbose 2>&1)",
+      "PowerShell(npx vitest run __tests__/auth/capabilities.test.ts --reporter=verbose 2>&1)",
+      "PowerShell(npx tsx --env-file=.env.local scripts/tmp-verify-101.ts)",
+      "PowerShell(npx tsx --env-file=.env.local scripts/tmp-grant-school-admin-docs.ts)",
+      "PowerShell(npx tsx --env-file=.env.local scripts/tmp-grant-coord-full.ts)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ace\\AppData\\Local\\Temp\\claude\\c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook\\aebe5fa0-94e1-410b-968e-c4a4daa13e23\\scratchpad"
