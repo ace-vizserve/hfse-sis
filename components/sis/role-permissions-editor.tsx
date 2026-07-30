@@ -31,14 +31,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Table,
   TableBody,
@@ -161,7 +161,7 @@ export function RolePermissionsEditor({
       <CompareAllRoles roles={allRoles} held={held} lockedRole={lockedRole} />
 
       {editing && (
-        <EditRoleSheet
+        <EditRoleDialog
           role={editing}
           current={[...(held.get(editing) ?? [])] as Capability[]}
           people={peopleByRole[editing] ?? 0}
@@ -375,7 +375,7 @@ function CompareAllRoles({
   );
 }
 
-function EditRoleSheet({
+function EditRoleDialog({
   role,
   current,
   people,
@@ -423,43 +423,56 @@ function EditRoleSheet({
     });
   }
 
+  const allSelected = ALL_CAPABILITIES.every((c) => selected.has(c));
+
   return (
-    <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="flex w-full flex-col sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle className="font-serif">
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      {/* Wide, and capped in height with the body scrolling inside — the header
+          and footer stay put, so Save is never pushed off-screen by the eight
+          permission groups (same shape as the publish checklist, KD #75). */}
+      <DialogContent className="flex max-h-[85dvh] flex-col gap-0 p-0 sm:max-w-4xl!">
+        <DialogHeader className="border-b border-border px-6 py-5">
+          <DialogTitle className="font-serif text-xl">
             What {ROLE_LABELS[role]} can do
-          </SheetTitle>
-          <SheetDescription>
+          </DialogTitle>
+          <DialogDescription>
             {people === 1 ? 'Affects 1 person. ' : `Affects ${people} people. `}
             Changes apply the next time they load a page — they do not need to
             sign in again.
-          </SheetDescription>
-        </SheetHeader>
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="flex-1 space-y-5 overflow-y-auto px-4">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {/* One row per permission group. The width goes to the checkboxes,
+              which sit on a single line beside the group they belong to
+              instead of stacking under it — the reason for the wide dialog. */}
+          <div className="grid grid-cols-[minmax(220px,1fr)_2fr] items-center gap-x-6 border-b border-border bg-muted/40 px-6 py-2.5">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Area
+            </span>
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Allowed to
+            </span>
+          </div>
+
           {RESOURCES.map((resource) => {
             const capabilities = resource.actions.map(
               (a) => `${resource.key}.${a}`
             );
             const allOn = capabilities.every((c) => selected.has(c));
+            const someOn = capabilities.some((c) => selected.has(c));
             return (
-              <section key={resource.key} className="space-y-2.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-serif text-[15px] font-semibold text-foreground">
-                      {resource.label}
-                    </p>
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      {resource.description}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() =>
+              <div
+                key={resource.key}
+                className="grid grid-cols-[minmax(220px,1fr)_2fr] items-start gap-x-6 border-b border-border px-6 py-3.5 last:border-b-0"
+              >
+                <div className="flex items-start gap-2.5">
+                  <Checkbox
+                    id={`all-${resource.key}`}
+                    className="mt-0.5"
+                    checked={allOn ? true : someOn ? 'indeterminate' : false}
+                    aria-label={`Allow everything under ${resource.label}`}
+                    onCheckedChange={() =>
                       setSelected((prev) => {
                         const next = new Set(prev);
                         for (const c of capabilities) {
@@ -469,18 +482,28 @@ function EditRoleSheet({
                         return next;
                       })
                     }
-                  >
-                    {allOn ? 'Clear all' : 'Allow all'}
-                  </Button>
+                  />
+                  <div className="min-w-0">
+                    <label
+                      htmlFor={`all-${resource.key}`}
+                      className="cursor-pointer font-serif text-[15px] font-semibold text-foreground"
+                    >
+                      {resource.label}
+                    </label>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      {resource.description}
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-2 rounded-lg border border-border p-3">
+
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
                   {resource.actions.map((action) => {
                     const capability = `${resource.key}.${action}`;
                     const id = `cap-${capability}`;
                     return (
                       <div
                         key={capability}
-                        className="flex items-center gap-2.5"
+                        className="flex items-center gap-2 whitespace-nowrap"
                       >
                         <Checkbox
                           id={id}
@@ -499,37 +522,47 @@ function EditRoleSheet({
                     );
                   })}
                 </div>
-              </section>
+              </div>
             );
           })}
         </div>
 
-        <SheetFooter className="border-t border-border">
-          <div className="flex w-full items-center justify-between gap-3">
-            <span className="text-xs text-muted-foreground">
-              {dirty ? (
-                <Badge variant="warning">Unsaved changes</Badge>
-              ) : (
-                'No changes yet'
-              )}
-            </span>
-            <div className="flex items-center gap-2">
-              <SheetClose asChild>
-                <Button variant="outline" type="button">
-                  Cancel
-                </Button>
-              </SheetClose>
-              <Button
-                type="button"
-                disabled={!dirty || save.isPending}
-                onClick={() => save.mutate()}
-              >
-                {save.isPending ? 'Saving…' : 'Save permissions'}
-              </Button>
-            </div>
+        <DialogFooter className="border-t border-border px-6 py-4 sm:justify-between">
+          <div className="flex items-center gap-3">
+            {dirty ? (
+              <Badge variant="warning">Unsaved changes</Badge>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                No changes yet
+              </span>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setSelected(allSelected ? new Set() : new Set(ALL_CAPABILITIES))
+              }
+            >
+              {allSelected ? 'Clear everything' : 'Allow everything'}
+            </Button>
           </div>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+          <div className="flex items-center gap-2">
+            <DialogClose asChild>
+              <Button variant="outline" type="button">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              disabled={!dirty || save.isPending}
+              onClick={() => save.mutate()}
+            >
+              {save.isPending ? 'Saving…' : 'Save permissions'}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
