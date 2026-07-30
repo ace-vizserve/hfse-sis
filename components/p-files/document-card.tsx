@@ -20,9 +20,6 @@ import { RejectDialog } from '@/components/p-files/document-validation/reject-di
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { HistoryDialog } from '@/components/p-files/history-dialog';
-import { NotifyDialog } from '@/components/p-files/notify-dialog';
-import { PromiseDialog } from '@/components/p-files/promise-dialog';
-import { UploadDialog } from '@/components/p-files/upload-dialog';
 import type { DocumentStatus, SlotMeta } from '@/lib/p-files/document-config';
 import { classifyUrgency, type SlotUrgencyKind } from '@/lib/p-files/urgency';
 
@@ -222,7 +219,6 @@ export function DocumentCard({
   const [rejectOpen, setRejectOpen] = React.useState(false);
 
   const hasFile = status !== 'missing' && status !== 'na';
-  const canUpload = canWrite && status !== 'na';
   const showValidate = canWrite && status === 'uploaded';
   const showReclassify = canWrite && status === 'valid';
 
@@ -268,13 +264,10 @@ export function DocumentCard({
       // onError already toasted; swallow so the dialog stays open for retry.
     });
   }
+  // Kept: these read as badges on the card ("reminded 4 days ago", "promised
+  // by 12 Aug"), which is record, not action.
   const reminderText = reminderBadgeText(lastReminderAt);
   const promiseText = promiseBadgeText(activePromise?.promisedUntil);
-  const showNotify =
-    canWrite &&
-    (ACTIONABLE_STATUSES.includes(status) ||
-      isExpiringSoon(status, expiryDate));
-  const showPromise = canWrite && ACTIONABLE_STATUSES.includes(status);
 
   const urgencyKind = classifyUrgency({
     key: slotKey,
@@ -372,32 +365,19 @@ export function DocumentCard({
             </Button>
           </>
         )}
-        {showNotify && recipients && (
-          <NotifyDialog
-            enroleeNumber={enroleeNumber}
-            slotKey={slotKey}
-            label={label}
-            recipients={recipients}
-            lastReminderAt={lastReminderAt}
-          />
-        )}
-        {showPromise && (
-          <PromiseDialog
-            enroleeNumber={enroleeNumber}
-            slotKey={slotKey}
-            label={label}
-          />
-        )}
-        {canUpload && (
-          <UploadDialog
-            enroleeNumber={enroleeNumber}
-            slotKey={slotKey}
-            label={label}
-            expires={expires}
-            meta={meta}
-            isReplacement={hasFile}
-          />
-        )}
+        {/* Reminding the parent, recording a promised date and uploading a
+            file are NOT here. They live in the action queue at the top of the
+            page and nowhere else.
+
+            They used to be in both places, under different names — "Notify"
+            up there and "Notify parent" down here, "Promise" and "Mark as
+            promised", "Upload" and "Replace" — so every actionable document
+            was two rows with two vocabularies for the same three dialogs.
+            The queue is where you work; this card is the record.
+
+            Approve / Reject below stay: approving a file a parent has already
+            sent is a different act from chasing one that hasn't arrived, it is
+            done while looking at the file, and the queue does not offer it. */}
         {url && (
           <Button
             asChild
@@ -416,14 +396,18 @@ export function DocumentCard({
             </a>
           </Button>
         )}
+        {/* Rejecting a document already on file is a correction, and a rare
+            one. It was a red-tinted button sitting beside the everyday actions,
+            which gave it more weight than it earns. Quiet by default; the
+            confirm dialog is where the consequence is spelled out. */}
         {showReclassify && (
           <Button
             size="sm"
-            variant="outline"
-            className="h-8 text-xs text-destructive hover:border-destructive/50 hover:bg-destructive/5 hover:text-destructive"
+            variant="ghost"
+            className="h-8 text-xs text-muted-foreground hover:text-destructive"
             onClick={() => setRejectOpen(true)}
           >
-            Mark as rejected
+            Reject
           </Button>
         )}
         {hasFile && (

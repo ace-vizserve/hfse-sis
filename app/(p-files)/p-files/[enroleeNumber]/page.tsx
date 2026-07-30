@@ -163,17 +163,11 @@ export default async function StudentDocumentDetailPage({
     student.total > 0
       ? Math.round((student.complete / student.total) * 100)
       : 0;
-  const circleR = 40;
-  const circleCircumference = 2 * Math.PI * circleR;
-  const circleDashOffset =
-    circleCircumference - (pct / 100) * circleCircumference;
-
   // Per-slot meta lookup so we don't repeat .find inside the render loops.
   const slotConfigByKey = new Map(DOCUMENT_SLOTS.map((s) => [s.key, s]));
 
-  // Multi-status counts for the hero pill row. Only render the pill when
-  // count > 0 — avoids painting a row of zero-state chips that don't help
-  // the registrar triage.
+  // Per-status counts. These used to be pills in the hero; they now sit on the
+  // record section below, next to the documents they describe.
   const promisedCount = student.slots.filter((s) => {
     const o = student.outreach[s.key];
     return o?.activePromise != null;
@@ -193,28 +187,30 @@ export default async function StudentDocumentDetailPage({
     (s) => s.status === 'rejected'
   ).length;
 
-  // ── Action queue: top N actionable slots ranked by urgency.
+  // ── Action queue: every actionable slot, ranked by urgency.
   const actionableSlots = student.slots
     .filter((s) => isActionable(classifyUrgency(s)))
     .slice()
     .sort(compareSlotsByUrgency);
   const totalActionable = actionableSlots.length;
-  const actionRows: ActionQueueRow[] = actionableSlots
-    .slice(0, ACTION_QUEUE_VISIBLE)
-    .map((s) => {
-      const config = slotConfigByKey.get(s.key);
-      const url = (docRow[s.key] as string | null | undefined) ?? null;
-      return {
-        slotKey: s.key,
-        slotLabel: s.label,
-        status: s.status,
-        expiryDate: s.expiryDate,
-        url,
-        meta: config?.meta ?? null,
-        expires: config?.expires ?? false,
-        lastReminderAt: student.outreach[s.key]?.lastReminderAt ?? null,
-      };
-    });
+  // Every actionable slot, not the top few. The queue is now the ONLY place
+  // these actions exist — the cards below are the record — so truncating it
+  // would leave a document with no way to act on it at all. A student has at
+  // most 9 slots, so the list can't run long.
+  const actionRows: ActionQueueRow[] = actionableSlots.map((s) => {
+    const config = slotConfigByKey.get(s.key);
+    const url = (docRow[s.key] as string | null | undefined) ?? null;
+    return {
+      slotKey: s.key,
+      slotLabel: s.label,
+      status: s.status,
+      expiryDate: s.expiryDate,
+      url,
+      meta: config?.meta ?? null,
+      expires: config?.expires ?? false,
+      lastReminderAt: student.outreach[s.key]?.lastReminderAt ?? null,
+    };
+  });
 
   // ── Document groups (existing layout) — slots within each group are
   //    re-sorted by urgency so the most pressing ones appear first.
@@ -326,88 +322,45 @@ export default async function StudentDocumentDetailPage({
               )}
               <span className="font-mono tabular-nums">{selectedAy}</span>
             </div>
-            {/* Status pills — only rendered when count > 0. */}
-            <div className="flex flex-wrap items-center gap-2">
-              {student.expired > 0 && (
-                <Badge variant="blocked">
-                  <ShieldAlert />
-                  {student.expired} expired
-                </Badge>
-              )}
-              {rejectedCount > 0 && (
-                <Badge variant="blocked">
-                  <XCircle />
-                  {rejectedCount} rejected
-                </Badge>
-              )}
-              {student.missing > 0 && (
-                <Badge
-                  variant="outline"
-                  className="border-dashed text-muted-foreground"
-                >
-                  <FileWarning />
-                  {student.missing} missing
-                </Badge>
-              )}
-              {promisedCount > 0 && (
-                <Badge variant="default">
-                  <CalendarClock />
-                  {promisedCount} promised
-                </Badge>
-              )}
-              {remindedCount > 0 && (
-                <Badge variant="warning">
-                  <Mail />
-                  {remindedCount} reminded
-                </Badge>
-              )}
-            </div>
-          </div>
+            {/* One status line, not three widgets.
 
-          {/* Circular completion indicator — right column. */}
-          <div className="flex shrink-0 flex-col items-center gap-2">
-            <div className="relative size-24">
-              <svg
-                className="absolute inset-0 -rotate-90"
-                width="96"
-                height="96"
-                viewBox="0 0 96 96"
-                aria-hidden="true"
+                This was a 96px completion ring, a separate "N/N on file"
+                caption, AND a row of expired / rejected / missing / promised /
+                reminded pills — three visual languages for one fact, before the
+                action queue below stated it a fourth time as "N documents need
+                attention". The per-status counts now live on the record section
+                further down, beside the documents they describe. */}
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <div
+                className="h-1.5 w-48 overflow-hidden rounded-full bg-muted"
+                role="img"
+                aria-label={`${student.complete} of ${student.total} documents on file`}
               >
-                <circle
-                  cx="48"
-                  cy="48"
-                  r={circleR}
-                  fill="none"
-                  strokeWidth="6"
-                  stroke="currentColor"
-                  className="text-muted-foreground/20"
+                <div
+                  className={
+                    pct === 100
+                      ? 'h-full rounded-full bg-brand-mint'
+                      : 'h-full rounded-full bg-primary'
+                  }
+                  style={{ width: `${pct}%` }}
                 />
-                <circle
-                  cx="48"
-                  cy="48"
-                  r={circleR}
-                  fill="none"
-                  strokeWidth="6"
-                  strokeLinecap="round"
-                  strokeDasharray={circleCircumference}
-                  strokeDashoffset={circleDashOffset}
-                  stroke="currentColor"
-                  className={pct === 100 ? 'text-brand-mint' : 'text-primary'}
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
-                <span className="font-mono text-lg font-semibold tabular-nums text-foreground">
-                  {pct}%
-                </span>
-                <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
-                  complete
-                </span>
               </div>
+              <p className="text-[13px] text-muted-foreground">
+                <span className="font-semibold tabular-nums text-foreground">
+                  {student.complete} of {student.total}
+                </span>{' '}
+                on file
+                {totalActionable > 0 && (
+                  <>
+                    {' · '}
+                    <span className="font-semibold tabular-nums text-foreground">
+                      {totalActionable}
+                    </span>{' '}
+                    need{totalActionable === 1 ? 's' : ''} attention
+                  </>
+                )}
+              </p>
             </div>
-            <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
-              {student.complete}/{student.total} on file
-            </p>
           </div>
         </div>
       </header>

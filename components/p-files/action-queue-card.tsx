@@ -159,13 +159,9 @@ export function ActionQueueCard({
                     recipients={recipients}
                     lastReminderAt={row.lastReminderAt}
                     trigger={
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1.5 text-xs"
-                      >
+                      <Button size="sm" className="h-8 gap-1.5 text-xs">
                         <Mail className="size-3" />
-                        Notify
+                        Remind parent
                       </Button>
                     }
                   />
@@ -183,7 +179,7 @@ export function ActionQueueCard({
                           className="h-8 gap-1.5 text-xs"
                         >
                           <CalendarClock className="size-3" />
-                          Promise
+                          Set promised date
                         </Button>
                       }
                     />
@@ -202,7 +198,7 @@ export function ActionQueueCard({
                         className="h-8 gap-1.5 text-xs"
                       >
                         <Upload className="size-3" />
-                        Upload
+                        {isReplacement ? 'Replace file' : 'Upload file'}
                       </Button>
                     }
                   />
