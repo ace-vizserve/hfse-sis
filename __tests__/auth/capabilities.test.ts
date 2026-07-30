@@ -81,6 +81,45 @@ const DELIBERATE_WIDENINGS: Partial<Record<Capability, Role[]>> = {
   'subjects.read': ['academic_coordinator', 'school_admin', 'superadmin'],
   'subjects.create': ['academic_coordinator', 'school_admin', 'superadmin'],
   'subjects.edit': ['academic_coordinator', 'school_admin', 'superadmin'],
+
+  // 2026-07-31, Mr Ace: document validation moved OFF the academic coordinator
+  // and onto the P-Files officer and school_admin. Migration 106. Note these
+  // are the first entries here that also NARROW — she loses all four of her
+  // document capabilities — so the name is now half-accurate; it is the record
+  // of deliberate moves, in either direction.
+  'documents_pre_enrolment.read': [
+    'admissions',
+    'p_file_officer',
+    'school_admin',
+    'superadmin',
+  ],
+  'documents_pre_enrolment.chase': [
+    'admissions',
+    'p_file_officer',
+    'school_admin',
+    'superadmin',
+  ],
+  'documents_pre_enrolment.validate': [
+    'admissions',
+    'p_file_officer',
+    'school_admin',
+    'superadmin',
+  ],
+  'documents_post_enrolment.validate': [
+    'p_file_officer',
+    'school_admin',
+    'superadmin',
+  ],
+  'documents_post_enrolment.chase': [
+    'p_file_officer',
+    'school_admin',
+    'superadmin',
+  ],
+  'documents_post_enrolment.upload': [
+    'p_file_officer',
+    'school_admin',
+    'superadmin',
+  ],
 };
 
 const PRE_MIGRATION_GATES: Partial<Record<Capability, Role[]>> = {
@@ -470,31 +509,52 @@ describe('parity with the gates these capabilities replace', () => {
     // And it no longer branches on who you are.
     expect(text).not.toMatch(/auth\.role === '/);
 
-    // The two sides still partition the same people, with nobody gained.
+    // Who validates each side is now a data decision (migration 106 moved it
+    // off the academic coordinator), so this no longer pins the holder sets —
+    // DELIBERATE_WIDENINGS does that. What must remain true is the STRUCTURE:
+    // both sides are held by somebody, and the pre/post split still exists
+    // rather than having collapsed into one undifferentiated permission.
     const pre = holdersOf('documents_pre_enrolment.validate');
     const post = holdersOf('documents_post_enrolment.validate');
-    expect([...new Set([...pre, ...post])].sort()).toEqual([
-      'academic_coordinator',
-      'admissions',
-      'p_file_officer',
-      'superadmin',
-    ]);
+    expect(pre.length).toBeGreaterThan(0);
+    expect(post.length).toBeGreaterThan(0);
+    // `admissions` must never hold the post-enrolment side and `p_file_officer`
+    // is the only role whose pre-enrolment grant was a deliberate crossing —
+    // KD #147's module ownership, which this reassignment does not reverse.
+    expect(post).not.toContain('admissions');
   });
 
-  it('school_admin may read and chase documents but never validate them', () => {
-    // Read-only oversight (KD #74 + KD #31). The write route always excluded
-    // them; before Phase 2 the queue rendered them Approve/Reject buttons that
-    // 403'd on click, because the component took no viewer prop at all.
-    expect(holdersOf('documents_pre_enrolment.read')).toContain('school_admin');
-    expect(holdersOf('documents_pre_enrolment.chase')).toContain(
-      'school_admin'
-    );
-    expect(holdersOf('documents_pre_enrolment.validate')).not.toContain(
-      'school_admin'
-    );
-    expect(holdersOf('documents_post_enrolment.validate')).not.toContain(
-      'school_admin'
-    );
+  it('school_admin now validates documents on both sides', () => {
+    // REVERSES the original assertion, deliberately. She was read-and-chase
+    // only (KD #74 + KD #31) while the queue still rendered her Approve/Reject
+    // buttons that 403'd on click — a real bug. Mr Ace granted her validation
+    // directly in role_permissions and confirmed it was intended (2026-07-31,
+    // migration 106), which fixes that bug by making the buttons work.
+    for (const capability of [
+      'documents_pre_enrolment.read',
+      'documents_pre_enrolment.chase',
+      'documents_pre_enrolment.validate',
+      'documents_post_enrolment.read',
+      'documents_post_enrolment.chase',
+      'documents_post_enrolment.upload',
+      'documents_post_enrolment.validate',
+    ] as const) {
+      expect(holdersOf(capability), capability).toContain('school_admin');
+    }
+  });
+
+  it('the academic coordinator holds no document capability at all', () => {
+    // The other half of the same reassignment — she is out of document work
+    // entirely, not merely reduced. A capability creeping back here would mean
+    // the swap had been partially undone without anyone deciding to.
+    for (const capability of ALL_CAPABILITIES.filter((c) =>
+      c.startsWith('documents_')
+    )) {
+      expect(
+        holdersOf(capability),
+        `academic_coordinator regained ${capability}`
+      ).not.toContain('academic_coordinator');
+    }
   });
 
   it('the migrated files ask for the capabilities we think they ask for', () => {
@@ -569,13 +629,26 @@ describe('parity with the gates these capabilities replace', () => {
     }
   });
 
-  it('the seed does NOT yet grant the officer pre-enrolment validation', () => {
-    // This is the change HFSE asked for, and it must be a data edit in the
-    // editor — not baked into the seed, or applying migration 101 would itself
-    // change access.
-    expect(DEFAULT_ROLE_CAPABILITIES.p_file_officer).not.toContain(
-      'documents_pre_enrolment.validate'
-    );
+  it('the officer now validates both sides of enrolment', () => {
+    // This test used to assert the OPPOSITE — that the seed must not grant it,
+    // because at the time it had to stay a data edit so applying migration 101
+    // changed no access. That constraint belonged to 101. The edit was since
+    // made in production and confirmed intentional, so migration 106 writes it
+    // into the seed and the code stops disagreeing with the database.
+    //
+    // This is the case the whole capability layer exists for: one person
+    // validating documents on both sides of enrolment, which a single role
+    // could never express (KD #166).
+    for (const capability of [
+      'documents_pre_enrolment.read',
+      'documents_pre_enrolment.chase',
+      'documents_pre_enrolment.validate',
+      'documents_post_enrolment.validate',
+    ] as const) {
+      expect(DEFAULT_ROLE_CAPABILITIES.p_file_officer, capability).toContain(
+        capability
+      );
+    }
   });
 });
 
@@ -593,33 +666,76 @@ const SEED_MIGRATIONS = [
   // Setup (2026-07-31). The parity assertion below is over the union, so it
   // holds regardless.
   'supabase/migrations/105_role_permissions_coordinator_sis.sql',
+  // The first to REVOKE — document validation moves off the academic
+  // coordinator onto the P-Files officer and school_admin. Order matters from
+  // here on: the replay below applies these in sequence, so a later file can
+  // undo an earlier one.
+  'supabase/migrations/106_role_permissions_document_reassignment.sql',
 ];
+
+/** `('role', 'capability')` tuples inside one SQL statement block. */
+function tuplesIn(block: string): string[] {
+  return [...block.matchAll(/\(\s*'([a-z_]+)'\s*,\s*'([a-z_.]+)'\s*\)/g)].map(
+    ([, role, capability]) => `${role}|${capability}`
+  );
+}
+
+/**
+ * Replays the seed migrations in order and returns the grant set a database
+ * would actually end up holding.
+ *
+ * This models inserts AND deletes rather than unioning every insert, because
+ * migration 106 is the first to REVOKE a grant (document validation moving off
+ * the academic coordinator). A union would still contain the revoked rows and
+ * report drift that doesn't exist — worse, it would go on passing if someone
+ * later re-added a capability that was deliberately taken away.
+ */
+function replaySeedMigrations(): Set<string> {
+  const held = new Set<string>();
+  for (const file of SEED_MIGRATIONS) {
+    const sql = source(file);
+    for (const statement of sql.split(';')) {
+      if (statement.includes('insert into public.role_permissions')) {
+        for (const t of tuplesIn(statement)) held.add(t);
+      } else if (statement.includes('delete from public.role_permissions')) {
+        for (const t of tuplesIn(statement)) held.delete(t);
+      }
+    }
+  }
+  return held;
+}
 
 describe('the seed migrations', () => {
   it('together match DEFAULT_ROLE_CAPABILITIES exactly', () => {
-    const seeded = SEED_MIGRATIONS.flatMap((file) => {
-      const sql = source(file);
-      const insertBlock = sql.slice(
-        sql.indexOf('insert into public.role_permissions')
-      );
-      return [
-        ...insertBlock.matchAll(/\(\s*'([a-z_]+)'\s*,\s*'([a-z_.]+)'\s*\)/g),
-      ].map(([, role, capability]) => `${role}|${capability}`);
-    });
+    const seeded = replaySeedMigrations();
 
-    expect(
-      seeded.length,
-      'no seed rows found in migration 101'
-    ).toBeGreaterThan(0);
-    expect(new Set(seeded).size, 'migration 101 seeds a row twice').toBe(
-      seeded.length
-    );
+    expect(seeded.size, 'no seed rows found at all').toBeGreaterThan(0);
 
     const expected = ROLES.flatMap((role) =>
       DEFAULT_ROLE_CAPABILITIES[role].map((c) => `${role}|${c}`)
     );
 
     expect([...seeded].sort()).toEqual([...expected].sort());
+  });
+
+  it('actually revokes — a delete statement is honoured, not ignored', () => {
+    // Guards the replay itself. If the delete parsing silently stopped
+    // matching, the assertion above would still pass (the union and the replay
+    // agree on every migration that only inserts), and a revoked capability
+    // would quietly come back on the next database rebuild.
+    const withDeletes = replaySeedMigrations();
+    const insertsOnly = new Set(
+      SEED_MIGRATIONS.flatMap((file) =>
+        source(file)
+          .split(';')
+          .filter((s) => s.includes('insert into public.role_permissions'))
+          .flatMap(tuplesIn)
+      )
+    );
+    expect(
+      insertsOnly.size,
+      'no seed migration deletes anything — if that is now true, this test and the replay comment are stale'
+    ).toBeGreaterThan(withDeletes.size);
   });
 
   it('is idempotent and denies the cookie client every operation', () => {

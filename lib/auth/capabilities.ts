@@ -174,16 +174,14 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
   teacher: ['sections.read'],
 
   academic_coordinator: [
-    // document/[slotKey]/route.ts:36-41 admits her, and she skips the
-    // enrolment-side branch at :75 entirely — she validates either side.
-    'documents_pre_enrolment.read',
-    'documents_pre_enrolment.chase',
-    'documents_pre_enrolment.validate',
-    // ASYMMETRY, reproduced: she may validate a post-enrolment document via the
-    // API, but /p-files/document-validation redirects her away (page.tsx:25-31),
-    // so she has `validate` without `read` on this side. Left as-is; Phase 2
-    // decides what the unified queue does about it.
-    'documents_post_enrolment.validate',
+    // DOCUMENT WORK MOVED OFF HER (2026-07-31, migration 106). She originally
+    // held pre-enrolment read/chase/validate plus post-enrolment validate —
+    // the pre-capability behaviour migration 101 transcribed. Mr Ace has since
+    // handed document validation to the P-Files officer and school_admin, and
+    // confirmed the reassignment was deliberate; it had already been made
+    // directly in `role_permissions`, so the code was the thing out of date,
+    // not the database. Her four document grants are dropped here and deleted
+    // by 106. She keeps no document capability at all.
     // The asymmetry that used to sit here — `edit_terms` without `read`,
     // because PATCH /api/sis/ay-setup/terms/[termId] admitted her while
     // /sis/ay-setup redirected her away — was RESOLVED on 2026-07-31 on Mr
@@ -221,17 +219,24 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
   ],
 
   school_admin: [
-    // The admissions validation page admits her (page.tsx:24) but the PATCH
-    // route deliberately excludes her (route.ts:36-41, "school_admin
-    // intentionally excluded", KD #74 + KD #31) — read and chase, never
-    // validate. Today the queue still RENDERS her Approve/Reject buttons, which
-    // then 403; that is bug 1 in the plan and Phase 2 fixes it using exactly
-    // this grant.
+    // SHE VALIDATES NOW, ON BOTH SIDES (2026-07-31, migration 106). She used
+    // to be read-and-chase only: the PATCH route excluded her ("school_admin
+    // intentionally excluded", KD #74 + KD #31) while the queue still RENDERED
+    // her Approve/Reject buttons, which then 403'd — a real bug this file
+    // recorded as outstanding. Mr Ace granted her validation directly in
+    // `role_permissions` and confirmed it was deliberate, which resolves that
+    // bug by making the buttons work rather than by hiding them.
     'documents_pre_enrolment.read',
     'documents_pre_enrolment.chase',
-    // Read-only oversight on the P-Files side too: the page admits her, and its
-    // `isOfficer` flag (page.tsx:33-34) already hides every action.
+    'documents_pre_enrolment.validate',
+    // No longer read-only oversight on the P-Files side: chase, upload and
+    // validate came with the same reassignment. The page's `isOfficer` flag
+    // (page.tsx:33-34) is now the narrower gate — worth revisiting, since it
+    // hides actions she is now permitted to take.
     'documents_post_enrolment.read',
+    'documents_post_enrolment.chase',
+    'documents_post_enrolment.upload',
+    'documents_post_enrolment.validate',
     'academic_year.read',
     'academic_year.create',
     'academic_year.edit',
@@ -311,10 +316,22 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     'documents_post_enrolment.chase',
     'documents_post_enrolment.upload',
     'documents_post_enrolment.validate',
-    // No pre-enrolment grant — route.ts:87-95 403s them on an un-enrolled
-    // applicant. Granting `documents_pre_enrolment.validate` here is exactly the
-    // change HFSE asked for, and it is a data edit in the editor, not a code
-    // change. It stays out of the seed so applying migration 101 is a no-op.
+    // BOTH SIDES OF ENROLMENT (2026-07-31, migration 106). This is the change
+    // the whole capability layer was built for — the note that used to sit here
+    // predicted it exactly ("granting documents_pre_enrolment.validate here is
+    // exactly the change HFSE asked for, and it is a data edit, not a code
+    // change"). It was made as a data edit; 106 writes it into the seed so the
+    // code stops disagreeing with production.
+    //
+    // No route change was needed: /p-files/document-validation is already the
+    // unified queue and loads the applicant rows whenever the viewer holds
+    // `documents_pre_enrolment.read`, so the officer sees both queues in the
+    // module they can already reach. `/admissions` still excludes them at
+    // ROUTE_ACCESS, deliberately — the capability gives them the WORK, not the
+    // whole Admissions module.
+    'documents_pre_enrolment.read',
+    'documents_pre_enrolment.chase',
+    'documents_pre_enrolment.validate',
   ],
 
   admissions: [
