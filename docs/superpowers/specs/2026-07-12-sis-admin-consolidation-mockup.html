@@ -1,0 +1,381 @@
+<title>SIS Admin — HFSE Makeover (modern, artifact-first)</title>
+<style>
+  :root {
+    --bg: #f8f9fb; --surface: #ffffff; --surface-2: #f3f4f6;
+    --ink: #09090b; --body: #3f3f46; --muted: #71717a; --faint: #a1a1aa;
+    --border: #e4e4e7; --border-strong: #d4d4d8;
+    --brand: #3730a3; --brand-fg: #ffffff; --brand-soft: #eef2ff; --brand-ink: #312e81;
+    --mint: #059669; --mint-soft: #ecfdf5;
+    --amber: #b45309; --amber-soft: #fffbeb;
+    --red: #b91c1c; --red-soft: #fef2f2;
+    --sky: #0369a1; --sky-soft: #f0f9ff;
+    --shadow: 0 1px 2px rgba(9,9,11,.05);
+    --shadow-md: 0 1px 3px rgba(9,9,11,.06), 0 4px 12px -4px rgba(9,9,11,.08);
+    --r: 10px; --r-sm: 7px;
+    --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --bg: #09090b; --surface: #101013; --surface-2: #18181c;
+    --ink: #fafafa; --body: #d4d4d8; --muted: #a1a1aa; --faint: #71717a;
+    --border: #232329; --border-strong: #33333b;
+    --brand: #818cf8; --brand-fg: #101013; --brand-soft: rgba(129,140,248,.12); --brand-ink: #a5b4fc;
+    --mint: #34d399; --mint-soft: rgba(52,211,153,.10);
+    --amber: #fbbf24; --amber-soft: rgba(251,191,36,.10);
+    --red: #f87171; --red-soft: rgba(248,113,113,.10);
+    --sky: #38bdf8; --sky-soft: rgba(56,189,248,.10);
+    --shadow: 0 1px 2px rgba(0,0,0,.5);
+    --shadow-md: 0 1px 3px rgba(0,0,0,.5), 0 6px 16px -6px rgba(0,0,0,.55);
+  }}
+  :root[data-theme="light"] {
+    --bg: #f8f9fb; --surface: #ffffff; --surface-2: #f3f4f6;
+    --ink: #09090b; --body: #3f3f46; --muted: #71717a; --faint: #a1a1aa;
+    --border: #e4e4e7; --border-strong: #d4d4d8;
+    --brand: #3730a3; --brand-fg: #ffffff; --brand-soft: #eef2ff; --brand-ink: #312e81;
+    --mint: #059669; --mint-soft: #ecfdf5;
+    --amber: #b45309; --amber-soft: #fffbeb;
+    --red: #b91c1c; --red-soft: #fef2f2;
+    --sky: #0369a1; --sky-soft: #f0f9ff;
+    --shadow: 0 1px 2px rgba(9,9,11,.05);
+    --shadow-md: 0 1px 3px rgba(9,9,11,.06), 0 4px 12px -4px rgba(9,9,11,.08);
+  }
+  :root[data-theme="dark"] {
+    --bg: #09090b; --surface: #101013; --surface-2: #18181c;
+    --ink: #fafafa; --body: #d4d4d8; --muted: #a1a1aa; --faint: #71717a;
+    --border: #232329; --border-strong: #33333b;
+    --brand: #818cf8; --brand-fg: #101013; --brand-soft: rgba(129,140,248,.12); --brand-ink: #a5b4fc;
+    --mint: #34d399; --mint-soft: rgba(52,211,153,.10);
+    --amber: #fbbf24; --amber-soft: rgba(251,191,36,.10);
+    --red: #f87171; --red-soft: rgba(248,113,113,.10);
+    --sky: #38bdf8; --sky-soft: rgba(56,189,248,.10);
+    --shadow: 0 1px 2px rgba(0,0,0,.5);
+    --shadow-md: 0 1px 3px rgba(0,0,0,.5), 0 6px 16px -6px rgba(0,0,0,.55);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.5; font-size:14px; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1200px; margin:0 auto; padding:36px 24px 80px; }
+
+  .masthead { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  h1 { font-size:clamp(22px,2.6vw,28px); font-weight:650; letter-spacing:-.02em; margin:0; }
+  .kicker { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--faint); margin:0 0 6px; }
+  .lede { color:var(--muted); font-size:14px; max-width:70ch; margin:10px 0 0; }
+  .lede b { color:var(--body); }
+  .theme-toggle { flex:none; background:var(--surface); border:1px solid var(--border-strong); color:var(--muted); border-radius:999px; padding:7px 14px; font-family:var(--mono); font-size:11px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; }
+  .theme-toggle:hover { color:var(--ink); border-color:var(--brand); }
+  .theme-toggle:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+
+  .rule { display:flex; align-items:center; gap:12px; margin:40px 0 6px; }
+  .rule::after { content:""; flex:1; height:1px; background:var(--border); }
+  .rule span { font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); }
+  .note { color:var(--muted); font-size:13px; max-width:76ch; margin:4px 0 16px; }
+  .note b { color:var(--body); }
+
+  /* app frame */
+  .frame { display:grid; grid-template-columns:224px 1fr; background:var(--bg); border:1px solid var(--border-strong); border-radius:14px; overflow:hidden; box-shadow:var(--shadow-md); }
+  .frame.noside { grid-template-columns:1fr; }
+  @media (max-width:860px){ .frame{grid-template-columns:1fr;} .side{display:none;} }
+  .side { background:var(--surface); border-right:1px solid var(--border); padding:12px 8px; display:flex; flex-direction:column; gap:1px; }
+  .sb-brand { display:flex; align-items:center; gap:8px; padding:6px 8px 12px; }
+  .sb-brand .logo { width:28px; height:28px; border-radius:7px; background:var(--brand); color:var(--brand-fg); display:grid; place-items:center; font-size:12px; font-weight:700; flex:none; }
+  .sb-brand b { font-size:13px; font-weight:600; }
+  .sb-brand small { display:block; font-size:10.5px; color:var(--faint); }
+  .it { display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:7px; font-size:13px; color:var(--muted); font-weight:500; }
+  .it svg { width:15px; height:15px; flex:none; opacity:.75; }
+  .it.on { background:var(--surface-2); color:var(--ink); font-weight:600; }
+  .it.on svg { opacity:1; color:var(--brand); }
+  .it .n { margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--faint); background:var(--surface-2); border:1px solid var(--border); border-radius:5px; padding:0 5px; }
+  .it .n.warn { color:var(--amber); background:var(--amber-soft); border-color:transparent; }
+
+  .screen { padding:20px 24px 26px; min-width:0; background:var(--bg); }
+  .crumb { font-size:12px; color:var(--faint); margin:0 0 4px; }
+  .crumb b { color:var(--muted); font-weight:500; }
+  .head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  .head h2 { font-size:19px; font-weight:650; letter-spacing:-.015em; margin:0; }
+  .head p { margin:3px 0 0; color:var(--muted); font-size:13px; max-width:60ch; }
+  .btn { display:inline-flex; align-items:center; gap:6px; border-radius:8px; padding:7px 13px; font-size:13px; font-weight:600; text-decoration:none; border:1px solid transparent; cursor:pointer; }
+  .btn.primary { background:var(--brand); color:var(--brand-fg); box-shadow:var(--shadow); }
+  .btn.primary:hover { filter:brightness(1.08); }
+  .btn.ghost { background:var(--surface); color:var(--body); border-color:var(--border-strong); }
+  .btn.ghost:hover { border-color:var(--brand); color:var(--ink); }
+  .btn:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+
+  .tabs { display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:3px; gap:2px; margin-bottom:14px; }
+  .tab { font-size:12.5px; padding:5px 13px; border-radius:6px; color:var(--muted); font-weight:500; }
+  .tab.on { background:var(--surface); color:var(--ink); font-weight:600; box-shadow:var(--shadow); }
+  .tab .lock { font-family:var(--mono); font-size:9px; text-transform:uppercase; color:var(--faint); border:1px solid var(--border); border-radius:4px; padding:0 4px; margin-left:5px; }
+
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; }
+  .card + .card { margin-top:12px; }
+  .card-h { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .card-h b { font-size:14px; font-weight:600; }
+  .card-h small { color:var(--muted); font-size:12px; display:block; font-weight:400; }
+  .card-h .end { display:flex; align-items:center; gap:8px; }
+
+  .pill { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600; border-radius:999px; padding:2px 9px; }
+  .pill svg { width:11px; height:11px; }
+  .p-mint { color:var(--mint); background:var(--mint-soft); }
+  .p-amber { color:var(--amber); background:var(--amber-soft); }
+  .p-red { color:var(--red); background:var(--red-soft); }
+  .p-sky { color:var(--sky); background:var(--sky-soft); }
+  .p-brand { color:var(--brand-ink); background:var(--brand-soft); }
+  .p-mutd { color:var(--muted); background:var(--surface-2); border:1px solid var(--border); }
+
+  .row { display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--border); font-size:13.5px; }
+  .row:last-child { border-bottom:0; }
+  .row .grow { flex:1; min-width:0; }
+  .row .grow small { display:block; color:var(--muted); font-size:12px; }
+  .row .go { color:var(--brand); font-weight:600; font-size:12.5px; text-decoration:none; flex:none; }
+  .row .go:hover { text-decoration:underline; }
+  .mono { font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .code { font-family:var(--mono); font-size:11px; font-weight:600; color:var(--brand-ink); background:var(--brand-soft); border-radius:5px; padding:2px 7px; flex:none; min-width:32px; text-align:center; }
+
+  /* grading sheet preview */
+  .sheet { display:flex; gap:2px; overflow-x:auto; padding:10px 16px 14px; }
+  .sheet .col { flex:none; min-width:34px; text-align:center; }
+  .sheet .col span { display:block; font-family:var(--mono); font-size:9.5px; color:var(--faint); text-transform:uppercase; padding:3px 4px; background:var(--surface-2); border:1px solid var(--border); border-bottom:0; border-radius:5px 5px 0 0; }
+  .sheet .col i { display:block; font-style:normal; font-family:var(--mono); font-size:10px; color:var(--muted); padding:5px 4px; border:1px solid var(--border); border-radius:0 0 5px 5px; background:var(--surface); }
+  .sheet .col.ww span { color:var(--sky); background:var(--sky-soft); border-color:transparent; }
+  .sheet .col.pt span { color:var(--mint); background:var(--mint-soft); border-color:transparent; }
+  .sheet .col.qa span { color:var(--amber); background:var(--amber-soft); border-color:transparent; }
+  .sheet .gap { flex:none; width:8px; }
+  .sheet-cap { padding:0 16px 12px; font-size:12px; color:var(--muted); }
+
+  /* calendar mini-grid */
+  .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; padding:12px 16px 6px; }
+  .cal .dow { font-family:var(--mono); font-size:9px; text-transform:uppercase; text-align:center; color:var(--faint); padding-bottom:2px; }
+  .cal .d { border:1px solid var(--border); border-radius:6px; min-height:38px; padding:3px 5px; font-size:11px; color:var(--body); background:var(--surface); position:relative; }
+  .cal .d em { font-style:normal; font-family:var(--mono); font-size:10px; color:var(--muted); }
+  .cal .d.off { background:var(--surface-2); color:var(--faint); border-style:dashed; }
+  .cal .d .t { display:block; font-size:9px; font-weight:700; margin-top:2px; border-radius:4px; padding:0 4px; width:fit-content; }
+  .t-ph { color:var(--red); background:var(--red-soft); }
+  .t-hbl { color:var(--amber); background:var(--amber-soft); }
+  .t-se { color:var(--sky); background:var(--sky-soft); }
+  .cal-key { display:flex; gap:14px; padding:8px 16px 14px; flex-wrap:wrap; font-size:11.5px; color:var(--muted); }
+  .cal-key i { font-style:normal; font-weight:700; font-size:9px; border-radius:4px; padding:0 5px; margin-right:4px; }
+
+  /* letterhead preview */
+  .letter { margin:14px 16px; border:1px solid var(--border-strong); border-radius:8px; padding:18px 20px 14px; background:var(--surface); text-align:center; }
+  .letter h3 { margin:0; font-size:16px; font-weight:700; letter-spacing:.02em; }
+  .letter p { margin:2px 0 0; font-size:11px; color:var(--muted); }
+  .letter .pei { font-family:var(--mono); font-size:10px; color:var(--faint); margin-top:6px; }
+  .letter .sig { display:flex; justify-content:space-around; margin-top:16px; padding-top:10px; border-top:1px dashed var(--border-strong); }
+  .letter .sig div { font-size:11px; color:var(--muted); }
+  .letter .sig b { display:block; font-size:12px; color:var(--ink); border-top:1px solid var(--border-strong); margin-top:14px; padding-top:4px; }
+  .letter .sig .missing b { color:var(--amber); border-top-style:dashed; }
+
+  .cfg { display:grid; grid-template-columns:1fr 1fr; }
+  @media (max-width:760px){ .cfg{grid-template-columns:1fr;} }
+  .cfg .cell { padding:12px 16px; border-bottom:1px solid var(--border); }
+  .cfg .cell:nth-last-child(-n+2){ border-bottom:0; }
+  .cfg label { display:block; font-size:11px; color:var(--faint); margin-bottom:2px; font-weight:500; }
+  .cfg div.v { font-size:13.5px; }
+  .cfg .edit { float:right; color:var(--brand); font-size:12px; font-weight:600; text-decoration:none; }
+
+  .avatar { width:32px; height:32px; border-radius:8px; background:var(--brand-soft); color:var(--brand-ink); display:grid; place-items:center; font-weight:700; font-size:12px; flex:none; }
+  .chip { font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:5px; border:1px solid var(--border); color:var(--muted); background:var(--surface-2); flex:none; }
+  .chip.fca { color:var(--amber); background:var(--amber-soft); border-color:transparent; }
+
+  .notes { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+  @media (max-width:760px){ .notes{grid-template-columns:1fr;} }
+  .noteCard { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px 16px; }
+  .noteCard h3 { font-size:13.5px; margin:0 0 5px; font-weight:650; }
+  .noteCard p { margin:0; font-size:12.5px; color:var(--muted); }
+  footer { margin-top:40px; padding-top:16px; border-top:1px solid var(--border); color:var(--faint); font-size:12.5px; max-width:80ch; }
+</style>
+
+<div class="wrap">
+  <div class="masthead">
+    <div>
+      <p class="kicker">HFSE SIS · SIS Admin makeover · v2</p>
+      <h1>Admin that speaks HFSE's language</h1>
+    </div>
+    <button class="theme-toggle" id="themeBtn" type="button" aria-label="Toggle theme"><span id="themeLabel">Dark</span></button>
+  </div>
+  <p class="lede">
+    Two changes from what exists today. <b>One:</b> every admin screen is rebuilt around the real thing it feeds — the grading sheet teachers fill in,
+    the attendance register, the printed report card, the parent application form — with a live preview of that artifact on the page, so Chandana and Joann
+    configure by looking at the result, not at a matrix of fields. <b>Two:</b> the presentation moves to the modern shadcn dashboard idiom used by current
+    production SaaS — clean sans type, quiet cards, real tables, pill statuses — no bespoke ceremony. Six surfaces, one sidebar, HFSE defaults pre-filled everywhere.
+  </p>
+
+  <div class="rule"><span>Screen 1 · Grading setup — /sis/structure</span></div>
+  <p class="note"><b>The page IS the grading sheet.</b> Pick a level, and each subject row shows exactly the columns teachers will get — WW slots in blue, PT in green, QA in amber — with HFSE's standard weights applied by default (Primary 40/40/20 · Secondary 30/50/20). Changing slots updates the preview live; unlocked sheets sync on save. No more abstract "subject config matrix."</p>
+
+  <div class="frame">
+    <aside class="side" aria-label="SIS Admin navigation">
+      <div class="sb-brand"><span class="logo">H</span><span><b>SIS Admin</b><small>HFSE International</small></span></div>
+      <div class="it"><svg viewBox="0 0 24 24" fill="none"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6h-6v6H4a1 1 0 01-1-1v-9z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Home</div>
+      <div class="it"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M3 9h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>School Year<span class="n warn">6/7</span></div>
+      <div class="it on"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7l8-4 8 4-8 4-8-4zM4 12l8 4 8-4M4 17l8 4 8-4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>Structure</div>
+      <div class="it"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Sections<span class="n">28</span></div>
+      <div class="it"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M3.5 19c.8-3 3-4.5 5.5-4.5S13.7 16 14.5 19M15 5.5a3 3 0 011.5 5.6M17 14.7c1.9.5 3.2 1.9 3.7 4.3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>People<span class="n">21</span></div>
+      <div class="it"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M19 12a7 7 0 00-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 00-2-1.2L14.2 3h-4l-.4 2.7a7 7 0 00-2 1.2l-2.3-1-2 3.4 2 1.5A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-1a7 7 0 002 1.2l.4 2.7h4l.4-2.7a7 7 0 002-1.2l2.3 1 2-3.4-2-1.5c0-.4.1-.8.1-1.2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>System</div>
+    </aside>
+    <div class="screen">
+      <p class="crumb"><b>Structure</b> · Grading setup · Grade levels · Year defaults</p>
+      <div class="head">
+        <div><h2>Grading setup</h2><p>What each subject's grading sheet looks like this year. Teachers' sheets follow this exactly.</p></div>
+        <span class="pill p-brand">Primary 3 · AY2026</span>
+      </div>
+      <div class="tabs" role="tablist">
+        <span class="tab on" role="tab" aria-selected="true">Grading setup</span>
+        <span class="tab" role="tab" aria-selected="false">Grade levels</span>
+        <span class="tab" role="tab" aria-selected="false">Year defaults</span>
+      </div>
+
+      <div class="card">
+        <div class="card-h">
+          <span><b>ENGLISH — Primary 3</b><small>Written Works 40% · Performance Tasks 40% · Quarterly Assessment 20%</small></span>
+          <span class="end"><span class="pill p-mint"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>HFSE Primary standard</span><a class="go" href="#">Change…</a></span>
+        </div>
+        <div class="sheet" aria-label="Grading sheet column preview">
+          <div class="col ww"><span>WW1</span><i>/10</i></div><div class="col ww"><span>WW2</span><i>/10</i></div><div class="col ww"><span>WW3</span><i>/10</i></div><div class="col ww"><span>WW4</span><i>/10</i></div><div class="col ww"><span>WW5</span><i>/10</i></div>
+          <div class="gap"></div>
+          <div class="col pt"><span>PT1</span><i>/10</i></div><div class="col pt"><span>PT2</span><i>/10</i></div><div class="col pt"><span>PT3</span><i>/10</i></div><div class="col pt"><span>PT4</span><i>/10</i></div><div class="col pt"><span>PT5</span><i>/10</i></div>
+          <div class="gap"></div>
+          <div class="col qa"><span>QA</span><i>/30</i></div>
+        </div>
+        <p class="sheet-cap">This is the sheet teachers open in Markbook. 5 written works + 5 performance tasks + one quarterly assessment out of 30.</p>
+      </div>
+
+      <div class="card">
+        <div class="row"><span class="code">MATH</span><span class="grow">Mathematics <small>5 WW · 5 PT · QA /30 — Primary standard</small></span><span class="pill p-mint">Standard</span><a class="go" href="#">Preview</a></div>
+        <div class="row"><span class="code">SCI</span><span class="grow">Science <small>4 WW · 5 PT · QA /40 — adjusted slots</small></span><span class="pill p-amber">Custom</span><a class="go" href="#">Preview</a></div>
+        <div class="row"><span class="code">PE</span><span class="grow">Physical Education <small>Letter-graded (A / B / C / IP) — no weights</small></span><span class="pill p-mutd">Non-examinable</span><a class="go" href="#">Preview</a></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rule"><span>Screen 2 · Attendance calendar — /sis/school-year</span></div>
+  <p class="note"><b>The page IS the register.</b> The calendar is edited as the month grid teachers recognise from the attendance workbook — PH / HBL / SE tags land on their sheets exactly as shown. One button for the common case (Add a closure); term dates imply school days, you only mark exceptions and events.</p>
+
+  <div class="frame noside">
+    <div class="screen">
+      <p class="crumb"><b>School Year</b> · Year · Calendar</p>
+      <div class="head">
+        <div><h2>School calendar — July 2026</h2><p>Every tag here prints on teachers' attendance sheets and counts toward report-card attendance.</p></div>
+        <span class="end" style="display:flex;gap:8px"><a class="btn ghost" href="#">Copy from last year</a><a class="btn primary" href="#">+ Add a closure</a></span>
+      </div>
+      <div class="card">
+        <div class="cal" aria-label="July 2026">
+          <span class="dow">Mon</span><span class="dow">Tue</span><span class="dow">Wed</span><span class="dow">Thu</span><span class="dow">Fri</span><span class="dow">Sat</span><span class="dow">Sun</span>
+          <div class="d"><em>13</em></div><div class="d"><em>14</em></div><div class="d"><em>15</em></div><div class="d"><em>16</em></div><div class="d"><em>17</em><span class="t t-hbl">HBL</span></div><div class="d off"><em>18</em></div><div class="d off"><em>19</em></div>
+          <div class="d"><em>20</em></div><div class="d"><em>21</em><span class="t t-se">SE</span></div><div class="d"><em>22</em></div><div class="d"><em>23</em></div><div class="d"><em>24</em></div><div class="d off"><em>25</em></div><div class="d off"><em>26</em></div>
+          <div class="d"><em>27</em></div><div class="d"><em>28</em></div><div class="d"><em>29</em></div><div class="d"><em>30</em></div><div class="d"><em>31</em></div><div class="d off"><em>1</em></div><div class="d off"><em>2</em></div>
+        </div>
+        <div class="cal-key">
+          <span><i class="t-ph">PH</i>Public holiday — no attendance</span>
+          <span><i class="t-hbl">HBL</i>Home-based learning — attendance taken</span>
+          <span><i class="t-se">SE</i>School event — Racial Harmony Day</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row"><span class="pill p-red">PH</span><span class="grow">National Day (observed) <small>Mon 10 Aug · whole school</small></span><a class="go" href="#">Edit</a></div>
+        <div class="row"><span class="pill p-sky">SE</span><span class="grow">Moving up photoshoot <small>Mon 13 Jul · whole school</small></span><a class="go" href="#">Edit</a></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rule"><span>Screen 3 · Report card setup — /sis/system</span></div>
+  <p class="note"><b>The page IS the report card header.</b> Letterhead and signatures are edited against a live preview of the printed card — a missing signature shows exactly where it will be missing. No more guessing which form field maps to which line on the card.</p>
+
+  <div class="frame noside">
+    <div class="screen">
+      <p class="crumb"><b>System</b> · School details · Settings · Activity history</p>
+      <div class="head">
+        <div><h2>Report card letterhead</h2><p>Exactly what parents see at the top of every printed report card.</p></div>
+        <span class="pill p-amber"><svg viewBox="0 0 24 24" fill="none"><path d="M12 6v7M12 16.5h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>1 item missing — blocks year setup</span>
+      </div>
+      <div class="card">
+        <div class="letter" aria-label="Report card header preview">
+          <h3>HFSE INTERNATIONAL SCHOOL</h3>
+          <p>1 Lor 2 Toa Payoh, Singapore · +65 6250 1832 · admissions@hfse.edu.sg</p>
+          <p class="pei">PEI Registration 200800000K · valid to 2028</p>
+          <div class="sig">
+            <div class="missing"><span>Principal</span><b>Signature not uploaded</b></div>
+            <div><span>Registrar</span><b>Ms. Joann R.</b></div>
+          </div>
+        </div>
+        <div class="cfg">
+          <div class="cell"><a class="edit" href="#">Edit</a><label>School name</label><div class="v">HFSE International School</div></div>
+          <div class="cell"><a class="edit" href="#">Edit</a><label>PEI registration</label><div class="v">200800000K · to 2028</div></div>
+          <div class="cell"><a class="edit" href="#">Upload</a><label>Principal signature</label><div class="v" style="color:var(--amber)">Missing — the year-setup checklist is waiting on this</div></div>
+          <div class="cell"><a class="edit" href="#">Edit</a><label>Registrar signature</label><div class="v">On file</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rule"><span>Screen 4 · Grade levels — what the application form offers</span></div>
+  <p class="note"><b>The page IS the application form's level list.</b> Levels are framed by what parents see when applying: which levels are offered next year, and which level a returning student is suggested to apply for. Demand from real applications surfaces inline.</p>
+
+  <div class="frame noside">
+    <div class="screen">
+      <p class="crumb"><b>Structure</b> · Grading setup · Grade levels · Year defaults</p>
+      <div class="head">
+        <div><h2>Grade levels</h2><p>P1–S4 are permanent. Everything else can be offered or shelved per year. "Next level" only pre-fills the application form — it never moves a student.</p></div>
+        <span class="pill p-sky">Application window: AY2027 open</span>
+      </div>
+      <div class="card">
+        <div class="card-h"><span><b>Primary</b><small>promotes P1 → P6 → S1 · weights 40/40/20</small></span></div>
+        <div class="row"><span class="code">P3</span><span class="grow">Primary 3 <small>next: P4 · 3 sections · 61 students</small></span><span class="pill p-mint">Offered</span></div>
+        <div class="row"><span class="code">P6</span><span class="grow">Primary 6 <small>next: S1 · 2 sections · 39 students</small></span><span class="pill p-mint">Offered</span></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span><b>Cambridge</b><small>offered per year · weights 30/50/20</small></span><span class="pill p-amber"><svg viewBox="0 0 24 24" fill="none"><path d="M12 6v7M12 16.5h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>2 AY2027 applicants chose CS1 — not offered</span></div>
+        <div class="row"><span class="code">CS1</span><span class="grow">Cambridge Stage 1 <small>next: CS2</small></span><span class="pill p-mutd">Not offered · AY2027</span><a class="go" href="#">Offer for AY2027</a></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rule"><span>Screen 5 · Sections — the class list as HFSE runs it</span></div>
+  <p class="note"><b>Virtue names, index numbers, advisers</b> — the three things HFSE actually manages per class. Index numbers are front and centre (misaligned index numbers were a named pain point); Generate class index is one click, with the year-started warning built in.</p>
+
+  <div class="frame noside">
+    <div class="screen">
+      <p class="crumb"><b>Sections</b> · AY2026</p>
+      <div class="head">
+        <div><h2>Sections</h2><p>28 classes across P1–S4. Each row is one register: virtue name, adviser, and the class index.</p></div>
+        <a class="btn primary" href="#">+ New section</a>
+      </div>
+      <div class="card">
+        <div class="row"><span class="code">P3</span><span class="grow"><b>Courtesy</b> · Morning <small>Adviser: Maria T. · index #1–#21 · 21 active</small></span><span class="pill p-mint">Index complete</span><a class="go" href="#">Open</a></div>
+        <div class="row"><span class="code">P3</span><span class="grow"><b>Courageous</b> · Morning <small>Adviser: David W. · index #1–#19 · 19 active + 1 new</small></span><span class="pill p-amber">1 student unnumbered</span><a class="go" href="#">Generate index</a></div>
+        <div class="row"><span class="code">S2</span><span class="grow"><b>Integrity</b> · Whole day <small>Adviser: Daniel L. · index #1–#24 · 23 active, #7 retired</small></span><span class="pill p-mint">Index complete</span><a class="go" href="#">Open</a></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rule"><span>What gets simpler, function-wise</span></div>
+  <div class="notes">
+    <div class="noteCard"><h3>Configure by preview, not by field</h3><p>Grading sheet columns, the calendar month, the report-card header, and the application form's level list are rendered ON the admin pages. You see what teachers/parents will see while you edit it — the single biggest de-jargoning move.</p></div>
+    <div class="noteCard"><h3>HFSE defaults do the typing</h3><p>Primary 40/40/20 and Secondary 30/50/20 are one-click "standards" (already in the DB per KD #4/#153) — a subject is "Standard" or "Custom", not eleven number inputs. New sections suggest the official virtue names + schedule (KD #144). New years copy Year Defaults automatically.</p></div>
+    <div class="noteCard"><h3>Common actions become one button</h3><p>"Add a closure", "Generate class index", "Offer for AY2027", "Upload signature" — each named pain point gets a first-class button on the page where you notice the problem, instead of a trip through a settings matrix.</p></div>
+    <div class="noteCard"><h3>Modern shadcn idiom, no bespoke ceremony</h3><p>Built from the shadcn primitives already installed (Card, Tabs, Table, Badge, Button) in the dashboard-01 layout language: sans type, quiet borders, pill statuses, one primary button per screen. All colors stay on existing Aurora Vault tokens (Hard Rule #7) — this is a restyle of presentation, not a new palette.</p></div>
+  </div>
+
+  <footer>
+    Preview only — links inert, values illustrative. The 13→6 route consolidation already built (six surfaces, cut tabs, redirects, role gating) is the skeleton this hangs on; what changes now is every page's CONTENT: artifact previews, HFSE defaults, and the modern presentation shown here. Approve this and implementation restyles the real pages to match, screen by screen.
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var root = document.documentElement;
+  var btn = document.getElementById("themeBtn");
+  var lbl = document.getElementById("themeLabel");
+  function current() {
+    var attr = root.getAttribute("data-theme");
+    if (attr) return attr;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  function sync() { lbl.textContent = current() === "dark" ? "Light" : "Dark"; }
+  btn.addEventListener("click", function () {
+    root.setAttribute("data-theme", current() === "dark" ? "light" : "dark");
+    sync();
+  });
+  sync();
+})();
+</script>
