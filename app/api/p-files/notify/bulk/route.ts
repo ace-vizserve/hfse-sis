@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/lib/auth/require-role';
+import { requireCapability } from '@/lib/auth/require-capability';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import { logAction, type AuditAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -36,13 +36,12 @@ export async function POST(request: NextRequest) {
   const moduleKey = resolveModule(parsed.data.module);
   const validItems: BulkItem[] = parsed.data.items;
 
-  // Per-module role gate.
-  const allowedRoles =
+  // Per-module gate, by capability — same holders as the role arrays this
+  // replaces (see the single-slot notify route for the full note).
+  const auth = await requireCapability(
     moduleKey === 'admissions'
-      ? ['admissions', 'academic_coordinator', 'school_admin', 'superadmin']
-      : ['p_file_officer', 'superadmin'];
-  const auth = await requireRole(
-    allowedRoles as import('@/lib/auth/roles').Role[]
+      ? 'documents_pre_enrolment.chase'
+      : 'documents_post_enrolment.chase'
   );
   if ('error' in auth) return auth.error;
 

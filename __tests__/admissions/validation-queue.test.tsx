@@ -59,7 +59,9 @@ describe('ValidationQueue (Tier-1 optimistic)', () => {
   it('optimistically removes the row, toasts success, and refreshes', async () => {
     const user = userEvent.setup();
     stubFetch(() => Promise.resolve(jsonResponse({ ok: true })));
-    renderWithClient(<ValidationQueue rows={[ROW]} ayCode="AY9999" />);
+    renderWithClient(
+      <ValidationQueue rows={[ROW]} ayCode="AY9999" canValidate />
+    );
 
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
     await user.click(approveButton());
@@ -77,7 +79,9 @@ describe('ValidationQueue (Tier-1 optimistic)', () => {
     stubFetch(() =>
       Promise.resolve(jsonResponse({ error: 'document_locked' }, 409))
     );
-    renderWithClient(<ValidationQueue rows={[ROW]} ayCode="AY9999" />);
+    renderWithClient(
+      <ValidationQueue rows={[ROW]} ayCode="AY9999" canValidate />
+    );
 
     await user.click(approveButton());
 
@@ -87,5 +91,42 @@ describe('ValidationQueue (Tier-1 optimistic)', () => {
     // Rolled back — the row is visible again, and no refresh happened.
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
     expect(refreshMock).not.toHaveBeenCalled();
+  });
+
+  // The bug this prop exists to fix: the page admits `school_admin` as
+  // read-only oversight (KD #74 + KD #31) while the PATCH route deliberately
+  // excludes them, and this component took no viewer prop — so it rendered
+  // Approve/Reject to everyone who could open the page, and every click 403'd.
+  it('renders no actions when the viewer cannot validate', () => {
+    stubFetch(() => Promise.resolve(jsonResponse({ ok: true })));
+    renderWithClient(
+      <ValidationQueue rows={[ROW]} ayCode="AY9999" canValidate={false} />
+    );
+
+    // The queue is still fully readable — this is oversight, not a lockout.
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /approve/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /reject/i })
+    ).not.toBeInTheDocument();
+    // Triage exists only to approve or reject, so it goes too.
+    expect(
+      screen.queryByRole('button', { name: /triage/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it('omitting the prop is read-only, not editable', () => {
+    // Fail-safe direction, matching KD #163's choice for row actions: a caller
+    // that forgets the prop must hide the actions rather than dead-end someone
+    // on a 403.
+    stubFetch(() => Promise.resolve(jsonResponse({ ok: true })));
+    renderWithClient(<ValidationQueue rows={[ROW]} ayCode="AY9999" />);
+
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /approve/i })
+    ).not.toBeInTheDocument();
   });
 });

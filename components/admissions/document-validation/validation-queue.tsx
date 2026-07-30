@@ -34,6 +34,20 @@ import { TriagePane } from './triage-pane';
 type Props = {
   rows: ValidationQueueRow[];
   ayCode: string;
+  /**
+   * May the viewer approve or reject? Gates the actions column, the triage
+   * mode, and the reject dialog — everything that writes.
+   *
+   * Defaults to FALSE deliberately: a caller who forgets to pass it renders a
+   * read-only queue rather than buttons that 403. That was the live bug this
+   * prop fixes — the page admitted `school_admin` (read-only oversight per
+   * KD #74 + KD #31) while the PATCH route deliberately excludes them, and
+   * this component took no viewer prop at all, so it rendered Approve/Reject
+   * to everyone who could open the page. Its P-Files sibling
+   * (components/p-files/document-validation/awaiting-queue.tsx) had always
+   * gated correctly on `isOfficer`; this side was the outlier.
+   */
+  canValidate?: boolean;
 };
 
 function ValidationGroupHeader({
@@ -100,7 +114,11 @@ function ValidationGroupHeader({
   );
 }
 
-export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
+export function ValidationQueue({
+  rows: initialRows,
+  ayCode,
+  canValidate = false,
+}: Props) {
   const router = useRouter();
   const [mode, setMode] = React.useState<'table' | 'triage'>('table');
   const [rows, setRows] = React.useState<ValidationQueueRow[]>(initialRows);
@@ -242,39 +260,45 @@ export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
           </a>
         ),
       },
-      {
-        id: 'actions',
-        header: '',
-        enableHiding: false,
-        cell: ({ row }) => {
-          const key = rowKey(row.original);
-          const busy = actingKey === key;
-          return (
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                size="sm"
-                variant="default"
-                disabled={busy}
-                onClick={() =>
-                  void patchStatus(row.original, { status: 'Valid' })
-                }
-              >
-                Approve
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={busy}
-                onClick={() => setRejectTarget(row.original)}
-              >
-                Reject
-              </Button>
-            </div>
-          );
-        },
-      },
+      // Spread, not a conditional cell: a viewer who can't act sees no column
+      // at all rather than an empty one, matching the sibling queue.
+      ...(canValidate
+        ? [
+            {
+              id: 'actions',
+              header: '',
+              enableHiding: false,
+              cell: ({ row }) => {
+                const key = rowKey(row.original);
+                const busy = actingKey === key;
+                return (
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="default"
+                      disabled={busy}
+                      onClick={() =>
+                        void patchStatus(row.original, { status: 'Valid' })
+                      }
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={busy}
+                      onClick={() => setRejectTarget(row.original)}
+                    >
+                      Reject
+                    </Button>
+                  </div>
+                );
+              },
+            } satisfies ColumnDef<ValidationQueueRow>,
+          ]
+        : []),
     ],
-    [actingKey, ayCode, patchStatus, rowKey]
+    [actingKey, ayCode, canValidate, patchStatus, rowKey]
   );
 
   // Facets: document type, owner, level, app status. The shell renders
@@ -329,8 +353,9 @@ export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
     []
   );
 
-  // Toolbar: mode toggle.
-  const modeToggle = (
+  // Toolbar: mode toggle. Triage exists to approve or reject one document at a
+  // time, so it has nothing to offer a read-only viewer.
+  const modeToggle = !canValidate ? null : (
     <div className="flex items-center gap-1 rounded-lg border border-hairline p-0.5">
       <Toggle
         size="sm"
@@ -353,7 +378,7 @@ export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
     </div>
   );
 
-  if (mode === 'triage') {
+  if (mode === 'triage' && canValidate) {
     return (
       <div className="space-y-4">
         <TriagePane
@@ -405,22 +430,24 @@ export function ValidationQueue({ rows: initialRows, ayCode }: Props) {
           ),
         }}
       />
-      <RejectDialog
-        open={rejectTarget != null}
-        onOpenChange={(open) => {
-          if (!open) setRejectTarget(null);
-        }}
-        slotLabel={rejectTarget?.slotLabel ?? ''}
-        studentName={rejectTarget?.fullName ?? ''}
-        onConfirm={async (reason) => {
-          if (!rejectTarget) return;
-          const ok = await patchStatus(rejectTarget, {
-            status: 'Rejected',
-            rejectionReason: reason,
-          });
-          if (ok) setRejectTarget(null);
-        }}
-      />
+      {canValidate && (
+        <RejectDialog
+          open={rejectTarget != null}
+          onOpenChange={(open) => {
+            if (!open) setRejectTarget(null);
+          }}
+          slotLabel={rejectTarget?.slotLabel ?? ''}
+          studentName={rejectTarget?.fullName ?? ''}
+          onConfirm={async (reason) => {
+            if (!rejectTarget) return;
+            const ok = await patchStatus(rejectTarget, {
+              status: 'Rejected',
+              rejectionReason: reason,
+            });
+            if (ok) setRejectTarget(null);
+          }}
+        />
+      )}
     </div>
   );
 }
