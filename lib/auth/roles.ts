@@ -493,13 +493,14 @@ const SIS_NAV: NavSection[] = [
       {
         href: '/sis',
         label: 'Admin Hub',
-        // The hub root is school_admin/superadmin-only territory (ROUTE_ACCESS's
-        // broad `/sis` catch-all excludes registrar) — gating the nav link to
-        // match kills the registrar dead-end where the link was visible but
-        // the proxy bounced her off it. Her direct cross-links into SIS Admin
-        // (Records → /sis/sections, /sis/admin/staff, /sis/admin/discount-codes)
-        // are unaffected — those routes carry their own ROUTE_ACCESS rows.
-        requiresRoles: ['school_admin', 'superadmin'],
+        // Mirrors ROUTE_ACCESS's `/sis` catch-all exactly — a nav link visible
+        // to a role the proxy then bounces is the dead-end KD #159 direction A
+        // exists to prevent, and the guard test asserts these two agree. The
+        // academic coordinator was added to both on 2026-07-31 so SIS Admin
+        // shows up in her module switcher; her cross-links from Records and
+        // Admissions still work and are now a shortcut rather than the only
+        // way in.
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -911,7 +912,26 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
     prefix: '/records',
     allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
-  { prefix: '/sis', allowed: ['school_admin', 'superadmin'] },
+  // The hub admits the academic coordinator so SIS Admin appears in her module
+  // switcher — the switcher shows a module iff `isRouteAllowed(primaryHref)`,
+  // and SIS's primaryHref is this route, so without this row she owned four
+  // surfaces under /sis with no way in except a cross-link from another
+  // module's sidebar. Narrows KD #154's "hub is school_admin+" on Mr Ace's
+  // explicit instruction (2026-07-31).
+  //
+  // This is the catch-all, so it only grants what no longer-prefix rule
+  // overrides: ay-setup, calendar, sections, staff and admin/subjects each
+  // carry their own row admitting her, while audit-log, school-config,
+  // approvers and admin/roles carry rows that do not — longer-prefix-wins
+  // keeps her out of those. The hub is status-and-launch, so what it can
+  // expose is bounded by what she can already open; the two links that were
+  // NOT so bounded (the approver-readiness attention row and the "New staff
+  // member" quick action, which deep-links to an Accounts tab she cannot see)
+  // are gated at their source rather than left as dead ends.
+  {
+    prefix: '/sis',
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
+  },
 ];
 
 export function getUserRole(user: User | null | undefined): Role | null {

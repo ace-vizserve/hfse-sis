@@ -34,6 +34,8 @@ type QuickAction = {
   href: string;
   icon: LucideIcon;
   toneClass: string;
+  /** Shown only to a viewer who can actually manage staff accounts. */
+  requiresAccountManagement?: boolean;
 };
 
 const NEUTRAL_TILE =
@@ -61,6 +63,10 @@ const ACTIONS: QuickAction[] = [
     href: '/sis/admin/staff?view=accounts',
     icon: UserPlus,
     toneClass: NEUTRAL_TILE,
+    // Creating an account is superadmin-only (KD #87), and the staff page hides
+    // the Accounts tab from everyone else — so for any other viewer this tile
+    // lands on the directory with no sign of what they clicked for.
+    requiresAccountManagement: true,
   },
   {
     label: 'Add a closure',
@@ -72,14 +78,23 @@ const ACTIONS: QuickAction[] = [
   },
 ];
 
-export function HubQuickActions() {
+export function HubQuickActions({
+  canManageAccounts = true,
+}: {
+  /** Defaults true so the pre-existing superadmin/school_admin render is
+   *  unchanged for any caller that doesn't pass it. */
+  canManageAccounts?: boolean;
+}) {
+  const actions = ACTIONS.filter(
+    (action) => canManageAccounts || !action.requiresAccountManagement
+  );
   return (
     <div
       role="group"
       aria-label="Quick actions"
       className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
     >
-      {ACTIONS.map((action) => (
+      {actions.map((action) => (
         <Link
           key={action.href}
           href={action.href}

@@ -59,9 +59,25 @@ export default async function SisAdminHub() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   const role = sessionUser.role;
-  if (role !== 'school_admin' && role !== 'superadmin') {
+  if (
+    role !== 'academic_coordinator' &&
+    role !== 'school_admin' &&
+    role !== 'superadmin'
+  ) {
     redirect('/');
   }
+  // The hub is status-and-launch, so nearly everything it renders is bounded by
+  // what the viewer can already open. One link isn't: the "New staff member"
+  // quick action deep-links to `?view=accounts`, and the staff page hides the
+  // Accounts tab from the academic coordinator — she would land on the
+  // directory with no sign of what she clicked for. Gated here rather than left
+  // to disappoint. (The other candidate, the approver-readiness attention row,
+  // needs no new gate: `approverFlowCounts` is already fetched only for
+  // superadmin, so the row cannot be built for anyone else.)
+  //
+  // Neither is a nav item, so the KD #159 nav test would not have caught this —
+  // the same blind spot as the row-action cross-links in KD #163.
+  const canManageAccounts = role === 'superadmin';
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
@@ -314,7 +330,7 @@ export default async function SisAdminHub() {
         />
       )}
 
-      <HubQuickActions />
+      <HubQuickActions canManageAccounts={canManageAccounts} />
 
       {/* Trust strip */}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
