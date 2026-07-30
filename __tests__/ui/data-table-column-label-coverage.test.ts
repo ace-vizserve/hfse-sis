@@ -39,8 +39,10 @@ const INTENTIONAL_LABEL_DIVERGENCE: Record<string, string> = {
   // Header is a per-term short code ("T2") and the id carries a term UUID;
   // the menu has room for the full "Term 2".
   writeups: 'dynamic per-term column — full term label in the menu',
-  // Header is abbreviated to fit a ~60px column; menu takes the full name.
-  slot: 'document slot column — header is abbreviated to fit the grid',
+  // The `slot:` entry that used to live here covered the 13 abbreviated
+  // per-document columns on the completeness table. Those columns were
+  // replaced by a single strip; the per-slot detail now ships as
+  // `csv.extraColumns`, which carry a plain `header` and never need a label.
 };
 
 /**

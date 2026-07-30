@@ -2,10 +2,19 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, Mail, Search } from 'lucide-react';
+import { ArrowUpRight, Check, Mail, Search } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import { IdentifierLink } from '@/components/ui/identifier-link';
+import {
+  DocumentCompletenessStrip,
+  DocumentStatusLegend,
+} from '@/components/shared/document-completeness-strip';
+import {
+  STATUS_CHIP,
+  chipClassForStatus,
+  isOutstanding,
+} from '@/components/shared/document-status-visuals';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -47,96 +56,83 @@ export type AdmissionsStatusFilter =
 /** P-Files renewal: only 'expired' + 'all'. */
 export type PFilesStatusFilter = 'all' | 'expired';
 
-// ─── Slot dot rendering ───────────────────────────────────────────────────────
+// ─── Outstanding-document chips ───────────────────────────────────────────────
+// The exceptions, named in words. This is the column the officer actually
+// works from: on a chase surface the outstanding documents ARE the job, so
+// they get the widest column and plain names rather than a colour to decode.
+//
+// Three fit comfortably on one line; the rest collapse into a count, with the
+// full list one click away in the strip's popover (and in the row title).
 
-function StatusDot({ status }: { status: DocumentStatus }) {
-  switch (status) {
-    case 'valid':
-      return (
-        <span
-          className="inline-block size-2.5 rounded-full bg-brand-mint"
-          title="On file"
-        />
-      );
-    case 'uploaded':
-      return (
-        <span
-          className="inline-block size-2.5 rounded-full bg-brand-amber"
-          title="Pending review"
-        />
-      );
-    case 'rejected':
-      return (
-        <span
-          className="inline-block size-2.5 rounded-full bg-destructive"
-          title="Rejected"
-        />
-      );
-    case 'to-follow':
-      return (
-        <span
-          className="inline-block size-2.5 rounded-full bg-primary"
-          title="To follow"
-        />
-      );
-    case 'expired':
-      return (
-        <span
-          className="inline-block size-2.5 rounded-full bg-destructive"
-          title="Expired"
-        />
-      );
-    case 'missing':
-      return (
-        <span
-          className="inline-block size-2.5 rounded-full border border-border bg-muted"
-          title="Missing"
-        />
-      );
-    case 'na':
-      return (
-        <span
-          className="inline-block size-2.5 rounded-full bg-muted"
-          title="N/A"
-        />
-      );
+const MAX_VISIBLE_CHIPS = 3;
+
+function OutstandingChips({ slots }: { slots: CommonRow['slots'] }) {
+  const open = slots.filter((s) => isOutstanding(s.status));
+
+  if (open.length === 0) {
+    return (
+      <Badge
+        variant="outline"
+        className="h-5.5 gap-1 border-brand-mint/60 bg-brand-mint/15 px-2 text-[11px] font-medium text-ink"
+      >
+        <Check className="size-3" />
+        All on file
+      </Badge>
+    );
   }
-}
 
-// ─── Completeness % badge ─────────────────────────────────────────────────────
+  const shown = open.slice(0, MAX_VISIBLE_CHIPS);
+  const rest = open.length - shown.length;
 
-function CompletePct({ pct }: { pct: number }) {
   return (
-    <Badge
-      variant="outline"
-      className={`font-mono text-[10px] tabular-nums ${
-        pct === 100
-          ? 'border-brand-mint bg-gradient-to-b from-brand-mint/25 to-brand-mint/10 text-ink'
-          : pct >= 70
-            ? 'border-primary/30 bg-gradient-to-b from-primary/15 to-primary/5 text-primary'
-            : pct >= 40
-              ? 'border-brand-amber/40 bg-gradient-to-b from-brand-amber/15 to-brand-amber/5 text-brand-amber'
-              : 'border-destructive/30 bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive'
-      }`}
-    >
-      {pct}%
-    </Badge>
+    <div className="flex flex-wrap items-center gap-1.5">
+      {shown.map((slot) => {
+        const { label, icon: Icon } = STATUS_CHIP[slot.status];
+        return (
+          <Badge
+            key={slot.key}
+            variant="outline"
+            // Icon + tint, never tint alone — `expired` and `rejected` share
+            // a colour on purpose (identical next action) and are told apart
+            // by the icon and the tooltip.
+            title={`${slot.label} — ${label}`}
+            className={`h-5.5 gap-1 px-2 text-[11px] font-medium ${chipClassForStatus(
+              slot.status
+            )}`}
+          >
+            <Icon className="size-3 shrink-0" />
+            {slot.label}
+          </Badge>
+        );
+      })}
+      {rest > 0 && (
+        <Badge
+          variant="outline"
+          className="h-5.5 border-hairline-strong px-2 font-mono text-[10px] text-muted-foreground"
+          title={open
+            .slice(MAX_VISIBLE_CHIPS)
+            .map((s) => `${s.label} — ${STATUS_CHIP[s.status].label}`)
+            .join('\n')}
+        >
+          +{rest}
+        </Badge>
+      )}
+    </div>
   );
 }
+
+// ─── Completeness helpers ─────────────────────────────────────────────────────
 
 function pct(total: number, complete: number): number {
   return total > 0 ? Math.round((complete / total) * 100) : 0;
 }
 
-// ─── Slot header abbreviation (shared by both modules) ────────────────────────
-
-function abbreviateSlotLabel(label: string): string {
-  return label
-    .replace('Mother ', 'M/')
-    .replace('Father ', 'F/')
-    .replace('Guardian ', 'G/')
-    .replace('Passport', 'PP')
-    .replace('Student ', 'S/');
+function outstandingSummary(slots: CommonRow['slots']): string {
+  const open = slots.filter((s) => isOutstanding(s.status));
+  if (open.length === 0) return 'All on file';
+  return open
+    .map((s) => `${s.label} (${STATUS_CHIP[s.status].label.toLowerCase()})`)
+    .join('; ');
 }
 
 // ─── BulkNotifyItem builders (module-specific) ────────────────────────────────
@@ -298,7 +294,6 @@ const SELECT_COLUMN: ColumnDef<CommonRow> = {
 
 function buildColumns(
   module: Module,
-  slotHeaders: { key: string; label: string }[],
   actionHref: (enroleeNumber: string) => string,
   bulkRemindEnabled: boolean,
   onRemindOne: (items: BulkNotifyItem[]) => void,
@@ -315,10 +310,13 @@ function buildColumns(
       ),
       meta: { label: identifierLabel },
       cell: ({ row }) => (
-        <div>
+        // Fixed two-line cell, nothing wraps — the 13 slot columns used to
+        // take the width first, leaving names to wrap onto three lines and
+        // giving every row a different height.
+        <div className="min-w-[13rem] max-w-[17rem]">
           <IdentifierLink
             href={actionHref(row.original.enroleeNumber)}
-            className="text-sm"
+            className="block truncate text-sm"
           >
             {row.original.fullName}
           </IdentifierLink>
@@ -367,50 +365,35 @@ function buildColumns(
     },
   ];
 
-  for (const h of slotHeaders) {
-    columns.push({
-      id: `slot:${h.key}`,
-      accessorFn: (row) =>
-        row.slots.find((sl) => sl.key === h.key)?.status ?? '',
-      header: () => (
-        <span
-          className="inline-block max-w-[60px] truncate text-center text-[10px]"
-          title={h.label}
-        >
-          {abbreviateSlotLabel(h.label)}
-        </span>
-      ),
-      // The grid header is abbreviated to fit a narrow column; the Columns
-      // menu and CSV header take the full slot name.
-      meta: { label: h.label },
-      cell: ({ row }) => {
-        const status = row.original.slots.find(
-          (sl) => sl.key === h.key
-        )?.status;
-        return (
-          <div className="text-center">
-            {status ? (
-              <StatusDot status={status} />
-            ) : (
-              <span className="text-[10px] text-muted-foreground">—</span>
-            )}
-          </div>
-        );
-      },
-      enableSorting: false,
-    });
-  }
+  // One strip in place of the 13 per-slot columns. Sorts on completeness, so
+  // "worst first" is a single click on the header.
+  columns.push({
+    id: 'documents',
+    accessorFn: (row) => pct(row.total, row.complete),
+    header: ({ column }) => (
+      <SortableHeader column={column}>Documents</SortableHeader>
+    ),
+    // The raw accessor is a bare number with no unit — the humanized
+    // equivalents ship as `csv.extraColumns` instead.
+    meta: { label: 'Documents', excludeFromExport: true },
+    cell: ({ row }) => (
+      <DocumentCompletenessStrip
+        slots={row.original.slots}
+        studentName={row.original.fullName}
+      />
+    ),
+  });
 
   columns.push({
-    id: 'pct',
-    accessorFn: (row) => pct(row.total, row.complete),
-    header: ({ column }) => <SortableHeader column={column}>%</SortableHeader>,
-    meta: { label: 'Documents complete %' },
-    cell: ({ row }) => (
-      <div className="text-center">
-        <CompletePct pct={pct(row.original.total, row.original.complete)} />
-      </div>
+    id: 'outstanding',
+    // Sort by how much is outstanding — the officer's natural worklist order.
+    accessorFn: (row) =>
+      row.slots.filter((s) => isOutstanding(s.status)).length,
+    header: ({ column }) => (
+      <SortableHeader column={column}>Outstanding</SortableHeader>
     ),
+    meta: { label: 'Outstanding', excludeFromExport: true },
+    cell: ({ row }) => <OutstandingChips slots={row.original.slots} />,
   });
 
   columns.push({
@@ -556,7 +539,6 @@ export function DocumentCompletenessTable(props: Props) {
     () =>
       buildColumns(
         module,
-        slotHeaders,
         actionHref,
         bulkRemindEnabled,
         handleRemindOne,
@@ -564,12 +546,49 @@ export function DocumentCompletenessTable(props: Props) {
       ),
     [
       module,
-      slotHeaders,
       actionHref,
       bulkRemindEnabled,
       handleRemindOne,
       bulkRemindWindowDays,
     ]
+  );
+
+  // The per-slot detail leaves the SCREEN, not the export. Each slot ships as
+  // an always-exported CSV field carrying the humanized status word (the old
+  // slot columns exported the raw `DocumentStatus` enum), so a spreadsheet
+  // keeps every column it had and reads better. `defaultChecked: true` means
+  // "always exported" per KD #162.
+  const csvExtraColumns = React.useMemo(
+    () => [
+      {
+        id: 'documents-on-file',
+        header: 'Documents on file',
+        accessor: (row: CommonRow) => `${row.complete} of ${row.total}`,
+        defaultChecked: true,
+      },
+      {
+        id: 'documents-complete-pct',
+        header: 'Documents complete %',
+        accessor: (row: CommonRow) => pct(row.total, row.complete),
+        defaultChecked: true,
+      },
+      {
+        id: 'outstanding-documents',
+        header: 'Outstanding documents',
+        accessor: (row: CommonRow) => outstandingSummary(row.slots),
+        defaultChecked: true,
+      },
+      ...slotHeaders.map((h) => ({
+        id: `slot:${h.key}`,
+        header: h.label,
+        accessor: (row: CommonRow) => {
+          const slot = row.slots.find((sl) => sl.key === h.key);
+          return slot ? STATUS_CHIP[slot.status].label : '';
+        },
+        defaultChecked: true,
+      })),
+    ],
+    [slotHeaders]
   );
 
   const statusOptions: { value: string; label: string }[] =
@@ -588,6 +607,10 @@ export function DocumentCompletenessTable(props: Props) {
         <CardTitle>{cardTitle}</CardTitle>
         <CardDescription>{cardDescription}</CardDescription>
       </CardHeader>
+      {/* Always-visible key. The dot matrix this replaced had no legend
+          anywhere on either page — colour was the only signal, explained
+          solely by a hover tooltip. */}
+      <DocumentStatusLegend />
       <CardContent className="px-0">
         <DataTable<CommonRow>
           data={students}
@@ -632,7 +655,10 @@ export function DocumentCompletenessTable(props: Props) {
               isDefault: props.initialStatusFilter === opt.value,
             })),
           ]}
-          csv={{ filename: `${countLabel}-completeness.csv` }}
+          csv={{
+            filename: `${countLabel}-completeness.csv`,
+            extraColumns: csvExtraColumns,
+          }}
           url={{ enabled: true, namespace: 'completeness' }}
           initialSort={[{ id: 'name', desc: false }]}
           pageSizeOptions={[10, 25, 50, 100]}
