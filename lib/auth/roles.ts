@@ -186,6 +186,16 @@ const RECORDS_NAV: NavSection[] = [
         label: 'Staff directory',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
+      {
+        // Same reason as the two cross-links above: the academic coordinator is
+        // admitted to this page (ROUTE_ACCESS + the capability) but reaches no
+        // /sis surface through a SIS sidebar of her own, so without a link here
+        // the page is URL-only. She owns the WW/PT/QA weighting behind every
+        // grade, so this is squarely her work.
+        href: '/sis/admin/subjects',
+        label: 'Subject weights',
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+      },
     ],
   },
   // Cohort views — pre-baked filtered lists for cross-cutting student
@@ -532,7 +542,7 @@ const SIS_NAV: NavSection[] = [
       {
         href: '/sis/admin/subjects',
         label: 'Subject Weights',
-        requiresRoles: ['school_admin', 'superadmin'],
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -751,7 +761,16 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   // controlling access to the capability editor could be revoked, locking the
   // holder out of the only surface that could put it back.
   { prefix: '/sis/admin/roles', allowed: ['superadmin'] },
-  { prefix: '/sis/admin/subjects', allowed: ['school_admin', 'superadmin'] },
+  {
+    // academic_coordinator added so a role granted `subjects.read` can actually
+    // reach the page — the capability governs what you may DO, this rule governs
+    // whether the proxy lets you through, and the proxy runs first. Scoped to
+    // this one prefix (longer-prefix-wins), so the broad `/sis` rule below still
+    // keeps her out of every other SIS surface. Same shape as the
+    // /sis/admin/staff row (KD #154/#159).
+    prefix: '/sis/admin/subjects',
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
+  },
   {
     prefix: '/sis/admin/school-config',
     allowed: ['school_admin', 'superadmin'],

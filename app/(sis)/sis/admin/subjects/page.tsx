@@ -2,6 +2,8 @@ import { AlertTriangle, BookOpenCheck } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { can } from '@/lib/auth/capabilities';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { SubjectAySwitcher } from '@/components/sis/subject-ay-switcher';
 import { SubjectCatalogCard } from '@/components/sis/subject-catalog-card';
@@ -54,10 +56,11 @@ export default async function SubjectConfigPage({
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
-  if (
-    sessionUser.role !== 'superadmin' &&
-    sessionUser.role !== 'school_admin'
-  ) {
+  // Gated on the capability rather than a role list, so granting a role
+  // subjects.read in /sis/admin/roles is enough to open this page. Note the
+  // capability alone is NOT sufficient on its own: ROUTE_ACCESS still has to
+  // admit the role to this prefix, because the proxy runs before this file does.
+  if (!can(await getCapabilitiesForRole(sessionUser.role), 'subjects.read')) {
     redirect('/sis');
   }
 
