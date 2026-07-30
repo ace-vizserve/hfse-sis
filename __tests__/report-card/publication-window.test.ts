@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeActivePublishedTermNumbers,
+  computePublishedTermNumbers,
   filterPayloadToActiveTerms,
+  selectEarlierComments,
   type PublicationRow,
   type TermNumberRow,
   type PayloadLike,
@@ -202,5 +204,211 @@ describe('filterPayloadToActiveTerms', () => {
     const withExtra = { ...payload(), studentName: 'Jane Doe' };
     const result = filterPayloadToActiveTerms(withExtra, new Set([2]));
     expect(result.studentName).toBe('Jane Doe');
+  });
+});
+
+describe('selectEarlierComments', () => {
+  const FULL_TERMS = [
+    { id: 't1', term_number: 1, label: 'Term 1', virtue_theme: 'Obedience' },
+    { id: 't2', term_number: 2, label: 'Term 2', virtue_theme: null },
+    { id: 't3', term_number: 3, label: 'Term 3', virtue_theme: 'Diligence' },
+    { id: 't4', term_number: 4, label: 'Term 4', virtue_theme: 'Excellence' },
+  ];
+
+  function comment(
+    term_id: string,
+    over: Partial<{ comment: string | null; submitted: boolean }> = {}
+  ) {
+    return { term_id, comment: `${term_id} text`, submitted: true, ...over };
+  }
+
+  const ALL_OPENED = new Set([1, 2, 3, 4]);
+
+  // The bug this fixes: a parent opening the Term 3 card saw only the Term 3
+  // comment, though the adviser had written all three.
+  it('returns the earlier terms, in order, with their own label and virtue', () => {
+    const result = selectEarlierComments(
+      FULL_TERMS,
+      [comment('t1'), comment('t2'), comment('t3')],
+      ALL_OPENED,
+      3
+    );
+    expect(result.map((c) => c.term_number)).toEqual([1, 2]);
+    expect(result[0]).toEqual({
+      term_id: 't1',
+      term_number: 1,
+      term_label: 'Term 1',
+      virtue_theme: 'Obedience',
+      comment: 't1 text',
+    });
+    // Self-describing: nothing needs looking up in `terms`.
+    expect(result[1].term_label).toBe('Term 2');
+    expect(result[1].virtue_theme).toBeNull();
+  });
+
+  // Must not overlap `comments`, which still carries the viewed term — the
+  // portal would otherwise render the same box twice.
+  it('excludes the viewed term itself', () => {
+    const result = selectEarlierComments(
+      FULL_TERMS,
+      [comment('t1'), comment('t2'), comment('t3')],
+      ALL_OPENED,
+      3
+    );
+    expect(result.map((c) => c.term_id)).not.toContain('t3');
+  });
+
+  it('returns nothing when viewing Term 1', () => {
+    expect(
+      selectEarlierComments(FULL_TERMS, [comment('t1')], ALL_OPENED, 1)
+    ).toEqual([]);
+  });
+
+  // The final card has no form-adviser comment section at all (KD #49), so it
+  // gets nothing — not "T1-T3". Returning them would invite the portal to
+  // render a block the card isn't supposed to have.
+  it('returns nothing when viewing the final (Term 4) card', () => {
+    const result = selectEarlierComments(
+      FULL_TERMS,
+      [comment('t1'), comment('t2'), comment('t3'), comment('t4')],
+      ALL_OPENED,
+      4
+    );
+    expect(result).toEqual([]);
+  });
+
+  it('never includes Term 4 itself when viewing an interim card', () => {
+    // Defensive: term_number 4 can't be < 3, but the 1..3 bound is explicit so
+    // a future Term 5 or a mis-numbered row can't leak in either.
+    const result = selectEarlierComments(
+      FULL_TERMS,
+      [comment('t1'), comment('t4')],
+      ALL_OPENED,
+      3
+    );
+    expect(result.map((c) => c.term_number)).toEqual([1]);
+  });
+
+  // Only re-shows what the parent was already shown once.
+  it('excludes a term whose window has never opened', () => {
+    const result = selectEarlierComments(
+      FULL_TERMS,
+      [comment('t1'), comment('t2')],
+      new Set([2, 3]), // term 1 never released
+      3
+    );
+    expect(result.map((c) => c.term_number)).toEqual([2]);
+  });
+
+  it('excludes an unsubmitted draft', () => {
+    const result = selectEarlierComments(
+      FULL_TERMS,
+      [comment('t1', { submitted: false }), comment('t2')],
+      ALL_OPENED,
+      3
+    );
+    expect(result.map((c) => c.term_number)).toEqual([2]);
+  });
+
+  it('excludes blank and whitespace-only comments', () => {
+    const result = selectEarlierComments(
+      FULL_TERMS,
+      [comment('t1', { comment: '   ' }), comment('t2', { comment: null })],
+      ALL_OPENED,
+      3
+    );
+    expect(result).toEqual([]);
+  });
+
+  it('trims the returned text', () => {
+    const result = selectEarlierComments(
+      FULL_TERMS,
+      [comment('t1', { comment: '  well settled  ' })],
+      ALL_OPENED,
+      2
+    );
+    expect(result[0].comment).toBe('well settled');
+  });
+
+  it('skips a term with no write-up at all', () => {
+    const result = selectEarlierComments(
+      FULL_TERMS,
+      [comment('t2')],
+      ALL_OPENED,
+      3
+    );
+    expect(result.map((c) => c.term_number)).toEqual([2]);
+  });
+
+  it('is order-independent on its inputs', () => {
+    const reversed = [...FULL_TERMS].reverse();
+    const result = selectEarlierComments(
+      reversed,
+      [comment('t2'), comment('t1')],
+      ALL_OPENED,
+      3
+    );
+    expect(result.map((c) => c.term_number)).toEqual([1, 2]);
+  });
+});
+
+describe('computePublishedTermNumbers', () => {
+  // Drops the upper bound only: an expired window still counts, because that
+  // term was already delivered to this parent once.
+  it('includes a term whose window has expired', () => {
+    const pubs = [
+      pub({
+        section_id: 'sec-1',
+        term_id: 't1',
+        publish_from: '2020-01-01T00:00:00Z',
+        publish_until: '2020-02-01T00:00:00Z',
+      }),
+    ];
+    expect(computePublishedTermNumbers(pubs, TERMS, ['sec-1'], NOW)).toEqual(
+      new Set([1])
+    );
+    // ...and is correctly NOT active.
+    expect(
+      computeActivePublishedTermNumbers(pubs, TERMS, ['sec-1'], NOW)
+    ).toEqual(new Set());
+  });
+
+  // The distinction that makes "ever published" safe. Publishing upserts on
+  // (section_id, term_id), so re-publishing a lapsed term REPLACES its dates
+  // with future ones — treating that as "already delivered" would leak a
+  // comment the coordinator deliberately scheduled for later.
+  it('EXCLUDES a term whose window has not opened yet', () => {
+    const pubs = [
+      pub({
+        section_id: 'sec-1',
+        term_id: 't1',
+        publish_from: '2030-01-01T00:00:00Z',
+        publish_until: '2030-02-01T00:00:00Z',
+      }),
+    ];
+    expect(computePublishedTermNumbers(pubs, TERMS, ['sec-1'], NOW)).toEqual(
+      new Set()
+    );
+  });
+
+  it('includes a term whose window is open right now', () => {
+    const pubs = [pub({ section_id: 'sec-1', term_id: 't2' })];
+    expect(computePublishedTermNumbers(pubs, TERMS, ['sec-1'], NOW)).toEqual(
+      new Set([2])
+    );
+  });
+
+  it('ignores publications for sections this student was never in', () => {
+    const pubs = [pub({ section_id: 'other-section', term_id: 't1' })];
+    expect(computePublishedTermNumbers(pubs, TERMS, ['sec-1'], NOW)).toEqual(
+      new Set()
+    );
+  });
+
+  it('skips a term_id with no matching terms row', () => {
+    const pubs = [pub({ section_id: 'sec-1', term_id: 'unknown-term' })];
+    expect(computePublishedTermNumbers(pubs, TERMS, ['sec-1'], NOW)).toEqual(
+      new Set()
+    );
   });
 });

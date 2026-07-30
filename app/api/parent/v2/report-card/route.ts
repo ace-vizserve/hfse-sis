@@ -6,7 +6,9 @@ import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
 import { corsHeaders } from '@/lib/cors';
 import {
   computeActivePublishedTermNumbers,
+  computePublishedTermNumbers,
   filterPayloadToActiveTerms,
+  selectEarlierComments,
   type PublicationRow,
   type TermNumberRow,
 } from '@/lib/report-card/publication-window';
@@ -186,14 +188,55 @@ export async function GET(request: Request) {
     );
   }
 
-  // 5. Narrow subjects/attendance/comments down to exactly the terms with a
+  // 5. Narrow subjects/attendance down to exactly the terms with a
   //    currently-active publication window — never a term outside that set.
   //    A specific requested term narrows to just that one; an omitted
   //    termNumber narrows to every currently-active term (never the full
   //    unfiltered payload).
   const targetTermNumbers =
     termNumber !== null ? new Set([termNumber]) : activeTermNumbers;
-  const payload = filterPayloadToActiveTerms(result.payload, targetTermNumbers);
+
+  const narrowed = filterPayloadToActiveTerms(
+    result.payload,
+    targetTermNumbers
+  );
+
+  // 6. The earlier terms' form-adviser write-ups, as a SEPARATE list.
+  //
+  //    A report card is cumulative on comments (KD #129) — a Term 3 card shows
+  //    Term 1, 2 and 3 — but the narrowing above keeps only the viewed term, so
+  //    parents saw a single comment while advisers had written three.
+  //
+  //    Deliberately NOT merged into `comments`: the portal reads `comments[0]` /
+  //    `terms[0]` / `attendance[0]`, so appending would make it render an
+  //    EARLIER term's comment under the viewed term's heading. Wrong data is
+  //    worse than missing data. As a new field, nothing existing can read it, so
+  //    this cannot change what the portal renders today.
+  //
+  //    Each entry carries its own label + virtue theme, so the portal never has
+  //    to look a term up in `terms` (which still holds only the viewed term).
+  //    See selectEarlierComments for the full set of bounds.
+  const viewedTermNumber = termNumber ?? Math.max(...targetTermNumbers);
+  const earlierComments = selectEarlierComments(
+    result.payload.terms,
+    result.payload.comments,
+    computePublishedTermNumbers(
+      (pubRows ?? []) as PublicationRow[],
+      (termRows ?? []) as TermNumberRow[],
+      sectionIds,
+      now
+    ),
+    viewedTermNumber
+  );
+
+  // A draft never reaches a parent. The builder carries `submitted` through so
+  // the staff preview can flag one; this is the deliverable, so drop them.
+  // (`earlierComments` applies the same rule internally.)
+  const payload = {
+    ...narrowed,
+    comments: narrowed.comments.filter((c) => c.submitted),
+    earlierComments,
+  };
 
   return NextResponse.json({ payload }, { headers: cors });
 }
