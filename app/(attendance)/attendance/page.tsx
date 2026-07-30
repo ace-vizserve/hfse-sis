@@ -7,19 +7,13 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { Suspense } from 'react';
 
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 
-import { AttendanceBySectionCard } from '@/components/attendance/drills/attendance-by-section-card';
+import { AttendanceDrillSection } from '@/components/attendance/drills/attendance-drill-section';
 import { AttendanceDrillSheet } from '@/components/attendance/drills/attendance-drill-sheet';
-import {
-  DailyAttendanceDrillCard,
-  DayTypeDrillCard,
-  ExReasonDrillCard,
-  TopAbsentDrillCard,
-} from '@/components/attendance/drills/chart-drill-cards';
-import { CompassionateQuotaCard } from '@/components/attendance/drills/compassionate-quota-card';
-import { VacationLeaveQuotaCard } from '@/components/attendance/drills/vacation-leave-quota-card';
+import { DailyAttendanceDrillCard } from '@/components/attendance/drills/chart-drill-cards';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
@@ -27,6 +21,7 @@ import { MetricCard } from '@/components/dashboard/metric-card';
 import { PriorityPanel } from '@/components/dashboard/priority-panel';
 import { Button } from '@/components/ui/button';
 import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   getAttendanceKpisRange,
   getAttendancePriority,
@@ -34,7 +29,7 @@ import {
   getDayTypeDistributionRange,
   getExReasonMixRange,
 } from '@/lib/attendance/dashboard';
-import { buildAllRowSets } from '@/lib/attendance/drill';
+import { getCompassionateOverQuota } from '@/lib/attendance/drill';
 import { attendanceInsights } from '@/lib/dashboard/insights';
 import {
   formatRangeLabel,
@@ -118,26 +113,22 @@ export default async function AttendanceDashboard({
     }
   }
 
-  const [kpisResult, dailySeries, exMix, dayTypes, drillRowSets] =
+  const [kpisResult, dailySeries, exMix, dayTypes, compassionateOverQuota] =
     await Promise.all([
       getAttendanceKpisRange(rangeInput),
       getDailyAttendanceRange(rangeInput),
       getExReasonMixRange(rangeInput),
       getDayTypeDistributionRange(rangeInput),
-      buildAllRowSets({
-        ayCode: selectedAy,
-        from: rangeInput.from,
-        to: rangeInput.to,
-        vacationTermId: currentTermId,
-        defaultVlAllowance: schoolConfig.defaultVlAllowancePerTerm,
-      }),
+      // Fast, narrow query — independent of the ~180k-row buildAllRowSets
+      // scan, so the top-of-fold hero + PriorityPanel stay fast (KD #56/#57
+      // streaming split; the full-scan cards render below via
+      // <AttendanceDrillSection>, deferred behind Suspense).
+      getCompassionateOverQuota(selectedAy),
     ]);
 
-  // Priority depends on the freshly-loaded compassionate roll-up; compute
-  // after buildAllRowSets so we don't refetch entries inside the loader.
   const priority = await getAttendancePriority({
     ayCode: selectedAy,
-    compassionate: drillRowSets.compassionate,
+    compassionate: compassionateOverQuota,
   });
 
   const comparisonLabel = kpisResult.comparisonRange
@@ -161,10 +152,9 @@ export default async function AttendanceDashboard({
 
   // Over-quota compassionate students — counts students who have exceeded the
   // annual limit; surfaced in the lede on non-school days so the panel is
-  // still useful when attendance can’t be marked.
-  const overQuotaCount = drillRowSets.compassionate.filter(
-    (r) => r.isOverQuota
-  ).length;
+  // still useful when attendance can’t be marked. `compassionateOverQuota`
+  // is already filtered to over-quota rows (see getCompassionateOverQuota).
+  const overQuotaCount = compassionateOverQuota.length;
 
   const ledeSentence: string = (() => {
     // School day with unmarked sections — the most urgent operational signal.
@@ -376,58 +366,37 @@ export default async function AttendanceDashboard({
         />
       )}
 
-      {/* EX reason + Day type donuts */}
-      <section className="grid gap-4 lg:grid-cols-2">
-        <ExReasonDrillCard
-          data={exMix}
+      {/* EX reason + Day type donuts, section breakdown, leave quotas
+          (compassionate per-year + vacation per-term, KD #94), top-absent —
+          everything the ~180k-row buildAllRowSets scan feeds streams in
+          together, independent of the fast top-of-fold above (KD #56/#57). */}
+      <Suspense
+        fallback={
+          <>
+            <section className="grid gap-4 lg:grid-cols-2">
+              <Skeleton className="h-64 w-full rounded-xl" />
+              <Skeleton className="h-64 w-full rounded-xl" />
+            </section>
+            <Skeleton className="h-64 w-full rounded-xl" />
+            <section className="grid gap-4 lg:grid-cols-2">
+              <Skeleton className="h-64 w-full rounded-xl" />
+              <Skeleton className="h-64 w-full rounded-xl" />
+            </section>
+            <Skeleton className="h-64 w-full rounded-xl" />
+          </>
+        }
+      >
+        <AttendanceDrillSection
           ayCode={selectedAy}
           rangeFrom={rangeInput.from}
           rangeTo={rangeInput.to}
+          vacationTermId={currentTermId}
+          currentTermLabel={currentTermLabel}
+          defaultVlAllowance={schoolConfig.defaultVlAllowancePerTerm}
+          exMix={exMix}
+          dayTypes={dayTypes}
         />
-        <DayTypeDrillCard
-          data={dayTypes}
-          ayCode={selectedAy}
-          rangeFrom={rangeInput.from}
-          rangeTo={rangeInput.to}
-          initialCalendar={drillRowSets.calendar}
-        />
-      </section>
-
-      {/* Section breakdown — sits with the other range-aware analytics. */}
-      <AttendanceBySectionCard
-        data={drillRowSets.sectionAttendance}
-        ayCode={selectedAy}
-        rangeFrom={rangeInput.from}
-        rangeTo={rangeInput.to}
-      />
-
-      {/* Leave quotas — compassionate (per-year) + vacation (per-term, KD #94)
-          are both "students near/over a leave quota," grouped side-by-side.
-          The vacation card surfaces only when a term is resolvable (otherwise
-          this renders as a single column — that's fine). */}
-      <section className="grid gap-4 lg:grid-cols-2">
-        <CompassionateQuotaCard
-          data={drillRowSets.compassionate}
-          ayCode={selectedAy}
-        />
-        {currentTermId && currentTermLabel && (
-          <VacationLeaveQuotaCard
-            data={drillRowSets.vacationLeave}
-            ayCode={selectedAy}
-            termId={currentTermId}
-            termLabel={currentTermLabel}
-          />
-        )}
-      </section>
-
-      {/* Top-absent students */}
-      <TopAbsentDrillCard
-        data={drillRowSets.topAbsent}
-        ayCode={selectedAy}
-        rangeFrom={rangeInput.from}
-        rangeTo={rangeInput.to}
-        initialTopAbsent={drillRowSets.topAbsent}
-      />
+      </Suspense>
 
       {/* Trust strip */}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">

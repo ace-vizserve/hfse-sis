@@ -529,10 +529,11 @@ export function getDayTypeDistributionRange(
 export type AttendancePriorityInput = {
   ayCode: string;
   /**
-   * Already-loaded compassionate rows from `buildAllRowSets`. Pass through to
-   * avoid a duplicate fetch — same pattern as P-Files reusing
-   * getExpiringDocuments. Plain serializable objects are safe inside
-   * unstable_cache args.
+   * Over-quota compassionate rows from `getCompassionateOverQuota` — a fast,
+   * narrow query, NOT the ~180k-row `buildAllRowSets` scan. The priority
+   * panel + hero lede must stay independent of that scan so they can render
+   * before the deferred below-fold section resolves. Plain serializable
+   * objects are safe inside unstable_cache args.
    */
   compassionate: CompassionateUsageRow[];
 };

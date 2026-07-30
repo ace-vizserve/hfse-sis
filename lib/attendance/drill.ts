@@ -595,21 +595,23 @@ export function tallyLeaveUsageByStudent(
   return usage;
 }
 
-async function rollupCompassionate(
-  ayCode: string,
-  preloadedEntries?: AttendanceEntryRow[]
-): Promise<CompassionateUsageRow[]> {
-  const ctx = await resolveAyContext(ayCode);
-  if (!ctx.ayId || ctx.sectionStudents.length === 0) return [];
-  // Compassionate quota is intentionally **AY-wide** — the registrar's
-  // operational concern is "has student X consumed >5 compassionate
-  // absences this AY?" The selected dashboard date range does NOT narrow
-  // this metric; quota consumption accumulates over the whole AY and the
-  // panel always shows year-to-date usage. This matches KD #74 (the
-  // priority panel pulls this rollup for the chips, regardless of range).
-  // When buildAllRowSets has already loaded entries, reuse them rather than
-  // hitting the cache + re-iterating ~180k rows for a second roll-up.
-  const entries = preloadedEntries ?? (await loadEntryRows(ayCode));
+// Shared row-building logic for the compassionate-leave rollup — factored out
+// so `rollupCompassionate` (full AY-wide entry scan) and
+// `getCompassionateOverQuota` (narrow status='EX'/ex_reason='compassionate'
+// query) can never diverge on the allowance/over-quota computation. Both
+// callers pass in a context (`resolveAyContext`) + the entries relevant to
+// compassionate leave; which entries they pass in is the only difference.
+type AyContext = Awaited<ReturnType<typeof resolveAyContext>>;
+
+function computeCompassionateRows(
+  ctx: AyContext,
+  entries: Array<
+    Pick<
+      AttendanceEntryRow,
+      'studentSectionId' | 'termId' | 'status' | 'exReason'
+    >
+  >
+): CompassionateUsageRow[] {
   // Per-student union across ALL enrolment rows (incl. withdrawn pre-transfer
   // rows, KD #67) — ctx.sectionStudents deliberately includes withdrawn rows.
   const studentIdBySsId = new Map<string, string>();
@@ -646,6 +648,74 @@ async function rollupCompassionate(
   }
   rows.sort((a, b) => b.used - a.used || a.remaining - b.remaining);
   return rows;
+}
+
+async function rollupCompassionate(
+  ayCode: string,
+  preloadedEntries?: AttendanceEntryRow[]
+): Promise<CompassionateUsageRow[]> {
+  const ctx = await resolveAyContext(ayCode);
+  if (!ctx.ayId || ctx.sectionStudents.length === 0) return [];
+  // Compassionate quota is intentionally **AY-wide** — the registrar's
+  // operational concern is "has student X consumed >5 compassionate
+  // absences this AY?" The selected dashboard date range does NOT narrow
+  // this metric; quota consumption accumulates over the whole AY and the
+  // panel always shows year-to-date usage. This matches KD #74 (the
+  // priority panel pulls this rollup for the chips, regardless of range).
+  // When buildAllRowSets has already loaded entries, reuse them rather than
+  // hitting the cache + re-iterating ~180k rows for a second roll-up.
+  const entries = preloadedEntries ?? (await loadEntryRows(ayCode));
+  return computeCompassionateRows(ctx, entries);
+}
+
+// Fast, narrow sibling of `rollupCompassionate` — for callers (the priority
+// panel + hero lede) that only need the OVER-quota verdict and can't afford
+// to wait on the ~180k-row `buildAllRowSets` scan. Queries `attendance_daily`
+// pre-filtered to the compassionate-EX rows instead of loading every status,
+// then runs the SAME `computeCompassionateRows` used by `rollupCompassionate`
+// — so the two can't drift on allowance/over-quota logic or the KD #67
+// withdrawn/transfer union (both derive from the same `ctx.sectionStudents`).
+export async function getCompassionateOverQuota(
+  ayCode: string
+): Promise<CompassionateUsageRow[]> {
+  const service = createServiceClient();
+  const ctx = await resolveAyContext(ayCode);
+  if (!ctx.ayId || ctx.sectionStudents.length === 0) return [];
+
+  const ssIds = ctx.sectionStudents.map((ss) => ss.id);
+  if (ssIds.length === 0) return [];
+
+  type LeaveEntryLite = {
+    section_student_id: string;
+    term_id: string;
+    status: string;
+    ex_reason: string | null;
+  };
+  const CHUNK = 100; // same URL-length reasoning as loadEntryRowsUncached
+  const rows = (
+    await Promise.all(
+      Array.from({ length: Math.ceil(ssIds.length / CHUNK) }, (_, i) =>
+        fetchAllPages<LeaveEntryLite>((from, to) =>
+          service
+            .from('attendance_daily')
+            .select('section_student_id, term_id, status, ex_reason')
+            .in('section_student_id', ssIds.slice(i * CHUNK, (i + 1) * CHUNK))
+            .eq('status', 'EX')
+            .eq('ex_reason', 'compassionate')
+            .range(from, to)
+        )
+      )
+    )
+  ).flat();
+
+  const entries = rows.map((r) => ({
+    studentSectionId: r.section_student_id,
+    termId: r.term_id,
+    status: r.status as AttendanceEntryRow['status'],
+    exReason: r.ex_reason,
+  }));
+
+  return computeCompassionateRows(ctx, entries).filter((r) => r.isOverQuota);
 }
 
 // Vacation-leave rollup (KD #94) — scoped to a single term. HFSE policy:
