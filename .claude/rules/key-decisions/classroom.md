@@ -41,4 +41,28 @@ Teachers live in Classroom; oversight works _across_ classes so the module stays
 
 **Correction to this KD's own text (2026-07-30):** the paragraph above and `module-visibility.ts`'s header both asserted the dead-end tiles were "not a data leak — RLS and the page guards hold." That was **false for two attendance pages**, which read via the service client with no capability check of their own. Fixed in KD #163; the claim now holds.
 
+**Second correction (2026-07-31) — the Phase 8 ROW handoff is reversed for teachers.** The table above sends a teacher clicking a class in Attendance or Evaluation to the matching Classroom tab. That is undone in KD #170: those rows now go straight to the register and the write-up roster, like oversight. Classroom's Attendance tab's own primary button is "Open the attendance sheet", so marking a class cost two clicks where the row already named the destination — and this KD's own rationale, _"being in a module already declares intent"_, argues for the shorter path. Phase 8 applied that reasoning to the module NAV but still routed rows through Classroom. Markbook is unaffected: a teacher has no Markbook "Sections" nav item, so there is no handoff there. **Classroom itself is unchanged and still the whole-class view** — it is simply no longer on the path to the day's marking.
+
+### KD #172
+
+**Classroom Timeline — group by day, collapse runs** (2026-07-31; no migration). The tab rendered ~50 `audit_log` rows as one flat slab. Its worst property was not density: the **loudest element, a coloured pill, was usually the same word forty times running**, so repetition became the dominant visual and the eye got no signal at all. Most rows carried no detail either — `auditContextSummary` returns `'—'` when a context has nothing summarisable (KD #121), so a typical row was a badge, an email and a full timestamp arranged around **no information**.
+
+**The fix is one idea: treat repetition as repetition.** Seven write-ups saved back-to-back by one person is ONE row carrying a count and a time span, expandable to the individual entries — not seven rows that look identical. Everything else follows from making room for that:
+
+- **Days become sticky headings**, so rows keep only a time. Fifty full dates become a few headings and fifty short times.
+- **The badge becomes a dot on a spine.** Colour still encodes the kind; the action name becomes the row's own text, which is what the reader was after. It is also what finally makes the page read as a timeline rather than a list that happens to be in date order.
+- **The actor gets a display name and an initials circle**, resolved through the cached staff map (`getStaffDisplayEntries`), instead of the same email on forty rows. An unknown email falls back to itself, so a cron or a departed account still renders truthfully.
+- **A `'—'` line is omitted rather than printed.** An empty event should be short, not padded.
+- **Filter chips per kind** — Grades · Write-ups · Roster · Sheets — matching the four categories the page's own copy already named. Chips count **events, not runs**, so a chip cannot promise more than clicking it shows.
+
+**Three rules in `lib/classroom/timeline.ts` (pure, unit-tested) that a naive version gets wrong:**
+
+1. **Days are SINGAPORE days** (`sgDate`, KD #32). Grouping on the raw UTC stamp files everything before 08:00 SGT under the previous day — most of a school morning, and exactly when a register gets marked.
+2. **Collapsing is CONSECUTIVE-only.** A, B, A stays three runs; merging them would claim two things happened together when something else happened in between, and that ordering is what a timeline exists to carry.
+3. **A run never spans midnight**, because days are grouped first — which is what the day headings promise.
+
+`kindForAction` is **prefix-matched rather than enumerated**, so a new `sheet.*` or `evaluation.*` lands in the right bucket without anyone editing it, and anything unrecognised files under `other` rather than being dropped — losing an event would be far worse than a generic heading. Labels and summaries still go through the shared humanizer (KD #121); the page is now a thin shell that fetches, resolves names and hands off. The capability guard is unchanged (every capability may open this tab — the data is not `is_adviser_for_section` gated), as is the deliberate exclusion of per-mark attendance and its reasoning. Mockup approved before any JSX: `docs/superpowers/specs/2026-07-31-classroom-timeline-mockup.html`.
+
+**Known trade-off:** collapsing puts exact per-event times one click away. Right for a teacher scanning "what happened in my class"; if this page is ever wanted as an audit trail where every timestamp matters at a glance, expanded-by-default is the switch.
+
 **Test hardening from this work** (`__tests__/auth/nav-route-consistency-all-modules.test.ts`): the module-root map now derives from `SIDEBAR_REGISTRY[m].primaryHref` — what the real switcher filters on — instead of a hand-maintained copy that drifted the moment a module was added. And a new **direction C** asserts every module root has an explicit `ROUTE_ACCESS` rule: verified by experiment that deleting Classroom's row left directions A and B **green**, because `isRouteAllowed` returns `true` for an unmatched prefix, so both passed vacuously while every role — including `admissions` and `p_file_officer` — could open `/classroom`. The highest-risk mistake when adding a module was invisible to the guard meant to catch it.
