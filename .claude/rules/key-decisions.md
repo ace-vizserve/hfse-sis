@@ -1,6 +1,6 @@
 ---
 name: key-decisions
-description: Architectural and behavioral decisions, numbered KD #1–#173 globally (gaps at #19/#26/#30/#86 from sprint reshuffles). Full text lives in topic files under `.claude/rules/key-decisions/`. Read this index to find the topic file for a given KD #N or topic, then Read that file. Read whenever a "KD #N" reference is cited in code or docs, when making a cross-cutting architectural choice, or when in doubt about module boundaries, roles, or conventions.
+description: Architectural and behavioral decisions, numbered KD #1–#173 globally (gaps at #19/#26/#30/#86 from sprint reshuffles). Full text lives in topic files under `docs/key-decisions/`. Read this index to find the topic file for a given KD #N or topic, then Read that file. Read whenever a "KD #N" reference is cited in code or docs, when making a cross-cutting architectural choice, or when in doubt about module boundaries, roles, or conventions.
 load: on-demand
 ---
 
@@ -8,7 +8,7 @@ load: on-demand
 
 ## How this rule is organised
 
-KDs are numbered globally (1–173 with gaps at 19/26/30/86). Each KD lives in exactly one topic file under `.claude/rules/key-decisions/`. To find KD #N, look it up in the table or quick-lookup row below and read the matching topic file. To add a new KD: append it with the next unused number (don't renumber, don't restructure), place it in the topic file that best matches its scope, and add a row to the quick-lookup below.
+KDs are numbered globally (1–173 with gaps at 19/26/30/86). Each KD lives in exactly one topic file under `docs/key-decisions/`. To find KD #N, look it up in the table or quick-lookup row below and read the matching topic file. To add a new KD: append it with the next unused number (don't renumber, don't restructure), place it in the topic file that best matches its scope, and add a row to the quick-lookup below.
 
 ## Topic files
 

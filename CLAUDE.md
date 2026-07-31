@@ -4,23 +4,27 @@ A Student Information System for HFSE International School, Singapore. Modules �
 
 ## Stable rules — auto-loaded (every session)
 
-These two are `@`-imported so they're always in context. Do not edit without explicit user approval.
+**Everything inside `.claude/rules/` is read into context automatically, every session.** That is a Claude Code behaviour, not something a file can opt out of — a `load: on-demand` line in a file's frontmatter is descriptive only and does not stop it loading. So only four files live there, deliberately:
 
 @.claude/rules/always-do-first.md
 @.claude/rules/hard-rules.md
 
+- `.claude/rules/design-system.md` — binding design pointer; too important to risk missing (it is small, and only points at the full docs).
+- `.claude/rules/key-decisions.md` — the KD index, so a "KD #N" cite resolves with no extra read.
+
+Do not edit any of the four without explicit user approval, and **do not add new files to `.claude/rules/`** — anything put there is paid for in every session. On-demand material goes in `docs/` (below).
+
 ## Stable rules — on-demand (read with the Read tool when relevant)
 
-Not `@`-imported. Each file carries YAML frontmatter (`description`, `load: on-demand`) explaining its trigger. Read before acting when any of the "Read when..." conditions apply.
+These live **outside** `.claude/rules/`, so they cost nothing until read. Read before acting when any of the "Read when..." conditions apply.
 
-| Rule                              | Read when...                                                                                                                                                                                                                                                                       |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.claude/rules/tech-stack.md`     | Touching code, installing/upgrading a dep, debugging a framework behavior, or a Next.js 16 gotcha                                                                                                                                                                                  |
-| `.claude/rules/project-layout.md` | Creating new files, moving code between modules, or deciding where a new route or lib lives                                                                                                                                                                                        |
-| `.claude/rules/env-vars.md`       | Touching `.env.local`, Supabase/auth plumbing, or Resend emails                                                                                                                                                                                                                    |
-| `.claude/rules/key-decisions.md`  | A "KD #N" reference appears in code or docs; cross-cutting architectural choices; doubt about module boundaries, roles, or conventions. The file is a thin index — open it to find the topic file under `.claude/rules/key-decisions/` that holds the KD you need, then Read that. |
-| `.claude/rules/design-system.md`  | Before any UI / frontend code; when choosing a shadcn primitive, token, color, or layout                                                                                                                                                                                           |
-| `.claude/rules/workflow.md`       | Finishing work — before reporting a task done, or at session wrap-up                                                                                                                                                                                                               |
+| Rule                           | Read when...                                                                                                                                                                                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `docs/rules/tech-stack.md`     | Touching code, installing/upgrading a dep, debugging a framework behavior, or a Next.js 16 gotcha                                                                                                                                                      |
+| `docs/rules/project-layout.md` | Creating new files, moving code between modules, or deciding where a new route or lib lives                                                                                                                                                            |
+| `docs/rules/env-vars.md`       | Touching `.env.local`, Supabase/auth plumbing, or Resend emails                                                                                                                                                                                        |
+| `docs/rules/workflow.md`       | Finishing work — before reporting a task done, or at session wrap-up                                                                                                                                                                                   |
+| `docs/key-decisions/*.md`      | A "KD #N" reference appears in code or docs; cross-cutting architectural choices; doubt about module boundaries, roles, or conventions. Find the topic file via the always-loaded index at `.claude/rules/key-decisions.md`, then Read only that file. |
 
 ## Reference docs
 
@@ -77,4 +81,6 @@ here — they live in `.claude/rules/*.md`. Sprint-by-sprint history lives in
 
 ## Cross-reference note
 
-Cross-references elsewhere in the repo such as "CLAUDE.md Hard Rule #N" or "CLAUDE.md KD #N" now resolve to `.claude/rules/hard-rules.md` and `.claude/rules/key-decisions.md` respectively. Numbering is preserved across all moves. KDs were split into per-topic files under `.claude/rules/key-decisions/` (the root file is the index + KD-to-topic map); existing "KD #N" cites still resolve via the index, and global numbering is unchanged.
+Cross-references elsewhere in the repo such as "CLAUDE.md Hard Rule #N" or "CLAUDE.md KD #N" now resolve to `.claude/rules/hard-rules.md` and `.claude/rules/key-decisions.md` respectively. Numbering is preserved across all moves. KDs were split into per-topic files under `docs/key-decisions/` (the root file is the index + KD-to-topic map); existing "KD #N" cites still resolve via the index, and global numbering is unchanged.
+
+Historical plan and spec docs under `docs/superpowers/` cite the older `.claude/rules/key-decisions/<topic>.md` paths. Those are archival records of past work and were deliberately left as-written — read them as "the topic file for that KD", which now lives under `docs/key-decisions/`.

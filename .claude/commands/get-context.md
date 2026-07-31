@@ -19,7 +19,7 @@ Optional argument (`$ARGUMENTS`):
 
 - `CLAUDE.md` — already in context, but **re-read it** so the imports list, on-demand rule table, and session-context scratch are top-of-mind
 - `.claude/rules/hard-rules.md` — auto-loaded via `@`-import in CLAUDE.md; re-read if not confident it's in working memory
-- `.claude/rules/key-decisions.md` — **on-demand; read it now** as part of orientation. The root file is a thin index (KD-to-topic map); read it first to learn the topic structure, then read individual `.claude/rules/key-decisions/*.md` topic files only when a "KD #N" is cited or a topic-relevant architectural question comes up
+- `.claude/rules/key-decisions.md` — **on-demand; read it now** as part of orientation. The root file is a thin index (KD-to-topic map); read it first to learn the topic structure, then read individual `docs/key-decisions/*.md` topic files only when a "KD #N" is cited or a topic-relevant architectural question comes up
 - Other `.claude/rules/*.md` (tech-stack, project-layout, env-vars, workflow) — on-demand; read only if the session's task matches their frontmatter `description`
 - `docs/sprints/development-plan.md` — not auto-loaded; read it in full
 
