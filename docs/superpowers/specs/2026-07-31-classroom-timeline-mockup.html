@@ -1,0 +1,771 @@
+<title>Classroom timeline — redesign</title>
+
+<style>
+  /* Aurora Vault tokens from app/globals.css. Hex is a MOCKUP concession —
+     app code uses bg-brand-indigo / text-ink-4 / border-hairline (Hard Rule #7). */
+  :root {
+    --canvas: #f8fafc;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --ink-2: #334155;
+    --ink-3: #475569;
+    --ink-4: #64748b;
+    --ink-5: #94a3b8;
+    --hairline: #e2e8f0;
+    --hairline-strong: #cbd5e1;
+    --indigo: #213098;
+    --indigo-deep: #18215c;
+    --indigo-soft: #5b6bd0;
+    --accent: #e9ecf8;
+    --accent-ink: #1a2570;
+    --mint: #34d399;
+    --mint-deep: #0f9d6b;
+    --sky: #38bdf8;
+    --amber: #ed7622;
+    --destructive: oklch(0.6368 0.2078 25.3313);
+    --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.06);
+    --serif: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --canvas: #080c17;
+      --card: #0f1626;
+      --ink: #eef2f9;
+      --ink-2: #cbd5e1;
+      --ink-3: #a8b4c6;
+      --ink-4: #8a97ac;
+      --ink-5: #6b7889;
+      --hairline: #1e293b;
+      --hairline-strong: #334155;
+      --indigo: #6979e0;
+      --indigo-deep: #8f9cea;
+      --accent: #1a2148;
+      --accent-ink: #b9c2f2;
+      --mint-deep: #34d399;
+      --amber: #f59042;
+      --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.4);
+    }
+  }
+  :root[data-theme='dark'] {
+    --canvas: #080c17;
+    --card: #0f1626;
+    --ink: #eef2f9;
+    --ink-2: #cbd5e1;
+    --ink-3: #a8b4c6;
+    --ink-4: #8a97ac;
+    --ink-5: #6b7889;
+    --hairline: #1e293b;
+    --hairline-strong: #334155;
+    --indigo: #6979e0;
+    --indigo-deep: #8f9cea;
+    --accent: #1a2148;
+    --accent-ink: #b9c2f2;
+    --mint-deep: #34d399;
+    --amber: #f59042;
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+  :root[data-theme='light'] {
+    --canvas: #f8fafc;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --ink-2: #334155;
+    --ink-3: #475569;
+    --ink-4: #64748b;
+    --ink-5: #94a3b8;
+    --hairline: #e2e8f0;
+    --hairline-strong: #cbd5e1;
+    --indigo: #213098;
+    --indigo-deep: #18215c;
+    --accent: #e9ecf8;
+    --accent-ink: #1a2570;
+    --mint-deep: #0f9d6b;
+    --amber: #ed7622;
+    --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.06);
+  }
+
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 44px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-4);
+  }
+  h1 {
+    font-family: var(--serif);
+    font-size: 34px;
+    font-weight: 600;
+    line-height: 1.06;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 10px 0 0;
+  }
+  h2 {
+    font-family: var(--serif);
+    font-size: 21px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .lede {
+    max-width: 64ch;
+    color: var(--ink-3);
+    margin: 12px 0 0;
+  }
+  .note {
+    font-size: 13.5px;
+    color: var(--ink-4);
+    margin: 0;
+    max-width: 72ch;
+  }
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .sec-head {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    box-shadow: var(--shadow-xs);
+    overflow: hidden;
+  }
+
+  /* ── BEFORE: the wall ───────────────────────────────────────── */
+  .old-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .old-row:last-child {
+    border-bottom: 0;
+  }
+  .pill {
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    background: var(--indigo);
+    color: #fff;
+  }
+  .pill.grey {
+    background: #64748b;
+  }
+  .old-body {
+    flex: 1;
+    min-width: 0;
+  }
+  .old-summary {
+    font-size: 13.5px;
+    color: var(--ink);
+  }
+  .old-email {
+    font-size: 11.5px;
+    color: var(--ink-4);
+  }
+  .old-time {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-4);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── AFTER: grouped, railed, collapsed ──────────────────────── */
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline-strong);
+    background: var(--card);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--ink-3);
+    cursor: pointer;
+  }
+  .chip.on {
+    border-color: color-mix(in srgb, var(--indigo) 40%, transparent);
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .chip .n {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-4);
+    font-variant-numeric: tabular-nums;
+  }
+  .chip.on .n {
+    color: var(--accent-ink);
+  }
+
+  .day {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 18px;
+    background: color-mix(in srgb, var(--canvas) 82%, var(--card));
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .day .d {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-3);
+  }
+  .day .c {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-5);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ev {
+    position: relative;
+    display: flex;
+    gap: 14px;
+    padding: 12px 18px 12px 18px;
+  }
+  /* the spine */
+  .ev::before {
+    content: '';
+    position: absolute;
+    left: 30px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--hairline);
+  }
+  .ev:first-of-type::before {
+    top: 16px;
+  }
+  .ev:last-of-type::before {
+    bottom: calc(100% - 16px);
+  }
+  .dot {
+    position: relative;
+    z-index: 1;
+    width: 9px;
+    height: 9px;
+    margin-top: 6px;
+    border-radius: 999px;
+    flex: none;
+    margin-left: 8px;
+    box-shadow: 0 0 0 3px var(--card);
+  }
+  .dot.grade {
+    background: var(--indigo);
+  }
+  .dot.sheet {
+    background: var(--sky);
+  }
+  .dot.roster {
+    background: var(--amber);
+  }
+  .dot.writeup {
+    background: var(--mint-deep);
+  }
+  .ev-body {
+    flex: 1;
+    min-width: 0;
+  }
+  .ev-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .ev-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .ev-count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-4);
+    background: color-mix(in srgb, var(--ink-5) 14%, transparent);
+    padding: 1px 6px;
+    border-radius: 999px;
+  }
+  .ev-time {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-5);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ev-meta {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 4px;
+  }
+  .who {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .av {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    flex: none;
+    color: #fff;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--indigo-soft), var(--indigo));
+  }
+  .who span {
+    font-size: 12.5px;
+    color: var(--ink-3);
+  }
+  .ev-detail {
+    font-size: 12.5px;
+    color: var(--ink-4);
+  }
+  .ev-detail .mono {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .sep {
+    color: var(--hairline-strong);
+  }
+  .expand {
+    margin-top: 7px;
+    font-size: 12px;
+    color: var(--indigo);
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+  .expand:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .sub {
+    margin-top: 8px;
+    border-left: 1px solid var(--hairline);
+    padding-left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .sub-row {
+    display: flex;
+    gap: 10px;
+    font-size: 12.5px;
+    color: var(--ink-3);
+  }
+  .sub-row .t {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-5);
+    font-variant-numeric: tabular-nums;
+    min-width: 38px;
+  }
+
+  .flags {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  }
+  .flag {
+    border: 1px solid color-mix(in srgb, var(--indigo) 22%, transparent);
+    background: var(--accent);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .flag b {
+    font-size: 12.5px;
+    color: var(--accent-ink);
+  }
+  .flag span {
+    font-size: 12.5px;
+    color: var(--ink-3);
+    line-height: 1.45;
+  }
+  .bad {
+    border-color: color-mix(in srgb, var(--destructive) 26%, transparent);
+    background: color-mix(in srgb, var(--destructive) 8%, transparent);
+  }
+  .bad b {
+    color: var(--ink);
+  }
+
+  .trust {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 9px;
+    border-top: 1px solid var(--hairline);
+    padding-top: 18px;
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-4);
+  }
+  .trust .sep {
+    color: var(--hairline-strong);
+  }
+  @media (max-width: 620px) {
+    h1 {
+      font-size: 27px;
+    }
+    .ev-time {
+      margin-left: 0;
+    }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Classroom · Timeline · Proposed</p>
+    <h1>Fifty rows that all look the same aren't a timeline.</h1>
+    <p class="lede">
+      The tab shows the last fifty things that happened in a class. Today it
+      renders them as one flat slab where the loudest element — a coloured pill
+      — is usually the
+      <em>same word</em> forty times running, and most rows carry no detail at
+      all.
+    </p>
+  </header>
+
+  <!-- ══ BEFORE ══════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Today</p>
+      <h2>What it looks like now</h2>
+      <p class="note">Four rows of the fifty. Names are made up.</p>
+    </div>
+    <div class="card" id="oldTable"></div>
+
+    <div class="flags">
+      <div class="flag bad">
+        <b>The date repeats fifty times</b>
+        <span
+          >Every row prints the full <code>31 Jul 2026, 14:32</code> down the
+          right edge, so the column carries almost no information per
+          line.</span
+        >
+      </div>
+      <div class="flag bad">
+        <b>The badge is the loudest thing and says the least</b>
+        <span
+          >Forty consecutive "Write-up submitted" pills. Repetition becomes the
+          dominant visual and the eye gets no signal.</span
+        >
+      </div>
+      <div class="flag bad">
+        <b>Most rows have no content line</b>
+        <span
+          >When an audit row carries nothing summarisable the humanizer returns
+          "—", so a typical row is a badge, an email and a time around no
+          information.</span
+        >
+      </div>
+      <div class="flag bad">
+        <b>The actor is a raw email, every time</b>
+        <span
+          >The same address on forty rows, when the app already has a staff name
+          map and an initials-avatar convention.</span
+        >
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ AFTER ═══════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Proposed</p>
+      <h2>Grouped by day, collapsed by run</h2>
+      <p class="note">
+        Same fifty events, same humanizer. What changes is that repetition is
+        treated as repetition instead of as fifty separate facts.
+      </p>
+    </div>
+
+    <div class="chips">
+      <button class="chip on">All <span class="n">50</span></button>
+      <button class="chip">Grades <span class="n">18</span></button>
+      <button class="chip">Write-ups <span class="n">24</span></button>
+      <button class="chip">Roster <span class="n">5</span></button>
+      <button class="chip">Sheets <span class="n">3</span></button>
+    </div>
+
+    <div class="card" id="newTable"></div>
+  </section>
+
+  <!-- ══ DECISIONS ═══════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Why</p>
+      <h2>Decisions</h2>
+    </div>
+    <div class="flags">
+      <div class="flag">
+        <b>Runs collapse, and that's the whole fix</b>
+        <span
+          >Seven write-ups saved back-to-back by one person is one event with a
+          count and a time span, not seven rows. Expanding shows the individual
+          entries.</span
+        >
+      </div>
+      <div class="flag">
+        <b>The day is a heading, the row keeps the time</b>
+        <span
+          >Fifty full dates become four sticky headings and fifty short times.
+          The heading follows you down the scroll so you always know where you
+          are.</span
+        >
+      </div>
+      <div class="flag">
+        <b>The badge becomes a dot on the spine</b>
+        <span
+          >Colour still encodes the kind of event, but it stops shouting. The
+          action name is now the row's own text, which is what you were reading
+          anyway.</span
+        >
+      </div>
+      <div class="flag">
+        <b>A dash is not information</b>
+        <span
+          >When the humanizer has nothing to summarise, the line is omitted
+          rather than printing "—". An empty row should be short, not
+          padded.</span
+        >
+      </div>
+    </div>
+  </section>
+
+  <p class="trust">
+    <span>Mockup</span><span class="sep">·</span>
+    <span>Aurora Vault tokens</span><span class="sep">·</span>
+    <span>Fabricated names</span><span class="sep">·</span>
+    <span>2026-07-31</span>
+  </p>
+</div>
+
+<script>
+  const esc = (s) =>
+    String(s).replace(
+      /[&<>"]/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]
+    );
+  const initials = (n) =>
+    n
+      .split(/\s+/)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+
+  /* ── BEFORE ─────────────────────────────────────────────── */
+  const OLD = [
+    [
+      'Write-up submitted',
+      'Submitted · 9 characters',
+      'ateacher@hfse.edu.sg',
+      '31 Jul 2026, 14:41',
+    ],
+    ['Write-up submitted', '', 'ateacher@hfse.edu.sg', '31 Jul 2026, 14:39'],
+    ['Write-up submitted', '', 'ateacher@hfse.edu.sg', '31 Jul 2026, 14:37'],
+    [
+      'Grade updated',
+      'Ww Scores[3]: 8 → 10',
+      'ateacher@hfse.edu.sg',
+      '31 Jul 2026, 11:20',
+    ],
+  ];
+  document.getElementById('oldTable').innerHTML = OLD.map(
+    ([label, summary, email, time]) => `
+    <div class="old-row">
+      <span class="pill${label === 'Grade updated' ? '' : ' grey'}">${esc(label)}</span>
+      <div class="old-body">
+        <div class="old-summary">${summary ? esc(summary) : '—'}</div>
+        <div class="old-email">${esc(email)}</div>
+      </div>
+      <span class="old-time">${esc(time)}</span>
+    </div>`
+  ).join('');
+
+  /* ── AFTER ──────────────────────────────────────────────── */
+  const DAYS = [
+    {
+      label: 'Today · Thu 31 Jul',
+      count: 9,
+      events: [
+        {
+          kind: 'writeup',
+          title: 'Write-up submitted',
+          run: 7,
+          who: 'Ana Reyes',
+          time: '14:32 – 14:41',
+          sub: [
+            ['14:41', 'Aquino, Bianca'],
+            ['14:39', 'Bautista, Miguel'],
+            ['14:37', 'Castro, Lea'],
+            ['14:36', 'Dizon, Rafael'],
+            ['14:35', 'Espino, Nadia'],
+            ['14:33', 'Flores, Paolo'],
+            ['14:32', 'Garcia, Isabel'],
+          ],
+        },
+        {
+          kind: 'grade',
+          title: 'Grade updated',
+          who: 'Ana Reyes',
+          time: '11:20',
+          detail: 'Written Work 3 · <span class="mono">8 → 10</span>',
+        },
+        {
+          kind: 'sheet',
+          title: 'Sheet locked',
+          who: 'Joann Cruz',
+          time: '09:05',
+          detail: 'Mathematics · Term 2',
+        },
+      ],
+    },
+    {
+      label: 'Yesterday · Wed 30 Jul',
+      count: 3,
+      events: [
+        {
+          kind: 'grade',
+          title: 'Grade updated',
+          run: 2,
+          who: 'Ana Reyes',
+          time: '16:02 – 16:08',
+        },
+        {
+          kind: 'roster',
+          title: 'Student moved to another class',
+          who: 'Joann Cruz',
+          time: '10:14',
+          detail: 'Santos, Daniel · to Primary 1 Patience',
+        },
+      ],
+    },
+    {
+      label: 'Tue 22 Jul',
+      count: 2,
+      events: [
+        {
+          kind: 'sheet',
+          title: 'Activity labels updated',
+          who: 'Ana Reyes',
+          time: '13:47',
+          detail: 'Mathematics · Performance Task 2',
+        },
+        {
+          kind: 'roster',
+          title: 'Enrolment updated',
+          who: 'Joann Cruz',
+          time: '08:30',
+        },
+      ],
+    },
+  ];
+
+  document.getElementById('newTable').innerHTML = DAYS.map(
+    (day) => `
+    <div class="day">
+      <span class="d">${esc(day.label)}</span>
+      <span class="c">${day.count} event${day.count === 1 ? '' : 's'}</span>
+    </div>
+    ${day.events
+      .map(
+        (e) => `
+      <div class="ev">
+        <span class="dot ${e.kind}" aria-hidden="true"></span>
+        <div class="ev-body">
+          <div class="ev-head">
+            <span class="ev-title">${esc(e.title)}</span>
+            ${e.run ? `<span class="ev-count">×${e.run}</span>` : ''}
+            <span class="ev-time">${esc(e.time)}</span>
+          </div>
+          <div class="ev-meta">
+            <span class="who">
+              <span class="av" aria-hidden="true">${initials(e.who)}</span>
+              <span>${esc(e.who)}</span>
+            </span>
+            ${e.detail ? `<span class="sep">·</span><span class="ev-detail">${e.detail}</span>` : ''}
+          </div>
+          ${
+            e.sub
+              ? `
+            <button class="expand" data-open="0">Show ${e.sub.length} entries</button>
+            <div class="sub" hidden>
+              ${e.sub.map(([t, name]) => `<div class="sub-row"><span class="t">${t}</span><span>${esc(name)}</span></div>`).join('')}
+            </div>`
+              : ''
+          }
+        </div>
+      </div>`
+      )
+      .join('')}
+  `
+  ).join('');
+
+  document.querySelectorAll('.expand').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const panel = btn.nextElementSibling;
+      const open = panel.hasAttribute('hidden');
+      if (open) panel.removeAttribute('hidden');
+      else panel.setAttribute('hidden', '');
+      btn.textContent = open
+        ? 'Hide entries'
+        : `Show ${panel.querySelectorAll('.sub-row').length} entries`;
+    });
+  });
+</script>

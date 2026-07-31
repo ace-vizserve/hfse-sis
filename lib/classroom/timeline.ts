@@ -75,3 +75,158 @@ export function gatherTimelineEntityIds(
 /** How many recent events the Timeline page shows — see its "most recent N"
  * copy, which reads directly from this constant so the two can't drift. */
 export const TIMELINE_ROW_LIMIT = 50;
+
+// ──────────────────────────────────────────────────────────────────────────
+// Presentation shaping — pure, so the rules that make the page readable are
+// testable without a database.
+//
+// The tab rendered ~50 audit rows as one flat slab. Its worst property was
+// that the loudest element, a coloured pill, was usually the SAME WORD forty
+// times running: repetition became the dominant visual and the eye got no
+// signal at all. These helpers treat repetition AS repetition.
+// ──────────────────────────────────────────────────────────────────────────
+
+import { sgDate } from '@/lib/dates';
+
+/** The four categories the page's own copy already names, plus a catch-all. */
+export type TimelineKind =
+  | 'grades'
+  | 'writeups'
+  | 'roster'
+  | 'sheets'
+  | 'other';
+
+/**
+ * Which category an action belongs to.
+ *
+ * Prefix-matched rather than enumerated, deliberately: `AuditAction` grows, and
+ * a new `sheet.*` or `evaluation.writeup.*` should land in the right bucket
+ * without anyone remembering to edit this. `other` exists so an unclassified
+ * action still appears — dropping events would be far worse than filing one
+ * under a generic heading.
+ */
+export function kindForAction(action: string): TimelineKind {
+  if (action.startsWith('sheet.')) return 'sheets';
+  if (action.startsWith('evaluation.')) return 'writeups';
+  if (
+    action.startsWith('section.') ||
+    action.startsWith('enrolment.') ||
+    action.startsWith('student.')
+  ) {
+    return 'roster';
+  }
+  // Grade edits are `entry.*` / `totals.*` and the change-request flow.
+  if (
+    action.startsWith('entry.') ||
+    action.startsWith('totals.') ||
+    action.startsWith('grade')
+  ) {
+    return 'grades';
+  }
+  return 'other';
+}
+
+export type TimelineEvent = {
+  id: string;
+  action: string;
+  actorEmail: string;
+  context: Record<string, unknown>;
+  createdAt: string;
+};
+
+/** Consecutive events sharing an action and an actor, shown as one row. */
+export type TimelineRun = {
+  key: string;
+  kind: TimelineKind;
+  action: string;
+  actorEmail: string;
+  /** Newest first, matching the query. Length is the run's count. */
+  events: TimelineEvent[];
+  /** Oldest and newest stamps in the run — equal when the run is a single event. */
+  startedAt: string;
+  endedAt: string;
+};
+
+export type TimelineDay = {
+  /** `yyyy-MM-dd` in Singapore time. */
+  date: string;
+  runs: TimelineRun[];
+  /** Individual events that day, not runs — the day heading counts real events. */
+  eventCount: number;
+};
+
+/**
+ * Group into days, then collapse consecutive same-action-same-actor runs.
+ *
+ * Days are SINGAPORE days (`sgDate`, KD #32). Grouping on the raw UTC timestamp
+ * would file everything before 08:00 SGT under the previous day — which is most
+ * of a school morning, and precisely when a register gets marked.
+ *
+ * Collapsing is CONSECUTIVE-only. A, B, A stays three runs, because merging
+ * them would claim two things happened together when something else happened
+ * in between — the ordering is the information a timeline exists to carry.
+ *
+ * A run never spans midnight: days are grouped first, so an evening run and a
+ * following-morning run of the same action stay separate, which is what the
+ * day headings promise.
+ *
+ * Input is expected newest-first (the query orders `created_at desc`) and that
+ * order is preserved. Nothing here re-sorts, so a caller passing a different
+ * order gets that order back rather than a silently rearranged page.
+ */
+export function groupTimeline(events: readonly TimelineEvent[]): TimelineDay[] {
+  const days: TimelineDay[] = [];
+  let currentDay: TimelineDay | null = null;
+
+  for (const event of events) {
+    const date = sgDate(event.createdAt);
+    if (!currentDay || currentDay.date !== date) {
+      currentDay = { date, runs: [], eventCount: 0 };
+      days.push(currentDay);
+    }
+    currentDay.eventCount += 1;
+
+    const last = currentDay.runs.at(-1);
+    if (
+      last &&
+      last.action === event.action &&
+      last.actorEmail === event.actorEmail
+    ) {
+      last.events.push(event);
+      // Newest-first input means each later event is older, so it extends the
+      // start. Compare rather than assume, so an unsorted caller still gets a
+      // truthful span instead of a reversed one.
+      if (event.createdAt < last.startedAt) last.startedAt = event.createdAt;
+      if (event.createdAt > last.endedAt) last.endedAt = event.createdAt;
+      continue;
+    }
+
+    currentDay.runs.push({
+      key: event.id,
+      kind: kindForAction(event.action),
+      action: event.action,
+      actorEmail: event.actorEmail,
+      events: [event],
+      startedAt: event.createdAt,
+      endedAt: event.createdAt,
+    });
+  }
+
+  return days;
+}
+
+/** Per-kind totals for the filter chips. Counts EVENTS, not runs — a chip
+ *  reading "Write-ups 24" must match what the page says it is showing. */
+export function countByKind(
+  events: readonly TimelineEvent[]
+): Record<TimelineKind, number> {
+  const counts: Record<TimelineKind, number> = {
+    grades: 0,
+    writeups: 0,
+    roster: 0,
+    sheets: 0,
+    other: 0,
+  };
+  for (const e of events) counts[kindForAction(e.action)] += 1;
+  return counts;
+}
