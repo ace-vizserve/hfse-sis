@@ -1,0 +1,402 @@
+<title>Attendance dashboard for form class advisers</title>
+
+<style>
+  /* Aurora Vault tokens, lifted from app/globals.css. Hex here is a MOCKUP
+     concession only — in app code these are bg-brand-indigo, text-ink-4,
+     border-hairline etc. (Hard Rule #7). */
+  :root {
+    --canvas: #f8fafc; --card: #ffffff;
+    --ink: #0f172a; --ink-2: #334155; --ink-3: #475569; --ink-4: #64748b; --ink-5: #94a3b8;
+    --hairline: #e2e8f0; --hairline-strong: #cbd5e1;
+    --indigo: #213098; --indigo-deep: #18215c; --indigo-soft: #5b6bd0;
+    --accent: #e9ecf8; --accent-ink: #1a2570;
+    --mint: #34d399; --mint-deep: #0f9d6b; --sky: #38bdf8;
+    --amber: #ed7622; --amber-light: #fde8d5;
+    --destructive: oklch(0.6368 0.2078 25.3313);
+    --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.06);
+    --shadow-tile: 0 2px 6px rgb(33 48 152 / 0.28), inset 0 1px 0 rgb(255 255 255 / 0.18);
+    --serif: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --canvas: #080c17; --card: #0f1626; --ink: #eef2f9; --ink-2: #cbd5e1;
+      --ink-3: #a8b4c6; --ink-4: #8a97ac; --ink-5: #6b7889;
+      --hairline: #1e293b; --hairline-strong: #334155;
+      --indigo: #6979e0; --indigo-deep: #8f9cea; --accent: #1a2148; --accent-ink: #b9c2f2;
+      --mint-deep: #34d399; --amber: #f59042; --amber-light: #3a2110;
+      --shadow-xs: 0 1px 2px rgb(0 0 0 / .4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --canvas: #080c17; --card: #0f1626; --ink: #eef2f9; --ink-2: #cbd5e1;
+    --ink-3: #a8b4c6; --ink-4: #8a97ac; --ink-5: #6b7889;
+    --hairline: #1e293b; --hairline-strong: #334155;
+    --indigo: #6979e0; --indigo-deep: #8f9cea; --accent: #1a2148; --accent-ink: #b9c2f2;
+    --mint-deep: #34d399; --amber: #f59042; --amber-light: #3a2110;
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / .4);
+  }
+  :root[data-theme="light"] {
+    --canvas: #f8fafc; --card: #ffffff; --ink: #0f172a; --ink-2: #334155;
+    --ink-3: #475569; --ink-4: #64748b; --ink-5: #94a3b8;
+    --hairline: #e2e8f0; --hairline-strong: #cbd5e1;
+    --indigo: #213098; --indigo-deep: #18215c; --accent: #e9ecf8; --accent-ink: #1a2570;
+    --mint-deep: #0f9d6b; --amber: #ed7622; --amber-light: #fde8d5;
+    --shadow-xs: 0 1px 2px rgb(15 23 42 / .06);
+  }
+
+  body { background: var(--canvas); color: var(--ink); font-family: var(--sans);
+         font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 80px;
+          display: flex; flex-direction: column; gap: 44px; }
+
+  .eyebrow { font-family: var(--mono); font-size: 10px; font-weight: 600;
+             text-transform: uppercase; letter-spacing: .14em; color: var(--ink-4); }
+  h1 { font-family: var(--serif); font-size: 34px; font-weight: 600; line-height: 1.06;
+       letter-spacing: -.02em; text-wrap: balance; margin: 10px 0 0; }
+  h2 { font-family: var(--serif); font-size: 21px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+  .lede { max-width: 62ch; color: var(--ink-3); margin: 12px 0 0; font-size: 15.5px; }
+  .note { font-size: 13.5px; color: var(--ink-4); margin: 0; max-width: 70ch; }
+  section { display: flex; flex-direction: column; gap: 14px; }
+  .sec-head { display: flex; flex-direction: column; gap: 5px; }
+
+  .hero { display: flex; align-items: flex-start; gap: 16px;
+          border-bottom: 1px solid var(--hairline); padding-bottom: 26px; }
+  .tile { width: 44px; height: 44px; flex: none; border-radius: 12px; display: flex;
+          align-items: center; justify-content: center; color: #fff;
+          background: linear-gradient(135deg, var(--indigo), var(--indigo-deep));
+          box-shadow: var(--shadow-tile); }
+  .tile svg { width: 20px; height: 20px; }
+
+  .card { background: var(--card); border: 1px solid var(--hairline);
+          border-radius: 12px; box-shadow: var(--shadow-xs); overflow: hidden; }
+  .card-head { padding: 14px 20px; border-bottom: 1px solid var(--hairline);
+               display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+
+  /* ── the signature: today strip ─────────────────────────────── */
+  .today-row { display: flex; align-items: center; gap: 14px; padding: 16px 20px;
+               border-bottom: 1px solid var(--hairline); }
+  .today-row:last-child { border-bottom: 0; }
+  .state { width: 30px; height: 30px; flex: none; border-radius: 999px;
+           display: flex; align-items: center; justify-content: center; }
+  .state svg { width: 15px; height: 15px; }
+  .state.done { background: color-mix(in srgb, var(--mint) 20%, transparent); color: var(--mint-deep); }
+  .state.todo { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); }
+  .state.off  { background: color-mix(in srgb, var(--ink-5) 15%, transparent); color: var(--ink-4); }
+  .cls { flex: 1; min-width: 0; }
+  .cls-name { font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+  .cls-sub { font-size: 12.5px; color: var(--ink-4); margin-top: 1px; }
+  .cls-sub .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px;
+         border-radius: 8px; font-size: 13.5px; font-weight: 500; white-space: nowrap;
+         text-decoration: none; border: 1px solid transparent; cursor: pointer; }
+  .btn svg { width: 14px; height: 14px; }
+  .btn-primary { color: #fff; background: linear-gradient(180deg, var(--indigo-soft), var(--indigo));
+                 box-shadow: 0 1px 2px rgb(33 48 152 / .35), inset 0 1px 0 rgb(255 255 255 / .2); }
+  .btn-quiet { color: var(--ink-4); border-color: var(--hairline-strong); background: var(--card); }
+  .btn-quiet:hover { color: var(--ink); }
+
+  /* all-clear collapse */
+  .allclear { display: flex; align-items: center; gap: 12px; padding: 18px 20px; }
+  .allclear .msg { font-size: 14.5px; color: var(--ink-2); }
+  .allclear .msg b { font-weight: 600; color: var(--ink); }
+
+  /* ── term table ─────────────────────────────────────────────── */
+  table { border-collapse: collapse; width: 100%; }
+  thead th { font-size: 11px; font-weight: 600; color: var(--ink-4); text-align: left;
+             padding: 9px 20px; background: color-mix(in srgb, var(--canvas) 60%, transparent);
+             border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+  thead th.r, tbody td.r { text-align: right; }
+  tbody td { padding: 13px 20px; border-bottom: 1px solid var(--hairline); font-size: 13.5px; }
+  tbody tr:last-child td { border-bottom: 0; }
+  .rate { font-family: var(--mono); font-variant-numeric: tabular-nums;
+          font-size: 15px; font-weight: 600; letter-spacing: -.02em; }
+  .bar { height: 5px; border-radius: 999px; background: color-mix(in srgb, var(--ink-5) 22%, transparent);
+         overflow: hidden; margin-top: 6px; width: 130px; }
+  .bar span { display: block; height: 100%; border-radius: 999px;
+              background: linear-gradient(90deg, var(--mint), var(--sky)); }
+  .mix { font-family: var(--mono); font-size: 11px; color: var(--ink-4);
+         font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ── attention ──────────────────────────────────────────────── */
+  .att { display: flex; align-items: flex-start; gap: 12px; padding: 14px 20px;
+         border-bottom: 1px solid var(--hairline); }
+  .att:last-child { border-bottom: 0; }
+  .att .dot { width: 7px; height: 7px; border-radius: 999px; margin-top: 7px; flex: none; }
+  .att .body { flex: 1; min-width: 0; }
+  .att .t { font-size: 14px; color: var(--ink); }
+  .att .s { font-size: 12.5px; color: var(--ink-4); margin-top: 2px; }
+  .att a { color: var(--indigo); text-decoration: none; font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .att a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+  .flags { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .flag { border: 1px solid color-mix(in srgb, var(--indigo) 22%, transparent);
+          background: var(--accent); border-radius: 10px; padding: 12px 14px;
+          display: flex; flex-direction: column; gap: 3px; }
+  .flag b { font-size: 12.5px; color: var(--accent-ink); }
+  .flag span { font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+
+  .trust { display: flex; flex-wrap: wrap; align-items: center; gap: 9px;
+           border-top: 1px solid var(--hairline); padding-top: 18px;
+           font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+           letter-spacing: .14em; color: var(--ink-4); }
+  .trust .sep { color: var(--hairline-strong); }
+  @media (max-width: 640px) {
+    h1 { font-size: 27px; }
+    .today-row { flex-wrap: wrap; }
+    .bar { width: 90px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Attendance · Proposed</p>
+    <h1>A register, not a report.</h1>
+    <p class="lede">
+      The registrar's attendance dashboard answers <em>how is the school doing</em>. A form
+      class adviser has a different question, and they ask it every single morning:
+      <strong>is today marked?</strong> That is binary, it expires daily, and it is the
+      only thing that belongs at the top.
+    </p>
+  </header>
+
+  <!-- ══ STATE 1 ══════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">The working state</p>
+      <h2>One class still needs marking</h2>
+      <p class="note">Names are made up — no real students in this mockup.</p>
+    </div>
+
+    <div class="hero">
+      <div class="tile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="m16 19 2 2 4-4"/></svg>
+      </div>
+      <div>
+        <p class="eyebrow">Thursday, 31 July · Term 2</p>
+        <h1 style="font-size:29px">Primary 1 Respect isn't marked yet.</h1>
+        <p class="lede" style="font-size:14.5px;margin-top:8px">
+          Primary 2 Humility is done. Nothing else needs you today.
+        </p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="today-row">
+        <span class="state todo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        </span>
+        <span class="cls">
+          <div class="cls-name">Primary 1 Respect</div>
+          <div class="cls-sub"><span class="num">28</span> students · not marked</div>
+        </span>
+        <a class="btn btn-primary" href="#">
+          Open register
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>
+        </a>
+      </div>
+      <div class="today-row">
+        <span class="state done" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <span class="cls">
+          <div class="cls-name">Primary 2 Humility</div>
+          <div class="cls-sub">
+            Marked <span class="num">07:42</span> ·
+            <span class="num">26</span> present, <span class="num">1</span> late,
+            <span class="num">1</span> absent
+          </div>
+        </span>
+        <a class="btn btn-quiet" href="#">View</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ STATE 2 ══════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">The good day</p>
+      <h2>When it's done, the page gets out of the way</h2>
+      <p class="note">
+        The signature move: the strip <em>collapses</em> rather than showing a wall of green
+        cards. Most dashboards grow when things are fine. An adviser opening this at 07:45
+        wants one glance and their morning back.
+      </p>
+    </div>
+
+    <div class="hero">
+      <div class="tile" style="background:linear-gradient(135deg,var(--mint),var(--sky));box-shadow:0 2px 6px rgb(52 211 153 / .3), inset 0 1px 0 rgb(255 255 255 / .3)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <div>
+        <p class="eyebrow">Thursday, 31 July · Term 2</p>
+        <h1 style="font-size:29px">Both classes marked for today.</h1>
+        <p class="lede" style="font-size:14.5px;margin-top:8px">
+          Last one in at 07:51. Nothing outstanding.
+        </p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="allclear">
+        <span class="state done" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <span class="msg">
+          <b>Primary 1 Respect</b> and <b>Primary 2 Humility</b> are both in for today.
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ STATE 3 ══════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Not a school day</p>
+      <h2>Never say "not marked" about a day nobody should mark</h2>
+      <p class="note">
+        The school calendar has five day types, and only <code>school_day</code> and
+        <code>hbl</code> accept marks (KD&nbsp;#50). On the other three the strip states the
+        reason instead of showing an amber to-do that cannot be cleared.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="allclear">
+        <span class="state off" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
+        </span>
+        <span class="msg">
+          <b>National Day</b> — a public holiday. No register today. Next school day is
+          Monday, 4 August.
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ BELOW THE FOLD ══════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Below today</p>
+      <h2>This term</h2>
+      <p class="note">
+        Checked weekly, not daily — so it sits under the strip, compact, one row per class.
+        Every figure is the adviser's own classes; no school-wide number appears anywhere on
+        this page.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="scroll" style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Class</th>
+              <th>Attendance</th>
+              <th>Present · late · absent · excused</th>
+              <th class="r">School days</th>
+              <th class="r">Perfect</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span style="font-weight:600">Primary 1 Respect</span><div style="font-size:12px;color:var(--ink-4)">28 students</div></td>
+              <td>
+                <span class="rate" style="color:var(--mint-deep)">96.4%</span>
+                <div class="bar"><span style="width:96.4%"></span></div>
+              </td>
+              <td class="mix">1024 · 12 · 8 · 4</td>
+              <td class="r mix">38</td>
+              <td class="r mix">19</td>
+            </tr>
+            <tr>
+              <td><span style="font-weight:600">Primary 2 Humility</span><div style="font-size:12px;color:var(--ink-4)">26 students</div></td>
+              <td>
+                <span class="rate" style="color:var(--amber)">89.7%</span>
+                <div class="bar"><span style="width:89.7%"></span></div>
+              </td>
+              <td class="mix">886 · 31 · 47 · 24</td>
+              <td class="r mix">38</td>
+              <td class="r mix">11</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Below today</p>
+      <h2>Worth a look</h2>
+      <p class="note">
+        Only two things qualify: days that slipped past unmarked, and students who have used
+        up a leave allowance. Both are the adviser's to act on. Nothing here is an analytics
+        finding.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="att">
+        <span class="dot" style="background:var(--amber)" aria-hidden="true"></span>
+        <span class="body">
+          <div class="t">3 school days were never marked</div>
+          <div class="s">Primary 1 Respect — Tue 22 Jul, Wed 23 Jul, Fri 25 Jul</div>
+        </span>
+        <a href="#">Backfill</a>
+      </div>
+      <div class="att">
+        <span class="dot" style="background:var(--destructive)" aria-hidden="true"></span>
+        <span class="body">
+          <div class="t">Maria Santos has used 6 of 5 compassionate days</div>
+          <div class="s">Primary 2 Humility · over the yearly allowance</div>
+        </span>
+        <a href="#">Open record</a>
+      </div>
+      <div class="att">
+        <span class="dot" style="background:var(--destructive)" aria-hidden="true"></span>
+        <span class="body">
+          <div class="t">Daniel Cruz has used 2 of 1 vacation days this term</div>
+          <div class="s">Primary 1 Respect · over the term allowance</div>
+        </span>
+        <a href="#">Open record</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ RATIONALE ═══════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Why this shape</p>
+      <h2>Decisions</h2>
+    </div>
+    <div class="flags">
+      <div class="flag">
+        <b>No big percentage at the top</b>
+        <span>That's the registrar's question. An adviser's term rate barely moves day to day; putting it in the hero would push the one thing that changes daily below it.</span>
+      </div>
+      <div class="flag">
+        <b>Nothing school-wide, anywhere</b>
+        <span>Attendance is adviser-only at the database. Every number here is built from the adviser's own sections, so the page cannot leak what KD&nbsp;#163 just closed.</span>
+      </div>
+      <div class="flag">
+        <b>The strip shrinks when you're done</b>
+        <span>Two marked classes become one sentence, not two green cards. Absence of work should look like absence, not like more content.</span>
+      </div>
+      <div class="flag">
+        <b>Holidays are stated, not implied</b>
+        <span>A day nobody should mark never renders as an outstanding task — it says which holiday, and when the next school day is.</span>
+      </div>
+    </div>
+  </section>
+
+  <p class="trust">
+    <span>Mockup</span><span class="sep">·</span>
+    <span>Aurora Vault tokens</span><span class="sep">·</span>
+    <span>Fabricated names</span><span class="sep">·</span>
+    <span>2026-07-31</span>
+  </p>
+</div>

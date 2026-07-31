@@ -7,6 +7,13 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { AdviserAttendanceDashboard } from '@/components/attendance/adviser-dashboard';
+import {
+  loadAdviserAttendanceDashboard,
+  type AdviserDashboard,
+} from '@/lib/attendance/adviser-dashboard-queries';
+import { resolveCurrentTermId } from '@/lib/sis/current-term';
+import { sgToday } from '@/lib/dates';
 import { Suspense } from 'react';
 
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
@@ -40,6 +47,48 @@ import {
 import { getDashboardWindows } from '@/lib/dashboard/windows';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
+
+// Resolves the adviser's own dashboard, or null when they advise nothing.
+//
+// Term comes from the canonical resolver (KD #116) rather than `is_current`,
+// which is routinely left unmaintained — the same trap that pinned every report
+// card to Term 1 (KD #164).
+async function loadAdviserDashboardForTeacher(
+  userId: string
+): Promise<AdviserDashboard | null> {
+  const service = createServiceClient();
+  const { data: ayRow } = await service
+    .from('academic_years')
+    .select('id')
+    .eq('is_current', true)
+    .maybeSingle();
+  const academicYearId = (ayRow as { id: string } | null)?.id;
+  if (!academicYearId) return null;
+
+  const { data: termRows } = await service
+    .from('terms')
+    .select('id, term_number, start_date, end_date, is_current')
+    .eq('academic_year_id', academicYearId);
+  const termId = resolveCurrentTermId(
+    (termRows ?? []) as Array<{
+      id: string;
+      term_number: number;
+      start_date: string | null;
+      end_date: string | null;
+      is_current: boolean | null;
+    }>,
+    sgToday()
+  );
+  if (!termId) return null;
+
+  return loadAdviserAttendanceDashboard({
+    role: 'teacher',
+    userId,
+    academicYearId,
+    termId,
+  });
+}
 
 export default async function AttendanceDashboard({
   searchParams,
@@ -49,9 +98,24 @@ export default async function AttendanceDashboard({
   const session = await getSessionUser();
   if (!session) redirect('/login');
 
-  // Teachers should still land on the section picker — the dashboard is
-  // registrar+.
-  if (session.role === 'teacher') redirect('/attendance/sections');
+  // A teacher used to be bounced straight to the section picker, so the module
+  // had no landing surface for the person who uses it every morning. They get
+  // one now — but a SCOPED one. Everything below this branch is school-wide and
+  // reads through the service client, so simply lifting the redirect would show
+  // an adviser every section's attendance, which is the exposure KD #163
+  // closed. `loadAdviserAttendanceDashboard` returns null for a teacher who
+  // advises nothing (a subject teacher has no attendance work at all — RLS
+  // gates `attendance_records` on `is_adviser_for_section`), and those keep the
+  // old redirect.
+  if (session.role === 'teacher') {
+    const teacherView = await loadAdviserDashboardForTeacher(session.id);
+    if (!teacherView) redirect('/attendance/sections');
+    return (
+      <PageShell>
+        <AdviserAttendanceDashboard data={teacherView} />
+      </PageShell>
+    );
+  }
 
   const supabase = await createClient();
   const { data: ay } = await supabase
