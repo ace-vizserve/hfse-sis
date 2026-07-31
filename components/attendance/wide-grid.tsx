@@ -83,7 +83,7 @@ import { resolveColumnTag } from '@/lib/attendance/sheet-columns';
 import { COLUMN_TAG_COLOR } from '@/components/attendance/column-tags';
 import { CellMarkPalette } from '@/components/attendance/cell-mark-popover';
 import { EnrolmentMetaEditor } from '@/components/attendance/enrolment-meta-editor';
-import { useDebouncedRefresh } from '@/components/attendance/use-debounced-refresh';
+import { useDebouncedRefresh } from '@/lib/hooks/use-debounced-refresh';
 import { statusCellWash } from '@/components/attendance/status-wash';
 import {
   Popover,

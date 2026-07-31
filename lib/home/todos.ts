@@ -2,6 +2,10 @@ import { unstable_cache } from 'next/cache';
 
 import type { Role } from '@/lib/auth/roles';
 import type { PriorityPayload } from '@/lib/dashboard/priority';
+import {
+  NO_TEACHING_PROFILE,
+  type TeachingProfile,
+} from '@/lib/sidebar/module-visibility';
 import { createServiceClient } from '@/lib/supabase/service';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { sgToday } from '@/lib/dates';
@@ -70,21 +74,38 @@ function fromPriority(
   };
 }
 
+// The two teacher rows belong to DIFFERENT JOBS, so each is gated on the job
+// that owns it — the same split the quick actions use, one panel up. Grading is
+// subject-teacher work (an adviser cannot encode a score); write-ups are
+// adviser work (`is_adviser_for_section`, migration 005).
+//
+// The query is skipped, not fetched-and-discarded: both loaders run on every
+// home render for a teacher, and there is no point asking about work the viewer
+// cannot do. Note the evaluation row USUALLY self-hid for a subject-only
+// teacher because the count came back 0 — that was luck, not a guard, and it
+// stopped being reliable the moment the count could be non-zero for any reason.
 async function teacherTodos(
   ayCode: string,
-  userId: string
+  userId: string,
+  profile: TeachingProfile
 ): Promise<HomeTodoItem[]> {
   const { getMarkbookTeacherPriority } =
     await import('@/lib/markbook/dashboard');
   const { getEvaluationTeacherPriority } =
     await import('@/lib/evaluation/dashboard');
   const [markbook, evaluation] = await Promise.all([
-    getMarkbookTeacherPriority({ ayCode, teacherUserId: userId }),
-    getEvaluationTeacherPriority({ ayCode, teacherUserId: userId }),
+    profile.teachesSubject
+      ? getMarkbookTeacherPriority({ ayCode, teacherUserId: userId })
+      : Promise.resolve(null),
+    profile.advises
+      ? getEvaluationTeacherPriority({ ayCode, teacherUserId: userId })
+      : Promise.resolve(null),
   ]);
   return [
-    fromPriority('markbook-priority', 'Markbook', markbook),
-    fromPriority('evaluation-priority', 'Evaluation', evaluation),
+    markbook ? fromPriority('markbook-priority', 'Markbook', markbook) : null,
+    evaluation
+      ? fromPriority('evaluation-priority', 'Evaluation', evaluation)
+      : null,
   ].filter((t): t is HomeTodoItem => t !== null);
 }
 
@@ -297,10 +318,15 @@ function reportCardGapsTodo(ayCode: string): Promise<HomeTodoItem | null> {
 export async function getHomeTodos(
   role: Role,
   ayCode: string,
-  userId: string
+  userId: string,
+  // Only consulted for `teacher`. Defaults to "holds neither job" so a caller
+  // that forgets it shows a teacher nothing rather than showing them the wrong
+  // work — the safe direction for a panel, unlike the quick-action row whose
+  // failure path deliberately grants both (see resolveTeacherNavScope).
+  profile: TeachingProfile = NO_TEACHING_PROFILE
 ): Promise<HomeTodoItem[]> {
   if (role === 'teacher') {
-    return teacherTodos(ayCode, userId);
+    return teacherTodos(ayCode, userId, profile);
   }
 
   if (role === 'academic_coordinator') {

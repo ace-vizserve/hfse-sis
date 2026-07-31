@@ -35,7 +35,6 @@ export default async function AttendanceSectionsListPage() {
   // than a fresh inline role check, so it can't drift from how Classroom
   // itself decides teacher-vs-oversight. The adviser-only section scoping
   // just below is unrelated and PRESERVED as-is.
-  const isOversight = resolveClassroomScope(role, []).isOversight;
 
   const supabase = await createClient();
 
@@ -250,7 +249,6 @@ export default async function AttendanceSectionsListPage() {
           levels={levels}
           today={today}
           showAdviser={!isTeacherOnly}
-          isOversight={isOversight}
         />
       )}
     </PageShell>

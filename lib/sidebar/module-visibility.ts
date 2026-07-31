@@ -73,6 +73,53 @@ export function hiddenModulesForTeacher(
 }
 
 /**
+ * Which of the two teaching jobs this person actually holds.
+ *
+ * `hiddenModulesForTeacher` above answers a MODULE-shaped question ("is
+ * Attendance ever useful to you"). This answers the finer one the home page
+ * needs: adviser work and subject work are different jobs, and an action that
+ * belongs to one must not be offered to someone who only does the other.
+ *
+ * The case that forced this: a form-adviser-only teacher was offered "Enter
+ * grades". Not a dead link — RLS lets an adviser READ every subject's sheet in
+ * their section (`is_teacher_for_sheet`, migration 005) — but the write gate is
+ * application code (`isSubjectTeacher` in
+ * app/api/grading-sheets/[id]/entries/[entryId]/route.ts), which a `form_adviser`
+ * row can never satisfy. So the button landed on a fully populated, entirely
+ * read-only grid. A module-level check could never catch that, because Markbook
+ * is genuinely useful to both jobs — it is the ACTION that isn't.
+ *
+ * Same two invariants as its sibling above:
+ *  - never narrows a non-teacher role (oversight roles hold no assignments, so
+ *    deriving anything from them would strip the people who need it most);
+ *  - "anywhere" spans academic years, inheriting the no-AY-filter caveat
+ *    documented on `hiddenModulesForTeacher`.
+ */
+export type TeachingProfile = {
+  /** Holds at least one `form_adviser` row — attendance, write-ups, report cards. */
+  advises: boolean;
+  /** Holds at least one `subject_teacher` row — the only job that may enter grades. */
+  teachesSubject: boolean;
+};
+
+/** A role that holds no teaching assignments at all. */
+export const NO_TEACHING_PROFILE: TeachingProfile = {
+  advises: false,
+  teachesSubject: false,
+};
+
+export function teachingProfileFor(
+  role: Role | null,
+  assignments: readonly AssignmentRow[]
+): TeachingProfile {
+  if (role !== 'teacher') return NO_TEACHING_PROFILE;
+  return {
+    advises: assignments.some((a) => a.role === 'form_adviser'),
+    teachesSubject: assignments.some((a) => a.role === 'subject_teacher'),
+  };
+}
+
+/**
  * Does this link lead into a module we're hiding from this viewer?
  *
  * Modules are offered in FIVE places, not one — the sidebar switcher, the

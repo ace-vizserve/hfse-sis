@@ -55,25 +55,54 @@ vi.mock('@/lib/markbook/comment-completeness', () => ({
 
 import { getHomeTodos } from '@/lib/home/todos';
 
+const MARKBOOK_ROW = {
+  id: 'markbook-priority',
+  module: 'Markbook',
+  text: '6 unscored slots',
+  href: '/markbook/grading',
+  kind: 'review',
+};
+const EVALUATION_ROW = {
+  id: 'evaluation-priority',
+  module: 'Evaluation',
+  text: '4 write-ups still in draft',
+  href: '/evaluation',
+  kind: 'review',
+};
+
 describe('getHomeTodos', () => {
   it('gives teacher review-only rows from the teacher priority payloads', async () => {
-    const todos = await getHomeTodos('teacher', 'AY2026', 'teacher-1');
-    expect(todos).toEqual([
-      {
-        id: 'markbook-priority',
-        module: 'Markbook',
-        text: '6 unscored slots',
-        href: '/markbook/grading',
-        kind: 'review',
-      },
-      {
-        id: 'evaluation-priority',
-        module: 'Evaluation',
-        text: '4 write-ups still in draft',
-        href: '/evaluation',
-        kind: 'review',
-      },
-    ]);
+    const todos = await getHomeTodos('teacher', 'AY2026', 'teacher-1', {
+      advises: true,
+      teachesSubject: true,
+    });
+    expect(todos).toEqual([MARKBOOK_ROW, EVALUATION_ROW]);
+  });
+
+  // The two teacher rows belong to different jobs. Grading is subject-teacher
+  // work; write-ups are adviser work. Offering either to someone who does not
+  // hold that job is the same defect as the "Enter grades" quick action a form
+  // adviser used to be shown, one panel up.
+  it('gives a form adviser the write-up row only', async () => {
+    const todos = await getHomeTodos('teacher', 'AY2026', 'teacher-1', {
+      advises: true,
+      teachesSubject: false,
+    });
+    expect(todos).toEqual([EVALUATION_ROW]);
+  });
+
+  it('gives a subject teacher the grading row only', async () => {
+    const todos = await getHomeTodos('teacher', 'AY2026', 'teacher-1', {
+      advises: false,
+      teachesSubject: true,
+    });
+    expect(todos).toEqual([MARKBOOK_ROW]);
+  });
+
+  it('gives a teacher with no assignments nothing', async () => {
+    // Also the default when a caller omits the profile — the safe direction for
+    // a panel: show nothing rather than the wrong work.
+    expect(await getHomeTodos('teacher', 'AY2026', 'teacher-1')).toEqual([]);
   });
 
   it('gives academic_coordinator review-only rows, never change-request rows', async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-import { useDebouncedRefresh } from '@/components/attendance/use-debounced-refresh';
+import { useDebouncedRefresh } from '@/lib/hooks/use-debounced-refresh';
 
 // The Term sheet's stat cards (average attendance, perfect attendance) are
 // RSC-computed from the rollup each cell write recomputes server-side, so the

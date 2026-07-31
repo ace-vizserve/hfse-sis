@@ -16,6 +16,7 @@ import {
   ADVISER_ONLY_MODULES,
   hiddenModulesForTeacher,
   isHiddenModuleHref,
+  teachingProfileFor,
 } from '@/lib/sidebar/module-visibility';
 import type { AssignmentRow } from '@/lib/auth/teacher-assignments';
 import type { Role } from '@/lib/auth/roles';
@@ -147,5 +148,85 @@ describe('isHiddenModuleHref — the five surfaces must agree', () => {
 
   it('hides nothing when the hidden list is empty', () => {
     expect(isHiddenModuleHref('/attendance/sections', [])).toBe(false);
+  });
+});
+
+// `hiddenModulesForTeacher` above answers a MODULE question ("is Attendance
+// ever useful to you"). This answers the finer one: which of the two teaching
+// jobs the person holds, which is what decides whether an ACTION is theirs.
+describe('teachingProfileFor', () => {
+  const adviser = (sectionId: string) => ({
+    id: `a-${sectionId}`,
+    teacher_user_id: 'u1',
+    section_id: sectionId,
+    subject_id: null,
+    role: 'form_adviser' as const,
+  });
+  const subject = (sectionId: string, subjectId: string) => ({
+    id: `s-${sectionId}-${subjectId}`,
+    teacher_user_id: 'u1',
+    section_id: sectionId,
+    subject_id: subjectId,
+    role: 'subject_teacher' as const,
+  });
+
+  it('reports adviser-only', () => {
+    expect(teachingProfileFor('teacher', [adviser('sec-1')])).toEqual({
+      advises: true,
+      teachesSubject: false,
+    });
+  });
+
+  it('reports subject-only', () => {
+    expect(teachingProfileFor('teacher', [subject('sec-1', 'sub-1')])).toEqual({
+      advises: false,
+      teachesSubject: true,
+    });
+  });
+
+  it('reports both when the person does both jobs', () => {
+    // The partial unique indexes on teacher_assignments permit this: the
+    // adviser index keys on section_id alone, so one person can advise one
+    // class and teach subjects in others.
+    expect(
+      teachingProfileFor('teacher', [
+        adviser('sec-1'),
+        subject('sec-2', 'sub-1'),
+        subject('sec-3', 'sub-2'),
+      ])
+    ).toEqual({ advises: true, teachesSubject: true });
+  });
+
+  it('is order-independent', () => {
+    const rows = [subject('sec-2', 'sub-1'), adviser('sec-1')];
+    expect(teachingProfileFor('teacher', rows)).toEqual(
+      teachingProfileFor('teacher', [...rows].reverse())
+    );
+  });
+
+  it('reports neither for a teacher with no assignments', () => {
+    expect(teachingProfileFor('teacher', [])).toEqual({
+      advises: false,
+      teachesSubject: false,
+    });
+  });
+
+  // Oversight roles hold no assignment rows at all, so deriving a job from them
+  // would strip the people who most need the actions. Same invariant as
+  // hiddenModulesForTeacher, which refuses to narrow them.
+  it('reports neither for every non-teacher role, and for null', () => {
+    for (const role of [
+      'academic_coordinator',
+      'school_admin',
+      'superadmin',
+      'p_file_officer',
+      'admissions',
+      null,
+    ] as const) {
+      expect(teachingProfileFor(role, [adviser('sec-1')]), `${role}`).toEqual({
+        advises: false,
+        teachesSubject: false,
+      });
+    }
   });
 });

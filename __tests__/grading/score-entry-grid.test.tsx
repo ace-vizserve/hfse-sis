@@ -24,6 +24,17 @@ const { toastSuccess, toastError } = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }));
+// The grid now signals a debounced router.refresh() after each saved cell, so
+// the "Graded n/N" stat card catches up without a manual reload. That needs an
+// app-router context these tests don't render inside — same mock shape the
+// other client-component suites use.
+const refreshMock = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: refreshMock, replace: vi.fn(), push: vi.fn() }),
+  usePathname: () => '/markbook/grading/sheet-1',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 vi.mock('sonner', () => ({
   toast: { success: toastSuccess, error: toastError },
 }));
@@ -253,6 +264,31 @@ describe('ScoreEntryGrid — first-score label gate', () => {
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body).toEqual({ ww_scores: [8] });
     expect(body.slot_label).toBeUndefined();
+  });
+
+  // The "Graded n/N · % complete" card is computed by the page's server
+  // component, so before this it sat at its page-load value while the teacher
+  // filled the grid. One coalesced refresh once entry goes idle — never one per
+  // cell, which would re-run the whole server render per keystroke.
+  it('refreshes the server-rendered stat cards after a saved score, debounced', async () => {
+    refreshMock.mockClear();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(okEntryResponse({ ww_scores: [8] }))
+    );
+    const { container } = renderGrid({
+      rows: [alice(), bob({ ww_scores: [10] })],
+    });
+
+    const [aliceWw] = scoreInputs(container);
+    await typeAndBlur(aliceWw, '8');
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+
+    // Not immediately — the whole point is to coalesce a burst.
+    expect(refreshMock).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1), {
+      timeout: 4000,
+    });
   });
 
   it('editing an existing non-null score on the same cell never opens the dialog', async () => {

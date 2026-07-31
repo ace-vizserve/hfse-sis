@@ -3,7 +3,7 @@ import { Sunrise, Sun, Moon } from 'lucide-react';
 
 import { PageShell } from '@/components/ui/page-shell';
 import { getSessionUser } from '@/lib/supabase/server';
-import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
+import { resolveTeacherNavScope } from '@/lib/sidebar/resolve-hidden-modules';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { sgHour } from '@/lib/dates';
@@ -29,9 +29,15 @@ export default async function Home() {
 
   const { role, email, id: userId } = sessionUser;
 
-  // Drop quick actions that lead into a module this teacher's assignments make
-  // a dead end — the home page must agree with the switchers.
-  const hiddenModules = await resolveHiddenModules(sessionUser.role, userId);
+  // One assignment read, two answers: which modules are dead ends for this
+  // teacher (the home page must agree with the switchers), and which of the two
+  // teaching jobs they hold — an adviser and a subject teacher share the
+  // `teacher` role but do different work, so the actions and to-dos below are
+  // filtered per job, not per role (KD #160).
+  const { hiddenModules, profile } = await resolveTeacherNavScope(
+    sessionUser.role,
+    userId
+  );
 
   // Same forced-redirect rules as before — unchanged from the plain-picker
   // version. Only the 4 multi-module roles ever render the rest of this
@@ -55,7 +61,7 @@ export default async function Home() {
       <PageShell>
         <Header
           name={displayName}
-          quickActions={getQuickActions(role, hiddenModules)}
+          quickActions={getQuickActions(role, hiddenModules, profile)}
         />
         <p className="mt-8 text-sm text-muted-foreground">
           No current academic year is set yet — ask a superadmin to configure
@@ -74,9 +80,9 @@ export default async function Home() {
 
   const [quickActions, recentActions, baseTodos, reportCardGaps, events] =
     await Promise.all([
-      Promise.resolve(getQuickActions(role, hiddenModules)),
+      Promise.resolve(getQuickActions(role, hiddenModules, profile)),
       getRecentActions(email),
-      getHomeTodos(role, ay.ay_code, userId),
+      getHomeTodos(role, ay.ay_code, userId, profile),
       role === 'academic_coordinator' ||
       role === 'school_admin' ||
       role === 'superadmin'

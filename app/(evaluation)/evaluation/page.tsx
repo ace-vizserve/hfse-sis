@@ -444,7 +444,15 @@ export default async function EvaluationHub({
         </>
       )}
 
-      <section className="grid gap-4 md:grid-cols-3">
+      {/* Only the roster card is a teacher's. The other two point at
+          /evaluation/virtue-themes and /sis/calendar, both of which
+          ROUTE_ACCESS restricts to the same three roles `canToggle` names — so
+          for a teacher they were links the proxy bounces. `canToggle` is reused
+          rather than re-derived: it already IS that role set, a few lines up,
+          and the warning block above this grid has always branched on it. */}
+      <section
+        className={`grid gap-4 ${canToggle ? 'md:grid-cols-3' : 'md:grid-cols-1'}`}
+      >
         <HubCard
           href="/evaluation/sections"
           icon={SquarePen}
@@ -457,22 +465,26 @@ export default async function EvaluationHub({
           }
           cta="Open roster"
         />
-        <HubCard
-          href="/evaluation/virtue-themes"
-          icon={NotebookPen}
-          eyebrow="Configuration"
-          title="Virtue themes"
-          description="Set the virtue theme per term. The theme appears as a prompt to advisers and as the parenthetical on printed report cards."
-          cta="Edit virtue themes"
-        />
-        <HubCard
-          href="/sis/calendar"
-          icon={CalendarDays}
-          eyebrow="Scheduling"
-          title="PTC schedule"
-          description="Parent-teacher-conference dates from the school calendar — the deadline driver for each write-up cycle."
-          cta="Open calendar"
-        />
+        {canToggle && (
+          <>
+            <HubCard
+              href="/evaluation/virtue-themes"
+              icon={NotebookPen}
+              eyebrow="Configuration"
+              title="Virtue themes"
+              description="Set the virtue theme per term. The theme appears as a prompt to advisers and as the parenthetical on printed report cards."
+              cta="Edit virtue themes"
+            />
+            <HubCard
+              href="/sis/calendar"
+              icon={CalendarDays}
+              eyebrow="Scheduling"
+              title="PTC schedule"
+              description="Parent-teacher-conference dates from the school calendar — the deadline driver for each write-up cycle."
+              cta="Open calendar"
+            />
+          </>
+        )}
       </section>
 
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">

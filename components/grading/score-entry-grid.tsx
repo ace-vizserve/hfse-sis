@@ -9,10 +9,12 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import type { SlotMeta, SlotLabels } from '@/lib/schemas/grading-sheet';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
+import { useDebouncedRefresh } from '@/lib/hooks/use-debounced-refresh';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -333,6 +335,16 @@ export function ScoreEntryGrid({
   // from data.entry on success; this mutation owns no cache and does not touch
   // the optimistic flow. The 422 error codes the autosave surfaces + the exact
   // per-cell revert/toast are preserved in patchEntry below.
+  // The sheet's "Graded n/N · % complete" card is computed by the page's server
+  // component from `grade_entries`, so it sat at its page-load value while the
+  // teacher filled the grid. Signal after each saved cell and let the hook
+  // coalesce the burst into one refresh once entry goes idle — score entry is
+  // bursty (a column at a time) and each refresh re-runs the whole server
+  // render, so per-cell would be the wrong trade. Same hook, same reason, as
+  // the attendance Term sheet.
+  const router = useRouter();
+  const signalStatsRefresh = useDebouncedRefresh(() => router.refresh());
+
   const entryMutation = useMutation({
     mutationFn: (vars: { entryId: string; payload: Record<string, unknown> }) =>
       apiFetch<{
@@ -454,6 +466,8 @@ export function ScoreEntryGrid({
         } else if ('correction_reason' in extraPayload) {
           toast.success('Correction logged on activity history');
         }
+        // Server-confirmed, so the stat cards are now stale. Coalesced.
+        signalStatsRefresh();
       } catch (e) {
         // The commit did NOT persist — fold the optimistic cell (and its
         // derived Total) back to the last saved values so the grid never
@@ -484,6 +498,7 @@ export function ScoreEntryGrid({
       wwTotals.length,
       ptTotals.length,
       entryMutation,
+      signalStatsRefresh,
     ]
   );
 

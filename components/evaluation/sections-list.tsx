@@ -71,7 +71,6 @@ function facetFilterFn(
 
 function buildColumns(
   isTeacher: boolean,
-  isOversight: boolean,
   terms: SectionTermColumn[]
 ): ColumnDef<EvalSectionRow>[] {
   return [
@@ -83,11 +82,11 @@ function buildColumns(
       meta: { label: 'Section' },
       cell: ({ row }) => (
         <IdentifierLink
-          href={
-            isOversight
-              ? `/evaluation/sections/${row.original.id}`
-              : `/classroom/${row.original.id}/write-ups`
-          }
+          // Everyone goes to the write-up roster — see the matching note in
+          // components/attendance/sections-data-table.tsx. A teacher who opened
+          // Evaluation and picked a class wants to write, not to read a
+          // Classroom summary of what they have written.
+          href={`/evaluation/sections/${row.original.id}`}
         >
           {row.original.name}
         </IdentifierLink>
@@ -186,22 +185,15 @@ export function EvaluationSectionsList({
   levels,
   terms,
   isTeacher = false,
-  isOversight,
 }: {
   sections: SectionCardData[];
   levels: LevelOption[];
   /** The AY's T1–T3 terms (KD #49) — one write-up progress column each. */
   terms: SectionTermColumn[];
   isTeacher?: boolean;
-  /** From lib/classroom/scope.ts's resolver (Phase 8, design doc
-   *  2026-07-28-classroom-workspace-design.md) — decides the row link
-   *  target: a teacher lands in Classroom's Write-ups tab for that class;
-   *  oversight lands on this module's own section detail (unchanged).
-   *  Never re-derive this from role inline. */
-  isOversight: boolean;
 }) {
   const rows = sections.map(deriveRow);
-  const columns = buildColumns(isTeacher, isOversight, terms);
+  const columns = buildColumns(isTeacher, terms);
 
   const facets: FacetConfig[] =
     levels.length > 1

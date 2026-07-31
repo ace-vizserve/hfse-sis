@@ -186,7 +186,6 @@ export default async function EvaluationSectionsPickerPage() {
   // than a fresh inline role check, so it can't drift from how Classroom
   // itself decides teacher-vs-oversight. The adviser-only section scoping
   // above is unrelated and PRESERVED as-is.
-  const isOversight = resolveClassroomScope(sessionUser.role, []).isOversight;
 
   const levels = Array.from(
     new Map(
@@ -319,7 +318,6 @@ export default async function EvaluationSectionsPickerPage() {
             levels={levels}
             terms={termColumns}
             isTeacher={isTeacher}
-            isOversight={isOversight}
             sections={sorted.map((s) => ({
               id: s.id,
               name: s.name,

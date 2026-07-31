@@ -5,16 +5,21 @@ import { useCallback, useEffect, useRef } from 'react';
 // Coalescing trigger for a server refresh from a high-frequency autosave
 // surface.
 //
-// The Term sheet's stat cards (average attendance, perfect attendance) are
-// computed on the server from `attendance_records`, which every cell write
-// recomputes via `recompute_attendance_rollup`. The numbers are therefore
-// correct the instant a write lands — but the cards are rendered by the page's
-// server component, so the browser has to ask for them again.
+// Two surfaces have the same shape. The attendance Term sheet's stat cards
+// (average attendance, perfect attendance) are computed on the server from
+// `attendance_records`; the grading sheet's "Graded n/N" card is computed on
+// the server from `grade_entries`. Both are correct the instant a write lands,
+// but both are rendered by the page's server component, so the browser has to
+// ask for them again.
+//
+// It lives in lib/hooks/ rather than beside either grid because it belongs to
+// neither module — it moved out of components/attendance/ on 2026-07-31 when
+// the grading grid became its second consumer.
 //
 // Asking per cell is the wrong trade: marking is bursty (a teacher fills a
 // column at a time) and each refresh re-runs the page's whole server render.
 // So callers signal "something changed" per write and this coalesces the burst
-// into one refresh once marking goes idle. The low-frequency surfaces here
+// into one refresh once entry goes idle. The low-frequency surfaces here
 // (roster metadata, the Daily view's batched submit) still refresh directly —
 // they fire once per user action, so there is nothing to coalesce.
 
