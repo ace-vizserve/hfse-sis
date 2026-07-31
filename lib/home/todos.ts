@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache';
 
+import { can, type Capability } from '@/lib/auth/capabilities';
 import type { Role } from '@/lib/auth/roles';
 import type { PriorityPayload } from '@/lib/dashboard/priority';
 import {
@@ -84,29 +85,39 @@ function fromPriority(
 // cannot do. Note the evaluation row USUALLY self-hid for a subject-only
 // teacher because the count came back 0 — that was luck, not a guard, and it
 // stopped being reliable the moment the count could be non-zero for any reason.
-async function teacherTodos(
-  ayCode: string,
-  userId: string,
-  profile: TeachingProfile
-): Promise<HomeTodoItem[]> {
+//
+// The job check lives inside each loader rather than in the source table
+// because it is not a capability: `teacher` is one RBAC role covering two jobs
+// (KD #160/#170), and the answer comes from `teacher_assignments`, not from
+// `role_permissions`.
+async function markbookPriorityTodo({
+  ayCode,
+  userId,
+  profile,
+}: TodoContext): Promise<HomeTodoItem | null> {
+  if (!profile.teachesSubject) return null;
   const { getMarkbookTeacherPriority } =
     await import('@/lib/markbook/dashboard');
+  const payload = await getMarkbookTeacherPriority({
+    ayCode,
+    teacherUserId: userId,
+  });
+  return fromPriority('markbook-priority', 'Markbook', payload);
+}
+
+async function evaluationPriorityTodo({
+  ayCode,
+  userId,
+  profile,
+}: TodoContext): Promise<HomeTodoItem | null> {
+  if (!profile.advises) return null;
   const { getEvaluationTeacherPriority } =
     await import('@/lib/evaluation/dashboard');
-  const [markbook, evaluation] = await Promise.all([
-    profile.teachesSubject
-      ? getMarkbookTeacherPriority({ ayCode, teacherUserId: userId })
-      : Promise.resolve(null),
-    profile.advises
-      ? getEvaluationTeacherPriority({ ayCode, teacherUserId: userId })
-      : Promise.resolve(null),
-  ]);
-  return [
-    markbook ? fromPriority('markbook-priority', 'Markbook', markbook) : null,
-    evaluation
-      ? fromPriority('evaluation-priority', 'Evaluation', evaluation)
-      : null,
-  ].filter((t): t is HomeTodoItem => t !== null);
+  const payload = await getEvaluationTeacherPriority({
+    ayCode,
+    teacherUserId: userId,
+  });
+  return fromPriority('evaluation-priority', 'Evaluation', payload);
 }
 
 function agingFor(requestedAt: string): {
@@ -137,10 +148,10 @@ type RawCrRow = {
  * — verified against lib/change-requests/decide.ts, which 403s any other
  * role attempting to approve/reject regardless of what any page renders.
  */
-async function schoolAdminChangeRequestTodos(
-  ayCode: string,
-  userId: string
-): Promise<HomeTodoItem[]> {
+async function schoolAdminChangeRequestTodos({
+  ayCode,
+  userId,
+}: TodoContext): Promise<HomeTodoItem[]> {
   const service = createServiceClient();
   const ayId = await resolveAyId(service, ayCode);
   if (!ayId) return [];
@@ -181,7 +192,9 @@ async function schoolAdminChangeRequestTodos(
   });
 }
 
-async function docValidationTodo(ayCode: string): Promise<HomeTodoItem | null> {
+async function docValidationTodo({
+  ayCode,
+}: TodoContext): Promise<HomeTodoItem | null> {
   const { countPendingDocValidation } =
     await import('@/lib/admissions/document-validation');
   const count = await countPendingDocValidation(ayCode);
@@ -195,9 +208,9 @@ async function docValidationTodo(ayCode: string): Promise<HomeTodoItem | null> {
   };
 }
 
-async function unsyncedStudentsTodo(
-  ayCode: string
-): Promise<HomeTodoItem | null> {
+async function unsyncedStudentsTodo({
+  ayCode,
+}: TodoContext): Promise<HomeTodoItem | null> {
   const { countUnsyncedEnrolledStudents } =
     await import('@/lib/sis/unsynced-students');
   const count = await countUnsyncedEnrolledStudents(ayCode);
@@ -211,9 +224,9 @@ async function unsyncedStudentsTodo(
   };
 }
 
-async function pFilesValidationTodo(
-  ayCode: string
-): Promise<HomeTodoItem | null> {
+async function pFilesValidationTodo({
+  ayCode,
+}: TodoContext): Promise<HomeTodoItem | null> {
   const { countAwaitingVerification } =
     await import('@/lib/p-files/document-validation');
   const count = await countAwaitingVerification(ayCode);
@@ -309,11 +322,114 @@ function reportCardGapsTodo(ayCode: string): Promise<HomeTodoItem | null> {
   )(ayCode);
 }
 
+/** Everything a to-do source is allowed to ask about the viewer. Passed whole
+ *  so a new source can use a field the others don't without changing every
+ *  loader's signature. */
+type TodoContext = {
+  ayCode: string;
+  userId: string;
+  /** Only consulted by the two teacher rows — see their loaders (KD #170). */
+  profile: TeachingProfile;
+};
+
+type TodoSource = {
+  id: string;
+  /**
+   * The page every row from this source links to — the guard that must pass.
+   * A row whose destination bounces the viewer is worse than no row: the
+   * panel promises work and the click lands them back where they started.
+   * (The two teacher rows take their real href from the priority payload's
+   * CTA; the value here is that CTA's destination.)
+   */
+  href: string;
+  roles: Role[];
+  /**
+   * Checked against the viewer's live grants when set. Roles say who the row
+   * is FOR; a capability says whether they may still open it — and since
+   * grants are data a superadmin edits at /sis/admin/roles, a role list alone
+   * can go stale the moment someone unticks a box.
+   */
+  requiresCapability?: Capability;
+  load: (ctx: TodoContext) => Promise<HomeTodoItem[] | HomeTodoItem | null>;
+};
+
+// Exported for the drift test only, following QUICK_ACTIONS one panel up:
+// `getHomeTodos` FILTERS, so a row that can never survive its own gates would
+// vanish silently. The test reads the raw table.
+//
+// ORDER IS THE PANEL'S ORDER — the survivors are loaded in parallel and
+// flattened in place, so moving a row here moves it on screen.
+export const HOME_TODO_SOURCES: TodoSource[] = [
+  {
+    id: 'markbook-priority',
+    href: '/markbook/grading',
+    roles: ['teacher'],
+    load: markbookPriorityTodo,
+  },
+  {
+    id: 'evaluation-priority',
+    href: '/evaluation/sections',
+    roles: ['teacher'],
+    load: evaluationPriorityTodo,
+  },
+  {
+    id: 'markbook-change-requests',
+    href: '/markbook/change-requests',
+    // The only source that emits `kind: 'change-request'`, and school_admin is
+    // the only role it fires for (KD #41, verified against
+    // lib/change-requests/decide.ts, which 403s every other role attempting to
+    // approve or reject).
+    roles: ['school_admin'],
+    load: schoolAdminChangeRequestTodos,
+  },
+  {
+    id: 'admissions-doc-validation',
+    href: '/admissions/document-validation',
+    // TWO INDEPENDENT GATES ON THE SAME LOOP, DELIBERATELY (KD #173).
+    //
+    // The academic coordinator was offered this row and it dead-ended: the page
+    // redirects anyone without `documents_pre_enrolment.read` to `/`, and
+    // migration 106 took that capability off her when document validation moved
+    // to the P-Files officer and school_admin — so the to-do sat ON the page she
+    // was bounced to, and clicking it looped.
+    //
+    // Dropping her from `roles` fixes today. The capability fixes tomorrow: the
+    // grant is DATA, editable by a superadmin at /sis/admin/roles, so any role
+    // in the list can lose its access without a single line of code changing.
+    // Belt and braces is the point — a hardcoded role list cannot see a data
+    // edit coming, and a capability check alone would offer this to every role
+    // that happens to hold the grant rather than the ones it is meant for.
+    roles: ['school_admin'],
+    requiresCapability: 'documents_pre_enrolment.read',
+    load: docValidationTodo,
+  },
+  {
+    id: 'p-files-validation',
+    href: '/p-files/document-validation',
+    // Same gate for the same reason, on the other side of enrolment. That page
+    // redirects a viewer holding neither document read capability
+    // (app/(p-files)/p-files/document-validation/page.tsx), and this row counts
+    // documents awaiting verification for ENROLLED students — the post-enrolment
+    // half — so post-enrolment read is the one that must hold.
+    roles: ['superadmin'],
+    requiresCapability: 'documents_post_enrolment.read',
+    load: pFilesValidationTodo,
+  },
+  {
+    id: 'records-unsynced',
+    href: '/records/unsynced',
+    roles: ['academic_coordinator', 'school_admin', 'superadmin'],
+    load: unsyncedStudentsTodo,
+  },
+];
+
 /**
- * Role-scoped to-do rows for the home page. `school_admin` is the only
- * role that gets `kind: 'change-request'` rows (KD #41, verified against
- * lib/change-requests/decide.ts) — every other role's rows are review-only
- * links into the real page.
+ * Role-scoped to-do rows for the home page, filtered on two independent
+ * grounds — whether the row is meant for this role, and whether the viewer
+ * still holds the capability its destination demands (KD #173).
+ *
+ * `school_admin` is the only role that gets `kind: 'change-request'` rows
+ * (KD #41) — every other role's rows are review-only links into the real page.
  */
 export async function getHomeTodos(
   role: Role,
@@ -323,40 +439,26 @@ export async function getHomeTodos(
   // that forgets it shows a teacher nothing rather than showing them the wrong
   // work — the safe direction for a panel, unlike the quick-action row whose
   // failure path deliberately grants both (see resolveTeacherNavScope).
-  profile: TeachingProfile = NO_TEACHING_PROFILE
+  profile: TeachingProfile = NO_TEACHING_PROFILE,
+  // Same safe direction: a caller that forgets these drops the capability-gated
+  // rows rather than offering a link that might bounce. Production callers pass
+  // getCapabilitiesForRole(role) — see app/(dashboard)/page.tsx.
+  capabilities: readonly Capability[] = []
 ): Promise<HomeTodoItem[]> {
-  if (role === 'teacher') {
-    return teacherTodos(ayCode, userId, profile);
-  }
+  const ctx: TodoContext = { ayCode, userId, profile };
 
-  if (role === 'academic_coordinator') {
-    const [docs, unsynced] = await Promise.all([
-      docValidationTodo(ayCode),
-      unsyncedStudentsTodo(ayCode),
-    ]);
-    return [docs, unsynced].filter((t): t is HomeTodoItem => t !== null);
-  }
+  const sources = HOME_TODO_SOURCES.filter(
+    (source) =>
+      source.roles.includes(role) &&
+      (!source.requiresCapability ||
+        can(capabilities, source.requiresCapability))
+  );
 
-  if (role === 'school_admin') {
-    const [crs, docs, unsynced] = await Promise.all([
-      schoolAdminChangeRequestTodos(ayCode, userId),
-      docValidationTodo(ayCode),
-      unsyncedStudentsTodo(ayCode),
-    ]);
-    return [...crs, docs, unsynced].filter(
-      (t): t is HomeTodoItem => t !== null
-    );
-  }
+  const results = await Promise.all(sources.map((source) => source.load(ctx)));
 
-  if (role === 'superadmin') {
-    const [pFiles, unsynced] = await Promise.all([
-      pFilesValidationTodo(ayCode),
-      unsyncedStudentsTodo(ayCode),
-    ]);
-    return [pFiles, unsynced].filter((t): t is HomeTodoItem => t !== null);
-  }
-
-  return [];
+  return results
+    .flatMap((result) => (Array.isArray(result) ? result : [result]))
+    .filter((todo): todo is HomeTodoItem => todo !== null);
 }
 
 // Exported for Task 8's server component to avoid importing the whole

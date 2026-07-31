@@ -164,8 +164,15 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
     quickActionByRole: {
       // P-Files quick action = the most-actionable renewal bucket: docs
       // expiring within 30 days. Already-expired surfaces as a sidebar
-      // nav item one click away. School admin / admin / superadmin are
-      // read-only on P-Files (KD #31).
+      // nav item one click away.
+      //
+      // No school_admin entry, and that is now a GAP rather than a policy.
+      // KD #31 made her read-only on P-Files, but migration 106 granted her
+      // `documents_post_enrolment.chase/upload/validate` — while the pages
+      // still gate their write actions on a `role === 'p_file_officer' ||
+      // 'superadmin'` literal. So she holds the rights and cannot reach them.
+      // Deliberately left alone here (KD #173): widening the P-Files write
+      // surface is its own decision, not a side effect of a comment fix.
       p_file_officer: {
         label: 'Expiring ≤30 days',
         href: '/p-files?expiring=30',

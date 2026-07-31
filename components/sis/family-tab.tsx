@@ -33,6 +33,10 @@ type Props = {
   app: ApplicationRow;
   ayCode: string;
   enroleeNumber: string;
+  /** May this viewer edit parent/guardian details? Defaults to FALSE so a
+   *  caller that forgets it renders read-only cards rather than an Edit sheet
+   *  whose PATCH route would 403 (KD #173). Every call site passes it. */
+  canEdit?: boolean;
 };
 
 type SlotConfig = {
@@ -49,7 +53,12 @@ type SlotConfig = {
   initial: Record<string, unknown>;
 };
 
-export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
+export function FamilyTab({
+  app,
+  ayCode,
+  enroleeNumber,
+  canEdit = false,
+}: Props) {
   const slots: SlotConfig[] = [
     {
       slot: 'father',
@@ -250,6 +259,7 @@ export function FamilyTab({ app, ayCode, enroleeNumber }: Props) {
           slot={s}
           ayCode={ayCode}
           enroleeNumber={enroleeNumber}
+          canEdit={canEdit}
         />
       ))}
       <SiblingsCard app={app} />
@@ -410,10 +420,12 @@ function ParentCard({
   slot,
   ayCode,
   enroleeNumber,
+  canEdit,
 }: {
   slot: SlotConfig;
   ayCode: string;
   enroleeNumber: string;
+  canEdit: boolean;
 }) {
   const empty = isSlotEmpty(slot);
   const filled = slot.fields.filter((f) => !isFieldEmpty(f)).length;
@@ -472,14 +484,16 @@ function ParentCard({
               </div>
             )}
           </div>
-          <CardAction>
-            <EditFamilySheet
-              ayCode={ayCode}
-              enroleeNumber={enroleeNumber}
-              parent={slot.slot}
-              initial={slot.initial}
-            />
-          </CardAction>
+          {canEdit && (
+            <CardAction>
+              <EditFamilySheet
+                ayCode={ayCode}
+                enroleeNumber={enroleeNumber}
+                parent={slot.slot}
+                initial={slot.initial}
+              />
+            </CardAction>
+          )}
         </div>
       </CardHeader>
 

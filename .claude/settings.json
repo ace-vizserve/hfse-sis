@@ -22,10 +22,12 @@
       "PowerShell(npx tsx --env-file=.env.local scripts/tmp-verify-101.ts)",
       "PowerShell(npx tsx --env-file=.env.local scripts/tmp-grant-school-admin-docs.ts)",
       "PowerShell(npx tsx --env-file=.env.local scripts/tmp-grant-coord-full.ts)",
-      "Bash(echo \"TSC: $?\")"
+      "Bash(echo \"TSC: $?\")",
+      "Bash(cd \"c:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-vizserve projects/hfse-markbook\" && echo \"=== guard + canWrite ===\" && sed -n '/const canWrite/,/^$/p' \"app/\\(p-files\\)/p-files/[enroleeNumber]/page.tsx\" | head -8 && echo \"=== components rendered with canWrite ===\" && grep -n \"canWrite\\\\|DocumentValidationActions\\\\|DocumentCard\\\\|NotifyDialog\\\\|PromiseDialog\\\\|UploadDialog\" \"app/\\(p-files\\)/p-files/[enroleeNumber]/page.tsx\")"
     ],
     "additionalDirectories": [
-      "C:\\Users\\Ace\\AppData\\Local\\Temp\\claude\\c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook\\aebe5fa0-94e1-410b-968e-c4a4daa13e23\\scratchpad"
+      "C:\\Users\\Ace\\AppData\\Local\\Temp\\claude\\c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook\\aebe5fa0-94e1-410b-968e-c4a4daa13e23\\scratchpad",
+      "c:\\Users\\Ace\\OneDrive - HFSE International School\\Desktop\\hfse-vizserve projects\\hfse-markbook\\app\\(p-files)\\p-files\\[enroleeNumber]"
     ]
   }
 }

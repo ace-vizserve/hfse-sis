@@ -91,10 +91,16 @@ export function StpApplicationCard({
   application,
   stpApplicationStatus,
   ayCode,
+  canEdit = false,
 }: {
   application: ApplicationRow;
   stpApplicationStatus: string | null;
   ayCode: string;
+  /** May this viewer edit the STP status and residence history? Defaults to
+   *  FALSE so a caller that forgets it renders the record read-only rather
+   *  than two editors whose PATCH routes would 403 (KD #173). Both call sites
+   *  pass it explicitly. */
+  canEdit?: boolean;
 }) {
   if (!application.stpApplicationType) return null;
 
@@ -138,11 +144,13 @@ export function StpApplicationCard({
             title="ICA application status"
             subtitle="Parents file the Student Pass directly with ICA. Use this control to record which phase they're in so registrars across the team have a single source of truth."
           />
-          <StpStatusEditor
-            ayCode={ayCode}
-            enroleeNumber={application.enroleeNumber}
-            initialStatus={normalizedStatus}
-          />
+          {canEdit && (
+            <StpStatusEditor
+              ayCode={ayCode}
+              enroleeNumber={application.enroleeNumber}
+              initialStatus={normalizedStatus}
+            />
+          )}
           <p className="text-[11px] text-muted-foreground">
             Pending = parent hasn&rsquo;t filed yet · Submitted = filed with ICA
             · Approved = ICA issued the pass · Rejected = ICA declined.
@@ -179,21 +187,26 @@ export function StpApplicationCard({
                   ? 'Residence history not yet captured.'
                   : 'Residence history JSON is malformed.'}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {parsed.ok
-                  ? 'Use the editor below to add the past 5 years.'
-                  : 'Open the editor below to repair or replace the value.'}
-              </p>
+              {/* Only point at an editor the viewer actually has. */}
+              {canEdit && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {parsed.ok
+                    ? 'Use the editor below to add the past 5 years.'
+                    : 'Open the editor below to repair or replace the value.'}
+                </p>
+              )}
             </div>
           )}
 
-          <div className="pt-1">
-            <ResidenceHistoryEditor
-              ayCode={ayCode}
-              enroleeNumber={application.enroleeNumber}
-              initialJson={application.residenceHistory ?? null}
-            />
-          </div>
+          {canEdit && (
+            <div className="pt-1">
+              <ResidenceHistoryEditor
+                ayCode={ayCode}
+                enroleeNumber={application.enroleeNumber}
+                initialJson={application.residenceHistory ?? null}
+              />
+            </div>
+          )}
         </section>
       </CardContent>
     </Card>

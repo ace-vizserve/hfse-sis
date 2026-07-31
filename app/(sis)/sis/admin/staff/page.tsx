@@ -22,6 +22,8 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { can } from '@/lib/auth/capabilities';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getStaffCount, getTeacherList } from '@/lib/auth/staff-list';
 import { getSectionStaffingCoverage } from '@/lib/sis/dashboard';
 import { loadStaffAssignments } from '@/lib/sis/staff';
@@ -56,12 +58,30 @@ export default async function StaffPage({
   }
 
   const params = await searchParams;
-  const canSeeAccounts = sessionUser.role !== 'academic_coordinator';
+  // `staff.view_accounts` has been declared in RESOURCES and offered as a
+  // tickable permission at /sis/admin/roles since the capability layer landed
+  // (KD #166) — but nothing read it, so ticking the box did nothing. This was
+  // the inert half: the Accounts tab was gated on the hardcoded
+  // `role !== 'academic_coordinator'` instead. Wired up by KD #173.
+  //
+  // Behaviour is unchanged on the defaults. Of the three roles this page admits,
+  // exactly school_admin and superadmin hold `staff.view_accounts` in
+  // DEFAULT_ROLE_CAPABILITIES, which is the same set the old role test produced.
+  // What changes is that a superadmin can now move the line from the permissions
+  // editor rather than needing a code edit.
+  const capabilities = await getCapabilitiesForRole(sessionUser.role);
+  const canSeeAccounts = can(capabilities, 'staff.view_accounts');
   const requestedView: StaffView =
     params.view === 'accounts' ? 'accounts' : 'assignments';
-  // A registrar hitting ?view=accounts directly (bookmark, typed URL) falls
-  // back to Assignments rather than 404ing or bouncing her off the page.
+  // Anyone without the capability hitting ?view=accounts directly (bookmark,
+  // typed URL) falls back to Assignments rather than 404ing or bouncing them
+  // off the page.
   const view: StaffView = canSeeAccounts ? requestedView : 'assignments';
+  // Deliberately left on the role literal. `staff.manage_accounts` exists and is
+  // held only by superadmin, but the account-management API routes under
+  // app/api/sis/admin/users/** still gate on the role themselves (KD #87), and
+  // moving the flag here without moving those would let the UI and the server
+  // disagree. Converting that pair together is a separate, larger decision.
   const canManageAccounts = sessionUser.role === 'superadmin';
 
   const supabase = await createClient();

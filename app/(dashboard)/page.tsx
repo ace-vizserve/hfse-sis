@@ -5,6 +5,7 @@ import { PageShell } from '@/components/ui/page-shell';
 import { getSessionUser } from '@/lib/supabase/server';
 import { resolveTeacherNavScope } from '@/lib/sidebar/resolve-hidden-modules';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { sgHour } from '@/lib/dates';
 import { getQuickActions, type QuickAction } from '@/lib/home/quick-actions';
@@ -48,7 +49,16 @@ export default async function Home() {
 
   // Falls back to email when no display name is set (getStaffDisplayNameById
   // → lib/auth/staff-list.ts::loadAllStaffUncached already does this).
-  const staffNames = await getStaffDisplayNameById();
+  //
+  // The capabilities go to getQuickActions: some of the pages it offers guard
+  // on a CAPABILITY rather than a role name, so the row has to be able to ask
+  // the same question the page will — otherwise it advertises work the page
+  // bounces the viewer away from (KD #173). Cached and tagged `permissions`,
+  // so this is not a fresh query per render.
+  const [staffNames, capabilities] = await Promise.all([
+    getStaffDisplayNameById(),
+    getCapabilitiesForRole(role),
+  ]);
   const displayName = new Map(staffNames).get(userId) ?? email;
 
   const ay = await getCurrentAcademicYear();
@@ -61,7 +71,12 @@ export default async function Home() {
       <PageShell>
         <Header
           name={displayName}
-          quickActions={getQuickActions(role, hiddenModules, profile)}
+          quickActions={getQuickActions(
+            role,
+            hiddenModules,
+            profile,
+            capabilities
+          )}
         />
         <p className="mt-8 text-sm text-muted-foreground">
           No current academic year is set yet — ask a superadmin to configure
@@ -80,9 +95,11 @@ export default async function Home() {
 
   const [quickActions, recentActions, baseTodos, reportCardGaps, events] =
     await Promise.all([
-      Promise.resolve(getQuickActions(role, hiddenModules, profile)),
+      Promise.resolve(
+        getQuickActions(role, hiddenModules, profile, capabilities)
+      ),
       getRecentActions(email),
-      getHomeTodos(role, ay.ay_code, userId, profile),
+      getHomeTodos(role, ay.ay_code, userId, profile, capabilities),
       role === 'academic_coordinator' ||
       role === 'school_admin' ||
       role === 'superadmin'

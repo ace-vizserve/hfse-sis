@@ -89,6 +89,8 @@ import {
 import { getDashboardWindows } from '@/lib/dashboard/windows';
 import { getPipelineStageBreakdown } from '@/lib/sis/dashboard';
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
+import { can } from '@/lib/auth/capabilities';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -169,6 +171,13 @@ export default async function AdmissionsDashboard({
   const isOperational =
     sessionUser.role === 'admissions' ||
     sessionUser.role === 'academic_coordinator';
+
+  // Document work is gated by capability, not by role name (KD #173). The
+  // academic coordinator is operational on this funnel but holds no document
+  // capability since migration 106, so the two questions genuinely differ here
+  // and `isOperational` cannot answer the second one.
+  const capabilities = await getCapabilitiesForRole(sessionUser.role);
+  const canReadDocs = can(capabilities, 'documents_pre_enrolment.read');
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
@@ -278,7 +287,14 @@ export default async function AdmissionsDashboard({
           students={students}
           ayCode={isCurrentAy ? undefined : selectedAy}
           initialStatusFilter={focusedStatus}
-          bulkRemindEnabled={isOperational}
+          // NOT `isOperational` — that flag answers "does this role get the
+          // chase-first layout", which is a different question from "may this
+          // role send the reminders". POST /api/p-files/notify/bulk enforces
+          // `documents_pre_enrolment.chase`, so the two had drifted in both
+          // directions at once: the coordinator got a button that 403'd, and
+          // school_admin — who holds the capability since migration 106 — did
+          // not get one at all (KD #173).
+          bulkRemindEnabled={can(capabilities, 'documents_pre_enrolment.chase')}
         />
 
         <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
@@ -797,12 +813,18 @@ export default async function AdmissionsDashboard({
                 title="Closed applications"
                 description="Withdrawn & cancelled archive."
               />
-              <QuickLink
-                href={`/admissions/document-validation?ay=${selectedAy}`}
-                icon={FileCheck}
-                title="Document validation"
-                description="Review parent uploads waiting on you."
-              />
+              {/* The description says "waiting on you", which is only true of
+                  someone who may actually validate. The page redirects anyone
+                  without this capability, so offering the tile promised work
+                  and delivered a bounce (KD #173). */}
+              {canReadDocs && (
+                <QuickLink
+                  href={`/admissions/document-validation?ay=${selectedAy}`}
+                  icon={FileCheck}
+                  title="Document validation"
+                  description="Review parent uploads waiting on you."
+                />
+              )}
               <QuickLink
                 href="/admissions/upcoming/applications"
                 icon={CalendarClock}

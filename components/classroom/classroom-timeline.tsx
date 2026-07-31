@@ -1,7 +1,7 @@
 'use client';
 
-import * as React from 'react';
 import { History } from 'lucide-react';
+import * as React from 'react';
 
 import { Card } from '@/components/ui/card';
 import { auditActionLabel, auditContextSummary } from '@/lib/audit/humanize';
@@ -13,6 +13,7 @@ import {
   type TimelineKind,
 } from '@/lib/classroom/timeline';
 import { cn } from '@/lib/utils';
+import { Button } from '../ui/button';
 
 // "What happened in this class." Previously ~50 audit rows in one flat slab
 // whose loudest element — a coloured pill — was usually the SAME WORD forty
@@ -206,22 +207,17 @@ function FilterChip({
   onClick: () => void;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant={on ? 'default' : 'ghost'}
       onClick={onClick}
       aria-pressed={on}
-      className={cn(
-        'inline-flex h-[30px] items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium transition-colors',
-        on
-          ? 'border-brand-indigo/40 bg-accent text-accent-foreground'
-          : 'border-hairline-strong bg-card text-ink-3 hover:text-foreground'
-      )}
     >
       {label}
       <span className="font-mono text-[10.5px] tabular-nums opacity-70">
         {count}
       </span>
-    </button>
+    </Button>
   );
 }
 

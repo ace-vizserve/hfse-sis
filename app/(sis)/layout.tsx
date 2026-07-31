@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/sidebar';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getStaffCount } from '@/lib/auth/staff-list';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarCounts } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import { getAyReadiness } from '@/lib/sis/readiness';
@@ -26,11 +27,26 @@ export default async function SisLayout({
   if (!sessionUser) redirect('/login');
 
   const { id, email, role } = sessionUser;
-  // admissions is admitted to this layout for the single cross-module surface
-  // they own operationally — Discount Codes (/sis/admin/discount-codes). The
-  // per-route gate (ROUTE_ACCESS + proxy) keeps them scoped to that one route;
-  // every other /sis nav entry is hidden from them via requiresRoles, and the
-  // bare Admin Hub link is gated so they see no dead links.
+  // THE INVARIANT: a route-GROUP layout is the UNION of its group's
+  // ROUTE_ACCESS rows, never the intersection. The layout runs before the page,
+  // so it must admit every role allowed on ANY path in the group — otherwise it
+  // shuts someone out of a route the route table explicitly grants them, and the
+  // symptom is a redirect from a page that never got to run its own guard.
+  //
+  // Which is why `admissions` appears here while the broad `/sis` ROUTE_ACCESS
+  // row excludes them: they are admitted by the longer-prefix
+  // `/sis/admin/discount-codes` row (KD #133), the single cross-module surface
+  // they own operationally. That is NOT a leak and must not be "tidied" into
+  // matching the `/sis` row — doing so would break Discount Codes for the team
+  // that uses it. The narrowing is the per-route gate's job, and it does it:
+  // longest-prefix-wins keeps them on that one route, every other /sis nav entry
+  // is hidden from them via `requiresRoles`, and the bare Admin Hub link is
+  // gated, so they see no dead links.
+  //
+  // Same reasoning admits `academic_coordinator`, who holds rows for ay-setup,
+  // calendar, sections, staff and admin/subjects plus the `/sis` hub itself
+  // (KD #169), while audit-log, school-config, approvers and admin/roles carry
+  // longer-prefix rows that keep her out.
   if (
     role !== 'admissions' &&
     role !== 'academic_coordinator' &&
@@ -41,6 +57,8 @@ export default async function SisLayout({
     if (!role) redirect('/login');
     redirect('/');
   }
+
+  const capabilities = await getCapabilitiesForRole(role);
 
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';
@@ -96,6 +114,7 @@ export default async function SisLayout({
         email={email}
         userId={id}
         counts={sidebarCounts}
+        capabilities={capabilities}
       />
       <SidebarInset>
         <AyBanner />

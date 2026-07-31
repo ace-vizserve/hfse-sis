@@ -38,9 +38,18 @@ type Props = {
   app: ApplicationRow;
   ayCode: string;
   enroleeNumber: string;
+  /** May this viewer edit the profile? Defaults to FALSE so a caller that
+   *  forgets it renders a read-only tab rather than an Edit sheet whose PATCH
+   *  route would 403 (KD #173). Every call site passes it explicitly. */
+  canEdit?: boolean;
 };
 
-export function ProfileTab({ app, ayCode, enroleeNumber }: Props) {
+export function ProfileTab({
+  app,
+  ayCode,
+  enroleeNumber,
+  canEdit = false,
+}: Props) {
   const initial: Partial<ProfileUpdateInput> = {
     firstName: app.firstName,
     middleName: app.middleName,
@@ -284,11 +293,13 @@ export function ProfileTab({ app, ayCode, enroleeNumber }: Props) {
               <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
                 <User className="size-5" />
               </div>
-              <EditProfileSheet
-                ayCode={ayCode}
-                enroleeNumber={enroleeNumber}
-                initial={initial}
-              />
+              {canEdit && (
+                <EditProfileSheet
+                  ayCode={ayCode}
+                  enroleeNumber={enroleeNumber}
+                  initial={initial}
+                />
+              )}
             </div>
           </CardAction>
         </CardHeader>

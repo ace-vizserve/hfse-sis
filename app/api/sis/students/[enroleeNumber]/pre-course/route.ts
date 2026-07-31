@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
+import { STUDENT_RECORD_WRITERS } from '@/lib/auth/student-record';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -14,8 +15,8 @@ import { createServiceClient } from '@/lib/supabase/service';
 // proof) on ay{YY}_enrolment_applications. A date ⇒ counselled (answer 'Yes');
 // clearing ⇒ not-yet (answer + date null). `preCourseAcknowledgedAt` is the
 // parent-portal app-confirmation timestamp — never written here; the DATE is the
-// proof. Role: operational writers only (KD #74) — school_admin sees the tracker
-// but is read-only oversight. Mirrors the stp-status route.
+// proof. Role: the shared student-record writers — see
+// lib/auth/student-record.ts. Mirrors the stp-status route.
 
 // Accepts 'YYYY-MM-DD' or null; '' → null.
 const PreCourseBodySchema = z.object({
@@ -28,11 +29,11 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ enroleeNumber: string }> }
 ) {
-  const auth = await requireRole([
-    'admissions',
-    'academic_coordinator',
-    'superadmin',
-  ]);
+  // Who may write the shared student record — see lib/auth/student-record.ts.
+  // school_admin was added 2026-07-31 (KD #173): both pages that render these
+  // editors already admitted her, so every save 403'd against a form that had
+  // opened for her.
+  const auth = await requireRole([...STUDENT_RECORD_WRITERS]);
   if ('error' in auth) return auth.error;
 
   const { enroleeNumber } = await params;

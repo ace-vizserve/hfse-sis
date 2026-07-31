@@ -62,6 +62,8 @@ import {
 import { getDocumentDashboardData } from '@/lib/p-files/queries';
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
 import { getExpiringDocuments } from '@/lib/sis/dashboard';
+import { can } from '@/lib/auth/capabilities';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -147,13 +149,20 @@ export default async function PFilesDashboard({
   ) {
     redirect('/');
   }
-  // KD #2 + KD #31: p-file/superadmin = officer (writes); school_admin/admin =
-  // oversight (read-only monitoring lens). The two roles share KPIs +
-  // completion charts + revision trends, but the chase queue, priority
-  // panel, and chase narrative are officer-only — admins can't act on
-  // them and the framing ("you owe these reminders") doesn't fit.
-  const isOfficer =
-    sessionUser.role === 'p_file_officer' || sessionUser.role === 'superadmin';
+  // Officer vs oversight is a question about what you may DO, not what you are
+  // called (KD #173). This used to read `role === 'p_file_officer' ||
+  // 'superadmin'`, which was right until migration 106 gave `school_admin` the
+  // post-enrolment document capabilities — after which she held the rights and
+  // the page still hid every control that uses them.
+  //
+  // Everything gated below is chase work: the priority panel, the chase queue
+  // strip, the "act now" callout, and the bulk-remind footer all end in
+  // `POST /api/p-files/notify/bulk`, which enforces exactly this capability. So
+  // the flag names the capability its buttons actually need, and a role that
+  // cannot chase still gets the read-only monitoring lens with the same KPIs,
+  // completion charts and revision trends as before.
+  const capabilities = await getCapabilitiesForRole(sessionUser.role);
+  const isOfficer = can(capabilities, 'documents_post_enrolment.chase');
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);

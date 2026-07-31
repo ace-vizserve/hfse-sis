@@ -99,6 +99,7 @@ import {
   getSectionTransfersForStudent,
   type SectionTransferEntry,
 } from '@/lib/sis/section-history';
+import { canWriteStudentRecord } from '@/lib/auth/student-record';
 import { preloadTermsForAYs, termForDateInPreloaded } from '@/lib/sis/terms';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -294,6 +295,13 @@ export default async function RecordsStudentCrossYearPage({
   ) {
     redirect('/');
   }
+
+  // `<StpApplicationCard>` gained an OPTIONAL `canEdit` defaulting to FALSE
+  // (KD #173) so the P-Files officer gets a read-only applicant file. Passed
+  // explicitly here so this page's behaviour is unchanged: all three roles
+  // admitted above are STUDENT_RECORD_WRITERS, so it is always true — stated,
+  // not assumed, so a future change to either list is visible at this line.
+  const canEditRecord = canWriteStudentRecord(sessionUser.role);
 
   const { studentNumber } = await params;
   const { tab: tabParam } = await searchParams;
@@ -626,6 +634,7 @@ export default async function RecordsStudentCrossYearPage({
                 currentAyDetail.application.stpApplicationStatus ?? null
               }
               ayCode={currentAyDetail.ayCode}
+              canEdit={canEditRecord}
             />
           )}
         </TabsContent>

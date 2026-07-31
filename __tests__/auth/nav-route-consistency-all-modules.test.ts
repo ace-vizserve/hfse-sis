@@ -67,7 +67,52 @@ const REDIRECT_STUBS = new Set([
   '/attendance/calendar', // -> /sis/calendar
   '/sis/admin/users', // -> /sis/admin/staff?view=accounts (KD #154)
   '/admin/admissions', // -> /records (KD #17)
+  '/admin', // -> /records; the bare legacy bookmark, gated by KD #173
 ]);
+
+// Routes a role reaches by CLICKING A ROW on a page they already work in,
+// never from a sidebar item. A distinct category from REDIRECT_STUBS above —
+// these render a real page, so calling them redirect stubs would make that
+// set's promise (every member is a `redirect(...)` one-liner) untrue.
+//
+// A route a role can reach ONLY as a subtree — never as its own index page —
+// is by definition reached by clicking a row, so demanding a nav link for it
+// would demand a link to a page that does not exist for them.
+//
+// DERIVED, not hand-listed, for the same reason `moduleRoot` above is derived:
+// a hardcoded copy drifts the moment someone adds a rule. A rule is
+// detail-only for a role when an EARLIER row with the same prefix is `exact`
+// and excludes that role — which is exactly the shape `isRouteAllowed` reads,
+// so this cannot disagree with the real gate.
+//
+// Today this exempts one pair: the P-Files officer on
+// `/admissions/applications`. Migration 106 gave them the pre-enrolment
+// document capabilities, so their own /p-files/document-validation queue grew
+// an Applicants tab and every applicant name in it links to the applicant
+// FILE. They do not get the funnel — the list page next door is `exact`-gated
+// away from them — and app/(admissions)/layout.tsx renders them P-Files
+// chrome, so they never see an Admissions sidebar that could carry such an
+// item at all. See KD #173. The floor assertion below keeps this from quietly
+// growing into a way to hide real dead ends.
+function isDetailOnlyFor(prefix: string, index: number, role: Role): boolean {
+  return ROUTE_ACCESS.some(
+    (r, i) =>
+      i < index && r.exact && r.prefix === prefix && !r.allowed.includes(role)
+  );
+}
+
+/** Every (role, prefix) pair the derivation currently exempts. */
+function derivedExemptions(): Array<{ role: Role; prefix: string }> {
+  const out: Array<{ role: Role; prefix: string }> = [];
+  ROUTE_ACCESS.forEach((rule, index) => {
+    for (const role of rule.allowed) {
+      if (isDetailOnlyFor(rule.prefix, index, role)) {
+        out.push({ role, prefix: rule.prefix });
+      }
+    }
+  });
+  return out;
+}
 
 function itemsForRole(role: Role): Array<{ module: string; item: NavItem }> {
   const out: Array<{ module: string; item: NavItem }> = [];
@@ -145,10 +190,10 @@ describe('nav <-> ROUTE_ACCESS consistency (all modules)', () => {
         itemsForRole(role).map(({ item }) => pathOf(item.href))
       );
 
-      const unreachable = ROUTE_ACCESS.filter((rule) =>
-        rule.allowed.includes(role)
-      )
-        .map((rule) => rule.prefix)
+      const unreachable = ROUTE_ACCESS.map((rule, index) => ({ rule, index }))
+        .filter(({ rule }) => rule.allowed.includes(role))
+        .filter(({ rule, index }) => !isDetailOnlyFor(rule.prefix, index, role))
+        .map(({ rule }) => rule.prefix)
         .filter((prefix) => !REDIRECT_STUBS.has(prefix))
         .filter(
           (prefix) =>
@@ -160,6 +205,16 @@ describe('nav <-> ROUTE_ACCESS consistency (all modules)', () => {
         `role "${role}" is allowed to open these routes but has no nav link to them ` +
           `(add a nav item / cross-link, or add the route to REDIRECT_STUBS if it is a redirect)`
       ).toEqual([]);
+    });
+
+    // The exemption above is derived, so it could in principle start swallowing
+    // genuine dead ends if someone adds an `exact` split for a broad prefix.
+    // Pin the whole set: growing it should be a deliberate, reviewed edit here,
+    // not a silent side effect of a ROUTE_ACCESS change.
+    it('the detail-only exemption covers exactly the pairs we intend', () => {
+      expect(derivedExemptions()).toEqual([
+        { role: 'p_file_officer', prefix: '/admissions/applications' },
+      ]);
     });
   });
 });

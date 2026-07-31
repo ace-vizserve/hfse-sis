@@ -11,6 +11,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -26,6 +27,8 @@ export default async function MarkbookLayout({
   const { id, email, role } = sessionUser;
   if (!role) redirect('/login');
   if (role === 'p_file_officer') redirect('/p-files');
+
+  const capabilities = await getCapabilitiesForRole(role);
 
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';
@@ -48,6 +51,7 @@ export default async function MarkbookLayout({
         userId={id}
         hiddenModules={hiddenModules}
         badges={sidebarBadges}
+        capabilities={capabilities}
       />
       <SidebarInset>
         <AyBanner />

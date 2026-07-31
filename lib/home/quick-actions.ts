@@ -1,3 +1,4 @@
+import { can, type Capability } from '@/lib/auth/capabilities';
 import { isRouteAllowed, type Role } from '@/lib/auth/roles';
 import {
   isHiddenModuleHref,
@@ -23,7 +24,24 @@ export type QuickAction = { label: string; href: string };
  */
 type JobRequirement = 'adviser' | 'subject';
 
-type QuickActionRow = QuickAction & { requires?: JobRequirement };
+type QuickActionRow = QuickAction & {
+  requires?: JobRequirement;
+  /**
+   * The capability the DESTINATION page guards on.
+   *
+   * Same field, same reason, as `NavItem.requiresCapability` in
+   * lib/auth/roles.ts: the role check above answers "may the proxy let you
+   * through", and it cannot answer "will the page keep you once you arrive"
+   * for a page that now gates on a capability rather than a role name. The
+   * sidebar learned this the hard way — the academic coordinator was shown
+   * "Document validation" on five surfaces, all of which bounced her, after
+   * migration 106 took `documents_pre_enrolment.read` off her (KD #173).
+   *
+   * A page migrated to a capability gate MUST be tagged here, or this table
+   * drifts the same way.
+   */
+  requiresCapability?: Capability;
+};
 
 /** The one action offered to a teacher with no assignments at all. */
 const NO_ASSIGNMENTS_FALLBACK: QuickAction = {
@@ -68,6 +86,13 @@ export const QUICK_ACTIONS: Record<Role, QuickActionRow[]> = {
     {
       label: 'Validate application documents',
       href: '/admissions/document-validation',
+      // NO-OP TODAY, on purpose. school_admin holds this capability
+      // (DEFAULT_ROLE_CAPABILITIES + migration 106), so tagging the row
+      // changes nothing right now — it stops the row from OUTLIVING the
+      // grant. The page redirects anyone lacking it
+      // (app/(admissions)/admissions/document-validation/page.tsx:30), which
+      // is exactly the guard that stranded the academic coordinator here.
+      requiresCapability: 'documents_pre_enrolment.read',
     },
     { label: 'AY Setup', href: '/sis/ay-setup' },
     { label: 'Manage staff', href: '/sis/admin/staff' },
@@ -76,6 +101,14 @@ export const QUICK_ACTIONS: Record<Role, QuickActionRow[]> = {
     {
       label: 'Validate renewal documents',
       href: '/p-files/document-validation',
+      // Also a no-op today — superadmin holds every document capability.
+      // That page's guard is an OR (pre-enrolment read OR post-enrolment
+      // read, page.tsx:46-47) and this field takes ONE capability, matching
+      // `NavItem.requiresCapability`. Tagging the post-enrolment half is the
+      // conservative arm: it names the queue the label promises ("renewal"),
+      // and if a future grant move ever left a superadmin holding only the
+      // pre-enrolment half the row would hide rather than mislead.
+      requiresCapability: 'documents_post_enrolment.read',
     },
     { label: 'Manage staff', href: '/sis/admin/staff' },
     { label: 'School config', href: '/sis/admin/school-config' },
@@ -87,7 +120,7 @@ export const QUICK_ACTIONS: Record<Role, QuickActionRow[]> = {
   admissions: [],
 };
 
-// Drops actions this viewer can't use, on two independent grounds:
+// Drops actions this viewer can't use, on four independent grounds:
 //
 //  1. ROLE — the href must pass the same `isRouteAllowed` gate the proxy and
 //     the sidebar use. The table above happens to be correct today, but
@@ -103,10 +136,25 @@ export const QUICK_ACTIONS: Record<Role, QuickActionRow[]> = {
 //     subsumes (2) for teachers, since both adviser-only modules now also carry
 //     an explicit `requires: 'adviser'`. (2) is kept anyway — it still serves
 //     the switchers, and two independent filters agreeing is cheap.
+//  4. THE CAPABILITY — (1) answers "may the proxy let you through"; this
+//     answers "will the page keep you once you arrive". Several destinations
+//     now guard on a capability rather than a role name, and a role check
+//     cannot see that: the row would advertise work the page then bounces the
+//     viewer away from. Today's rows are all correct, so this filter removes
+//     nothing — but nothing else stops the next grant move from breaking one,
+//     which is precisely what happened to the sidebar (KD #173).
+//
+//     FAILS CLOSED. The `capabilities` default of `[]` means a caller who
+//     forgets the argument LOSES every capability-tagged row rather than
+//     showing one it shouldn't. That is the right direction: a missing action
+//     is visible and gets reported, while a dead-end action is the bug this
+//     ground exists to prevent. Same trade-off, same reasoning, as
+//     lib/auth/nav-visibility.ts.
 export function getQuickActions(
   role: Role,
   hiddenModules: readonly SidebarModule[] = [],
-  profile: TeachingProfile = NO_TEACHING_PROFILE
+  profile: TeachingProfile = NO_TEACHING_PROFILE,
+  capabilities: readonly Capability[] = []
 ): QuickAction[] {
   const actions = QUICK_ACTIONS[role]
     .filter((a) => {
@@ -117,7 +165,8 @@ export function getQuickActions(
     .filter(
       (a) =>
         isRouteAllowed(a.href, role) &&
-        !isHiddenModuleHref(a.href, hiddenModules)
+        !isHiddenModuleHref(a.href, hiddenModules) &&
+        (!a.requiresCapability || can(capabilities, a.requiresCapability))
     )
     .map(({ label, href }) => ({ label, href }));
 

@@ -77,6 +77,12 @@ type Props = {
    *  CTA on the class stage tile. Null when pre-Enrolled or section was
    *  renamed/dropped after AY rollover. */
   currentSectionId?: string | null;
+  /** May this viewer edit stage statuses? Defaults to FALSE so a caller that
+   *  forgets it renders the read-only record rather than an EditStageDialog
+   *  whose PATCH route would 403 (KD #173). It also matters beyond the save:
+   *  the dialog fetches `assignable-sections`, which 403s for a read-only
+   *  viewer and would leave them staring at an empty section picker. */
+  canEdit?: boolean;
 };
 
 type StageCard = {
@@ -269,6 +275,7 @@ export function EnrollmentTab({
   enroleeNumber,
   statusFetchError,
   currentSectionId,
+  canEdit = false,
 }: Props) {
   const s = status ?? ({} as StatusRow);
 
@@ -491,6 +498,7 @@ export function EnrollmentTab({
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
         frozen={frozen}
+        canEdit={canEdit}
       />
 
       <StatusGroupCard
@@ -501,6 +509,7 @@ export function EnrollmentTab({
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
         applicationStatus={applicationStatus}
+        canEdit={canEdit}
       />
 
       <StatusGroupCard
@@ -511,6 +520,7 @@ export function EnrollmentTab({
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
         applicationStatus={applicationStatus}
+        canEdit={canEdit}
       />
 
       <StatusGroupCard
@@ -522,6 +532,7 @@ export function EnrollmentTab({
         enroleeNumber={enroleeNumber}
         currentSectionId={currentSectionId}
         applicationStatus={applicationStatus}
+        canEdit={canEdit}
       />
 
       {/* items-start so each card sizes to its own content. The default
@@ -636,6 +647,7 @@ function ApplicationStatusCard({
   ayCode,
   enroleeNumber,
   frozen,
+  canEdit,
 }: {
   applicationCard: StageCard;
   applicationTone: ApplicationTone;
@@ -643,6 +655,7 @@ function ApplicationStatusCard({
   ayCode: string;
   enroleeNumber: string;
   frozen: boolean;
+  canEdit: boolean;
 }) {
   const tile = APPLICATION_TILE[applicationTone];
   const TileIcon = tile.icon;
@@ -710,15 +723,17 @@ function ApplicationStatusCard({
               </p>
             )}
           </div>
-          <EditStageDialog
-            ayCode={ayCode}
-            enroleeNumber={enroleeNumber}
-            stageKey="application"
-            initialStatus={applicationCard.status}
-            initialRemarks={applicationCard.remarks}
-            initialExtras={applicationCard.extrasInitial}
-            frozen={frozen}
-          />
+          {canEdit && (
+            <EditStageDialog
+              ayCode={ayCode}
+              enroleeNumber={enroleeNumber}
+              stageKey="application"
+              initialStatus={applicationCard.status}
+              initialRemarks={applicationCard.remarks}
+              initialExtras={applicationCard.extrasInitial}
+              frozen={frozen}
+            />
+          )}
         </div>
 
         {applicationCard.extras &&
@@ -976,6 +991,7 @@ function StatusGroupCard({
   enroleeNumber,
   currentSectionId,
   applicationStatus,
+  canEdit,
 }: {
   eyebrow: string;
   title: string;
@@ -987,6 +1003,7 @@ function StatusGroupCard({
   currentSectionId?: string | null;
   /** Drives the per-stage freeze (KD #147) — passed to each tile. */
   applicationStatus: string | null;
+  canEdit: boolean;
 }) {
   const counts = stageBucketCounts(stages);
 
@@ -1037,6 +1054,7 @@ function StatusGroupCard({
             enroleeNumber={enroleeNumber}
             currentSectionId={stage.key === 'class' ? currentSectionId : null}
             applicationStatus={applicationStatus}
+            canEdit={canEdit}
           />
         ))}
       </div>
@@ -1050,6 +1068,7 @@ function StageStatusTile({
   enroleeNumber,
   currentSectionId,
   applicationStatus,
+  canEdit,
 }: {
   stage: StageCard;
   ayCode: string;
@@ -1058,6 +1077,7 @@ function StageStatusTile({
    *  Drives the "Move to another section →" CTA. */
   currentSectionId?: string | null;
   applicationStatus: string | null;
+  canEdit: boolean;
 }) {
   // Per-stage freeze (KD #147): all stages freeze once fully Enrolled, except
   // supplies/orientation which stay editable until finalized. Shared with the
@@ -1099,7 +1119,7 @@ function StageStatusTile({
           <Badge variant="muted" className="shrink-0 gap-1">
             Set via Enrolled
           </Badge>
-        ) : (
+        ) : canEdit ? (
           <EditStageDialog
             ayCode={ayCode}
             enroleeNumber={enroleeNumber}
@@ -1109,7 +1129,7 @@ function StageStatusTile({
             initialExtras={stage.extrasInitial}
             frozen={frozen}
           />
-        )}
+        ) : null}
       </div>
 
       <div className="pl-1">
@@ -1141,7 +1161,10 @@ function StageStatusTile({
           {stage.remarks}
         </p>
       )}
-      {autoManaged && currentSectionId && (
+      {/* A section transfer is an edit, even though it happens on another
+          surface — a read-only viewer would follow this link into a page their
+          role cannot open (KD #173). */}
+      {autoManaged && currentSectionId && canEdit && (
         <Button asChild variant="outline" size="sm" className="ml-1 self-start">
           <Link href={`/sis/sections/${currentSectionId}`}>
             <ArrowRightLeft className="size-3.5" />

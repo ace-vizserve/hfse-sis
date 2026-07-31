@@ -44,6 +44,9 @@ import {
   getSectionIdByLevelAndName,
   getStudentDetail,
 } from '@/lib/sis/queries';
+import { can } from '@/lib/auth/capabilities';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
+import { canWriteStudentRecord } from '@/lib/auth/student-record';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { cn } from '@/lib/utils';
@@ -76,14 +79,34 @@ export default async function SisStudentDetailPage({
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
-  if (
-    sessionUser.role !== 'admissions' &&
-    sessionUser.role !== 'academic_coordinator' &&
-    sessionUser.role !== 'school_admin' &&
-    sessionUser.role !== 'superadmin'
-  ) {
-    redirect('/');
-  }
+
+  // Document actions on this page are gated by CAPABILITY, not by a role list
+  // (KD #173). The academic coordinator is admitted here — this is still her
+  // applicant record — but migration 106 moved document validation and chasing
+  // off her, and the routes behind those buttons enforce it. They used to
+  // render for her anyway and 403 on click.
+  const capabilities = await getCapabilitiesForRole(sessionUser.role);
+
+  // TWO AUDIENCES, ONE PAGE (KD #173).
+  //
+  // The four roles that may WRITE a student record open it to work on it. The
+  // P-Files officer opens it because their own document-validation queue links
+  // every applicant name here — they need to SEE the file behind a document
+  // they are deciding on, and nothing more.
+  //
+  // This replaces a four-role `!==` chain. It admits exactly the same people:
+  // STUDENT_RECORD_WRITERS is that same four (admissions,
+  // academic_coordinator, school_admin, superadmin), and `teacher` holds no
+  // document capability, so they are still bounced.
+  const canOpen =
+    canWriteStudentRecord(sessionUser.role) ||
+    can(capabilities, 'documents_pre_enrolment.read');
+  if (!canOpen) redirect('/');
+
+  // Drives every edit affordance below. Read-only for the officer: the routes
+  // behind these sheets and dialogs already refuse them, so rendering the
+  // controls would only produce a form that 403s on save.
+  const canEditRecord = canWriteStudentRecord(sessionUser.role);
 
   const { enroleeNumber } = await params;
   const { ay: ayParam, tab: tabParam } = await searchParams;
@@ -368,6 +391,7 @@ export default async function SisStudentDetailPage({
             app={application}
             ayCode={selectedAy}
             enroleeNumber={application.enroleeNumber}
+            canEdit={canEditRecord}
           />
         </TabsContent>
 
@@ -376,6 +400,7 @@ export default async function SisStudentDetailPage({
             app={application}
             ayCode={selectedAy}
             enroleeNumber={application.enroleeNumber}
+            canEdit={canEditRecord}
           />
         </TabsContent>
 
@@ -394,6 +419,7 @@ export default async function SisStudentDetailPage({
             enroleeNumber={application.enroleeNumber}
             statusFetchError={detail.statusFetchError}
             currentSectionId={currentSectionId}
+            canEdit={canEditRecord}
           />
         </TabsContent>
 
@@ -426,6 +452,7 @@ export default async function SisStudentDetailPage({
               application={application}
               stpApplicationStatus={application.stpApplicationStatus ?? null}
               ayCode={selectedAy}
+              canEdit={canEditRecord}
             />
           )}
           <DocumentsViewer
@@ -439,6 +466,8 @@ export default async function SisStudentDetailPage({
             documents={documents}
             enroleeNumber={application.enroleeNumber}
             ayCode={selectedAy}
+            canValidate={can(capabilities, 'documents_pre_enrolment.validate')}
+            canChase={can(capabilities, 'documents_pre_enrolment.chase')}
           />
         </TabsContent>
 

@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
+import { STUDENT_RECORD_WRITERS } from '@/lib/auth/student-record';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { STP_APPLICATION_STATUS_OPTIONS } from '@/lib/sis/queries';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -17,7 +18,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 // directly; the school only tracks which phase the application is in via
 // the 4-value enum.
 //
-// Role: registrar, school_admin, superadmin, admissions.
+// Role: the shared student-record writers — see lib/auth/student-record.ts.
 //
 // The CHECK constraint on the column is the canonical guard — the Zod
 // schema here mirrors the same enum so we surface a friendly error
@@ -31,12 +32,11 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ enroleeNumber: string }> }
 ) {
-  // Per KD #74: admissions is the operational writer; school_admin is read-only oversight.
-  const auth = await requireRole([
-    'admissions',
-    'academic_coordinator',
-    'superadmin',
-  ]);
+  // Who may write the shared student record — see lib/auth/student-record.ts.
+  // school_admin was added 2026-07-31 (KD #173): both pages that render these
+  // editors already admitted her, so every save 403'd against a form that had
+  // opened for her.
+  const auth = await requireRole([...STUDENT_RECORD_WRITERS]);
   if ('error' in auth) return auth.error;
 
   const { enroleeNumber } = await params;

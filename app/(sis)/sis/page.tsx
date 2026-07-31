@@ -51,7 +51,13 @@ import {
 
 // SIS Admin Hub — a command centre, not a menu (Task V1 of the visual
 // redesign, `docs/superpowers/specs/2026-07-11-sis-admin-visual-redesign.html`
-// Screen 1). Reachable only by school_admin + superadmin (guard below).
+// Screen 1). Reachable by the academic coordinator, school_admin and superadmin
+// (guard below). This line used to read "school_admin + superadmin only", which
+// was correct under KD #154 but stopped being true on 2026-07-31: migration 105
+// opened the `/sis` catch-all to the academic coordinator so SIS Admin appears in
+// her module switcher, since she sets up the academic year, the classes and the
+// subject weights (KD #169). The guard below has admitted her since; only this
+// comment lagged.
 // Layout: hero → year band (signature element) → stat band → 3:2
 // "Needs attention" / "Coming up" → quick actions. Everything below the
 // hero is status or a launch point — nothing here duplicates the sidebar.

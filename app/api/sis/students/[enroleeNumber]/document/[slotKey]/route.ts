@@ -30,10 +30,21 @@ export async function PATCH(
   // Gate on holding EITHER side's validate capability; which one is actually
   // required is decided below by whether the student has enrolled.
   //
-  // `school_admin` holds neither and is stopped here — read-only oversight,
-  // KD #74 + KD #31. That has always been true of this route; what changed is
-  // that the queue UI now knows it too, instead of rendering them
-  // Approve/Reject buttons that landed on this 403.
+  // WHO IS STOPPED HERE CHANGED ON 2026-07-31 (migration 106). This comment used
+  // to say `school_admin` holds neither capability and is stopped at this gate —
+  // read-only oversight per KD #74 + KD #31, and true of this route since it was
+  // written. It is no longer true: 106 granted her
+  // `documents_pre_enrolment.validate` and the whole post-enrolment set, so she
+  // passes this gate and both branches below. That was deliberate — it fixes the
+  // long-standing bug where the validation queue rendered her Approve/Reject
+  // buttons that then 403'd here, by making the buttons work rather than by
+  // hiding them. The same migration gave `p_file_officer` the pre-enrolment side,
+  // which is the "one person, both sides of enrolment" case the capability layer
+  // was built for (KD #166).
+  //
+  // The only role this gate now stops outright is `teacher`, who holds no
+  // document capability at all. Everyone else is narrowed by enrolment state in
+  // the block below, not by the gate here.
   const auth = await requireAnyCapability([
     'documents_pre_enrolment.validate',
     'documents_post_enrolment.validate',

@@ -11,6 +11,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export default async function AttendanceLayout({
@@ -34,6 +35,8 @@ export default async function AttendanceLayout({
     redirect('/');
   }
 
+  const capabilities = await getCapabilitiesForRole(role);
+
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';
 
@@ -56,6 +59,7 @@ export default async function AttendanceLayout({
         email={email}
         userId={id}
         hiddenModules={hiddenModules}
+        capabilities={capabilities}
       />
       <SidebarInset>
         <AyBanner />

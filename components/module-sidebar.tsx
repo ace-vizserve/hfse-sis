@@ -14,10 +14,10 @@ import {
   SidebarMenu,
   SidebarRail,
 } from '@/components/ui/sidebar';
+import type { Capability } from '@/lib/auth/capabilities';
+import { resolveSectionsForRole } from '@/lib/auth/nav-visibility';
 import {
-  NAV_BY_MODULE,
   type NavItem,
-  type NavSection,
   type Role,
   type SidebarBadges,
   type SidebarCounts,
@@ -46,6 +46,12 @@ type ModuleSidebarProps = {
   // non-teacher call site resolves to [] and renders identically to before.
   // See lib/sidebar/module-visibility.ts.
   hiddenModules?: readonly SidebarModule[];
+  // The viewer's capabilities, resolved server-side by the layout via
+  // `getCapabilitiesForRole`. Nav items carrying `requiresCapability` are
+  // HIDDEN without this — omitting the prop can only remove rows, never reveal
+  // them (KD #173). A layout that forgets it silently loses those rows, so
+  // __tests__/auth/link-capability-consistency.test.ts asserts all eight pass it.
+  capabilities?: readonly Capability[];
 };
 
 // Stable empty default. Inlining `badges ?? {}` would create a fresh
@@ -66,31 +72,6 @@ const PREFIX_MATCH_HREFS = new Set<string>([
   '/evaluation/sections',
   '/attendance/sections',
 ]);
-
-function resolveSectionsForRole(
-  module: SidebarModule,
-  role: Role | null
-): NavSection[] {
-  if (module === 'markbook') {
-    if (!role) return [];
-    const byRole = NAV_BY_MODULE.markbook[role] ?? [];
-    return byRole;
-  }
-
-  const sections = NAV_BY_MODULE[module] ?? [];
-  if (!role) return sections;
-
-  // Filter requiresRoles per item, drop empty groups so no orphan
-  // labels render.
-  return sections
-    .map((section) => ({
-      ...section,
-      items: section.items.filter(
-        (item) => !item.requiresRoles || item.requiresRoles.includes(role)
-      ),
-    }))
-    .filter((section) => section.items.length > 0);
-}
 
 // Split a sidebar href into its pathname and (optional) query params.
 // Quicklinks like `/p-files?status=missing` and
@@ -146,6 +127,7 @@ export function ModuleSidebar({
   badges,
   counts,
   hiddenModules,
+  capabilities,
 }: ModuleSidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -154,7 +136,7 @@ export function ModuleSidebar({
   const liveBadges = useRealtimeBadges(role, userId, badges ?? EMPTY_BADGES);
   const itemCounts = counts ?? EMPTY_COUNTS;
 
-  const sections = resolveSectionsForRole(module, role);
+  const sections = resolveSectionsForRole(module, role, capabilities);
   const allItems = sections.flatMap((s) => s.items);
   const activeHref = findActiveHref(
     allItems,

@@ -1,5 +1,13 @@
 import type { User } from '@supabase/supabase-js';
 
+// TYPE-ONLY on purpose. This module is in proxy.ts's import graph (edge
+// runtime); a type-only import erases at compile time, so nothing from the
+// capability layer reaches the edge bundle. lib/auth/capabilities.ts is pure
+// and client-safe anyway (its only import is `type Role` from this file), but
+// keeping it type-only makes that unarguable and keeps the dependency acyclic
+// at runtime.
+import type { Capability } from '@/lib/auth/capabilities';
+
 export type Role =
   | 'teacher'
   | 'academic_coordinator'
@@ -38,6 +46,22 @@ export type NavItem = {
   // live client-side like badgeKey. SIS Admin visual pass (Task V2).
   countKey?: SidebarCountKey;
   requiresRoles?: Role[];
+  // The capability the DESTINATION page guards on.
+  //
+  // `requiresRoles` answers "may the proxy let you through" — it mirrors
+  // ROUTE_ACCESS. This answers the different question "will the page keep you
+  // once you arrive", for the pages that now gate on a capability rather than a
+  // role name. A page migrated to a capability gate MUST set this, or the item
+  // advertises work the page then bounces the viewer away from — which is what
+  // happened to the academic coordinator on /admissions/document-validation
+  // (KD #173).
+  //
+  // ONE capability, not a list. The only page whose guard is an OR of two
+  // (/p-files/document-validation, pre-enrolment read OR post-enrolment read)
+  // keeps plain `requiresRoles`, which is exactly that OR's holder set; the
+  // regression test proves the two agree rather than letting this field grow an
+  // any-of form nothing else needs.
+  requiresCapability?: Capability;
   step?: number;
 };
 export type NavSection = {
@@ -72,17 +96,21 @@ const PFILES_NAV: NavSection[] = [
   },
   {
     // Quick filters land on the dashboard with a `?status=` preset so the
-    // P-File Officer can jump straight to the work queue (oversight role —
-    // school_admin — sees the same lists but in read-only mode).
+    // P-File Officer can jump straight to the work queue. school_admin sees
+    // the same lists, and the page still renders them read-only — but that is
+    // now a UI gap rather than a rule: migration 106 gave her the
+    // post-enrolment document capabilities while the page kept its
+    // role-literal write gate. See KD #173.
     label: 'Quick filters',
     items: [{ href: '/p-files?status=expired', label: 'Expired documents' }],
   },
   {
-    // Renewal-outreach windows — officer+ only (p-file / school_admin /
-    // superadmin) because these are the lists the bulk-remind action operates
-    // on. school_admin sees the same data in read-only mode (per KD #74 — no
-    // bulk-notify CTA). Oversight-only roles (registrar etc.) are not granted
-    // these quicklinks.
+    // Renewal-outreach windows — officer+ only (p_file_officer / school_admin
+    // / superadmin) because these are the lists the bulk-remind action
+    // operates on. school_admin reaches the lists but gets no bulk-notify CTA;
+    // that used to be KD #74 policy and is now just the page's role-literal
+    // gate lagging her migration-106 grants (KD #173). Other oversight roles
+    // are not granted these quicklinks at all.
     label: 'Expiring soon',
     items: [
       {
@@ -303,11 +331,20 @@ const ADMISSIONS_NAV: NavSection[] = [
       { href: '/admissions/applications', label: 'Applications' },
       // Document validation (KD #70 + KD #71): dedicated triage queue for
       // un-enrolled applicants whose documents are status='Uploaded' and
-      // awaiting registrar review. Replaces the legacy
-      // `/admissions?status=uploaded` quicklink with a purpose-built page.
-      // Badge mirrors the row count from `countPendingDocValidation`.
+      // awaiting review. Badge mirrors the row count from
+      // `countPendingDocValidation`.
+      //
+      // CAPABILITY-GATED, not role-gated (KD #173). The page redirects anyone
+      // without `documents_pre_enrolment.read`, and migration 106 took that off
+      // the academic coordinator when document validation moved to the P-Files
+      // officer and school_admin. She is admitted to /admissions by
+      // ROUTE_ACCESS, so a `requiresRoles` list here would have to restate the
+      // capability's holder set and then drift from it the next time a grant
+      // moves. Naming the capability makes the row and the page read the same
+      // source.
       {
         href: '/admissions/document-validation',
+        requiresCapability: 'documents_pre_enrolment.read',
         label: 'Document validation',
         badgeKey: 'pendingDocValidation',
       },
@@ -756,7 +793,22 @@ export const NAV_BY_MODULE: {
 // evaluated first via the explicit `find` order below, so `/sis/ay-setup`
 // must appear before the broader `/sis` rule.
 // fallow-ignore-next-line unused-export
-export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
+export const ROUTE_ACCESS: Array<{
+  prefix: string;
+  allowed: Role[];
+  // Match THIS PATHNAME ONLY, never the subtree beneath it.
+  //
+  // The one thing a prefix table cannot otherwise say is "the file, not the
+  // folder": `/admissions/applications` and
+  // `/admissions/applications/[enroleeNumber]` share a prefix string, so no
+  // amount of reordering separates the list page from a detail page. Needed
+  // when a role should reach a record they were linked to without being handed
+  // the whole index — see the P-Files officer rows below (KD #173).
+  //
+  // First-match-in-declaration-order still decides everything, so an `exact`
+  // row must sit ABOVE the subtree row it carves out of.
+  exact?: boolean;
+}> = [
   { prefix: '/sis/admin/approvers', allowed: ['superadmin'] },
   // Who may edit what each role is allowed to do. Superadmin only, and
   // deliberately gated on the ROLE rather than on a capability: a capability
@@ -826,6 +878,23 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
     prefix: '/admin/admissions',
     allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
+  // The bare legacy `/admin` bookmark, which is a one-line `redirect('/records')`
+  // stub like its `/admin/admissions` sibling above. It had no rule at all until
+  // KD #173, and `isRouteAllowed` returns true for an unmatched prefix — so a
+  // teacher, admissions or p_file_officer user opening an old bookmark was let
+  // through, redirected to /records, blocked there by the proxy, bounced to `/`,
+  // and redirected once more by the home page's own role routing. Three hops to
+  // say "no". With this row the gate fires on the first request, which is the
+  // whole reason a redirect stub carries a ROUTE_ACCESS row.
+  //
+  // Must sit AFTER `/admin/admissions`: first-match-in-declaration-order decides,
+  // and this shorter prefix would otherwise swallow that row. The two allow the
+  // same roles today, so nothing breaks if they diverge — but the ordering is
+  // what keeps them independently editable.
+  {
+    prefix: '/admin',
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
+  },
   // Classroom — a section × term workspace for teaching staff. Mandatory
   // row: isRouteAllowed defaults to ALLOW for any prefix with no matching
   // rule, so without this, admissions and p_file_officer (who have no
@@ -893,6 +962,48 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
     prefix: '/p-files',
     allowed: ['p_file_officer', 'school_admin', 'superadmin'],
   },
+  // ── The applicant record, split list-vs-detail for the P-Files officer ────
+  // These three rows are order-sensitive; see `exact` on ROUTE_ACCESS above.
+  //
+  // Migration 106 gave `p_file_officer` the pre-enrolment document
+  // capabilities, so /p-files/document-validation now shows them an Applicants
+  // tab. Every applicant name in that queue links to the applicant file — which
+  // lived behind the broad /admissions rule, so the link bounced them to `/`.
+  // They may now open the FILE. They still may not browse the funnel: the
+  // closed archive and the applications list keep their original audience.
+  {
+    prefix: '/admissions/applications/closed',
+    allowed: [
+      'admissions',
+      'academic_coordinator',
+      'school_admin',
+      'superadmin',
+    ],
+  },
+  {
+    // The list. `exact` is the whole mechanism — without it this row would
+    // swallow every detail page below and the officer would be shut out again.
+    prefix: '/admissions/applications',
+    exact: true,
+    allowed: [
+      'admissions',
+      'academic_coordinator',
+      'school_admin',
+      'superadmin',
+    ],
+  },
+  {
+    // The applicant file. Detail-only by construction: the `exact` row above
+    // has already claimed the bare list path.
+    prefix: '/admissions/applications',
+    allowed: [
+      'admissions',
+      'academic_coordinator',
+      'school_admin',
+      'superadmin',
+      'p_file_officer',
+    ],
+  },
   {
     prefix: '/admissions',
     allowed: [
@@ -950,8 +1061,10 @@ export function getRoleFromClaims(
 }
 
 export function isRouteAllowed(pathname: string, role: Role | null): boolean {
-  const rule = ROUTE_ACCESS.find(
-    (r) => pathname === r.prefix || pathname.startsWith(r.prefix + '/')
+  const rule = ROUTE_ACCESS.find((r) =>
+    r.exact
+      ? pathname === r.prefix
+      : pathname === r.prefix || pathname.startsWith(r.prefix + '/')
   );
   if (!rule) return true;
   return role != null && rule.allowed.includes(role);

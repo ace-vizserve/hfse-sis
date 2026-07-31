@@ -56,6 +56,8 @@ import {
   classifyUrgency,
 } from '@/lib/p-files/urgency';
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
+import { can } from '@/lib/auth/capabilities';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -156,8 +158,28 @@ export default async function StudentDocumentDetailPage({
   }
 
   const docRow = student.rawDocRow;
-  const canWrite =
-    sessionUser.role === 'p_file_officer' || sessionUser.role === 'superadmin';
+  // One flag used to gate every control here — `role === 'p_file_officer' ||
+  // 'superadmin'`. That was correct until migration 106 gave `school_admin` the
+  // post-enrolment document capabilities: she then held the rights while this
+  // page hid every button that used them, and the API behind them would have
+  // accepted her (KD #173).
+  //
+  // Split three ways rather than swapped one-for-one, because the buttons do
+  // not all need the same right and their routes already enforce them
+  // separately: Approve/Reject → the document PATCH (`validate`), Remind
+  // parent / Set promised date → notify + promise (`chase`), Upload/Replace →
+  // the upload route (`upload`). Every current holder has all three, so this
+  // changes nothing today — but revoking just one in /sis/admin/roles will now
+  // hide exactly the controls it should.
+  const capabilities = await getCapabilitiesForRole(sessionUser.role);
+  const canValidateDocs = can(
+    capabilities,
+    'documents_post_enrolment.validate'
+  );
+  const canChaseDocs = can(capabilities, 'documents_post_enrolment.chase');
+  const canUploadDocs = can(capabilities, 'documents_post_enrolment.upload');
+  // Hero framing only: is there any document work this viewer can do here?
+  const canWrite = canValidateDocs || canChaseDocs || canUploadDocs;
 
   const pct =
     student.total > 0
@@ -264,7 +286,10 @@ export default async function StudentDocumentDetailPage({
                 expires={config?.expires ?? false}
                 meta={config?.meta ?? null}
                 ayCode={selectedAy}
-                canWrite={canWrite}
+                // Approve / Reject only — the card's chase and upload actions
+                // moved to the queue above (KD #91's one-document-one-place
+                // pass), so `validate` is the only right it needs.
+                canWrite={canValidateDocs}
                 studentName={student.fullName}
                 recipients={student.recipients}
                 lastReminderAt={outreach?.lastReminderAt ?? null}
@@ -393,7 +418,8 @@ export default async function StudentDocumentDetailPage({
             enroleeNumber={enroleeNumber}
             rows={actionRows}
             recipients={student.recipients}
-            canWrite={canWrite}
+            canChase={canChaseDocs}
+            canUpload={canUploadDocs}
             totalActionable={totalActionable}
           />
         </div>

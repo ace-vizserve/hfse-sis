@@ -326,9 +326,14 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     // No route change was needed: /p-files/document-validation is already the
     // unified queue and loads the applicant rows whenever the viewer holds
     // `documents_pre_enrolment.read`, so the officer sees both queues in the
-    // module they can already reach. `/admissions` still excludes them at
-    // ROUTE_ACCESS, deliberately — the capability gives them the WORK, not the
-    // whole Admissions module.
+    // module they can already reach.
+    //
+    // ONE route was opened afterwards (KD #173): the applicant FILE at
+    // /admissions/applications/[enroleeNumber], which every row in that new
+    // Applicants tab links to. `/admissions` otherwise still excludes them at
+    // ROUTE_ACCESS, deliberately — including the applications list next door —
+    // and the file renders read-only for them. The capability gives them the
+    // WORK, not the whole Admissions module.
     'documents_pre_enrolment.read',
     'documents_pre_enrolment.chase',
     'documents_pre_enrolment.validate',

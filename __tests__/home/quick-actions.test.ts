@@ -1,12 +1,28 @@
 import { describe, it, expect } from 'vitest';
 import { getQuickActions, QUICK_ACTIONS } from '@/lib/home/quick-actions';
 import { isRouteAllowed, type Role } from '@/lib/auth/roles';
+import {
+  DEFAULT_ROLE_CAPABILITIES,
+  type Capability,
+} from '@/lib/auth/capabilities';
 import type { TeachingProfile } from '@/lib/sidebar/module-visibility';
 
 const ADVISER: TeachingProfile = { advises: true, teachesSubject: false };
 const SUBJECT: TeachingProfile = { advises: false, teachesSubject: true };
 const BOTH: TeachingProfile = { advises: true, teachesSubject: true };
 const NEITHER: TeachingProfile = { advises: false, teachesSubject: false };
+
+// The real grants, so a role's expected action list is checked against what
+// that role actually holds — not against a hand-written literal that could
+// drift from DEFAULT_ROLE_CAPABILITIES without anyone noticing.
+const CAPS_OF = (role: Role): Capability[] => DEFAULT_ROLE_CAPABILITIES[role];
+
+// A table row carries the filter GROUNDS (`requires`, `requiresCapability`);
+// getQuickActions returns only what renders. Comparing a result against the raw
+// table therefore needs the same projection getQuickActions applies — this
+// still pins every row, in order, it just does it in the returned shape.
+const offered = (role: Role) =>
+  QUICK_ACTIONS[role].map(({ label, href }) => ({ label, href }));
 
 const ENTER_GRADES = { label: 'Enter grades', href: '/markbook/grading' };
 const MARK_ATTENDANCE = {
@@ -53,14 +69,22 @@ describe('getQuickActions — teacher, by job', () => {
     // A zero-length result there would mean the table itself is wrong; papering
     // over it with a Classroom link would hide that.
     expect(getQuickActions('academic_coordinator', [], NEITHER)).toEqual(
-      QUICK_ACTIONS.academic_coordinator
+      offered('academic_coordinator')
     );
   });
 });
 
 describe('getQuickActions', () => {
   it('returns the 3 school_admin shortcuts', () => {
-    const actions = getQuickActions('school_admin');
+    // Capabilities are required: the document-validation row is tagged, and
+    // getQuickActions fails closed, so omitting them would (correctly) drop it.
+    // Passing the REAL defaults is also what proves the tag is a no-op today.
+    const actions = getQuickActions(
+      'school_admin',
+      [],
+      NEITHER,
+      CAPS_OF('school_admin')
+    );
     expect(actions).toEqual([
       {
         label: 'Validate application documents',
@@ -105,7 +129,7 @@ describe('getQuickActions', () => {
   // actions must survive even if a caller passed a non-empty hidden list.
   it('does not narrow oversight roles', () => {
     expect(getQuickActions('academic_coordinator', ['attendance'])).toEqual(
-      QUICK_ACTIONS.academic_coordinator
+      offered('academic_coordinator')
     );
   });
 
@@ -114,10 +138,51 @@ describe('getQuickActions', () => {
   // teaching assignments at all.
   it('ignores the profile for oversight roles', () => {
     for (const profile of [ADVISER, SUBJECT, BOTH, NEITHER]) {
-      expect(getQuickActions('superadmin', [], profile)).toEqual(
-        QUICK_ACTIONS.superadmin
-      );
+      expect(
+        getQuickActions('superadmin', [], profile, CAPS_OF('superadmin'))
+      ).toEqual(offered('superadmin'));
     }
+  });
+});
+
+// The drift this guards against: a row advertising a page whose CAPABILITY
+// guard would bounce the viewer. Role alone cannot see that — which is how the
+// sidebar came to offer the academic coordinator five links to a page that
+// redirected her once migration 106 took `documents_pre_enrolment.read` off her
+// (KD #173). Today's rows are all correct; this is what stops the next grant
+// move from breaking one silently.
+describe('getQuickActions — capability filter', () => {
+  it('drops exactly the tagged row when the viewer lacks its capability', () => {
+    // Everything school_admin holds EXCEPT the one the document-validation
+    // page guards on — the shape a future revoke would produce.
+    const without = CAPS_OF('school_admin').filter(
+      (c) => c !== 'documents_pre_enrolment.read'
+    );
+
+    expect(getQuickActions('school_admin', [], NEITHER, without)).toEqual([
+      { label: 'AY Setup', href: '/sis/ay-setup' },
+      { label: 'Manage staff', href: '/sis/admin/staff' },
+    ]);
+  });
+
+  it('keeps the tagged row while the capability is held', () => {
+    const actions = getQuickActions(
+      'school_admin',
+      [],
+      NEITHER,
+      CAPS_OF('school_admin')
+    );
+    expect(actions.map((a) => a.href)).toContain(
+      '/admissions/document-validation'
+    );
+  });
+
+  it('fails closed when a caller forgets to pass capabilities', () => {
+    // A missing action is visible and gets reported; a dead-end action is the
+    // bug this filter exists to prevent. So the default MUST hide, not reveal.
+    expect(getQuickActions('superadmin').map((a) => a.href)).not.toContain(
+      '/p-files/document-validation'
+    );
   });
 });
 

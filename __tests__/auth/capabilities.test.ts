@@ -224,6 +224,10 @@ const DELIBERATELY_NOT_MIGRATED: Array<{ file: string; why: string }> = [
     file: 'app/api/teacher-assignments/route.ts',
     why: 'its GET admits teacher so they can read their own assignments; staff.read is registrar+',
   },
+  {
+    file: 'app/api/sis/students/[enroleeNumber]/profile/route.ts',
+    why: 'two role sets in one folder — one capability would grant `admissions` section placement; see lib/auth/student-record.ts',
+  },
 ];
 
 /** Files migrated in Phase 2 → the capabilities each must reference. */

@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
+import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
 import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
 import { validateSectionChoice } from '@/lib/sis/class-assignment';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -38,11 +39,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ enroleeNumber: string }> }
 ) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  // Placement, not the student record — `admissions` is deliberately excluded
+  // (KD #51). Same three roles as before; see lib/auth/student-record.ts.
+  const auth = await requireRole([...ENROLMENT_PLACEMENT_WRITERS]);
   if ('error' in auth) return auth.error;
 
   const { enroleeNumber } = await params;

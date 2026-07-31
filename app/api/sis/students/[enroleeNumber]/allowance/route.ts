@@ -2,6 +2,7 @@ import { revalidateTag } from 'next/cache';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
+import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -22,11 +23,10 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ enroleeNumber: string }> }
 ) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  // Placement and allowances, not the student record — `admissions` is
+  // deliberately excluded (KD #51). Same three roles as before; see
+  // lib/auth/student-record.ts.
+  const auth = await requireRole([...ENROLMENT_PLACEMENT_WRITERS]);
   if ('error' in auth) return auth.error;
 
   const { enroleeNumber } = await params;

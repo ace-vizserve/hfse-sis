@@ -3,8 +3,9 @@ import { cookies } from 'next/headers';
 import { getSessionUser } from '@/lib/supabase/server';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
-import { countAwaitingVerification } from '@/lib/p-files/document-validation';
+import { resolvePFileBadges } from '@/lib/p-files/sidebar-badges';
 import { createServiceClient } from '@/lib/supabase/service';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { ModuleSidebar } from '@/components/module-sidebar';
 import { NotificationBell } from '@/components/notifications/notification-bell';
@@ -31,16 +32,17 @@ export default async function PFilesLayout({
   )
     redirect('/');
 
+  const capabilities = await getCapabilitiesForRole(role);
+
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';
 
+  // Badge counts BOTH document-validation queues the viewer can actually see —
+  // enrolled students and, since migration 106 gave the officer the
+  // pre-enrolment capabilities, applicants too (KD #173).
   const currentAy = await getCurrentAcademicYear();
   const badges: SidebarBadges = currentAy
-    ? {
-        pfileAwaitingVerification: await countAwaitingVerification(
-          currentAy.ay_code
-        ),
-      }
+    ? await resolvePFileBadges(currentAy.ay_code, capabilities)
     : {};
 
   const service = createServiceClient();
@@ -57,6 +59,7 @@ export default async function PFilesLayout({
         email={email}
         userId={id}
         badges={badges}
+        capabilities={capabilities}
       />
       <SidebarInset>
         <AyBanner />

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
+import { STUDENT_RECORD_WRITERS } from '@/lib/auth/student-record';
 import { listAssignableSections } from '@/lib/sis/class-assignment';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -16,11 +17,11 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ enroleeNumber: string }> }
 ) {
-  const auth = await requireRole([
-    'admissions',
-    'academic_coordinator',
-    'superadmin',
-  ]);
+  // Who may write the shared student record — see lib/auth/student-record.ts.
+  // school_admin was added 2026-07-31 (KD #173): both pages that render these
+  // editors already admitted her, so every save 403'd against a form that had
+  // opened for her.
+  const auth = await requireRole([...STUDENT_RECORD_WRITERS]);
   if ('error' in auth) return auth.error;
 
   const { enroleeNumber } = await params;

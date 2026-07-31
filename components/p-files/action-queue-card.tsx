@@ -61,13 +61,20 @@ export function ActionQueueCard({
   enroleeNumber,
   rows,
   recipients,
-  canWrite,
+  canChase,
+  canUpload,
   totalActionable,
 }: {
   enroleeNumber: string;
   rows: ActionQueueRow[];
   recipients: Recipients;
-  canWrite: boolean;
+  // Two rights, because these buttons hit two different routes and each
+  // enforces its own (KD #173). Remind parent / Set promised date are
+  // `documents_post_enrolment.chase`; Upload/Replace is `.upload`. Both
+  // default false at the call site's discretion — a viewer with neither sees
+  // the queue as a read-only worklist, which is the honest oversight view.
+  canChase: boolean;
+  canUpload: boolean;
   totalActionable: number;
 }) {
   if (rows.length === 0) {
@@ -150,58 +157,63 @@ export function ActionQueueCard({
                   </p>
                 </div>
               </div>
-              {canWrite ? (
+              {canChase || canUpload ? (
                 <div className="flex flex-wrap items-center gap-2">
-                  <NotifyDialog
-                    enroleeNumber={enroleeNumber}
-                    slotKey={row.slotKey}
-                    label={row.slotLabel}
-                    recipients={recipients}
-                    lastReminderAt={row.lastReminderAt}
-                    trigger={
-                      <Button size="sm" className="h-8 gap-1.5 text-xs">
-                        <Mail className="size-3" />
-                        Remind parent
-                      </Button>
-                    }
-                  />
-                  {(row.status === 'expired' ||
-                    row.status === 'rejected' ||
-                    row.status === 'missing') && (
-                    <PromiseDialog
+                  {canChase && (
+                    <NotifyDialog
                       enroleeNumber={enroleeNumber}
                       slotKey={row.slotKey}
                       label={row.slotLabel}
+                      recipients={recipients}
+                      lastReminderAt={row.lastReminderAt}
+                      trigger={
+                        <Button size="sm" className="h-8 gap-1.5 text-xs">
+                          <Mail className="size-3" />
+                          Remind parent
+                        </Button>
+                      }
+                    />
+                  )}
+                  {canChase &&
+                    (row.status === 'expired' ||
+                      row.status === 'rejected' ||
+                      row.status === 'missing') && (
+                      <PromiseDialog
+                        enroleeNumber={enroleeNumber}
+                        slotKey={row.slotKey}
+                        label={row.slotLabel}
+                        trigger={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 text-xs"
+                          >
+                            <CalendarClock className="size-3" />
+                            Set promised date
+                          </Button>
+                        }
+                      />
+                    )}
+                  {canUpload && (
+                    <UploadDialog
+                      enroleeNumber={enroleeNumber}
+                      slotKey={row.slotKey}
+                      label={row.slotLabel}
+                      expires={config?.expires ?? row.expires}
+                      meta={config?.meta ?? row.meta}
+                      isReplacement={isReplacement}
                       trigger={
                         <Button
                           variant="outline"
                           size="sm"
                           className="h-8 gap-1.5 text-xs"
                         >
-                          <CalendarClock className="size-3" />
-                          Set promised date
+                          <Upload className="size-3" />
+                          {isReplacement ? 'Replace file' : 'Upload file'}
                         </Button>
                       }
                     />
                   )}
-                  <UploadDialog
-                    enroleeNumber={enroleeNumber}
-                    slotKey={row.slotKey}
-                    label={row.slotLabel}
-                    expires={config?.expires ?? row.expires}
-                    meta={config?.meta ?? row.meta}
-                    isReplacement={isReplacement}
-                    trigger={
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1.5 text-xs"
-                      >
-                        <Upload className="size-3" />
-                        {isReplacement ? 'Replace file' : 'Upload file'}
-                      </Button>
-                    }
-                  />
                   <Link
                     href={`#slot-${row.slotKey}`}
                     aria-label={`Jump to ${row.slotLabel}`}

@@ -75,6 +75,24 @@ type Props = {
   documents: DocumentSlot[];
   enroleeNumber: string;
   ayCode: string;
+  // Document rights, resolved by the page from the viewer's capabilities.
+  //
+  // BOTH DEFAULT TO FALSE, deliberately. This component used to take no
+  // permission input at all, so it rendered Approve / Reject / Notify /
+  // Mark-as-promised to anyone who could open the applicant page — and the
+  // routes behind those buttons gate on capabilities the viewer may not hold.
+  // The academic coordinator got the full set and a 403 on every click, since
+  // migration 106 moved document work off her (KD #173). A caller that forgets
+  // these now shows a read-only record, which is the safe way to be wrong.
+  //
+  // Gated here at the call site rather than inside DocumentValidationActions:
+  // that component is mounted from more than one surface, and the answer
+  // depends on which student is on screen, not on the button.
+  /** `documents_pre_enrolment.validate` — approve or reject an upload. */
+  canValidate?: boolean;
+  /** `documents_pre_enrolment.chase` — remind the parent, or record a
+   *  promised-by date. */
+  canChase?: boolean;
 };
 
 // Active funnel statuses where the admissions team may chase parents
@@ -217,6 +235,8 @@ export function DocumentsViewer({
   documents,
   enroleeNumber,
   ayCode,
+  canValidate = false,
+  canChase = false,
 }: Props) {
   // Hide STP slots when the parent didn't opt into the STP sub-flow (KD #61).
   const stpEnabled = !!application.stpApplicationType;
@@ -367,6 +387,8 @@ export function DocumentsViewer({
             isAdmissionsScope={isAdmissionsScope}
             recipients={recipients}
             applicationStatus={application.applicationStatus ?? null}
+            canValidate={canValidate}
+            canChase={canChase}
           />
         )}
       </div>
@@ -713,6 +735,8 @@ function PreviewPane({
   isAdmissionsScope,
   recipients,
   applicationStatus,
+  canValidate,
+  canChase,
 }: {
   doc: DocumentSlot;
   enroleeNumber: string;
@@ -725,6 +749,8 @@ function PreviewPane({
     guardianEmail: string | null;
   };
   applicationStatus: string | null;
+  canValidate: boolean;
+  canChase: boolean;
 }) {
   const kind = fileKind(doc.url);
   const filename = fileNameFromUrl(doc.url);
@@ -734,7 +760,7 @@ function PreviewPane({
   // are P-Files territory and surface their own renewal actions on the
   // /p-files/[enroleeNumber] detail page.
   const showAdmissionsChase =
-    isAdmissionsScope && isAdmissionsChaseable(doc.status);
+    isAdmissionsScope && isAdmissionsChaseable(doc.status) && canChase;
 
   return (
     <div className="hidden lg:block">
@@ -785,15 +811,17 @@ function PreviewPane({
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/20 px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
-            <DocumentValidationActions
-              ayCode={ayCode}
-              enroleeNumber={enroleeNumber}
-              slotKey={doc.key}
-              label={doc.label}
-              status={doc.status}
-              url={doc.url}
-              applicationStatus={applicationStatus}
-            />
+            {canValidate && (
+              <DocumentValidationActions
+                ayCode={ayCode}
+                enroleeNumber={enroleeNumber}
+                slotKey={doc.key}
+                label={doc.label}
+                status={doc.status}
+                url={doc.url}
+                applicationStatus={applicationStatus}
+              />
+            )}
             {showAdmissionsChase && (
               <>
                 <NotifyDialog

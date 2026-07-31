@@ -53,7 +53,17 @@ vi.mock('@/lib/markbook/comment-completeness', () => ({
   cumulativeCommentGaps: vi.fn(async () => []),
 }));
 
-import { getHomeTodos } from '@/lib/home/todos';
+import {
+  DEFAULT_ROLE_CAPABILITIES,
+  type Capability,
+} from '@/lib/auth/capabilities';
+import { NO_TEACHING_PROFILE } from '@/lib/sidebar/module-visibility';
+import { getHomeTodos, HOME_TODO_SOURCES } from '@/lib/home/todos';
+
+// The real grants, not a literal — the point of the capability gate is that it
+// agrees with what the destination page will ask, and these are the same
+// defaults that seed `role_permissions`.
+const CAPS = DEFAULT_ROLE_CAPABILITIES;
 
 const MARKBOOK_ROW = {
   id: 'markbook-priority',
@@ -105,26 +115,74 @@ describe('getHomeTodos', () => {
     expect(await getHomeTodos('teacher', 'AY2026', 'teacher-1')).toEqual([]);
   });
 
-  it('gives academic_coordinator review-only rows, never change-request rows', async () => {
+  // She is NOT offered the admissions document-validation row any more. That
+  // page redirects anyone without `documents_pre_enrolment.read` to `/`, and
+  // migration 106 took that capability off her — so the row sat on the page she
+  // was bounced to and clicking it looped (KD #173).
+  it('gives academic_coordinator the unsynced row only — never the doc-validation loop', async () => {
     const todos = await getHomeTodos(
       'academic_coordinator',
       'AY2026',
-      'coord-1'
+      'coord-1',
+      NO_TEACHING_PROFILE,
+      CAPS.academic_coordinator
     );
     expect(todos.every((t) => t.kind === 'review')).toBe(true);
-    expect(todos.map((t) => t.module)).toEqual(['Admissions', 'Records']);
+    expect(todos.map((t) => t.module)).toEqual(['Records']);
+    expect(todos.some((t) => t.id === 'admissions-doc-validation')).toBe(false);
   });
 
   it('gives school_admin change-request rows with a requestId', async () => {
-    const todos = await getHomeTodos('school_admin', 'AY2026', 'admin-1');
+    const todos = await getHomeTodos(
+      'school_admin',
+      'AY2026',
+      'admin-1',
+      NO_TEACHING_PROFILE,
+      CAPS.school_admin
+    );
     const cr = todos.find((t) => t.kind === 'change-request');
     expect(cr).toBeDefined();
     expect(cr?.requestId).toBe('cr-1');
     expect(cr?.aging).toEqual({ label: '2 days', tone: 'success' });
+    // Unchanged for her: she holds the capability, so the row still appears.
+    expect(todos.some((t) => t.id === 'admissions-doc-validation')).toBe(true);
+  });
+
+  // The capability gate is load-bearing ON ITS OWN, not just a comment beside
+  // the roles list: grants are DATA a superadmin edits at /sis/admin/roles, so
+  // a role that is still listed here can lose access without any code change —
+  // exactly what happened to the academic coordinator in migration 106.
+  it('drops the doc-validation row for a listed role that lost the capability', async () => {
+    const withoutDocRead = CAPS.school_admin.filter(
+      (c) => c !== 'documents_pre_enrolment.read'
+    ) as Capability[];
+
+    const source = HOME_TODO_SOURCES.find(
+      (s) => s.id === 'admissions-doc-validation'
+    );
+    expect(source?.roles).toContain('school_admin'); // still listed…
+
+    const todos = await getHomeTodos(
+      'school_admin',
+      'AY2026',
+      'admin-1',
+      NO_TEACHING_PROFILE,
+      withoutDocRead
+    );
+    expect(todos.some((t) => t.id === 'admissions-doc-validation')).toBe(false); // …and still dropped
+    // Only that row goes — the rest of her panel is untouched.
+    expect(todos.some((t) => t.kind === 'change-request')).toBe(true);
+    expect(todos.some((t) => t.id === 'records-unsynced')).toBe(true);
   });
 
   it('never gives superadmin change-request rows (KD #41 — not in the approver pool)', async () => {
-    const todos = await getHomeTodos('superadmin', 'AY2026', 'super-1');
+    const todos = await getHomeTodos(
+      'superadmin',
+      'AY2026',
+      'super-1',
+      NO_TEACHING_PROFILE,
+      CAPS.superadmin
+    );
     expect(todos.some((t) => t.kind === 'change-request')).toBe(false);
     expect(todos.map((t) => t.module)).toContain('P-Files');
   });

@@ -10,6 +10,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import { countUnmatchedLevelLabels } from '@/lib/sis/level-review';
@@ -34,6 +35,8 @@ export default async function RecordsLayout({
     if (!role) redirect('/login');
     redirect('/');
   }
+
+  const capabilities = await getCapabilitiesForRole(role);
 
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';
@@ -63,6 +66,7 @@ export default async function RecordsLayout({
         email={email}
         userId={id}
         badges={badges}
+        capabilities={capabilities}
       />
       <SidebarInset>
         <AyBanner />

@@ -10,6 +10,7 @@ import {
 } from '@/components/sis/command-palette';
 import { QueryProvider } from '@/components/providers/query-provider';
 import { ScreenGuard } from '@/components/ui/screen-guard';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getSessionUser } from '@/lib/supabase/server';
 import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 
@@ -54,6 +55,10 @@ export default async function RootLayout({
   const hiddenModules = sessionUser
     ? await resolveHiddenModules(role, sessionUser.id)
     : [];
+  // What this viewer may actually DO (KD #166). Some routes admit a role at the
+  // prefix and then bounce them on a capability the page requires — the palette
+  // must not advertise those.
+  const capabilities = sessionUser ? await getCapabilitiesForRole(role) : [];
 
   return (
     <html
@@ -71,7 +76,11 @@ export default async function RootLayout({
           <CommandPaletteProvider>
             {children}
             {role && (
-              <CommandPalette role={role} hiddenModules={hiddenModules} />
+              <CommandPalette
+                role={role}
+                capabilities={capabilities}
+                hiddenModules={hiddenModules}
+              />
             )}
           </CommandPaletteProvider>
           <ScreenGuard />

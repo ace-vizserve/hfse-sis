@@ -1,7 +1,8 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { ArrowLeft, FileSpreadsheet } from 'lucide-react';
 
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import {
   Card,
   CardContent,
@@ -13,6 +14,22 @@ import { PageShell } from '@/components/ui/page-shell';
 import { ImportAttendanceForm } from '@/components/attendance/import-form';
 
 export default async function AttendanceImportPage() {
+  // Bulk import is registrar+ only, matching this page's own ROUTE_ACCESS row
+  // (`/attendance/import`) exactly. Added by KD #173: the page previously had
+  // no guard at all — not even a session read — so its audience had to be
+  // inferred from two other files (the ROUTE_ACCESS table and the route-group
+  // layout), and neither of those lives anywhere near the bulk writer they were
+  // protecting. The page now states its own contract.
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) redirect('/login');
+  if (
+    sessionUser.role !== 'academic_coordinator' &&
+    sessionUser.role !== 'school_admin' &&
+    sessionUser.role !== 'superadmin'
+  ) {
+    redirect('/');
+  }
+
   const supabase = await createClient();
 
   const { data: ay } = await supabase

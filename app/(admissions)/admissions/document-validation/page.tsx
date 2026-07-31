@@ -14,13 +14,19 @@ import { getSessionUser } from '@/lib/supabase/server';
 // the document workflow (we owe a review). KD #71 keeps the page admissions-
 // side only — enrolled applicants flow through P-Files renewal.
 //
-// Who sees this, and who may act on it, are two different questions — the
-// previous comment here claimed the mutation route "already permits the same
-// set" and it never did. `school_admin` is admitted as read-only oversight
-// (KD #74 + KD #31) while PATCH .../document/[slotKey] deliberately excludes
-// them, so the queue used to render them Approve/Reject buttons that 403 on
-// click. Both questions now resolve from capabilities, which is what keeps the
-// two in step.
+// Who sees this, and who may act on it, are two different questions, and this
+// page has been wrong about the answer twice. An early comment claimed the
+// mutation route "already permits the same set", which it never did. The
+// replacement said `school_admin` is read-only oversight here (KD #74 + KD #31)
+// while PATCH .../document/[slotKey] excludes her — true when written, and no
+// longer true: migration 106 (2026-07-31) granted her
+// `documents_pre_enrolment.validate`, so she both sees this queue AND may act on
+// it, and the Approve/Reject buttons that used to 403 on click now work.
+//
+// What stops that from drifting a third time is that both questions resolve from
+// the same capabilities the PATCH route gates on — `read` for the page,
+// `validate` for the buttons. The answer moves when a superadmin edits the
+// grants at /sis/admin/roles, not when someone edits a comment.
 
 export default async function DocumentValidationPage() {
   const sessionUser = await getSessionUser();
