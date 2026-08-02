@@ -6,6 +6,15 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { subjectConfigUnchanged } from '@/lib/sis/subject-config-unchanged';
 import { SubjectConfigUpdateSchema } from '@/lib/schemas/subject-config';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
+import {
+  findTruncationBlockers,
+  recomputeSyncedSheets,
+} from '@/lib/grading/sync-config-sheets';
+
+// A config fans out to 4 terms x N sections, and each sheet's entries are
+// recomputed in TypeScript. Comfortably inside 60s at HFSE's ~20 sections,
+// but the default limit is not worth gambling a half-applied sync on.
+export const maxDuration = 60;
 
 // PATCH /api/sis/admin/subjects/[configId]
 //
@@ -87,6 +96,66 @@ export async function PATCH(
     return NextResponse.json({ ok: true, changed: false, sheets_synced: 0 });
   }
 
+  // ── Rule 1: never destroy entered marks ────────────────────────────────
+  // HFSE agrees a Scheme of Work before each AY, so the normal save lands on
+  // empty sheets and this finds nothing. Mid-year changes are rare but real,
+  // and that is when lowering a slot count would delete work.
+  //
+  // Refuse rather than log it: Hard Rule #6 wants an audit row for a deletion,
+  // but a score cannot be recovered FROM an audit row. Clearing the slot first
+  // is a deliberate act; losing it to an unrelated config edit is not.
+  let blockers;
+  try {
+    blockers = await findTruncationBlockers(
+      service,
+      configId,
+      ww_max_slots,
+      pt_max_slots
+    );
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'check failed' },
+      { status: 500 }
+    );
+  }
+  if (blockers.length > 0) {
+    const slots = [
+      ...new Set(
+        blockers.flatMap((b) =>
+          b.slotNumbers.map(
+            (n) =>
+              `${b.component === 'ww' ? 'Written Work' : 'Performance Task'} ${n}`
+          )
+        )
+      ),
+    ].sort();
+    return NextResponse.json(
+      {
+        error: `Reducing the number of slots would erase marks that teachers have already entered (${slots.join(', ')}) on ${blockers.length} class ${blockers.length === 1 ? 'sheet' : 'sheets'}. Clear those scores first, then change the setting.`,
+        blocked_by_entered_scores: true,
+        sheets: blockers,
+      },
+      { status: 409 }
+    );
+  }
+
+  // ── Rule 2 (part 1): remember each sheet's exam total BEFORE the sync ───
+  // Read here, not after, so the customisation rule is correct whether or not
+  // migration 108 has been applied — the RPC still overwrites qa_total until
+  // then, and this is the only moment the true prior value exists.
+  const { data: priorSheets, error: priorErr } = await service
+    .from('grading_sheets')
+    .select('id, qa_total')
+    .eq('subject_config_id', configId)
+    .eq('is_locked', false);
+  if (priorErr)
+    return NextResponse.json({ error: priorErr.message }, { status: 500 });
+  const priorQaBySheet = new Map<string, number | null>(
+    ((priorSheets ?? []) as { id: string; qa_total: number | null }[]).map(
+      (r) => [r.id, r.qa_total == null ? null : Number(r.qa_total)]
+    )
+  );
+
   const ww_dec = (ww_weight / 100).toFixed(2);
   const pt_dec = (pt_weight / 100).toFixed(2);
   const qa_dec = (qa_weight / 100).toFixed(2);
@@ -120,9 +189,60 @@ export async function PATCH(
     'sync_grading_sheets_from_config',
     { p_config_id: configId }
   );
-  if (syncErr) {
-    // Log and proceed — the config update succeeded; the sync is best-effort.
-    console.error('[subject_config patch] sheet sync failed:', syncErr.message);
+
+  // The RPC moves the DENOMINATORS and cannot recompute the grades that hang
+  // off them — a SQL function can't call lib/compute/quarterly.ts, which Hard
+  // Rule #2 makes the only place the formula lives. Left there, every affected
+  // student's stored quarterly_grade stays computed against the old totals,
+  // and that stored value is what the report card prints.
+  const sync = await recomputeSyncedSheets(
+    service,
+    configId,
+    syncResult,
+    syncErr,
+    // Rule 2 (part 2): a sheet still on the old subject default adopts the new
+    // one — the SOW broadcast. A sheet set deliberately for its section keeps
+    // what it was given.
+    {
+      previousQaMax: before.qa_max == null ? null : Number(before.qa_max),
+      nextQaMax: qa_max,
+      priorQaBySheet,
+    }
+  );
+
+  // No longer best-effort. Once grades depend on this step, a green toast over
+  // silently-wrong report cards is not an acceptable failure mode: the caller
+  // is told, and pointed at the resync endpoint, which is safely re-runnable.
+  if (sync.error) {
+    await logAction({
+      service,
+      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      action: 'subject_config.update',
+      entityType: 'subject_config',
+      entityId: configId,
+      context: {
+        academic_year_id: before.academic_year_id,
+        subject_id: before.subject_id,
+        sheets_synced: sync.sheetsSynced,
+        sheets_skipped_locked: sync.sheetsSkippedLocked,
+        entries_scanned: sync.entriesScanned,
+        entries_recomputed: sync.entriesRecomputed,
+        qa_totals_applied: sync.qaTotalsApplied,
+        qa_totals_preserved: sync.qaTotalsPreserved,
+        sync_error: sync.error,
+      },
+    });
+    return NextResponse.json(
+      {
+        error:
+          'The subject settings were saved, but the grading sheets could not be brought up to date. Grades on those sheets may be wrong until this is retried.',
+        config_updated: true,
+        sync_failed: true,
+        detail: sync.error,
+        resync_href: `/api/sis/admin/subjects/${configId}/resync`,
+      },
+      { status: 500 }
+    );
   }
 
   await logAction({
@@ -152,8 +272,12 @@ export async function PATCH(
         qa_max,
         weights_confirmed: true,
       },
-      sheets_synced:
-        (syncResult as { updated_sheets?: number } | null)?.updated_sheets ?? 0,
+      sheets_synced: sync.sheetsSynced,
+      sheets_skipped_locked: sync.sheetsSkippedLocked,
+      entries_scanned: sync.entriesScanned,
+      entries_recomputed: sync.entriesRecomputed,
+      qa_totals_applied: sync.qaTotalsApplied,
+      qa_totals_preserved: sync.qaTotalsPreserved,
     },
   });
 

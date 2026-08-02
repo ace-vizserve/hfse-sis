@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
-import { computeQuarterly } from '@/lib/compute/quarterly';
+import { recomputeSheetEntries } from '@/lib/grading/recompute-sheet';
 import {
   buildTotalsAuditRows,
   writeAuditRows,
@@ -158,54 +158,26 @@ export async function PATCH(
     return NextResponse.json({ error: upErr.message }, { status: 500 });
 
   // Recompute every entry's PS / initial / quarterly against the new totals.
-  const { data: entries, error: entErr } = await service
-    .from('grade_entries')
-    .select('id, ww_scores, pt_scores, qa_score')
-    .eq('grading_sheet_id', sheetId);
-  if (entErr)
-    return NextResponse.json({ error: entErr.message }, { status: 500 });
-
-  const pad = (arr: (number | null)[] | null, length: number) => {
-    const out: (number | null)[] = new Array(length).fill(null);
-    for (let i = 0; i < Math.min((arr ?? []).length, length); i++)
-      out[i] = (arr ?? [])[i] ?? null;
-    return out;
-  };
-  for (const e of entries ?? []) {
-    const ww = pad(
-      e.ww_scores as (number | null)[] | null,
-      after.ww_totals.length
-    );
-    const pt = pad(
-      e.pt_scores as (number | null)[] | null,
-      after.pt_totals.length
-    );
-    const computed = computeQuarterly({
-      ww_scores: ww,
-      ww_totals: after.ww_totals,
-      pt_scores: pt,
-      pt_totals: after.pt_totals,
-      qa_score: e.qa_score as number | null,
-      qa_total: after.qa_total,
+  // Shared with the config-level fan-out via lib/grading/recompute-sheet.ts —
+  // this route was the only correct implementation, so it became the shared
+  // one rather than staying a thing to copy.
+  //
+  // One behaviour difference from the inline version this replaced: an entry
+  // whose values are already identical is no longer rewritten, so its
+  // `updated_at` no longer bumps on a no-op. Every entry that genuinely moves,
+  // and every entry whose score array has to resize, is still written.
+  let recompute;
+  try {
+    recompute = await recomputeSheetEntries(service, sheetId, after, {
       ww_weight: Number(config.ww_weight),
       pt_weight: Number(config.pt_weight),
       qa_weight: Number(config.qa_weight),
     });
-    const { error } = await service
-      .from('grade_entries')
-      .update({
-        ww_scores: ww,
-        pt_scores: pt,
-        ww_ps: computed.ww_ps,
-        pt_ps: computed.pt_ps,
-        qa_ps: computed.qa_ps,
-        initial_grade: computed.initial_grade,
-        quarterly_grade: computed.quarterly_grade,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', e.id);
-    if (error)
-      return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'recompute failed' },
+      { status: 500 }
+    );
   }
 
   // Audit-log the totals change (pre-lock AND post-lock in the new generic
@@ -214,7 +186,7 @@ export async function PATCH(
   const actionForAudit: AuditAction = sheet.is_locked
     ? 'grade_correction'
     : 'totals.update';
-  const anchor = (entries ?? [])[0]?.id;
+  const anchor = recompute.anchorEntryId;
   if (anchor) {
     const totalsDiff = buildTotalsAuditRows(before, after, {
       grading_sheet_id: sheetId,
