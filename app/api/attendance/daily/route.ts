@@ -16,6 +16,7 @@ import {
 } from '@/lib/schemas/attendance';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
+import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 
 // PATCH /api/attendance/daily
 //
@@ -164,22 +165,64 @@ export async function PATCH(request: NextRequest) {
     )
   );
   const sectionIds = Array.from(new Set(sectionIdByEnrolment.values()));
+  // `name` rides along for the audit context — this query is already being
+  // made for the day-type lookup, so the class name costs no extra round trip.
   const { data: sectionRows } = sectionIds.length
     ? await service
         .from('sections')
-        .select('id, levels(code)')
+        .select('id, name, levels(code)')
         .in('id', sectionIds)
     : { data: [] };
   // `sections.levels` is typed as `{ code: string } | { code: string }[] | null`
   // depending on Supabase's join inference; normalise to a single code.
   type RawSectionRow = {
     id: string;
+    name: string;
     levels: { code: string } | { code: string }[] | null;
   };
   const levelCodeBySection = new Map<string, string | null>();
+  const sectionNameById = new Map<string, string>();
   for (const row of (sectionRows ?? []) as RawSectionRow[]) {
     const lvl = Array.isArray(row.levels) ? row.levels[0] : row.levels;
     levelCodeBySection.set(row.id, lvl?.code ?? null);
+    sectionNameById.set(row.id, row.name);
+  }
+
+  // Prior status per (enrolment, date), for the before -> after rendering in
+  // lib/audit/humanize.ts. One batched read for the whole request rather than
+  // one per entry.
+  //
+  // attendance_daily is an append-only ledger superseded by `recorded_at desc`
+  // (migration 014), so the first row seen per key in that order IS the
+  // current mark — the same single-pass rule lib/attendance/queries.ts uses.
+  // The secondary sort on `id` gives a total order, without which `.range()`
+  // paging could show a row twice or skip it.
+  //
+  // Chunked because DailyBulkSchema caps a submit at 500 entries and
+  // section_student_id is a uuid — past the ~396-uuid URL ceiling documented
+  // in lib/supabase/paginate.ts. A truncated read here would hand the audit
+  // trail a WRONG prior status, which is worse than an absent one.
+  const submittedDates = Array.from(new Set(entries.map((e) => e.date)));
+  const priorRows = await fetchInChunks(studentIds, (slice) =>
+    fetchAllPages<{
+      section_student_id: string;
+      date: string;
+      status: string;
+    }>((from, to) =>
+      service
+        .from('attendance_daily')
+        .select('section_student_id, date, status, recorded_at')
+        .in('section_student_id', slice)
+        .in('date', submittedDates)
+        .order('recorded_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)
+    )
+  );
+  const priorStatusByKey = new Map<string, string>();
+  for (const row of priorRows) {
+    const key = `${row.section_student_id}|${row.date}`;
+    if (!priorStatusByKey.has(key)) priorStatusByKey.set(key, row.status);
   }
   const levelTypeByEnrolment = new Map<
     string,
@@ -278,11 +321,31 @@ export async function PATCH(request: NextRequest) {
             : 'attendance.daily.update',
         entityType: 'attendance_daily',
         entityId: null,
+        // Key names match the FIRST alternative in each `??` chain in
+        // lib/audit/humanize.ts (`section_name` at :358, `prior_status` at
+        // :365) and match what the import route already writes, so the two
+        // attendance writers finally agree. The renderer was always correct;
+        // only this writer was silent, which is why every daily row showed up
+        // on /attendance/audit-log with no class name and no before -> after.
         context: {
           section_student_id: entry.sectionStudentId,
+          section_id: sectionIdByEnrolment.get(entry.sectionStudentId) ?? null,
+          section_name:
+            sectionNameById.get(
+              sectionIdByEnrolment.get(entry.sectionStudentId) ?? ''
+            ) ?? null,
           term_id: entry.termId,
           date: entry.date,
           status: entry.status,
+          // Omitted entirely when there is no prior row: a first mark is not a
+          // transition, and humanize renders just the new status for that case.
+          ...(priorStatusByKey.has(`${entry.sectionStudentId}|${entry.date}`)
+            ? {
+                prior_status: priorStatusByKey.get(
+                  `${entry.sectionStudentId}|${entry.date}`
+                ),
+              }
+            : {}),
           ...(entry.exReason ? { ex_reason: entry.exReason } : {}),
         },
       });
