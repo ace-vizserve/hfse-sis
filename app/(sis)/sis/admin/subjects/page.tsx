@@ -18,6 +18,7 @@ import {
   listSectionsForLevelType,
   listSubjectLevelOfferings,
 } from '@/lib/sis/subjects/queries';
+import { getSheetImpactByConfig } from '@/lib/sis/subjects/sheet-impact';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -108,6 +109,14 @@ export default async function SubjectConfigPage({
   // first, then that level's sections), independent of which catalog tab
   // is active on the page.
   const allSections = [...primarySections, ...secondarySections];
+
+  // How many open grading sheets a subject-settings save would reach. One
+  // config covers the whole subject for the year, so that is every unlocked
+  // sheet across every section and level — the edit form now says so rather
+  // than leaving an admin to guess (see lib/sis/subjects/sheet-impact.ts).
+  const sheetImpactByConfigId = currentAy
+    ? Object.fromEntries(await getSheetImpactByConfig(service, currentAy.id))
+    : {};
 
   // Every level is core and always relevant (migration 086 removed the
   // volatile-level / per-AY-offering concept, KD #153) — the gap banner
@@ -234,6 +243,7 @@ export default async function SubjectConfigPage({
         <SubjectCatalogCard
           catalog={catalogForLevel}
           levelLabel={levelLabel}
+          sheetImpactByConfigId={sheetImpactByConfigId}
           ayCode={currentAy.ay_code}
           ayId={currentAy.id}
           sections={allSections}

@@ -80,6 +80,13 @@ export type SubjectConfigFormDraft = SubjectConfigFormSubject & {
 };
 
 type SubjectConfigFormProps = {
+  /** What a save would actually change, from `lib/sis/subjects/sheet-impact.ts`
+   * — UNLOCKED sheets only, since locked ones are immune (Hard Rule #5). The
+   * catalog table quotes the wider "who uses this at all" figure from the same
+   * source; the two differing is the point, not a bug. Optional: when absent
+   * the scope alert still renders without numbers, because a missing count
+   * must never block Subject Setup. */
+  sheetImpact?: { unlockedSheets: number; unlockedSections: number };
   /** Full catalog subject list — feeds the "Reports to" select (edit mode
    * only; see the field's own comment for why create mode omits it). */
   subjects: SubjectOption[];
@@ -482,21 +489,45 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
             </div>
           </FieldRow>
 
-          {/* Slot-reduction warning — edit mode only (create has nothing
-              to reduce FROM yet). */}
-          {mode === 'edit' &&
-            (Number(wwSlots) < props.draft.ww_max_slots ||
-              Number(ptSlots) < props.draft.pt_max_slots) && (
-              <div className="flex items-start gap-2 rounded-md border border-brand-amber/40 bg-brand-amber/5 p-3 text-[12px] text-foreground">
-                <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-brand-amber" />
-                <span>
-                  Lowering slot count will trim existing unlocked grading sheets
-                  — scores in removed slots will be lost. If a Scheme of Work
-                  has been published for this subject, activity labels beyond
-                  the new limit won&apos;t appear on future grading sheets.
-                </span>
-              </div>
-            )}
+          {/* Scope + reduction notice — edit mode only (a new subject has no
+              sheets yet, and nothing to reduce FROM).
+
+              One `subject_configs` row covers the whole subject for the year
+              (migration 080 dropped the level dimension), so a save reaches
+              every unlocked sheet across every section and level — up to ~21
+              sections for English or Maths. That breadth is deliberate: it is
+              how the Scheme of Work lands each year (KD #176). The form just
+              never said so, and an admin cannot judge a change they cannot
+              see the size of.
+
+              The reduction sentence used to read "scores in removed slots
+              will be lost." That stopped being true in KD #176 — the save is
+              now REFUSED when a slot being removed holds a mark. Leaving it
+              would have warned about an impossible outcome while implying a
+              safe reduction was dangerous. */}
+          {mode === 'edit' && (
+            <div className="flex items-start gap-2 rounded-md border border-brand-amber/40 bg-brand-amber/5 p-3 text-[12px] text-foreground">
+              <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-brand-amber" />
+              <span>
+                <span className="font-medium">
+                  Saving applies to every class taking this subject.
+                </span>{' '}
+                {props.sheetImpact && props.sheetImpact.unlockedSheets > 0
+                  ? `${props.sheetImpact.unlockedSheets} grading ${props.sheetImpact.unlockedSheets === 1 ? 'sheet' : 'sheets'} across ${props.sheetImpact.unlockedSections} ${props.sheetImpact.unlockedSections === 1 ? 'class' : 'classes'} will be updated. `
+                  : 'No open grading sheets are affected right now. '}
+                Locked sheets are not changed.
+                {(Number(wwSlots) < props.draft.ww_max_slots ||
+                  Number(ptSlots) < props.draft.pt_max_slots) && (
+                  <>
+                    {' '}
+                    Slots you remove are cleared from those sheets. If a student
+                    already has a mark in a slot you&apos;re removing, the save
+                    is refused and nothing changes.
+                  </>
+                )}
+              </span>
+            </div>
+          )}
 
           {/* QA max row — single input, label-left input-right. */}
           <FieldRow
