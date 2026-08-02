@@ -4,8 +4,8 @@ import { ArrowUpRight, MessageSquare } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { IdentifierLink } from '@/components/ui/identifier-link';
-import { canReadWriteups } from '@/lib/classroom/scope';
+import { StudentRecordLink } from '@/components/ui/student-record-link';
+import { canOpenStudentRecord, canReadWriteups } from '@/lib/classroom/scope';
 import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
 import { isWriteupComplete } from '@/lib/classroom/writeups';
@@ -119,11 +119,12 @@ export default async function ClassroomWriteupsPage({
                   <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
                     {r.index_number}
                   </span>
-                  <IdentifierLink
-                    href={`/records/students/${r.student_number}`}
+                  <StudentRecordLink
+                    studentNumber={r.student_number}
+                    canOpen={canOpenStudentRecord(capability)}
                   >
                     {r.student_name}
-                  </IdentifierLink>
+                  </StudentRecordLink>
                 </div>
                 {done ? (
                   <Badge variant="success">Submitted</Badge>

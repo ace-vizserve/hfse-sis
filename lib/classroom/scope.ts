@@ -138,3 +138,27 @@ export function canReadReportCard(
 ): boolean {
   return capability === 'adviser' || capability === 'oversight';
 }
+
+/**
+ * Whether this user can open the permanent student record at
+ * `/records/students/[studentNumber]`.
+ *
+ * NOT the same question as `canReadRoster`: a teacher may read every name on
+ * their roster and open none of the records behind them. `/records` is
+ * registrar-and-above in ROUTE_ACCESS (lib/auth/roles.ts), which is exactly
+ * the three roles `OVERSIGHT_ROLES` names above — that equality is what makes
+ * this answerable from capability alone, and it is pinned by
+ * __tests__/classroom/student-record-link.test.ts so a future narrowing of
+ * `/records` cannot silently desync from this predicate.
+ *
+ * Exists because the classroom rendered every student name as a link to that
+ * page for everyone, so a form adviser clicking a student on their own roster
+ * was bounced to `/` by the proxy. KD #173's rule — the link layer gates on
+ * the same thing the page does — applied to an in-page link rather than a nav
+ * item.
+ */
+export function canOpenStudentRecord(
+  capability: ClassroomCapability | null
+): boolean {
+  return capability === 'oversight';
+}

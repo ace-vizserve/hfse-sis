@@ -3,7 +3,7 @@ import { ArrowUpRight, CheckCircle2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
-import { IdentifierLink } from '@/components/ui/identifier-link';
+import { StudentRecordLink } from '@/components/ui/student-record-link';
 import {
   AT_RISK_ATTENDANCE_THRESHOLD_PCT,
   type AtRiskStudent,
@@ -99,12 +99,15 @@ export function ClassroomHealthChecklist({
 
 export function ClassroomAtRiskPanel({
   students,
+  canOpenRecord,
 }: {
   /** `null` = no attendance rollup recorded yet this term — hidden entirely,
    * never rendered as a fabricated "0 at risk." An empty array (rollups
    * exist, nobody is below the threshold) is a real, positive result and
    * does render. */
   students: AtRiskStudent[] | null;
+  /** Oversight only — from `canOpenStudentRecord(capability)` on the server. */
+  canOpenRecord: boolean;
 }) {
   if (students === null) return null;
 
@@ -133,15 +136,12 @@ export function ClassroomAtRiskPanel({
                 <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
                   {s.indexNumber ?? '—'}
                 </span>
-                {s.studentNumber ? (
-                  <IdentifierLink href={`/records/students/${s.studentNumber}`}>
-                    {s.name}
-                  </IdentifierLink>
-                ) : (
-                  <span className="text-sm font-medium text-foreground">
-                    {s.name}
-                  </span>
-                )}
+                <StudentRecordLink
+                  studentNumber={s.studentNumber}
+                  canOpen={canOpenRecord}
+                >
+                  {s.name}
+                </StudentRecordLink>
               </div>
               <Badge variant="warning">{s.attendancePct.toFixed(1)}%</Badge>
             </div>

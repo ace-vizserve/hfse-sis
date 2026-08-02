@@ -31,7 +31,11 @@ import {
   selectAtRiskStudents,
   type AtRiskStudent,
 } from '@/lib/classroom/health';
-import { canReadAttendance, canReadWriteups } from '@/lib/classroom/scope';
+import {
+  canOpenStudentRecord,
+  canReadAttendance,
+  canReadWriteups,
+} from '@/lib/classroom/scope';
 import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
 import {
@@ -333,7 +337,10 @@ export default async function ClassroomOverviewPage({
       </div>
 
       <ClassroomHealthChecklist rows={healthRows} />
-      <ClassroomAtRiskPanel students={atRiskStudents} />
+      <ClassroomAtRiskPanel
+        students={atRiskStudents}
+        canOpenRecord={canOpenStudentRecord(capability)}
+      />
     </div>
   );
 }

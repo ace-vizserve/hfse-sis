@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import { ClassroomRosterTable } from '@/components/classroom/classroom-roster-table';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
-import { canReadReportCard } from '@/lib/classroom/scope';
+import { canOpenStudentRecord, canReadReportCard } from '@/lib/classroom/scope';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type EnrolmentRow = {
@@ -71,10 +71,14 @@ export default async function ClassroomStudentsPage({
       {/* The report-card link is adviser/oversight only — a subject teacher's
           card would be structurally hollow, so the page 404s for them and the
           row must not offer it. Same predicate the page itself enforces. */}
+      {/* The student record is registrar-and-above, so a teacher clicking a
+          name here used to be bounced to `/`. The link asks the same question
+          the page does. */}
       <ClassroomRosterTable
         sectionId={sectionId}
         data={rosterRows}
         showReportCard={canReadReportCard(capability)}
+        showRecordLink={canOpenStudentRecord(capability)}
       />
     </div>
   );

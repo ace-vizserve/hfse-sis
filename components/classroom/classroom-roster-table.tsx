@@ -19,7 +19,7 @@ import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
-import { IdentifierLink } from '@/components/ui/identifier-link';
+import { StudentRecordLink } from '@/components/ui/student-record-link';
 import {
   Table,
   TableBody,
@@ -45,6 +45,7 @@ export function ClassroomRosterTable({
   sectionId,
   data,
   showReportCard = false,
+  showRecordLink,
 }: {
   sectionId: string;
   data: ClassroomRosterRow[];
@@ -55,6 +56,12 @@ export function ClassroomRosterTable({
    * report-cards index is coordinator-and-above.
    */
   showReportCard?: boolean;
+  /**
+   * Oversight only — the caller decides via `canOpenStudentRecord(capability)`.
+   * Required on purpose: a forgotten decision must fail the build rather than
+   * quietly re-create the dead link this replaced.
+   */
+  showRecordLink: boolean;
 }) {
   const [order] = useStudentOrder(sectionId);
   const rows = sortRosterByOrder(data, order);
@@ -93,11 +100,12 @@ export function ClassroomRosterTable({
                 {row.student_number || '—'}
               </TableCell>
               <TableCell>
-                <IdentifierLink
-                  href={`/records/students/${row.student_number}`}
+                <StudentRecordLink
+                  studentNumber={row.student_number}
+                  canOpen={showRecordLink}
                 >
                   {row.student_name}
-                </IdentifierLink>
+                </StudentRecordLink>
               </TableCell>
               <TableCell>
                 <EnrollmentStatusBadge status={row.enrollment_status} />
