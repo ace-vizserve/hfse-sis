@@ -309,6 +309,7 @@ export async function PATCH(request: NextRequest) {
         date: entry.date,
         status: entry.status,
         exReason: entry.exReason ?? null,
+        exNote: entry.exNote ?? null,
         recordedBy: auth.user.id,
       });
 
@@ -347,6 +348,15 @@ export async function PATCH(request: NextRequest) {
               }
             : {}),
           ...(entry.exReason ? { ex_reason: entry.exReason } : {}),
+          // PRESENCE ONLY — never the note text. `audit_log` is readable by
+          // every `is_registrar_or_above()` user, a wider audience than the
+          // mark itself (attendance_daily is registrar+ OR that section's form
+          // adviser), and its rows can never be updated or deleted. A note
+          // reading "MC submitted — dengue, hospitalised" would therefore be
+          // permanently un-redactable and visible to more people than the
+          // absence it explains. The trail still proves a note was attached or
+          // changed and by whom, which is what an audit needs to answer.
+          ...(entry.exNote != null ? { ex_note_present: true } : {}),
         },
       });
 

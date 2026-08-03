@@ -28,6 +28,8 @@ export type DailyEntryRow = {
   date: string; // yyyy-MM-dd
   status: AttendanceStatus;
   exReason: ExReason | null;
+  /** Free-text "why" on an EX mark (migration 109). */
+  exNote: string | null;
   periodId: string | null;
   recordedBy: string | null;
   recordedAt: string; // ISO 8601 UTC
@@ -59,6 +61,7 @@ type DailyRaw = {
   date: string;
   status: AttendanceStatus;
   ex_reason: ExReason | null;
+  ex_note: string | null;
   period_id: string | null;
   recorded_by: string | null;
   recorded_at: string;
@@ -83,6 +86,7 @@ function normalizeDaily(row: DailyRaw): DailyEntryRow {
     date: row.date,
     status: row.status,
     exReason: row.ex_reason,
+    exNote: row.ex_note,
     periodId: row.period_id,
     recordedBy: row.recorded_by,
     recordedAt: row.recorded_at,
@@ -138,7 +142,7 @@ export async function getDailyForSection(
   let query = service
     .from('attendance_daily')
     .select(
-      'id, section_student_id, term_id, date, status, ex_reason, period_id, recorded_by, recorded_at'
+      'id, section_student_id, term_id, date, status, ex_reason, ex_note, period_id, recorded_by, recorded_at'
     )
     .eq('term_id', termId)
     .in('section_student_id', enrolmentIds)
@@ -181,7 +185,7 @@ export async function getDailyForStudent(
   let query = service
     .from('attendance_daily')
     .select(
-      'id, section_student_id, term_id, date, status, ex_reason, period_id, recorded_by, recorded_at'
+      'id, section_student_id, term_id, date, status, ex_reason, ex_note, period_id, recorded_by, recorded_at'
     )
     .eq('section_student_id', sectionStudentId)
     .order('date', { ascending: false })

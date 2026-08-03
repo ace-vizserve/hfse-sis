@@ -34,6 +34,7 @@ import {
   DAY_TYPE_LABELS,
   EVENT_CATEGORY_LABELS,
   EX_REASON_LABELS,
+  EX_NOTE_MAX_LENGTH,
   isEncodableDayType,
   type ExReason,
 } from '@/lib/schemas/attendance';
@@ -478,8 +479,12 @@ function DailyPanel({
                                   ? {
                                       status: 'EX',
                                       exReason: m?.exReason ?? null,
+                                      exNote: m?.exNote ?? null,
                                     }
-                                  : { status: s, exReason: null }
+                                  : // Leaving EX drops the note with the
+                                    // reason — a "why they were excused" note
+                                    // is meaningless on a Present.
+                                    { status: s, exReason: null, exNote: null }
                               )
                             }
                             className={`w-11 py-1.5 text-center font-mono text-xs font-semibold transition-colors ${
@@ -494,27 +499,50 @@ function DailyPanel({
                       })}
                     </div>
                     {m?.status === 'EX' && (
-                      <div className="inline-flex flex-wrap justify-end gap-1">
-                        {EX_REASONS.map((r) => (
-                          <button
-                            key={r}
-                            type="button"
-                            onClick={() =>
-                              setMark(e.enrolmentId, {
-                                status: 'EX',
-                                exReason: r,
-                              })
-                            }
-                            className={`rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                              m.exReason === r
-                                ? 'bg-brand-indigo text-white'
-                                : 'border border-border text-muted-foreground hover:bg-muted/60'
-                            }`}
-                          >
-                            {EX_REASON_LABELS[r]}
-                          </button>
-                        ))}
-                      </div>
+                      <>
+                        <div className="inline-flex flex-wrap justify-end gap-1">
+                          {EX_REASONS.map((r) => (
+                            <button
+                              key={r}
+                              type="button"
+                              onClick={() =>
+                                setMark(e.enrolmentId, {
+                                  status: 'EX',
+                                  exReason: r,
+                                  exNote: m.exNote ?? null,
+                                })
+                              }
+                              className={`rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                                m.exReason === r
+                                  ? 'bg-brand-indigo text-white'
+                                  : 'border border-border text-muted-foreground hover:bg-muted/60'
+                              }`}
+                            >
+                              {EX_REASON_LABELS[r]}
+                            </button>
+                          ))}
+                        </div>
+                        {/* Melissa's ask: somewhere to say WHY, since the MC
+                            document itself can't be uploaded yet. Updates on
+                            change rather than on blur — this view already
+                            batches everything behind an explicit Submit, so
+                            there is no per-keystroke write to worry about. */}
+                        <input
+                          type="text"
+                          value={m.exNote ?? ''}
+                          maxLength={EX_NOTE_MAX_LENGTH}
+                          onChange={(ev) =>
+                            setMark(e.enrolmentId, {
+                              status: 'EX',
+                              exReason: m.exReason ?? null,
+                              exNote: ev.target.value,
+                            })
+                          }
+                          placeholder="Add a note (optional)"
+                          aria-label={`Note for ${e.studentName}`}
+                          className="w-56 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        />
+                      </>
                     )}
                   </div>
                 )}

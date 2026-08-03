@@ -8,7 +8,12 @@ import {
 } from '@/lib/schemas/attendance';
 
 // A single student's mark for the day being edited.
-export type DailyMark = { status: AttendanceStatus; exReason: ExReason | null };
+export type DailyMark = {
+  status: AttendanceStatus;
+  exReason: ExReason | null;
+  /** Free-text "why" on an EX mark. Null when absent or not applicable. */
+  exNote: string | null;
+};
 
 // One entry in the bulk PATCH /api/attendance/daily payload.
 export type SubmitEntry = {
@@ -17,6 +22,12 @@ export type SubmitEntry = {
   date: string;
   status: AttendanceStatus;
   exReason?: ExReason;
+  /**
+   * Sent as an explicit `null` to CLEAR a note, and omitted when there is
+   * nothing to say. The route distinguishes the two, so this cannot be
+   * collapsed into `exNote?: string`.
+   */
+  exNote?: string | null;
 };
 
 /** Encodable school-day dates for the term, ascending. */
@@ -54,7 +65,13 @@ export function loadedMarksForDate(
   for (const r of daily) {
     if (r.date !== date) continue;
     if (map.has(r.sectionStudentId)) continue; // first seen = latest (query order)
-    map.set(r.sectionStudentId, { status: r.status, exReason: r.exReason });
+    map.set(r.sectionStudentId, {
+      status: r.status,
+      exReason: r.exReason,
+      // Carried back deliberately: without it, re-submitting an unchanged day
+      // would compare against a note-less baseline and clear every note.
+      exNote: r.exNote,
+    });
   }
   return map;
 }
@@ -66,8 +83,23 @@ function isEligible(e: WideGridEnrolment, date: string): boolean {
   return true;
 }
 
+/**
+ * Whether the stored mark already equals the target, so the submit can skip it.
+ *
+ * `exNote` MUST be part of this. It was left out at first and the failure is
+ * silent and total: a teacher who edits only the note gets an empty write set
+ * and the toast "No changes to submit", with their typing discarded. Compare
+ * normalised — the UI hands back `''` for an emptied input while the ledger
+ * stores `null`, and those mean the same thing.
+ */
 function sameMark(a: DailyMark | undefined, b: DailyMark): boolean {
-  return a != null && a.status === b.status && a.exReason === b.exReason;
+  if (a == null) return false;
+  const note = (v: string | null) => (v == null || v === '' ? null : v);
+  return (
+    a.status === b.status &&
+    a.exReason === b.exReason &&
+    note(a.exNote) === note(b.exNote)
+  );
 }
 
 /**
@@ -89,8 +121,20 @@ export function computeSubmitEntries(input: {
     const target: DailyMark = marks.get(e.enrolmentId) ?? {
       status: 'P',
       exReason: null,
+      exNote: null,
     };
-    if (sameMark(loaded.get(e.enrolmentId), target)) continue;
+    const previous = loaded.get(e.enrolmentId);
+    if (sameMark(previous, target)) continue;
+
+    // A note only travels with EX. An emptied input arrives as '' and must be
+    // sent as an explicit null so the route can tell "clear this" from "no
+    // opinion" — omitting the key would silently preserve the old note.
+    const note =
+      target.status === 'EX' && target.exNote != null && target.exNote !== ''
+        ? target.exNote
+        : null;
+    const hadNote = previous?.exNote != null && previous.exNote !== '';
+
     out.push({
       sectionStudentId: e.enrolmentId,
       termId,
@@ -99,6 +143,7 @@ export function computeSubmitEntries(input: {
       ...(target.status === 'EX' && target.exReason
         ? { exReason: target.exReason }
         : {}),
+      ...(note != null ? { exNote: note } : hadNote ? { exNote: null } : {}),
     });
   }
   return out;

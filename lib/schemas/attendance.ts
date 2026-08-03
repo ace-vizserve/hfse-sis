@@ -47,6 +47,9 @@ const uuidString = z.string().uuid('Invalid id');
 // Live entry (single cell) — PATCH /api/attendance/daily
 // ─────────────────────────────────────────────────────────────────────────
 
+/** Mirrors the 300-char DB constraint in migration 109. */
+export const EX_NOTE_MAX_LENGTH = 300;
+
 export const DailyEntrySchema = z
   .object({
     sectionStudentId: uuidString,
@@ -54,10 +57,25 @@ export const DailyEntrySchema = z
     date: dateString,
     status: z.enum(ATTENDANCE_STATUS_VALUES),
     exReason: z.enum(EX_REASON_VALUES).optional().nullable(),
+    // Free-text "why" for an EX mark. An explicit null CLEARS it; omitting the
+    // key leaves whatever is on file alone, so the two are not interchangeable.
+    // `''` normalises to null so an emptied input clears rather than storing
+    // a blank string.
+    exNote: z
+      .string()
+      .trim()
+      .max(EX_NOTE_MAX_LENGTH)
+      .transform((v) => (v === '' ? null : v))
+      .optional()
+      .nullable(),
   })
   .refine((v) => v.status === 'EX' || !v.exReason, {
     message: 'exReason may only be set when status = EX',
     path: ['exReason'],
+  })
+  .refine((v) => v.status === 'EX' || !v.exNote, {
+    message: 'exNote may only be set when status = EX',
+    path: ['exNote'],
   });
 
 export type DailyEntryInput = z.infer<typeof DailyEntrySchema>;

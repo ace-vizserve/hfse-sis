@@ -197,6 +197,19 @@ function buildEntryColumns(
           ),
         });
         break;
+      case 'notes':
+        cols.push({
+          id: 'notes',
+          accessorKey: 'notes',
+          header: DRILL_COLUMN_LABELS.notes,
+          meta: { label: DRILL_COLUMN_LABELS.notes },
+          cell: ({ row }) => (
+            <span className="text-xs text-muted-foreground">
+              {row.original.notes ?? '—'}
+            </span>
+          ),
+        });
+        break;
     }
   }
   return cols;

@@ -169,6 +169,8 @@ function csvCell(
         return r.status;
       case 'exReason':
         return r.exReason ?? '';
+      case 'notes':
+        return r.notes ?? '';
       default:
         return '';
     }

@@ -154,6 +154,8 @@ export type WideGridEnrolment = {
 type CellState = {
   status: AttendanceStatus | null;
   exReason: ExReason | null;
+  /** Free-text "why" on an EX mark. Shown in the tooltip + a corner dot. */
+  exNote: string | null;
   saving: boolean;
   savedAt: number | null;
 };
@@ -206,6 +208,7 @@ export function AttendanceWideGrid({
       m.set(k, {
         status: r.status,
         exReason: r.exReason,
+        exNote: r.exNote,
         saving: false,
         savedAt: null,
       });
@@ -283,6 +286,7 @@ export function AttendanceWideGrid({
       const prev = next.get(k) ?? {
         status: null,
         exReason: null,
+        exNote: null,
         saving: false,
         savedAt: null,
       };
@@ -304,6 +308,7 @@ export function AttendanceWideGrid({
       date: string;
       status: AttendanceStatus;
       exReason: ExReason | null;
+      exNote?: string | null;
     }) => apiFetch('/api/attendance/daily', jsonInit('PATCH', payload)),
   });
 
@@ -339,16 +344,25 @@ export function AttendanceWideGrid({
     enrolmentId: string,
     date: string,
     status: AttendanceStatus,
-    exReason: ExReason | null
+    exReason: ExReason | null,
+    // `undefined` means "leave the note as it is" (a status/reason change);
+    // an explicit null clears it. The popover only passes this when the note
+    // field itself was edited.
+    exNote?: string | null
   ) {
     void sectionId; // reserved: future bulk endpoint may use it
     const k = keyFor(enrolmentId, date);
     const prev = cells.get(k) ?? {
       status: null,
       exReason: null,
+      exNote: null,
       saving: false,
       savedAt: null,
     };
+
+    // A note only belongs to an EX mark, so moving away from EX drops it.
+    const nextNote =
+      status !== 'EX' ? null : exNote === undefined ? prev.exNote : exNote;
 
     // KD #94 — soft warning when a vacation-leave entry would push the
     // student over their per-term quota (HFSE policy: 1 per term). The
@@ -376,7 +390,7 @@ export function AttendanceWideGrid({
       }
     }
 
-    updateCell(k, { status, exReason, saving: true });
+    updateCell(k, { status, exReason, exNote: nextNote, saving: true });
     try {
       await saveCellMutation.mutateAsync({
         sectionStudentId: enrolmentId,
@@ -384,6 +398,7 @@ export function AttendanceWideGrid({
         date,
         status,
         exReason,
+        exNote: nextNote,
       });
       updateCell(k, { saving: false, savedAt: Date.now() });
       // Saved — the server's rollup has moved, so the stat cards are now
@@ -402,6 +417,7 @@ export function AttendanceWideGrid({
       updateCell(k, {
         status: prev.status,
         exReason: prev.exReason,
+        exNote: prev.exNote,
         saving: false,
       });
       toast.error(
@@ -942,6 +958,7 @@ export function AttendanceWideGrid({
                           const cell = cells.get(keyFor(e.enrolmentId, c.iso));
                           const status = cell?.status ?? null;
                           const exReason = cell?.exReason ?? null;
+                          const exNote = cell?.exNote ?? null;
                           // Pre-enrollment: date is before the student's enrollment
                           // date — cell should be dimmed and non-interactive. If
                           // there is already a recorded entry, we still show it
@@ -1005,6 +1022,7 @@ export function AttendanceWideGrid({
                                   withdrawn={e.withdrawn}
                                   status={status}
                                   exReason={exReason}
+                                  exNote={exNote}
                                   saving={!!cell?.saving}
                                   saved={!!cell?.savedAt}
                                   onOpen={openCell}
@@ -1032,19 +1050,24 @@ export function AttendanceWideGrid({
               dateLabel={cellDateLabel(activeCell.iso)}
               status={activeCellState?.status ?? null}
               exReason={activeCellState?.exReason ?? null}
+              exNote={activeCellState?.exNote ?? null}
               canWriteNc={canWriteNc}
               vlUsed={activeEnrolment.vlUsedThisTerm}
               vlAllowance={activeEnrolment.vlAllowance}
               compassionateUsed={activeEnrolment.compassionateUsed}
               compassionateAllowance={activeEnrolment.compassionateAllowance}
-              onPick={(status, exReason) => {
+              onPick={(status, exReason, exNote) => {
                 void writeCell(
                   activeCell.enrolmentId,
                   activeCell.iso,
                   status,
-                  exReason
+                  exReason,
+                  exNote
                 );
-                setActiveCell(null);
+                // A note commit (blur/Enter) passes exNote and must NOT close
+                // the popover — the teacher is still working in that cell.
+                // Picking a status or reason still closes it, as before.
+                if (exNote === undefined) setActiveCell(null);
               }}
             />
           )}
@@ -1100,6 +1123,7 @@ const CellButton = memo(function CellButton({
   withdrawn,
   status,
   exReason,
+  exNote,
   saving,
   saved,
   onOpen,
@@ -1110,13 +1134,15 @@ const CellButton = memo(function CellButton({
   withdrawn: boolean;
   status: AttendanceStatus | null;
   exReason: ExReason | null;
+  exNote: string | null;
   saving: boolean;
   saved: boolean;
   onOpen: (enrolmentId: string, iso: string) => void;
 }) {
   const label = status ?? '—';
+  const hasNote = status === 'EX' && exNote != null && exNote !== '';
   const tip = status
-    ? `${ATTENDANCE_STATUS_LABELS[status]}${status === 'EX' && exReason ? ` · ${EX_REASON_LABELS[exReason]}` : ''}`
+    ? `${ATTENDANCE_STATUS_LABELS[status]}${status === 'EX' && exReason ? ` · ${EX_REASON_LABELS[exReason]}` : ''}${hasNote ? ` — ${exNote}` : ''}`
     : 'Mark attendance';
 
   const inner = (
@@ -1147,6 +1173,16 @@ const CellButton = memo(function CellButton({
       )}
       {saved && (
         <CheckCircle2 className="pointer-events-none absolute right-0 top-0 size-2.5 text-primary" />
+      )}
+      {/* A note lives in the tooltip, which nobody discovers by accident.
+          This dot is the only thing that says "there is a reason recorded
+          here" while scanning the sheet. Bottom-left keeps it clear of the
+          saving/saved indicators. */}
+      {hasNote && !saving && !saved && (
+        <span
+          className="pointer-events-none absolute bottom-0.5 left-0.5 size-1 rounded-full bg-foreground/50"
+          aria-hidden
+        />
       )}
     </div>
   );

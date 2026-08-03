@@ -1,11 +1,13 @@
 'use client';
 
 import { Check } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 import { STATUS_CELL_WASH } from '@/components/attendance/status-wash';
 import { cn } from '@/lib/utils';
 import {
   ATTENDANCE_STATUS_LABELS,
+  EX_NOTE_MAX_LENGTH,
   EX_REASON_LABELS,
   type AttendanceStatus,
   type ExReason,
@@ -30,12 +32,17 @@ export type CellMarkPaletteProps = {
   dateLabel: string;
   status: AttendanceStatus | null;
   exReason: ExReason | null;
+  exNote: string | null;
   canWriteNc: boolean;
   vlUsed: number;
   vlAllowance: number;
   compassionateUsed: number;
   compassionateAllowance: number;
-  onPick: (status: AttendanceStatus, exReason: ExReason | null) => void;
+  onPick: (
+    status: AttendanceStatus,
+    exReason: ExReason | null,
+    exNote?: string | null
+  ) => void;
 };
 
 export function CellMarkPalette({
@@ -43,6 +50,7 @@ export function CellMarkPalette({
   dateLabel,
   status,
   exReason,
+  exNote,
   canWriteNc,
   vlUsed,
   vlAllowance,
@@ -50,9 +58,27 @@ export function CellMarkPalette({
   compassionateAllowance,
   onPick,
 }: CellMarkPaletteProps) {
+  // Draft note, committed on blur or Enter rather than per keystroke — the
+  // grid writes to an append-only ledger, so a write per character would be
+  // a row per character.
+  const [noteDraft, setNoteDraft] = useState(exNote ?? '');
+  useEffect(() => setNoteDraft(exNote ?? ''), [exNote]);
+
+  function commitNote() {
+    const next = noteDraft.trim();
+    if (next === (exNote ?? '').trim()) return;
+    onPick('EX', exReason, next === '' ? null : next);
+  }
+
   // Letter keys for the common marks — speed for bulk encoding. Excuse reasons
   // stay Tab/click (they carry a quota decision, not a reflex).
   function onKeyDown(e: React.KeyboardEvent) {
+    // The note field lives inside this handler's subtree, so without this
+    // guard typing "please" into it would stamp Present, Late and Absent on
+    // the way through.
+    const target = e.target as HTMLElement | null;
+    if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
+
     const k = e.key.toLowerCase();
     if (k === 'p') onPick('P', null);
     else if (k === 'a') onPick('A', null);
@@ -171,6 +197,28 @@ export function CellMarkPalette({
             </button>
           );
         })}
+
+        {/* Melissa's ask (2026-07-31): somewhere to record WHY, since the MC
+            document itself cannot be attached yet. Only offered once the mark
+            is EX — the column is EX-only at the database too. */}
+        {status === 'EX' && (
+          <input
+            type="text"
+            value={noteDraft}
+            maxLength={EX_NOTE_MAX_LENGTH}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            onBlur={commitNote}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitNote();
+              }
+            }}
+            placeholder="Add a note (optional)"
+            aria-label={`Note for ${studentName} on ${dateLabel}`}
+            className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-[12px] text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        )}
       </div>
 
       {/* No-class — registrar only */}

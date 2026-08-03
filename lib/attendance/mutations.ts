@@ -19,6 +19,8 @@ export type DailyWriteInput = {
   date: string; // yyyy-MM-dd
   status: AttendanceStatus;
   exReason?: ExReason | null;
+  /** Free-text "why" for an EX mark (migration 109). EX-only, ≤300 chars. */
+  exNote?: string | null;
   periodId?: string | null; // Phase 1: always null / omitted
   recordedBy: string | null;
 };
@@ -49,6 +51,9 @@ export async function writeDailyEntry(
     date: input.date,
     status: input.status,
     ex_reason: input.status === 'EX' ? (input.exReason ?? null) : null,
+    // Same guard as ex_reason: a note must never survive a switch away from
+    // EX, or "Medical certificate submitted" ends up attached to a Present.
+    ex_note: input.status === 'EX' ? (input.exNote ?? null) : null,
     period_id: input.periodId ?? null,
     recorded_by: input.recordedBy,
   });
@@ -72,6 +77,7 @@ export async function writeDailyBulk(
     date: i.date,
     status: i.status,
     ex_reason: i.status === 'EX' ? (i.exReason ?? null) : null,
+    ex_note: i.status === 'EX' ? (i.exNote ?? null) : null,
     period_id: i.periodId ?? null,
     recorded_by: i.recordedBy,
   }));

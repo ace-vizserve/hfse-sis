@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowUpRight, CalendarCheck } from 'lucide-react';
+import { ArrowUpRight, CalendarCheck, StickyNote } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,9 @@ import {
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   ATTENDANCE_STATUS_LABELS,
+  EX_REASON_LABELS,
   type AttendanceStatus,
+  type ExReason,
 } from '@/lib/schemas/attendance';
 import {
   getCompassionateUsage,
@@ -217,22 +219,42 @@ export async function StudentAttendanceTab({
                       {monthLabel}
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      {entries.map((e) => (
-                        <span
-                          key={e.id}
-                          title={`${ATTENDANCE_STATUS_LABELS[e.status]} · ${e.date}`}
-                          className={
-                            'inline-flex min-w-[52px] items-center justify-center gap-1 rounded-md border px-2 py-1 font-mono text-[10px] font-semibold ' +
-                            STATUS_TONE[e.status]
-                          }
-                        >
-                          <span className="tabular-nums">
-                            {e.date.slice(-2)}
+                      {entries.map((e) => {
+                        // The "why was she out?" surface. Both the EX subtype
+                        // and the teacher's note were already loaded here and
+                        // simply never rendered — this page showed only the
+                        // date and the letter.
+                        const hasNote =
+                          e.status === 'EX' &&
+                          e.exNote != null &&
+                          e.exNote !== '';
+                        const reason =
+                          e.status === 'EX' && e.exReason
+                            ? ` · ${EX_REASON_LABELS[e.exReason]}`
+                            : '';
+                        return (
+                          <span
+                            key={e.id}
+                            title={`${ATTENDANCE_STATUS_LABELS[e.status]} · ${e.date}${reason}${hasNote ? ` — ${e.exNote}` : ''}`}
+                            className={
+                              'inline-flex min-w-13 items-center justify-center gap-1 rounded-md border px-2 py-1 font-mono text-[10px] font-semibold ' +
+                              STATUS_TONE[e.status]
+                            }
+                          >
+                            <span className="tabular-nums">
+                              {e.date.slice(-2)}
+                            </span>
+                            <span>·</span>
+                            <span>{e.status}</span>
+                            {hasNote && (
+                              <StickyNote
+                                className="size-2.5 shrink-0 opacity-70"
+                                aria-label="has a note"
+                              />
+                            )}
                           </span>
-                          <span>·</span>
-                          <span>{e.status}</span>
-                        </span>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -368,16 +390,20 @@ function summarise(rows: Array<{ status: AttendanceStatus }>) {
   return { present, late, excused, absent, schoolDays, pct };
 }
 
-function groupByMonth(
-  rows: Array<{ id: string; date: string; status: AttendanceStatus }>
-): Array<
-  [string, Array<{ id: string; date: string; status: AttendanceStatus }>]
-> {
+// The chip carries the EX subtype and the teacher's note, so the grouping
+// helper has to pass them through — narrowing to {id,date,status} here is what
+// kept both invisible on this page even though the query already returned them.
+type LogEntry = {
+  id: string;
+  date: string;
+  status: AttendanceStatus;
+  exReason: ExReason | null;
+  exNote: string | null;
+};
+
+function groupByMonth(rows: LogEntry[]): Array<[string, LogEntry[]]> {
   // Rows arrive sorted date desc by the query — keep that order inside groups.
-  const map = new Map<
-    string,
-    Array<{ id: string; date: string; status: AttendanceStatus }>
-  >();
+  const map = new Map<string, LogEntry[]>();
   for (const r of rows) {
     const key = r.date.slice(0, 7); // yyyy-MM
     if (!map.has(key)) map.set(key, []);

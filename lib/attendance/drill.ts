@@ -320,8 +320,10 @@ async function loadEntryRowsUncached(
   // response cap doesn't silently truncate at HFSE scale (200 students ×
   // 60+ school days = 12K+ rows for a full term per AY).
   // Column is `date` on the schema (migration 014); the camelCase alias
-  // `attendanceDate` on the public row shape is mapped below. `notes` was
-  // referenced here but isn't a real column on attendance_daily — dropped.
+  // `attendanceDate` on the public row shape is mapped below. `notes` is
+  // `ex_note`, added by migration 109 — the teacher's free-text reason for an
+  // excused absence. It was declared on the row shape long before the column
+  // existed and hardcoded to null; it is now real.
   type EntryLite = {
     id: string;
     date: string;
@@ -329,6 +331,7 @@ async function loadEntryRowsUncached(
     section_student_id: string;
     status: string;
     ex_reason: string | null;
+    ex_note: string | null;
   };
   const CHUNK = 100; // UUIDs per IN-clause — keep URL < ~8 KB (100 ≈ 3.7 KB)
   const all = (
@@ -337,7 +340,9 @@ async function loadEntryRowsUncached(
         fetchAllPages<EntryLite>((from, to) =>
           service
             .from('attendance_daily')
-            .select('id, date, term_id, section_student_id, status, ex_reason')
+            .select(
+              'id, date, term_id, section_student_id, status, ex_reason, ex_note'
+            )
             .in('section_student_id', ssIds.slice(i * CHUNK, (i + 1) * CHUNK))
             .range(from, to)
         )
@@ -365,7 +370,7 @@ async function loadEntryRowsUncached(
       level: ctx.levels.get(section.level_id) ?? null,
       status: e.status as AttendanceEntryRow['status'],
       exReason: e.ex_reason,
-      notes: null,
+      notes: e.ex_note,
     });
   }
   return out;
@@ -1072,6 +1077,7 @@ export type DrillColumnKey =
   | 'attendanceDate'
   | 'status'
   | 'exReason'
+  | 'notes'
   | 'absences'
   | 'lates'
   | 'excused'
@@ -1097,6 +1103,7 @@ export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
   attendanceDate: 'Date',
   status: 'Status',
   exReason: 'Reason',
+  notes: 'Note',
   absences: 'Absent',
   lates: 'Late',
   excused: 'Excused',
@@ -1122,6 +1129,7 @@ const ENTRY_COLUMNS: DrillColumnKey[] = [
   'level',
   'status',
   'exReason',
+  'notes',
 ];
 const TOP_ABSENT_COLUMNS: DrillColumnKey[] = [
   'studentName',
@@ -1188,7 +1196,9 @@ export function defaultColumnsForTarget(
   // drill doesn't render an always-blank Reason column. The Columns
   // dropdown can still surface it on demand.
   if (target === 'lates' || target === 'absent') {
-    return ENTRY_COLUMNS.filter((c) => c !== 'exReason');
+    // Lates/absences have neither a reason nor a note by construction
+    // (both columns are EX-only at the database).
+    return ENTRY_COLUMNS.filter((c) => c !== 'exReason' && c !== 'notes');
   }
   return allColumnsForKind(rowKindForTarget(target));
 }
