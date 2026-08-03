@@ -15,6 +15,27 @@ export const STATUS_CELL_WASH: Record<AttendanceStatus, string> = {
   NC: 'bg-ink-4 text-white',
 };
 
+// The same washes, restated for a Radix toggle.
+//
+// `toggleVariants` ships its own hover and selected colours — `hover:bg-muted`
+// and `data-[state=on]:bg-accent` — for a neutral chrome toggle. A plain `bg-*`
+// class does not beat a `hover:`- or `data-[state=on]:`-prefixed one whatever
+// the order, so each wash has to be spelled out under both states or the mark
+// tiles turn grey on hover and on selection.
+//
+// Written as literal strings on purpose. Tailwind only emits class names it can
+// read in the source, so `hover:${STATUS_CELL_WASH[s]}` compiles to nothing at
+// all — and silently, since the class simply never exists. The drift risk
+// against the map above is covered by
+// `__tests__/attendance/status-wash.test.ts`.
+export const STATUS_TOGGLE_WASH: Record<AttendanceStatus, string> = {
+  P: 'bg-attendance-present hover:bg-attendance-present data-[state=on]:bg-attendance-present',
+  L: 'bg-attendance-late hover:bg-attendance-late data-[state=on]:bg-attendance-late',
+  EX: 'bg-attendance-excused hover:bg-attendance-excused data-[state=on]:bg-attendance-excused',
+  A: 'bg-attendance-absent hover:bg-attendance-absent data-[state=on]:bg-attendance-absent',
+  NC: 'bg-ink-4 hover:bg-ink-4 data-[state=on]:bg-ink-4',
+};
+
 export function statusCellWash(status: AttendanceStatus | null): string {
   return status ? STATUS_CELL_WASH[status] : 'text-foreground';
 }

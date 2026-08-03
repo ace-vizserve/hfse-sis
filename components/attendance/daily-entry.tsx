@@ -35,9 +35,11 @@ import {
   EVENT_CATEGORY_LABELS,
   EX_REASON_LABELS,
   EX_NOTE_MAX_LENGTH,
+  EX_NOTE_PLACEHOLDER,
   isEncodableDayType,
   type ExReason,
 } from '@/lib/schemas/attendance';
+import { STATUS_TOGGLE_WASH } from '@/components/attendance/status-wash';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -46,6 +48,9 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { cn } from '@/lib/utils';
 
 function formatLongDate(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
@@ -56,33 +61,28 @@ function formatLongDate(iso: string): string {
   });
 }
 
-// Selected-mark fills for the P/L/A/EX segmented control — HFSE paper-sheet
-// palette (KD A3), the SAME washes as the wide-grid cells (P light blue, L
-// pink, A yellow, EX cyan) with dark mark-ink so the letter stays legible
-// (≥4.5:1). This is the marking surface, so it carries the local paper-sheet
-// colour language; the day-summary stat cards below keep the semantic palette.
-// The LETTER on each button is always the signal; colour is secondary.
-const STATUS_BTN: Record<
-  'P' | 'L' | 'A' | 'EX',
-  { label: string; on: string }
-> = {
-  P: {
-    label: 'P',
-    on: 'bg-attendance-present text-attendance-mark-ink shadow-xs',
-  },
-  L: {
-    label: 'L',
-    on: 'bg-attendance-late text-attendance-mark-ink shadow-xs',
-  },
-  A: {
-    label: 'A',
-    on: 'bg-attendance-absent text-attendance-mark-ink shadow-xs',
-  },
-  EX: {
-    label: 'EX',
-    on: 'bg-attendance-excused text-attendance-mark-ink shadow-xs',
-  },
-};
+// The P/L/A/EX segmented control — HFSE paper-sheet palette (KD A3), the SAME
+// washes as the wide-grid cells and the term-view marking palette (P light
+// blue, L pink, A yellow, EX cyan) with dark mark-ink so the letter stays
+// legible (≥4.5:1). This is a marking surface, so it carries the local
+// paper-sheet colour language; the day-summary stat cards below keep the
+// semantic palette. The LETTER is always the signal; colour is secondary.
+//
+// Shape only — the colours come from STATUS_TOGGLE_WASH, which restates each
+// wash under `hover:` and `data-[state=on]:` because `toggleVariants` sets its
+// own under both and a plain `bg-*` class does not outrank them.
+const MARK_BUTTON =
+  'h-auto w-11 rounded-none px-0 py-1.5 text-center font-mono text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-[state=on]:text-attendance-mark-ink data-[state=on]:shadow-xs';
+
+// The buttons show a letter, so each needs a spoken name. Deliberately NOT
+// ATTENDANCE_STATUS_LABELS: its EX entry reads "Excused (MC / Excuse leave)",
+// which names one of the three reasons the button reveals.
+const MARKS: Array<{ status: 'P' | 'L' | 'A' | 'EX'; word: string }> = [
+  { status: 'P', word: 'Present' },
+  { status: 'L', word: 'Late' },
+  { status: 'A', word: 'Absent' },
+  { status: 'EX', word: 'Excused' },
+];
 const EX_REASONS: ExReason[] = ['mc', 'compassionate', 'vacation'];
 
 // Day-summary stat cards — status gradient tiles (§9.3 palette). The number
@@ -373,9 +373,14 @@ function DailyPanel({
   // Saved counts (what's on record for this day) — drives the stat cards.
   // Only changes after Submit → router.refresh() re-fetches `initialDaily`.
   const saved = tally({ roster, marks: loaded, date });
-  const exMissingReason = [...marks.values()].some(
+  // An excused absence with no reason is not a record of anything, so Submit
+  // refuses the whole day until every one has one. Counting rather than
+  // testing `.some()` lets the bar say how many are outstanding — with a
+  // roster of thirty, "choose a reason" without a number is a hunt.
+  const exMissingReasonCount = [...marks.values()].filter(
     (m) => m.status === 'EX' && !m.exReason
-  );
+  ).length;
+  const exMissingReason = exMissingReasonCount > 0;
 
   function submit() {
     const entries = computeSubmitEntries({
@@ -442,108 +447,158 @@ function DailyPanel({
             return (
               <li
                 key={e.enrolmentId}
-                className={`flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${
+                className={`flex flex-col gap-2 px-4 py-3 ${
                   beforeJoin ? 'bg-muted/40 opacity-40' : ''
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
-                    {e.indexNumber}
-                  </span>
-                  <span className="text-sm font-medium text-foreground">
-                    {e.studentName}
-                  </span>
+                {/* Name and marks share one line; the excused block below gets
+                    the whole row. Boxing it into the right-hand column left a
+                    narrow strip of cyan against a wide empty row. */}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
+                      {e.indexNumber}
+                    </span>
+                    <span className="text-sm font-medium text-foreground">
+                      {e.studentName}
+                    </span>
+                  </div>
+
+                  {beforeJoin ? (
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                      Before enrolment date
+                    </span>
+                  ) : (
+                    /* `spacing={0}` is the group's segmented-control branch —
+                       one joined strip, corners on the ends only. */
+                    <ToggleGroup
+                      type="single"
+                      value={m?.status ?? ''}
+                      spacing={0}
+                      aria-label={`Attendance mark for ${e.studentName}`}
+                      onValueChange={(next) => {
+                        // Empty means the teacher clicked the mark that is
+                        // already set. There is no "unmarked" they can choose
+                        // — leaving the row alone is how you say Present — so
+                        // it is a no-op rather than a clear.
+                        if (!next) return;
+                        setMark(
+                          e.enrolmentId,
+                          next === 'EX'
+                            ? {
+                                status: 'EX',
+                                exReason: m?.exReason ?? null,
+                                exNote: m?.exNote ?? null,
+                              }
+                            : // Leaving EX drops the note with the reason — a
+                              // "why they were excused" note is meaningless on
+                              // a Present.
+                              {
+                                status: next as 'P' | 'L' | 'A',
+                                exReason: null,
+                                exNote: null,
+                              }
+                        );
+                      }}
+                      className="overflow-hidden rounded-lg border border-border"
+                    >
+                      {MARKS.map(({ status: s, word }) => (
+                        <ToggleGroupItem
+                          key={s}
+                          value={s}
+                          aria-label={word}
+                          className={cn(
+                            MARK_BUTTON,
+                            STATUS_TOGGLE_WASH[s],
+                            // Unmarked rows submit as Present, so P is shown
+                            // as the standing default — in ink, not in wash,
+                            // because nobody has actually said so yet.
+                            !m && s === 'P' && 'text-foreground',
+                            // The wash is a SELECTED colour here, unlike the
+                            // term-view tiles where every tile is always
+                            // coloured. Off state stays chrome.
+                            'bg-transparent hover:bg-muted/60'
+                          )}
+                        >
+                          {s}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  )}
                 </div>
 
-                {beforeJoin ? (
-                  <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                    Before enrolment date
-                  </span>
-                ) : (
-                  <div className="flex flex-col items-end gap-1.5">
-                    <div className="inline-flex overflow-hidden rounded-lg border border-border">
-                      {(['P', 'L', 'A', 'EX'] as const).map((s) => {
-                        const isOn = active === s && (m != null || s === 'P');
-                        const explicit =
-                          m != null &&
-                          (m.status === s || (s === 'P' && m.status === 'P'));
-                        return (
-                          <button
-                            key={s}
-                            type="button"
-                            aria-pressed={isOn}
-                            onClick={() =>
-                              setMark(
-                                e.enrolmentId,
-                                s === 'EX'
-                                  ? {
-                                      status: 'EX',
-                                      exReason: m?.exReason ?? null,
-                                      exNote: m?.exNote ?? null,
-                                    }
-                                  : // Leaving EX drops the note with the
-                                    // reason — a "why they were excused" note
-                                    // is meaningless on a Present.
-                                    { status: s, exReason: null, exNote: null }
-                              )
-                            }
-                            className={`w-11 py-1.5 text-center font-mono text-xs font-semibold transition-colors ${
-                              isOn && explicit
-                                ? STATUS_BTN[s].on
-                                : 'text-muted-foreground hover:bg-muted/60'
-                            } ${active === s && !explicit ? 'text-foreground' : ''}`}
-                          >
-                            {STATUS_BTN[s].label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {m?.status === 'EX' && (
-                      <>
-                        <div className="inline-flex flex-wrap justify-end gap-1">
-                          {EX_REASONS.map((r) => (
-                            <button
-                              key={r}
-                              type="button"
-                              onClick={() =>
-                                setMark(e.enrolmentId, {
-                                  status: 'EX',
-                                  exReason: r,
-                                  exNote: m.exNote ?? null,
-                                })
-                              }
-                              className={`rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                                m.exReason === r
-                                  ? 'bg-brand-indigo text-white'
-                                  : 'border border-border text-muted-foreground hover:bg-muted/60'
-                              }`}
-                            >
-                              {EX_REASON_LABELS[r]}
-                            </button>
-                          ))}
-                        </div>
-                        {/* Melissa's ask: somewhere to say WHY, since the MC
-                            document itself can't be uploaded yet. Updates on
-                            change rather than on blur — this view already
-                            batches everything behind an explicit Submit, so
-                            there is no per-keystroke write to worry about. */}
-                        <input
-                          type="text"
-                          value={m.exNote ?? ''}
-                          maxLength={EX_NOTE_MAX_LENGTH}
-                          onChange={(ev) =>
+                {/* The excused block, on the cyan of the EX button that opened
+                    it — the same "colour as parentage" the term view uses, so
+                    the two surfaces read as one feature. Full row width: the
+                    reasons and the note are the substance of an excused
+                    absence, not an afterthought clinging to the right edge. */}
+                {!beforeJoin && m?.status === 'EX' && (
+                  <div className="flex animate-in flex-col gap-2 rounded-lg border border-attendance-excused bg-attendance-excused/25 p-2 fade-in-0 slide-in-from-top-1 duration-150">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          Reason
+                        </span>
+                        <ToggleGroup
+                          type="single"
+                          value={m.exReason ?? ''}
+                          spacing={1}
+                          aria-label={`Reason for ${e.studentName}`}
+                          onValueChange={(next) => {
+                            if (!next) return;
                             setMark(e.enrolmentId, {
                               status: 'EX',
-                              exReason: m.exReason ?? null,
-                              exNote: ev.target.value,
-                            })
-                          }
-                          placeholder="Add a note (optional)"
-                          aria-label={`Note for ${e.studentName}`}
-                          className="w-56 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                        />
-                      </>
-                    )}
+                              exReason: next as ExReason,
+                              exNote: m.exNote ?? null,
+                            });
+                          }}
+                          className="flex w-auto flex-wrap gap-1"
+                        >
+                          {EX_REASONS.map((r) => (
+                            <ToggleGroupItem
+                              key={r}
+                              value={r}
+                              className="h-auto rounded-md border border-foreground/10 bg-card/50 px-2 py-1 text-[11px] font-normal text-foreground hover:bg-card/80 hover:text-foreground data-[state=on]:bg-attendance-excused data-[state=on]:text-attendance-mark-ink data-[state=on]:ring-1 data-[state=on]:ring-inset data-[state=on]:ring-foreground/30 data-[state=on]:font-medium"
+                            >
+                              {EX_REASON_LABELS[r]}
+                            </ToggleGroupItem>
+                          ))}
+                        </ToggleGroup>
+                      </div>
+                      {!m.exReason && (
+                        <p className="text-[11px] font-medium text-brand-amber">
+                          Choose a reason to submit.
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Melissa's ask: somewhere to say WHY, since the MC
+                        document itself can't be uploaded yet. Updates on
+                        change rather than on blur — this view batches
+                        everything behind an explicit Submit, so there is no
+                        per-keystroke write to worry about.
+
+                        Disabled until a reason is chosen, matching the term
+                        view: an excused absence with no reason is not a record
+                        of anything, and Submit already refuses one. Saying so
+                        on the row names WHICH student, which the submit bar
+                        cannot. */}
+                    <Textarea
+                      rows={2}
+                      value={m.exNote ?? ''}
+                      disabled={!m.exReason}
+                      maxLength={EX_NOTE_MAX_LENGTH}
+                      onChange={(ev) =>
+                        setMark(e.enrolmentId, {
+                          status: 'EX',
+                          exReason: m.exReason ?? null,
+                          exNote: ev.target.value,
+                        })
+                      }
+                      placeholder={EX_NOTE_PLACEHOLDER}
+                      aria-label={`Note for ${e.studentName}`}
+                      className="min-h-0 w-full resize-none px-2 py-1.5 text-[12px] leading-snug"
+                    />
                   </div>
                 )}
               </li>
@@ -554,9 +609,18 @@ function DailyPanel({
 
       {/* Submit bar */}
       <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-border bg-background/95 py-3 backdrop-blur">
-        <p className="text-xs text-muted-foreground">
+        <p
+          className={cn(
+            'text-xs',
+            exMissingReason
+              ? 'font-medium text-brand-amber'
+              : 'text-muted-foreground'
+          )}
+        >
           {exMissingReason
-            ? 'Choose a reason for each Excused student to submit.'
+            ? exMissingReasonCount === 1
+              ? '1 excused student still needs a reason.'
+              : `${exMissingReasonCount} excused students still need a reason.`
             : `${counts.P + counts.unmarked} present · ${counts.L + counts.A + counts.EX} exceptions`}
         </p>
         <Button onClick={submit} disabled={saving || exMissingReason}>

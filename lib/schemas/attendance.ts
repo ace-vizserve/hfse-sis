@@ -50,6 +50,13 @@ const uuidString = z.string().uuid('Invalid id');
 /** Mirrors the 300-char DB constraint in migration 109. */
 export const EX_NOTE_MAX_LENGTH = 300;
 
+// Shared by the daily register and the term-view marking palette so the two
+// cannot drift. It says "optional" outright: the field sits inside a block
+// that is otherwise all required choices, and an example alone reads as an
+// instruction to fill it in.
+export const EX_NOTE_PLACEHOLDER =
+  'Add a note (optional) — e.g. medical certificate submitted, returning Monday';
+
 export const DailyEntrySchema = z
   .object({
     sectionStudentId: uuidString,

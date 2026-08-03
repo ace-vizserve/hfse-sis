@@ -1043,9 +1043,15 @@ export function AttendanceWideGrid({
             </div>
           )}
         </Card>
-        <PopoverContent align="center" sideOffset={6} className="w-64">
+        <PopoverContent align="center" sideOffset={6} className="w-72">
           {activeEnrolment && activeCell && (
             <CellMarkPalette
+              // Keyed on the cell so moving to another one remounts the
+              // palette. Its draft state — the note being typed, and whether
+              // the excused reasons have been opened without a reason chosen
+              // yet — belongs to ONE cell, and React would otherwise reuse the
+              // instance and carry it across.
+              key={`${activeCell.enrolmentId}|${activeCell.iso}`}
               studentName={activeEnrolment.studentName}
               dateLabel={cellDateLabel(activeCell.iso)}
               status={activeCellState?.status ?? null}
@@ -1064,10 +1070,17 @@ export function AttendanceWideGrid({
                   exReason,
                   exNote
                 );
-                // A note commit (blur/Enter) passes exNote and must NOT close
-                // the popover — the teacher is still working in that cell.
-                // Picking a status or reason still closes it, as before.
-                if (exNote === undefined) setActiveCell(null);
+                // Present, Absent, Late and No class are one decision, so the
+                // popover closes and the teacher moves on — that is the fast
+                // bulk-encoding path and it must stay one click.
+                //
+                // Excused is not one decision: it is a mark, then a reason,
+                // then possibly a note. Closing after the first of those threw
+                // the teacher out of the cell and made them re-open it twice
+                // to finish. So EX keeps the popover open, and they leave it
+                // the way they leave any popover — Esc, or clicking the next
+                // cell, which opens that one in the same motion.
+                if (status !== 'EX') setActiveCell(null);
               }}
             />
           )}
