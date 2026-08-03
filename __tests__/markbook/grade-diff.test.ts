@@ -28,11 +28,17 @@ describe('buildPriorGradeMap', () => {
         {
           section_student_id: 'ss-old',
           quarterly_grade: 88,
+          ww_ps: null,
+          pt_ps: null,
+          qa_ps: null,
           grading_sheet_id: 'sheet-t1-old-section',
         },
         {
           section_student_id: 'ss-old',
           quarterly_grade: 90,
+          ww_ps: null,
+          pt_ps: null,
+          qa_ps: null,
           grading_sheet_id: 'sheet-t2-old-section',
         },
       ],
@@ -40,8 +46,22 @@ describe('buildPriorGradeMap', () => {
     });
 
     expect(result['ss-new']).toEqual([
-      { term_number: 1, term_label: 'Term 1', quarterly_grade: 88 },
-      { term_number: 2, term_label: 'Term 2', quarterly_grade: 90 },
+      {
+        term_number: 1,
+        term_label: 'Term 1',
+        quarterly_grade: 88,
+        ww_ps: null,
+        pt_ps: null,
+        qa_ps: null,
+      },
+      {
+        term_number: 2,
+        term_label: 'Term 2',
+        quarterly_grade: 90,
+        ww_ps: null,
+        pt_ps: null,
+        qa_ps: null,
+      },
     ]);
   });
 
@@ -52,11 +72,17 @@ describe('buildPriorGradeMap', () => {
       {
         section_student_id: 'ss-new',
         quarterly_grade: null,
+        ww_ps: null,
+        pt_ps: null,
+        qa_ps: null,
         grading_sheet_id: 'sheet-t1-this-section',
       },
       {
         section_student_id: 'ss-old',
         quarterly_grade: 85,
+        ww_ps: null,
+        pt_ps: null,
+        qa_ps: null,
         grading_sheet_id: 'sheet-t1-old-section',
       },
     ];
@@ -68,7 +94,14 @@ describe('buildPriorGradeMap', () => {
         termBySheetId,
       });
       expect(result['ss-new']).toEqual([
-        { term_number: 1, term_label: 'Term 1', quarterly_grade: 85 },
+        {
+          term_number: 1,
+          term_label: 'Term 1',
+          quarterly_grade: 85,
+          ww_ps: null,
+          pt_ps: null,
+          qa_ps: null,
+        },
       ]);
     }
   });
@@ -81,13 +114,23 @@ describe('buildPriorGradeMap', () => {
         {
           section_student_id: 'ss-plain',
           quarterly_grade: 77,
+          ww_ps: null,
+          pt_ps: null,
+          qa_ps: null,
           grading_sheet_id: 'sheet-t1-this-section',
         },
       ],
       termBySheetId,
     });
     expect(result['ss-plain']).toEqual([
-      { term_number: 1, term_label: 'Term 1', quarterly_grade: 77 },
+      {
+        term_number: 1,
+        term_label: 'Term 1',
+        quarterly_grade: 77,
+        ww_ps: null,
+        pt_ps: null,
+        qa_ps: null,
+      },
     ]);
   });
 
@@ -103,12 +146,18 @@ describe('buildPriorGradeMap', () => {
         {
           section_student_id: 'ss-a',
           quarterly_grade: 99,
+          ww_ps: null,
+          pt_ps: null,
+          qa_ps: null,
           grading_sheet_id: 'sheet-current-term',
         },
         // Enrolment row not in the map — ignored.
         {
           section_student_id: 'ss-unknown',
           quarterly_grade: 60,
+          ww_ps: null,
+          pt_ps: null,
+          qa_ps: null,
           grading_sheet_id: 'sheet-t1-this-section',
         },
       ],
@@ -125,11 +174,17 @@ describe('buildPriorGradeMap', () => {
         {
           section_student_id: 'ss-a',
           quarterly_grade: 70,
+          ww_ps: null,
+          pt_ps: null,
+          qa_ps: null,
           grading_sheet_id: 'sheet-t2-this-section',
         },
         {
           section_student_id: 'ss-a',
           quarterly_grade: 72,
+          ww_ps: null,
+          pt_ps: null,
+          qa_ps: null,
           grading_sheet_id: 'sheet-t1-this-section',
         },
       ],

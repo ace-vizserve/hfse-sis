@@ -56,6 +56,20 @@ import {
 } from './use-approval-reference';
 import { GradeDiffDialog, type AlertComparison } from './grade-diff-dialog';
 import {
+  ALERT_METRICS,
+  GRADE_ALERT_THRESHOLD,
+  outlierSlotIndices,
+  priorValueFor,
+} from '@/lib/markbook/alert-threshold';
+import type { PriorTermGrade } from '@/lib/markbook/grade-diff';
+
+// Shown on a score that sits well below the student's own average across the
+// other assessments on this sheet. Deliberately says "on this sheet" — it is
+// not a comparison against the class, and reading it as one would be worse
+// than no signal at all.
+const OUTLIER_HINT =
+  'Well below this student’s own average on this sheet. Worth a look — this is a hint, not a mistake, and nothing is blocked.';
+import {
   applyServerEntry,
   revertPatchedFields,
   type EntryPatchBody,
@@ -91,12 +105,9 @@ export type GradeRow = {
   letter_grade: string | null;
 };
 
-type PriorTermGrade = {
-  term_number: number;
-  term_label: string;
-  quarterly_grade: number | null;
-};
-
+// Imported rather than redeclared: this file and lib/markbook/grade-diff.ts
+// held two independent copies of the same shape, so widening one to carry the
+// component percentages silently diverged them.
 type Props = {
   sheetId: string;
   wwTotals: number[];
@@ -328,6 +339,27 @@ export function ScoreEntryGrid({
       return true;
     });
   }, [rows, filters, wwLen, ptLen]);
+
+  // The mid-term half of the 2026-07-31 at-risk ask. The Alerts column
+  // compares this term against the last one, which cannot fire until a term
+  // grade exists; this compares a score against the student's OWN other
+  // scores on the sheet in front of you, so it fires while there is still
+  // something a teacher can do about it. No query — every number is already
+  // rendered.
+  //
+  // Withdrawn and N.A. rows are skipped: their blanks are structural, not
+  // performance. Computed here rather than inline per row so the legend below
+  // the sheet can stay silent when nothing is flagged.
+  const outliers = useMemo(() => {
+    const map = new Map<string, { ww: number[]; pt: number[] }>();
+    for (const r of visibleRows) {
+      if (r.withdrawn || r.is_na) continue;
+      const ww = outlierSlotIndices(r.ww_scores, wwTotals);
+      const pt = outlierSlotIndices(r.pt_scores, ptTotals);
+      if (ww.length || pt.length) map.set(r.entry_id, { ww, pt });
+    }
+    return map;
+  }, [visibleRows, wwTotals, ptTotals]);
 
   // Tier-3 autosave: the per-cell PATCH is routed through useMutation purely so
   // it gets retry:0 + the shared apiFetch error handling. The optimistic UX is
@@ -868,6 +900,8 @@ export function ScoreEntryGrid({
 
               const wwTotal = sumScores(r.ww_scores, wwLen);
               const ptTotal = sumScores(r.pt_scores, ptLen);
+
+              const rowOutliers = outliers.get(r.entry_id);
               const wwWs = r.ww_ps != null ? r.ww_ps * wwWeight : null;
               const ptWs = r.pt_ps != null ? r.pt_ps * ptWeight : null;
               const qaWs = r.qa_ps != null ? r.qa_ps * qaWeight : null;
@@ -914,6 +948,7 @@ export function ScoreEntryGrid({
                         max={max}
                         plaintext={locked}
                         disabled={inputsDisabled}
+                        outlier={rowOutliers?.ww.includes(i)}
                         onLocalChange={(v) =>
                           updateLocal(r.entry_id, (row) => ({
                             ...row,
@@ -955,6 +990,7 @@ export function ScoreEntryGrid({
                         <TableCell key={`pt-${i}`} className="px-1 py-1">
                           <ScoreInput
                             value={r.pt_scores[i] ?? null}
+                            outlier={rowOutliers?.pt.includes(i)}
                             max={max}
                             plaintext={locked}
                             disabled={inputsDisabled}
@@ -1140,6 +1176,23 @@ export function ScoreEntryGrid({
         </Table>
       </Card>
 
+      {/* Only shown when something is actually flagged. A permanent legend for
+          a marker nobody can see reads as a promise the sheet is not keeping,
+          and `insights-watchlist.ts` records a watchlist that was deleted for
+          exactly that. The number is stated on screen because it is a rule of
+          thumb we chose, not a policy HFSE has adopted. */}
+      {outliers.size > 0 && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span
+            className="inline-block size-3 shrink-0 rounded-sm border border-brand-amber/50 bg-brand-amber/5"
+            aria-hidden
+          />
+          Highlighted scores are at least {GRADE_ALERT_THRESHOLD * 2} points
+          below that student&rsquo;s own average on this sheet. Nothing is
+          blocked &mdash; it is only there to catch your eye.
+        </p>
+      )}
+
       {approvalDialog}
 
       {pendingFirstScore && (
@@ -1175,22 +1228,46 @@ export function ScoreEntryGrid({
   );
 }
 
+/**
+ * Term-over-term comparisons for one student, across every component.
+ *
+ * Previously this compared the term grade alone. The 2026-07-31 training asked
+ * for the quizzes and the exam as well — and those are the cases the term
+ * grade hides, because a fall in written work and a rise in the exam cancel
+ * out in the weighted total.
+ *
+ * `current` carries the live values from the grid, so the comparison updates
+ * as a teacher types rather than only after a reload.
+ */
 function computeComparisons(
-  currentGrade: number,
+  current: {
+    quarterly: number | null;
+    ww: number | null;
+    pt: number | null;
+    qa: number | null;
+  },
   priorTermGrades: PriorTermGrade[]
 ): AlertComparison[] {
-  return priorTermGrades
-    .filter((p) => p.quarterly_grade !== null)
-    .map((p) => {
-      const diff = currentGrade - p.quarterly_grade!;
-      return {
+  const out: AlertComparison[] = [];
+  for (const metric of ALERT_METRICS) {
+    const currentValue = current[metric.key];
+    if (currentValue == null) continue;
+    for (const p of priorTermGrades) {
+      const priorValue = priorValueFor(p, metric.key);
+      if (priorValue == null) continue;
+      const diff = currentValue - priorValue;
+      out.push({
         term_label: p.term_label,
         term_number: p.term_number,
-        prior_grade: p.quarterly_grade!,
+        prior_grade: priorValue,
         diff,
-        flagged: Math.abs(diff) >= 5,
-      };
-    });
+        flagged: Math.abs(diff) >= GRADE_ALERT_THRESHOLD,
+        metric: metric.key,
+        metric_label: metric.label,
+      });
+    }
+  }
+  return out;
 }
 
 function AlertCell({
@@ -1215,7 +1292,15 @@ function AlertCell({
     );
   }
 
-  const comparisons = computeComparisons(row.quarterly_grade, priorTermGrades);
+  const comparisons = computeComparisons(
+    {
+      quarterly: row.quarterly_grade,
+      ww: row.ww_ps,
+      pt: row.pt_ps,
+      qa: row.qa_ps,
+    },
+    priorTermGrades
+  );
   // No prior-term grades to compare against — nothing to show.
   if (comparisons.length === 0) {
     return (
@@ -1234,7 +1319,7 @@ function AlertCell({
     biggest.diff > 0 ? `+${absBig}` : biggest.diff < 0 ? `−${absBig}` : '0';
 
   if (flaggedCount === 0) {
-    // Comparison available but below the ±5 alert threshold — neutral chip
+    // Comparison available but below the alert threshold — neutral chip
     // showing the biggest delta; click to view the full term-over-term breakdown.
     const neutralLabel = `Largest change ${signedBig} vs a prior term — click to compare`;
     return (
@@ -1250,9 +1335,9 @@ function AlertCell({
     );
   }
 
-  const label = `${flaggedCount} significant grade change${
+  const label = `${flaggedCount} significant change${
     flaggedCount === 1 ? '' : 's'
-  } (≥5 points) — click to view`;
+  } (≥${GRADE_ALERT_THRESHOLD} points, across term grade / written work / tasks / exam) — click to view`;
 
   return (
     <button
@@ -1797,6 +1882,7 @@ function ScoreInput({
   max,
   disabled,
   plaintext,
+  outlier,
   onLocalChange,
   onCommit,
 }: {
@@ -1804,6 +1890,14 @@ function ScoreInput({
   max?: number | null;
   disabled?: boolean;
   plaintext?: boolean;
+  /**
+   * This score sits well below the student's own average on this sheet. The
+   * signal Koh asked for that fires DURING a term — a cross-term comparison
+   * cannot see it until the term grade exists, by which point it is too late
+   * to do anything about it. Advisory only: never blocks a save, and it is
+   * not an error, so it must not borrow the red exceeded-max styling.
+   */
+  outlier?: boolean;
   onLocalChange: (v: number | null) => void;
   onCommit: (v: number | null) => void;
 }) {
@@ -1821,7 +1915,13 @@ function ScoreInput({
 
   if (plaintext) {
     return (
-      <span className="inline-block h-8 w-14 px-1.5 py-1 text-right font-mono text-sm tabular-nums text-ink">
+      <span
+        className={
+          'inline-block h-8 w-14 px-1.5 py-1 text-right font-mono text-sm tabular-nums text-ink' +
+          (outlier ? ' rounded-md bg-brand-amber/10' : '')
+        }
+        title={outlier ? OUTLIER_HINT : undefined}
+      >
         {displayCell(value) || '—'}
       </span>
     );
@@ -1849,7 +1949,16 @@ function ScoreInput({
           (e.target as HTMLInputElement).blur();
         }
       }}
-      className="h-8 w-14 rounded-md border border-input bg-background px-1.5 text-right font-mono text-sm tabular-nums ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-destructive/5 aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/20"
+      title={outlier && !isExceeded ? OUTLIER_HINT : undefined}
+      className={
+        'h-8 w-14 rounded-md border border-input bg-background px-1.5 text-right font-mono text-sm tabular-nums ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-destructive/5 aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/20' +
+        // Amber, not destructive: a low score is information, not a mistake.
+        // Suppressed when the value also exceeds its max, so the real error
+        // keeps the cell.
+        (outlier && !isExceeded
+          ? ' border-brand-amber/50 bg-brand-amber/5'
+          : '')
+      }
     />
   );
 }

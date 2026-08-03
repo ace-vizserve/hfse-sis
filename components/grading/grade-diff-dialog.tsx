@@ -16,6 +16,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  GRADE_ALERT_THRESHOLD,
+  type AlertMetric,
+} from '@/lib/markbook/alert-threshold';
 
 export type AlertComparison = {
   term_label: string;
@@ -24,6 +28,15 @@ export type AlertComparison = {
   /** currentGrade - prior_grade */
   diff: number;
   flagged: boolean;
+  /**
+   * Which component moved. 'quarterly' is the term grade — the only thing this
+   * compared before the 2026-07-31 training, where Koh and Hermilita asked for
+   * the signal on the quizzes and the exam too. A term grade can hold still
+   * while written work falls and the exam rises to cover it, which is exactly
+   * the case that used to slip through.
+   */
+  metric: AlertMetric;
+  metric_label: string;
 };
 
 type Props = {
@@ -112,7 +125,7 @@ export function GradeDiffDialog({
 
                   return (
                     <div
-                      key={c.term_number}
+                      key={`${c.metric}-${c.term_number}`}
                       className={`flex items-center gap-4 rounded-lg border px-4 py-3 ${
                         c.flagged
                           ? 'border-brand-amber/40 bg-brand-amber/5'
@@ -122,6 +135,12 @@ export function GradeDiffDialog({
                       <div className="min-w-0 flex-1">
                         <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                           {c.term_label}
+                          <span className="px-1 text-hairline-strong">·</span>
+                          {/* Which component moved. Without this every row
+                              reads as a term-grade change, and the whole point
+                              of the 2026-07-31 addition is that written work
+                              and the exam move independently of it. */}
+                          {c.metric_label}
                         </p>
                         <p className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">
                           {c.prior_grade}
@@ -172,10 +191,10 @@ export function GradeDiffDialog({
 
         <p className="border-t border-border pt-3 text-sm text-muted-foreground">
           {flaggedCount === 0
-            ? 'No significant grade changes detected (threshold ±5).'
+            ? `No significant changes detected (threshold ±${GRADE_ALERT_THRESHOLD}).`
             : flaggedCount === 1
-              ? '1 significant change detected (threshold ±5).'
-              : `${flaggedCount} significant changes detected (threshold ±5).`}
+              ? `1 significant change detected (threshold ±${GRADE_ALERT_THRESHOLD}).`
+              : `${flaggedCount} significant changes detected (threshold ±${GRADE_ALERT_THRESHOLD}).`}
         </p>
       </DialogContent>
     </Dialog>

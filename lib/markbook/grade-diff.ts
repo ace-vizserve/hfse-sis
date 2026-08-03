@@ -4,6 +4,15 @@ export type PriorTermGrade = {
   term_number: number;
   term_label: string;
   quarterly_grade: number | null;
+  // Component percentages, added for the 2026-07-31 training ask. Koh and
+  // Hermilita wanted the signal on "the quizzes... and also for exam", not
+  // only the term grade — and a term grade can sit still while written work
+  // collapses and the exam compensates. These are already stored per entry
+  // and normalised to a percentage, so they compare honestly across terms in
+  // a way individual slots never can (slots have no identity across terms).
+  ww_ps: number | null;
+  pt_ps: number | null;
+  qa_ps: number | null;
 };
 
 type TermLite = { term_number: number; label: string };
@@ -32,6 +41,9 @@ export function buildPriorGradeMap(args: {
   entries: {
     section_student_id: string;
     quarterly_grade: number | null;
+    ww_ps: number | null;
+    pt_ps: number | null;
+    qa_ps: number | null;
     grading_sheet_id: string;
   }[];
   termBySheetId: Map<string, TermLite>;
@@ -56,6 +68,9 @@ export function buildPriorGradeMap(args: {
         term_number: term.term_number,
         term_label: term.label,
         quarterly_grade: e.quarterly_grade,
+        ww_ps: e.ww_ps,
+        pt_ps: e.pt_ps,
+        qa_ps: e.qa_ps,
       });
     }
   }
@@ -170,7 +185,9 @@ export async function loadPriorTermGrades(
   //    one subject), well under the PostgREST 1000-row cap.
   const { data: entriesRaw } = await service
     .from('grade_entries')
-    .select('section_student_id, quarterly_grade, grading_sheet_id')
+    .select(
+      'section_student_id, quarterly_grade, ww_ps, pt_ps, qa_ps, grading_sheet_id'
+    )
     .in(
       'grading_sheet_id',
       sheets.map((s) => s.id)
@@ -186,6 +203,9 @@ export async function loadPriorTermGrades(
     entries: (entriesRaw ?? []) as {
       section_student_id: string;
       quarterly_grade: number | null;
+      ww_ps: number | null;
+      pt_ps: number | null;
+      qa_ps: number | null;
       grading_sheet_id: string;
     }[],
     termBySheetId,
