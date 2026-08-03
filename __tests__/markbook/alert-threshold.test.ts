@@ -12,6 +12,7 @@ import {
   ALERT_METRICS,
   GRADE_ALERT_THRESHOLD,
   outlierSlotIndices,
+  outlierSlots,
   priorValueFor,
 } from '@/lib/markbook/alert-threshold';
 
@@ -90,5 +91,52 @@ describe('outlierSlotIndices — the mid-term signal', () => {
 
   it('handles a zero score as a real mark', () => {
     expect(outlierSlotIndices([10, 10, 0], [10, 10, 10])).toEqual([2]);
+  });
+});
+
+describe('outlierSlots — what the Alerts dialog reads', () => {
+  // The indices alone tint the right cells. Naming the assessment and saying
+  // how far below it sits is what makes the Alerts column usable in Term 1,
+  // where there is no prior term and this is the only signal that exists.
+
+  it('reports the slot, its percentage, and the average it fell short of', () => {
+    const [flagged] = outlierSlots([9, 19, 4], [10, 20, 10]);
+    expect(flagged.index).toBe(2);
+    expect(flagged.pct).toBe(40);
+    // 90% and 95% — the student's own other work, not the class average.
+    expect(flagged.othersMeanPct).toBeCloseTo(92.5);
+  });
+
+  it('agrees with outlierSlotIndices on every case', () => {
+    // The two must never disagree: one tints the cells, the other fills the
+    // dialog, and a mismatch would highlight one assessment while explaining
+    // a different one.
+    const cases: Array<[(number | null)[], number[]]> = [
+      [
+        [9, 19, 4],
+        [10, 20, 10],
+      ],
+      [
+        [9, 18, 9],
+        [10, 20, 10],
+      ],
+      [
+        [9, 3],
+        [10, 10],
+      ],
+      [
+        [9, null, 10, 9],
+        [10, 10, 10, 10],
+      ],
+      [
+        [10, 10, 0],
+        [10, 10, 10],
+      ],
+    ];
+    for (const [scores, totals] of cases) {
+      expect(outlierSlots(scores, totals).map((o) => o.index)).toEqual(
+        outlierSlotIndices(scores, totals)
+      );
+    }
   });
 });

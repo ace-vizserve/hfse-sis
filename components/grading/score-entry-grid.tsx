@@ -54,21 +54,21 @@ import {
   useChangeReference,
   type ChangeReferenceTarget,
 } from './use-approval-reference';
-import { GradeDiffDialog, type AlertComparison } from './grade-diff-dialog';
+import {
+  GradeLookupDialog,
+  type AlertComparison,
+  type SheetOutlier,
+  type StudentAlertRow,
+} from './grade-lookup-dialog';
 import {
   ALERT_METRICS,
   GRADE_ALERT_THRESHOLD,
-  outlierSlotIndices,
+  outlierSlots,
   priorValueFor,
+  type SlotOutlier,
 } from '@/lib/markbook/alert-threshold';
 import type { PriorTermGrade } from '@/lib/markbook/grade-diff';
 
-// Shown on a score that sits well below the student's own average across the
-// other assessments on this sheet. Deliberately says "on this sheet" — it is
-// not a comparison against the class, and reading it as one would be worse
-// than no signal at all.
-const OUTLIER_HINT =
-  'Well below this student’s own average on this sheet. Worth a look — this is a hint, not a mistake, and nothing is blocked.';
 import {
   applyServerEntry,
   revertPatchedFields,
@@ -229,12 +229,6 @@ export function ScoreEntryGrid({
   const [filters, setFilters] = useState<GridFilters>(DEFAULT_GRID_FILTERS);
   const { requireChangeReference, dialog: approvalDialog } =
     useChangeReference();
-  const [alertDialogState, setAlertDialogState] = useState<{
-    studentName: string;
-    currentGrade: number;
-    comparisons: AlertComparison[];
-  } | null>(null);
-
   // Slot labels — managed locally, PATCHed on blur.
   const [labels, setLabels] = useState<Required<SlotLabels>>({
     ww: slotLabels?.ww ?? [],
@@ -348,18 +342,56 @@ export function ScoreEntryGrid({
   // rendered.
   //
   // Withdrawn and N.A. rows are skipped: their blanks are structural, not
-  // performance. Computed here rather than inline per row so the legend below
-  // the sheet can stay silent when nothing is flagged.
-  const outliers = useMemo(() => {
-    const map = new Map<string, { ww: number[]; pt: number[] }>();
-    for (const r of visibleRows) {
-      if (r.withdrawn || r.is_na) continue;
-      const ww = outlierSlotIndices(r.ww_scores, wwTotals);
-      const pt = outlierSlotIndices(r.pt_scores, ptTotals);
-      if (ww.length || pt.length) map.set(r.entry_id, { ww, pt });
-    }
-    return map;
-  }, [visibleRows, wwTotals, ptTotals]);
+  // performance.
+  //
+  // These feed the Alerts column and its dialog ONLY. Tinting the flagged
+  // score cells themselves was tried and removed: a grid of thirty rows is
+  // already dense with numbers, and colouring individual cells read as noise
+  // rather than as a signal. The flag belongs in the one column whose job is
+  // saying who needs attention.
+  // Every student on the sheet, with their comparisons and flagged
+  // assessments — the list the "Look up student" dialog ranks. Built from
+  // `rows` rather than `visibleRows`: the lookup is its own surface with its
+  // own search, and a student hidden by a grid filter is still a student a
+  // teacher may need to check.
+  const alertRows = useMemo<StudentAlertRow[]>(() => {
+    return rows.map((r) => {
+      const rowOut =
+        r.withdrawn || r.is_na
+          ? { ww: [] as SlotOutlier[], pt: [] as SlotOutlier[] }
+          : {
+              ww: outlierSlots(r.ww_scores, wwTotals),
+              pt: outlierSlots(r.pt_scores, ptTotals),
+            };
+      const comparisons =
+        currentTermNumber > 1 && r.quarterly_grade != null && !r.is_na
+          ? computeComparisons(
+              {
+                quarterly: r.quarterly_grade,
+                ww: r.ww_ps,
+                pt: r.pt_ps,
+                qa: r.qa_ps,
+              },
+              priorGrades?.[r.section_student_id] ?? []
+            )
+          : [];
+      return {
+        entryId: r.entry_id,
+        indexNumber: r.index_number,
+        studentName: r.student_name,
+        withdrawn: r.withdrawn,
+        currentGrade: r.quarterly_grade,
+        comparisons,
+        outliers: sheetOutliersFor(
+          rowOut,
+          r.ww_scores,
+          wwTotals,
+          r.pt_scores,
+          ptTotals
+        ),
+      };
+    });
+  }, [rows, wwTotals, ptTotals, currentTermNumber, priorGrades]);
 
   // Tier-3 autosave: the per-cell PATCH is routed through useMutation purely so
   // it gets retry:0 + the shared apiFetch error handling. The optimistic UX is
@@ -634,17 +666,14 @@ export function ScoreEntryGrid({
     []
   );
 
-  // # + Student | WW slots + (Total PS WS) | PT slots + (Total PS WS) | QA (Exam PS WS) | Initial | Quarterly | N/A | Alerts
-  // The trailing Alerts column only exists in T2+ (no prior term to compare in T1).
+  // # + Student | WW slots + (Total PS WS) | PT slots + (Total PS WS) | QA (Exam PS WS) | Initial | Quarterly | N/A
+  //
+  // No Alerts column. It lived at the far right of a wide grid, so noticing it
+  // meant scrolling past every score on the sheet, and it answered for one
+  // student at a time. Koh asked to "flag out students" — a list — which is
+  // now the "Look up student" dialog in the toolbar above.
   const totalCols =
-    2 +
-    (wwLen + 3) +
-    (ptLen > 0 ? ptLen + 3 : 0) +
-    3 +
-    1 +
-    1 +
-    1 +
-    (currentTermNumber > 1 ? 1 : 0);
+    2 + (wwLen + 3) + (ptLen > 0 ? ptLen + 3 : 0) + 3 + 1 + 1 + 1;
 
   const wwPct = Math.round(wwWeight * 100);
   const ptPct = Math.round(ptWeight * 100);
@@ -696,6 +725,11 @@ export function ScoreEntryGrid({
           onChange={setFilters}
           total={rows.length}
           visible={visibleRows.length}
+        />
+        <GradeLookupDialog
+          rows={alertRows}
+          currentTermLabel={currentTermLabel}
+          weights={{ ww: wwPct, pt: ptPct, qa: qaPct }}
         />
         {savingId && (
           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-brand-indigo/20 bg-brand-indigo/8 px-2.5 py-1 font-mono text-[11px] font-semibold text-brand-indigo">
@@ -766,15 +800,6 @@ export function ScoreEntryGrid({
               >
                 {letterDisplay ? 'Override' : 'N/A'}
               </TableHead>
-              {/* No prior term to compare against in T1 — drop the column. */}
-              {currentTermNumber > 1 && (
-                <TableHead
-                  rowSpan={3}
-                  className="align-bottom text-center text-xs text-muted-foreground"
-                >
-                  Alerts
-                </TableHead>
-              )}
             </TableRow>
 
             {/* Row 2 — column codes */}
@@ -901,7 +926,6 @@ export function ScoreEntryGrid({
               const wwTotal = sumScores(r.ww_scores, wwLen);
               const ptTotal = sumScores(r.pt_scores, ptLen);
 
-              const rowOutliers = outliers.get(r.entry_id);
               const wwWs = r.ww_ps != null ? r.ww_ps * wwWeight : null;
               const ptWs = r.pt_ps != null ? r.pt_ps * ptWeight : null;
               const qaWs = r.qa_ps != null ? r.qa_ps * qaWeight : null;
@@ -948,7 +972,6 @@ export function ScoreEntryGrid({
                         max={max}
                         plaintext={locked}
                         disabled={inputsDisabled}
-                        outlier={rowOutliers?.ww.includes(i)}
                         onLocalChange={(v) =>
                           updateLocal(r.entry_id, (row) => ({
                             ...row,
@@ -990,7 +1013,6 @@ export function ScoreEntryGrid({
                         <TableCell key={`pt-${i}`} className="px-1 py-1">
                           <ScoreInput
                             value={r.pt_scores[i] ?? null}
-                            outlier={rowOutliers?.pt.includes(i)}
                             max={max}
                             plaintext={locked}
                             disabled={inputsDisabled}
@@ -1149,49 +1171,12 @@ export function ScoreEntryGrid({
                       />
                     )}
                   </TableCell>
-
-                  {/* Alerts — column hidden entirely in T1 (no prior term). */}
-                  {currentTermNumber > 1 && (
-                    <TableCell className="text-center">
-                      <AlertCell
-                        row={r}
-                        priorTermGrades={
-                          priorGrades?.[r.section_student_id] ?? []
-                        }
-                        currentTermNumber={currentTermNumber}
-                        onOpen={(comparisons) =>
-                          setAlertDialogState({
-                            studentName: r.student_name,
-                            currentGrade: r.quarterly_grade!,
-                            comparisons,
-                          })
-                        }
-                      />
-                    </TableCell>
-                  )}
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
       </Card>
-
-      {/* Only shown when something is actually flagged. A permanent legend for
-          a marker nobody can see reads as a promise the sheet is not keeping,
-          and `insights-watchlist.ts` records a watchlist that was deleted for
-          exactly that. The number is stated on screen because it is a rule of
-          thumb we chose, not a policy HFSE has adopted. */}
-      {outliers.size > 0 && (
-        <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span
-            className="inline-block size-3 shrink-0 rounded-sm border border-brand-amber/50 bg-brand-amber/5"
-            aria-hidden
-          />
-          Highlighted scores are at least {GRADE_ALERT_THRESHOLD * 2} points
-          below that student&rsquo;s own average on this sheet. Nothing is
-          blocked &mdash; it is only there to catch your eye.
-        </p>
-      )}
 
       {approvalDialog}
 
@@ -1209,19 +1194,6 @@ export function ScoreEntryGrid({
           seedMeta={pendingFirstScore.seedMeta}
           onConfirm={handleFirstScoreConfirm}
           onCancel={handleFirstScoreCancel}
-        />
-      )}
-
-      {alertDialogState && (
-        <GradeDiffDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setAlertDialogState(null);
-          }}
-          studentName={alertDialogState.studentName}
-          currentTermLabel={currentTermLabel}
-          currentGrade={alertDialogState.currentGrade}
-          comparisons={alertDialogState.comparisons}
         />
       )}
     </div>
@@ -1270,87 +1242,39 @@ function computeComparisons(
   return out;
 }
 
-function AlertCell({
-  row,
-  priorTermGrades,
-  currentTermNumber,
-  onOpen,
-}: {
-  row: GradeRow;
-  priorTermGrades: PriorTermGrade[];
-  currentTermNumber: number;
-  onOpen: (comparisons: AlertComparison[]) => void;
-}) {
-  if (
-    currentTermNumber <= 1 ||
-    row.is_na ||
-    row.withdrawn ||
-    row.quarterly_grade == null
-  ) {
-    return (
-      <span className="font-mono text-[11px] text-muted-foreground/40">—</span>
-    );
+/**
+ * Names a flagged slot the way a teacher refers to it: "Written work 2".
+ * 1-based, because W1 is the first column on the sheet and nobody counts
+ * assessments from zero.
+ */
+function sheetOutliersFor(
+  rowOutliers: { ww: SlotOutlier[]; pt: SlotOutlier[] } | undefined,
+  wwScores: (number | null)[],
+  wwTotals: number[],
+  ptScores: (number | null)[],
+  ptTotals: number[]
+): SheetOutlier[] {
+  if (!rowOutliers) return [];
+  const out: SheetOutlier[] = [];
+  for (const o of rowOutliers.ww) {
+    out.push({
+      label: `Written work ${o.index + 1}`,
+      score: wwScores[o.index] ?? 0,
+      max: wwTotals[o.index] ?? 0,
+      pct: o.pct,
+      othersMeanPct: o.othersMeanPct,
+    });
   }
-
-  const comparisons = computeComparisons(
-    {
-      quarterly: row.quarterly_grade,
-      ww: row.ww_ps,
-      pt: row.pt_ps,
-      qa: row.qa_ps,
-    },
-    priorTermGrades
-  );
-  // No prior-term grades to compare against — nothing to show.
-  if (comparisons.length === 0) {
-    return (
-      <span className="font-mono text-[11px] text-muted-foreground/40">—</span>
-    );
+  for (const o of rowOutliers.pt) {
+    out.push({
+      label: `Performance task ${o.index + 1}`,
+      score: ptScores[o.index] ?? 0,
+      max: ptTotals[o.index] ?? 0,
+      pct: o.pct,
+      othersMeanPct: o.othersMeanPct,
+    });
   }
-
-  const flaggedCount = comparisons.filter((c) => c.flagged).length;
-  // Largest term-over-term swing (by magnitude) — surfaced on the chip so the
-  // comparison stays glanceable even when nothing crosses the ±5 alert threshold.
-  const biggest = comparisons.reduce((a, b) =>
-    Math.abs(b.diff) > Math.abs(a.diff) ? b : a
-  );
-  const absBig = Math.abs(biggest.diff);
-  const signedBig =
-    biggest.diff > 0 ? `+${absBig}` : biggest.diff < 0 ? `−${absBig}` : '0';
-
-  if (flaggedCount === 0) {
-    // Comparison available but below the alert threshold — neutral chip
-    // showing the biggest delta; click to view the full term-over-term breakdown.
-    const neutralLabel = `Largest change ${signedBig} vs a prior term — click to compare`;
-    return (
-      <button
-        type="button"
-        onClick={() => onOpen(comparisons)}
-        title={neutralLabel}
-        aria-label={neutralLabel}
-        className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-muted-foreground transition hover:border-hairline-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/30"
-      >
-        {signedBig}
-      </button>
-    );
-  }
-
-  const label = `${flaggedCount} significant change${
-    flaggedCount === 1 ? '' : 's'
-  } (≥${GRADE_ALERT_THRESHOLD} points, across term grade / written work / tasks / exam) — click to view`;
-
-  return (
-    <button
-      type="button"
-      onClick={() => onOpen(comparisons)}
-      title={label}
-      aria-label={label}
-      className="inline-flex items-center gap-1 rounded-full border border-transparent bg-gradient-to-b from-brand-amber to-brand-amber/85 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,23,42,0.08)] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-amber/40"
-    >
-      <AlertTriangle className="h-3 w-3" />
-      {flaggedCount}
-    </button>
-  );
+  return out;
 }
 
 function ScoringGuide({
@@ -1882,7 +1806,6 @@ function ScoreInput({
   max,
   disabled,
   plaintext,
-  outlier,
   onLocalChange,
   onCommit,
 }: {
@@ -1890,14 +1813,6 @@ function ScoreInput({
   max?: number | null;
   disabled?: boolean;
   plaintext?: boolean;
-  /**
-   * This score sits well below the student's own average on this sheet. The
-   * signal Koh asked for that fires DURING a term — a cross-term comparison
-   * cannot see it until the term grade exists, by which point it is too late
-   * to do anything about it. Advisory only: never blocks a save, and it is
-   * not an error, so it must not borrow the red exceeded-max styling.
-   */
-  outlier?: boolean;
   onLocalChange: (v: number | null) => void;
   onCommit: (v: number | null) => void;
 }) {
@@ -1915,13 +1830,7 @@ function ScoreInput({
 
   if (plaintext) {
     return (
-      <span
-        className={
-          'inline-block h-8 w-14 px-1.5 py-1 text-right font-mono text-sm tabular-nums text-ink' +
-          (outlier ? ' rounded-md bg-brand-amber/10' : '')
-        }
-        title={outlier ? OUTLIER_HINT : undefined}
-      >
+      <span className="inline-block h-8 w-14 px-1.5 py-1 text-right font-mono text-sm tabular-nums text-ink">
         {displayCell(value) || '—'}
       </span>
     );
@@ -1949,16 +1858,7 @@ function ScoreInput({
           (e.target as HTMLInputElement).blur();
         }
       }}
-      title={outlier && !isExceeded ? OUTLIER_HINT : undefined}
-      className={
-        'h-8 w-14 rounded-md border border-input bg-background px-1.5 text-right font-mono text-sm tabular-nums ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-destructive/5 aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/20' +
-        // Amber, not destructive: a low score is information, not a mistake.
-        // Suppressed when the value also exceeds its max, so the real error
-        // keeps the cell.
-        (outlier && !isExceeded
-          ? ' border-brand-amber/50 bg-brand-amber/5'
-          : '')
-      }
+      className="h-8 w-14 rounded-md border border-input bg-background px-1.5 text-right font-mono text-sm tabular-nums ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-destructive/5 aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/20"
     />
   );
 }

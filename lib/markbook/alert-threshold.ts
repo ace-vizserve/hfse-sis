@@ -68,11 +68,20 @@ export function priorValueFor(
  * the same component. Fewer than three scored slots returns nothing: with two
  * points, "below average" is just "the lower one".
  */
-export function outlierSlotIndices(
+export type SlotOutlier = {
+  /** 0-based position in the component's score array. */
+  index: number;
+  /** This slot, as a percentage of its own maximum. */
+  pct: number;
+  /** The student's mean across their OTHER scored slots in this component. */
+  othersMeanPct: number;
+};
+
+export function outlierSlots(
   scores: (number | null)[],
   totals: number[],
   threshold: number = GRADE_ALERT_THRESHOLD * 2
-): number[] {
+): SlotOutlier[] {
   const pct: Array<{ index: number; value: number }> = [];
   for (let i = 0; i < scores.length; i++) {
     const score = scores[i];
@@ -82,11 +91,22 @@ export function outlierSlotIndices(
   }
   if (pct.length < 3) return [];
 
-  const out: number[] = [];
+  const out: SlotOutlier[] = [];
   for (const p of pct) {
     const others = pct.filter((q) => q.index !== p.index);
     const mean = others.reduce((sum, q) => sum + q.value, 0) / others.length;
-    if (mean - p.value >= threshold) out.push(p.index);
+    if (mean - p.value >= threshold) {
+      out.push({ index: p.index, pct: p.value, othersMeanPct: mean });
+    }
   }
   return out;
+}
+
+/** Positions only — what the grid needs to tint the right cells. */
+export function outlierSlotIndices(
+  scores: (number | null)[],
+  totals: number[],
+  threshold: number = GRADE_ALERT_THRESHOLD * 2
+): number[] {
+  return outlierSlots(scores, totals, threshold).map((o) => o.index);
 }
