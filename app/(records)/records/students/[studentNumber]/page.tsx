@@ -33,6 +33,10 @@ import { notFound, redirect } from 'next/navigation';
 import React from 'react';
 
 import { CompassionateAllowanceInline } from '@/components/sis/compassionate-allowance-inline';
+import { HouseSelectInline } from '@/components/sis/house-select-inline';
+import { HouseChip } from '@/components/ui/house-chip';
+import { listHouses, type HouseRow } from '@/lib/sis/houses';
+import { summariseSeriesMovement } from '@/lib/dashboard/trend-delta';
 import { EditFamilySheet } from '@/components/sis/edit-family-sheet';
 import { EditProfileSheet } from '@/components/sis/edit-profile-sheet';
 import { PlacementEditButton } from '@/components/sis/placement-edit-button';
@@ -380,6 +384,7 @@ export default async function RecordsStudentCrossYearPage({
     sectionTransfers,
     termsByAy,
     allowanceResult,
+    houses,
     siblings,
     ,
     awardThresholdsResult,
@@ -391,9 +396,12 @@ export default async function RecordsStudentCrossYearPage({
     preloadTermsForAYs(placementAyCodes),
     createServiceClient()
       .from('students')
-      .select('urgent_compassionate_allowance')
+      .select('urgent_compassionate_allowance, house_id')
       .eq('id', student.studentId)
       .maybeSingle(),
+    // The four houses, for the setter's options and to resolve this student's
+    // id to a name + colour token.
+    listHouses(),
     // Sibling sections: 3-query internal chain, returns SiblingSection[].
     (async (): Promise<SiblingSection[]> => {
       if (
@@ -470,6 +478,11 @@ export default async function RecordsStudentCrossYearPage({
       } | null
     )?.urgent_compassionate_allowance ?? 5;
 
+  const houseId =
+    (allowanceResult.data as { house_id: string | null } | null)?.house_id ??
+    null;
+  const house = houseId ? (houses.find((h) => h.id === houseId) ?? null) : null;
+
   const awardThresholds: AwardThresholds = (() => {
     const cfg = awardThresholdsResult?.data as {
       subject_award_bronze_min: number | null;
@@ -531,6 +544,14 @@ export default async function RecordsStudentCrossYearPage({
           >
             #{student.studentNumber}
           </Badge>
+          {/* A house spans P1-S4, so it is identity rather than placement —
+              it belongs beside the student number, not in the year-scoped
+              blocks below. Renders nothing when unassigned. */}
+          <HouseChip
+            name={house?.name ?? null}
+            colourToken={house?.colourToken ?? null}
+            className="h-7 px-3"
+          />
         </div>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
           Cross-year view, linked by the student&rsquo;s permanent student ID.{' '}
@@ -692,6 +713,8 @@ export default async function RecordsStudentCrossYearPage({
             enroleeByAy={enroleeByAy}
             studentNumber={studentNumber}
             allowance={allowance}
+            houses={houses}
+            houseId={houseId}
             currentEnroleeNumber={currentEnroleeNumber}
           />
         </TabsContent>
@@ -1187,6 +1210,12 @@ function AcademicSection({
                               T{t.termNumber}
                             </th>
                           ))}
+                          {/* Christina, 2026-07-31: "will the system show us
+                              the entire performance from term one to term
+                              three?" The grid below already held every term —
+                              what it never said was which way a subject was
+                              going. */}
+                          <th className="py-2 pr-3 text-right">Trend</th>
                           <th className="py-2 text-right">Annual</th>
                         </tr>
                       </thead>
@@ -1227,6 +1256,54 @@ function AcademicSection({
                                   </td>
                                 );
                               })}
+                              <td className="py-2 pr-3 text-right">
+                                {(() => {
+                                  // Zero new queries — every term's grade for
+                                  // this subject is already rendered in the
+                                  // cells to the left.
+                                  const movement = summariseSeriesMovement(
+                                    ay.terms.map((t) => ({
+                                      x: `T${t.termNumber}`,
+                                      value:
+                                        t.subjects.find(
+                                          (sub) => sub.subjectCode === code
+                                        )?.quarterlyGrade ?? null,
+                                    }))
+                                  );
+                                  if (movement.delta == null) {
+                                    // One term of data, or none — a single
+                                    // point has no direction, and pretending
+                                    // otherwise is how a flat line becomes a
+                                    // "trend".
+                                    return (
+                                      <span className="font-mono text-[11px] text-muted-foreground">
+                                        —
+                                      </span>
+                                    );
+                                  }
+                                  const { direction, label } = movement.delta;
+                                  return (
+                                    <span
+                                      className={
+                                        'inline-flex items-center gap-1 font-mono text-[11px] tabular-nums ' +
+                                        (direction === 'up'
+                                          ? 'text-brand-mint'
+                                          : direction === 'down'
+                                            ? 'text-destructive'
+                                            : 'text-muted-foreground')
+                                      }
+                                      title={`${label} since the first graded term (now ${movement.currentValue ?? '—'} at ${movement.periodLabel ?? '—'})`}
+                                    >
+                                      {direction === 'up'
+                                        ? '▲'
+                                        : direction === 'down'
+                                          ? '▼'
+                                          : '–'}
+                                      {label}
+                                    </span>
+                                  );
+                                })()}
+                              </td>
                               <td className="py-2 text-right">
                                 {(() => {
                                   const meta = subjectMeta.get(code);
@@ -1345,12 +1422,16 @@ function AttendanceSection({
   enroleeByAy,
   studentNumber,
   allowance,
+  houses,
+  houseId,
   currentEnroleeNumber,
 }: {
   rows: AttendanceHistoryRow[];
   enroleeByAy: Map<string, string>;
   studentNumber: string;
   allowance: number;
+  houses: HouseRow[];
+  houseId: string | null;
   currentEnroleeNumber: string | null;
 }) {
   return (
@@ -1375,6 +1456,19 @@ function AttendanceSection({
         </CardAction>
       </CardHeader>
       <div className="border-b border-hairline px-6 pb-4">
+        <div className="mb-4">
+          <HouseSelectInline
+            enroleeNumber={currentEnroleeNumber ?? ''}
+            houses={houses}
+            initialHouseId={houseId}
+            disabled={!currentEnroleeNumber}
+            disabledReason={
+              !currentEnroleeNumber
+                ? 'No current-AY admissions record for this student.'
+                : undefined
+            }
+          />
+        </div>
         <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           Compassionate-leave quota
         </p>

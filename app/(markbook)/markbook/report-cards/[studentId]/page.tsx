@@ -155,8 +155,17 @@ export default async function ReportCardPreview({
               ))}
             </TabsList>
           </Tabs>
+          {/* Christina asked at the 2026-07-31 training whether the system
+              could show a whole year at once. It already does — `visibleTerms`
+              in report-card-document.tsx renders Terms 1-3 side by side at any
+              interim term, and all four at Final. The previous wording ("every
+              term up to the one selected") described the COMMENTS, which are
+              cumulative, and read as though the grades table hid earlier
+              terms. Nobody had reason to look. */}
           <p className="text-xs text-muted-foreground">
-            Each card shows every term up to the one selected.
+            Grades for Terms 1&ndash;3 always appear together; Final adds Term 4
+            and the year&rsquo;s overall result. Choosing a term changes which
+            adviser comments are shown.
           </p>
         </div>
 
