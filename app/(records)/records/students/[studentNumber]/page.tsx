@@ -33,8 +33,7 @@ import { notFound, redirect } from 'next/navigation';
 import React from 'react';
 
 import { CompassionateAllowanceInline } from '@/components/sis/compassionate-allowance-inline';
-import { HouseSelectInline } from '@/components/sis/house-select-inline';
-import { HouseChip } from '@/components/ui/house-chip';
+import { HouseTile } from '@/components/sis/house-tile';
 import { listHouses, type HouseRow } from '@/lib/sis/houses';
 import { summariseSeriesMovement } from '@/lib/dashboard/trend-delta';
 import { EditFamilySheet } from '@/components/sis/edit-family-sheet';
@@ -481,7 +480,6 @@ export default async function RecordsStudentCrossYearPage({
   const houseId =
     (allowanceResult.data as { house_id: string | null } | null)?.house_id ??
     null;
-  const house = houseId ? (houses.find((h) => h.id === houseId) ?? null) : null;
 
   const awardThresholds: AwardThresholds = (() => {
     const cfg = awardThresholdsResult?.data as {
@@ -544,15 +542,8 @@ export default async function RecordsStudentCrossYearPage({
           >
             #{student.studentNumber}
           </Badge>
-          {/* A house spans P1-S4, so it is identity rather than placement —
-              it belongs beside the student number, not in the year-scoped
-              blocks below. Renders nothing when unassigned. */}
-          <HouseChip
-            name={house?.name ?? null}
-            colourToken={house?.colourToken ?? null}
-            className="h-7 px-3"
-          />
         </div>
+
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
           Cross-year view, linked by the student&rsquo;s permanent student ID.{' '}
           {ayCount > 0 ? (
@@ -577,7 +568,10 @@ export default async function RecordsStudentCrossYearPage({
       </header>
 
       <section className="@container/main">
-        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-3">
+        {/* Facts about this student. House is the fourth one and the only
+            one that can be changed — see components/sis/house-tile.tsx for
+            why it lives here rather than in a control of its own. */}
+        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
           <Stat
             label="Academic years"
             value={ayCount}
@@ -595,6 +589,17 @@ export default async function RecordsStudentCrossYearPage({
             value={academics.reduce((n, ay) => n + ay.terms.length, 0)}
             icon={GraduationCap}
             footnote="Cumulative across years"
+          />
+          <HouseTile
+            enroleeNumber={currentEnroleeNumber ?? ''}
+            houses={houses}
+            initialHouseId={houseId}
+            disabled={!currentEnroleeNumber}
+            disabledReason={
+              !currentEnroleeNumber
+                ? 'This student has no current-year admissions record yet.'
+                : undefined
+            }
           />
         </div>
       </section>
@@ -713,8 +718,6 @@ export default async function RecordsStudentCrossYearPage({
             enroleeByAy={enroleeByAy}
             studentNumber={studentNumber}
             allowance={allowance}
-            houses={houses}
-            houseId={houseId}
             currentEnroleeNumber={currentEnroleeNumber}
           />
         </TabsContent>
@@ -1422,16 +1425,12 @@ function AttendanceSection({
   enroleeByAy,
   studentNumber,
   allowance,
-  houses,
-  houseId,
   currentEnroleeNumber,
 }: {
   rows: AttendanceHistoryRow[];
   enroleeByAy: Map<string, string>;
   studentNumber: string;
   allowance: number;
-  houses: HouseRow[];
-  houseId: string | null;
   currentEnroleeNumber: string | null;
 }) {
   return (
@@ -1456,19 +1455,6 @@ function AttendanceSection({
         </CardAction>
       </CardHeader>
       <div className="border-b border-hairline px-6 pb-4">
-        <div className="mb-4">
-          <HouseSelectInline
-            enroleeNumber={currentEnroleeNumber ?? ''}
-            houses={houses}
-            initialHouseId={houseId}
-            disabled={!currentEnroleeNumber}
-            disabledReason={
-              !currentEnroleeNumber
-                ? 'No current-AY admissions record for this student.'
-                : undefined
-            }
-          />
-        </div>
         <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           Compassionate-leave quota
         </p>

@@ -47,6 +47,34 @@ export function houseSwatchClass(colourToken: string): string {
 }
 
 /**
+ * Tailwind classes for the permanent record's house icon tile.
+ *
+ * The three tiles beside it count things and share the SIS-wide indigo→navy
+ * icon-tile gradient (§7.4). This one is the student's identity rather than a
+ * quantity, so it wears the house's own colour — which means that once a house
+ * is set, the tile answers "which house" before anyone reads the word. The
+ * name is still always printed beside it (§9.3).
+ *
+ * Literal per-token strings, not a template: Tailwind emits no class it cannot
+ * read in the source, so an interpolated `from-${token}` compiles to nothing
+ * and does so silently.
+ */
+export function houseTileClass(colourToken: string): string {
+  switch (colourToken) {
+    case 'house-1':
+      return 'bg-gradient-to-br from-house-1 to-house-1-deep';
+    case 'house-2':
+      return 'bg-gradient-to-br from-house-2 to-house-2-deep';
+    case 'house-3':
+      return 'bg-gradient-to-br from-house-3 to-house-3-deep';
+    case 'house-4':
+      return 'bg-gradient-to-br from-house-4 to-house-4-deep';
+    default:
+      return 'bg-muted-foreground';
+  }
+}
+
+/**
  * Every house, in display order. Request-scoped cache — the four rows are
  * read by the students list, the permanent record and the roster chips within
  * one render.

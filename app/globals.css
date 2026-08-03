@@ -96,6 +96,13 @@
   --av-house-2: #1d4ed8;
   --av-house-3: #15803d;
   --av-house-4: #a16207;
+  /* Darker stop for the permanent record's house tile, so it reads as a
+     crafted icon tile like its three neighbours (§7.4) rather than a flat
+     patch. Same relationship as --av-indigo → --av-indigo-deep. */
+  --av-house-1-deep: #7c2d12;
+  --av-house-2-deep: #1e3a8a;
+  --av-house-3-deep: #14532d;
+  --av-house-4-deep: #713f12;
 
   /* Attendance marking-grid mark fills — HFSE paper-sheet palette (KD A3).
      LOCAL to the encode/marking surface only (wide-grid + Daily view); the
@@ -262,6 +269,10 @@
   --color-house-2: var(--av-house-2);
   --color-house-3: var(--av-house-3);
   --color-house-4: var(--av-house-4);
+  --color-house-1-deep: var(--av-house-1-deep);
+  --color-house-2-deep: var(--av-house-2-deep);
+  --color-house-3-deep: var(--av-house-3-deep);
+  --color-house-4-deep: var(--av-house-4-deep);
   --color-ink: var(--av-ink);
   --color-ink-2: var(--av-ink-2);
   --color-ink-3: var(--av-ink-3);
