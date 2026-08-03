@@ -19,6 +19,7 @@ import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
+import { HouseChip } from '@/components/ui/house-chip';
 import { StudentRecordLink } from '@/components/ui/student-record-link';
 import {
   Table,
@@ -39,6 +40,10 @@ export type ClassroomRosterRow = {
   student_number: string;
   student_name: string;
   enrollment_status: 'active' | 'late_enrollee';
+  /** The student's house — spans P1-S4, so it cannot be inferred from the
+   * section. Null when unassigned, which is a normal state. */
+  house_name: string | null;
+  house_colour_token: string | null;
 };
 
 export function ClassroomRosterTable({
@@ -100,12 +105,18 @@ export function ClassroomRosterTable({
                 {row.student_number || '—'}
               </TableCell>
               <TableCell>
-                <StudentRecordLink
-                  studentNumber={row.student_number}
-                  canOpen={showRecordLink}
-                >
-                  {row.student_name}
-                </StudentRecordLink>
+                <span className="flex flex-wrap items-center gap-2">
+                  <StudentRecordLink
+                    studentNumber={row.student_number}
+                    canOpen={showRecordLink}
+                  >
+                    {row.student_name}
+                  </StudentRecordLink>
+                  <HouseChip
+                    name={row.house_name}
+                    colourToken={row.house_colour_token}
+                  />
+                </span>
               </TableCell>
               <TableCell>
                 <EnrollmentStatusBadge status={row.enrollment_status} />

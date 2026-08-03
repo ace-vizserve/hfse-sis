@@ -1117,6 +1117,20 @@ export const VlAllowanceSchema = z.object({
 export type VlAllowanceInput = z.infer<typeof VlAllowanceSchema>;
 
 // ──────────────────────────────────────────────────────────────────────────
+// House assignment (migration 110)
+// ──────────────────────────────────────────────────────────────────────────
+//
+// Edits students.house_id. NULL clears the assignment ("not in a house yet"),
+// which is a real state — a newly enrolled student has no house until someone
+// puts them in one.
+
+export const HouseAssignmentSchema = z.object({
+  houseId: z.string().uuid().nullable(),
+});
+
+export type HouseAssignmentInput = z.infer<typeof HouseAssignmentSchema>;
+
+// ──────────────────────────────────────────────────────────────────────────
 // Residence history (ICA STP requirement — past 5 years per applicant)
 // ──────────────────────────────────────────────────────────────────────────
 //

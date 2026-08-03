@@ -140,6 +140,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'sis.documents.auto-revive': 'Documents auto-revived',
   'sis.allowance.update': 'Leave allowance updated',
   'sis.vl_allowance.update': 'Vacation allowance updated',
+  'sis.house.update': 'House updated',
   'sis.level.create': 'Level created',
 
   // Grade levels (Levels & Grade Progression, migration 078) — the admin
@@ -555,6 +556,21 @@ function templateSummary(
       } else if (after !== null) {
         parts.push(String(after));
       }
+      return joinParts(parts);
+    }
+
+    // House assignment (migration 110) ---------------------------------------
+    // The route writes `before_name`/`after_name` alongside the ids precisely
+    // so this reads as "Ana Reyes · House 2 → House 3" rather than two uuids.
+    case 'sis.house.update': {
+      const parts: string[] = [];
+      const lead = studentLead(ctx);
+      if (lead) parts.push(lead);
+      const before = str(ctx.before_name);
+      const after = str(ctx.after_name);
+      if (before && after) parts.push(`${before}${ARROW}${after}`);
+      else if (after) parts.push(after);
+      else if (before) parts.push(`${before}${ARROW}none`);
       return joinParts(parts);
     }
 

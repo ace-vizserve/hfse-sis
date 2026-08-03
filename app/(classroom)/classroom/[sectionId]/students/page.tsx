@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import { ClassroomRosterTable } from '@/components/classroom/classroom-roster-table';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
+import { listHouses } from '@/lib/sis/houses';
 import { canOpenStudentRecord, canReadReportCard } from '@/lib/classroom/scope';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
@@ -15,6 +16,7 @@ type EnrolmentRow = {
     last_name: string;
     first_name: string;
     middle_name: string | null;
+    house_id: string | null;
   } | null;
 };
 
@@ -39,13 +41,18 @@ export default async function ClassroomStudentsPage({
   const { data: rows } = await supabase
     .from('section_students')
     .select(
-      'id, index_number, enrollment_status, student:students(id, student_number, last_name, first_name, middle_name)'
+      'id, index_number, enrollment_status, student:students(id, student_number, last_name, first_name, middle_name, house_id)'
     )
     .eq('section_id', sectionId)
     .neq('enrollment_status', 'withdrawn')
     .order('index_number');
 
   const enrolments = (rows ?? []) as unknown as EnrolmentRow[];
+  // A house spans P1-S4, so an adviser looking at their own class cannot infer
+  // it from anything else on this screen. The join above already reaches
+  // `students`, so this costs one extra column, not a query.
+  const houses = await listHouses();
+  const houseById = new Map(houses.map((h) => [h.id, h]));
   const rosterRows = enrolments.map((e) => {
     const s = e.student;
     return {
@@ -57,6 +64,12 @@ export default async function ClassroomStudentsPage({
         ? [s.last_name, s.first_name, s.middle_name].filter(Boolean).join(', ')
         : '(missing student)',
       enrollment_status: e.enrollment_status as 'active' | 'late_enrollee',
+      house_name: s?.house_id
+        ? (houseById.get(s.house_id)?.name ?? null)
+        : null,
+      house_colour_token: s?.house_id
+        ? (houseById.get(s.house_id)?.colourToken ?? null)
+        : null,
     };
   });
 

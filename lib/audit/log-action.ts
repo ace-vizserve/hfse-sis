@@ -83,6 +83,7 @@ export const ALL_AUDIT_ACTIONS = [
   'sis.documents.auto-revive',
   'sis.allowance.update',
   'sis.vl_allowance.update',
+  'sis.house.update',
   'sis.level.create',
   // 'level.create'/'level.update'/'level.delete'/'level.offering.toggle'
   // backed the Grade Levels admin CRUD (KD #153) — removed by migration 086

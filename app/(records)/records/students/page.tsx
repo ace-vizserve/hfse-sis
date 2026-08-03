@@ -37,7 +37,9 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { listStudents, type StudentListRow } from '@/lib/sis/queries';
+import { listHouses } from '@/lib/sis/houses';
 import { countUnsyncedEnrolledStudents } from '@/lib/sis/unsynced-students';
+import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -134,10 +136,48 @@ export default async function RecordsStudentsPage({
     withdrawnFromSections = withdrawnSet.size;
   }
 
+  // House. `StudentListRow` is built entirely from the admissions tables and
+  // carries nothing from `public.students`, so the house has to be joined on
+  // here — beside the section_students merge above, which exists for the same
+  // reason. Keyed by studentNumber (Hard Rule #4); students without one yet
+  // simply have no house.
+  const houses = await listHouses();
+  const houseById = new Map(houses.map((h) => [h.id, h]));
+  const houseByStudentNumber = new Map<string, string>();
+  const studentNumbers = students
+    .map((s) => s.studentNumber)
+    .filter((n): n is string => !!n);
+  if (studentNumbers.length > 0) {
+    const rows = await fetchInChunks(studentNumbers, (slice) =>
+      fetchAllPages<{ student_number: string; house_id: string | null }>(
+        (from, to) =>
+          service
+            .from('students')
+            .select('student_number, house_id')
+            .in('student_number', slice)
+            .order('student_number')
+            .range(from, to)
+      )
+    );
+    for (const r of rows) {
+      if (r.house_id) houseByStudentNumber.set(r.student_number, r.house_id);
+    }
+  }
+
   const studentsWithStatus: StudentListRow[] = students.map((s) => ({
     ...s,
     enrollmentStatus: enrollmentStatusMap.get(s.enroleeNumber) ?? null,
     indexNumber: indexNumberMap.get(s.enroleeNumber) ?? null,
+    house:
+      s.studentNumber && houseByStudentNumber.has(s.studentNumber)
+        ? (houseById.get(houseByStudentNumber.get(s.studentNumber)!)?.name ??
+          null)
+        : null,
+    houseColourToken:
+      s.studentNumber && houseByStudentNumber.has(s.studentNumber)
+        ? (houseById.get(houseByStudentNumber.get(s.studentNumber)!)
+            ?.colourToken ?? null)
+        : null,
   }));
 
   const activeCount = studentsWithStatus.filter(

@@ -1,0 +1,84 @@
+import { cache } from 'react';
+
+import { createServiceClient } from '@/lib/supabase/service';
+
+// The house system (migration 110) — the Commonwealth grouping that cuts
+// across year groups, so a house holds students from P1 to S4.
+//
+// NO `import 'server-only'` here, deliberately, and the same reasoning as
+// lib/sis/levels.ts: the chip component is a client component and imports the
+// pure token helper below. Only `listHouses` touches the service client, and
+// only server components call it.
+
+export type HouseRow = {
+  id: string;
+  code: string;
+  name: string;
+  /** Design-token NAME, resolved against app/globals.css. Never a hex value. */
+  colourToken: string;
+  sortOrder: number;
+};
+
+/**
+ * Tailwind classes for a house swatch.
+ *
+ * These are house IDENTITY, not semantic state — a house simply IS its colour,
+ * and it carries no good/warning/critical meaning. Never reuse them to signal
+ * status, and never render the colour alone: every caller shows the house name
+ * beside it, so the information survives for anyone who cannot distinguish the
+ * hues (§9.3, and Hard Rule #7 is why these are tokens rather than hex).
+ *
+ * Unknown tokens fall back to a neutral rather than throwing — a house added
+ * by an admin without a matching token should still render.
+ */
+export function houseSwatchClass(colourToken: string): string {
+  switch (colourToken) {
+    case 'house-1':
+      return 'bg-house-1';
+    case 'house-2':
+      return 'bg-house-2';
+    case 'house-3':
+      return 'bg-house-3';
+    case 'house-4':
+      return 'bg-house-4';
+    default:
+      return 'bg-muted-foreground';
+  }
+}
+
+/**
+ * Every house, in display order. Request-scoped cache — the four rows are
+ * read by the students list, the permanent record and the roster chips within
+ * one render.
+ *
+ * Returns an ARRAY, never a Set: this shape gets passed to cached server
+ * functions elsewhere and `unstable_cache` JSON-serialises, which turns a Set
+ * into `{}` (KD #153).
+ */
+export const listHouses = cache(async (): Promise<HouseRow[]> => {
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from('houses')
+    .select('id, code, name, colour_token, sort_order')
+    .order('sort_order');
+  if (error) {
+    // Best-effort: a house chip is never worth failing a page for.
+    console.error('[houses] read failed:', error.message);
+    return [];
+  }
+  return (
+    (data ?? []) as Array<{
+      id: string;
+      code: string;
+      name: string;
+      colour_token: string;
+      sort_order: number;
+    }>
+  ).map((h) => ({
+    id: h.id,
+    code: h.code,
+    name: h.name,
+    colourToken: h.colour_token,
+    sortOrder: h.sort_order,
+  }));
+});

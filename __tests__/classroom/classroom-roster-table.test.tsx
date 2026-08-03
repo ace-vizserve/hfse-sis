@@ -30,6 +30,8 @@ const ROWS: ClassroomRosterRow[] = [
     student_number: 'S12345',
     student_name: 'Reyes, Ana',
     enrollment_status: 'active',
+    house_name: null,
+    house_colour_token: null,
   },
 ];
 

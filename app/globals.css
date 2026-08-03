@@ -85,6 +85,18 @@
   --av-hairline: #e2e8f0;
   --av-hairline-strong: #cbd5e1;
 
+  /* House colours (migration 110). Unlike every other token here these are
+     IDENTITY, not semantics — a house IS its colour, so they carry no
+     good/warning/critical meaning and must never be reused to signal state.
+     They live here rather than as hex in a component so Hard Rule #7 holds.
+     ⚠ Placeholders until Chandana confirms HFSE's actual house colours;
+     renaming is a one-line change here and nothing branches on the values.
+     Colour is never the only signal — every house chip also shows its name. */
+  --av-house-1: #c2410c;
+  --av-house-2: #1d4ed8;
+  --av-house-3: #15803d;
+  --av-house-4: #a16207;
+
   /* Attendance marking-grid mark fills — HFSE paper-sheet palette (KD A3).
      LOCAL to the encode/marking surface only (wide-grid + Daily view); the
      attendance dashboard / drills / quota cards keep the semantic
@@ -246,6 +258,10 @@
   --color-brand-amber: var(--av-amber);
   --color-brand-amber-light: var(--av-amber-light);
   --color-brand-bronze: var(--av-bronze);
+  --color-house-1: var(--av-house-1);
+  --color-house-2: var(--av-house-2);
+  --color-house-3: var(--av-house-3);
+  --color-house-4: var(--av-house-4);
   --color-ink: var(--av-ink);
   --color-ink-2: var(--av-ink-2);
   --color-ink-3: var(--av-ink-3);

@@ -31,6 +31,7 @@ import {
   type ApplicationTerminalReason,
   type StageKey,
 } from '@/lib/schemas/sis';
+import { HouseChip } from '@/components/ui/house-chip';
 
 // Field on StudentListRow carrying each stage's status string — used to build
 // the 9 hidden filterable "stage_<key>" facet columns when `showPipeline` is
@@ -272,6 +273,32 @@ export function StudentDataTable({
         cell: ({ row }) =>
           row.original.classSection ? (
             <span className="text-foreground">{row.original.classSection}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+        filterFn: (row, id, value) => {
+          if (!value || (Array.isArray(value) && value.length === 0))
+            return true;
+          return Array.isArray(value)
+            ? value.includes(row.getValue(id))
+            : row.getValue(id) === value;
+        },
+      },
+      {
+        // House spans P1-S4, so it cannot be read off Level or Section — this
+        // is the only place on the list it can come from. `accessorFn` rather
+        // than `accessorKey` so the facet filters on the NAME (what a person
+        // picks) while the cell still gets the colour token from the row.
+        accessorFn: (row: StudentListRow) => row.house ?? '',
+        id: 'house',
+        header: 'House',
+        meta: { label: 'House' },
+        cell: ({ row }) =>
+          row.original.house ? (
+            <HouseChip
+              name={row.original.house}
+              colourToken={row.original.houseColourToken ?? null}
+            />
           ) : (
             <span className="text-muted-foreground">—</span>
           ),
@@ -570,6 +597,7 @@ export function StudentDataTable({
       facets={[
         { columnId: 'level', label: 'Level' },
         { columnId: 'section', label: 'Section' },
+        { columnId: 'house', label: 'House' },
         ...(showStaleness
           ? [
               {

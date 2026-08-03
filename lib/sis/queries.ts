@@ -52,6 +52,11 @@ export type StudentListRow = {
   // by the Records student directory — null for Admissions callers and for
   // students with no active section row (unsynced / withdrawn-only).
   indexNumber?: number | null;
+  /** House name + colour token, merged in by the page from `public.students` —
+   * the admissions tables this row is otherwise built from know nothing about
+   * it. Null when unassigned or not yet synced. */
+  house?: string | null;
+  houseColourToken?: string | null;
   // Terminal reason + notes — only present on Cancelled/Withdrawn rows.
   // Populated from _enrolment_status; undefined for non-terminal rows is
   // safe — callers only render these on the closed-applications page.
