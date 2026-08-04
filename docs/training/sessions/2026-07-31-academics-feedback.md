@@ -16,11 +16,10 @@ someone said in a room does not change; status changes weekly. They are split
 accordingly: **this file holds the words, the todos and the open questions; the
 dev plan holds the sprint status.**
 
-**Questions before code.** Every item below carries a _Questions to settle_
-block — the plain-English W/H set that has to have answers before the feature
-is finished. House is the cautionary example: it shipped, works, and is on
-production, and nobody can yet say what a house is FOR or whether it may touch
-a grade. Ask these in the room, not in a design doc.
+**Questions before code.** _Questions to send_ below holds the plain-English
+questions each item still needs answered, written so the person who asked can
+answer them without a developer present. Ask them in the room, not in a design
+doc.
 
 ---
 
@@ -103,165 +102,169 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 
 ---
 
-## Questions to settle
+## Questions to send
 
-> **Send-ready versions are in `2026-07-31-questions-to-send.md`** — one block
-> per person, plain English, no system vocabulary. Send those. This section is
-> the same questions with our reasoning attached, which is why it stays here.
+Ready to copy, one block per person. **An item is not finished until its
+questions have answers** — house shipped without them, which is why its four
+rows are still called "House 1" and why nobody can yet say what a house is FOR
+or whether it may ever touch a grade.
 
-Written to be answerable by the person who asked, in a meeting, without a
-developer present. **An item is not ready to build until its questions have
-answers** — house shipped without them, which is why its four rows are still
-called "House 1" and why nobody can yet say what a house is FOR.
+Send separately rather than as one group message: each person only needs their
+own, and short lists get answered. Every block follows the same six —
+what is it for · who does it · when · what can change it · who can see it ·
+**what must it never do** — with the last phrased as a confirmation, because it
+is the cheapest question to ask and the one most often skipped.
 
-Everything here follows the same six: **what is it for · who does it · when ·
-what can change it · who can see it · what must it never do.** The last one is
-the cheapest question in the list and the one most often skipped.
+Two entries are corrections rather than questions, marked **⚠**. Both were
+answered wrongly in the session and someone is working from bad information now.
 
-### 1 · Excused note — SHIPPED, questions still open
+### To Chandana
 
-- **Who is allowed to read a note?** Today: any teacher who can see the mark,
-  plus registrar-and-above. Should a note saying "mother in hospital" really be
-  visible to every subject teacher, or only the form adviser?
-- **Do parents ever see it?** Today, no. Confirm that is intended.
-- **Does it belong on the printed register?** Deliberately left off the xlsx
-  export — the layout cannot take a column without shifting every date (KD
-  #151). If the school wants it on paper, it needs a different shape.
-- **What must it never do:** it is not a medical record and cannot be edited
-  away — every version is kept. Is the school comfortable with that?
+> Hi Ms Chandana,
+>
+> The house field is now in the system — every student can be assigned a house,
+> and it stays with them from P1 to S4 rather than resetting each year. Before I
+> can set it up properly I need a few things from you:
+>
+> 1. What are the four houses called, and what colour is each one?
+> 2. Once a student is put in a house, do they stay in it for their whole time
+>    at HFSE, or can it change?
+> 3. Do brothers and sisters go into the same house?
+> 4. What are houses used for day to day — sports days, assemblies, the awards
+>    at the end of the year, something else?
+> 5. Should parents be able to see which house their child is in? Should it
+>    appear on the report card? (Right now only staff can see it.)
+> 6. Just to confirm: being in a house never changes a student's grade in any
+>    way — it is only for house activities and points. Is that right?
+>
+> On **house points**, which you mentioned alongside the awards — I have not
+> built anything yet, because how they work has to come from you first:
+>
+> 7. What earns a point?
+> 8. Who records them, and can points be taken away?
+> 9. Do they reset each year, or run across a student's whole time here?
+> 10. Should there be a running total anyone can look at, and who should see it
+>     — staff, students, parents?
+>
+> One more, unrelated:
+>
+> 11. If the number of quizzes or the weightings change part-way through a year,
+>     should that apply to the term already in progress, or only from the next
+>     term onward?
+>
+> Thank you.
 
-### 2 · House — SHIPPED on placeholders, questions still open
+### To Christina
 
-The feature exists; what it MEANS does not. These are Chandana's to answer.
+> Hi Ms Christina,
+>
+> Following up on what you raised at the training. A few things I need decided
+> before I build them.
+>
+> **Student information for teachers** (Ms Melissa asked for this too)
+>
+> 1. Which details should a teacher be able to see when they click a student's
+>    name? Allergies and special-needs declarations were mentioned — should
+>    parent contact numbers be there as well?
+> 2. Is there anything a teacher should specifically **not** see?
+> 3. Should every teacher see this, or only teachers who currently teach that
+>    student?
+>
+> **Medical certificates**
+>
+> 4. Who should be able to upload one — the teacher who marked the absence, the
+>    office, or both?
+> 5. Who should be able to open it afterwards?
+> 6. How long do we keep them, and does the paper copy still get filed as well?
+>
+> **Disciplinary records**
+>
+> 7. Should the system become the place where incident reports are written, or
+>    only a place to view reports filed elsewhere?
+> 8. Who writes an entry, and who is allowed to correct or remove one?
+> 9. Who can read them — every teacher who teaches the student, only the form
+>    class adviser, or only leadership?
+> 10. Do the records carry over between school years? Do parents ever see them?
+>
+> **Awards and certificates**
+>
+> 11. What should be recorded for each one — the award name, the date, who
+>     issued it, and the certificate file?
+> 12. Who enters it — the teacher who ran the activity, or the office?
+> 13. At the end of the year, would you like a list per student, a list per
+>     award, or both?
+>
+> **Grade-change approvals**
+>
+> 14. How many approvers do you need, and who are they?
+> 15. ⚠ **This one matters.** At the moment, whoever responds first decides the
+>     request, and the second person's response is not used. So it is not
+>     really two signatures — it is whichever of you gets there first. If you
+>     need both people to agree before a change goes through, tell me and I will
+>     change it.
+> 16. For a change after the report book has already gone out: who is the AEB
+>     approver in the system — a specific person, or a role?
+> 17. Does "already issued" mean the report book was published at least once, or
+>     that parents can see it right now? (A parent may have seen a card that was
+>     later taken down.)
+>
+> **Relief teachers**
+>
+> 18. When a relief teacher covers a class and marks the register, should it
+>     show that it was marked on behalf of the usual teacher?
+>
+> Thank you.
 
-- **What is a house for at HFSE?** Competition and points? Pastoral grouping?
-  Seating and assembly? Sports days only? The answer decides whether this stays
-  one field or grows a whole subsystem.
-- **Why does it belong in the SIS?** Where is it recorded today, and what
-  breaks if it stays there? (Asked plainly: what does putting it here let
-  someone do that they cannot do now?)
-- **Does a house affect a grade in any way — ever?** The build assumes **no**,
-  and nothing in the grading formula reads it. Chandana linked houses to awards
-  in the same breath at 23:51, so this needs saying out loud: an award tier
-  derived from an average must not become "house 2 gets a bonus". Confirm.
-- **Who assigns a student's house, and when?** At enrolment? By the registrar,
-  the form adviser, or the office? Today the route is open to
-  enrolment-placement writers, which is a guess.
-- **Can a student change house?** The build assumes never — that continuity is
-  the whole point, and it is why the field lives on the cross-AY record. If
-  they CAN change, what happens to points already earned?
-- **Do siblings go in the same house?** Common practice, and it changes how the
-  first ~400 are assigned.
-- **Who can see it?** Teachers, parents, the students themselves? Should it
-  appear on the report card? (Today: staff surfaces only, deliberately.)
-- **What happens to a withdrawn or transferred student?** And to one who
-  leaves and returns in a later year?
-- **What must it never do:** it must not be reset by the August rollover, and
-  it must not become a way to group students for anything academic.
+### To Koh
 
-### 3 · Whole-year view — SHIPPED, one question open
+> Hi Ms Koh,
+>
+> The at-risk flagging you asked for is now on the grading sheet — there is a
+> **Look up student** button that lists who needs a look, with what dropped and
+> by how much. Three questions so I can finish it properly:
+>
+> 1. How big a drop should raise a flag? At the moment it is five points. Is a
+>    drop from 95 to 89 the same level of concern as one from 65 to 59?
+> 2. Who should be told — the subject teacher, the form class adviser, or both?
+>    Right now only the subject teacher can see it, and you mentioned the FCA as
+>    well, so I would like to get that right.
+> 3. After a teacher contacts the parents, should the system record that the
+>    call was made, or is that kept outside the system?
+>
+> ⚠ Also, a correction to something you were told during the session. You asked
+> whether an exam's total marks could be changed through a change request — the
+> answer given was yes, but that is not correct. Total marks are part of the
+> subject settings and are changed by the academic coordinator (Ms Joann).
+> Change requests are for a student's scores only. Apologies for the confusion.
+>
+> Thank you.
 
-- **Who else needs it?** It is on the Records student page, which subject
-  teachers cannot open. Christina is school admin and can. Should a subject
-  teacher see one student's whole year, or only their own subject?
+### To Wynne
 
-### 4 · At-risk — HALF SHIPPED
+> Hi Ms Wynne,
+>
+> Two things from the training:
+>
+> 1. **Transcript of Records** — the data is all there and goes back across
+>    school years. What I need is the school's template, so the layout matches
+>    what you issue today. Could you send a copy, or a recent example with the
+>    student's details removed?
+> 2. **Approvers** — you mentioned there are quite a few people who approve
+>    grade changes. How many do you need the system to allow? Ms Christina is
+>    deciding who they are, so this is just the number.
+>
+> Thank you.
 
-- **What actually counts as "at risk"?** Five points is our guess, not a school
-  rule. Is a drop from 95 to 89 the same concern as 65 to 59?
-- **Who is supposed to act — the subject teacher, the form adviser, or both?**
-  Koh named both. Today only the subject teacher can see it.
-- **What happens after the call?** Koh's endpoint was contacting the parents.
-  Should the system record that the call was made, or is that outside it?
-- **How often should someone look?** Once a term, weekly, or only when
-  entering marks? This decides whether it needs to notify or merely display.
-- **What must it never do:** it must not reach parents, and it must not be
-  read as a prediction about a child.
+### Not asked yet, and why
 
-### 5 · Student profile — NOT STARTED
+**Melissa** — her question at the training was about teacher access to medical
+alerts and learning difficulties, which is the same feature as Christina's
+first block. Folded in there rather than asked twice.
 
-- **What exactly should a teacher see?** Allergies and special-needs
-  declarations were named. What about passport numbers, parent NRICs, fee
-  status, admission notes? The underlying table has ~150 columns and the app
-  layer is the only thing protecting them.
-- **Which teachers?** Any teacher, or only those currently teaching that
-  student? A form adviser only for their own class?
-- **Who decides what is shareable** — Christina, the registrar, or a policy
-  that already exists on paper?
-- **Where does a teacher expect to find it?** Clicking a name in their class
-  list, or a search? Christina's words were "a common place to view that".
-- **What must it never do:** it must not become a second place where medical
-  information is edited, and it must not show a student's file to a teacher who
-  does not teach them.
+**Hermilita** — her addition ("not only the quizzes, but also the exam and
+overall") is already built. Nothing to ask.
 
-### 6 · MC upload — NOT STARTED, security first
-
-- **Who may upload, replace, and delete?** Teachers, the office, or both?
-- **Who may look at an uploaded certificate afterwards?**
-- **How long is it kept, and who deletes it?** Is this a medical record with a
-  retention rule the school already follows?
-- **Is the paper certificate still filed as well?** If yes, this is a
-  convenience copy; if no, it becomes the record of truth and needs to be
-  treated like one.
-- **What must it never do:** it must not put a child's medical document
-  somewhere reachable by guessing a web address, and granting teachers upload
-  rights must not hand them the ability to overwrite passports and birth
-  certificates.
-
-### 7 · Disciplinary records — NOT STARTED
-
-- **Is the SIS the system of record, or a window onto the existing process?**
-  Incident reports are filed somewhere today. Does that stop, or continue?
-- **Who writes an entry, and who may edit or remove one?**
-- **Who reads it?** Every teacher who teaches the student, only the form
-  adviser, only leadership?
-- **Does it follow the student across years, or reset?**
-- **Do parents ever see it? Does it appear on any report?**
-- **What must it never do:** it must not be deletable without a trace, and it
-  must not affect a grade.
-
-### 8 · Awards beyond the tiers — NOT STARTED
-
-- **What is recorded for one award?** Name, date, issuer, level (school /
-  national), the certificate file?
-- **Who records it — the teacher who ran the activity, or the office?**
-- **Is the soft copy required or optional?**
-- **What is the output?** Christina named the moving-up ceremony — is the goal
-  a printable per-student list at year end, a per-award list, or both?
-- **What must it never do:** it must not be confused with the Gold/Silver/Bronze
-  tiers, which are computed from averages and have no issuer or date.
-
-### 9 · House points — NOT STARTED, blocked on #2 and #8
-
-- **What earns a point?** Only awards, or also behaviour, attendance, sport?
-- **How many, and who decides the scale?**
-- **Who records them, and can they be taken away?**
-- **Do they reset each year?** Chandana mentioned an "overall house points
-  towards the end of the year", which sounds like a yearly total.
-- **Is there a live leaderboard, and who sees it — staff, students, parents?**
-- **What must it never do:** it must not sit on the report card, and it must
-  not be derived automatically from grades.
-
-### 10 · More than two approvers — NOT STARTED
-
-- **How many, and who are they by name or by role?**
-- **Must every approver agree, or is one enough?** This is the important one.
-  Today the FIRST to act decides and the second is never read — so if the
-  school believes two signatures are required, the system does not currently
-  do that.
-- **Does the number differ by what is being changed?**
-- **What must it never do:** it must not let a change apply with fewer
-  approvals than policy requires, silently.
-
-### 11 · Approval route keyed on publication — NOT STARTED
-
-- **Who is the AEB in the system?** A named person, a role, a group?
-- **Does "issued" mean the report book was published once, or that it is
-  currently visible to parents?** We want the former — a card seen by a parent
-  and then unpublished has still been seen.
-- **Does the AEB replace the two approvers after issue, or add to them?**
-- **What must it never do:** a post-issue change must not be applicable on the
-  pre-issue route by anyone, including by accident of timing.
+**Joel** — no open items.
 
 ---
 
