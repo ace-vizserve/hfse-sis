@@ -293,8 +293,8 @@ export function CellMarkPalette({
             })}
           </ToggleGroup>
 
-          {/* Melissa's ask (2026-07-31): somewhere to record WHY, since the MC
-              document itself cannot be attached yet. Lives inside the drawer
+          {/* Christina's ask (2026-07-31, 31:07): somewhere to record WHY,
+              since the MC document itself cannot be attached yet. Lives inside the drawer
               because the column is EX-only at the database too.
 
               Three lines, not the one it started as. The field takes 300

@@ -1291,6 +1291,8 @@ Other cross-cutting candidates not yet scoped to a plan file:
 
 ## Academics training feedback — 2026-07-31 session 1 (triage 2026-08-01)
 
+> **The words, the attributions and the todos live in `docs/training/sessions/2026-07-31-academics-feedback.md`.** This section keeps the sprint status only. When the two disagree, that file wins — it quotes the transcript; this one paraphrases it, and the paraphrase has already been wrong twice.
+
 Fathom transcript of the first SIS training with the academics team. Eleven action items were raised. **Three pre-existing defects surfaced during triage were fixed first** and are recorded as KD #174 (in-page link reachability), KD #175 (the missed `SECURITY DEFINER` revoke) and KD #176 (subject config as ceiling, not broadcast); migrations 107 + 108 are applied.
 
 **Four of the eleven then shipped (2026-08-03, migrations 109 + 110 applied) — KD #177 / #178 / #179.** They are checked off in place below. Everything still unchecked is either genuinely unbuilt, blocked on someone else's input, or a policy call the school owns. **Browser pass so far covers attendance only.**

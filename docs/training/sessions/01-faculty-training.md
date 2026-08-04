@@ -27,7 +27,7 @@
 4. **Key rule — Blank ≠ Zero:** an empty cell = "not taken" (excluded); a `0` = "took it, scored zero" (counted). Show both.
 5. **Non-examinable subjects** (Music/Arts/PE/MAPEH): the Quarterly shows a **letter** (A/B/C/IP) derived from the score; use the **"Override" dropdown** for N/A or UG/E.
 6. **Locked sheet:** once a sheet is locked, you can't edit directly — you **raise a change request** (pick the two approvers, add a reason). Show the dialog. Frame it: "this protects finalized grades; the office approves the change."
-7. Mention the **±5 alert chip** — flags a big term-to-term swing for a student so you can double-check.
+7. Mention **Look up student** in the sheet toolbar — a ranked list of who needs a look, with the count on the button. Opening a student shows the term grade against an earlier term, the three components beneath it, and any assessment well below that student's own average on the sheet. _(Replaced the ±5 alert chip and its column on 2026-08-03 — KD #179.)_
 
 **Hands-on:** "On _your_ sheet: enter a full WW/PT/QA set for one student; leave one cell blank and set another to 0; read the Quarterly. Then open a locked sheet and start a change request (don't submit)."
 
