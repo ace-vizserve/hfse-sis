@@ -105,6 +105,10 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 
 ## Questions to settle
 
+> **Send-ready versions are in `2026-07-31-questions-to-send.md`** — one block
+> per person, plain English, no system vocabulary. Send those. This section is
+> the same questions with our reasoning attached, which is why it stays here.
+
 Written to be answerable by the person who asked, in a meeting, without a
 developer present. **An item is not ready to build until its questions have
 answers** — house shipped without them, which is why its four rows are still
