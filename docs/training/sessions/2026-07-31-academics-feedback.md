@@ -104,16 +104,17 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 
 ## Questions to send
 
-Ready to copy, one block per person. **An item is not finished until its
-questions have answers** — house shipped without them, which is why its four
-rows are still called "House 1" and why nobody can yet say what a house is FOR
-or whether it may ever touch a grade.
+Ready to copy, one block per person. Send separately — each person only needs
+their own, and short lists get answered.
 
-Send separately rather than as one group message: each person only needs their
-own, and short lists get answered. Every block follows the same six —
-what is it for · who does it · when · what can change it · who can see it ·
-**what must it never do** — with the last phrased as a confirmation, because it
-is the cheapest question to ask and the one most often skipped.
+**Keep them small.** These exist to pin down what was already asked for, not to
+design it. A first draft asked Chandana whether house points could be taken
+away and whether there should be a leaderboard; she never mentioned either, and
+questions like that invite a bigger feature than the one requested. If a
+question is not needed to finish the thing they described, it does not go in.
+
+Anything genuinely undecided on our side stays in **Todos** above, where it
+belongs, until it turns into something they can actually answer.
 
 Two entries are corrections rather than questions, marked **⚠**. Both were
 answered wrongly in the session and someone is working from bad information now.
@@ -122,35 +123,19 @@ answered wrongly in the session and someone is working from bad information now.
 
 > Hi Ms Chandana,
 >
-> The house field is now in the system — every student can be assigned a house,
-> and it stays with them from P1 to S4 rather than resetting each year. Before I
-> can set it up properly I need a few things from you:
+> The house field is in the system now — every student can be assigned a house,
+> and it stays with them from P1 to S4. To finish it I need:
 >
-> 1. What are the four houses called, and what colour is each one?
-> 2. Once a student is put in a house, do they stay in it for their whole time
->    at HFSE, or can it change?
-> 3. Do brothers and sisters go into the same house?
-> 4. What are houses used for day to day — sports days, assemblies, the awards
->    at the end of the year, something else?
-> 5. Should parents be able to see which house their child is in? Should it
->    appear on the report card? (Right now only staff can see it.)
-> 6. Just to confirm: being in a house never changes a student's grade in any
->    way — it is only for house activities and points. Is that right?
+> 1. What are the four houses called, and what colour is each?
+> 2. Who decides which house a student goes into? And is there an existing list
+>    I can load, or should I set them up one by one?
 >
-> On **house points**, which you mentioned alongside the awards — I have not
-> built anything yet, because how they work has to come from you first:
+> On house points, which you mentioned alongside the awards:
 >
-> 7. What earns a point?
-> 8. Who records them, and can points be taken away?
-> 9. Do they reset each year, or run across a student's whole time here?
-> 10. Should there be a running total anyone can look at, and who should see it
->     — staff, students, parents?
->
-> One more, unrelated:
->
-> 11. If the number of quizzes or the weightings change part-way through a year,
->     should that apply to the term already in progress, or only from the next
->     term onward?
+> 3. Could you describe how house points work at HFSE — what earns a point, and
+>    who records them?
+> 4. Are they connected to the awards? You mentioned the two together, so I want
+>    to check whether an award should also give the student's house points.
 >
 > Thank you.
 
@@ -158,60 +143,46 @@ answered wrongly in the session and someone is working from bad information now.
 
 > Hi Ms Christina,
 >
-> Following up on what you raised at the training. A few things I need decided
-> before I build them.
+> Four things you raised at the training. Short questions on each so I build
+> what you actually need.
 >
-> **Student information for teachers** (Ms Melissa asked for this too)
+> **Student details for teachers** — you mentioned allergies and special-needs
+> declarations, so teachers do not have to hunt through folders. Ms Melissa
+> asked for the same.
 >
-> 1. Which details should a teacher be able to see when they click a student's
->    name? Allergies and special-needs declarations were mentioned — should
->    parent contact numbers be there as well?
-> 2. Is there anything a teacher should specifically **not** see?
-> 3. Should every teacher see this, or only teachers who currently teach that
->    student?
+> 1. Besides allergies and special needs, what else should be on that screen?
+> 2. Should every teacher see it, or only the teachers who teach that student?
 >
 > **Medical certificates**
 >
-> 4. Who should be able to upload one — the teacher who marked the absence, the
->    office, or both?
-> 5. Who should be able to open it afterwards?
-> 6. How long do we keep them, and does the paper copy still get filed as well?
+> 3. When a student brings one in, who would upload it — the teacher who marked
+>    the absence, or the office?
+> 4. Who needs to be able to open it afterwards?
 >
 > **Disciplinary records**
 >
-> 7. Should the system become the place where incident reports are written, or
->    only a place to view reports filed elsewhere?
-> 8. Who writes an entry, and who is allowed to correct or remove one?
-> 9. Who can read them — every teacher who teaches the student, only the form
->    class adviser, or only leadership?
-> 10. Do the records carry over between school years? Do parents ever see them?
+> 5. Where are incident reports written and kept today? I want to know whether
+>    the system should replace that, or just show what is already on file.
+> 6. Who should be able to see a student's record — every teacher who teaches
+>    them, the form class adviser, or only leadership?
 >
 > **Awards and certificates**
 >
-> 11. What should be recorded for each one — the award name, the date, who
->     issued it, and the certificate file?
-> 12. Who enters it — the teacher who ran the activity, or the office?
-> 13. At the end of the year, would you like a list per student, a list per
->     award, or both?
+> 7. What would you want listed for each one? I am assuming the award name, the
+>    date and who gave it, with the certificate file attached — tell me if
+>    anything is missing.
+> 8. Who would enter it — the teacher who ran the activity, or the office?
 >
 > **Grade-change approvals**
 >
-> 14. How many approvers do you need, and who are they?
-> 15. ⚠ **This one matters.** At the moment, whoever responds first decides the
->     request, and the second person's response is not used. So it is not
->     really two signatures — it is whichever of you gets there first. If you
->     need both people to agree before a change goes through, tell me and I will
->     change it.
-> 16. For a change after the report book has already gone out: who is the AEB
->     approver in the system — a specific person, or a role?
-> 17. Does "already issued" mean the report book was published at least once, or
->     that parents can see it right now? (A parent may have seen a card that was
->     later taken down.)
->
-> **Relief teachers**
->
-> 18. When a relief teacher covers a class and marks the register, should it
->     show that it was marked on behalf of the usual teacher?
+> 9. How many approvers do you need, and who are they?
+> 10. ⚠ Worth flagging: at the moment whoever responds first decides the
+>     request, and the second person's response is not used — so it is not
+>     really two signatures, it is whichever of you gets there first. If you
+>     need both to agree before a change goes through, say so and I will change
+>     it.
+> 11. For a change after the report book has gone out, you mentioned AEB
+>     approval — who should that be in the system?
 >
 > Thank you.
 
@@ -219,23 +190,20 @@ answered wrongly in the session and someone is working from bad information now.
 
 > Hi Ms Koh,
 >
-> The at-risk flagging you asked for is now on the grading sheet — there is a
-> **Look up student** button that lists who needs a look, with what dropped and
-> by how much. Three questions so I can finish it properly:
+> The at-risk flagging you asked for is on the grading sheet now — a **Look up
+> student** button lists who needs a look, with what dropped and by how much.
+> Two questions:
 >
-> 1. How big a drop should raise a flag? At the moment it is five points. Is a
->    drop from 95 to 89 the same level of concern as one from 65 to 59?
-> 2. Who should be told — the subject teacher, the form class adviser, or both?
->    Right now only the subject teacher can see it, and you mentioned the FCA as
->    well, so I would like to get that right.
-> 3. After a teacher contacts the parents, should the system record that the
->    call was made, or is that kept outside the system?
+> 1. You mentioned the subject teacher **or the FCA** — should the form class
+>    adviser see this as well? At the moment only the subject teacher can, and I
+>    would like to get that right.
+> 2. How big a drop should raise a flag? It is set to five points at the moment.
 >
-> ⚠ Also, a correction to something you were told during the session. You asked
+> ⚠ Also a correction to something you were told in the session. You asked
 > whether an exam's total marks could be changed through a change request — the
-> answer given was yes, but that is not correct. Total marks are part of the
+> answer given was yes, but that is not right. Total marks are part of the
 > subject settings and are changed by the academic coordinator (Ms Joann).
-> Change requests are for a student's scores only. Apologies for the confusion.
+> Change requests are for a student's scores only. Sorry for the confusion.
 >
 > Thank you.
 
@@ -246,27 +214,32 @@ answered wrongly in the session and someone is working from bad information now.
 > Two things from the training:
 >
 > 1. **Transcript of Records** — the data is all there and goes back across
->    school years. What I need is the school's template, so the layout matches
->    what you issue today. Could you send a copy, or a recent example with the
+>    school years; what I need is the school's template so the layout matches
+>    what you issue today. Could you send a copy, or a recent one with the
 >    student's details removed?
 > 2. **Approvers** — you mentioned there are quite a few people who approve
->    grade changes. How many do you need the system to allow? Ms Christina is
->    deciding who they are, so this is just the number.
+>    grade changes. How many should the system allow? Ms Christina is deciding
+>    who they are, so this is just the number.
 >
 > Thank you.
 
-### Not asked yet, and why
+### Not asked, and why
 
-**Melissa** — her question at the training was about teacher access to medical
-alerts and learning difficulties, which is the same feature as Christina's
-first block. Folded in there rather than asked twice.
+**Melissa** — her question was teacher access to medical alerts and learning
+difficulties, which is the same feature as Christina's first block. Folded in
+rather than asked twice, since two answers to one question is worse than none.
 
 **Hermilita** — her addition ("not only the quizzes, but also the exam and
-overall") is already built. Nothing to ask.
+overall") is built. Nothing to ask.
 
 **Joel** — no open items.
 
----
+**Deliberately not asked of anyone:** how long a medical certificate is kept,
+whether disciplinary records reach parents, whether house points reset each
+year, whether a relief teacher's marking should be attributed. All are real
+questions and none was raised by anyone in the room. They belong to whoever
+designs those features, and asking now would turn a request into a
+specification exercise.
 
 ## The record
 
