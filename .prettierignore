@@ -5,3 +5,8 @@ public/
 .claude/worktrees/
 .claude/skills/
 grade-skill-result/
+
+# One 70k-character line with ~1,276 backticks. Prettier loses track of the
+# code-span boundaries at that size and rewrites `__tests__/...` paths into
+# bold `**tests**/...`, corrupting them. Nothing here benefits from formatting.
+docs/sprints/development-plan.md
