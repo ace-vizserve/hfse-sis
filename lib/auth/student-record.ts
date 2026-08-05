@@ -66,3 +66,18 @@ export const ENROLMENT_PLACEMENT_WRITERS = [
 export function canWriteStudentRecord(role: Role | null): boolean {
   return !!role && (STUDENT_RECORD_WRITERS as readonly string[]).includes(role);
 }
+
+/**
+ * May this role put a student into a class?
+ *
+ * The two lists differ by exactly `admissions`, and that difference is the
+ * school's admission process: Enrolment is step 10 (admissions), Class
+ * Assignment is step 11, done by Student Affairs "subject to a deliberation
+ * by Academics Team" (docs/context/admission-process.md). So an admissions
+ * user finishes the funnel and hands over; they never choose the class.
+ */
+export function canAssignSection(role: Role | null): boolean {
+  return (
+    !!role && (ENROLMENT_PLACEMENT_WRITERS as readonly string[]).includes(role)
+  );
+}

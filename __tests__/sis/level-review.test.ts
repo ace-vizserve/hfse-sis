@@ -236,6 +236,81 @@ describe('diffUnmatchedLevelLabels', () => {
     expect(diffUnmatchedLevelLabels([], KNOWN_LABELS)).toEqual([]);
   });
 
+  // Once a registrar maps a label at /records/level-mismatches, the alias is
+  // what makes it resolve (lib/sis/levels.ts::resolveLevelIdFromCatalog reads
+  // `level_aliases` third, after the direct + legacy-digit lookups). The review
+  // queue has to honour the same table or a resolved label sits in the list
+  // forever and the sidebar badge never decrements — which is exactly what it
+  // did before this test existed.
+  it('does NOT flag a label that has already been mapped to a level via an alias', () => {
+    const observed: ObservedLevelLabel[] = [
+      {
+        rawLabel:
+          'HFSE Global Education Programme – Year 2 (equivalent to Primary One)',
+        ayCode: 'AY2027',
+        appsCount: 2,
+        statusCount: 1,
+        sampleEnrolees: ['E-0001'],
+      },
+    ];
+
+    const result = diffUnmatchedLevelLabels(observed, KNOWN_LABELS, [
+      {
+        raw_label:
+          'HFSE Global Education Programme – Year 2 (equivalent to Primary One)',
+        level_id: 'level-p1',
+      },
+    ]);
+
+    expect(result).toEqual([]);
+  });
+
+  it('matches an alias on the exact raw label, not its canonical form', () => {
+    const observed: ObservedLevelLabel[] = [
+      {
+        rawLabel: 'YoungStarter Junior Star',
+        ayCode: 'AY2027',
+        appsCount: 1,
+        statusCount: 0,
+        sampleEnrolees: ['E-0002'],
+      },
+      {
+        rawLabel: 'Youngstarters Junior Star',
+        ayCode: 'AY2027',
+        appsCount: 1,
+        statusCount: 0,
+        sampleEnrolees: ['E-0003'],
+      },
+    ];
+
+    // Only the first spelling is mapped — the second must still surface, since
+    // an alias is an exact-string mapping and never generalizes to look-alikes.
+    const result = diffUnmatchedLevelLabels(observed, KNOWN_LABELS, [
+      { raw_label: 'YoungStarter Junior Star', level_id: 'level-ys' },
+    ]);
+
+    expect(result.map((r) => r.rawLabel)).toEqual([
+      'Youngstarters Junior Star',
+    ]);
+  });
+
+  it('treats an omitted alias list as "no aliases yet"', () => {
+    const observed: ObservedLevelLabel[] = [
+      {
+        rawLabel: 'Some Unknown Level',
+        ayCode: 'AY2027',
+        appsCount: 1,
+        statusCount: 0,
+        sampleEnrolees: [],
+      },
+    ];
+
+    expect(diffUnmatchedLevelLabels(observed, KNOWN_LABELS)).toHaveLength(1);
+    expect(diffUnmatchedLevelLabels(observed, KNOWN_LABELS, [])).toHaveLength(
+      1
+    );
+  });
+
   it('sorts results alphabetically by rawLabel', () => {
     const observed: ObservedLevelLabel[] = [
       {

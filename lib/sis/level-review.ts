@@ -4,7 +4,7 @@ import {
   getCurrentAcademicYear,
   getUpcomingAcademicYear,
 } from '@/lib/academic-year';
-import { canonicalizeLevelLabel } from '@/lib/sis/levels';
+import { canonicalizeLevelLabel, type LevelAliasRow } from '@/lib/sis/levels';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -69,14 +69,22 @@ function prefixFor(ayCode: string): string {
 
 /**
  * Pure diff — given the raw observed `levelApplied` labels (already
- * aggregated per AY by the caller) and the current set of
- * `public.levels.label` values, returns the labels that don't match any
- * known level after canonicalization.
+ * aggregated per AY by the caller), the current set of
+ * `public.levels.label` values, and the registrar's saved aliases, returns
+ * the labels that still resolve to nothing.
  *
  * Canonicalization (via `canonicalizeLevelLabel`) folds legacy digit-form
  * labels ("Primary 1") onto their word-form canonical ("Primary One") so
  * they do NOT surface as unmatched — only genuinely-unrecognized strings
  * (GEP-style descriptions, spelling variants, typos) do.
+ *
+ * `aliases` mirrors the third and final lookup in
+ * `lib/sis/levels.ts::resolveLevelIdFromCatalog` — an EXACT match on the
+ * raw label, never a canonicalized or fuzzy one. The two must agree: a
+ * label the assignment path can resolve is, by definition, no longer
+ * awaiting review. (Before this argument existed the queue read only
+ * `levels.label`, so a mapped label stayed listed forever and the sidebar
+ * badge never decremented, while the toast claimed it was resolved.)
  *
  * Observations for the same `rawLabel` across different AYs are merged into
  * one result row (`ayCodes` accumulates, counts sum, sample enrolees dedupe
@@ -84,13 +92,15 @@ function prefixFor(ayCode: string): string {
  */
 export function diffUnmatchedLevelLabels(
   observed: ObservedLevelLabel[],
-  knownLabels: string[]
+  knownLabels: string[],
+  aliases: LevelAliasRow[] = []
 ): UnmatchedLevelLabel[] {
   const knownSet = new Set(
     knownLabels
       .map((l) => canonicalizeLevelLabel(l))
       .filter((l): l is string => l != null)
   );
+  const aliasedSet = new Set(aliases.map((a) => a.raw_label));
 
   const merged = new Map<string, UnmatchedLevelLabel>();
 
@@ -98,6 +108,7 @@ export function diffUnmatchedLevelLabels(
     const canonical = canonicalizeLevelLabel(obs.rawLabel);
     if (canonical == null) continue; // blank/null observed label — nothing to reconcile
     if (knownSet.has(canonical)) continue; // matches an existing level — not unmatched
+    if (aliasedSet.has(obs.rawLabel)) continue; // registrar already mapped it — resolved
 
     const existing = merged.get(obs.rawLabel);
     if (!existing) {
@@ -136,11 +147,26 @@ async function loadUnmatchedLevelLabelsUncached(
   const admissions = createAdmissionsClient();
   const service = createServiceClient();
 
-  const levelsRes = await service.from('levels').select('label');
+  // Both halves of "does this label resolve?" — the catalog and the saved
+  // aliases. Fetched together because omitting either one produces a queue
+  // that disagrees with the assignment path about what still needs work.
+  const [levelsRes, aliasesRes] = await Promise.all([
+    service.from('levels').select('label'),
+    service.from('level_aliases').select('raw_label, level_id'),
+  ]);
   if (levelsRes.error) {
     console.warn(
       '[sis/level-review] levels fetch failed:',
       levelsRes.error.message
+    );
+    return [];
+  }
+  if (aliasesRes.error) {
+    // Fail soft rather than listing already-mapped labels as unresolved —
+    // a queue that re-raises finished work is worse than an empty one.
+    console.warn(
+      '[sis/level-review] level_aliases fetch failed:',
+      aliasesRes.error.message
     );
     return [];
   }
@@ -149,6 +175,7 @@ async function loadUnmatchedLevelLabelsUncached(
   )
     .map((r) => r.label)
     .filter((l): l is string => !!l);
+  const aliases = (aliasesRes.data ?? []) as LevelAliasRow[];
 
   type Row = { enroleeNumber: string | null; levelApplied: string | null };
 
@@ -223,7 +250,11 @@ async function loadUnmatchedLevelLabelsUncached(
     addObservations(ayCode, (statusRes.data ?? []) as Row[], 'statusCount');
   }
 
-  return diffUnmatchedLevelLabels(Array.from(buckets.values()), knownLabels);
+  return diffUnmatchedLevelLabels(
+    Array.from(buckets.values()),
+    knownLabels,
+    aliases
+  );
 }
 
 /**

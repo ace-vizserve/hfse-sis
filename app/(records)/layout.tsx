@@ -14,6 +14,7 @@ import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import { countUnmatchedLevelLabels } from '@/lib/sis/level-review';
+import { countLevelsAwaitingSections } from '@/lib/sis/levels-awaiting-sections';
 import { countUnsyncedEnrolledStudents } from '@/lib/sis/unsynced-students';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -47,15 +48,25 @@ export default async function RecordsLayout({
   // mutation runs (which is what AssignSectionDialog triggers anyway).
   const currentAy = await getCurrentAcademicYear();
   const service = createServiceClient();
-  const [unsyncedCount, levelMismatchCount, changeRequestCount] =
-    await Promise.all([
-      currentAy ? countUnsyncedEnrolledStudents(currentAy.ay_code) : 0,
-      countUnmatchedLevelLabels(),
-      getSidebarChangeRequestCount(service, role, id),
-    ]);
+  const [
+    unsyncedCount,
+    unmatchedNameCount,
+    awaitingSectionsCount,
+    changeRequestCount,
+  ] = await Promise.all([
+    currentAy ? countUnsyncedEnrolledStudents(currentAy.ay_code) : 0,
+    countUnmatchedLevelLabels(),
+    countLevelsAwaitingSections(),
+    getSidebarChangeRequestCount(service, role, id),
+  ]);
+  // Both halves of "Levels needing attention" — an unrecognized level name and
+  // a level with students waiting but no class. The page shows them as two
+  // lists; the badge is the total, so it matches what the registrar finds
+  // there.
+  const levelAttentionCount = unmatchedNameCount + awaitingSectionsCount;
   const badges: SidebarBadges = {
     unsyncedStudents: unsyncedCount > 0 ? unsyncedCount : undefined,
-    levelMismatches: levelMismatchCount > 0 ? levelMismatchCount : undefined,
+    levelMismatches: levelAttentionCount > 0 ? levelAttentionCount : undefined,
   };
 
   return (

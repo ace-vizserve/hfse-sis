@@ -18,8 +18,10 @@ dev plan holds the sprint status.**
 
 **Questions before code.** _Questions to send_ below holds the plain-English
 questions each item still needs answered, written so the person who asked can
-answer them without a developer present. Ask them in the room, not in a design
-doc.
+answer them without a developer present. Every block states what the feature
+reaches **today** — which modules see it, whether it is on the report card,
+whether parents can see it — so the school confirms a boundary rather than
+inventing one. Ask them in the room, not in a design doc.
 
 ---
 
@@ -104,100 +106,192 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 
 ## Questions to send
 
-Ready to copy, one block per person. Send separately — each person only needs
-their own, and short lists get answered.
+Ready to copy. Send separately — short lists get answered.
 
-**Keep them small.** These exist to pin down what was already asked for, not to
-design it. A first draft asked Chandana whether house points could be taken
-away and whether there should be a leaderboard; she never mentioned either, and
-questions like that invite a bigger feature than the one requested. If a
-question is not needed to finish the thing they described, it does not go in.
+**Two kinds of question, and only one of them belongs here.**
 
-Anything genuinely undecided on our side stays in **Todos** above, where it
-belongs, until it turns into something they can actually answer.
+- **Reach** — "should this appear on the report card?", "do parents see it?",
+  "does it affect the awards?" These have yes/no answers, and getting one wrong
+  means the system does not do what the school wanted. **Ask these.**
+- **Mechanics** — "can points be taken away?", "how long is it kept?", "is there
+  a leaderboard?" These invite a bigger feature than the one requested. **Leave
+  these out** until the school raises them.
 
-Two entries are corrections rather than questions, marked **⚠**. Both were
-answered wrongly in the session and someone is working from bad information now.
+Each block opens by stating what the feature reaches _today_, so the reply is a
+confirmation rather than an invitation to design. House is why: it has been on
+production for days, is read in exactly three places, and nobody has ever
+confirmed that is what was wanted.
 
-### To Chandana
+Four entries marked **⚠** are places where the system does not work the way
+somebody in the room believed it did. Those are corrections, not questions.
+
+### To Chandana — house
 
 > Hi Ms Chandana,
 >
-> The house field is in the system now — every student can be assigned a house,
-> and it stays with them from P1 to S4. To finish it I need:
+> The house field is live. Before I go further I want to check I have put it in
+> the right places.
 >
-> 1. What are the four houses called, and what colour is each?
-> 2. Who decides which house a student goes into? And is there an existing list
->    I can load, or should I set them up one by one?
+> **Right now a house is saved on the student's record and shown in three
+> places:** the student list in Records, the student's own record page, and the
+> class roster. It does **not** appear on the report card, parents cannot see
+> it, and it has no effect on grades or on the Gold/Silver/Bronze awards.
 >
-> On house points, which you mentioned alongside the awards:
+> 1. Is that right, or should a house show up somewhere else in the system?
+> 2. Should it appear on the report card?
+> 3. Should parents be able to see which house their child is in?
+> 4. What are the four houses called, and what colour is each? **One thing to
+>    flag before you decide:** our classes are already named after virtues — P1
+>    Respect, P1 Grit. If the houses use virtue names too, staff will see the
+>    same word meaning two different things on one screen.
+> 5. Who decides which house a student goes into? Is there an existing list I
+>    can load, or should I set them up one by one?
 >
-> 3. Could you describe how house points work at HFSE — what earns a point, and
+> On house points:
+>
+> 6. Could you describe how house points work at HFSE — what earns a point, and
 >    who records them?
-> 4. Are they connected to the awards? You mentioned the two together, so I want
->    to check whether an award should also give the student's house points.
+> 7. You mentioned points and awards together. The awards in the system today
+>    (Gold, Silver, Bronze) are worked out purely from a student's average marks
+>    — nothing else feeds them. Should an award also give that student's house
+>    some points?
 >
 > Thank you.
 
-### To Christina
+### To Christina — 1 of 5 · student details for teachers
 
 > Hi Ms Christina,
 >
-> Four things you raised at the training. Short questions on each so I build
-> what you actually need.
+> On the allergies and special-needs information you wanted teachers to see.
 >
-> **Student details for teachers** — you mentioned allergies and special-needs
-> declarations, so teachers do not have to hunt through folders. Ms Melissa
-> asked for the same.
+> **Right now teachers cannot open the Records module at all**, so they see none
+> of this. What the system already holds, from the enrolment form: allergies,
+> food allergies, asthma, heart conditions, epilepsy, diabetes, eczema, plus
+> written details for allergies, food allergies, other conditions and dietary
+> restrictions, and whether you have paracetamol consent.
 >
-> 1. Besides allergies and special needs, what else should be on that screen?
-> 2. Should every teacher see it, or only the teachers who teach that student?
->
-> **Medical certificates**
->
-> 3. When a student brings one in, who would upload it — the teacher who marked
->    the absence, or the office?
-> 4. Who needs to be able to open it afterwards?
->
-> **Disciplinary records**
->
-> 5. Where are incident reports written and kept today? I want to know whether
->    the system should replace that, or just show what is already on file.
-> 6. Who should be able to see a student's record — every teacher who teaches
->    them, the form class adviser, or only leadership?
->
-> **Awards and certificates**
->
-> 7. What would you want listed for each one? I am assuming the award name, the
->    date and who gave it, with the certificate file attached — tell me if
->    anything is missing.
-> 8. Who would enter it — the teacher who ran the activity, or the office?
->
-> **Grade-change approvals**
->
-> 9. How many approvers do you need, and who are they?
-> 10. ⚠ Worth flagging: at the moment whoever responds first decides the
->     request, and the second person's response is not used — so it is not
->     really two signatures, it is whichever of you gets there first. If you
->     need both to agree before a change goes through, say so and I will change
->     it.
-> 11. For a change after the report book has gone out, you mentioned AEB
->     approval — who should that be in the system?
+> 1. Should teachers see all of that, or only some of it?
+> 2. Every teacher, or only the ones who teach that student?
+> 3. You also mentioned special-needs declarations — "diagnosed with ADHD, for
+>    instance". **The system has nowhere to record that today**; it is not on
+>    the enrolment form and there is no field for it anywhere. Where is that
+>    kept at the moment, and should the system start holding it?
+> 4. Should teachers only be able to read this, or should they be able to add to
+>    it as well?
 >
 > Thank you.
 
-### To Koh
+### To Christina — 2 of 5 · medical certificates
+
+> Hi Ms Christina,
+>
+> On uploading the medical certificate.
+>
+> **Right now** a teacher can mark a student excused and type a note saying an
+> MC was submitted. That note is only visible inside the Attendance module. The
+> certificate itself cannot be uploaded anywhere.
+>
+> 1. Who would upload it — the teacher who marked the absence, or the office?
+> 2. Who needs to be able to open it afterwards?
+> 3. Should it sit with the student's other documents (birth certificate,
+>    passport and so on) so everything is in one place, or only against that
+>    day's attendance?
+> 4. **Worth confirming, because it is easy to miss:** an excused absence
+>    already counts as **present** on the report card. The card shows only
+>    Number of School Days, Days Present and Days Late — so a student with an MC
+>    is not shown as absent at all, and the reason never appears. Is that what
+>    you want?
+>
+> Thank you.
+
+### To Christina — 3 of 5 · disciplinary records
+
+> Hi Ms Christina,
+>
+> On the incident reports and disciplinary records.
+>
+> **Right now there is nothing about behaviour in the system at all.** The
+> report card shows grades, attendance and the form class adviser's comment, and
+> nothing else.
+>
+> 1. Where are incident reports written and kept today? I want to know whether
+>    the system should replace that, or just show what is already on file.
+> 2. Who should be able to see a student's record — every teacher who teaches
+>    them, only the form class adviser, or only leadership?
+> 3. Should anything about it ever appear on the report card?
+> 4. Should parents be able to see it?
+> 5. Should it affect whether a student can receive an award? At the moment
+>    awards are worked out purely from marks, and nothing else is considered.
+> 6. The form class adviser's report-card comment is currently the only place
+>    anyone writes about a student's character, as free text. Should disciplinary
+>    records be kept completely separate from that, or are they related?
+>
+> Thank you.
+
+### To Christina — 4 of 5 · awards and certificates
+
+> Hi Ms Christina,
+>
+> On the awards and certificates of participation.
+>
+> **Right now the system only has Gold, Silver and Bronze**, worked out
+> automatically from a student's average marks. They are visible to staff only —
+> they are not printed on the report card, and parents cannot see them.
+>
+> 1. What would you want recorded for each new award? I am assuming the award
+>    name, the date, who gave it, and the certificate file — tell me if anything
+>    is missing.
+> 2. Who would enter it — the teacher who ran the activity, or the office?
+> 3. Should these new awards appear on the report card?
+> 4. Should parents be able to see them?
+> 5. Should they feed the house points Ms Chandana mentioned?
+>
+> Thank you.
+
+### To Christina — 5 of 5 · grade-change approvals
+
+> Hi Ms Christina,
+>
+> On approving grade changes. Two things about how it works today may not match
+> what you have in mind.
+>
+> 1. How many approvers do you need, and who are they?
+> 2. ⚠ **Whoever responds first decides the request.** The second person's
+>    response is never used. So it is not really two signatures — it is
+>    whichever of you gets there first. If you need both to agree before a change
+>    goes through, tell me and I will change it.
+> 3. ⚠ **The teacher raising the request chooses which two approvers it goes
+>    to**, from a list of everyone eligible. You said "two approvers, Ms Chandana
+>    and I only" — if it should always be the same two people rather than the
+>    teacher's choice, that is a change too.
+> 4. For a change after the report book has gone out, you mentioned AEB
+>    approval. Who should that be in the system?
+> 5. Should anything other than a grade change need approval — a correction to
+>    attendance, for example? Nothing else in the system has an approval step at
+>    the moment.
+>
+> Thank you.
+
+### To Koh — at-risk students
 
 > Hi Ms Koh,
 >
 > The at-risk flagging you asked for is on the grading sheet now — a **Look up
 > student** button lists who needs a look, with what dropped and by how much.
-> Two questions:
+>
+> **Right now only the subject teacher for that subject can see it.** Nobody is
+> notified; you have to open the sheet. It does not appear on the report card
+> and parents cannot see it.
 >
 > 1. You mentioned the subject teacher **or the FCA** — should the form class
->    adviser see this as well? At the moment only the subject teacher can, and I
->    would like to get that right.
-> 2. How big a drop should raise a flag? It is set to five points at the moment.
+>    adviser see this as well? They have no grading sheet of their own, so this
+>    would need to go somewhere else for them.
+> 2. Should anyone be **told** when a student is flagged, or is seeing it on the
+>    sheet enough? There is a bell in the system today, but it only carries
+>    grade-change requests.
+> 3. How big a drop should raise a flag? It is set to five points at the moment.
+> 4. Should this ever reach parents? I have assumed it stays staff-only and that
+>    contacting the parents is the teacher's own call.
 >
 > ⚠ Also a correction to something you were told in the session. You asked
 > whether an exam's total marks could be changed through a change request — the
@@ -226,7 +320,7 @@ answered wrongly in the session and someone is working from bad information now.
 ### Not asked, and why
 
 **Melissa** — her question was teacher access to medical alerts and learning
-difficulties, which is the same feature as Christina's first block. Folded in
+difficulties, which is the same feature as Christina's first message. Folded in
 rather than asked twice, since two answers to one question is worse than none.
 
 **Hermilita** — her addition ("not only the quizzes, but also the exam and
@@ -234,12 +328,16 @@ overall") is built. Nothing to ask.
 
 **Joel** — no open items.
 
-**Deliberately not asked of anyone:** how long a medical certificate is kept,
-whether disciplinary records reach parents, whether house points reset each
-year, whether a relief teacher's marking should be attributed. All are real
-questions and none was raised by anyone in the room. They belong to whoever
-designs those features, and asking now would turn a request into a
-specification exercise.
+**Where the line falls.** Reach is theirs to decide; mechanics are ours until
+they ask. So nobody is being asked how long a medical certificate should be
+kept, whether house points reset each year, whether points can be taken away, or
+whether there should be a leaderboard — none of it was raised, and asking would
+turn a request into a specification exercise.
+
+The relief-teacher question is also held back, but for a different reason: the
+real gap is that **a form class adviser cannot see the attendance audit log at
+all**, so a teacher cannot check who altered their own register. That needs
+fixing before it is worth asking anyone how covering should be recorded.
 
 ## The record
 

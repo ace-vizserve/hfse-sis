@@ -16,6 +16,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { parseLocalDate } from '@/lib/dashboard/range';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 import { EXPIRING_SOON_THRESHOLD_DAYS } from '@/lib/sis/process';
+import { inChaseLensScope, type ChaseQueueLens } from '@/lib/sis/chase-lens';
 import {
   DOCUMENT_SLOTS as PFILES_DOCUMENT_SLOTS,
   resolveStatus,
@@ -1525,28 +1526,13 @@ const ACTIVE_FUNNEL = new Set([
   'Processing',
 ]);
 
-const ENROLLED_APP_STATUSES = new Set(['Enrolled', 'Enrolled (Conditional)']);
-
 // The four document-chase targets are mounted on two surfaces with opposite
 // populations: /admissions chases NON-enrolled funnel applicants, /records +
-// /p-files chase ENROLLED students. The `lens` mirrors getDocumentChaseQueueCounts
-// exactly so the drill matches the card it was opened from (KD #124 count==drill).
-// No lens → no scope (back-compat for any lens-less caller).
-type ChaseDrillLens = 'admissions' | 'p-files';
-
-function inChaseLensScope(
-  lens: ChaseDrillLens | undefined,
-  appStatus: string,
-  classSection: string | null | undefined
-): boolean {
-  if (!lens) return true;
-  if (lens === 'admissions') return ACTIVE_FUNNEL.has(appStatus);
-  // p-files: enrolled + has a class section (KD #31/#71).
-  return (
-    ENROLLED_APP_STATUSES.has(appStatus) &&
-    (classSection ?? '').toString().trim().length > 0
-  );
-}
+// /p-files chase ENROLLED students. The scope predicate is SHARED with
+// getDocumentChaseQueueCounts (`lib/sis/chase-lens.ts`) so the drill matches
+// the card it was opened from — KD #124 count==drill, now guaranteed by one
+// definition rather than two mirrored blocks.
+type ChaseDrillLens = ChaseQueueLens;
 
 export async function buildLifecycleDrillRows(
   ayCode: string,

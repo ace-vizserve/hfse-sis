@@ -6,6 +6,12 @@ import {
   EXPIRING_SOON_THRESHOLD_DAYS,
   scanDocStatusForActionFlags,
 } from '@/lib/sis/process';
+import {
+  ADMISSIONS_FUNNEL_STATUSES,
+  CHASE_ENROLLED_STATUSES,
+  inChaseLensScope,
+  type ChaseQueueLens,
+} from '@/lib/sis/chase-lens';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Document chase queue — top-of-fold counts for /p-files + /admissions
@@ -34,7 +40,9 @@ import {
 // etc.) automatically refreshes these counts.
 // ──────────────────────────────────────────────────────────────────────────
 
-export type ChaseQueueLens = 'admissions' | 'p-files';
+// Re-exported from its original home so existing importers (the dashboard
+// strip components) don't all have to move at once.
+export type { ChaseQueueLens };
 
 export type DocumentChaseQueueCounts = {
   promised: number; // any slot at 'To follow' (admissions only — zero for p-files)
@@ -44,14 +52,6 @@ export type DocumentChaseQueueCounts = {
 };
 
 const CACHE_TTL_SECONDS = 60;
-
-const ADMISSIONS_FUNNEL_STATUSES = [
-  'Submitted',
-  'Ongoing Verification',
-  'Processing',
-] as const;
-
-const ENROLLED_STATUSES = ['Enrolled', 'Enrolled (Conditional)'] as const;
 
 function prefixFor(ayCode: string): string {
   return `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
@@ -81,7 +81,7 @@ async function loadChaseQueueUncached(
     ]);
   } else {
     statusQuery = statusQuery
-      .in('applicationStatus', [...ENROLLED_STATUSES])
+      .in('applicationStatus', [...CHASE_ENROLLED_STATUSES])
       .not('classSection', 'is', null);
   }
   const statusRes = await statusQuery;
@@ -100,14 +100,16 @@ async function loadChaseQueueUncached(
   const statusRows = ((statusRes.data ?? []) as unknown as StatusRow[]).filter(
     (r) => !!r.enroleeNumber
   );
-  // p-files extra defensive filter — `.not('classSection', 'is', null)`
-  // handles NULL but blank strings ('') would slip through. Strip them.
+  // The server-side `.in()` / `.not()` narrows the fetch; `inChaseLensScope`
+  // is the authority on membership and is SHARED with the drill, so the count
+  // and the row list can't drift (KD #124). It also catches what PostgREST
+  // can't: `.not('classSection','is',null)` passes a blank string through.
   const enroleeSet = new Set(
-    moduleKey === 'p-files'
-      ? statusRows
-          .filter((r) => (r.classSection ?? '').toString().trim().length > 0)
-          .map((r) => r.enroleeNumber!)
-      : statusRows.map((r) => r.enroleeNumber!)
+    statusRows
+      .filter((r) =>
+        inChaseLensScope(moduleKey, r.applicationStatus, r.classSection)
+      )
+      .map((r) => r.enroleeNumber!)
   );
   if (enroleeSet.size === 0) {
     return { promised: 0, validation: 0, revalidation: 0, expiringSoon: 0 };

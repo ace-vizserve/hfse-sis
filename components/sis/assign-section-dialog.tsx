@@ -150,9 +150,9 @@ export function AssignSectionDialog({
         <div className="space-y-2 py-2">
           {!hasOptions ? (
             <p className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-              No sections available for {level?.label ?? 'this level'} in{' '}
-              {ayCode}. Create a section in{' '}
-              <span className="font-mono text-xs">/sis/sections</span> first.
+              There are no classes at {level?.label ?? 'this level'} in {ayCode}{' '}
+              yet, so there is nowhere to put this student. Create one under SIS
+              Admin → Section setup, then come back.
             </p>
           ) : (
             sorted.map((s) => (

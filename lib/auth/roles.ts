@@ -185,13 +185,15 @@ const RECORDS_NAV: NavSection[] = [
         label: 'Students needing setup',
         badgeKey: 'unsyncedStudents',
       },
-      // Reconciliation queue for admissions `levelApplied` free-text values
-      // that don't match any known level (KD-adjacent to unsynced students —
-      // same "surface the gap, offer a one-click fix" pattern). Badge mirrors
-      // `countUnmatchedLevelLabels`.
+      // Both ways a level blocks enrolment (KD-adjacent to unsynced students —
+      // same "surface the gap, offer a one-click fix" pattern): an admissions
+      // `levelApplied` value matching no known level, and a level that has
+      // students waiting but no class section to seat them in. Badge sums
+      // `countUnmatchedLevelLabels` + `countLevelsAwaitingSections`, because
+      // to a registrar these are one queue, not two.
       {
         href: '/records/level-mismatches',
-        label: 'Level naming to review',
+        label: 'Levels needing attention',
         badgeKey: 'levelMismatches',
       },
       // The three cross-links below are SHORTCUTS, not the only way in.

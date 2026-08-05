@@ -24,7 +24,10 @@ import {
   OPTIONAL_DOCUMENT_SLOT_KEYS,
   STP_CONDITIONAL_SLOT_KEYS,
 } from '@/lib/sis/queries';
-import { getEnrolmentPosition } from '@/lib/sis/terms';
+import {
+  completePlacement,
+  type MidTermPayload,
+} from '@/lib/sis/placement-completion';
 import { stampEnrolledAtIfNull } from '@/lib/sis/enrolled-at';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -750,24 +753,14 @@ export async function PATCH(
     }
   }
 
-  // 6) enrollment_date stamp + mid-term enrolment detection.
-  // When autosync lands a fresh/reactivated section_students row, stamp
-  // enrollment_date=today so downstream term inference (KD #68 per-row "·T2"
-  // badge, late-enrollee N/A logic) uses the actual Enrolled-flip date, not
-  // the admissions row's earlier stamp. Boundary-only — only fires on the
-  // three change values that indicate a real insertion or reactivation.
-  // Then resolve the enrolment position; if a term is in session the dialog
-  // surfaces the position-aware "join current / start next" late-enrollee prompt.
-  type MidTermPayload = {
-    termNumber: number; // joining term (active term mid-term, else next term)
-    termLabel: string;
-    sectionId: string;
-    sectionStudentId: string;
-    activeTermNumber: number | null; // null when joining during a break
-    nextTermNumber: number | null;
-    canDeferToNext: boolean;
-    daysLeftInActiveTerm: number | null;
-  };
+  // 6) The student now has a seat — stamp the attendance start date and work
+  // out whether they're a late enrollee.
+  // Boundary-only: fires on the three change values that mean a real insertion
+  // or reactivation. Shared with the assign-section route
+  // (`lib/sis/placement-completion.ts`), because placement can happen in
+  // either — Enrolment is step 10 and Class Assignment is step 11 of HFSE's
+  // admission process, so this route sees only the case where a registrar
+  // chose to do both at once.
   let midTermEnrolment: MidTermPayload | null = null;
   if (
     shouldSync &&
@@ -776,49 +769,11 @@ export async function PATCH(
       autoSync.change === 'inserted' ||
       autoSync.change === 'reactivated')
   ) {
-    const { data: ss } = await supabase
-      .from('section_students')
-      .select('id, section_id, enrollment_date')
-      .eq('enrolee_number', enroleeNumber)
-      .neq('enrollment_status', 'withdrawn')
-      .maybeSingle();
-    const ssRow = ss as {
-      id: string;
-      section_id: string;
-      enrollment_date: string | null;
-    } | null;
-    if (ssRow?.id && ssRow?.section_id) {
-      const today = sgToday();
-      if (ssRow.enrollment_date !== today) {
-        const { error: dateErr } = await supabase
-          .from('section_students')
-          .update({ enrollment_date: today })
-          .eq('id', ssRow.id);
-        if (dateErr) {
-          console.warn(
-            '[stage PATCH] enrollment_date stamp failed:',
-            dateErr.message
-          );
-        }
-      }
-      const pos = await getEnrolmentPosition(ayCode);
-      // Late once the year has started — mid-term (activeTerm) OR between terms
-      // (joining the next term). Use joiningTerm so the prompt also fires in a
-      // break; the active-term-only fields stay null so the dialog renders the
-      // single "join next term" option.
-      if (pos.isLateEnrollee && pos.joiningTerm) {
-        midTermEnrolment = {
-          termNumber: pos.joiningTerm.termNumber,
-          termLabel: `T${pos.joiningTerm.termNumber}`,
-          sectionId: ssRow.section_id,
-          sectionStudentId: ssRow.id,
-          activeTermNumber: pos.activeTerm?.termNumber ?? null,
-          nextTermNumber: pos.nextTerm?.termNumber ?? null,
-          canDeferToNext: pos.canDeferToNext,
-          daysLeftInActiveTerm: pos.daysLeftInActiveTerm,
-        };
-      }
-    }
+    const placement = await completePlacement(supabase, {
+      enroleeNumber,
+      ayCode,
+    });
+    midTermEnrolment = placement.midTermEnrolment;
   }
 
   // 7) Withdrawn / Cancelled cascade.

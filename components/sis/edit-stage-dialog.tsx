@@ -641,13 +641,15 @@ export function EditStageDialog({
                       <p className="text-xs text-destructive">
                         This applicant&apos;s level name isn&apos;t recognized
                         yet — a registrar needs to resolve it under Records →
-                        Level naming to review before this student can be
+                        Levels needing attention before this student can be
                         enrolled.
                       </p>
                     ) : sectionsQuery.data.sections.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        No sections exist yet for{' '}
-                        {sectionsQuery.data.level.label}.
+                      <p className="text-xs text-destructive">
+                        There are no classes at {sectionsQuery.data.level.label}{' '}
+                        yet, so there is nowhere to put this student. Create one
+                        under SIS Admin → Section setup. Records → Levels
+                        needing attention lists every level in this state.
                       </p>
                     ) : (
                       <div className="space-y-1.5">
