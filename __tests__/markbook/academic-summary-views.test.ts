@@ -327,10 +327,22 @@ describe('buildAwardsRows', () => {
 describe('buildAttendanceRows', () => {
   const payload = buildPayload();
 
-  it('total: absent = schoolDays - present - late', () => {
+  // A LATE DAY IS A PRESENT DAY. `days_present` counts P, L and EX alike
+  // (migration 068, `recompute_attendance_rollup`); `days_late` is a flag on
+  // top of it, not a separate bucket. So absent = schoolDays − present, and
+  // subtracting `late` a second time under-reports absences by exactly the
+  // number of lates — reporting zero whenever a student was late at least as
+  // often as they were away.
+  //
+  // These two assertions used to read `schoolDays - present - late`, which is
+  // the implementation restated rather than the rule, so they passed against
+  // the wrong arithmetic for as long as it existed. Concrete numbers now.
+  it('total: a late day counts as present, not as an absence', () => {
     const rows = buildAttendanceRows(payload, { termNumber: null });
     const r = rows.find((r) => r.studentNumber === 'A001')!;
-    expect(r.absent).toBe(r.schoolDays - r.present - r.late);
+    // schoolDays 160, present 152 (4 of them late) → 8 days away, not 4.
+    expect(r.absent).toBe(8);
+    expect(r.absent).toBe(r.schoolDays - r.present);
   });
 
   it('total: rate = present / schoolDays * 100 (1dp)', () => {
@@ -358,10 +370,22 @@ describe('buildAttendanceRows', () => {
     expect(r.late).toBe(1);
   });
 
-  it('per-term absent derived correctly', () => {
+  it('per-term: a late day counts as present there too', () => {
     const rows = buildAttendanceRows(payload, { termNumber: 1 });
     const r = rows.find((r) => r.studentNumber === 'A001')!;
-    expect(r.absent).toBe(r.schoolDays - r.present - r.late);
+    // T1: schoolDays 40, present 38 (1 late) → 2 days away, not 1.
+    expect(r.absent).toBe(2);
+    expect(r.absent).toBe(r.schoolDays - r.present);
+  });
+
+  it('agrees with the dashboard, which had it right all along', () => {
+    // `lib/markbook/masterfile-dashboard.ts` computes the same figure as
+    // `schoolDays - present` and says why in a comment. Two files in one
+    // module disagreed; this pins them together.
+    const rows = buildAttendanceRows(payload, { termNumber: null });
+    for (const r of rows) {
+      expect(r.absent).toBe(Math.max(0, r.schoolDays - r.present));
+    }
   });
 
   it('rate is null when schoolDays is 0', () => {

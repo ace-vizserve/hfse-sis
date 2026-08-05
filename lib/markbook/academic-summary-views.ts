@@ -179,7 +179,15 @@ export type AttendanceRow = {
   indexNumber: number | null;
   present: number;
   late: number;
-  /** absent = schoolDays − present − late (floor at 0) */
+  /**
+   * Days the student was away altogether: `schoolDays − present`, floored at 0.
+   *
+   * NOT `− late` as well. `days_present` already counts a late day as present
+   * (migration 068 — P, L and EX all land in the same bucket); `days_late` is
+   * a flag on top of it. Subtracting it twice under-reports absences by the
+   * number of lates, and shows zero whenever a student was late at least as
+   * often as they were away.
+   */
   absent: number;
   schoolDays: number;
   /** present / schoolDays × 100, rounded to 1dp.  null when schoolDays = 0. */
@@ -214,7 +222,10 @@ export function buildAttendanceRows(
         schoolDays = cell?.schoolDays ?? 0;
       }
 
-      const absent = Math.max(0, schoolDays - present - late);
+      // See the `absent` doc comment above: late is a subset of present, so
+      // it must not be subtracted again. `masterfile-dashboard.ts` has always
+      // computed this correctly; the two disagreed until 2026-08-05.
+      const absent = Math.max(0, schoolDays - present);
       const rate =
         schoolDays > 0 ? Math.round((present / schoolDays) * 1000) / 10 : null;
 
