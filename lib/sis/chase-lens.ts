@@ -35,19 +35,20 @@ const ENROLLED_SET: ReadonlySet<string> = new Set(CHASE_ENROLLED_STATUSES);
 /**
  * Is this student inside the given chase lens?
  *
- * `classSection` is accepted but only consulted for the p-files lens, which
- * currently requires one (KD #31/#71).
+ * The p-files lens deliberately does NOT require a class section. It used to,
+ * which meant a student who was enrolled but not yet placed had nobody
+ * chasing their expiring or rejected documents. Placement is step 11 of the
+ * admission process and can trail enrolment by weeks, so that gap was never
+ * small — and it contradicted KD #91, which had already dropped the same
+ * requirement from the P-Files roster and detail page. The counts were the
+ * last place still filtering on it.
  */
 export function inChaseLensScope(
   lens: ChaseQueueLens | undefined,
-  appStatus: string | null | undefined,
-  classSection: string | null | undefined
+  appStatus: string | null | undefined
 ): boolean {
   if (!lens) return true;
   const status = (appStatus ?? '').trim();
   if (lens === 'admissions') return ADMISSIONS_FUNNEL_SET.has(status);
-  return (
-    ENROLLED_SET.has(status) &&
-    (classSection ?? '').toString().trim().length > 0
-  );
+  return ENROLLED_SET.has(status);
 }

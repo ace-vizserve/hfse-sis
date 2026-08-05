@@ -46,7 +46,10 @@ import {
 } from '@/lib/sis/queries';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
-import { canWriteStudentRecord } from '@/lib/auth/student-record';
+import {
+  canAssignSection,
+  canWriteStudentRecord,
+} from '@/lib/auth/student-record';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { cn } from '@/lib/utils';
@@ -107,6 +110,9 @@ export default async function SisStudentDetailPage({
   // behind these sheets and dialogs already refuse them, so rendering the
   // controls would only produce a form that 403s on save.
   const canEditRecord = canWriteStudentRecord(sessionUser.role);
+  // Narrower than canEditRecord: admissions finish enrolment (step 10) but
+  // Records assign the class (step 11, KD #51).
+  const canPlaceStudent = canAssignSection(sessionUser.role);
 
   const { enroleeNumber } = await params;
   const { ay: ayParam, tab: tabParam } = await searchParams;
@@ -420,6 +426,7 @@ export default async function SisStudentDetailPage({
             statusFetchError={detail.statusFetchError}
             currentSectionId={currentSectionId}
             canEdit={canEditRecord}
+            canAssignSection={canPlaceStudent}
           />
         </TabsContent>
 

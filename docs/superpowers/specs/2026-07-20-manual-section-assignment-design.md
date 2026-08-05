@@ -2,6 +2,8 @@
 
 **Date:** 2026-07-20 · **Audience:** dev follow-up (implementation plan)
 
+> **PARTLY SUPERSEDED (2026-08-05, KD #180).** This spec's core rule — **no auto-pick anywhere, the registrar always chooses** — still holds and is unchanged. What no longer holds is the requirement that a section be chosen **at the moment of the Enrolled flip**: HFSE's admission process makes Enrolment step 10 and Class Assignment step 11, done separately by Student Affairs. `section_id` is now optional on that flip, and supplying it requires a placement role. Read the rest of this document with that one substitution in mind.
+
 ## Problem
 
 `class-assignment.ts::pickSectionForApplicant` auto-assigns a section on the Enrolled-status flip, scoring candidate sections primarily on `classType`/`preferredSchedule` match and using load only as a tiebreaker. Real grading-sheet data shows HFSE doesn't evenly fill a section toward the 50-student cap before a second section at the same level starts receiving students — the auto-pick gives the registrar no visibility into section state and no say in the outcome, and the scoring heuristic doesn't actually optimize for the balance HFSE wants in practice.

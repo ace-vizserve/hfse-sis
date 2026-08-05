@@ -83,6 +83,11 @@ type Props = {
    *  the dialog fetches `assignable-sections`, which 403s for a read-only
    *  viewer and would leave them staring at an empty section picker. */
   canEdit?: boolean;
+  /** May this viewer put a student in a class? Narrower than `canEdit` — the
+   *  admissions team finishes enrolment (step 10) but Records assigns the
+   *  class (step 11, KD #51). Defaults to FALSE for the same reason `canEdit`
+   *  does: no picker beats a picker whose save is refused. */
+  canAssignSection?: boolean;
 };
 
 type StageCard = {
@@ -276,6 +281,7 @@ export function EnrollmentTab({
   statusFetchError,
   currentSectionId,
   canEdit = false,
+  canAssignSection = false,
 }: Props) {
   const s = status ?? ({} as StatusRow);
 
@@ -499,6 +505,7 @@ export function EnrollmentTab({
         enroleeNumber={enroleeNumber}
         frozen={frozen}
         canEdit={canEdit}
+        canAssignSection={canAssignSection}
       />
 
       <StatusGroupCard
@@ -510,6 +517,7 @@ export function EnrollmentTab({
         enroleeNumber={enroleeNumber}
         applicationStatus={applicationStatus}
         canEdit={canEdit}
+        canAssignSection={canAssignSection}
       />
 
       <StatusGroupCard
@@ -521,6 +529,7 @@ export function EnrollmentTab({
         enroleeNumber={enroleeNumber}
         applicationStatus={applicationStatus}
         canEdit={canEdit}
+        canAssignSection={canAssignSection}
       />
 
       <StatusGroupCard
@@ -533,6 +542,7 @@ export function EnrollmentTab({
         currentSectionId={currentSectionId}
         applicationStatus={applicationStatus}
         canEdit={canEdit}
+        canAssignSection={canAssignSection}
       />
 
       {/* items-start so each card sizes to its own content. The default
@@ -648,6 +658,7 @@ function ApplicationStatusCard({
   enroleeNumber,
   frozen,
   canEdit,
+  canAssignSection,
 }: {
   applicationCard: StageCard;
   applicationTone: ApplicationTone;
@@ -656,6 +667,7 @@ function ApplicationStatusCard({
   enroleeNumber: string;
   frozen: boolean;
   canEdit: boolean;
+  canAssignSection: boolean;
 }) {
   const tile = APPLICATION_TILE[applicationTone];
   const TileIcon = tile.icon;
@@ -732,6 +744,7 @@ function ApplicationStatusCard({
               initialRemarks={applicationCard.remarks}
               initialExtras={applicationCard.extrasInitial}
               frozen={frozen}
+              canAssignSection={canAssignSection}
             />
           )}
         </div>
@@ -992,6 +1005,7 @@ function StatusGroupCard({
   currentSectionId,
   applicationStatus,
   canEdit,
+  canAssignSection,
 }: {
   eyebrow: string;
   title: string;
@@ -1004,6 +1018,8 @@ function StatusGroupCard({
   /** Drives the per-stage freeze (KD #147) — passed to each tile. */
   applicationStatus: string | null;
   canEdit: boolean;
+  /** Gates the class tile's two Records links (KD #51 / KD #173). */
+  canAssignSection: boolean;
 }) {
   const counts = stageBucketCounts(stages);
 
@@ -1055,6 +1071,7 @@ function StatusGroupCard({
             currentSectionId={stage.key === 'class' ? currentSectionId : null}
             applicationStatus={applicationStatus}
             canEdit={canEdit}
+            canAssignSection={canAssignSection}
           />
         ))}
       </div>
@@ -1069,6 +1086,7 @@ function StageStatusTile({
   currentSectionId,
   applicationStatus,
   canEdit,
+  canAssignSection,
 }: {
   stage: StageCard;
   ayCode: string;
@@ -1078,6 +1096,7 @@ function StageStatusTile({
   currentSectionId?: string | null;
   applicationStatus: string | null;
   canEdit: boolean;
+  canAssignSection: boolean;
 }) {
   // Per-stage freeze (KD #147): all stages freeze once fully Enrolled, except
   // supplies/orientation which stay editable until finalized. Shared with the
@@ -1089,12 +1108,18 @@ function StageStatusTile({
   );
   const StageIcon = STAGE_ICON[stage.key];
   const stripe = statusStripeClass(stage.status);
-  // Class assignment is set as part of the application stage's Enrolled
-  // flip (the registrar picks a section inline in that dialog, Task 3.6) —
-  // it has no independent edit control of its own. Post-Enrolled changes
-  // route through the dedicated section-transfer endpoint (KD #67), not
-  // here. Hide the edit button and label as tied-to-enrollment.
+  // The class stage has no edit control of its own here. Class Assignment is
+  // step 11 of HFSE's admission process, done in Records — either alongside
+  // the Enrolled flip or, normally, afterwards from the students-needing-setup
+  // queue. Post-placement changes route through the section-transfer endpoint
+  // (KD #67). So: hide the edit button, and point at whichever Records surface
+  // applies.
   const autoManaged = stage.key === 'class';
+  const isEnrolledStatus =
+    applicationStatus === 'Enrolled' ||
+    applicationStatus === 'Enrolled (Conditional)';
+  const awaitingPlacement =
+    autoManaged && isEnrolledStatus && !currentSectionId;
 
   return (
     <div
@@ -1117,7 +1142,7 @@ function StageStatusTile({
         </div>
         {autoManaged ? (
           <Badge variant="muted" className="shrink-0 gap-1">
-            Set via Enrolled
+            Assigned in Records
           </Badge>
         ) : canEdit ? (
           <EditStageDialog
@@ -1138,7 +1163,7 @@ function StageStatusTile({
 
       {stage.updatedAt ? (
         <span className="pl-1 font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
-          {autoManaged && 'Set via Enrolled · '}
+          {autoManaged && 'Assigned · '}
           {formatDate(stage.updatedAt)}
           {stage.updatedBy && (
             <span className="ml-1.5 normal-case text-muted-foreground/80">
@@ -1148,7 +1173,7 @@ function StageStatusTile({
         </span>
       ) : autoManaged ? (
         <span className="pl-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          Set when Enrolled
+          {awaitingPlacement ? 'Awaiting class assignment' : 'Not assigned yet'}
         </span>
       ) : null}
       {stage.extras && stage.extras.some((e) => !isFieldEmpty(e)) && (
@@ -1161,14 +1186,25 @@ function StageStatusTile({
           {stage.remarks}
         </p>
       )}
-      {/* A section transfer is an edit, even though it happens on another
-          surface — a read-only viewer would follow this link into a page their
-          role cannot open (KD #173). */}
-      {autoManaged && currentSectionId && canEdit && (
+      {/* Both links go to placement surfaces, so both gate on the placement
+          role, not merely on canEdit — an admissions viewer following either
+          would land on a page their role cannot open (KD #173). */}
+      {autoManaged && currentSectionId && canAssignSection && (
         <Button asChild variant="outline" size="sm" className="ml-1 self-start">
           <Link href={`/sis/sections/${currentSectionId}`}>
             <ArrowRightLeft className="size-3.5" />
             Move to another section
+          </Link>
+        </Button>
+      )}
+      {/* Enrolled but unplaced — this tile is otherwise a dead end, because
+          the class stage is frozen once Enrolled and the queue is the only
+          door left. */}
+      {awaitingPlacement && canAssignSection && (
+        <Button asChild variant="outline" size="sm" className="ml-1 self-start">
+          <Link href="/records/unsynced">
+            <GraduationCap className="size-3.5" />
+            Assign a class
           </Link>
         </Button>
       )}

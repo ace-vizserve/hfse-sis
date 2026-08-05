@@ -3,17 +3,20 @@ import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import { NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
-import { STUDENT_RECORD_WRITERS } from '@/lib/auth/student-record';
+import {
+  STUDENT_RECORD_WRITERS,
+  canAssignSection,
+} from '@/lib/auth/student-record';
 import { logAction } from '@/lib/audit/log-action';
 import {
   APPLICATION_TERMINAL_STATUSES,
   ENROLLED_PREREQ_STAGES,
+  evaluateEnrolledFlip,
   isAdmissionsStageFrozen,
   POST_ENROLMENT_EDITABLE_STAGES,
   STAGE_COLUMN_MAP,
   STAGE_KEYS,
   STAGE_LABELS,
-  STAGE_TERMINAL_STATUS,
   StageUpdateSchema,
   validateTerminalReason,
   type StageKey,
@@ -309,9 +312,17 @@ export async function PATCH(
         appStatusRow as { applicationStatus: string | null } | null
       )?.applicationStatus;
       if (appStatus === 'Enrolled' || appStatus === 'Enrolled (Conditional)') {
+        // A student with no class yet isn't transferring — they're being
+        // placed for the first time (step 11), which is what assign-section
+        // is for. Sending them to transfer-section would fail, because there
+        // is no source section to move them out of. Now that enrolling
+        // without a class is the normal path, this is the common case.
+        const route = currentSection
+          ? `POST /api/sis/students/${enroleeNumber}/transfer-section to move enrolled students between sections`
+          : `POST /api/sis/students/${enroleeNumber}/assign-section to place this student in a class for the first time`;
         return NextResponse.json(
           {
-            error: `Use POST /api/sis/students/${enroleeNumber}/transfer-section to move enrolled students between sections — this keeps section_students in sync atomically.`,
+            error: `Use ${route} — this keeps section_students in sync atomically.`,
           },
           { status: 422 }
         );
@@ -430,19 +441,28 @@ export async function PATCH(
     }
   }
 
-  // 2b) Enrolled-prereq gate + registrar-chosen class assignment.
-  // Setting applicationStatus = 'Enrolled' requires all 5 prereq stages at
-  // their terminal values AND a client-supplied section with capacity.
-  // 'Enrolled (Conditional)' deliberately bypasses this — it's the
-  // registrar override for edge cases (transfers mid-year, late-arriving
-  // documents, etc.). Per
+  // 2b) The Enrolled flip — step 10 of HFSE's admission process.
+  //
+  // Requires all 5 prereq stages at their terminal values. A CLASS IS NOT
+  // REQUIRED: Class Assignment is step 11, done separately by Student Affairs
+  // "subject to a deliberation by Academics Team"
+  // (docs/context/admission-process.md). A student enrolled without one is a
+  // normal, expected state — they surface in the students-needing-setup queue
+  // and are placed later via /assign-section, which is also the only door once
+  // `isAdmissionsStageFrozen` freezes the class stage.
+  //
+  // A section MAY still be supplied, as a convenience for a coordinator doing
+  // both steps at once. There is deliberately no auto-pick anywhere (see
   // docs/superpowers/specs/2026-07-20-manual-section-assignment-design.md,
-  // there is deliberately no auto-pick anywhere in the system: the
-  // registrar must have already chosen a section via the picker before
-  // this PATCH is submitted (wired into EditStageDialog, Task 3.6). If the
-  // gate passes, we piggyback the class-assignment columns onto the same
-  // UPDATE so the flip is atomic at the row level.
+  // which predates the step-10/11 split and required the section outright).
+  // When one is supplied we piggyback the class columns onto the same UPDATE
+  // so the flip and the placement land atomically.
+  //
+  // 'Enrolled (Conditional)' skips this block entirely. It means ALN — the
+  // student didn't pass the assessment or came with a declaration and attends
+  // Trial Class + SPED. It is NOT a way to enrol someone without a class.
   let classAutoAssigned = false;
+  let awaitingPlacement = false;
   if (stageKey === 'application' && status === 'Enrolled') {
     // Re-fetch the status row with every prereq column for the gate check.
     const prereqSelect = ENROLLED_PREREQ_STAGES.map(
@@ -464,49 +484,9 @@ export async function PATCH(
       );
     }
     const prereqCurrent = prereqRow as unknown as Record<string, string | null>;
-    const blockers: Array<{
-      stage: string;
-      current: string | null;
-      expected: string;
-    }> = [];
-    for (const stage of ENROLLED_PREREQ_STAGES) {
-      const col = STAGE_COLUMN_MAP[stage].statusCol;
-      const expected = STAGE_TERMINAL_STATUS[stage]!;
-      const current = prereqCurrent[col] ?? null;
-      if (current !== expected) {
-        blockers.push({
-          stage: STAGE_LABELS[stage],
-          current: current,
-          expected,
-        });
-      }
-    }
-    if (blockers.length > 0) {
-      return NextResponse.json(
-        {
-          error: 'Prerequisite stages incomplete',
-          blockers,
-        },
-        { status: 422 }
-      );
-    }
 
-    // Gate passed. section_id is a required input here, not computed
-    // server-side — no auto-pick anywhere.
-    if (!parsed.data.section_id) {
-      return NextResponse.json(
-        { error: 'Pick a section before enrolling this student.' },
-        { status: 422 }
-      );
-    }
-    // Need the application row's studentNumber — what syncOneStudent uses
-    // to upsert the public `students` row + section_students row; in
-    // production the parent portal writes it alongside enroleeNumber at
-    // intake, so a null here is anomalous. Fail loudly instead of letting
-    // syncOneStudent silently skip with 'no studentNumber' (which would
-    // land the row in an Enrolled status with no section roster
-    // placement). Also carries levelApplied so validateSectionChoice can
-    // confirm the chosen section's level matches the applicant's level.
+    // The apps row carries the studentNumber the gate may need and the
+    // levelApplied validateSectionChoice compares the section against.
     const admissionsClient = createAdmissionsClient();
     const appsTable = `${prefix}_enrolment_applications`;
     const { data: appRow, error: appErr } = await admissionsClient
@@ -528,39 +508,58 @@ export async function PATCH(
       studentNumber: string | null;
       levelApplied: string | null;
     };
-    if (!appLite.studentNumber) {
+
+    const gate = evaluateEnrolledFlip({
+      canAssignSection: canAssignSection(auth.role),
+      sectionId: parsed.data.section_id,
+      prereqStatuses: Object.fromEntries(
+        ENROLLED_PREREQ_STAGES.map((k) => [
+          k,
+          prereqCurrent[STAGE_COLUMN_MAP[k].statusCol] ?? null,
+        ])
+      ),
+      studentNumber: appLite.studentNumber,
+    });
+    if (!gate.ok) {
       return NextResponse.json(
-        {
-          error:
-            'Cannot enroll: this applicant has no Student Number on file. Student numbers are normally generated at parent-portal submission alongside the enrolee number — contact admissions support to assign one before enrolling.',
-        },
-        { status: 422 }
+        gate.blockers
+          ? { error: gate.error, code: gate.code, blockers: gate.blockers }
+          : { error: gate.error, code: gate.code },
+        { status: gate.status }
       );
     }
 
-    const validated = await validateSectionChoice(
-      supabase,
-      parsed.data.section_id,
-      ayCode,
-      appLite.levelApplied
-    );
-    if ('error' in validated) {
-      return NextResponse.json(
-        { error: `Cannot enroll: ${validated.error}` },
-        { status: 422 }
+    if (gate.assignsSection) {
+      const validated = await validateSectionChoice(
+        supabase,
+        parsed.data.section_id!,
+        ayCode,
+        appLite.levelApplied
       );
-    }
+      if ('error' in validated) {
+        return NextResponse.json(
+          { error: `Cannot enroll: ${validated.error}` },
+          { status: 422 }
+        );
+      }
 
-    // Merge class-assignment columns into the same update so the Enrolled
-    // flip and the class write land atomically (single row UPDATE).
-    const classCols = STAGE_COLUMN_MAP.class;
-    const todayIso = new Date().toISOString();
-    update[classCols.statusCol] = 'Finished';
-    update['classLevel'] = validated.section.levelLabel;
-    update['classSection'] = validated.section.name;
-    update[classCols.updatedDateCol] = todayIso;
-    update[classCols.updatedByCol] = auth.user.email ?? '(unknown)';
-    classAutoAssigned = true;
+      const classCols = STAGE_COLUMN_MAP.class;
+      const todayIso = new Date().toISOString();
+      update[classCols.statusCol] = 'Finished';
+      update['classLevel'] = validated.section.levelLabel;
+      update['classSection'] = validated.section.name;
+      update[classCols.updatedDateCol] = todayIso;
+      update[classCols.updatedByCol] = auth.user.email ?? '(unknown)';
+      classAutoAssigned = true;
+    } else {
+      // No section chosen — step 11 is still to come. Tell the client so it
+      // can say so, rather than leaving a silent success that looks identical
+      // to a fully-placed enrolment. Read the pre-update row: a student whose
+      // class was already set through the class stage is NOT awaiting anything.
+      const preClass = (before as unknown as Record<string, unknown>)
+        .classSection as string | null | undefined;
+      awaitingPlacement = !preClass?.trim();
+    }
   }
 
   // 2c) Terminal-status reason gate.
@@ -661,18 +660,20 @@ export async function PATCH(
 
   // 5) Auto-sync the grading roster when class placement is now complete.
   // Fires in three paths:
-  //   (a) application → Enrolled — auto-assigned the class above.
-  //   (b) application → Enrolled (Conditional) — the registrar override
-  //       deliberately bypasses the prereq + auto-assign gate, but if a
-  //       classSection is already on the admissions row (mid-year transfer,
-  //       previously assigned then status edited) we still need to create
-  //       the section_students row. The classCheck below guards the
-  //       'no classSection yet' branch with a clean no-op.
+  //   (a) application → Enrolled — either a class was chosen above, or the
+  //       row already carried one (set through the class stage BEFORE
+  //       enrolment, which is legal — `class` is not a prereq stage and is
+  //       only frozen once Enrolled). Both must sync; only the first sets
+  //       classAutoAssigned, so this arm cannot key off that flag alone or a
+  //       pre-placed student would enrol and never reach the roster — the
+  //       exact admissions-vs-roster drift KD #90 exists to prevent.
+  //   (b) application → Enrolled (Conditional) — same reasoning.
   //   (c) class stage manually set to Finished (registrar override or
   //       reassignment) — need to confirm classLevel + classSection are
   //       both populated before syncing.
   // Post-update re-read ensures both class columns are non-null regardless
-  // of path. When sync fails we surface autoSyncFailed in the response so
+  // of path; a genuinely unplaced student falls out at hasClassPlacement as a
+  // clean no-op. When sync fails we surface autoSyncFailed in the response so
   // the dialog can warn — silent failure on (a)/(b) was the gap that left
   // enrolled students missing from Records' placement section.
   let autoSync: { change: string; reason?: string; error?: string } | null =
@@ -680,7 +681,8 @@ export async function PATCH(
   let autoSyncFailed = false;
   const shouldSync =
     classAutoAssigned ||
-    (stageKey === 'application' && status === 'Enrolled (Conditional)') ||
+    (stageKey === 'application' &&
+      (status === 'Enrolled' || status === 'Enrolled (Conditional)')) ||
     (stageKey === 'class' && status === 'Finished');
 
   if (shouldSync) {
@@ -734,15 +736,17 @@ export async function PATCH(
           },
         });
       } else if (!result.ok) {
-        // Conditional path with no classSection set yet is the expected
-        // no-op (registrar will assign a section later via the unsynced
-        // queue). Don't flag it as a failure.
-        const isConditionalNoSection =
+        // Enrolling without a class is step 10 finishing, not a failure —
+        // Class Assignment is step 11 and the student is now sitting in the
+        // students-needing-setup queue waiting for it. Same for a missing
+        // student number, which that queue reports separately. Either way the
+        // registrar has somewhere to go, so don't cry wolf in the dialog.
+        const isExpectedUnplacedSkip =
           stageKey === 'application' &&
-          status === 'Enrolled (Conditional)' &&
+          (status === 'Enrolled' || status === 'Enrolled (Conditional)') &&
           (result.reason === 'missing classLevel or classSection' ||
             result.reason === 'no studentNumber');
-        if (!isConditionalNoSection) {
+        if (!isExpectedUnplacedSkip) {
           autoSyncFailed = true;
           console.warn(
             '[stage PATCH] auto-sync failed:',
@@ -915,6 +919,9 @@ export async function PATCH(
     ok: true,
     changed: changes.length,
     classAutoAssigned,
+    // Enrolled, but step 11 hasn't happened — the dialog says so rather than
+    // reporting a success indistinguishable from a fully-placed enrolment.
+    awaitingPlacement,
     autoSync,
     autoSyncFailed,
     withdrawalCascade,

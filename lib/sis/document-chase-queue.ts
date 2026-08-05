@@ -32,7 +32,14 @@ import {
 //
 // Filtering by enrollment status keeps the two surfaces non-overlapping:
 //   admissions  → applicationStatus IN ('Submitted', 'Ongoing Verification', 'Processing')
-//   p-files     → applicationStatus IN ('Enrolled', 'Enrolled (Conditional)') AND classSection IS NOT NULL
+//   p-files     → applicationStatus IN ('Enrolled', 'Enrolled (Conditional)')
+//
+// p-files used to also require classSection IS NOT NULL. It no longer does:
+// class assignment is step 11 of the admission process and trails enrolment,
+// so that filter silently dropped enrolled students from document chasing for
+// as long as they went unplaced. KD #91 had already relaxed the same rule on
+// the P-Files roster and detail page; the counts were the last holdout.
+// Membership now lives in one shared predicate — see `lib/sis/chase-lens.ts`.
 //
 // Cached per-(AY, module) with the existing `sis:${ayCode}` tag (KD #46),
 // so any existing write that already invalidates that tag (PATCH on
@@ -80,9 +87,11 @@ async function loadChaseQueueUncached(
       ...ADMISSIONS_FUNNEL_STATUSES,
     ]);
   } else {
-    statusQuery = statusQuery
-      .in('applicationStatus', [...CHASE_ENROLLED_STATUSES])
-      .not('classSection', 'is', null);
+    // No classSection filter: an enrolled student awaiting class assignment
+    // still has documents worth chasing. See inChaseLensScope.
+    statusQuery = statusQuery.in('applicationStatus', [
+      ...CHASE_ENROLLED_STATUSES,
+    ]);
   }
   const statusRes = await statusQuery;
   if (statusRes.error) {
@@ -106,9 +115,7 @@ async function loadChaseQueueUncached(
   // can't: `.not('classSection','is',null)` passes a blank string through.
   const enroleeSet = new Set(
     statusRows
-      .filter((r) =>
-        inChaseLensScope(moduleKey, r.applicationStatus, r.classSection)
-      )
+      .filter((r) => inChaseLensScope(moduleKey, r.applicationStatus))
       .map((r) => r.enroleeNumber!)
   );
   if (enroleeSet.size === 0) {

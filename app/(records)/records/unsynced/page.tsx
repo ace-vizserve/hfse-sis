@@ -8,7 +8,8 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { listAssignableSections } from '@/lib/sis/class-assignment';
-import { loadUnsyncedEnrolledStudents } from '@/lib/sis/unsynced-students';
+import { sectionMapKey } from '@/lib/sis/section-map-key';
+import { loadUnsyncedInScope } from '@/lib/sis/unsynced-students';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -47,30 +48,35 @@ export default async function UnsyncedStudentsPage() {
     );
   }
 
-  const rows = await loadUnsyncedEnrolledStudents(currentAy.ay_code);
+  // Every year that can currently have someone waiting, not just the live one.
+  // Admissions enrol into next year's intake during the early-bird window, and
+  // a queue that only reads the current AY hides exactly that work.
+  const rows = await loadUnsyncedInScope();
 
-  // Build the per-level section map up-front so each dialog open is
-  // pre-populated (no per-row fetch on click) — resolved level + section
-  // list with per-section active counts, same shape the lite page gets
-  // from `listAssignableSections` directly.
-  const uniqueLevels = Array.from(
-    new Set(
+  // Build the section map up-front so each dialog open is pre-populated (no
+  // per-row fetch on click). Keyed by AY **and** level: the same level has
+  // different sections in different years, so a level-only key would offer a
+  // registrar next year's classes for this year's student.
+  const uniquePairs = Array.from(
+    new Map(
       rows
-        .map((r) => r.levelApplied)
         .filter(
-          (s): s is string => typeof s === 'string' && s.trim().length > 0
+          (r) =>
+            typeof r.levelApplied === 'string' && r.levelApplied.trim().length
         )
-    )
+        .map((r) => [
+          sectionMapKey(r.ayCode, r.levelApplied!),
+          { ayCode: r.ayCode, level: r.levelApplied! },
+        ])
+    ).values()
   );
-  const sectionsByLevel = await loadSectionsForLevels(
-    currentAy.ay_code,
-    uniqueLevels
-  );
+  const sectionsByLevel = await loadSectionsForLevels(uniquePairs);
 
+  const ayCount = new Set(rows.map((r) => r.ayCode)).size;
   const countLabel =
     rows.length === 0
       ? 'All enrolled students are set up — no action needed.'
-      : `${rows.length.toLocaleString('en-SG')} student${rows.length === 1 ? '' : 's'} waiting for a section.`;
+      : `${rows.length.toLocaleString('en-SG')} student${rows.length === 1 ? '' : 's'} waiting for a class${ayCount > 1 ? ', across more than one academic year' : ''}.`;
 
   return (
     <PageShell>
@@ -83,20 +89,15 @@ export default async function UnsyncedStudentsPage() {
         </h1>
         <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
           Enrolled students who don&rsquo;t yet have access to grading and
-          attendance because a class section hasn&rsquo;t been assigned.{' '}
-          {countLabel}
+          attendance because they haven&rsquo;t been given a class. {countLabel}
         </p>
       </header>
 
-      <UnsyncedStudentsQueue
-        rows={rows}
-        ayCode={currentAy.ay_code}
-        sectionsByLevel={sectionsByLevel}
-      />
+      <UnsyncedStudentsQueue rows={rows} sectionsByLevel={sectionsByLevel} />
 
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         <UserX className="size-3" strokeWidth={2.25} />
-        <span>{currentAy.ay_code}</span>
+        <span>Current + upcoming AY</span>
         <span className="text-border">·</span>
         <span>Enrolled only</span>
         <span className="text-border">·</span>
@@ -115,16 +116,18 @@ export default async function UnsyncedStudentsPage() {
 // ──────────────────────────────────────────────────────────────────────────
 
 async function loadSectionsForLevels(
-  ayCode: string,
-  levelLabels: string[]
+  pairs: Array<{ ayCode: string; level: string }>
 ): Promise<Record<string, AssignableLevelSections>> {
-  if (levelLabels.length === 0) return {};
+  if (pairs.length === 0) return {};
   const service = createServiceClient();
 
   const entries = await Promise.all(
-    levelLabels.map(
-      async (label) =>
-        [label, await listAssignableSections(service, ayCode, label)] as const
+    pairs.map(
+      async ({ ayCode, level }) =>
+        [
+          sectionMapKey(ayCode, level),
+          await listAssignableSections(service, ayCode, level),
+        ] as const
     )
   );
 

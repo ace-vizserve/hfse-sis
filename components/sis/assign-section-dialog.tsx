@@ -18,6 +18,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { NewSectionButton } from '@/components/markbook/new-section-button';
+import { LateEnrolleePrompt } from '@/components/sis/late-enrollee-prompt';
+import type { MidTermPayload } from '@/lib/sis/placement-completion';
 import {
   MAX_ACTIVE_PER_SECTION,
   type AssignableLevel,
@@ -57,13 +59,20 @@ export function AssignSectionDialog({
   const router = useRouter();
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [createOpen, setCreateOpen] = React.useState(false);
+  // Set when the student turns out to be joining after the year began; the
+  // dialog then shows the late-enrollee prompt instead of closing.
+  const [pendingMidTerm, setPendingMidTerm] =
+    React.useState<MidTermPayload | null>(null);
   const [localSections, setLocalSections] = React.useState(availableSections);
   React.useEffect(() => {
     setLocalSections(availableSections);
   }, [availableSections]);
 
   React.useEffect(() => {
-    if (!open) setSelectedId(null);
+    if (!open) {
+      setSelectedId(null);
+      setPendingMidTerm(null);
+    }
   }, [open]);
 
   const sorted = React.useMemo(
@@ -84,14 +93,28 @@ export function AssignSectionDialog({
 
   const assignMutation = useMutation({
     mutationFn: (sectionId: string) =>
-      apiFetch<{ sectionName?: string }>(
+      apiFetch<{
+        sectionName?: string;
+        midTermEnrolment?: MidTermPayload | null;
+      }>(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/assign-section?ay=${encodeURIComponent(ayCode)}`,
         jsonInit('POST', { sectionId })
       ),
     onSuccess: (body) => {
+      const where = body.sectionName ?? 'their new class';
+      const late = body.midTermEnrolment;
       toast.success(
-        `Assigned ${studentName} to ${body.sectionName ?? 'their new section'}. Grading access is now active.`
+        // Don't promise a start date we're about to let them change — the
+        // late-enrollee prompt can move it forward to a later term's first day.
+        late
+          ? `Assigned ${studentName} to ${where}. Grading access is now active.`
+          : `Assigned ${studentName} to ${where}. Grading access is now active and attendance starts today.`
       );
+      // Swap this dialog's body to the prompt rather than opening a second one.
+      if (late?.sectionId) {
+        setPendingMidTerm(late);
+        return;
+      }
       onOpenChange(false);
       router.refresh();
     },
@@ -123,25 +146,42 @@ export function AssignSectionDialog({
 
   const hasOptions = sorted.length > 0;
 
+  if (pendingMidTerm) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <LateEnrolleePrompt
+            payload={pendingMidTerm}
+            onDone={() => {
+              setPendingMidTerm(null);
+              onOpenChange(false);
+              router.refresh();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-serif text-xl">
             <GraduationCap className="size-4 text-brand-indigo" />
-            Assign to a class section
+            Assign to a class
           </DialogTitle>
           <DialogDescription>
             {level?.label ? (
               <>
-                Pick a section for <strong>{studentName}</strong> at{' '}
-                <strong>{level.label}</strong>. Once assigned, the grading
-                roster will pick them up automatically.
+                Pick a class for <strong>{studentName}</strong> at{' '}
+                <strong>{level.label}</strong>. Once assigned they join the
+                roster, and their attendance starts.
               </>
             ) : (
               <>
-                Pick a section for <strong>{studentName}</strong>. Once
-                assigned, the grading roster will pick them up automatically.
+                Pick a class for <strong>{studentName}</strong>. Once assigned
+                they join the roster, and their attendance starts.
               </>
             )}
           </DialogDescription>
@@ -151,8 +191,7 @@ export function AssignSectionDialog({
           {!hasOptions ? (
             <p className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
               There are no classes at {level?.label ?? 'this level'} in {ayCode}{' '}
-              yet, so there is nowhere to put this student. Create one under SIS
-              Admin → Section setup, then come back.
+              yet. Create one under SIS Admin → Section setup, then come back.
             </p>
           ) : (
             sorted.map((s) => (

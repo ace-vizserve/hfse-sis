@@ -7,6 +7,10 @@ import { requireRole } from '@/lib/auth/require-role';
 import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
 import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
 import { validateSectionChoice } from '@/lib/sis/class-assignment';
+import {
+  completePlacement,
+  type MidTermPayload,
+} from '@/lib/sis/placement-completion';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import { syncOneStudent } from '@/lib/sync/students';
@@ -134,10 +138,13 @@ export async function POST(
 
   // ── 2. Pre-checks ─────────────────────────────────────────────────────
   if (!appsRow.studentNumber) {
+    // A sync can't invent a student number — it's issued at parent-portal
+    // submission alongside the enrolee number. Telling the registrar to run
+    // one sends them somewhere that cannot help.
     return NextResponse.json(
       {
         error:
-          'This applicant has no student number yet. Run a student sync first so the grading roster can pick them up.',
+          'This applicant has no student number yet, so they can’t be added to a class roster. Student numbers are issued when the application is submitted — contact admissions support to assign one.',
       },
       { status: 422 }
     );
@@ -283,6 +290,32 @@ export async function POST(
     );
   }
 
+  // ── 5b. The student now has a seat ───────────────────────────────────
+  // Stamp the attendance start date and work out whether they're joining
+  // late. This is step 11 of HFSE's admission process, and for a student who
+  // was enrolled (step 10) weeks ago it is THIS moment — not the enrolment —
+  // that their register starts from.
+  //
+  // Runs after the sync has succeeded, so it is past the rollback point: a
+  // failure here must never fail the request, and `completePlacement` is
+  // best-effort by contract. Before the audit, so the audit row records what
+  // actually happened.
+  let midTermEnrolment: MidTermPayload | null = null;
+  let enrollmentDateStamped = false;
+  if (
+    syncResult.change === 'enrolled' ||
+    syncResult.change === 'inserted' ||
+    syncResult.change === 'reactivated'
+  ) {
+    const placement = await completePlacement(service, {
+      enroleeNumber,
+      ayCode,
+      sectionId: section.id,
+    });
+    midTermEnrolment = placement.midTermEnrolment;
+    enrollmentDateStamped = placement.enrollmentDateStamped;
+  }
+
   // ── 6. Step C — audit ────────────────────────────────────────────────
   await logAction({
     service,
@@ -300,6 +333,8 @@ export async function POST(
       levelLabel: section.levelLabel,
       assignedBy: actorEmail,
       syncChange: syncResult.change,
+      enrollmentDateStamped,
+      lateEnrolleeCandidate: midTermEnrolment?.termLabel ?? null,
     },
   });
 
@@ -312,5 +347,9 @@ export async function POST(
     sectionName: section.name,
     levelLabel: section.levelLabel,
     syncChange: syncResult.change,
+    // Non-null when the student is joining after the year began — the dialog
+    // then asks which term they're joining, which can move their start date
+    // forward to that term's first day.
+    midTermEnrolment,
   });
 }

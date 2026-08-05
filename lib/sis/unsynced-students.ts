@@ -1,5 +1,9 @@
 import { unstable_cache } from 'next/cache';
 
+import {
+  getCurrentAcademicYear,
+  getUpcomingAcademicYear,
+} from '@/lib/academic-year';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -40,6 +44,9 @@ export type UnsyncedGapReason =
   | 'not_synced';
 
 export type UnsyncedStudentRow = {
+  /** Which academic year this student is enrolled into. Carried per row
+   *  because the queue spans more than one — see `loadUnsyncedInScope`. */
+  ayCode: string;
   enroleeNumber: string;
   studentNumber: string | null;
   firstName: string | null;
@@ -158,6 +165,7 @@ async function loadUnsyncedUncached(
     if (!app) continue; // status without an apps row — corrupt; skip
 
     const base = {
+      ayCode,
       enroleeNumber,
       studentNumber: app.studentNumber ?? null,
       firstName: app.firstName ?? null,
@@ -221,5 +229,49 @@ export async function countUnsyncedEnrolledStudents(
   ayCode: string
 ): Promise<number> {
   const rows = await loadUnsyncedEnrolledStudents(ayCode);
+  return rows.length;
+}
+
+/**
+ * Every student waiting for setup, in EVERY academic year that can currently
+ * have one — the current AY plus the upcoming accepting AY.
+ *
+ * The per-AY loader above answers "what's outstanding in this year", which is
+ * what a page showing one selected year wants. This answers "what's
+ * outstanding, full stop", which is what an operational queue wants — because
+ * admissions run a year ahead during the early-bird window (KD #118), so
+ * asking a registrar to know which year to go looking in is asking them to
+ * find work they don't know exists. Same in-scope window as
+ * `lib/sis/level-review.ts` and `lib/sis/levels-awaiting-sections.ts`, so all
+ * three Records queues agree on what "now" means.
+ *
+ * Rows carry their own `ayCode`; sorted by AY first so a year's worth of work
+ * reads together.
+ */
+export async function loadUnsyncedInScope(): Promise<UnsyncedStudentRow[]> {
+  const [current, upcoming] = await Promise.all([
+    getCurrentAcademicYear(),
+    getUpcomingAcademicYear(),
+  ]);
+
+  const ayCodes = Array.from(
+    new Set(
+      [current?.ay_code, upcoming?.ay_code].filter((c): c is string => !!c)
+    )
+  );
+  if (ayCodes.length === 0) return [];
+
+  const perAy = await Promise.all(ayCodes.map(loadUnsyncedEnrolledStudents));
+  return perAy.flat().sort((a, b) => {
+    const byAy = a.ayCode.localeCompare(b.ayCode);
+    if (byAy !== 0) return byAy;
+    // Preserve the per-AY ordering the loader already applied (gap reason,
+    // then name) by leaving same-AY rows alone.
+    return 0;
+  });
+}
+
+export async function countUnsyncedInScope(): Promise<number> {
+  const rows = await loadUnsyncedInScope();
   return rows.length;
 }

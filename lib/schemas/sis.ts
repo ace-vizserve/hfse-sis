@@ -796,6 +796,105 @@ export function validateTerminalReason(
   return { ok: true };
 }
 
+// ── The Enrolled flip (step 10) ──────────────────────────────────────────
+//
+// HFSE's admission process has Enrolment as step 10 and Class Assignment as
+// step 11 — separate steps, done by different people (Student Affairs assign
+// the class, "subject to a deliberation by Academics Team"). So a class is
+// NOT required to enrol. See docs/context/admission-process.md.
+//
+// What IS required is that the five preceding stages are finished. That gate
+// is unchanged and must stay that way: it is the definition of step 10.
+//
+// If the caller does supply a class — a convenience for a coordinator doing
+// both jobs in one sitting — they must be allowed to assign classes. The
+// `admissions` role may enrol but never places (KD #51), so it is refused
+// here rather than silently accepted, which is what made the old code
+// contradict its own role model.
+//
+// Note `Enrolled (Conditional)` never reaches this function: it bypasses the
+// prereq gate by design and means ALN — the student didn't pass the
+// assessment or came with a declaration and attends Trial Class + SPED. It is
+// NOT a way to enrol someone without a class, and must never be used as one.
+export type EnrolledFlipBlocker = {
+  stage: string;
+  current: string | null;
+  expected: string;
+};
+
+export type EnrolledFlipGateResult =
+  | { ok: true; assignsSection: boolean }
+  | {
+      ok: false;
+      status: 403 | 422;
+      code: 'prereqs_incomplete' | 'placement_forbidden' | 'no_student_number';
+      error: string;
+      blockers?: EnrolledFlipBlocker[];
+    };
+
+export function evaluateEnrolledFlip(input: {
+  /** True when the actor's role may place students — `canAssignSection`. */
+  canAssignSection: boolean;
+  /** The registrar's chosen section, if they picked one. Optional by design. */
+  sectionId: string | null | undefined;
+  /** Current value of each prereq stage's status column, keyed by stage. */
+  prereqStatuses: Record<string, string | null>;
+  /**
+   * The applicant's student number. Only consulted when a section is being
+   * assigned: without it `syncOneStudent` silently skips, which would leave
+   * an Enrolled row holding a class it never reached the roster with. With no
+   * section there is nothing to guarantee — the student is legitimately
+   * unplaced, and a missing number is already surfaced as the
+   * `no_student_number` gap in the students-needing-setup queue.
+   */
+  studentNumber: string | null | undefined;
+}): EnrolledFlipGateResult {
+  const { canAssignSection, sectionId, prereqStatuses, studentNumber } = input;
+
+  const blockers: EnrolledFlipBlocker[] = [];
+  for (const stage of ENROLLED_PREREQ_STAGES) {
+    const expected = STAGE_TERMINAL_STATUS[stage]!;
+    const current = prereqStatuses[stage] ?? null;
+    if (current !== expected) {
+      blockers.push({ stage: STAGE_LABELS[stage], current, expected });
+    }
+  }
+  if (blockers.length > 0) {
+    return {
+      ok: false,
+      status: 422,
+      code: 'prereqs_incomplete',
+      error: 'Prerequisite stages incomplete',
+      blockers,
+    };
+  }
+
+  const wantsSection = !!sectionId;
+  if (!wantsSection) return { ok: true, assignsSection: false };
+
+  if (!canAssignSection) {
+    return {
+      ok: false,
+      status: 403,
+      code: 'placement_forbidden',
+      error:
+        'Class assignment is handled by Records. Enrol this student now and they will appear under Students awaiting class assignment.',
+    };
+  }
+
+  if (!studentNumber) {
+    return {
+      ok: false,
+      status: 422,
+      code: 'no_student_number',
+      error:
+        'This applicant has no Student Number on file, so they cannot be added to a class roster yet. Student numbers are issued at parent-portal submission alongside the enrolee number — contact admissions support to assign one, or enrol without a class for now.',
+    };
+  }
+
+  return { ok: true, assignsSection: true };
+}
+
 // Each stage maps to status / remarks / extras column names on enrolment_status.
 // The route reads this map to know which columns to write.
 export type StageColumns = {

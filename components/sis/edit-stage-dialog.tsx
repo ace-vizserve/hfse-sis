@@ -10,6 +10,8 @@ import { toast } from 'sonner';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
+import { LateEnrolleePrompt } from '@/components/sis/late-enrollee-prompt';
+import type { MidTermPayload } from '@/lib/sis/placement-completion';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -57,16 +59,6 @@ import {
 const OTHER_SENTINEL = '__other__';
 
 type ExtraValues = Record<string, string | null>;
-type MidTermPayload = {
-  termNumber: number; // joining term (active term mid-term, else next term)
-  termLabel: string;
-  sectionId: string;
-  sectionStudentId: string;
-  activeTermNumber: number | null; // null when joining during a break
-  nextTermNumber: number | null;
-  canDeferToNext: boolean;
-  daysLeftInActiveTerm: number | null;
-};
 
 export function EditStageDialog({
   ayCode,
@@ -77,6 +69,7 @@ export function EditStageDialog({
   initialExtras,
   prereqStatuses,
   frozen = false,
+  canAssignSection = false,
 }: {
   ayCode: string;
   enroleeNumber: string;
@@ -99,15 +92,20 @@ export function EditStageDialog({
    * purely a heads-up.
    */
   prereqStatuses?: Partial<Record<StageKey, string | null>>;
+  /**
+   * May this viewer put a student in a class? Class Assignment is step 11 of
+   * HFSE's admission process and belongs to Records, so an admissions user
+   * finishing step 10 never sees the picker — and the server 403s them if
+   * they somehow post one. Defaults to false: a caller that forgets to pass
+   * it renders no picker, rather than one whose save is refused.
+   */
+  canAssignSection?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pendingMidTerm, setPendingMidTerm] = useState<MidTermPayload | null>(
     null
   );
-  // The registrar-chosen joining term (active term = "join current",
-  // next term = "start next"). Defaults to the active term when the prompt opens.
-  const [chosenTerm, setChosenTerm] = useState<number | null>(null);
 
   const cols = STAGE_COLUMN_MAP[stageKey];
   const canonicalOptions = STAGE_STATUS_OPTIONS[stageKey];
@@ -177,15 +175,20 @@ export function EditStageDialog({
     : [];
   const incompleteCount = prereqRows.filter((r) => !r.ok).length;
 
-  // Manual section picker (Task 3.6, docs/superpowers/specs/2026-07-20-manual-section-assignment-design.md).
-  // Renders inline (not a nested dialog) the moment the registrar's pending
-  // choice is "Enrolled". This is just the UI's own precondition for showing
-  // the picker (submit is gated on `sectionId` too, see `onSubmit`) — it does
-  // NOT duplicate prereq-completeness or section-validity checks. The stage
-  // PATCH route is the actual enforcement for both; on a miss it 422s with a
-  // `blockers` array that `saveMutation.onError` surfaces as a toast.
-  const requiresSectionPick =
-    stageKey === 'application' && effectiveStatus === 'Enrolled';
+  // Optional inline section picker (not a nested dialog), shown once the
+  // registrar's pending choice is "Enrolled" AND they're allowed to place
+  // students.
+  //
+  // OPTIONAL is the point: HFSE enrols at step 10 and assigns the class at
+  // step 11, so leaving this empty is the normal path, not an incomplete
+  // form. Submit is never gated on it. The picker exists only as a shortcut
+  // for a coordinator doing both jobs in one sitting; the stage PATCH route
+  // is the real enforcement and 422s (prereqs) or 403s (placement role) on a
+  // miss, which `saveMutation.onError` surfaces as a toast.
+  const canPickSectionNow =
+    stageKey === 'application' &&
+    effectiveStatus === 'Enrolled' &&
+    canAssignSection;
 
   const [sectionId, setSectionId] = useState<string | null>(null);
 
@@ -203,12 +206,12 @@ export function EditStageDialog({
       }>(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/assignable-sections?ay=${encodeURIComponent(ayCode)}`
       ),
-    enabled: requiresSectionPick,
+    enabled: canPickSectionNow,
   });
 
   useEffect(() => {
-    if (!requiresSectionPick) setSectionId(null);
-  }, [requiresSectionPick]);
+    if (!canPickSectionNow) setSectionId(null);
+  }, [canPickSectionNow]);
 
   const isTerminalStatus = (
     APPLICATION_TERMINAL_STATUSES as readonly string[]
@@ -233,6 +236,7 @@ export function EditStageDialog({
   type StageResponse = {
     changed?: number;
     classAutoAssigned?: boolean;
+    awaitingPlacement?: boolean;
     autoSync?: { change?: string; reason?: string; error?: string };
     autoSyncFailed?: boolean;
     withdrawalCascade?: {
@@ -282,7 +286,14 @@ export function EditStageDialog({
           }
         );
       } else if (classAutoAssigned) {
-        toast.success('Enrolled · section assigned · synced to roster');
+        toast.success('Enrolled · class assigned · added to the roster');
+      } else if (body.awaitingPlacement === true) {
+        // Step 10 done, step 11 still to come. Say so — otherwise this reads
+        // identical to a fully-placed enrolment and nobody knows to follow up.
+        toast.success('Enrolled · awaiting class assignment', {
+          description:
+            'They are now under Records → Students needing setup. Attendance starts on the day they are placed.',
+        });
       } else if (
         stageKey === 'application' &&
         autoSync?.change &&
@@ -298,10 +309,11 @@ export function EditStageDialog({
             : `${STAGE_LABELS[stageKey]} updated`
         );
       }
+      // Swap this dialog's body to the late-enrollee prompt rather than
+      // closing — never a second dialog stacked on the first.
       const midTermPayload = body.midTermEnrolment;
       if (midTermPayload?.sectionId) {
         setPendingMidTerm(midTermPayload);
-        setChosenTerm(midTermPayload.termNumber); // default = active term
         return;
       }
       setOpen(false);
@@ -365,7 +377,6 @@ export function EditStageDialog({
 
   async function onSubmit(values: StageUpdateInput) {
     if (frozen) return;
-    if (requiresSectionPick && !sectionId) return;
     const extrasPayload = {
       ...values.extras,
       ...(stageKey === 'application' &&
@@ -380,41 +391,10 @@ export function EditStageDialog({
       .mutateAsync({
         ...values,
         extras: extrasPayload,
-        ...(requiresSectionPick && sectionId ? { section_id: sectionId } : {}),
+        ...(canPickSectionNow && sectionId ? { section_id: sectionId } : {}),
       })
       .catch(() => {});
   }
-
-  // Late-enrollee confirm in the mid-term prompt. The original threw a bespoke
-  // 'Failed to mark as late enrollee' without reading the body, so onError
-  // surfaces that fixed copy; onSettled mirrors the original `finally` block.
-  const lateMutation = useMutation({
-    mutationFn: (vars: {
-      sectionId: string;
-      sectionStudentId: string;
-      term: number;
-    }) =>
-      apiFetch(
-        `/api/sections/${vars.sectionId}/students/${vars.sectionStudentId}`,
-        jsonInit('PATCH', {
-          enrollment_status: 'late_enrollee',
-          late_enrollee_term_number: vars.term,
-        })
-      ),
-    onSuccess: (_data, vars) => {
-      toast.success(`Marked as late enrollee · T${vars.term}`);
-    },
-    onError: () => {
-      toast.error('Failed to mark as late enrollee');
-    },
-    onSettled: () => {
-      setPendingMidTerm(null);
-      setChosenTerm(null);
-      setOpen(false);
-      router.refresh();
-    },
-  });
-  const applyingLate = lateMutation.isPending;
 
   const busy = form.formState.isSubmitting;
 
@@ -425,7 +405,6 @@ export function EditStageDialog({
         setOpen(next);
         if (!next) {
           setPendingMidTerm(null);
-          setChosenTerm(null);
           // Reset to initials on close.
           setStatusChoice(
             initialStatus === null
@@ -474,87 +453,14 @@ export function EditStageDialog({
       </DialogTrigger>
       <DialogContent className="max-w-lg">
         {pendingMidTerm ? (
-          <>
-            <DialogHeader>
-              <DialogTitle className="font-serif text-lg font-semibold">
-                Enrolling after the year started
-              </DialogTitle>
-              <DialogDescription>
-                {pendingMidTerm.activeTermNumber !== null
-                  ? `Enrolled after T${pendingMidTerm.activeTermNumber} started — this is a late enrollee. Choose which term they join (this skips assessments from before they joined).`
-                  : `The school year has already started, so this is a late enrollee. They'll join the next term, ${pendingMidTerm.termLabel}.`}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-1.5">
-              <button
-                type="button"
-                onClick={() => setChosenTerm(pendingMidTerm.termNumber)}
-                className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${
-                  chosenTerm === pendingMidTerm.termNumber
-                    ? 'border-primary bg-accent text-foreground'
-                    : 'border-hairline text-foreground hover:bg-muted/50'
-                }`}
-              >
-                {pendingMidTerm.activeTermNumber !== null
-                  ? `Join ${pendingMidTerm.termLabel} now`
-                  : `Join ${pendingMidTerm.termLabel}`}
-                {pendingMidTerm.daysLeftInActiveTerm !== null &&
-                  pendingMidTerm.daysLeftInActiveTerm < 14 && (
-                    <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-brand-amber">
-                      ends in {pendingMidTerm.daysLeftInActiveTerm}d
-                    </span>
-                  )}
-              </button>
-              {pendingMidTerm.canDeferToNext &&
-                pendingMidTerm.nextTermNumber !== null && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setChosenTerm(pendingMidTerm.nextTermNumber!)
-                    }
-                    className={`flex w-full items-center rounded-lg border px-3 py-2 text-left text-sm ${
-                      chosenTerm === pendingMidTerm.nextTermNumber
-                        ? 'border-primary bg-accent text-foreground'
-                        : 'border-hairline text-foreground hover:bg-muted/50'
-                    }`}
-                  >
-                    Start in T{pendingMidTerm.nextTermNumber} instead
-                  </button>
-                )}
-            </div>
-            <DialogFooter className="gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={applyingLate}
-                onClick={() => {
-                  setPendingMidTerm(null);
-                  setChosenTerm(null);
-                  setOpen(false);
-                  router.refresh();
-                }}
-              >
-                Not a late enrollee
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                disabled={applyingLate || chosenTerm === null}
-                onClick={() => {
-                  if (chosenTerm === null) return;
-                  lateMutation.mutate({
-                    sectionId: pendingMidTerm.sectionId,
-                    sectionStudentId: pendingMidTerm.sectionStudentId,
-                    term: chosenTerm,
-                  });
-                }}
-              >
-                {applyingLate && <Loader2 className="size-3.5 animate-spin" />}
-                {applyingLate ? 'Saving…' : 'Confirm'}
-              </Button>
-            </DialogFooter>
-          </>
+          <LateEnrolleePrompt
+            payload={pendingMidTerm}
+            onDone={() => {
+              setPendingMidTerm(null);
+              setOpen(false);
+              router.refresh();
+            }}
+          />
         ) : (
           <>
             <DialogHeader>
@@ -622,34 +528,39 @@ export function EditStageDialog({
                   </div>
                 )}
 
-                {requiresSectionPick && (
+                {canPickSectionNow && (
                   <div className="space-y-2.5 rounded-md border border-hairline bg-muted/30 p-3">
                     <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Pick a section
+                      Assign a class now (optional)
+                    </p>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Leave this empty to enrol now — the student will appear
+                      under Records → Students needing setup, waiting for a
+                      class. Attendance starts on the day they are placed.
                     </p>
                     {sectionsQuery.isLoading ? (
                       <p className="text-xs text-muted-foreground">
-                        Loading sections…
+                        Loading classes…
                       </p>
                     ) : sectionsQuery.isError ? (
                       <p className="text-xs text-destructive">
                         {sectionsQuery.error instanceof ApiError
                           ? sectionsQuery.error.message
-                          : "Couldn't load sections — try again."}
+                          : "Couldn't load classes — try again."}
                       </p>
                     ) : !sectionsQuery.data?.level ? (
-                      <p className="text-xs text-destructive">
-                        This applicant&apos;s level name isn&apos;t recognized
-                        yet — a registrar needs to resolve it under Records →
-                        Levels needing attention before this student can be
-                        enrolled.
+                      <p className="text-xs text-muted-foreground">
+                        This applicant&apos;s level name isn&apos;t recognised
+                        yet, so no classes can be listed. You can still enrol
+                        them — resolve the name under Records → Levels needing
+                        attention, then assign a class.
                       </p>
                     ) : sectionsQuery.data.sections.length === 0 ? (
-                      <p className="text-xs text-destructive">
+                      <p className="text-xs text-muted-foreground">
                         There are no classes at {sectionsQuery.data.level.label}{' '}
-                        yet, so there is nowhere to put this student. Create one
-                        under SIS Admin → Section setup. Records → Levels
-                        needing attention lists every level in this state.
+                        yet. You can still enrol this student — create a class
+                        under SIS Admin → Section setup, then assign it from
+                        Records.
                       </p>
                     ) : (
                       <div className="space-y-1.5">
@@ -873,7 +784,6 @@ export function EditStageDialog({
                     size="sm"
                     disabled={
                       busy ||
-                      (requiresSectionPick && !sectionId) ||
                       (stageKey === 'application' &&
                         isTerminalStatus &&
                         (!terminalReason ||

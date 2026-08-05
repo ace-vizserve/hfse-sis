@@ -1548,7 +1548,7 @@ export async function buildLifecycleDrillRows(
     const docs = snap.docs.get(enroleeNumber);
     // Scope the document-chase targets to the lens's enrollment population so
     // the drill can't show students the card's count excluded.
-    const lensOk = inChaseLensScope(lens, appStatus, status.classSection);
+    const lensOk = inChaseLensScope(lens, appStatus);
 
     switch (target) {
       case 'awaiting-fee-payment': {

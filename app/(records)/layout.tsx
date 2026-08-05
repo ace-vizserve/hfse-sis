@@ -9,13 +9,12 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import { countUnmatchedLevelLabels } from '@/lib/sis/level-review';
 import { countLevelsAwaitingSections } from '@/lib/sis/levels-awaiting-sections';
-import { countUnsyncedEnrolledStudents } from '@/lib/sis/unsynced-students';
+import { countUnsyncedInScope } from '@/lib/sis/unsynced-students';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export default async function RecordsLayout({
@@ -43,10 +42,11 @@ export default async function RecordsLayout({
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';
 
   // Sidebar badges — SSR-static (no realtime subscription per KD #29).
-  // `countUnsyncedEnrolledStudents` shares the `sis:${ayCode}` cache tag
-  // with the loader, so the badge refreshes whenever an admissions
-  // mutation runs (which is what AssignSectionDialog triggers anyway).
-  const currentAy = await getCurrentAcademicYear();
+  // Each count shares the `sis:${ayCode}` cache tag with its loader, so the
+  // badges refresh whenever an admissions mutation runs (which is what
+  // AssignSectionDialog triggers anyway). All three resolve their own AY
+  // scope — current plus the upcoming accepting year — so they agree with
+  // the pages they link to.
   const service = createServiceClient();
   const [
     unsyncedCount,
@@ -54,7 +54,10 @@ export default async function RecordsLayout({
     awaitingSectionsCount,
     changeRequestCount,
   ] = await Promise.all([
-    currentAy ? countUnsyncedEnrolledStudents(currentAy.ay_code) : 0,
+    // Current AND upcoming AY — admissions enrol into next year's intake
+    // during the early-bird window, and a badge that only counts the live
+    // year hides that work until the year rolls over.
+    countUnsyncedInScope(),
     countUnmatchedLevelLabels(),
     countLevelsAwaitingSections(),
     getSidebarChangeRequestCount(service, role, id),

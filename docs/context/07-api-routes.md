@@ -177,9 +177,13 @@ Field edits on the AY-prefixed admissions tables. Most are gated `admissions, re
 | `pre-course`                                      | PATCH  | Pre-course counselling fields                                                              |
 | `allowance` / `vl-allowance`                      | PATCH  | registrar+ — compassionate / vacation leave allowances (KD #94)                            |
 | `transfer-section`                                | POST   | registrar+ — atomic mid-year section transfer (KD #67)                                     |
-| `assign-section`                                  | POST   | registrar+ — assign + sync an unsynced enrolled student (KD #90)                           |
+| `assign-section`                                  | POST   | registrar+ — class assignment (step 11) + sync; returns `midTermEnrolment` (KD #180)       |
 
 Related reads: `GET /api/sis/today-term` (current-term resolver, KD #116), `GET /api/sis/cohorts/:cohort` (STP / medical / pass-expiry cohort lenses), `POST /api/sis/students/raw-columns` (export sheet's load-all-columns read).
+
+**Enrolment vs class assignment (KD #180).** `stage/:stageKey` takes an **optional** `section_id` when flipping the application stage to `Enrolled` — enrolment is step 10 and class assignment is step 11, so omitting it is the normal path and the response carries `awaitingPlacement: true`. Supplying it is a convenience for a coordinator doing both at once and requires a placement role; `admissions` gets **403 `placement_forbidden`**. The 5-stage prereq gate is unaffected either way. Both routes return `midTermEnrolment` (the late-enrollee prompt) when placement lands after the year began.
+
+**Casing gotcha:** `stage/:stageKey` takes snake_case **`section_id`**; `assign-section` takes camelCase **`sectionId`**. Both are live and consumed by shipped clients — deliberately not unified.
 
 ## SIS Admin & AY Setup
 

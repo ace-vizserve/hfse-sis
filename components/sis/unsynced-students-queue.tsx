@@ -15,6 +15,7 @@ import type {
   AssignableLevel,
   AssignableSection,
 } from '@/lib/sis/class-assignment';
+import { sectionMapKey } from '@/lib/sis/section-map-key';
 import type {
   UnsyncedGapReason,
   UnsyncedStudentRow,
@@ -47,12 +48,15 @@ export type AssignableLevelSections = {
 
 type Props = {
   rows: UnsyncedStudentRow[];
-  ayCode: string;
+  /** Keyed by `sectionMapKey(ayCode, levelApplied)` — the queue spans more
+   *  than one academic year, and a level's classes differ between them. */
   sectionsByLevel: Record<string, AssignableLevelSections>;
 };
 
 const GAP_COPY: Record<UnsyncedGapReason, string> = {
-  no_class_section: 'No class section assigned',
+  // Step 11 of the admission process hasn't happened yet — the normal state
+  // between enrolling a student and Student Affairs placing them.
+  no_class_section: 'Awaiting class assignment',
   no_student_number: 'No student number yet',
   not_synced: 'Not yet synced to grading',
 };
@@ -66,7 +70,7 @@ const STATUS_TABS: StatusTabConfig<UnsyncedStudentRow>[] = [
   },
   {
     value: 'no_class_section',
-    label: 'No class section assigned',
+    label: 'Awaiting class assignment',
     predicate: (r) => r.gapReason === 'no_class_section',
   },
   {
@@ -89,11 +93,7 @@ function fullNameOf(row: UnsyncedStudentRow): string {
   return parts.length ? parts.join(', ') : row.enroleeNumber;
 }
 
-export function UnsyncedStudentsQueue({
-  rows,
-  ayCode,
-  sectionsByLevel,
-}: Props) {
+export function UnsyncedStudentsQueue({ rows, sectionsByLevel }: Props) {
   const [dialogRow, setDialogRow] = React.useState<UnsyncedStudentRow | null>(
     null
   );
@@ -146,6 +146,26 @@ export function UnsyncedStudentsQueue({
         },
       },
       {
+        // The queue spans the current AND upcoming year, so the year has to
+        // be on the row — otherwise a registrar can't tell which intake
+        // they're looking at, and next year's students look overdue.
+        accessorKey: 'ayCode',
+        header: 'Year',
+        meta: { label: 'Academic year' },
+        cell: ({ row }) => (
+          <span className="font-mono text-xs uppercase tracking-wider tabular-nums text-muted-foreground">
+            {row.original.ayCode}
+          </span>
+        ),
+        filterFn: (row, id, value) => {
+          if (!value || (Array.isArray(value) && value.length === 0))
+            return true;
+          return Array.isArray(value)
+            ? value.includes(row.getValue(id))
+            : row.getValue(id) === value;
+        },
+      },
+      {
         accessorKey: 'applicationStatus',
         header: 'Status',
         cell: ({ row }) => (
@@ -183,7 +203,7 @@ export function UnsyncedStudentsQueue({
               )}
               <Button size="sm" variant="outline" asChild>
                 <Link
-                  href={`/admissions/applications/${encodeURIComponent(row.original.enroleeNumber)}?ay=${encodeURIComponent(ayCode)}`}
+                  href={`/admissions/applications/${encodeURIComponent(row.original.enroleeNumber)}?ay=${encodeURIComponent(row.original.ayCode)}`}
                 >
                   Open in admissions
                   <ArrowUpRight className="size-3.5" />
@@ -194,7 +214,7 @@ export function UnsyncedStudentsQueue({
         },
       },
     ],
-    [ayCode]
+    []
   );
 
   return (
@@ -227,11 +247,19 @@ export function UnsyncedStudentsQueue({
       {dialogRow && (
         <AssignSectionDialog
           enroleeNumber={dialogRow.enroleeNumber}
-          ayCode={ayCode}
-          level={sectionsByLevel[dialogRow.levelApplied ?? '']?.level ?? null}
+          // The row's own year, not the page's — placing a student into next
+          // year's intake must write to next year's tables.
+          ayCode={dialogRow.ayCode}
+          level={
+            sectionsByLevel[
+              sectionMapKey(dialogRow.ayCode, dialogRow.levelApplied ?? '')
+            ]?.level ?? null
+          }
           studentName={fullNameOf(dialogRow)}
           availableSections={
-            sectionsByLevel[dialogRow.levelApplied ?? '']?.sections ?? []
+            sectionsByLevel[
+              sectionMapKey(dialogRow.ayCode, dialogRow.levelApplied ?? '')
+            ]?.sections ?? []
           }
           open={true}
           onOpenChange={(open) => {
