@@ -2,7 +2,7 @@
 
 **Session 1 of the faculty training** (~1 hour, ran long). Present: Christina
 Labrador, Chandana Dileep, Koh Suat Hoon, Melissa Balantac, Wynne Lynn Faustino,
-Hermilita Mendoza, Joel Castro. Demo driven by Ace Guevarra.
+Hermilita Mendoza, Marrie Aines Juni, Joel Castro. Demo driven by Ace Guevarra.
 
 **Source:** Fathom recording — transcript with speaker attribution and
 timestamps, plus an auto-generated summary. The transcript is not stored in this
@@ -11,7 +11,8 @@ record of what was asked.
 
 **Why this file exists.** These items were first tracked only as a section of
 `docs/sprints/development-plan.md`, summarised in my own words. Twice that
-summary lost something load-bearing — see _Corrections_ at the bottom. What
+summary lost something load-bearing, and a third time a correction written to
+fix it went wrong the same way — see _Corrections_ at the bottom. What
 someone said in a room does not change; status changes weekly. They are split
 accordingly: **this file holds the words, the todos and the open questions; the
 dev plan holds the sprint status.**
@@ -29,7 +30,7 @@ inventing one. Ask them in the room, not in a design doc.
 
 | #   | Ask                                                   | Who                                                  | Status                           | Where                             |
 | --- | ----------------------------------------------------- | ---------------------------------------------------- | -------------------------------- | --------------------------------- |
-| 1   | Comment on an excused absence                         | Christina (31:07)                                    | **Shipped** 2026-08-03           | KD #177, migration 109            |
+| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03           | KD #177, migration 109            |
 | 2   | House colour                                          | Chandana (23:35)                                     | **Shipped** 2026-08-03           | KD #178, migration 110            |
 | 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03           | Records → Academic tab            |
 | 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Half shipped**                 | KD #179 — see todo T1             |
@@ -38,9 +39,10 @@ inventing one. Ask them in the room, not in a design doc.
 | 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | Open                             | New table + surface               |
 | 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | Open                             | Needs its own table               |
 | 9   | House points                                          | Chandana (23:51)                                     | Open — rules undefined           | Overlaps #8                       |
-| 10  | More than two grade-change approvers                  | Wynne (45:22)                                        | Open — structurally hard         | Christina owns the number         |
+| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | Open — structurally hard         | Christina owns the number         |
 | 11  | Second approval route keyed on publication            | Christina (46:04)                                    | Open — most feasible             | `APPROVER_FLOWS` was built for it |
 | —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended | KD #176                           |
+| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it      | See _Waiting on the school_       |
 
 Three pre-existing defects surfaced during triage and were fixed first:
 **KD #174** (in-page link reachability), **KD #175** (a missed `SECURITY DEFINER`
@@ -58,7 +60,7 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   it per student **across subjects** — Classroom is the obvious candidate, next
   to the FCA attendance dashboard (KD #171). The endpoint she named was
   contacting the parents, so whatever ships must carry enough to make that call.
-- **T2 — the student profile** (#5). Five people asked five versions of "when I
+- **T2 — the student profile** (#5). Three people asked five versions of "when I
   click the name I want to see X". Three of those five things already exist in
   Records; teachers simply cannot reach that module. Unresolved: is Classroom
   the teacher's home for everything, or a section×term workspace with the
@@ -84,18 +86,21 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   there a running leaderboard), and whether a mid-year SOW change reaches
   in-flight terms or only future ones.
 - **Christina** — the approver count (#10) and the AEB rule (#11). Also the
-  relief-teacher policy: admins can already write any section's attendance, but
-  the audit log has no on-behalf-of concept and advisers cannot read it.
+  relief-teacher policy, **raised by Marrie at 33:18** and answered in the room
+  by Christina (designate an admin rather than share a login): admins can
+  already write any section's attendance, but the audit log has no
+  on-behalf-of concept and advisers cannot read it.
 - **Wynne** — the Transcript of Records template. The data layer is complete and
-  cross-AY on `studentNumber`; the template is the whole blocker. (Note: the TOR
-  appears in Fathom's auto-generated next-steps list but not in any quoted turn,
-  so its attribution is weaker than everything else on this page.)
+  cross-AY on `studentNumber`; the template is the whole blocker. She asked for
+  it directly at 1:00:57 and **offered the template herself** in the same
+  exchange, so this is a reminder, not a cold request.
 
 ### To correct with the team
 
-- **Koh was told (47:55) she could change an exam paper's total via a change
-  request.** She cannot. That is coordinator-only subject config, blocked at the
-  schema, at a DB `CHECK`, and at the apply RPC.
+- **Koh was told she could change an exam paper's total via a change request**
+  (she asked at 47:20, the answer came at 48:00). She cannot. That is
+  coordinator-only subject config, blocked at the schema, at a DB `CHECK`, and
+  at the apply RPC.
 - **The two approvers are NOT a dual signature.** The first to act sets the
   status and nothing ever reads `secondary_decision`. Christina's 46:04 answer
   assumes both must agree; the system does not work that way today.
@@ -294,8 +299,8 @@ somebody in the room believed it did. Those are corrections, not questions.
 >    contacting the parents is the teacher's own call.
 >
 > ⚠ Also a correction to something you were told in the session. You asked
-> whether an exam's total marks could be changed through a change request — the
-> answer given was yes, but that is not right. Total marks are part of the
+> (47:20) whether an exam's total marks could be changed through a change
+> request — the answer given was yes, but that is not right. Total marks are part of the
 > subject settings and are changed by the academic coordinator (Ms Joann).
 > Change requests are for a student's scores only. Sorry for the confusion.
 >
@@ -307,10 +312,10 @@ somebody in the room believed it did. Those are corrections, not questions.
 >
 > Two things from the training:
 >
-> 1. **Transcript of Records** — the data is all there and goes back across
->    school years; what I need is the school's template so the layout matches
->    what you issue today. Could you send a copy, or a recent one with the
->    student's details removed?
+> 1. **Transcript of Records** — you offered to send the template during the
+>    session. The data is all there and goes back across school years, so the
+>    template is the only thing I am waiting on. Could you send a copy, or a
+>    recent one with the student's details removed?
 > 2. **Approvers** — you mentioned there are quite a few people who approve
 >    grade changes. How many should the system allow? Ms Christina is deciding
 >    who they are, so this is just the number.
@@ -319,12 +324,18 @@ somebody in the room believed it did. Those are corrections, not questions.
 
 ### Not asked, and why
 
-**Melissa** — her question was teacher access to medical alerts and learning
-difficulties, which is the same feature as Christina's first message. Folded in
-rather than asked twice, since two answers to one question is worse than none.
+**Melissa** — she asked two things. Teacher access to medical alerts and
+learning difficulties (21:53) is the same feature as Christina's first message,
+folded in rather than asked twice, since two answers to one question is worse
+than none. Her second (32:44) was the excused-absence comment, which has
+shipped.
 
-**Hermilita** — her addition ("not only the quizzes, but also the exam and
-overall") is built. Nothing to ask.
+**Hermilita** — her ask (59:13) was per-component descriptions on the grading
+sheet: what the assessment was, when it was administered, its scope. All three
+already exist in Activity Labels. Nothing to ask.
+
+**Marrie** — she raised relief teachers (33:18) and Christina answered it in the
+room. It is a policy question the school owns, not a design question for her.
 
 **Joel** — no open items.
 
@@ -358,10 +369,42 @@ Quoted from the transcript. Ellipses mark cuts; nothing else is altered.
 Ace, 32:00 — confirmed editing works, and that upload "currently there is no
 feature for that yet, but that is noted, and we will add that."
 
-**Two asks in one turn.** The comment shipped (KD #177). The upload did not, and
-needs a security pass first.
+**Melissa Balantac, 32:44** — restated the comment as the fallback, once she
+heard upload was unavailable:
 
-### The student profile — five people, one feature
+> "The same thing for attendance, so **if we're not able to upload the MC yet,
+> can we at least have, or can we put a comment if ever the student is on MC? We
+> can put the reason why the student is not present on that day.** Like a
+> description — or is that possible?"
+
+**Two asks in one turn, and two people on the first of them.** Christina raised
+the comment inside her MC turn; Melissa asked for it standalone 90 seconds later
+as the thing worth having if the upload could not be built. The comment shipped
+(KD #177). The upload did not, and needs a security pass first.
+
+### Relief teachers
+
+**Marrie Aines Juni, 33:18**
+
+> "But if, for example, **I'm a relief teacher for other section, can we also
+> edit** or how are we going to do that?… Let's say Ms Melissa is on leave today
+> and I'm doing a relief class for her class. As a relief teacher for her class,
+> **can I do the edit of her attendance?**"
+
+Ace, 34:10 — the only way today is to use Melissa's own account; the system has
+no relief concept.
+
+**Christina, 34:46** — answered it as policy in the room: "I think it would be
+challenging also to be sharing the access to your co-teacher… **maybe the admin
+can enter the attendance for the day on behalf of the teacher who was absent
+rather than share your login details.** Or perhaps a designated person like the
+OIT can be an admin or the academic assistant can be the admin also."
+
+That answer already works — admins can write any section's register. What does
+not exist is any record that it was done _on behalf of_ someone, and an adviser
+cannot read the attendance audit log to notice either way.
+
+### The student profile — three people, five asks, one feature
 
 **Christina, 16:08**
 
@@ -429,12 +472,17 @@ before the awards table exists risks building it twice.
 > at risk in term two, and then **the subject teacher or the FCA got to contact
 > the parents**."
 
-**Hermilita Mendoza / Ace, 56:00**
+**Ace, 56:00** — restating and widening Koh's ask, immediately after a garbled
+Hermilita turn at 55:59 that Fathom could not transcribe:
 
 > "…**not only for the quizzes, but also for exam, for overall**, things like
 > that. Currently, the system is only able to compare the term grades per term,
 > not yet for the quiz or the scores… here are the alerts. So I think I can just
 > add that here alongside with the term grades comparison."
+
+**Attribution note.** This widening has been credited to Hermilita elsewhere. The
+transcript labels it Ace; Hermilita's own audible contribution is at 59:13
+(below). The scope it describes is what shipped either way.
 
 **Three things in Koh's ask**, all of which my first summary dropped: it is a
 **list** ("flag out students", plural), it names **the FCA** as well as the
@@ -454,12 +502,15 @@ did.
 
 ### Approvers
 
-**Wynne Lynn Faustino, 45:22**
+**Wynne Lynn Faustino, 45:30 and 45:46**
 
 > "Currently you showed that there's only two approver… **in terms of approver,
 > there's quite a few people**. So I just want to check, is it limiting to two
 > people only in the system, or you can add more in case?… Because usually you
 > still have the **AEB**, right?"
+
+(Fathom labels the 45:22 lead-in as Ace; the question is Wynne's and continues
+through 45:46, where the AEB mention sits.)
 
 **Christina, 46:04**
 
@@ -487,20 +538,76 @@ the system. **Christina, 50:57**: "The same approvers who are giving the
 approval via the MS approvals will be the same approvers who will be put in this
 system. So you don't need to. **That will be superseded by this already.**"
 
+### Activity labels
+
+**Hermilita Mendoza, 59:13**
+
+> "Currently in our grading sheet, we do like a description for each component.
+> Like, for example, **for written work one, if that is a spelling test, when it
+> was administered, and where is the scope** of that given assessment. Are we
+> still can do that in the grading sheet?"
+
+Ace, 59:30 — yes; the Activity Labels dialog already carries details, page
+number and date administered (KD #105). Nothing to build. Her "scope" maps to
+the page-number field.
+
+### Transcript of Records
+
+**Wynne Lynn Faustino, 1:00:57**
+
+> "I see here that we can actually generate the report cards, right? But because
+> for admin side, we do… **generate transcript of records — it means all the
+> records of the students from the time that they join us.** So is there a way
+> for us to also generate that from the system?"
+
+Ace, 1:01:14 — no feature today. The template was offered in the same exchange:
+"**Maybe we can give you the template** and from there you can incorporate."
+
 ---
 
 ## Corrections to earlier notes
 
-Kept rather than quietly fixed, because both are the same failure — working from
-my summary instead of the source.
+Kept rather than quietly fixed, because all three are the same failure — working
+from a summary instead of the source.
 
 1. **The excused-absence comment was Christina's ask (31:07), not Melissa's.**
    It was attributed to Melissa in KD #177, in two source comments, in a test
    header and in the dev plan. Melissa's contribution at 21:53 was a different
    ask — teacher access to medical alerts and learning difficulties, which is
-   item #5. Corrected 2026-08-04.
+   item #5. Corrected 2026-08-04. **Then over-corrected — see 3.**
 2. **Koh's ask was a list, not a column.** The first build put an Alerts column
    on the grading sheet, matching what Ace offered in the room at 56:00 but not
    what Koh asked for at 55:10. Re-reading the transcript replaced it with a
    ranked lookup — and surfaced that the FCA half is still entirely unbuilt. See
    KD #179's amendment.
+3. **Correction 1 was itself wrong: Melissa did ask for the excused-absence
+   comment, at 32:44.** Correction 1 checked only her 21:53 turn, found a
+   different ask there, and concluded the attribution to her was baseless. It
+   was not — she asked for the comment explicitly 90 seconds after Christina,
+   as the fallback once she heard the MC upload did not exist. **Both asked**;
+   the original attribution was incomplete rather than wrong. Her 32:44 turn was
+   missing from _The record_ entirely, which is how a correction written from
+   this file could reach the opposite conclusion. Corrected 2026-08-05, on a
+   full re-read of the transcript against every row of this file.
+
+   **Migration 109's own header had it right the whole time** — both askers,
+   with Melissa's line quoted — because it was written while the transcript was
+   open. Correction 1 swept KD #177, two source comments, a test header and the
+   dev plan, and never checked the one place that disagreed with it. A site
+   that contradicts a correction is the first thing to read, not the one to
+   miss.
+
+   Same pass, smaller fixes: Marrie Aines Juni was missing from the attendee
+   list and was the person who raised relief teachers; the Transcript of Records
+   carried a caveat saying it appeared only in Fathom's auto-summary when Wynne
+   asked for it directly at 1:00:57 and offered the template herself; "five
+   people asked five versions" was three people asking five things; Wynne's
+   approver timestamp was 45:30/45:46 rather than 45:22; Koh's exam-total
+   question was 47:20 with the wrong answer at 48:00 rather than 47:55; and the
+   56:00 widening credited to Hermilita is labelled Ace in the transcript, with
+   her real contribution at 59:13.
+
+**The pattern across all three.** Every one came from working off a summary
+instead of the transcript — including correction 1, which was written to fix
+exactly that. A correction is a claim about the source and has to be checked
+against the source, not against the file it is correcting.

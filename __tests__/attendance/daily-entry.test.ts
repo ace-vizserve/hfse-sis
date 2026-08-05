@@ -215,8 +215,9 @@ describe('tally', () => {
 
 // ── The excused-absence note (migration 109) ──────────────────────────────
 //
-// Christina asked for somewhere to record WHY a student was excused, since the
-// MC document itself cannot be attached yet. The note rides on the same
+// Christina (31:07) and Melissa (32:44) both asked for somewhere to record WHY
+// a student was excused, since the MC document itself cannot be attached yet.
+// The note rides on the same
 // append-only ledger as the mark, which creates one trap worth a dedicated
 // block of tests: `sameMark` decides whether a row is written at all, so a
 // note it does not compare is a note that silently never saves.

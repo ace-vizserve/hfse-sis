@@ -1,10 +1,10 @@
 /**
  * The grading sheet's at-risk signals, extended after the 2026-07-31 training.
  *
- * Koh described a student scoring 90 in Term 1 and dropping in Term 2; asked
- * to be precise, Hermilita added "not only for the quizzes, but also for exam,
- * for overall". The alert only ever compared the TERM GRADE, which is the one
- * of those three that can hide the other two.
+ * Koh described a student scoring 90 in Term 1 and dropping in Term 2 (55:10);
+ * the ask was then widened in the room to "not only for the quizzes, but also
+ * for exam, for overall" (56:00). The alert only ever compared the TERM GRADE,
+ * which is the one of those three that can hide the other two.
  */
 
 import { describe, it, expect } from 'vitest';

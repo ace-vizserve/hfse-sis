@@ -18,9 +18,11 @@ export const GRADE_ALERT_THRESHOLD = 5;
  * Which components a term-over-term comparison covers.
  *
  * `quarterly` is the term grade — what the alert compared before. The other
- * three are the ask from the 2026-07-31 training: Koh and Hermilita wanted
- * this "not only for the quizzes, but also for exam", and a term grade can
- * hold still while written work falls and the exam rises to cover it.
+ * three are the ask from the 2026-07-31 training: Koh asked for it (55:10) and
+ * it was widened in the room to "not only for the quizzes, but also for exam"
+ * (56:00), and a term grade can hold still while written work falls and the
+ * exam rises to cover it. (That 56:00 line is labelled Ace in the transcript,
+ * not Hermilita as first recorded — see the session file.)
  *
  * These are PERCENTAGES of each component's own total, already stored per
  * entry, so they are comparable across terms even though the assessments

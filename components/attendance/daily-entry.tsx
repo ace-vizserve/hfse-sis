@@ -572,8 +572,9 @@ function DailyPanel({
                       )}
                     </div>
 
-                    {/* Christina's ask (2026-07-31, 31:07): somewhere to say
-                        WHY, since the MC document itself can't be uploaded yet. Updates on
+                    {/* Christina's ask (2026-07-31, 31:07) and Melissa's
+                        (32:44): somewhere to say WHY, since the MC document itself can't be
+                        uploaded yet. Updates on
                         change rather than on blur — this view batches
                         everything behind an explicit Submit, so there is no
                         per-keystroke write to worry about.

@@ -4,8 +4,9 @@ export type PriorTermGrade = {
   term_number: number;
   term_label: string;
   quarterly_grade: number | null;
-  // Component percentages, added for the 2026-07-31 training ask. Koh and
-  // Hermilita wanted the signal on "the quizzes... and also for exam", not
+  // Component percentages, added for the 2026-07-31 training ask. Koh asked
+  // for the signal (55:10) and it was widened in the room to "the quizzes...
+  // and also for exam" (56:00), not
   // only the term grade — and a term grade can sit still while written work
   // collapses and the exam compensates. These are already stored per entry
   // and normalised to a percentage, so they compare honestly across terms in
