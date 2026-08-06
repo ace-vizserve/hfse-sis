@@ -31,9 +31,13 @@ export function SubjectAySwitcher({
 
   function onChange(next: string) {
     if (next === current) return;
-    router.push(
-      `/sis/admin/subjects?ay=${encodeURIComponent(next)}&level=${encodeURIComponent(levelType)}`
-    );
+    // Level is the route now; the AY stays a query param because it is a
+    // filter on the same view rather than a different one.
+    const path =
+      levelType === 'secondary'
+        ? '/sis/admin/subjects/secondary'
+        : '/sis/admin/subjects';
+    router.push(`${path}?ay=${encodeURIComponent(next)}`);
     // Same route + changed ?ay= → force the RSC to re-fetch the subject-config
     // matrix for the new AY (the client Router Cache would otherwise replay the
     // prior AY's matrix until a hard reload).

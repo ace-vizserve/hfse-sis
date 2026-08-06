@@ -610,6 +610,14 @@ const SIS_NAV: NavSection[] = [
         href: '/sis/admin/subjects',
         label: 'Subject Weights',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+        // Each level's catalog is its own route. The chosen academic year
+        // stays a query param — it filters the same view rather than naming a
+        // different one — so these plain hrefs fall back to the current AY,
+        // which is what a sidebar click should do.
+        children: [
+          { href: '/sis/admin/subjects', label: 'Primary' },
+          { href: '/sis/admin/subjects/secondary', label: 'Secondary' },
+        ],
       },
     ],
   },

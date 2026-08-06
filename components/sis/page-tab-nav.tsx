@@ -29,9 +29,16 @@ export function PageTabNav({ tabs }: { tabs: PageTab[] }) {
   // Longest match wins, so `/sis/admin/staff/accounts` selects Accounts rather
   // than its parent. Falls back to the first tab, which is always the parent
   // route's own view.
+  //
+  // Matched on the path only. A tab may carry a query string to preserve state
+  // across the switch (Subject Setup keeps `?ay=` when changing level), and
+  // that must not stop it matching the route it points at.
   const active =
     tabs
-      .filter((t) => pathname === t.href || pathname.startsWith(t.href + '/'))
+      .filter((t) => {
+        const path = t.href.split('?')[0];
+        return pathname === path || pathname.startsWith(path + '/');
+      })
       .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? tabs[0]?.href;
 
   return (
