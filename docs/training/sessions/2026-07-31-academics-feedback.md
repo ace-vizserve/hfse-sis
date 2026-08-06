@@ -91,15 +91,39 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   20 class tabs, the ones written with the `🔵` emoji, **410 students**. Carry
   into the design: the superseded master tab still sits in the same file, the
   sheet has no student numbers so matching is by name, and five rows cannot be
-  matched at all. **Next step is a dry-run match, not an import** — count exact /
-  ambiguous / no-match against the database before deciding whether this is a
-  throwaway script or needs a review screen.
+  matched at all. **Shape settled** (Mr Ace, 2026-08-06): the attendance and
+  grading import pattern — a `scripts/backfill/gen-*.ts` generator emitting a
+  `-preview.sql` / `-apply.sql` pair, output gitignored, applied through the SQL
+  editor. No review screen, no CRUD page. **The generator's own dry run is the
+  first step**, reporting exact / ambiguous / unmatched before any SQL is
+  trusted.
 - **T8 — the house belongs in the parent portal**, per Chandana, and nowhere on
-  the report card. ⚠ Read the parent-portal constraint before designing it: a
-  parent is null-role and reads some tables **directly**, where only
-  `school_config` and `report_card_publications` are parent-readable and
-  everything else silently returns zero rows. `houses` today is
-  `authenticated`-read, so a parent would get a blank name, not an error.
+  the report card. **The only one of her answers the system does not already
+  satisfy** — and it is not a field addition. Audited 2026-08-06:
+  - **The parent portal is a separate Next.js codebase**
+    (`docs/context/10-parent-portal.md`). This repo has no parent UI, only
+    `/api/parent/v2/*` that the portal calls. We can expose a house; somebody
+    else has to render it.
+  - ⚠ **The obvious payload has a trap.** `/api/parent/v2/students` is the child
+    list, which is the right home given "not the report card" — but it drops any
+    student with no **active publication window**
+    (`app/api/parent/v2/students/route.ts`, the `activePubs.length === 0`
+    guard). House added there would appear only during a report-card release and
+    be absent the rest of the year, which is not what "parents can see their
+    child's house" means.
+  - **The alternative is the KD #165 route** — an RLS policy letting a parent
+    read `houses` and their own `students.house_id` directly, which is already
+    how the portal reads `school_config`. No publication window involved. But
+    `students` is not parent-readable today, so the predicate needs designing
+    rather than copying.
+  - Needs a conversation with whoever maintains the portal. **Does not gate T6 or
+    T7.**
+
+  For the record, the other three of her answers are already true in code:
+  `HouseChip` and `HouseTile` render `name` alone (no symbol, no logo); house
+  appears nowhere in the report-card code; and it appears nowhere in
+  `lib/compute/awards.ts`.
+
 - **T9 — staff are in houses too.** Hanafi's sheet carries a tab allocating ~44
   staff across the four houses. Nothing in the system models this, nobody asked
   for it, and it is recorded here only so it is not discovered late. Do not
