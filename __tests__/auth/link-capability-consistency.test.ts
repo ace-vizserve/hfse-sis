@@ -38,7 +38,10 @@ import {
   isCapability,
   type Capability,
 } from '@/lib/auth/capabilities';
-import { resolveSectionsForRole } from '@/lib/auth/nav-visibility';
+import {
+  flattenNavItems,
+  resolveSectionsForRole,
+} from '@/lib/auth/nav-visibility';
 import { ROLES, isRouteAllowed, type Role } from '@/lib/auth/roles';
 import { getQuickActions } from '@/lib/home/quick-actions';
 import { HOME_TODO_SOURCES } from '@/lib/home/todos';
@@ -211,14 +214,16 @@ function linksFor(role: Role): Link[] {
 
   for (const moduleName of MODULE_ORDER) {
     if (!seesModule(moduleName, role)) continue;
-    for (const section of resolveSectionsForRole(moduleName, role, caps)) {
-      for (const item of section.items) {
-        links.push({
-          source: `nav/${moduleName}`,
-          label: item.label,
-          href: item.href,
-        });
-      }
+    // Flattened: a child row is a link like any other, and an unguarded child
+    // would be KD #173's defect one level down.
+    for (const item of flattenNavItems(
+      resolveSectionsForRole(moduleName, role, caps)
+    )) {
+      links.push({
+        source: `nav/${moduleName}`,
+        label: item.label,
+        href: item.href,
+      });
     }
   }
 
@@ -302,7 +307,7 @@ describe('the guard map is really looking at something', () => {
   it('at least one nav item declares requiresCapability', () => {
     const tagged = MODULE_ORDER.flatMap((m) =>
       ROLES.flatMap((r) =>
-        resolveSectionsForRole(m, r, undefined).flatMap((s) => s.items)
+        flattenNavItems(resolveSectionsForRole(m, r, undefined))
       )
     );
     // Resolved with NO capabilities, so a `requiresCapability` item is hidden
@@ -311,7 +316,7 @@ describe('the guard map is really looking at something', () => {
 
     const withCaps = MODULE_ORDER.flatMap((m) =>
       ROLES.flatMap((r) =>
-        resolveSectionsForRole(m, r, capsOf(r)).flatMap((s) => s.items)
+        flattenNavItems(resolveSectionsForRole(m, r, capsOf(r)))
       )
     );
     expect(withCaps.some((i) => i.requiresCapability)).toBe(true);
@@ -353,12 +358,10 @@ describe('requiresRoles lists agree with the guard they stand in for', () => {
 
     for (const moduleName of MODULE_ORDER) {
       for (const role of ROLES) {
-        for (const section of resolveSectionsForRole(
-          moduleName,
-          role,
-          capsOf(role)
-        )) {
-          for (const item of section.items) {
+        {
+          for (const item of flattenNavItems(
+            resolveSectionsForRole(moduleName, role, capsOf(role))
+          )) {
             if (!item.requiresRoles) continue;
             const guard = GUARD_BY_ROUTE.get(pathOf(item.href));
             if (!guard) continue;

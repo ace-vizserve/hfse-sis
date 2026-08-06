@@ -1,5 +1,10 @@
 import { can, type Capability } from '@/lib/auth/capabilities';
-import { NAV_BY_MODULE, type NavSection, type Role } from '@/lib/auth/roles';
+import {
+  NAV_BY_MODULE,
+  type NavItem,
+  type NavSection,
+  type Role,
+} from '@/lib/auth/roles';
 import type { SidebarModule } from '@/lib/sidebar/registry';
 
 // Which sidebar rows a viewer actually sees.
@@ -50,12 +55,60 @@ export function resolveSectionsForRole(
   return sections
     .map((section) => ({
       ...section,
-      items: section.items.filter(
-        (item) =>
-          (!item.requiresRoles || item.requiresRoles.includes(role)) &&
-          (!item.requiresCapability ||
-            can(capabilities, item.requiresCapability))
-      ),
+      items: section.items
+        .filter((item) => isVisible(item, role, capabilities))
+        .map((item) => withVisibleChildren(item, role, capabilities)),
     }))
     .filter((section) => section.items.length > 0);
+}
+
+/**
+ * Every row a viewer can see, parents and children alike, as one flat list.
+ *
+ * Use this anywhere the question is "what links does this role have" —
+ * active-state matching, and the KD #173 guards that check no visible link
+ * points at a page which will bounce the viewer. Iterating `section.items`
+ * alone skips children, which would let a capability-gated child advertise work
+ * its page then refuses: the exact defect KD #173 exists to prevent, one level
+ * further down.
+ */
+export function flattenNavItems(sections: NavSection[]): NavItem[] {
+  return sections.flatMap((section) =>
+    section.items.flatMap((item) => [item, ...(item.children ?? [])])
+  );
+}
+
+function isVisible(
+  item: NavItem,
+  role: Role,
+  capabilities: readonly Capability[] | undefined
+): boolean {
+  return (
+    (!item.requiresRoles || item.requiresRoles.includes(role)) &&
+    (!item.requiresCapability || can(capabilities, item.requiresCapability))
+  );
+}
+
+/**
+ * Children run through the same two gates as their parent, independently.
+ *
+ * A parent whose children all fail keeps its own row and loses the `children`
+ * key entirely, so it renders as a plain link rather than an expander that
+ * opens onto nothing. That is the Staff case: everyone who can open Staff sees
+ * it, but only a holder of `staff.view_accounts` sees the Accounts child.
+ */
+function withVisibleChildren(
+  item: NavItem,
+  role: Role,
+  capabilities: readonly Capability[] | undefined
+): NavItem {
+  if (!item.children?.length) return item;
+  const children = item.children.filter((child) =>
+    isVisible(child, role, capabilities)
+  );
+  if (children.length === 0) {
+    const { children: _dropped, ...rest } = item;
+    return rest;
+  }
+  return { ...item, children };
 }

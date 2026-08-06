@@ -12,7 +12,10 @@ import {
   SidebarRail,
 } from '@/components/ui/sidebar';
 import type { Capability } from '@/lib/auth/capabilities';
-import { resolveSectionsForRole } from '@/lib/auth/nav-visibility';
+import {
+  flattenNavItems,
+  resolveSectionsForRole,
+} from '@/lib/auth/nav-visibility';
 import {
   type NavItem,
   type Role,
@@ -165,7 +168,10 @@ export function ModuleSidebar({
   const itemCounts = counts ?? EMPTY_COUNTS;
 
   const sections = resolveSectionsForRole(module, role, capabilities);
-  const allItems = sections.flatMap((s) => s.items);
+  // Children are candidates too. A child route is a longer href than its
+  // parent, and `findActiveHref` picks the longest match, so standing on
+  // `/sis/admin/staff/accounts` highlights the child rather than the parent.
+  const allItems = flattenNavItems(sections);
   const activeHref = findActiveHref(
     allItems,
     pathname ?? '',

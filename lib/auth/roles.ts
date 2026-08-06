@@ -63,6 +63,17 @@ export type NavItem = {
   // any-of form nothing else needs.
   requiresCapability?: Capability;
   step?: number;
+  // Child rows, shown indented under this item when it is expanded.
+  //
+  // For pages whose sub-views are their own routes (Staff -> Accounts), so the
+  // work is reachable and visible from the sidebar instead of hidden behind an
+  // in-page tab. Each child is gated INDEPENDENTLY of its parent — a viewer who
+  // may open Staff but lacks `staff.view_accounts` sees the parent without that
+  // child, which is the whole point of gating them separately.
+  //
+  // One level only. A second level of nesting has no home in this sidebar's
+  // visual language and nothing in the app needs it.
+  children?: NavItem[];
 };
 export type NavSection = {
   label?: string;

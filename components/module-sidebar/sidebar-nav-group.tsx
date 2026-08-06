@@ -74,6 +74,7 @@ export function SidebarNavGroup({
             config={config}
             badges={badges}
             counts={counts}
+            activeHref={activeHref}
           />
         ))}
       </SidebarMenu>
