@@ -101,11 +101,36 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   overwrites, 0 unresolved student numbers.** Resulting sizes Orange 99 / Green
   101 / Blue 94 / Yellow 97. Awaiting `house-assignment-apply.sql`.
 
-  Of the 19 that did not match, **seven are students who have WITHDRAWN** and
-  are still on Hanafi's sheet — excluding them is the correct outcome, not a
-  shortfall. The rest are the five partial names, two students absent from
-  AY2026 entirely (Tayeb Taseen, Toki Sayeda), and four where the sheet and the
-  roster hold different middle names.
+  **All 19 misses are now explained**, after a check that was missed first time
+  round — see below. **Eight have WITHDRAWN** and are still on the sheet;
+  excluding them is the correct outcome, not a shortfall. **The other eleven are
+  on the sheet under a different name** and are individually identified.
+
+- **T11 — check the roster against the sheet, not only the sheet against the
+  roster.** Chandana said houses were allocated to "all the students". Only the
+  sheet→roster direction was ever checked, so students the sheet **never
+  mentions** were invisible: they simply would have had no house, and nothing in
+  the school breaks when a child has none. Run 2026-08-06
+  (`house/check-reverse-gap.ts`), it changed the picture:
+  - **405 enrolled students, 390 named on the sheet, 15 not.**
+  - **Eleven of the fifteen are on the sheet after all**, written differently —
+    and having a roster row to compare against is what identified them. `Ariana`
+    is Ariana Megan **Pabayos**; `Richie` is Richie Lyandrei **Martinez**;
+    `Matthew` is Matthew Jordan **Udtuhan**; `Rabaya` is Mst **Rabiya** Akter.
+    **`TAYEB, Taseen` and `TOKI, Sayeda` have their first and last names the
+    wrong way round** — they are Taseen Tayeb and Sayeda Toki, which is why a
+    surname lookup found nothing and an earlier note wrongly called them absent
+    from AY2026.
+  - **Three are genuinely missing from the sheet**: Pin Sin Huang (Diligence),
+    Lushi Liquiran (Humility), James Aaron Alcantara (Integrity 2). So "all the
+    students" is not quite true, and only this direction could have found it.
+  - The fifteenth is the `Test, Testing Two` record.
+
+  ⚠ **The script's first run reported "0 enrolled, 0 missing" — a clean bill of
+  health produced by a broken query.** It selected a column that does not exist
+  on that table; supabase-js returned `data: null` with the error in a field
+  nothing read. Any check whose healthy answer is a zero needs its inputs
+  asserted, or it cannot tell "nothing wrong" from "nothing ran".
 
 - **T10 — bulk house assignment: decided against, for good reasons rather than
   as a deferral** (Mr Ace, 2026-08-06). Assigning stays one student at a time
@@ -366,22 +391,35 @@ correction.
 > Thank you — both sheets are exactly what I needed, and the points legend
 > answered more than I had asked.
 >
-> I have loaded the list — 391 of the 410 students matched their records and are
-> in their houses now. Three things came out of it.
+> I have loaded the list — 391 of the 410 students went straight in. I worked
+> out most of the rest myself, so this is mainly to confirm rather than to ask.
 >
-> 1. A few rows have only part of a name: Ariana, Richie and Matthew in Sec 3,
->    Rabaya in Primary 3 Courageous, and Shen Bustamante in Sec 2 I2. Could you
->    give me their full names so I can match them to their records?
-> 2. Seven students on the list have left the school — Alexxa Singson (P2
->    Humility), Johannah Bruno (P4 Trust), Kaung Khant Min Phone Naing and Ichigo
->    Suzara (P5 Commitment), Muhammad Ibrahim Ajmal (P6 Loyalty), Joan Irawan
->    (Sec 2 I2) and Ashley Rae Cama (Sec 3). I have left them out rather than put
->    them in a house, but they are worth removing from your sheet so your counts
->    stay right.
-> 3. Two I could not place at all: Taseen Tayeb (P4 Trust) and Sayeda Toki (Sec 1
->    D1) do not appear in our records for this school year.
+> 1. **Eight students on the list have left the school**: Alexxa Singson (P2
+>    Humility), Kairo Alonzo Santos and Johannah Bruno (P4 Trust), Kaung Khant
+>    Min Phone Naing and Ichigo Suzara (P5 Commitment), Muhammad Ibrahim Ajmal
+>    (P6 Loyalty), Joan Irawan (Sec 2 I2) and Ashley Rae Cama (Sec 3). I have
+>    left them out rather than put them in a house — worth removing from your
+>    sheet so your counts stay right.
+> 2. **Three students are missing from the list entirely**, and have no house:
+>    Pin Sin Huang (P4 Diligence), Lushi Liquiran (P2 Humility) and James Aaron
+>    Alcantara (Sec 2 I2). Which houses should they be in?
+> 3. **Please confirm these eleven** — the names are written differently on the
+>    sheet than in our records, so I matched them by class and I would rather
+>    check than guess:
 >
-> Everything else I could work out from the sheets themselves.
+>    | On your sheet              | Our records                    |
+>    | -------------------------- | ------------------------------ |
+>    | Ariana (Sec 3)             | Ariana Megan **Pabayos**       |
+>    | Richie (Sec 3)             | Richie Lyandrei **Martinez**   |
+>    | Matthew (Sec 3)            | Matthew Jordan **Udtuhan**     |
+>    | Rabaya (P3 Courageous)     | Mst **Rabiya** Akter           |
+>    | Shen Bustamante (Sec 2I2)  | Bustamante, Shen               |
+>    | TAYEB, Taseen (P4 Trust)   | **Taseen, Tayeb** — name order |
+>    | TOKI, Sayeda (Sec 1D1)     | **Sayeda, Toki** — name order  |
+>    | Ajith Sharwan, Micheal     | AJITH KUMAR, **Sarwan**        |
+>    | CHIO, Karlyle Aleksndr…    | Karlyle **Aleksandr** Ysmael   |
+>    | CALIMBAS, Audrey Elizabeth | Audrey Calimbas                |
+>    | FAYLONA, Lucas Paulus      | Lucas Faylona                  |
 >
 > One small thing you may want to know: there is still an older sheet in the
 > same file listing every class in one long run, without the colour circles. I
