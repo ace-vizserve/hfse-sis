@@ -135,10 +135,22 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   received_. Nothing outstanding on it. Still hers: whether a mid-year SOW change
   reaches in-flight terms or only future ones.
 
-  Dropped rather than asked: whether a student ever changes house (the audit log
-  already records the change by name, KD #178, so nothing turns on the answer)
-  and whether siblings share a house (it would only matter if the system
-  assigned houses, and Hanafi already has).
+  **A house belongs to the child and stays with them — confirmed by Mr Ace,
+  2026-08-06. Closed; do not reopen it.** This had been left here as "dropped
+  rather than asked", which is why it kept resurfacing as an open question every
+  time the file was re-read. It is the premise the whole design rests on and it
+  is now settled, so `students.house_id` on the cross-AY row is right, the
+  "stays with the student" copy on the house tile is true, and the sync test is
+  guarding the right thing.
+
+  Two things that had looked like evidence against it are not. Hanafi's master
+  tab differing from the class tabs on 292 students is **one supersede**, not
+  annual churn; and each class being evenly balanced is how the initial
+  allocation was carried out, not something re-done each year. Both are
+  compatible with a permanent house.
+
+  Also dropped, and staying dropped: whether siblings share a house — it would
+  only matter if the system assigned houses, and Hanafi already has.
 
 - **Mr Hanafi** — **new, and not a training attendee.** Answered 2026-08-06 and
   sent both sheets; see _Answers received_. **Nothing of his blocks the import
