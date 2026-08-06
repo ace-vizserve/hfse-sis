@@ -87,9 +87,10 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 - **T7 — there is no way to assign a house in bulk**, and the list that arrived
   needs one. One per-student `PATCH` at
   `app/api/sis/students/[enroleeNumber]/house/route.ts`, driven from the profile
-  tab, is the only write path. **Blocked on a question to Hanafi, not on
-  design:** his sheet holds two different allocations and it is not yet
-  established which is live (see _Answers received_).
+  tab, is the only write path. **No longer blocked** — the live allocation is the
+  per-class tabs, the ones written with the `🔵` emoji. Two things to carry into
+  the design: a superseded tab still sits in the same file, and the sheet has no
+  student numbers, so matching is by name across ~490 students.
 - **T8 — the house belongs in the parent portal**, per Chandana, and nowhere on
   the report card. ⚠ Read the parent-portal constraint before designing it: a
   parent is null-role and reads some tables **directly**, where only
@@ -113,10 +114,10 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   assigned houses, and Hanafi already has).
 
 - **Mr Hanafi** — **new, and not a training attendee.** Answered 2026-08-06 and
-  sent both sheets; see _Answers received_. **One thing still blocks the
-  import:** his allocation sheet contains two different allocations for the same
-  students and it is not established which one is live. Everything else about
-  the import can be designed without him.
+  sent both sheets; see _Answers received_. **Nothing of his blocks the import
+  any more.** All that is outstanding is the full names of five students his
+  sheet lists by first name alone, and those five can be left unassigned without
+  holding up the other ~485.
 - **Christina** — the approver count (#10) and the AEB rule (#11). Also the
   relief-teacher policy, **raised by Marrie at 33:18** and answered in the room
   by Christina (designate an admin rather than share a login): admins can
@@ -272,32 +273,27 @@ the block below.
 >
 > Thank you.
 
-### To Hanafi — which list is the live one
+### To Hanafi — the names I cannot match
 
-**The only thing blocking the import.** Deliberately not asked as "your sheet is
-inconsistent" — it is asked with the evidence attached, so he can settle it in
-one line.
+**Was two questions; the first is answered.** Which allocation is live was
+settled internally on 2026-08-06 — the per-class tabs — so only the unmatched
+names remain. The superseded tab is mentioned last and as a courtesy, not as a
+correction.
 
 > Hi Mr Hanafi,
 >
 > Thank you — both sheets are exactly what I needed, and the points legend
 > answered more than I had asked.
 >
-> One thing I want to be certain of before I load anything, because getting it
-> wrong would put the whole school in the wrong house.
->
-> 1. Your house list looks like it holds two versions of the same thing, and
->    they do not agree. Taking Primary 1 Patience as the example — on the first
->    sheet all eight students are Green. On the later sheet for that class the
->    same eight are split: Jaime Alvarez III and Jaiden Amate in Blue, Leighton
->    Banday and Xkye Elbanbuena in Yellow, Victoria Palacio and Johann Rombaoa in
->    Green, Alyzza Sencir and Chelsea Silverio in Orange — with four newer
->    students added. Which of the two should I treat as the current one?
-> 2. A few rows have only a first name — Ariana, Richie and Matthew in Sec 3,
->    Rabaya in Primary 3 Courageous, and Shen Bustamante in Sec 2 I2. Could you
->    give me their full names, so I can match them to their records?
->
+> A few rows in the house list have only a first name — Ariana, Richie and
+> Matthew in Sec 3, Rabaya in Primary 3 Courageous, and Shen Bustamante in Sec 2
+> I2. Could you give me their full names, so I can match them to their records?
 > Everything else I can work out from the sheets themselves.
+>
+> One small thing you may want to know: there is still an older sheet in the
+> same file listing every class in one long run, without the colour circles. I
+> am ignoring it and using the per-class sheets, but it might be worth removing
+> so nobody loads the wrong one later.
 >
 > Thank you po.
 
@@ -619,10 +615,16 @@ They disagree child by child. P1 Patience's eight students are all Green on the
 first tab; on the per-class tab they are Blue, Blue, Yellow, Yellow, Green,
 Green, Orange, Orange, with four newer students added and a `3/3/3/3` count.
 
-The per-class tabs look newer — they carry students the first tab does not, and
-they are balanced, which the first is visibly not. **That is an inference, not a
-fact, and importing the wrong one silently mis-assigns every student in the
-school.** Ask before importing anything.
+**Settled 2026-08-06 by Mr Ace: the per-class tabs are the live list.** They are
+the ones written as `🔵 Blue`, with the emoji; the superseded tab writes plain
+`Green` with none, which is the quickest way to tell them apart. The file is
+`Student House Color Assignment`, owned by `hanafi.hfhse@gmail.com`, last
+modified 2026-07-03.
+
+⚠ **The superseded tab is still sitting in the same file**, and reading the file
+whole returns every tab at once. Anything built against this sheet must select
+tabs deliberately rather than take the first one it finds — importing that tab
+would silently mis-assign every student in the school.
 
 **Three more things about that sheet, none of them blocking:**
 
