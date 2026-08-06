@@ -286,12 +286,13 @@ one line.
 > One thing I want to be certain of before I load anything, because getting it
 > wrong would put the whole school in the wrong house.
 >
-> 1. Your house list looks like it holds two versions. The first sheet groups
->    the colours in long runs — the whole of Primary 1 Patience is Green, for
->    instance. The later sheets, one per class, spread the four colours evenly
->    across each class and include some newer students. The two disagree:
->    ALVAREZ, Jaime III D. is Green on the first sheet and Blue on the Primary 1
->    Patience sheet. Which should I treat as the current one?
+> 1. Your house list looks like it holds two versions of the same thing, and
+>    they do not agree. Taking Primary 1 Patience as the example — on the first
+>    sheet all eight students are Green. On the later sheet for that class the
+>    same eight are split: Jaime Alvarez III and Jaiden Amate in Blue, Leighton
+>    Banday and Xkye Elbanbuena in Yellow, Victoria Palacio and Johann Rombaoa in
+>    Green, Alyzza Sencir and Chelsea Silverio in Orange — with four newer
+>    students added. Which of the two should I treat as the current one?
 > 2. A few rows have only a first name — Ariana, Richie and Matthew in Sec 3,
 >    Rabaya in Primary 3 Courageous, and Shen Bustamante in Sec 2 I2. Could you
 >    give me their full names, so I can match them to their records?
@@ -604,15 +605,24 @@ All five answered, and nothing on house is open with her any more.
 Both sheets were read. What follows is from the files, not from his message.
 
 **The allocation sheet — and the one thing that blocks the import.** It holds
-**two different allocations for the same students**, on different tabs. The
-first tab assigns houses in contiguous blocks (every P1 student Green, then a
-run of Blue, and so on); the per-class tabs assign them round-robin with a
-per-house balance count at the foot of each class. They disagree student by
-student — ALVAREZ, Jaime III D. is Green on the first and Blue on the per-class
-tab. The per-class tabs look newer: they carry students the first tab does not
-(new joiners), and they are balanced, which the first is visibly not. **That is
-an inference, not a fact, and importing the wrong one silently mis-assigns every
-student in the school.** Ask before importing anything.
+**two different allocations for the same students**, on different tabs.
+
+Both are per student: every row carries its own colour. What differs is how the
+colours fall. On the first tab the same colour runs down long contiguous
+stretches of the roster, crossing class boundaries — P2 Humility opens Green and
+switches to Blue partway down, P3 Courtesy is Blue but for one Green — which
+reads as the roster having been chunked rather than each child assigned. The
+per-class tabs spread all four colours through every class and carry a per-house
+count at the foot.
+
+They disagree child by child. P1 Patience's eight students are all Green on the
+first tab; on the per-class tab they are Blue, Blue, Yellow, Yellow, Green,
+Green, Orange, Orange, with four newer students added and a `3/3/3/3` count.
+
+The per-class tabs look newer — they carry students the first tab does not, and
+they are balanced, which the first is visibly not. **That is an inference, not a
+fact, and importing the wrong one silently mis-assigns every student in the
+school.** Ask before importing anything.
 
 **Three more things about that sheet, none of them blocking:**
 
