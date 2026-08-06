@@ -33,7 +33,7 @@ rather than being edited into the reply.
 | #   | Ask                                                   | Who                                                  | Status                             | Where                             |
 | --- | ----------------------------------------------------- | ---------------------------------------------------- | ---------------------------------- | --------------------------------- |
 | 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03             | KD #177, migration 109            |
-| 2   | House colour                                          | Chandana (23:35)                                     | **Shipped** — reach settled, T6–T8 | KD #178, migration 110            |
+| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading    | KD #178, migrations 110 / 111     |
 | 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03             | Records → Academic tab            |
 | 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Half shipped**                   | KD #179 — see todo T1             |
 | 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | Open                               | Design question unresolved        |
@@ -78,12 +78,14 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 - **T5 — disciplinary records** (#7) and **awards** (#8), each needing its own
   table. Do **not** extend `lib/compute/awards.ts`: "award" there means a tier
   derived from a numeric average, with no entity, id, date or issuer.
-- **T6 — rename the four house rows. Unblocked.** Chandana's 2026-08-06 replies
-  settle it: **"Orange House", not "Orange House – The Flame"**, and the logo
-  waits for next year. The four colour tokens already in `app/globals.css`
-  happen to match her colours — `--av-house-1` is orange, `-2` blue, `-3` green,
-  `-4` yellow — so this is a four-row `UPDATE` with no token work and nothing
-  outstanding.
+- **T6 — rename the four house rows. Done; migration 111 applied 2026-08-06.**
+  Rather than choose between "Orange House" and "Orange House – The Flame" —
+  her answer supports either, since her picture calls the colour one thing and
+  the name another — the two are **separate columns**. `name` is the colour and
+  stays the only thing rendered; `title` ("The Flame") and `core_values` are
+  stored and shown nowhere, ready for Mr Lloyd's logos next year. No component
+  changed. The colour tokens already matched her colours, so no token work.
+  Verified live through `listHouses()`.
 - **T7 — there is no way to assign a house in bulk**, and the list that arrived
   needs one. One per-student `PATCH` at
   `app/api/sis/students/[enroleeNumber]/house/route.ts`, driven from the profile
@@ -91,12 +93,44 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   20 class tabs, the ones written with the `🔵` emoji, **410 students**. Carry
   into the design: the superseded master tab still sits in the same file, the
   sheet has no student numbers so matching is by name, and five rows cannot be
-  matched at all. **Shape settled** (Mr Ace, 2026-08-06): the attendance and
-  grading import pattern — a `scripts/backfill/gen-*.ts` generator emitting a
-  `-preview.sql` / `-apply.sql` pair, output gitignored, applied through the SQL
-  editor. No review screen, no CRUD page. **The generator's own dry run is the
-  first step**, reporting exact / ambiguous / unmatched before any SQL is
-  trusted.
+  matched at all. **Built 2026-08-06** as `scripts/backfill/gen-house-assignment.ts`,
+  following the attendance/grading pattern — preview + apply SQL, output
+  gitignored, run through the SQL editor. No review screen, no CRUD page.
+
+  **391 of 410 matched. Dry run against production is clean: 391 set, 0
+  overwrites, 0 unresolved student numbers.** Resulting sizes Orange 99 / Green
+  101 / Blue 94 / Yellow 97. Awaiting `house-assignment-apply.sql`.
+
+  Of the 19 that did not match, **seven are students who have WITHDRAWN** and
+  are still on Hanafi's sheet — excluding them is the correct outcome, not a
+  shortfall. The rest are the five partial names, two students absent from
+  AY2026 entirely (Tayeb Taseen, Toki Sayeda), and four where the sheet and the
+  roster hold different middle names.
+
+- **T10 — bulk house assignment: decided against, for good reasons rather than
+  as a deferral** (Mr Ace, 2026-08-06). Assigning stays one student at a time
+  from the permanent record.
+
+  **Because a house is permanent, the only recurring volume is new enrolees — a
+  handful a year**, which is exactly what a per-student picker suits. The single
+  moment of real volume is the initial ~400, and the import covers that. After
+  it lands, 19 students need setting by hand and then a trickle.
+
+  ⚠ **Reopen only if the school ever re-balances houses across classes.** That
+  would mean hundreds of changes at once and the picker would be the wrong tool
+  — but it also contradicts a house being permanent, so it should not happen.
+
+  If it is ever built, the pieces are already there: `DataTable` supports row
+  selection with bulk actions (used by the grading sheet, document completeness
+  and cohorts) and `StudentDataTable` simply does not enable it. The honest
+  scope is one action, one dialog and one endpoint looping the existing PATCH
+  logic — an hour, not a project. Two things would matter: **report which rows
+  did not write** (a wrong or missing house is invisible, since nothing in the
+  school breaks when a child has none), and **make "no house" filterable** — the
+  House facet holds an empty string for unassigned students today, so
+  select-and-assign has no starting point. Audit and permission come free from
+  reusing the existing route.
+
 - **T8 — house in the parent portal. A nice-to-have, and priced accordingly.**
   Her words were _"**would be good** if parents can see their child's house name
   in the parents portal"_ — a preference, not a request, and the softest of her
@@ -332,11 +366,22 @@ correction.
 > Thank you — both sheets are exactly what I needed, and the points legend
 > answered more than I had asked.
 >
-> A few rows have only part of a name — Ariana, Richie and Matthew in Sec 3,
-> Rabaya in Primary 3 Courageous, and Shen Bustamante in Sec 2 I2. Could you
-> give me their full names, so I can match them to their records?
+> I have loaded the list — 391 of the 410 students matched their records and are
+> in their houses now. Three things came out of it.
 >
-> Everything else I can work out from the sheets themselves.
+> 1. A few rows have only part of a name: Ariana, Richie and Matthew in Sec 3,
+>    Rabaya in Primary 3 Courageous, and Shen Bustamante in Sec 2 I2. Could you
+>    give me their full names so I can match them to their records?
+> 2. Seven students on the list have left the school — Alexxa Singson (P2
+>    Humility), Johannah Bruno (P4 Trust), Kaung Khant Min Phone Naing and Ichigo
+>    Suzara (P5 Commitment), Muhammad Ibrahim Ajmal (P6 Loyalty), Joan Irawan
+>    (Sec 2 I2) and Ashley Rae Cama (Sec 3). I have left them out rather than put
+>    them in a house, but they are worth removing from your sheet so your counts
+>    stay right.
+> 3. Two I could not place at all: Taseen Tayeb (P4 Trust) and Sayeda Toki (Sec 1
+>    D1) do not appear in our records for this school year.
+>
+> Everything else I could work out from the sheets themselves.
 >
 > One small thing you may want to know: there is still an older sheet in the
 > same file listing every class in one long run, without the colour circles. I
