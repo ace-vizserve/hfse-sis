@@ -68,7 +68,10 @@ export function SidebarNavItem({
   const row = (
     <SidebarMenuButton
       asChild
-      isActive={isActive}
+      // A parent whose default view is also listed as a child shares that
+      // child's href (Staff -> Teaching assignments). Without this both rows
+      // light up and "you are here" points at two places at once.
+      isActive={isActive && !childIsActive}
       tooltip={badge > 0 ? `${item.label} (${badge})` : item.label}
       className={
         // Clearance for the expander, which is absolutely positioned at the

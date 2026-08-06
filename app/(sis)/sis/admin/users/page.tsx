@@ -7,5 +7,5 @@ import { redirect } from 'next/navigation';
 // prefix stays superadmin-only so the gate fires before the redirect (mirrors
 // the discount-codes stub pattern at app/(records)/records/discount-codes).
 export default function LegacyUsersAdminPage() {
-  redirect('/sis/admin/staff?view=accounts');
+  redirect('/sis/admin/staff/accounts');
 }

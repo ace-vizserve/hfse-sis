@@ -580,6 +580,21 @@ const SIS_NAV: NavSection[] = [
         label: 'Staff',
         countKey: 'staffCount',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+        // Both cuts of the staff directory, each its own route. Accounts is
+        // capability-gated independently, so the academic coordinator sees the
+        // parent and Teaching assignments but not Accounts — matching what the
+        // page itself enforces.
+        children: [
+          {
+            href: '/sis/admin/staff',
+            label: 'Teaching assignments',
+          },
+          {
+            href: '/sis/admin/staff/accounts',
+            label: 'Accounts',
+            requiresCapability: 'staff.view_accounts',
+          },
+        ],
       },
     ],
   },

@@ -231,7 +231,7 @@ function RoleCard({
               </DropdownMenuItem>
             )}
             <DropdownMenuItem asChild>
-              <Link href="/sis/admin/staff?view=accounts">
+              <Link href="/sis/admin/staff/accounts">
                 <Users />
                 See who holds this role
               </Link>

@@ -60,7 +60,7 @@ const ACTIONS: QuickAction[] = [
   {
     label: 'New staff member',
     sublabel: 'Staff',
-    href: '/sis/admin/staff?view=accounts',
+    href: '/sis/admin/staff/accounts',
     icon: UserPlus,
     toneClass: NEUTRAL_TILE,
     // Creating an account is superadmin-only (KD #87), and the staff page hides

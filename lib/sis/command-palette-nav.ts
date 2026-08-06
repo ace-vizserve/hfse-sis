@@ -273,7 +273,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     // Assignments tab, so a registrar who somehow lands here isn't broken —
     // just redundant). Explicit `requiresRoles` pins the intended gate
     // instead of relying on query-string-vs-ROUTE_ACCESS-row coincidence.
-    href: '/sis/admin/staff?view=accounts',
+    href: '/sis/admin/staff/accounts',
     label: 'Staff accounts',
     group: 'Admin',
     icon: UsersIcon,
