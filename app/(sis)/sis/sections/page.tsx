@@ -13,6 +13,7 @@ import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
 import { sgToday } from '@/lib/dates';
+import { hasTermStarted } from '@/lib/sis/current-term';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { computeIndexStatus } from '@/lib/sis/section-index-status';
 import type { Schedule, SectionClassType } from '@/lib/schemas/section';
@@ -90,25 +91,16 @@ export default async function SisSectionsListPage({
     .eq('is_current', true)
     .single();
 
-  // Compute termStarted = the school year's first term has begun (today ≥
-  // earliest term start_date). Used to escalate the "Generate index" dialog
-  // mid-year. We query terms for the current AY and check the minimum
-  // start_date against sgToday() (SGT date — KD #32). A null start_date on
-  // every term is treated as "not yet started" (conservative, no false
-  // escalations during initial setup).
+  // termStarted = the school year's first term has begun. Used to escalate the
+  // "Generate index" dialog mid-year (KD #136). Null-start_date handling and the
+  // SGT clock live in hasTermStarted — see lib/sis/current-term.ts.
   let termStarted = false;
   if (ay) {
     const { data: terms } = await supabase
       .from('terms')
       .select('start_date')
-      .eq('academic_year_id', ay.id)
-      .order('start_date', { ascending: true });
-    const today = sgToday();
-    const earliestStart = (terms ?? [])
-      .map((t) => t.start_date)
-      .filter((d): d is string => !!d)
-      .sort()[0];
-    termStarted = !!earliestStart && earliestStart <= today;
+      .eq('academic_year_id', ay.id);
+    termStarted = hasTermStarted(terms ?? [], sgToday());
   }
 
   const { data: sections } = ay

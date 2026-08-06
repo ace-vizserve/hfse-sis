@@ -28,6 +28,10 @@ import {
   REASON_CATEGORY_LABELS,
   CORRECTION_REASON_LABELS,
 } from '@/lib/schemas/change-request';
+import {
+  ASSIGNMENT_CHANGE_REASON_LABELS,
+  ASSIGNMENT_ROLE_LABELS,
+} from '@/lib/schemas/teacher-assignment';
 
 // ─────────────────────────────────────────────────────────────────────────
 // 1. auditActionLabel
@@ -735,6 +739,35 @@ function templateSummary(
       return joinParts(parts);
     }
 
+    // Teacher assignments. Handled explicitly rather than left to the generic
+    // fallback for three reasons: the fallback caps at LIST_CAP rendered keys
+    // (the reason could be truncated away), it would print `role` as the raw
+    // database word `subject_teacher`, and `role` can't be added to the shared
+    // `enumKeys` set because staff-account entries use the same key for USER
+    // roles. Reads e.g.
+    //   "Ms Tan · Subject teacher, Mathematics, P4 Diligence · On leave"
+    case 'assignment.create':
+    case 'assignment.delete': {
+      const parts: string[] = [];
+      const teacher = str(ctx.teacher_name);
+      if (teacher) parts.push(teacher);
+
+      // Role, then what they were teaching, then where.
+      const roleLabel =
+        (ASSIGNMENT_ROLE_LABELS as Record<string, string>)[str(ctx.role)] ?? '';
+      const where = [roleLabel, str(ctx.subject_name), str(ctx.section_name)]
+        .filter(Boolean)
+        .join(', ');
+      if (where) parts.push(where);
+
+      const reason = labelFor('change_reason', ctx.change_reason);
+      if (reason) parts.push(reason);
+      const notes = str(ctx.change_notes);
+      if (notes) parts.push(notes);
+
+      return joinParts(parts);
+    }
+
     default:
       return null;
   }
@@ -1000,6 +1033,10 @@ function labelFor(key: string, value: unknown): string {
       return (CORRECTION_REASON_LABELS as Record<string, string>)[raw] ?? raw;
     case 'withdrawal_reason':
       return (WITHDRAWAL_REASON_LABELS as Record<string, string>)[raw] ?? raw;
+    case 'change_reason':
+      return (
+        (ASSIGNMENT_CHANGE_REASON_LABELS as Record<string, string>)[raw] ?? raw
+      );
     default:
       return raw;
   }

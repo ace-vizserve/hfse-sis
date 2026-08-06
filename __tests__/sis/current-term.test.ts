@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  hasTermStarted,
   resolveCurrentTerm,
   resolveCurrentTermId,
   type TermLike,
@@ -110,5 +111,50 @@ describe('resolveCurrentTerm', () => {
 
   it('returns null for an empty list', () => {
     expect(resolveCurrentTerm([], '2026-06-01')).toBeNull();
+  });
+});
+
+// hasTermStarted — the "is the school year underway" gate (KD #136). Lifted out
+// of three inline copies (/sis/sections, /sis/sections/[id], /markbook/sections),
+// so these cases pin the behaviour all three used to have.
+describe('hasTermStarted', () => {
+  it('is false before the first term begins', () => {
+    expect(hasTermStarted(terms(), '2026-01-07')).toBe(false);
+  });
+
+  it('is true on the very first day of T1', () => {
+    expect(hasTermStarted(terms(), '2026-01-08')).toBe(true);
+  });
+
+  it('is true mid-term', () => {
+    expect(hasTermStarted(terms(), '2026-04-15')).toBe(true);
+  });
+
+  it('stays true in the gap between terms — the reshuffle window', () => {
+    // 2026-06-01 sits after T2 ended (05-29) and before T3 starts (06-29).
+    // A holiday reassignment still needs a reason: marks already exist.
+    expect(hasTermStarted(terms(), '2026-06-01')).toBe(true);
+  });
+
+  it('stays true after the whole year has ended', () => {
+    expect(hasTermStarted(terms(), '2027-01-01')).toBe(true);
+  });
+
+  it('is false when no term has a start date — an unconfigured calendar must not block setup', () => {
+    const undated = terms().map((t) => ({ ...t, start_date: null }));
+    expect(hasTermStarted(undated, '2026-06-01')).toBe(false);
+  });
+
+  it('ignores undated terms but still honours a dated one', () => {
+    expect(
+      hasTermStarted(
+        [{ start_date: null }, { start_date: '2026-01-08' }],
+        '2026-02-01'
+      )
+    ).toBe(true);
+  });
+
+  it('is false for an empty term list', () => {
+    expect(hasTermStarted([], '2026-06-01')).toBe(false);
   });
 });

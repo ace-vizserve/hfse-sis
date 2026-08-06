@@ -15,18 +15,10 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { AssignmentRemovalDialog } from '@/components/sis/assignment-removal-dialog';
 import { StaffAvatar } from '@/components/sis/staff-visuals';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import type { AssignmentChangeReason } from '@/lib/schemas/teacher-assignment';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -93,11 +85,14 @@ export function TeacherAssignmentsPanel({
   levelSubjects,
   initialTeachers,
   initialAssignments,
+  termStarted,
 }: {
   sectionId: string;
   levelSubjects: Subject[];
   initialTeachers: Teacher[];
   initialAssignments: Assignment[];
+  /** Has the school year begun? If so, a removal has to say why. */
+  termStarted: boolean;
 }) {
   const router = useRouter();
   const [teachers, setTeachers] = useState<Teacher[]>(initialTeachers);
@@ -163,14 +158,27 @@ export function TeacherAssignmentsPanel({
   });
 
   const removeMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch(`/api/teacher-assignments/${id}`, jsonInit('DELETE')),
+    mutationFn: ({
+      id,
+      reason,
+      notes,
+    }: {
+      id: string;
+      reason: AssignmentChangeReason | null;
+      notes: string | null;
+    }) =>
+      apiFetch(
+        `/api/teacher-assignments/${id}`,
+        jsonInit('DELETE', { change_reason: reason, change_notes: notes })
+      ),
     onSuccess: async () => {
+      setPendingRemoveId(null);
       toast.success('Assignment removed');
       await load();
       router.refresh();
     },
     onError: (e) => {
+      // Leave the dialog open so the reason the user typed isn't lost.
       toast.error(
         e instanceof Error ? e.message : 'Failed to remove assignment'
       );
@@ -190,8 +198,12 @@ export function TeacherAssignmentsPanel({
     createMutation.mutate();
   }
 
-  function removeAssignment(id: string) {
-    removeMutation.mutate(id);
+  function removeAssignment(
+    id: string,
+    reason: AssignmentChangeReason | null,
+    notes: string | null
+  ) {
+    removeMutation.mutate({ id, reason, notes });
   }
 
   const teachersById = useMemo(
@@ -477,35 +489,21 @@ export function TeacherAssignmentsPanel({
         </CardFooter>
       </Card>
 
-      <AlertDialog
+      <AssignmentRemovalDialog
         open={pendingRemoveId !== null}
         onOpenChange={(open) => {
           if (!open) setPendingRemoveId(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove this assignment?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The teacher will immediately lose access to this section. You can
-              re-assign them later.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
-              onClick={async () => {
-                const id = pendingRemoveId;
-                setPendingRemoveId(null);
-                if (id) await removeAssignment(id);
-              }}
-            >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        termStarted={termStarted}
+        title="Remove this assignment?"
+        description="The teacher will immediately lose access to this class. You can re-assign them later."
+        busy={removeMutation.isPending}
+        onConfirm={async (reason, notes) => {
+          const id = pendingRemoveId;
+          if (!id) return;
+          await removeAssignment(id, reason, notes);
+        }}
+      />
     </div>
   );
 }

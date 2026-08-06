@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
-const optionalText = (max: number) =>
+// Trimmed, length-capped free text where '' means "cleared" rather than "blank
+// string". Exported because sibling schema modules need the identical coercion
+// (lib/schemas/teacher-assignment.ts) — a second copy would drift.
+export const optionalText = (max: number) =>
   z
     .string()
     .trim()

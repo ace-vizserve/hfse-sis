@@ -57,3 +57,26 @@ export function resolveCurrentTermId(
 ): string | null {
   return resolveCurrentTerm(terms, today)?.id ?? null;
 }
+
+/**
+ * Has the academic year begun? True when the EARLIEST non-null term start_date
+ * is on or before `today`.
+ *
+ * This is the "term-started" gate from KD #136 (the escalated Generate-index
+ * warning), lifted out of three byte-identical inline copies — /sis/sections,
+ * /sis/sections/[id] and /markbook/sections — so there is one tested definition
+ * rather than three that can drift apart.
+ *
+ * Deliberately spans the WHOLE year, not just the term in progress: the gaps
+ * between terms are when staffing gets reshuffled, and by then marks already
+ * exist. Use `resolveCurrentTerm` instead when you need which term it is now.
+ *
+ * A term with no start_date counts as NOT started, so an unconfigured calendar
+ * never blocks setup work. Pass `sgToday()` as `today` (SGT date — KD #32).
+ */
+export function hasTermStarted(
+  terms: Array<{ start_date: string | null }>,
+  today: string
+): boolean {
+  return terms.some((t) => !!t.start_date && t.start_date <= today);
+}

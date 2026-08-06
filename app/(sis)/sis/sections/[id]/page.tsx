@@ -15,6 +15,7 @@ import {
   type SectionSubjectChip,
 } from '@/components/sis/section-subjects-panel';
 import { sgToday } from '@/lib/dates';
+import { hasTermStarted } from '@/lib/sis/current-term';
 import {
   Card,
   CardDescription,
@@ -160,15 +161,13 @@ export default async function SisSectionDetailPage({
       .from('teacher_assignments')
       .select('id, teacher_user_id, section_id, subject_id, role')
       .eq('section_id', id),
-    // Terms for this AY — used to compute termStarted (the school year's first
-    // term has started if today ≥ earliest term start_date). Conservative: a
-    // null start_date is treated as "not yet started" (no false escalations
-    // during initial AY setup). Uses sgToday() — KD #32.
+    // Terms for this AY — used to compute termStarted (see hasTermStarted in
+    // lib/sis/current-term.ts). Gates both the escalated Generate-index warning
+    // and the "why was this teacher removed?" prompt on the Teachers tab.
     supabase
       .from('terms')
       .select('start_date')
-      .eq('academic_year_id', section.academic_year_id)
-      .order('start_date', { ascending: true }),
+      .eq('academic_year_id', section.academic_year_id),
     // Per-section subject overrides (migration 079) — which of the level's
     // configured subjects apply to THIS section.
     supabase
@@ -177,12 +176,10 @@ export default async function SisSectionDetailPage({
       .eq('section_id', id),
   ]);
 
-  const today = sgToday();
-  const earliestTermStart = (termRows ?? [])
-    .map((t: { start_date: string | null }) => t.start_date)
-    .filter((d): d is string => !!d)
-    .sort()[0];
-  const termStarted = !!earliestTermStart && earliestTermStart <= today;
+  const termStarted = hasTermStarted(
+    (termRows ?? []) as Array<{ start_date: string | null }>,
+    sgToday()
+  );
 
   type RosterFetchRow = {
     id: string;
@@ -580,6 +577,7 @@ export default async function SisSectionDetailPage({
             levelSubjects={levelSubjects}
             initialTeachers={initialTeachers}
             initialAssignments={initialAssignments}
+            termStarted={termStarted}
           />
         </TabsContent>
       </Tabs>

@@ -20,6 +20,7 @@ import {
   resolveClassroomScope,
 } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
+import { hasTermStarted } from '@/lib/sis/current-term';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 
@@ -98,10 +99,7 @@ export default async function SectionsListPage() {
 
   // termStarted = the AY's earliest term has started (≤ today SGT). Used to
   // escalate the Generate-index warning (KD #136). Null start_date guarded.
-  const today = sgToday();
-  const termStarted = termRows.some(
-    (t) => !!t.start_date && t.start_date <= today
-  );
+  const termStarted = hasTermStarted(termRows, sgToday());
 
   const ids = sections.map((s) => s.id);
   const counts: Record<string, { active: number; withdrawn: number }> = {};

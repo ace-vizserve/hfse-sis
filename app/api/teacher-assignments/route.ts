@@ -9,6 +9,7 @@ import { requireCapability } from '@/lib/auth/require-capability';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
+import { buildAssignmentAuditContext } from '@/lib/audit/assignment-context';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -129,29 +130,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
-  // If we just set a form_adviser, mirror the display name onto the section
-  // so the report card header shows the same name without needing a second
-  // query. Best-effort â€” don't fail the insert if this lookup errors.
-  if (body.role === 'form_adviser') {
-    try {
-      const { data: u } = await service.auth.admin.getUserById(
-        body.teacher_user_id
-      );
-      const display =
-        ((u.user?.user_metadata as Record<string, unknown> | null)
-          ?.full_name as string | undefined) ??
-        u.user?.email ??
-        null;
-      if (display) {
-        await service
-          .from('sections')
-          .update({ form_class_adviser: display })
-          .eq('id', body.section_id);
-      }
-    } catch {
-      // swallow â€” the assignment is authoritative
-    }
-  }
+  // NOTE: this used to also mirror the adviser's display name onto
+  // `sections.form_class_adviser`. That write was removed — every consumer
+  // (report card, masterfile, publish-readiness) resolves the adviser LIVE from
+  // teacher_assignments and deliberately ignores the mirror, because it was
+  // written on assign and never cleared on unassign. Nothing read it, so the
+  // only thing it could do was drift and mislead the next reader. The column
+  // itself stays: a dozen AY-setup and template RPCs reference it, so dropping
+  // it is a large migration for no gain.
 
   await logAction({
     service,
@@ -159,12 +145,7 @@ export async function POST(request: NextRequest) {
     action: 'assignment.create',
     entityType: 'teacher_assignment',
     entityId: data.id,
-    context: {
-      teacher_user_id: data.teacher_user_id,
-      section_id: data.section_id,
-      subject_id: data.subject_id,
-      role: data.role,
-    },
+    context: await buildAssignmentAuditContext(service, data),
   });
 
   await invalidateForSection(service, data.section_id);

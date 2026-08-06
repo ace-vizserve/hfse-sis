@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireCapability } from '@/lib/auth/require-capability';
 import { createServiceClient } from '@/lib/supabase/service';
+import { hasTermStarted } from '@/lib/sis/current-term';
+import { sgToday } from '@/lib/dates';
 
 type RawSection = {
   id: string;
@@ -48,6 +50,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'AY not found' }, { status: 404 });
   }
   const ayId = (ayRow as { id: string }).id;
+
+  // Has this AY's first term begun? The staff sheet uses it to decide whether
+  // removing an assignment has to be explained (same gate as the DELETE route).
+  const { data: termRows } = await service
+    .from('terms')
+    .select('start_date')
+    .eq('academic_year_id', ayId);
+  const termStarted = hasTermStarted(termRows ?? [], sgToday());
 
   // All sections for this AY (needed for pickers)
   const { data: sectionRows } = await service
@@ -127,5 +137,6 @@ export async function GET(request: NextRequest) {
     subjectAssignments,
     allSections,
     allSubjects,
+    termStarted,
   });
 }

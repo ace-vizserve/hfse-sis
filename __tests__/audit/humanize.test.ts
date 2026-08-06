@@ -477,3 +477,87 @@ describe('auditContextSummary — never emits JSON', () => {
     expect(out).not.toContain('}');
   });
 });
+
+// Teacher assignment entries. These are handled by a dedicated case rather than
+// the generic fallback — the fallback hides every *_id key (so the old
+// ids-only context rendered as bare "Role: subject_teacher"), caps at four
+// keys, and would print the raw enum.
+describe('teacher assignment entries', () => {
+  const removalCtx = {
+    teacher_user_id: '11111111-1111-1111-1111-111111111111',
+    section_id: '22222222-2222-2222-2222-222222222222',
+    subject_id: '33333333-3333-3333-3333-333333333333',
+    role: 'subject_teacher',
+    teacher_name: 'Ms Tan',
+    section_name: 'P4 Diligence',
+    subject_name: 'Mathematics',
+    change_reason: 'resigned',
+    change_notes: null,
+  };
+
+  it('names the teacher, the class and the reason', () => {
+    const summary = auditContextSummary('assignment.delete', removalCtx);
+    expect(summary).toContain('Ms Tan');
+    expect(summary).toContain('Mathematics');
+    expect(summary).toContain('P4 Diligence');
+    expect(summary).toContain('Teacher resigned / left HFSE');
+  });
+
+  it('never leaks the raw role or a UUID', () => {
+    const summary = auditContextSummary('assignment.delete', removalCtx);
+    expect(summary).toContain('Subject teacher');
+    expect(summary).not.toContain('subject_teacher');
+    expect(summary).not.toContain('1111-1111');
+  });
+
+  it('keeps the reason even when every other field is present', () => {
+    // The generic fallback caps at LIST_CAP (4) rendered keys, which is what
+    // would have truncated the reason away.
+    const summary = auditContextSummary('assignment.delete', {
+      ...removalCtx,
+      change_reason: 'other',
+      change_notes: 'Swapped with Ms Lim for the STEM pilot.',
+    });
+    expect(summary).toContain('Other');
+    expect(summary).toContain('Swapped with Ms Lim for the STEM pilot.');
+  });
+
+  it('renders an assignment with no reason (added, or removed pre-term)', () => {
+    const summary = auditContextSummary('assignment.create', {
+      ...removalCtx,
+      change_reason: null,
+      change_notes: null,
+    });
+    expect(summary).toContain('Ms Tan');
+    expect(summary).toContain('Subject teacher');
+    expect(summary).not.toContain('undefined');
+  });
+
+  it('labels a form adviser in words', () => {
+    const summary = auditContextSummary('assignment.delete', {
+      teacher_user_id: '11111111-1111-1111-1111-111111111111',
+      section_id: '22222222-2222-2222-2222-222222222222',
+      subject_id: null,
+      role: 'form_adviser',
+      teacher_name: 'Mr Koh',
+      section_name: 'S1 Discipline',
+      change_reason: 'on_leave',
+    });
+    expect(summary).toContain('Mr Koh');
+    expect(summary).toContain('Form class adviser');
+    expect(summary).toContain('S1 Discipline');
+    expect(summary).toContain('On leave');
+  });
+
+  it('degrades gracefully when names could not be resolved', () => {
+    const summary = auditContextSummary('assignment.delete', {
+      teacher_user_id: '11111111-1111-1111-1111-111111111111',
+      section_id: '22222222-2222-2222-2222-222222222222',
+      subject_id: null,
+      role: 'form_adviser',
+      change_reason: 'class_restructured',
+    });
+    expect(summary).toContain('Form class adviser');
+    expect(summary).toContain('Class restructured or merged');
+  });
+});

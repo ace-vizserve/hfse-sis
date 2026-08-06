@@ -1,7 +1,13 @@
 import { unstable_cache } from 'next/cache';
 
+import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { applyDateRangeFilter } from '@/lib/dashboard/drill-range';
+import {
+  buildSubjectTeacherNameMap,
+  subjectTeacherKey,
+  type SubjectTeacherAssignmentRow,
+} from '@/lib/markbook/subject-teacher';
 import {
   applyTargetFilter,
   classifyGradeBucket,
@@ -307,13 +313,15 @@ async function loadEntryRowsUncached(
     qa_total: number | null;
     is_locked: boolean;
     locked_at: string | null;
-    teacher_name: string | null;
+    // NOTE: `teacher_name` is deliberately NOT selected here. This loader
+    // never emitted it, and the column is the drifting legacy mirror (KD #158)
+    // — fetching it invited the next reader to use it.
   };
   const sheets = await fetchAllPages<SheetLite>((from, to) =>
     service
       .from('grading_sheets')
       .select(
-        'id, term_id, section_id, subject_id, qa_total, is_locked, locked_at, teacher_name'
+        'id, term_id, section_id, subject_id, qa_total, is_locked, locked_at'
       )
       .in('term_id', allowedTermIds)
       .range(from, to)
@@ -540,6 +548,28 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
   );
   const sheetIdsForRollup = sheets.map((s) => s.id);
 
+  // Live subject teachers. `grading_sheets.teacher_name` is written once at
+  // sheet creation and never updated when assignments change, so it drifts
+  // wherever it is populated and is simply empty across AY2026 — the same
+  // column KD #158 stopped the grading list and sheet page from trusting.
+  // Resolve from teacher_assignments and keep the legacy column only as a
+  // fallback for historical sheets whose teacher has no assignment row.
+  const [assignmentRows, staffNameEntries] = await Promise.all([
+    sectionIds.length > 0
+      ? service
+          .from('teacher_assignments')
+          .select('section_id, subject_id, teacher_user_id')
+          .in('section_id', sectionIds)
+          .eq('role', 'subject_teacher')
+          .then((r) => (r.data ?? []) as SubjectTeacherAssignmentRow[])
+      : Promise.resolve([] as SubjectTeacherAssignmentRow[]),
+    getStaffDisplayNameById(),
+  ]);
+  const subjectTeachersByPair = buildSubjectTeacherNameMap(
+    assignmentRows,
+    staffNameEntries
+  );
+
   // Chunk the sheet-IDs IN-clause so the URL doesn't blow past PostgREST's
   // URL length cap when an AY has many sheets (sibling pattern in
   // loadEntryRowsUncached above). Run all three rollups in parallel still.
@@ -642,7 +672,12 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
       entriesPresent: present,
       entriesExpected: expected,
       completenessPct: completeness,
-      teacherName: s.teacher_name,
+      teacherName:
+        subjectTeachersByPair
+          .get(subjectTeacherKey(s.section_id, s.subject_id))
+          ?.join(', ') ??
+        s.teacher_name ??
+        null,
     });
   }
   return out;
