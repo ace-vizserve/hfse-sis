@@ -24,8 +24,22 @@ export interface MatchResult {
   score: number;
 }
 
+// Accents are stripped before comparison: HFSE's rosters and the workbooks
+// teachers keep disagree about them freely, and the same child is written
+// "Iñigo" in one place and "Inigo" in the other, "TRAQUEÑA" and "Traquena".
+// Both were real misses on the house import. Decomposing to NFD and dropping
+// the combining marks turns Ñ into N, é into e, and so on.
+//
+// This only ever WIDENS matching, and it cannot silently pick a wrong record:
+// matchName still refuses when more than one candidate looks equally right.
 function normalize(s: string): string {
-  return s.toUpperCase().replace(/[.,]/g, '').replace(/\s+/g, ' ').trim();
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .replace(/[.,]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function tokenize(s: string): string[] {

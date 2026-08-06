@@ -142,6 +142,61 @@ describe('matchName', () => {
   });
 });
 
+// Accent folding. Both cases below are real AY2026 misses found while building
+// the house import: HFSE's rosters and the workbooks teachers keep disagree
+// about diacritics freely, and the same child is spelled both ways.
+describe('matchName — accents', () => {
+  const accented: CandidateName[] = [
+    {
+      enroleeNumber: 'E260501',
+      studentNumber: 'H200079',
+      lastName: 'Fabre',
+      firstName: 'Kian',
+      middleName: 'Inigo Pagtakhan',
+    },
+    {
+      enroleeNumber: 'E260502',
+      studentNumber: 'H243795',
+      lastName: 'Traquena',
+      firstName: 'Chloe',
+      middleName: 'Isabel Berja',
+    },
+  ];
+
+  it('matches an accented first name against an unaccented roster', () => {
+    // Sheet writes "Iñigo"; the roster holds "Inigo".
+    const r = matchName(parseSheetFullName('FABRE, Kian Iñigo P.'), accented);
+    expect(r.tier).toBe('strong');
+    expect(r.candidate?.studentNumber).toBe('H200079');
+  });
+
+  it('matches an accented surname against an unaccented roster', () => {
+    // Sheet writes "TRAQUEÑA"; the roster holds "Traquena".
+    const r = matchName(
+      parseSheetFullName('TRAQUEÑA, Chloe Isabel B.'),
+      accented
+    );
+    expect(r.tier).toBe('strong');
+    expect(r.candidate?.studentNumber).toBe('H243795');
+  });
+
+  it('still refuses when folding makes two candidates equally right', () => {
+    // Folding must widen matching, never license a guess between two records.
+    const twins: CandidateName[] = [
+      { ...accented[0], enroleeNumber: 'E1', studentNumber: 'H1' },
+      {
+        ...accented[0],
+        enroleeNumber: 'E2',
+        studentNumber: 'H2',
+        lastName: 'Fábre',
+      },
+    ];
+    const r = matchName(parseSheetFullName('FABRE, Kian Iñigo P.'), twins);
+    expect(r.tier).toBe('none');
+    expect(r.candidate).toBeNull();
+  });
+});
+
 describe('similarityRatio', () => {
   it('is 1 for identical strings', () => {
     expect(similarityRatio('ABC', 'ABC')).toBe(1);

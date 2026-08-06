@@ -13,7 +13,23 @@ import { createServiceClient } from '@/lib/supabase/service';
 export type HouseRow = {
   id: string;
   code: string;
+  /**
+   * The COLOUR name — "Orange House". The only thing rendered anywhere today.
+   *
+   * Note this is not what Chandana's picture calls a house's "name" (that is
+   * `title`, below). Migration 111's header explains why the column keeps the
+   * broader word rather than churning every consumer for a vocabulary clash.
+   */
   name: string;
+  /**
+   * The symbol name — "The Flame" (migration 111). **Rendered nowhere.** The
+   * school asked for the colour name alone for now; this is what will sit
+   * beside Mr Lloyd's house logo when that arrives, and it is carried here so
+   * the data is reachable rather than needing a second trip to the database.
+   */
+  title: string | null;
+  /** The four values a house stands for. Rendered nowhere — see `title`. */
+  coreValues: string[];
   /** Design-token NAME, resolved against app/globals.css. Never a hex value. */
   colourToken: string;
   sortOrder: number;
@@ -87,7 +103,7 @@ export const listHouses = cache(async (): Promise<HouseRow[]> => {
   const service = createServiceClient();
   const { data, error } = await service
     .from('houses')
-    .select('id, code, name, colour_token, sort_order')
+    .select('id, code, name, title, core_values, colour_token, sort_order')
     .order('sort_order');
   if (error) {
     // Best-effort: a house chip is never worth failing a page for.
@@ -99,6 +115,8 @@ export const listHouses = cache(async (): Promise<HouseRow[]> => {
       id: string;
       code: string;
       name: string;
+      title: string | null;
+      core_values: string[] | null;
       colour_token: string;
       sort_order: number;
     }>
@@ -106,6 +124,8 @@ export const listHouses = cache(async (): Promise<HouseRow[]> => {
     id: h.id,
     code: h.code,
     name: h.name,
+    title: h.title,
+    coreValues: h.core_values ?? [],
     colourToken: h.colour_token,
     sortOrder: h.sort_order,
   }));

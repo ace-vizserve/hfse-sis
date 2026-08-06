@@ -85,17 +85,17 @@
   --av-hairline: #e2e8f0;
   --av-hairline-strong: #cbd5e1;
 
-  /* House colours (migration 110). Unlike every other token here these are
-     IDENTITY, not semantics — a house IS its colour, so they carry no
+  /* House colours (migration 110, named in 111). Unlike every other token here
+     these are IDENTITY, not semantics — a house IS its colour, so they carry no
      good/warning/critical meaning and must never be reused to signal state.
      They live here rather than as hex in a component so Hard Rule #7 holds.
-     ⚠ Placeholders until Chandana confirms HFSE's actual house colours;
-     renaming is a one-line change here and nothing branches on the values.
-     Colour is never the only signal — every house chip also shows its name. */
-  --av-house-1: #c2410c;
-  --av-house-2: #1d4ed8;
-  --av-house-3: #15803d;
-  --av-house-4: #a16207;
+     Confirmed by Chandana 2026-08-06 — the numbering is now load-bearing, since
+     each index is a named house. Colour is never the only signal: every house
+     chip and tile prints the name beside the swatch. */
+  --av-house-1: #c2410c; /* Orange House */
+  --av-house-2: #1d4ed8; /* Blue House   */
+  --av-house-3: #15803d; /* Green House  */
+  --av-house-4: #a16207; /* Yellow House */
   /* Darker stop for the permanent record's house tile, so it reads as a
      crafted icon tile like its three neighbours (§7.4) rather than a flat
      patch. Same relationship as --av-indigo → --av-indigo-deep. */
