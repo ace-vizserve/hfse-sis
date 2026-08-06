@@ -288,9 +288,16 @@ correction.
 > Thank you — both sheets are exactly what I needed, and the points legend
 > answered more than I had asked.
 >
-> A few rows in the house list have only a first name — Ariana, Richie and
-> Matthew in Sec 3, Rabaya in Primary 3 Courageous, and Shen Bustamante in Sec 2
-> I2. Could you give me their full names, so I can match them to their records?
+> Two small things before I load the list.
+>
+> 1. A few rows have only part of a name — Ariana, Richie and Matthew in Sec 3,
+>    Rabaya in Primary 3 Courageous, and Shen Bustamante in Sec 2 I2. Could you
+>    give me their full names, so I can match them to their records?
+> 2. In Primary 1 Obedience, G Anne Luzano is marked Blue, but the count at the
+>    bottom of that sheet reads Blue 5, Yellow 5, Green 4, Orange 4 — which only
+>    adds up if she is Green. Every other class matches its own count exactly, so
+>    this is the only one I am unsure about. Which is right for her?
+>
 > Everything else I can work out from the sheets themselves.
 >
 > One small thing you may want to know: there is still an older sheet in the
@@ -644,9 +651,21 @@ mis-assign roughly three students in four.
   something given `DELA CRUZ`, `SAN JOSE` and `SANTHOSH KUMAR`. We store
   `firstName` / `middleName` / `lastName` separately and the sheet carries only a
   middle initial, so matching is surname + first name with the class as tiebreak.
-- **Five names cannot be matched at all** — `Rabaya` (P3 Courageous),
-  `Shen Bustamante` (Sec 2 I2), and `Ariana`, `Richie`, `Matthew` (Sec 3). No
-  name appears on two tabs, so there is no cross-tab ambiguity beyond these.
+- **Five names are incomplete** — `Rabaya` (P3 Courageous), `Shen Bustamante`
+  (Sec 2 I2), and `Ariana`, `Richie`, `Matthew` (Sec 3). Verified: no fuller
+  version of any of them exists on any tab of either workbook. All five sit at
+  the **foot** of their tab, below the alphabetical run, which is where late
+  joiners get appended. `Shen Bustamante` is the soft one — a full name in
+  First-Last order, so matchable on the surname; `Rabaya` reads like a surname
+  with the first name missing. No name appears on two tabs.
+- ⚠ **One student's house is genuinely uncertain: `LUZANO, G Anne D.` (P1
+  Obedience).** Each tab tallies itself at the foot, and 19 of the 20 agree with
+  their own rows exactly — an independent check on the extraction, written by the
+  data's owner. P1 Obedience does not: the rows give Blue 6 / Yellow 5 / Green 3
+  / Orange 4, the tally says Blue 5 / Yellow 5 / Green 4 / Orange 4. Both total 18. Marking Luzano Green — she is Blue at row 10, between two Yellows, breaking
+  an otherwise tidy run — reproduces the tally exactly, and nothing else on the
+  tab can. So either she was moved to Blue and the tally left stale, or the cell
+  was changed by accident. **Ask before importing her.**
 - **Class names do not match ours** — "P2 HUMILTY", "P3 RESONSIBILITY", "SEC
   1D1". A matching hint, never a key.
 - **A staff tab**, allocating ~44 staff across the four houses. See T9.
