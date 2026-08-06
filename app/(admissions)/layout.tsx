@@ -2,6 +2,10 @@
 import { redirect } from 'next/navigation';
 
 import { ModuleSidebar } from '@/components/module-sidebar';
+import {
+  SIDEBAR_GROUPS_COOKIE,
+  expandedGroupsFor,
+} from '@/lib/sidebar/group-state';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import { AyBanner } from '@/components/sis/ay-banner';
 import {
@@ -67,6 +71,10 @@ export default async function AdmissionsLayout({
 
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';
+  const expandedGroups = expandedGroupsFor(
+    cookieStore.get(SIDEBAR_GROUPS_COOKIE)?.value,
+    sidebarModule
+  );
 
   // Sidebar badges — currently only the doc-validation pending count.
   // SSR-static (no realtime subscription): the docs columns live in the
@@ -117,6 +125,7 @@ export default async function AdmissionsLayout({
         userId={id}
         badges={badges}
         capabilities={capabilities}
+        expandedGroups={expandedGroups}
       />
       <SidebarInset>
         <AyBanner />

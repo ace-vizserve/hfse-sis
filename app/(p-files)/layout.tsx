@@ -8,6 +8,10 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { ModuleSidebar } from '@/components/module-sidebar';
+import {
+  SIDEBAR_GROUPS_COOKIE,
+  expandedGroupsFor,
+} from '@/lib/sidebar/group-state';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import { AyBanner } from '@/components/sis/ay-banner';
 import {
@@ -36,6 +40,10 @@ export default async function PFilesLayout({
 
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';
+  const expandedGroups = expandedGroupsFor(
+    cookieStore.get(SIDEBAR_GROUPS_COOKIE)?.value,
+    'p-files'
+  );
 
   // Badge counts BOTH document-validation queues the viewer can actually see —
   // enrolled students and, since migration 106 gave the officer the
@@ -60,6 +68,7 @@ export default async function PFilesLayout({
         userId={id}
         badges={badges}
         capabilities={capabilities}
+        expandedGroups={expandedGroups}
       />
       <SidebarInset>
         <AyBanner />

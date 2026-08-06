@@ -2,6 +2,10 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import { ModuleSidebar } from '@/components/module-sidebar';
+import {
+  SIDEBAR_GROUPS_COOKIE,
+  expandedGroupsFor,
+} from '@/lib/sidebar/group-state';
 import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import { AyBanner } from '@/components/sis/ay-banner';
@@ -32,6 +36,10 @@ export default async function MarkbookLayout({
 
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';
+  const expandedGroups = expandedGroupsFor(
+    cookieStore.get(SIDEBAR_GROUPS_COOKIE)?.value,
+    'markbook'
+  );
 
   const service = createServiceClient();
   const sidebarBadges: SidebarBadges = {
@@ -52,6 +60,7 @@ export default async function MarkbookLayout({
         hiddenModules={hiddenModules}
         badges={sidebarBadges}
         capabilities={capabilities}
+        expandedGroups={expandedGroups}
       />
       <SidebarInset>
         <AyBanner />

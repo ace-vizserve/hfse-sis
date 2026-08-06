@@ -1,5 +1,6 @@
 'use client';
 
+import { useCallback, useEffect, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -7,11 +8,7 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
-  SidebarMenu,
   SidebarRail,
 } from '@/components/ui/sidebar';
 import type { Capability } from '@/lib/auth/capabilities';
@@ -22,12 +19,21 @@ import {
   type SidebarBadges,
   type SidebarCounts,
 } from '@/lib/auth/roles';
+import {
+  SIDEBAR_GROUPS_COOKIE,
+  SIDEBAR_GROUPS_COOKIE_MAX_AGE,
+  decodeGroupCookie,
+  encodeGroupCookie,
+  groupKey,
+  isCollapsibleGroup,
+  resolveExpandedGroups,
+} from '@/lib/sidebar/group-state';
 import { SIDEBAR_REGISTRY, type SidebarModule } from '@/lib/sidebar/registry';
 import { useRealtimeBadges } from '@/lib/sidebar/use-realtime-badges';
 
 import { CommandPaletteTrigger } from '@/components/sis/command-palette';
 import { ModuleSidebarHeader } from './module-sidebar/sidebar-header';
-import { SidebarNavItem } from './module-sidebar/sidebar-nav-item';
+import { SidebarNavGroup } from './module-sidebar/sidebar-nav-group';
 import { SidebarProfile } from './module-sidebar/sidebar-profile';
 import { SidebarQuickAction } from './module-sidebar/sidebar-quick-action';
 
@@ -52,6 +58,12 @@ type ModuleSidebarProps = {
   // them (KD #173). A layout that forgets it silently loses those rows, so
   // __tests__/auth/link-capability-consistency.test.ts asserts all eight pass it.
   capabilities?: readonly Capability[];
+  // Group keys this viewer has left open, read from the `sidebar:groups` cookie
+  // server-side by the layout — same shape as `defaultOpen` for the sidebar
+  // itself. Passed rather than read here so the first paint is already correct;
+  // a client-side read renders the default and then pops groups open.
+  // Omitted (first ever visit) means "collapsed except the current page's group".
+  expandedGroups?: readonly string[];
 };
 
 // Stable empty default. Inlining `badges ?? {}` would create a fresh
@@ -119,6 +131,21 @@ function findActiveHref(
   );
 }
 
+// Rewrite this module's entry in the shared cookie without disturbing the other
+// seven — a viewer moves between modules and each keeps its own open groups.
+function persistExpandedGroups(moduleName: string, keys: string[]) {
+  if (typeof document === 'undefined') return;
+  const raw = document.cookie
+    .split('; ')
+    .find((c) => c.startsWith(SIDEBAR_GROUPS_COOKIE + '='))
+    ?.slice(SIDEBAR_GROUPS_COOKIE.length + 1);
+  const all = decodeGroupCookie(raw ? decodeURIComponent(raw) : undefined);
+  all[moduleName] = keys;
+  document.cookie =
+    `${SIDEBAR_GROUPS_COOKIE}=${encodeURIComponent(encodeGroupCookie(all))}` +
+    `; path=/; max-age=${SIDEBAR_GROUPS_COOKIE_MAX_AGE}`;
+}
+
 export function ModuleSidebar({
   module,
   role,
@@ -128,6 +155,7 @@ export function ModuleSidebar({
   counts,
   hiddenModules,
   capabilities,
+  expandedGroups,
 }: ModuleSidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -146,6 +174,45 @@ export function ModuleSidebar({
 
   const quickAction = role ? config.quickActionByRole[role] : undefined;
   const profileRole: Role | null = role ?? null;
+
+  // Initial resolve only. After this the viewer's own toggles are authoritative
+  // — forcing the active group open on every render would make clicking to
+  // close it do nothing, which reads as a broken control.
+  const [expanded, setExpanded] = useState<Set<string>>(() =>
+    resolveExpandedGroups({
+      sections,
+      activeHref,
+      saved: expandedGroups ? [...expandedGroups] : undefined,
+    })
+  );
+
+  // Navigating to a page inside a closed group opens that group — you have to
+  // be able to see where you are. Additive, so it never reopens something the
+  // viewer just closed. The functional update returns `prev` unchanged when the
+  // key is already present, so React bails out rather than looping on the
+  // freshly-built `sections` array.
+  useEffect(() => {
+    const activeSection = sections.find(
+      (s) => isCollapsibleGroup(s) && s.items.some((i) => i.href === activeHref)
+    );
+    if (!activeSection?.label) return;
+    const key = groupKey(activeSection.label);
+    setExpanded((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  }, [activeHref, sections]);
+
+  // Next set computed outside the updater on purpose: writing the cookie inside
+  // one would run twice under StrictMode's double-invoke.
+  const toggleGroup = useCallback(
+    (label: string) => {
+      const key = groupKey(label);
+      const next = new Set(expanded);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      setExpanded(next);
+      persistExpandedGroups(module, [...next]);
+    },
+    [expanded, module]
+  );
 
   return (
     <Sidebar collapsible="icon">
@@ -171,42 +238,20 @@ export function ModuleSidebar({
           )}
           <div className="px-1.5 pb-3 pt-1">
             {sections.map((section, i) => (
-              <SidebarGroup key={i}>
-                {section.label &&
-                  // The cadence-hint chrome (flex spread + span wrapper) is
-                  // gated strictly on `section.hint` — hint-less groups (every
-                  // module except SIS Admin today) render the exact pre-V2
-                  // markup: bare label text, original className, no wrapper
-                  // span. `items-baseline`/`justify-between` must not leak
-                  // into the hint-less branch (twMerge would override the
-                  // primitive's base `items-center`).
-                  (section.hint ? (
-                    <SidebarGroupLabel className="flex items-baseline justify-between gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
-                      <span>{section.label}</span>
-                      <span className="font-normal normal-case tracking-normal text-sidebar-foreground/40 group-data-[collapsible=icon]:hidden">
-                        {section.hint}
-                      </span>
-                    </SidebarGroupLabel>
-                  ) : (
-                    <SidebarGroupLabel className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">
-                      {section.label}
-                    </SidebarGroupLabel>
-                  ))}
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {section.items.map((item) => (
-                      <SidebarNavItem
-                        key={item.href}
-                        item={item}
-                        isActive={item.href === activeHref}
-                        config={config}
-                        badges={liveBadges}
-                        counts={itemCounts}
-                      />
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </SidebarGroup>
+              <SidebarNavGroup
+                key={section.label ?? `group-${i}`}
+                section={section}
+                activeHref={activeHref}
+                config={config}
+                badges={liveBadges}
+                counts={itemCounts}
+                isExpanded={
+                  section.label ? expanded.has(groupKey(section.label)) : true
+                }
+                onToggle={() =>
+                  section.label ? toggleGroup(section.label) : undefined
+                }
+              />
             ))}
           </div>
         </ScrollArea>

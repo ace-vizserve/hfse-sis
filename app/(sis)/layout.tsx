@@ -2,6 +2,10 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { getSessionUser } from '@/lib/supabase/server';
 import { ModuleSidebar } from '@/components/module-sidebar';
+import {
+  SIDEBAR_GROUPS_COOKIE,
+  expandedGroupsFor,
+} from '@/lib/sidebar/group-state';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import { AyBanner } from '@/components/sis/ay-banner';
 import {
@@ -62,6 +66,10 @@ export default async function SisLayout({
 
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';
+  const expandedGroups = expandedGroupsFor(
+    cookieStore.get(SIDEBAR_GROUPS_COOKIE)?.value,
+    'sis'
+  );
 
   const currentAy = await getCurrentAcademicYear();
   const readiness =
@@ -115,6 +123,7 @@ export default async function SisLayout({
         userId={id}
         counts={sidebarCounts}
         capabilities={capabilities}
+        expandedGroups={expandedGroups}
       />
       <SidebarInset>
         <AyBanner />

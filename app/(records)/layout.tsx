@@ -14,6 +14,10 @@ import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import { countUnmatchedLevelLabels } from '@/lib/sis/level-review';
 import { countLevelsAwaitingSections } from '@/lib/sis/levels-awaiting-sections';
+import {
+  SIDEBAR_GROUPS_COOKIE,
+  expandedGroupsFor,
+} from '@/lib/sidebar/group-state';
 import { countUnsyncedInScope } from '@/lib/sis/unsynced-students';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -40,6 +44,10 @@ export default async function RecordsLayout({
 
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';
+  const expandedGroups = expandedGroupsFor(
+    cookieStore.get(SIDEBAR_GROUPS_COOKIE)?.value,
+    'records'
+  );
 
   // Sidebar badges — SSR-static (no realtime subscription per KD #29).
   // Each count shares the `sis:${ayCode}` cache tag with its loader, so the
@@ -81,6 +89,7 @@ export default async function RecordsLayout({
         userId={id}
         badges={badges}
         capabilities={capabilities}
+        expandedGroups={expandedGroups}
       />
       <SidebarInset>
         <AyBanner />
