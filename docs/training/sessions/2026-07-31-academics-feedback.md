@@ -97,9 +97,17 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   editor. No review screen, no CRUD page. **The generator's own dry run is the
   first step**, reporting exact / ambiguous / unmatched before any SQL is
   trusted.
-- **T8 — the house belongs in the parent portal**, per Chandana, and nowhere on
-  the report card. **The only one of her answers the system does not already
-  satisfy** — and it is not a field addition. Audited 2026-08-06:
+- **T8 — house in the parent portal. A nice-to-have, and priced accordingly.**
+  Her words were _"**would be good** if parents can see their child's house name
+  in the parents portal"_ — a preference, not a request, and the softest of her
+  four answers. An earlier draft of this entry read "the house belongs in the
+  parent portal", which is a paraphrase that quietly promoted it; corrected
+  2026-08-06.
+
+  **Nothing about house is outstanding that the school is waiting on.** This is
+  the only one of her answers not already true in code, but "not built" and "a
+  gap" are different things, and it also happens to be the one item that needs
+  another team. Bottom of the list. Audited 2026-08-06:
   - **The parent portal is a separate Next.js codebase**
     (`docs/context/10-parent-portal.md`). This repo has no parent UI, only
     `/api/parent/v2/*` that the portal calls. We can expose a house; somebody
@@ -117,7 +125,7 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
     `students` is not parent-readable today, so the predicate needs designing
     rather than copying.
   - Needs a conversation with whoever maintains the portal. **Does not gate T6 or
-    T7.**
+    T7, and should not be started before either.**
 
   For the record, the other three of her answers are already true in code:
   `HouseChip` and `HouseTile` render `name` alone (no symbol, no logo); house
