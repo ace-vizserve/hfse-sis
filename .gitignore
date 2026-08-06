@@ -76,6 +76,11 @@ ay2025_calendar.sql
 # Untracked student-data spreadsheets at repo root (PII — never commit)
 /*.xlsx
 
+# House source workbooks from Mr Hanafi (real student PII — every student's
+# name and house, plus the house-points ledger). The rule above is root-only
+# and does not reach a subfolder, so this is its own entry. Never commit.
+/house/
+
 # AY2026 source Excel data (real student PII — attendance/grading/evaluation
 # workbooks). Local input for scripts/backfill/gen-ay2026-*.ts; never commit.
 /AY2026/

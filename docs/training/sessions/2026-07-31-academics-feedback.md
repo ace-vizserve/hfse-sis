@@ -88,9 +88,12 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   needs one. One per-student `PATCH` at
   `app/api/sis/students/[enroleeNumber]/house/route.ts`, driven from the profile
   tab, is the only write path. **No longer blocked** — the live allocation is the
-  per-class tabs, the ones written with the `🔵` emoji. Two things to carry into
-  the design: a superseded tab still sits in the same file, and the sheet has no
-  student numbers, so matching is by name across ~490 students.
+  20 class tabs, the ones written with the `🔵` emoji, **410 students**. Carry
+  into the design: the superseded master tab still sits in the same file, the
+  sheet has no student numbers so matching is by name, and five rows cannot be
+  matched at all. **Next step is a dry-run match, not an import** — count exact /
+  ambiguous / no-match against the database before deciding whether this is a
+  throwaway script or needs a review screen.
 - **T8 — the house belongs in the parent portal**, per Chandana, and nowhere on
   the report card. ⚠ Read the parent-portal constraint before designing it: a
   parent is null-role and reads some tables **directly**, where only
@@ -600,39 +603,52 @@ All five answered, and nothing on house is open with her any more.
 
 Both sheets were read. What follows is from the files, not from his message.
 
-**The allocation sheet — and the one thing that blocks the import.** It holds
-**two different allocations for the same students**, on different tabs.
+**The allocation sheet.** `Student House Color Assignment`, owned by
+`hanafi.hfhse@gmail.com`, last modified 2026-07-03. **24 tabs**: one superseded
+master, an HFSE Staff tab, and 22 cohort rosters. Figures below are from
+`house/extract.mjs`, run against the downloaded workbook — the Drive reader
+flattens every tab into one stream and silently truncates, which is how an
+earlier pass mistook the master for "the first part of the list".
 
-Both are per student: every row carries its own colour. What differs is how the
-colours fall. On the first tab the same colour runs down long contiguous
-stretches of the roster, crossing class boundaries — P2 Humility opens Green and
-switches to Blue partway down, P3 Courtesy is Blue but for one Green — which
-reads as the roster having been chunked rather than each child assigned. The
-per-class tabs spread all four colours through every class and carry a per-house
-count at the foot.
+**In scope is the 20 class tabs, P1 Patience → Sec 4 — 410 students**, and the
+houses come out near-evenly split, which is itself evidence these are the
+maintained tabs:
 
-They disagree child by child. P1 Patience's eight students are all Green on the
-first tab; on the per-class tab they are Blue, Blue, Yellow, Yellow, Green,
-Green, Orange, Orange, with four newer students added and a `3/3/3/3` count.
+| Blue | Yellow | Green | Orange | Total |
+| ---- | ------ | ----- | ------ | ----- |
+| 100  | 102    | 104   | 104    | 410   |
 
-**Settled 2026-08-06 by Mr Ace: the per-class tabs are the live list.** They are
-the ones written as `🔵 Blue`, with the emoji; the superseded tab writes plain
-`Green` with none, which is the quickest way to tell them apart. The file is
-`Student House Color Assignment`, owned by `hanafi.hfhse@gmail.com`, last
-modified 2026-07-03.
+**Out of scope for now** (Mr Ace, 2026-08-06): `YS` (YoungStarters, 15 students)
+and `VizSchool` (a separate school entity, 3 students). Both are real and both
+wait until P1–Sec 4 is done.
 
-⚠ **The superseded tab is still sitting in the same file**, and reading the file
-whole returns every tab at once. Anything built against this sheet must select
-tabs deliberately rather than take the first one it finds — importing that tab
-would silently mis-assign every student in the school.
+**Two allocations, and the split is not close.** Both are per student — every
+row carries its own colour — but they disagree wholesale. Of the master tab's
+389 rows: **91 agree with the class tabs, 292 give a different house**, 6 exist
+only on the master, and the class tabs carry 27 students the master never got.
+The master reads as a roster chunked into four blocks; the class tabs are
+balanced within each class.
 
-**Three more things about that sheet, none of them blocking:**
+**Settled 2026-08-06 by Mr Ace: the class tabs are the live list.** They write
+the value as `🔵 Blue`, with the emoji; the master writes plain `Green` with
+none, which is the fastest way to tell them apart.
 
-- **No student numbers.** Names only, as `SURNAME, First M.`. Matching will be
-  by name against ~490 students, and a handful of rows carry a first name alone
-  ("Ariana", "Richie", "Matthew", "Rabaya") which cannot be matched at all.
-- **Class names do not match ours** — "P2 HUMILTY", "P3 RESONSIBILITY", "Pri 6
-  Grit", "Primary Three Courages". Usable as a matching hint, not as a key.
+⚠ **The master tab is still in the file.** Anything built against this workbook
+must name its tabs rather than take what it finds first — loading that one would
+mis-assign roughly three students in four.
+
+**Three more things, none of them blocking:**
+
+- **No student numbers**, and no dates of birth. Names only, as
+  `SURNAME, First M.`, which at least splits cleanly on the comma — worth
+  something given `DELA CRUZ`, `SAN JOSE` and `SANTHOSH KUMAR`. We store
+  `firstName` / `middleName` / `lastName` separately and the sheet carries only a
+  middle initial, so matching is surname + first name with the class as tiebreak.
+- **Five names cannot be matched at all** — `Rabaya` (P3 Courageous),
+  `Shen Bustamante` (Sec 2 I2), and `Ariana`, `Richie`, `Matthew` (Sec 3). No
+  name appears on two tabs, so there is no cross-tab ambiguity beyond these.
+- **Class names do not match ours** — "P2 HUMILTY", "P3 RESONSIBILITY", "SEC
+  1D1". A matching hint, never a key.
 - **A staff tab**, allocating ~44 staff across the four houses. See T9.
 
 **The points sheet turned out to be the more valuable of the two**, because it
