@@ -288,15 +288,9 @@ correction.
 > Thank you — both sheets are exactly what I needed, and the points legend
 > answered more than I had asked.
 >
-> Two small things before I load the list.
->
-> 1. A few rows have only part of a name — Ariana, Richie and Matthew in Sec 3,
->    Rabaya in Primary 3 Courageous, and Shen Bustamante in Sec 2 I2. Could you
->    give me their full names, so I can match them to their records?
-> 2. In Primary 1 Obedience, G Anne Luzano is marked Blue, but the count at the
->    bottom of that sheet reads Blue 5, Yellow 5, Green 4, Orange 4 — which only
->    adds up if she is Green. Every other class matches its own count exactly, so
->    this is the only one I am unsure about. Which is right for her?
+> A few rows have only part of a name — Ariana, Richie and Matthew in Sec 3,
+> Rabaya in Primary 3 Courageous, and Shen Bustamante in Sec 2 I2. Could you
+> give me their full names, so I can match them to their records?
 >
 > Everything else I can work out from the sheets themselves.
 >
@@ -658,14 +652,19 @@ mis-assign roughly three students in four.
   joiners get appended. `Shen Bustamante` is the soft one — a full name in
   First-Last order, so matchable on the surname; `Rabaya` reads like a surname
   with the first name missing. No name appears on two tabs.
-- ⚠ **One student's house is genuinely uncertain: `LUZANO, G Anne D.` (P1
-  Obedience).** Each tab tallies itself at the foot, and 19 of the 20 agree with
-  their own rows exactly — an independent check on the extraction, written by the
-  data's owner. P1 Obedience does not: the rows give Blue 6 / Yellow 5 / Green 3
-  / Orange 4, the tally says Blue 5 / Yellow 5 / Green 4 / Orange 4. Both total 18. Marking Luzano Green — she is Blue at row 10, between two Yellows, breaking
-  an otherwise tidy run — reproduces the tally exactly, and nothing else on the
-  tab can. So either she was moved to Blue and the tally left stale, or the cell
-  was changed by accident. **Ask before importing her.**
+- **The per-tab tallies check our extraction, and are not data themselves.** Each
+  tab counts itself at the foot, and 19 of the 20 agree with their own rows
+  exactly — a verification of the parse written by the data's owner rather than
+  by us. P1 Obedience is the exception: rows give Blue 6 / Yellow 5 / Green 3 /
+  Orange 4 against a stated Blue 5 / Yellow 5 / Green 4 / Orange 4, both
+  totalling 18, and only `LUZANO, G Anne D.` being Green reproduces the stated
+  figures.
+
+  **Not a data problem — the tallies are typed by hand, not formulas** (Mr Ace,
+  2026-08-06). Somebody moved her and did not retype the count. **The rows are
+  the data; a tally is an annotation.** Luzano is Blue, there is nothing to ask,
+  and no importer should ever read those numbers as authoritative.
+
 - **Class names do not match ours** — "P2 HUMILTY", "P3 RESONSIBILITY", "SEC
   1D1". A matching hint, never a key.
 - **A staff tab**, allocating ~44 staff across the four houses. See T9.
